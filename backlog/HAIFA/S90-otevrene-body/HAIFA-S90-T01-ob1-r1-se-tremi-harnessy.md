@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S90-T01
 title: OB1 R1 se třemi harnessy
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 ---
@@ -19,3 +19,4 @@ Out of scope: změny produktu, pokud validace projde.
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-09 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/1 · náklady $3.62
