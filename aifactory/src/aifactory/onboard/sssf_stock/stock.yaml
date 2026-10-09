@@ -1,0 +1,68 @@
+# Stock sssf (vendor/sssf/templates) as factory onboard knows it; a machine without vendor/ can convert.
+# Blob ids are git hash-object of the vendor files; 3f5d4837... is a second stock adw_simple_sdlc.py.
+agents:
+  planner:
+    purpose: Turn a request into a plan the builder can implement without asking questions.
+    system: c7a04623ca9c2780e359d3d4b80f26ca2e0513cf
+    user: 5b2aa91f71a3bca80d46c555f36afc156577ccc5
+  builder:
+    purpose: Implement the plan exactly; report every changed file in the envelope.
+    system: c473000ea5157ccd5e8a27cbcee55f43ff231b67
+    user: 6b0e08c79d5a47c15edabcf4236613432db6794c
+  scout:
+    purpose: Find and report where things live; change nothing.
+    system: 7bb14b8a6e39e500bb0632df5daea0e8faaf0a82
+    user: 841deee8d3637a8214d08cf8c042b54f7ee71cf3
+  reviewer:
+    purpose: Confirm that what was built is what was asked for; change nothing.
+    system: a76117aadb1a898569d37af84975ddb0e5765de0
+    user: 53b58c19665cf204c443d45d77a35660072f6310
+  documenter:
+    purpose: Write up the change that was just made, from the diff; document only.
+    system: 92c06f89a7c76570523cb02945899cd55a3962dc
+    user: d3b778f515867370a75a0fa3d022f8605a7beda4
+chains:
+  07e5bfe41fac422063e6f3ddbfa2763e42e97fc4: plan
+  7e0a35bf063004ee2b886076b6b1741fae0ca4f8: plan-build
+  962fae110bd4983107c72707b27a4a57c348c3a6: plan-build-test
+  a6a5c4c1c4be7fb2bf3de4c80cdb798c8df23ffc: simple-sdlc
+  3f5d48378a8daefb7e9dfa79af8279454db42d34: simple-sdlc
+  96789aa53f64904bab5984ace733edef234ada86: document
+  39a008f8eda63c783b942f47a5ff33ddd3a347f7: scout
+chain_files:
+  adw_plan.py: plan
+  adw_plan_build.py: plan-build
+  adw_plan_build_test.py: plan-build-test
+  adw_simple_sdlc.py: simple-sdlc
+  adw_document.py: document
+  adw_scout.py: scout
+scripts:
+  adw_build.py: ca895bda898a70cb361f4b38230dc742209b288a
+  adw_build_review.py: 7ced9d929ae7a4fe94f7936c034e21dd41b639a8
+  adw_build_test.py: 58ec4a0cb29437f49c1cd0a4feb14ddc931e9bda
+  adw_compose.py: 8ca91b01c5cbf0065b3943d368d030d2c810b48f
+  adw_models.py: 820ea4979d6143aa148144703aa689946d3fa90d
+  adw_plan_build_test_quality.py: f0cae4972d0c6ca007f26463909ba2ce112b4609
+  adw_prompt.py: ed15c86ffb90e0e35bf97053980d438498de70ef
+  adw_quality.py: 6b697b77c7416f807c926390347490f2346e0a12
+modules:
+  __init__.py: e69de29bb2d1d6434b8b29ae775ad8c2e48c5391
+  agent_cc.py: 375fb8686ece7993f63f12f68112386f356327e3
+  agent_pi.py: 783e6a8bd94fafbb39bf1b1628c5ed1321ec7901
+  agents.py: 75627f93237d813fc45d8f33b3881ef7b6a81c61
+  chain.py: 21235d45ffe07cdc58ff88c76a1891a400106b39
+  changes.py: b8adb05b06ffa91022fc7cb5903dd9297b7cb2a1
+  cli.py: b301496f49dc4af1fe97213680f101fcf256ad03
+  console.py: c7bb0649cbb97eb43a003b65211ef1971dfa8843
+  data_types.py: c6e721b6931edf2da49474d60a092ff2d6e1cae5
+  gates.py: 99bf7016eb9d80cbf6eb76aa6b14a86436da6f6e
+  git_helper.py: 882e68c6d969a27cd29517ecf60fb308f40921ff
+  models.py: 55b6dfe11b3e6b90712b9cb2eadabd62ec165695
+  permissions.py: aaca59be16eee126812ffadb8e9ae1a3ea6c82f5
+  prompts.py: 2c74351d5764fe094678fa2785dc2835e6878f91
+  quality.py: 2f50c0f3c2450f575d20b5018554e7b79df9dde2
+  roles.py: 147e51463c04c1402d95fd8b5973b31f2e1a207a
+  runner.py: 86bf2b30797f6e66e0aaf5fd02835a02dbd7b0f3
+  session.py: 49c2375853ee500c8c15f214c6663948bdfe5d7b
+  tracer.py: 54eb6385edbcfb0470fdab5fed93edd61b136040
+  utils.py: 358e225a602ba0f4804f95a40f05ac2ff647b82b

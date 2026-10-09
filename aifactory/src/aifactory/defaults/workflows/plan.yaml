@@ -1,0 +1,5 @@
+# YAML form of adw_plan.py. Phases: engineer(request) -> planner
+name: plan
+description: Turn a request into a written plan and stop there, so a human can read it first
+steps:
+  - plan

@@ -1,0 +1,7 @@
+purpose: Write up the change from the diff; document only.
+defaults:
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes:
+    - $docs_dir/

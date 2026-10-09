@@ -1,0 +1,6 @@
+# YAML form of adw_document.py. Phases: engineer(request) -> code(changes) -> documenter
+name: document
+description: Write up a finished change from its diff, which code captures before the documenter reads it
+steps:
+  - changes
+  - document

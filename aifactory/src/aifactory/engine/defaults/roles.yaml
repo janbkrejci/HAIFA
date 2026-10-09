@@ -1,0 +1,85 @@
+# Step name -> role. Content mirrors vendor adw_modules/roles.py; output types
+# and gates are names looked up in adw_modules.data_types / adw_modules.gates.
+# `aliases` are extra step names that share the same role (`plan` == `planner`).
+# aifactory: a `.factory/roles.yaml` without `code_steps` overlays this file — an
+# existing step keeps the fields it does not name, a new step needs `agent`,
+# `output_type`, `gates` and `description`. A file with `code_steps` replaces it.
+roles:
+  plan:
+    agent: planner
+    output_type: PlanOutput
+    gates: [artifacts_exist, files_non_empty]
+    description: Turn the request into an implementable plan
+    aliases: [planner]
+  build:
+    agent: builder
+    output_type: BuildOutput
+    gates: [diff_matches_claims]
+    description: Implement what the previous step asked for
+    aliases: [builder]
+  scout:
+    agent: scout
+    output_type: ScoutOutput
+    gates: [artifacts_exist]
+    description: Find and report where things live; change nothing
+  review:
+    agent: reviewer
+    output_type: ReviewOutput
+    gates: [artifacts_exist, verdict_consistent]
+    description: Confirm the work matches what was asked for
+    aliases: [reviewer]
+  document:
+    agent: documenter
+    output_type: DocumentOutput
+    gates: [artifacts_exist, files_non_empty]
+    description: Write up the completed change from the diff
+    aliases: [documenter]
+  ask:
+    agent: builder
+    output_type: GenericOutput
+    gates: []
+    description: Answer the request directly, with no fixed output shape
+  fix:
+    agent: builder
+    output_type: BuildOutput
+    gates: [diff_matches_claims]
+    description: Repair what the previous step reported, from its verbatim output
+  # Not in the vendor registry: adw_simple_sdlc.py writes this role inline.
+  revise:
+    agent: builder
+    output_type: BuildOutput
+    gates: [diff_matches_claims]
+    description: Close the reviewer's blocking findings
+    retries: 1
+  # Not in the vendor registry: `factory task resolve` (a PR that conflicts with base).
+  resolve:
+    agent: builder
+    output_type: BuildOutput
+    gates: [diff_matches_claims]
+    description: Resolve the conflicts a rebase onto base left, editing only the conflicted files
+    retries: 1
+
+# Deterministic steps. The action is fixed by the step name; the registry only
+# supplies who owns the phase and what it is for.
+code_steps:
+  test:
+    owner: quality
+    description: Run the suite — a known command, so code runs it and no agent has to rediscover it
+  quality:
+    owner: quality
+    description: Run lint, typecheck and build — known commands, all of them
+  commit:
+    owner: git
+    description: Commit what the previous step produced, in its own words
+  changes:
+    owner: git
+    description: Diff the run against its pinned baseline, for the documenter
+  command:
+    owner: quality
+    description: Run the command the workflow names, as code rather than as an agent
+  rebase:
+    owner: git
+    description: Rebase the branch onto base and leave any conflicts in the tree for the resolver
+  rebuild:
+    owner: quality
+    description: Rebuild the generated outputs the rebase left in conflict, with their configured build command

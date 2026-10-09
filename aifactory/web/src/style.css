@@ -1,0 +1,403 @@
+:root {
+  --bg: #06080f;
+  --panel: #0d1119;
+  --panel-2: #131a26;
+  --panel-3: #0a0e16;
+  --border: #232c3d;
+  --border-soft: #222b3d;
+  --text: #f2f5fa;
+  --dim: #aabdd5;
+  --faint: #8b9cb6;
+  --green: #4ade80;
+  --red: #ff6f67;
+  --blue: #6cb6ff;
+  --amber: #e8b64a;
+  --purple: #c89bff;
+  --cyan: #5ad2dd;
+  --violet: #94a3ff;
+  /* Play carries the UI voice; mono is reserved for data (ids, times, code). */
+  --sans: 'Play', 'Helvetica Neue', system-ui, sans-serif;
+  --mono: ui-monospace, 'SF Mono', SFMono-Regular, Menlo, Monaco, 'Cascadia Mono',
+    'Roboto Mono', monospace;
+  /* Surface gradient shared by cards and panels — one recipe, everywhere. */
+  --surface: linear-gradient(180deg, #10141f 0%, #0b0f18 100%);
+  /* Layers above the sticky topbar (z-index 10): the modal, the dropdown list over it,
+     and the tooltip on top. */
+  --z-modal: 1000;
+  --z-dropdown: 1050;
+  --z-tooltip: 1100;
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+/* Shared controls keep their native keyboard and form behaviour. */
+:where(button) {
+  padding: 7px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  background: var(--panel-2);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color 120ms, border-color 120ms, box-shadow 120ms;
+}
+:where(button:not(:disabled)):hover { border-color: color-mix(in srgb, var(--dim) 45%, var(--border)); }
+button:focus-visible, input[type='checkbox']:focus-visible, input[type='radio']:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
+:where(button:disabled) { opacity: .45; cursor: not-allowed; }
+
+input[type='checkbox'], input[type='radio'] {
+  appearance: none;
+  display: inline-grid;
+  place-content: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin: 0;
+  padding: 0 !important;
+  border: 1px solid var(--dim);
+  border-radius: 5px;
+  background: var(--panel);
+  vertical-align: middle;
+  cursor: pointer;
+  transition: background-color 120ms, border-color 120ms;
+}
+input[type='checkbox']:checked, input[type='radio']:checked { border-color: var(--cyan); background: var(--cyan); }
+input[type='checkbox']::after {
+  content: '';
+  width: 10px;
+  height: 10px;
+  clip-path: polygon(14% 44%, 40% 70%, 86% 16%, 100% 30%, 42% 100%, 0 58%);
+  background: var(--panel);
+  transform: scale(0);
+}
+input[type='checkbox']:checked::after { transform: scale(1); }
+input[type='checkbox']:indeterminate { background: var(--cyan); border-color: var(--cyan); }
+input[type='checkbox']:indeterminate::after { clip-path: none; height: 2px; transform: scale(1); }
+input[type='radio'] { border-radius: 50%; }
+input[type='radio']::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--panel); transform: scale(0); }
+input[type='radio']:checked::after { transform: scale(1); }
+input[type='checkbox']:disabled, input[type='radio']:disabled { opacity: .4; cursor: not-allowed; }
+input[type='checkbox'].switch {
+  display: inline-block;
+  position: relative;
+  width: 38px;
+  height: 22px;
+  border-radius: 999px;
+  border-color: var(--border);
+  background: var(--panel-3);
+}
+input[type='checkbox'].switch::after {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 14px;
+  height: 14px;
+  clip-path: none;
+  border-radius: 50%;
+  background: var(--dim);
+  transform: none;
+  transition: left 120ms, background-color 120ms;
+}
+input[type='checkbox'].switch:checked { background: var(--cyan); border-color: var(--cyan); }
+input[type='checkbox'].switch:checked::after { left: 19px; background: var(--panel); transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  button, input[type='checkbox'], input[type='radio'], input[type='checkbox']::after { transition: none; }
+}
+
+[data-theme="light"] {
+  --bg: #f5f7fb;
+  --panel: #ffffff;
+  /* Inset depth has to be re-tuned per theme, not mirrored. On the dark ground
+     --panel-3 sits 1.02:1 below --panel — a whisper. Mapping the same idea onto
+     white by simply going darker produced 1.28:1, which is not a recess but a
+     grey slab, and it backs the biggest blocks in the app: prompt panels, gate
+     blocks, code. Both surfaces move one step lighter so the inset reads as
+     subtle here too (1.12:1), with the card still clearly on top. */
+  --panel-2: #f4f7fb;
+  --panel-3: #eef2f9;
+  --border: #c4cee0;
+  --border-soft: #d0d9ea;
+  --text: #1a2238;
+  --dim: #5a6a82;
+  --faint: #7a8a9e;
+  --surface: linear-gradient(180deg, #ffffff 0%, #eef2f9 100%);
+  /* The dark palette's accents are tuned for a near-black ground: every one of
+     them lands between 1.7:1 and 2.7:1 on white, where 4.5:1 is the readable
+     minimum. Same hues, darkened until each clears 4.5:1 against the lightest
+     surface that carries text (--panel-2). Without these, every status word,
+     JSON string, and cost figure in light mode is a pale smear. */
+  --green: #177d3c;
+  --red: #da0b00;
+  --blue: #006ad3;
+  --amber: #8d6612;
+  --purple: #8d30ff;
+  --cyan: #1b7881;
+  --violet: #3b57ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  /* Deep space with a faint violet/cyan aurora — fixed so scrolling glides over it. */
+  background:
+    radial-gradient(1100px 700px at 8% -10%, rgba(148, 163, 255, 0.09), transparent 62%),
+    radial-gradient(1000px 720px at 102% 108%, rgba(90, 210, 221, 0.07), transparent 60%),
+    var(--bg);
+  background-attachment: fixed;
+  color: var(--text);
+  font-family: var(--sans);
+  /* Readability floor: nothing in the app renders below 16px. */
+  font-size: 16px;
+  line-height: 1.5;
+}
+
+[data-theme="light"] body {
+  background: var(--bg);
+}
+
+#app {
+  min-height: 100vh;
+}
+
+a {
+  color: var(--blue);
+  text-decoration: none;
+}
+
+pre {
+  margin: 0;
+  padding: 12px 14px;
+  background: var(--panel-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 8px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 16px;
+  line-height: 1.55;
+  color: var(--text);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* JSON token colors — spans emitted by lib/highlight.ts */
+.j-key {
+  color: var(--purple);
+}
+
+.j-str {
+  color: var(--green);
+}
+
+.j-num {
+  color: var(--amber);
+}
+
+.j-bool {
+  color: var(--cyan);
+}
+
+.j-null {
+  color: var(--red);
+}
+
+.dim {
+  color: var(--dim);
+}
+
+.faint {
+  color: var(--faint);
+}
+
+.error-bar {
+  margin: 12px 24px;
+  padding: 10px 14px;
+  border: 1px solid rgba(255, 111, 103, 0.5);
+  background: rgba(255, 111, 103, 0.1);
+  color: var(--red);
+  border-radius: 8px;
+  font-size: 16px;
+}
+
+.error-bar .retry {
+  margin-left: 12px;
+  padding: 2px 10px;
+  border: 1px solid currentColor;
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.empty-state {
+  padding: 56px 24px;
+  text-align: center;
+  color: var(--dim);
+  font-size: 16px;
+}
+
+/* Rendered-markdown blocks (compiled prompts) — global because the content is
+   injected via v-html and scoped styles can't reach it. */
+.md {
+  font-size: 16px;
+  line-height: 1.6;
+  color: var(--text);
+}
+
+.md h1 {
+  font-size: 20px;
+  margin: 14px 0 8px;
+}
+
+.md h2 {
+  font-size: 18px;
+  margin: 14px 0 8px;
+}
+
+.md h3,
+.md h4 {
+  font-size: 17px;
+  margin: 12px 0 6px;
+}
+
+.md h1:first-child,
+.md h2:first-child,
+.md h3:first-child {
+  margin-top: 0;
+}
+
+.md p {
+  margin: 8px 0;
+  white-space: pre-wrap;
+}
+
+.md code {
+  background: var(--panel-2);
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 16px;
+}
+
+.md pre.md-code {
+  margin: 10px 0;
+  white-space: pre;
+}
+
+.md pre.md-code code {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+
+.md ul,
+.md ol {
+  margin: 8px 0;
+  padding-left: 28px;
+}
+
+.md li {
+  margin: 3px 0;
+}
+
+.md blockquote {
+  margin: 10px 0;
+  padding: 4px 0 4px 14px;
+  border-left: 3px solid var(--border);
+  color: var(--dim);
+  white-space: pre-wrap;
+}
+
+.md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 14px 0;
+}
+
+/* Markdown view tabs (MarkdownView: Náhled / Zdroj). */
+.md-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border-soft);
+}
+
+.md-tabs button {
+  padding: 4px 12px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--dim);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.md-tabs button:hover {
+  color: var(--text);
+}
+
+.md-tabs button.active {
+  color: var(--text);
+  border-bottom-color: var(--blue);
+}
+
+.md-source {
+  margin: 0;
+  padding: 10px 12px;
+  white-space: pre-wrap;
+  background: var(--panel-3);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 14px;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* Shared busy indicator (components/ui/Spinner.vue) and a spinning refresh icon. */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.spinner {
+  display: inline-block;
+  flex: none;
+  box-sizing: border-box;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  vertical-align: -0.125em;
+  animation: spin 0.7s linear infinite;
+}
+
+.spin {
+  animation: spin 1s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner,
+  .spin {
+    animation-duration: 2s;
+  }
+}

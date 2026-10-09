@@ -1,0 +1,32 @@
+# Agent roster pi-haiku for `just validate --roster aifactory/validation/rosters/pi-haiku`.
+#
+# Every agent inherits pi + space bunny from `defaults`; planner and documenter
+# override to claude haiku (for when codex is out of credit). The workflow
+# workflows/simple-sdlc.yaml names the harness of every step. The prompts (and
+# the validation rule of the reviewer) stay those of the template.
+defaults:
+  harness: pi
+  model: nous-portal/stealth/space-bunny-alpha
+  thinking: low
+
+agents:
+  - name: planner
+    harness: claude
+    model: haiku
+    purpose: Turn the task into a short plan the builder can follow.
+    writes:
+      - specs/
+
+  - name: builder
+    purpose: Implement the plan exactly; report every changed file.
+
+  - name: reviewer
+    purpose: Confirm that what was built is what was asked for; change nothing.
+    writes: []
+
+  - name: documenter
+    harness: claude
+    model: haiku
+    purpose: Write up the change from the diff; document only.
+    writes:
+      - app_docs/

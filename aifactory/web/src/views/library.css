@@ -1,0 +1,13 @@
+.global-page { max-width: 1150px; margin: auto; padding: 28px; }
+.global-page header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.global-page section, .global-page article { border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin: 16px 0; }
+.global-page button, .global-page input, .global-page select { font: inherit; color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 7px 12px; margin: 4px; }
+.global-page button { cursor: pointer; } .global-page button:disabled { opacity: .5; cursor: default; }
+.global-page a { color: var(--blue); } .global-page pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.global-page table { width: 100%; border-collapse: collapse; } .global-page th, .global-page td { text-align: left; padding: 10px; border-bottom: 1px solid var(--border); }
+.global-page [role=alert], .global-page .error { color: var(--red); }
+.global-page .warning { color: var(--amber); }
+.global-page .chip { display: inline-block; padding: 3px 8px; border: 1px solid currentColor; border-radius: 12px; margin: 3px; color: var(--amber); }
+.global-page .synced { color: var(--green); } .global-page .diverged, .global-page .missing, .global-page .repo_missing { color: var(--red); }
+.global-page [role=tab][aria-selected=true] { color: var(--cyan); border-color: var(--cyan); }
+.global-page .table-scroll { overflow-x: auto; }

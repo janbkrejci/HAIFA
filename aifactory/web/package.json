@@ -1,0 +1,27 @@
+{
+  "name": "haifa-dashboard",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "HAIFA dashboard frontend; built into aifactory/src/aifactory/web/static and served by `factory obs`. Look copied from the sssf visualizer.",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@fontsource/play": "^5.3.0",
+    "lucide-vue-next": "^1.0.0",
+    "vue": "^3.5.13"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6",
+    "@vue/test-utils": "^2.4.6",
+    "happy-dom": "^20",
+    "typescript": "^5.7.2",
+    "vite": "^7",
+    "vitest": "^3.2",
+    "vue-tsc": "^3"
+  }
+}

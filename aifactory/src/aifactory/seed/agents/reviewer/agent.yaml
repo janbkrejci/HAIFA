@@ -1,0 +1,6 @@
+purpose: Confirm that what was built is what was asked for; change nothing.
+defaults:
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes: []

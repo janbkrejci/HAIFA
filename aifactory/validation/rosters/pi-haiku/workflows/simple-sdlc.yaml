@@ -1,0 +1,50 @@
+# simple-sdlc of the pi-haiku roster: the template's workflow with every
+# builder step (build, fix, revise) on pi instead of codex. Plan stays on claude,
+# review on pi. R1 covers only claude + pi and R10 (Codex resume) is inconclusive.
+#
+# Loops (2.7): `until` is checked after every body step, so a last rejection is
+# not followed by revise_2 and a last red suite not by fix_3.
+name: simple-sdlc
+description: Plan, build, test with repairs, review with revision, then document — over three harnesses
+steps:
+  - plan:
+      harness: claude
+  - commit:
+      id: commit_plan
+      description: Put the spec on record before any code exists to blur it
+  - build:
+      description: Implement the plan exactly
+      harness: pi
+  - repeat: {max: 3, until: test.passed}
+    steps:
+      - test
+      - fix:
+          description: Repair what the suite reported, from its verbatim output
+          harness: pi
+  - repeat: {max: 2, until: review.approved}
+    steps:
+      - review:
+          input: [build, fix, revise]
+          description: Confirm the build matches the plan
+          harness: pi
+      - revise:
+          harness: pi
+  - test:
+      id: retest
+      when: revise.ran and review.approved
+      description: Re-run the suite — the revision changed code after the last green result
+  - commit:
+      id: commit_build
+      when: test.passed and review.approved
+      description: "Land the code only now: green suite, approved review"
+  - changes:
+      when: test.passed and review.approved
+      description: Diff the whole run against its pinned baseline, for the documenter
+  - document:
+      when: test.passed and review.approved
+      description: Write up the completed change
+  - commit:
+      id: commit_docs
+      when: test.passed and review.approved
+      description: Ship the write-up in its own commit, beside the code it describes
+accept: test.passed and review.approved

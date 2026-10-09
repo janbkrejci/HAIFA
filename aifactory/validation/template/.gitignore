@@ -1,0 +1,6 @@
+.factory/data/
+.factory/worktrees/
+.factory/local.yaml
+.factory/trace.db*
+__pycache__/
+*.pyc

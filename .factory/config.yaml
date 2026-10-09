@@ -1,0 +1,26 @@
+levels:
+- project
+- step
+- task
+backlog_dir: backlog
+specs_dir: specs
+docs_dir: app_docs
+base: main
+remote: origin
+git_provider: github
+merge_strategy: squash
+test_command:
+- just
+- check-scoped
+test_timeout: 1500
+generated:
+- path: aifactory/src/aifactory/web/static
+  command:
+  - just
+  - web-build
+protected_files:
+- .factory/
+- .claude/
+- CLAUDE.md
+- vendor/
+- prototype/

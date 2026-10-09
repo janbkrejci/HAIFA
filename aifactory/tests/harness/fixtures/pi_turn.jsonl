@@ -1,0 +1,4 @@
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"toolCall","id":"call_1","name":"bash","arguments":{"command":"ls"}}],"usage":{"input":100,"output":20,"cacheRead":50,"cacheWrite":0,"totalTokens":170,"cost":{"total":0.01}},"stopReason":"toolUse"}}
+{"type":"tool_execution_start","toolCallId":"call_1","toolName":"bash","args":{"command":"ls"}}
+{"type":"tool_execution_end","toolCallId":"call_1","toolName":"bash","result":{"content":[{"type":"text","text":"README.md\nsrc"}]},"isError":false}
+{"type":"message_end","message":{"role":"assistant","content":[{"type":"text","text":"{\"status\":\"success\"}"}],"usage":{"input":150,"output":30,"cacheRead":100,"cacheWrite":0,"totalTokens":280,"cost":{"total":0.02}},"stopReason":"stop"}}

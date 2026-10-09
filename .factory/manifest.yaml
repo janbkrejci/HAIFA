@@ -1,0 +1,38 @@
+format: 1
+written_by: 0.1.0
+library:
+  id: edd1ceda-ef2e-4f4d-b7a8-68b029433780
+  name: library
+  remote: null
+items:
+  agents:
+    planner:
+      item: planner
+      version: sha256:fe74d69bed18866a404cb47d1c0b34aceaa4ab53ce91e7a493f31c92f482e720
+    builder:
+      item: builder
+      version: sha256:0db0515a19c3aa56bad003b2c4d78831c2fd394831f43710c9e148ae6f87a40d
+    reviewer:
+      item: reviewer-haifa
+      version: sha256:1ae21ee78afac4ffd9fd22cbec3320cdb676fa2d9130098ea714e22001c40b5b
+    documenter:
+      item: documenter
+      version: sha256:e3eb223023d25c16b02277c8b399a4ca0b37aba8ecd339cab9ce621574ba12e0
+  workflows:
+    build-test-review:
+      item: build-test-review
+      version: sha256:653102f05256664178f8a9e498b49fd1afc9e57c5620c8d3e03b1cc0153237e1
+    finish-test-review:
+      item: finish-test-review
+      version: sha256:458e2c096555ac292aca250ab51e6d10514ea6e50c5066db26361918ceb63508
+    manual-r10-validation:
+      item: manual-r10-validation
+      version: sha256:73cb4e2892644b257879a8b221df3b67279b6ebf569a28247f759e2d9274d2ad
+    simple-sdlc:
+      item: simple-sdlc
+      version: sha256:068b8ec6d875feecf82d88675c68fe18f2eeb21ea2b22120461706b1b3e6b7e7
+    plan-build-test:
+      item: plan-build-test
+      version: sha256:8737c3200f52e7c0b3cc1fdf01e7a65efcfc5f898cae61fd37b42a7ec63f9fc5
+  skills: {}
+  extensions: {}

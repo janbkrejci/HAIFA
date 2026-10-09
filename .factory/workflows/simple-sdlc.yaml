@@ -1,0 +1,52 @@
+# YAML form of vendor/sssf/templates/adws/adw_simple_sdlc.py.
+#
+# Phases: engineer(request) -> planner -> git(commit_plan)
+#         -> builder -> code(test) [-> builder(fix) -> code(test) ... bounded]
+#         -> reviewer [-> builder(revise) -> reviewer ... bounded]
+#         -> code(retest, only if a revision changed code)
+#         -> git(commit_build) -> code(changes) -> documenter -> git(commit_docs)
+#
+# Loops (2.7): `until` is checked after every body step, and the last round ends
+# at the step `until` reads. A last rejection is therefore not followed by
+# revise_2 (as in the Python version), and a last red suite not by fix_3
+# (the Python version still runs fix_3; the outcome is the same: nothing committed).
+name: simple-sdlc
+description: Plan, build, test with repairs, review with revision, then document — committing each work product separately
+steps:
+  - plan
+  - commit:
+      id: commit_plan
+      description: Put the spec on record before any code exists to blur it
+  - build:
+      description: Implement the plan exactly
+  - repeat: {max: 3, until: test.passed}
+    steps:
+      - test
+      - fix:
+          description: Repair what the suite reported, from its verbatim output
+  - repeat: {max: 2, until: review.approved}
+    steps:
+      # The reviewer judges the latest code, not the test report before it.
+      - review:
+          input: [build, fix, revise]
+          description: Confirm the build matches the plan
+      - revise
+  - test:
+      id: retest
+      when: revise.ran and review.approved
+      description: Re-run the suite — the revision changed code after the last green result
+  - commit:
+      id: commit_build
+      when: test.passed and review.approved
+      description: "Land the code only now: green suite, approved review"
+  - changes:
+      when: test.passed and review.approved
+      description: Diff the whole run against its pinned baseline, for the documenter
+  - document:
+      when: test.passed and review.approved
+      description: Write up the completed change
+  - commit:
+      id: commit_docs
+      when: test.passed and review.approved
+      description: Ship the write-up in its own commit, beside the code it describes
+accept: test.passed and review.approved

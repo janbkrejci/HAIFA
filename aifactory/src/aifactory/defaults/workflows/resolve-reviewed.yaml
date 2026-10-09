@@ -1,0 +1,22 @@
+name: resolve-reviewed
+description: Resolve like `resolve`, then review a resolution the agent wrote; auto-merge resolves a conflicting PR with it
+steps:
+  - rebase
+  - resolve:
+      when: rebase.conflict
+      description: Settle every conflict in the files the rebase reported, keeping both sides' intent
+  - repeat: {max: 3, until: test.passed}
+    steps:
+      - rebuild:
+          when: rebase.conflict
+          description: Rebuild the generated outputs in conflict from the resolved sources
+      - test:
+          description: Re-run the whole suite on the rebased branch before it is pushed
+      - fix:
+          when: rebase.conflict
+          description: Repair what the suite reported, from its verbatim output, only in the conflicted files
+  - review:
+      when: resolve.ran and test.passed
+      input: [resolve, fix]
+      description: Confirm the resolved branch still does what the task asked and keeps what base now holds
+accept: test.passed and (not resolve.ran or review.approved)

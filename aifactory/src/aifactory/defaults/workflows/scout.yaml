@@ -1,0 +1,5 @@
+# YAML form of adw_scout.py. Phases: engineer(request) -> scout
+name: scout
+description: Read-only recon that reports where things live without changing the repo
+steps:
+  - scout

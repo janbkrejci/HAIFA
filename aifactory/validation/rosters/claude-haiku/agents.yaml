@@ -1,0 +1,28 @@
+# Agent roster claude-haiku for `just validate --roster aifactory/validation/rosters/claude-haiku`.
+#
+# Every agent runs on claude haiku: pi + space bunny did not return valid JSON
+# envelopes reliably (github-160918) and codex is out of credit. R1 and R10 stay
+# inconclusive with this roster. The prompts (and the validation rule of the
+# reviewer) stay those of the template.
+defaults:
+  harness: claude
+  model: haiku
+  thinking: low
+
+agents:
+  - name: planner
+    purpose: Turn the task into a short plan the builder can follow.
+    writes:
+      - specs/
+
+  - name: builder
+    purpose: Implement the plan exactly; report every changed file.
+
+  - name: reviewer
+    purpose: Confirm that what was built is what was asked for; change nothing.
+    writes: []
+
+  - name: documenter
+    purpose: Write up the change from the diff; document only.
+    writes:
+      - app_docs/

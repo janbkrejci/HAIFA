@@ -1,0 +1,124 @@
+[project]
+name = "aifactory"
+dynamic = ["version"]
+description = "HAIFA (Helios AI Factory): local control panel and CLI"
+requires-python = ">=3.11"
+license-files = ["THIRD_PARTY_NOTICES"]
+dependencies = [
+    "pydantic>=2.13.5,<3",
+    "python-dotenv>=1.2.3,<2",
+    "pyyaml>=6.0.3,<7",
+    "rich>=15.0.0,<16",
+    "ruamel-yaml>=0.18.10,<0.19",
+    "starlette>=1.7.0,<2",
+    "uvicorn>=0.54.0,<0.55",
+]
+
+[project.scripts]
+factory = "aifactory.cli:main"
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+    "mypy",
+    "types-PyYAML",
+    "pytest-xdist>=3.8.0",
+    "httpx2>=2.13.1",
+    "playwright>=1.49",
+    "hatchling>=1.27",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "src/aifactory/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aifactory"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# shared test helpers (tests/cli_json.py) import as top-level modules;
+# "." makes the validation package (validation/, not packaged) importable
+pythonpath = ["tests", "."]
+# parallel by default (`just test -n0` runs serially; worker count: tests/conftest.py);
+# tests marked xdist_group share a worker and run in file order
+addopts = "-n auto --dist loadgroup"
+# test tiers (justfile check-scoped): files listed in tests/conftest.py get these markers
+markers = [
+    "slow: whole-factory integration test, left out of the fast tier",
+    "browser: browser acceptance test, run again when the frontend changes",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "validation", "bundle"]
+# Engine ported from sssf (vendor/sssf/templates/adws/adw_modules). No longer
+# byte-identical: every logic change against sssf is marked `# aifactory 2.9:` (or
+# later) in the code, so `diff -r` plus those markers shows what changed (risk R6).
+# Not linted/formatted, to keep that diff readable.
+extend-exclude = [
+    # the validation sandbox's own code (foreign to aifactory) and run results
+    "validation/template",
+    "validation/results",
+    "src/aifactory/engine/__init__.py",
+    "src/aifactory/engine/agent_cc.py",
+    "src/aifactory/engine/agent_pi.py",
+    "src/aifactory/engine/agents.py",
+    "src/aifactory/engine/chain.py",
+    "src/aifactory/engine/changes.py",
+    "src/aifactory/engine/cli.py",
+    "src/aifactory/engine/console.py",
+    "src/aifactory/engine/data_types.py",
+    "src/aifactory/engine/gates.py",
+    "src/aifactory/engine/git_helper.py",
+    "src/aifactory/engine/models.py",
+    "src/aifactory/engine/permissions.py",
+    "src/aifactory/engine/prompts.py",
+    "src/aifactory/engine/quality.py",
+    "src/aifactory/engine/roles.py",
+    "src/aifactory/engine/runner.py",
+    "src/aifactory/engine/session.py",
+    "src/aifactory/engine/tracer.py",
+    "src/aifactory/engine/utils.py",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+files = ["src", "tests", "validation", "bundle"]
+exclude = ["^validation/template/", "^validation/results/"]
+# Calling the sssf engine (untyped) from typed code is allowed.
+untyped_calls_exclude = ["aifactory.engine"]
+
+# Engine ported from sssf, changes marked in code; see [tool.ruff].extend-exclude.
+[[tool.mypy.overrides]]
+module = [
+    "aifactory.engine.agent_cc",
+    "aifactory.engine.agent_pi",
+    "aifactory.engine.agents",
+    "aifactory.engine.chain",
+    "aifactory.engine.changes",
+    "aifactory.engine.cli",
+    "aifactory.engine.console",
+    "aifactory.engine.data_types",
+    "aifactory.engine.gates",
+    "aifactory.engine.git_helper",
+    "aifactory.engine.models",
+    "aifactory.engine.permissions",
+    "aifactory.engine.prompts",
+    "aifactory.engine.quality",
+    "aifactory.engine.roles",
+    "aifactory.engine.runner",
+    "aifactory.engine.session",
+    "aifactory.engine.tracer",
+    "aifactory.engine.utils",
+]
+ignore_errors = true

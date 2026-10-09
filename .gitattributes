@@ -1,0 +1,3 @@
+# LF in every checkout, also on Windows (core.autocrlf=true): package data, seeds and
+# fixtures are read as bytes and must match the committed blobs.
+* text=auto eol=lf

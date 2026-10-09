@@ -1,0 +1,5 @@
+purpose: Implement the plan exactly; report every changed file.
+defaults:
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium

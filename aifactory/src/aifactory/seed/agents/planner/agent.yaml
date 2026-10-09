@@ -1,0 +1,7 @@
+purpose: Turn the task into a short plan the builder can follow.
+defaults:
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes:
+    - $specs_dir/

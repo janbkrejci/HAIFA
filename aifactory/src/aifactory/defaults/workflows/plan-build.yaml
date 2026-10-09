@@ -1,0 +1,8 @@
+# YAML form of adw_plan_build.py. Phases: engineer(request) -> planner -> builder -> git(commit)
+name: plan-build
+description: Plan the change, implement it and commit the result without running tests
+steps:
+  - plan
+  - build
+  - commit:
+      description: Land the builder's changes, using the message it wrote

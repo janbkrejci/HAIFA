@@ -1,0 +1,106 @@
+name: Test and release
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HAIFA_UPDATE_REPO: ''
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.12'
+      - uses: oven-sh/setup-bun@v2
+      - name: Install prerequisites
+        run: |
+          uv tool install rust-just
+          uv tool dir --bin >> "$GITHUB_PATH"
+          uv sync --locked --project aifactory
+          cd aifactory
+          uv run playwright install --with-deps chromium
+      - name: Frontend checks and build
+        run: |
+          just web-test
+          just web-build
+      - name: Backend tests
+        working-directory: aifactory
+        run: uv run pytest -m 'not browser'
+      - name: Browser acceptance
+        run: just e2e
+      - name: Types and lint
+        run: |
+          just typecheck
+          just lint
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tested-frontend
+          path: aifactory/src/aifactory/web/static
+
+  release:
+    needs: test
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.12'
+      - uses: actions/download-artifact@v4
+        with:
+          name: tested-frontend
+          path: aifactory/src/aifactory/web/static
+      - name: Build uniquely versioned release bundle
+        id: bundle
+        working-directory: aifactory
+        run: |
+          uv sync --locked
+          version="$(.venv/bin/python -m bundle.release)"
+          .venv/bin/python -m bundle.build
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Verify fresh tool installation
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/haifa-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/haifa-bin
+          EXPECTED_VERSION: ${{ steps.bundle.outputs.version }}
+        run: |
+          unzip "aifactory/dist/haifa-$EXPECTED_VERSION.zip" -d "$RUNNER_TEMP/haifa-install"
+          bash "$RUNNER_TEMP/haifa-install/haifa-$EXPECTED_VERSION/install.sh"
+          "$UV_TOOL_BIN_DIR/factory" --version | grep -Fx "factory $EXPECTED_VERSION"
+      - name: Publish completed release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.bundle.outputs.version }}
+        run: |
+          current="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
+          if [ "$current" != "$GITHUB_SHA" ]; then
+            echo "A newer commit is on main; skip publishing this older build."
+            exit 0
+          fi
+          tag="v$VERSION"
+          if gh release view "$tag" --json isDraft --jq .isDraft > "$RUNNER_TEMP/haifa-draft" 2>/dev/null; then
+            if [ "$(cat "$RUNNER_TEMP/haifa-draft")" = false ]; then
+              echo "This build is already published."
+              exit 0
+            fi
+          else
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "HAIFA $VERSION" --notes "Automatically built after passing frontend, backend, browser, type and lint checks. Source commit: $GITHUB_SHA."
+          fi
+          gh release upload "$tag" "aifactory/dist/haifa-$VERSION.zip" --clobber
+          gh release edit "$tag" --draft=false --latest
