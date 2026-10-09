@@ -21,7 +21,7 @@ def test_resolve_rereads_a_stale_catalog(monkeypatch: pytest.MonkeyPatch) -> Non
     def run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[str]:
         return subprocess.CompletedProcess(args, 0, stdout=listings.pop(0), stderr="")
 
-    monkeypatch.setattr(agent_pi.subprocess, "run", run)
+    monkeypatch.setattr("aifactory.engine.agent_pi.subprocess.run", run)
     agent_pi._pi_catalog.cache_clear()
     try:
         agent_pi._pi_catalog()  # the dashboard cached the first, partial listing
