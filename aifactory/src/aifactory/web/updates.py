@@ -15,7 +15,7 @@ from aifactory import __version__
 from aifactory.library.remote import version_key
 from aifactory.upgrade import UpgradeError, editable_install, run_upgrade
 
-UPDATE_REPOSITORY = "janbkrejci/HAIFA-public"
+UPDATE_REPOSITORY = "janbkrejci/HAIFA"
 
 
 def latest_release(repository: str) -> dict[str, Any]:
