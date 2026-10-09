@@ -31,6 +31,8 @@ export interface RepoPlan extends LibraryPlan {
 }
 export interface RepoPlanRow { repo: RepoItem; status: string; plan: RepoPlan | null; error?: Blocker; result?: FactoryResult }
 export function fetchLibrary(): Promise<LibraryStatus> { return getGlobal('/library') }
+/** Status without the item list: cheap enough for the topbar readiness check. */
+export function fetchLibrarySummary(): Promise<LibraryStatus> { return getGlobal('/library?items=0') }
 export function fetchItem(type: FactoryItemType, name: string, version?: string): Promise<ItemDetail> {
   return getGlobal(`/library/items/${type}/${encodeURIComponent(name)}${version ? '?version=' + encodeURIComponent(version) : ''}`)
 }

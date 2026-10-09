@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { errorText } from './lib/format'
-import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect, type Component } from 'vue'
-import { Activity, Factory, GitPullRequest, ListTodo, Settings, Trash2 } from 'lucide-vue-next'
+import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
+import { Trash2 } from 'lucide-vue-next'
 import { fetchHealth, fetchRepos, type Health, type RepoItem } from './lib/api'
 import { pendingInstall, installBusy, installRegistering, cancelPendingInstall } from './lib/factory'
 import { useCodeState } from './lib/code'
@@ -10,13 +10,10 @@ import { useLimits } from './lib/limits'
 import { useRemoveRepo } from './lib/repos'
 import {
   OVERVIEW_HREF,
-  SCREENS,
   SCREEN_LABELS,
-  here,
   usePage,
   useRepoId,
   useRoute,
-  type Screen,
 } from './lib/router'
 import { useTheme } from './lib/theme'
 import SetupView from './views/SetupView.vue'
@@ -36,14 +33,6 @@ import RepoSwitcher from './components/RepoSwitcher.vue'
 import ConfirmDialog from './components/ui/ConfirmDialog.vue'
 import Spinner from './components/ui/Spinner.vue'
 import Tooltip from './components/ui/Tooltip.vue'
-
-const ICONS: Record<Screen, Component> = {
-  backlog: ListTodo,
-  runs: Activity,
-  review: GitPullRequest,
-  factory: Factory,
-  settings: Settings,
-}
 
 const route = useRoute()
 const readiness = provideReadiness()
@@ -155,19 +144,6 @@ onBeforeUnmount(() => {
         </svg>
         <a class="brand" href="/">HAIFA</a>
       </div>
-
-      <nav v-if="viewPage === 'repo'" class="view-toggle">
-        <a
-          v-for="screen in SCREENS"
-          :key="screen.id"
-          :href="here(screen.id)"
-          :class="{ active: route === screen.id }"
-          :data-screen="screen.id"
-        >
-          <component :is="ICONS[screen.id]" class="nav-icon" :size="16" aria-hidden="true" />
-          <span>{{ screen.label }}</span>
-        </a>
-      </nav>
 
       <div class="topbar-right">
         <UpdateChip />
@@ -366,44 +342,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.view-toggle {
-  display: flex;
-  gap: 4px;
-  padding: 4px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: var(--panel-2);
-  flex: none;
-}
-
-[data-theme="light"] .view-toggle {
-  background: rgba(255, 255, 255, 0.7);
-}
-
-[data-theme="light"] .view-toggle a.active {
-  background: linear-gradient(135deg, rgba(200, 155, 255, 0.25), rgba(90, 210, 221, 0.2));
-  box-shadow: inset 0 0 0 1px rgba(200, 155, 255, 0.3);
-}
-
-.view-toggle a {
-  padding: 6px 12px;
-  border-radius: 7px;
-  font-size: 15px;
-  color: var(--dim);
-  transition: background 0.15s ease, color 0.15s ease;
-  white-space: nowrap;
-}
-
-.view-toggle a:hover {
-  color: var(--text);
-}
-
-.view-toggle a.active {
-  background: var(--panel-3);
-  color: var(--text);
-  font-weight: 600;
-}
-
 .theme-toggle {
   display: inline-flex;
   align-items: center;
@@ -435,16 +373,6 @@ onBeforeUnmount(() => {
 .theme-icon {
   width: 18px;
   height: 18px;
-}
-
-.view-toggle a {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.nav-icon {
-  flex: none;
 }
 
 </style>

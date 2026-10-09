@@ -1,6 +1,6 @@
 import { inject, onBeforeUnmount, onMounted, provide, ref, type InjectionKey } from 'vue'
 import { fetchFactoryRoster, fetchMachineCheck, fetchRepos, getGlobal, type RepoItem } from './api'
-import { fetchLibrary } from './library'
+import { fetchLibrarySummary } from './library'
 import { focusRepo, gettingStartedSteps, type Step } from './gettingStarted'
 import { errorText } from './format'
 import { repoHref } from './router'
@@ -12,7 +12,6 @@ function createReadiness() {
   const issues = ref<Issue[]>([])
   let checking = false
   let disposed = false
-  let timer: ReturnType<typeof setInterval> | null = null
   async function check(fresh = false) {
     if (checking || disposed) return
     checking = true
@@ -20,7 +19,7 @@ function createReadiness() {
     issues.value = []
     try {
       const [machine, library, registry] = await Promise.all([
-        fetchMachineCheck(fresh), fetchLibrary(), fetchRepos(),
+        fetchMachineCheck(fresh), fetchLibrarySummary(), fetchRepos(),
       ])
       const repo = focusRepo(registry.repos)
       let rosterAgents = 0
@@ -59,10 +58,10 @@ function createReadiness() {
     } finally { checking = false }
   }
 
+  // The server checks once at start; a page load reads that result, later checks are explicit.
   function recheck() { void check(true) }
-  const readCached = () => { void check() }
-  onMounted(() => { readCached(); timer = setInterval(readCached, 60_000); window.addEventListener('focus', readCached); window.addEventListener('factory-applied', recheck) })
-  onBeforeUnmount(() => { disposed = true; if (timer) clearInterval(timer); window.removeEventListener('focus', readCached); window.removeEventListener('factory-applied', recheck) })
+  onMounted(() => { void check(); window.addEventListener('factory-applied', recheck) })
+  onBeforeUnmount(() => { disposed = true; window.removeEventListener('factory-applied', recheck) })
   return { phase, issues, recheck }
 }
 const key: InjectionKey<ReturnType<typeof createReadiness>> = Symbol('readiness')

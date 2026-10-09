@@ -15,7 +15,7 @@ function stub(options: { machine?: MachineCheck; repos?: RepoItem[]; fail?: bool
       if (options.fail) throw new Error('Server není dostupný')
       return envelope(options.machine ?? machine)
     }
-    if (url === '/api/library') return envelope({ exists: true })
+    if (url === '/api/library?items=0') return envelope({ exists: true })
     if (url === '/api/repos') return envelope({ repos: options.repos ?? [registered] })
     if (url === '/api/repos/a/factory/roster') return envelope({ agents: [{ name: 'builder' }], workflow_tasks: {} })
     if (url === '/api/repos/a/backlog') return envelope({ items: [{ id: 'M01' }] })
@@ -50,6 +50,17 @@ describe('overview readiness', () => {
     expect(overviewWrapper.find('[data-test="readiness-success"]').exists()).toBe(false)
   })
 
+  it('reads the cached result once on load and does not check again on focus', async () => {
+    const fetchMock = stub()
+    mount(OverviewReadiness, { props: { chip: true } })
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/machine/check')
+    const before = fetchMock.mock.calls.length
+    window.dispatchEvent(new Event('focus'))
+    await flushPromises()
+    expect(fetchMock.mock.calls.length).toBe(before)
+  })
+
   it('links the warning chip to problems and provides concrete fixes on that page', async () => {
     const options: { machine: MachineCheck } = { machine: { ...machine, ok: false, findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] } }
     stub(options)
@@ -77,26 +88,15 @@ describe('overview readiness', () => {
     expect(warning.text()).not.toContain('První projekt')
   })
 
-  it('offers a retry after a failed request and rechecks on returning to the window', async () => {
+  it('offers a retry after a failed request', async () => {
     const options = { fail: true }
     stub(options)
     const wrapper = mount(OverviewReadiness)
     await flushPromises()
     expect(wrapper.get('[data-test="readiness-warning"]').text()).toContain('Server není dostupný')
     options.fail = false
-    window.dispatchEvent(new Event('focus'))
+    await wrapper.get('[data-test="readiness-retry"]').trigger('click')
     await flushPromises()
     expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
-  })
-
-  it('removes its focus listener on unmount', async () => {
-    const fetchMock = stub()
-    const wrapper = mount(OverviewReadiness)
-    await flushPromises()
-    const count = fetchMock.mock.calls.length
-    wrapper.unmount()
-    window.dispatchEvent(new Event('focus'))
-    await flushPromises()
-    expect(fetchMock.mock.calls).toHaveLength(count)
   })
 })

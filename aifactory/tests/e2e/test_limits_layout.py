@@ -87,7 +87,7 @@ def test_stacked_limits_do_not_overlap_topbar_controls(state: str) -> None:
             claude, codex = boxes
             assert claude is not None and codex is not None
             assert claude["y"] + claude["height"] <= codex["y"], (width, state, boxes)
-            controls = page.locator(".theme-toggle, .repo-switcher, .view-toggle a, .brand")
+            controls = page.locator(".theme-toggle, .repo-switcher, .brand")
             control_boxes = [control.bounding_box() for control in controls.all()]
             for row in rows:
                 # Measure the actual contents: a shrinking parent can conceal overflow.

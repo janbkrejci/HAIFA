@@ -122,6 +122,12 @@ def resolve_model(pattern: str) -> tuple[str, str]:
     ``openai/gpt-5.6-terra`` without re-registering built-in models locally.
     """
     catalog = [(provider, model_id) for provider, model_id, _ in _pi_catalog()]
+    # aifactory 3.0: the cached listing can be partial or stale (pi's list varies between
+    # calls); a pattern it lacks re-reads it once instead of failing until a restart.
+    listed = any(pattern == f"{p}/{m}" or pattern in m for p, m in catalog)
+    if not listed and hasattr(_pi_catalog, "cache_clear"):   # tests replace the function
+        _pi_catalog.cache_clear()
+        catalog = [(provider, model_id) for provider, model_id, _ in _pi_catalog()]
     if "/" in pattern:
         provider, model_id = pattern.split("/", 1)
         if (provider, model_id) in catalog:

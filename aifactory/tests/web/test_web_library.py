@@ -89,6 +89,8 @@ def test_empty_home_and_read_only_init(client: TestClient) -> None:
     assert not (home.parent.parent / "process-home").exists()
     data = response(client.get("/api/library"))
     assert data["exists"] and data["name"] == "team" and not data["fetched"]
+    summary = response(client.get("/api/library?items=0"))
+    assert summary == {k: v for k, v in data.items() if k != "items"}
     for item in data["items"]:
         assert item["repo_count"] == 0
         assert all(item[k] for k in ("version", "date", "author", "commit"))

@@ -135,7 +135,8 @@ def usage(kind: str, name: str, env: Mapping[str, str]) -> list[dict[str, Any]]:
         raise
 
 
-def status(home: Path) -> tuple[dict[str, Any], list[str]]:
+def status(home: Path, *, items: bool = True) -> tuple[dict[str, Any], list[str]]:
+    """Library status; ``items=False`` skips the item list and its per-repo usage (slow)."""
     env = environment(home)
     with errors():
         try:
@@ -144,8 +145,10 @@ def status(home: Path) -> tuple[dict[str, Any], list[str]]:
             if exc.code == "library_missing":
                 return {"exists": False}, []
             raise
-        items = store.list_items(environ=env)["items"]
-        for item in items:
+        if not items:
+            return {"exists": True, **data}, warnings(data)
+        listed = store.list_items(environ=env)["items"]
+        for item in listed:
             item["repos"] = usage(item["type"], item["name"], env)
             shown = store.show_item(item["type"], item["name"], environ=env)
             item.update(_metadata(shown))
@@ -156,7 +159,7 @@ def status(home: Path) -> tuple[dict[str, Any], list[str]]:
             item["repo_count"] = len(
                 {row["repo"]["id"] for row in item["repos"] if row.get("slot") is not None}
             )
-        return {"exists": True, **data, "items": items}, warnings(data)
+        return {"exists": True, **data, "items": listed}, warnings(data)
 
 
 def _metadata(shown: Mapping[str, Any]) -> dict[str, Any]:

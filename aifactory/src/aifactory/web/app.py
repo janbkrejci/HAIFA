@@ -118,8 +118,9 @@ the topbar. The multi-repo app also serves the global ``GET /api/limits`` (no re
 only the subscriptions available on this machine).
 
 Global library: ``GET /api/machine/check?offline=&fresh=`` caches the outside-repo
-CLI check for 60 seconds. ``GET /api/library`` returns status without fetch and item
-metadata with repo counts; ``GET /api/library/items/{type}/{name}?version=`` returns
+CLI check; the server runs it once at start and again only for ``fresh=1``.
+``GET /api/library`` returns status without fetch and item metadata with repo counts
+(``?items=0``: status only); ``GET /api/library/items/{type}/{name}?version=`` returns
 files, history and usage. ``POST /api/library/plan`` and ``/apply`` take
 ``{action, options?, digest?}`` for init, clone, import and seed. Apply recomputes the
 reviewed digest. All writes including ``POST /api/library/pull`` and ``/push`` share
@@ -1790,7 +1791,10 @@ async def machine_check(request: Request) -> JSONResponse:
 
 async def library_get(request: Request) -> JSONResponse:
     try:
-        data, warnings = await run_in_threadpool(library.status, request.app.state.home)
+        items = "items" not in request.query_params or _flag(request, "items")
+        data, warnings = await run_in_threadpool(
+            library.status, request.app.state.home, items=items
+        )
     except factory.Failure as exc:
         return _failure(exc)
     return JSONResponse(envelope_ok(data, warnings))
@@ -1926,21 +1930,20 @@ def create_multi_app(
 
     @asynccontextmanager
     async def lifespan(app: Starlette) -> AsyncIterator[None]:
-        from aifactory.web.monitoring import periodic
+        from aifactory.web.monitoring import once, periodic
 
         checks: list[asyncio.Task[None]] = []
         if background_checks:
             checks = [
                 asyncio.create_task(
-                    periodic(
+                    once(
                         lambda: machine.check_view(
                             app.state.home,
                             app.state.library,
                             offline=False,
                             fresh=True,
                             machine=app.state.check_machine,
-                        ),
-                        300,
+                        )
                     )
                 ),
                 asyncio.create_task(periodic(app.state.updates.check, 60)),

@@ -3,11 +3,12 @@
 // App.vue keys it by the repo id, so a switch of the repo drops all of it (view data, run
 // cursors, subscriptions, banners) and the new repo starts clean.
 import { computed, onBeforeUnmount, onMounted, watch, type Component } from 'vue'
+import { Activity, Factory, GitPullRequest, ListTodo, Settings } from 'lucide-vue-next'
 import { useConfigStatus } from '@/lib/configStatus'
 import { resetBacklogStatus, useBacklogStatus } from '@/lib/backlogStatus'
 import { useLive } from '@/lib/live'
 import { refreshNames, resetNames } from '@/lib/names'
-import { currentRepoId, repoHref, useRoute, type Screen } from '@/lib/router'
+import { SCREENS, currentRepoId, here, repoHref, useRoute, type Screen } from '@/lib/router'
 import BacklogView from '@/views/BacklogView.vue'
 import RunsView from '@/views/RunsView.vue'
 import ReviewView from '@/views/ReviewView.vue'
@@ -21,6 +22,14 @@ const VIEWS: Record<Screen, Component> = {
   review: ReviewView,
   factory: FactoryView,
   settings: SettingsView,
+}
+
+const ICONS: Record<Screen, Component> = {
+  backlog: ListTodo,
+  runs: Activity,
+  review: GitPullRequest,
+  factory: Factory,
+  settings: Settings,
 }
 
 // the previous repo's backlog status and names never show here
@@ -96,6 +105,53 @@ onBeforeUnmount(() => {
     @commit="commitBacklog"
   />
   <main>
+    <nav class="screen-tabs" aria-label="Obrazovky repozitáře">
+      <a
+        v-for="screen in SCREENS"
+        :key="screen.id"
+        :href="here(screen.id)"
+        :class="{ active: route === screen.id }"
+        :aria-current="route === screen.id ? 'page' : undefined"
+        :data-screen="screen.id"
+      >
+        <component :is="ICONS[screen.id]" :size="16" aria-hidden="true" />
+        <span>{{ screen.label }}</span>
+      </a>
+    </nav>
     <component :is="view" />
   </main>
 </template>
+
+<style scoped>
+.screen-tabs {
+  display: flex;
+  gap: 4px;
+  padding: 12px 28px 0;
+  border-bottom: 1px solid var(--border-soft);
+  overflow-x: auto;
+}
+
+.screen-tabs a {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: -1px;
+  padding: 8px 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--dim);
+  font-size: 15px;
+  white-space: nowrap;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.screen-tabs a:hover {
+  color: var(--text);
+}
+
+.screen-tabs a.active {
+  border-bottom-color: var(--cyan);
+  color: var(--text);
+  font-weight: 600;
+}
+</style>

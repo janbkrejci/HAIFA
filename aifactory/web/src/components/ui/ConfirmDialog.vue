@@ -227,6 +227,11 @@ function onKeydown(e: KeyboardEvent) {
   color: #30100d;
 }
 
+/* Light mode darkens --green and --red, so the dark label would sink into them. */
+[data-theme='light'] .btn.ok {
+  color: #ffffff;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
