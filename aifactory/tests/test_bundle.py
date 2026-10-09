@@ -105,7 +105,9 @@ def test_install_docs_are_versioned(unpacked: Path) -> None:
 
 
 def test_install_sh_parses(unpacked: Path) -> None:
-    subprocess.run(["bash", "-n", str(unpacked / "install.sh")], check=True)
+    bash = shutil.which("bash")
+    assert bash is not None
+    subprocess.run([bash, "-n", str(unpacked / "install.sh")], check=True)
 
 
 def _install_sh(path: str) -> list[str]:
