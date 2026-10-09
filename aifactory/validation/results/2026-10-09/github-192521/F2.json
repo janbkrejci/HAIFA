@@ -1,0 +1,101 @@
+{
+  "scenario": "F2",
+  "risk": "Akceptace F2: 5 úkolů z CLI (2 paralelně, auto-continue) po mergnutý PR a done v base",
+  "remote": "github",
+  "outcome": "failed",
+  "started_at": "2026-10-09T18:14:27+00:00",
+  "ended_at": "2026-10-09T18:31:53+00:00",
+  "duration_s": 1046.125,
+  "checks": [
+    {
+      "name": "backlog_created",
+      "ok": true,
+      "detail": "failed []; status in base {'M03-S01-T01': 'todo', 'M03-S01-T02': 'todo', 'M04-S01-T01': 'todo', 'M04-S01-T02': 'todo', 'M04-S01-T03': 'todo'}"
+    },
+    {
+      "name": "parallel_runs_ok",
+      "ok": true,
+      "detail": "exit 0: run 191673cf succeeded | exit 0: run f945329a succeeded"
+    },
+    {
+      "name": "runs_overlapped",
+      "ok": true,
+      "detail": "overlap 246.066 s"
+    },
+    {
+      "name": "distinct_worktrees",
+      "ok": true,
+      "detail": "['/private/var/folders/xs/x1r0h2kn0yn6nrkyzk8_yvkw0000gn/T/haifa-validate-dn7vu413/repo/.factory/worktrees/191673cf', '/private/var/folders/xs/x1r0h2kn0yn6nrkyzk8_yvkw0000gn/T/haifa-validate-dn7vu413/repo/.factory/worktrees/f945329a']"
+    },
+    {
+      "name": "parallel_approved",
+      "ok": true,
+      "detail": "M03-S01-T01: exit 0 | M04-S01-T01: exit 0"
+    },
+    {
+      "name": "auto_chain",
+      "ok": false,
+      "detail": "exit 1: run_failed: accept not met; tasks ['M04-S01-T02', 'M04-S01-T03']; stop failed; waiting []"
+    }
+  ],
+  "observations": [
+    "F2: 2 moduly, 5 tasků; paralelně M03-S01-T01 a M04-S01-T01; --auto od M04-S01-T02 spustil M04-S01-T03; approve bez approve review (D11)"
+  ],
+  "evidence": {
+    "run_ids": [
+      "191673cf",
+      "f945329a",
+      "0d42c2a4",
+      "30e83cd1"
+    ],
+    "prs": [
+      {
+        "task_id": "M03-S01-T01",
+        "branch": "factory/M03-S01-T01-5",
+        "url": "https://github.com/janbkrejci/haifa-sandbox/pull/61",
+        "pr_id": "61",
+        "state": "open"
+      },
+      {
+        "task_id": "M04-S01-T01",
+        "branch": "factory/M04-S01-T01-4",
+        "url": "https://github.com/janbkrejci/haifa-sandbox/pull/60",
+        "pr_id": "60",
+        "state": "open"
+      },
+      {
+        "task_id": "M04-S01-T02",
+        "branch": "factory/M04-S01-T02-4",
+        "url": "https://github.com/janbkrejci/haifa-sandbox/pull/62",
+        "pr_id": "62",
+        "state": "open"
+      }
+    ],
+    "commits": [
+      "06196a74530d01b3d7cc793c9c52d9387d833707",
+      "73d133d9dc319488306c08441ec65c79395bc7a8",
+      "12bdcb6b4cd6d03d112252ede9c662a17be1bd6a"
+    ],
+    "trace": {
+      "db": "trace/sssf.db",
+      "sessions": [
+        "trace/sessions/191673cf",
+        "trace/sessions/f945329a",
+        "trace/sessions/0d42c2a4",
+        "trace/sessions/30e83cd1"
+      ],
+      "files": []
+    }
+  },
+  "measurements": {
+    "overlap_s": 246.066,
+    "auto_chain": {
+      "tasks": [
+        "M04-S01-T02",
+        "M04-S01-T03"
+      ],
+      "stop": "failed",
+      "waiting": []
+    }
+  }
+}

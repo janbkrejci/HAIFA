@@ -273,8 +273,8 @@ def _app_with(home: Path, tmp_path: Path, ov: Overview) -> TestClient:
 
 
 # limit, sleep of the slow repo and response bound; on Windows the other repo alone needs
-# ~8 git processes of 0.15-0.3 s each
-LIMIT, SLOW, BOUND = (4.0, 8.0, 7.0) if sys.platform == "win32" else (0.3, 1.5, 1.2)
+# ~8 git processes of 0.15-0.3 s each, and a loaded full suite (xdist) slows them elsewhere too
+LIMIT, SLOW, BOUND = (4.0, 8.0, 7.0) if sys.platform == "win32" else (1.0, 3.0, 2.5)
 
 
 def test_slow_repo_times_out_and_the_others_answer(

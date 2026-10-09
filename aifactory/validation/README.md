@@ -20,6 +20,7 @@ Další přepínače:
   - Když roster nemá harness, který R1 nebo R10 ověřuje, scénář hlásí `inconclusive` místo `failed`. R1 potřebuje claude, codex i pi v jednom workflow, R10 build i fix na codexu. Skutečná chyba jiného checku zůstává `failed`.
   - Použitý roster a harness po krocích jsou v `summary.json` (`roster`, `harness_per_step`).
   - Příklad: `just validate --remote local --roster aifactory/validation/rosters/pi-haiku` (vše na pi, planner a documenter na claude haiku).
+  - Příklad: `just validate --remote github --roster aifactory/validation/rosters/claude-codex-pi` (planner a documenter na claude, builder na codexu, reviewer na pi s modelem z OB5; ověří R1 i R10).
 
 Kód návratu:
 - 0: všechny scénáře skončily `passed` nebo `inconclusive`;

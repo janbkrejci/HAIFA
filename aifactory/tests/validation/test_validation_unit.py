@@ -381,3 +381,26 @@ def test_fake_gate_rejects_unbounded_timeout(tmp_path: Path, timeout: float) -> 
     harness_ = fake.FakeHarness("codex", {"agents": {"builder": [entry]}}, tmp_path / "fake.json")
     with pytest.raises(ValueError, match="finite timeout"):
         harness_.run(_Request(tmp_path))
+
+
+def test_isolated_haifa_home_leaves_out_machine_harness_choices(tmp_path: Path) -> None:
+    real = tmp_path / "real"
+    (real / "library").mkdir(parents=True)
+    (real / "env").write_text("KEY=value\n", encoding="utf-8")
+    (real / "harnesses.json").write_text('{"default_harness": "codex"}', encoding="utf-8")
+    (real / "harness-tests.json").write_text("{}", encoding="utf-8")
+    workdir = tmp_path / "work"
+
+    home = runner.isolated_haifa_home(workdir, real)
+
+    assert sorted(p.name for p in home.iterdir()) == ["env", "library"]
+    assert (home / "env").read_text(encoding="utf-8") == "KEY=value\n"
+    owned = Owned()
+    owned.add(workdir)
+    safe_rmtree(workdir, workdir, owned)
+    assert (real / "env").exists() and (real / "library").is_dir()
+
+
+def test_isolated_haifa_home_without_a_real_home_is_empty(tmp_path: Path) -> None:
+    home = runner.isolated_haifa_home(tmp_path / "work", tmp_path / "missing")
+    assert home.is_dir() and not any(home.iterdir())
