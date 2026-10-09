@@ -70,7 +70,11 @@ def log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         make_executable(path)
     calls = tmp_path / "calls.log"
     calls.write_text("", encoding="utf-8")
-    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), str(Path(git).parent)]))
+    # git alone, not its directory: uv or node may be installed next to it (Homebrew)
+    git_dir = tmp_path / "git-bin"
+    git_dir.mkdir()
+    (git_dir / Path(git).name).symlink_to(Path(git).resolve())
+    monkeypatch.setenv("PATH", os.pathsep.join([str(bin_dir), str(git_dir)]))
     monkeypatch.setenv("FAKE_LOG", str(calls))
     monkeypatch.delenv("FAKE_RC", raising=False)
     monkeypatch.delenv("HAIFA_LIBRARY", raising=False)

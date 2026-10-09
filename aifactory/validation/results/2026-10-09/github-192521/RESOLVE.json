@@ -1,0 +1,76 @@
+{
+  "scenario": "RESOLVE",
+  "risk": "Konflikt dvou PR nejde vyřešit bez ruční práce",
+  "remote": "github",
+  "outcome": "passed",
+  "started_at": "2026-10-09T17:50:38+00:00",
+  "ended_at": "2026-10-09T17:51:56+00:00",
+  "duration_s": 78.21,
+  "checks": [
+    {
+      "name": "resolve_ok",
+      "ok": true,
+      "detail": "exit 0: run b2ba7a05 succeeded"
+    },
+    {
+      "name": "resolve_phase_ran",
+      "ok": true,
+      "detail": "phases request -> rebase -> resolve -> rebuild_1 -> test_1; rebase=success, resolve=success, test passed=True"
+    },
+    {
+      "name": "no_conflict_markers",
+      "ok": true,
+      "detail": "src/sandbox/mathx.py at 8df8ca8: 440 chars"
+    },
+    {
+      "name": "second_merged",
+      "ok": true,
+      "detail": "exit 0; status in base: done"
+    },
+    {
+      "name": "both_prs_merged",
+      "ok": true,
+      "detail": "PR states {'factory/M01-S01-T01-7': 'merged', 'factory/M01-S01-T02-6': 'merged'}; status in base {'M01-S01-T01': 'done', 'M01-S01-T02': 'done'}"
+    },
+    {
+      "name": "base_has_both",
+      "ok": true,
+      "detail": "clamp present, lerp present"
+    }
+  ],
+  "observations": [],
+  "evidence": {
+    "run_ids": [
+      "b2ba7a05"
+    ],
+    "prs": [
+      {
+        "task_id": "M01-S01-T02",
+        "branch": "factory/M01-S01-T02-6",
+        "url": "https://github.com/janbkrejci/haifa-sandbox/pull/56",
+        "pr_id": "56",
+        "state": "open"
+      }
+    ],
+    "commits": [
+      "378050c56f78edeea247ff2a03cd830a9a753b02"
+    ],
+    "trace": {
+      "db": "trace/sssf.db",
+      "sessions": [
+        "trace/sessions/b2ba7a05"
+      ],
+      "files": []
+    }
+  },
+  "measurements": {
+    "phases": [
+      "request",
+      "rebase",
+      "resolve",
+      "rebuild_1",
+      "test_1"
+    ],
+    "run_seconds": 51.086
+  }
+}

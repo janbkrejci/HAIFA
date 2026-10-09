@@ -1,0 +1,66 @@
+{
+  "scenario": "R4",
+  "risk": "Běh nevidí necommitnutou změnu promptu z dashboardu",
+  "remote": "github",
+  "outcome": "passed",
+  "started_at": "2026-10-09T17:57:26+00:00",
+  "ended_at": "2026-10-09T18:14:16+00:00",
+  "duration_s": 1010.343,
+  "checks": [
+    {
+      "name": "tree_dirty",
+      "ok": true,
+      "detail": "M .factory/agents.yaml;  M .factory/prompts/planner/user.md"
+    },
+    {
+      "name": "run_ok",
+      "ok": true,
+      "detail": "exit 0: run 54155469 succeeded"
+    },
+    {
+      "name": "uncommitted_warning",
+      "ok": true,
+      "detail": ".factory/agents.yaml is modified in the working tree but not committed to haifa-validate/20261009-192521 (b6bd887); runs use the committed version; .factory/prompts/planner/user.md is modified in the working tree but not committed to haifa-validate/20261009-192521 (b6bd887); runs use the committed version"
+    },
+    {
+      "name": "prompt_change_invisible",
+      "ok": true,
+      "detail": "user.md: marker absent, sentinel present"
+    },
+    {
+      "name": "config_change_invisible",
+      "ok": true,
+      "detail": "planner thinking in the run: 'low'"
+    }
+  ],
+  "observations": [
+    "konfigurace (agents.yaml, prompty, workflow) se čte z commitu v base; necommitnutá změna se neprojeví a factory na ni upozorní varováním (D4 vyřešeno)"
+  ],
+  "evidence": {
+    "run_ids": [
+      "54155469"
+    ],
+    "prs": [
+      {
+        "task_id": "M02-S01-T01",
+        "branch": "factory/M02-S01-T01-5",
+        "url": "https://github.com/janbkrejci/haifa-sandbox/pull/59",
+        "pr_id": "59",
+        "state": "open"
+      }
+    ],
+    "commits": [],
+    "trace": {
+      "db": "trace/sssf.db",
+      "sessions": [
+        "trace/sessions/54155469"
+      ],
+      "files": [
+        "trace/sessions/54155469/planner/prompts/user.md"
+      ]
+    }
+  },
+  "measurements": {
+    "planner_thinking": "low"
+  }
+}

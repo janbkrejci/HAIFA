@@ -1,0 +1,35 @@
+# Agent roster claude-codex-pi for `just validate --roster aifactory/validation/rosters/claude-codex-pi`.
+#
+# OB1 (HAIFA-S90-T01): R1 over three harnesses in one workflow. Planner and
+# documenter on claude, builder on codex, reviewer on pi with the model chosen
+# in OB5 (longcat 2.5 preview, roster pi-longcat). The workflow
+# workflows/simple-sdlc.yaml names the harness of every step. The prompts (and
+# the validation rule of the reviewer) stay those of the template.
+defaults:
+  thinking: low
+
+agents:
+  - name: planner
+    harness: claude
+    model: sonnet
+    purpose: Turn the task into a short plan the builder can follow.
+    writes:
+      - specs/
+
+  - name: builder
+    harness: codex
+    model: gpt-5.5
+    purpose: Implement the plan exactly; report every changed file.
+
+  - name: reviewer
+    harness: pi
+    model: nous-portal-api-key/meituan/longcat-2.5-preview:free
+    purpose: Confirm that what was built is what was asked for; change nothing.
+    writes: []
+
+  - name: documenter
+    harness: claude
+    model: haiku
+    purpose: Write up the change from the diff; document only.
+    writes:
+      - app_docs/

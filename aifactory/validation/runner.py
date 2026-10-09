@@ -108,6 +108,40 @@ def _load_env() -> None:
     load_dotenv(HAIFA_ROOT / ".env", override=False)
 
 
+# Computer-local harness choices (``factory harness settings``): a default harness there
+# overrides the harness and model of every agent of the roster, so a run would no longer
+# validate the roster. The isolated home leaves them out and links everything else.
+MACHINE_HARNESS_FILES = frozenset({"harnesses.json", "harness-tests.json"})
+HOME_ENV = "HAIFA_HOME"
+
+
+def isolated_haifa_home(workdir: Path, source: Path | None = None) -> Path:
+    """A HAIFA home in `workdir` that mirrors `source` without the machine harness choices.
+
+    Every other entry of `source` (``env``, ``library``, ``logs`` ...) is a symlink (a
+    copy where symlinks fail), so the run keeps the operator's credentials and library;
+    only the roster decides which harness and model each agent uses.
+    """
+    from aifactory.home import haifa_home
+
+    real = (source if source is not None else haifa_home()).expanduser()
+    home = workdir / "haifa-home"
+    home.mkdir(parents=True, exist_ok=True)
+    if real.is_dir():
+        for entry in sorted(real.iterdir()):
+            if entry.name in MACHINE_HARNESS_FILES:
+                continue
+            link = home / entry.name
+            try:
+                link.symlink_to(entry.resolve(), entry.is_dir())
+            except OSError:  # Windows without the symlink privilege
+                if entry.is_dir():
+                    shutil.copytree(entry, link, symlinks=True)
+                else:
+                    shutil.copy2(entry, link)
+    return home
+
+
 def _worker_json(argv: list[str]) -> tuple[int, dict[str, Any]]:
     """A factory command through the worker without the fake (github preflight)."""
     env = {k: v for k, v in os.environ.items() if k != "HAIFA_VALIDATE_FAKE"}
@@ -278,6 +312,27 @@ def main(argv: list[str] | None = None) -> int:
             return EXIT_SETUP
         else:
             owned.add(workdir)
+
+    previous_home = os.environ.get(HOME_ENV)
+    os.environ[HOME_ENV] = str(isolated_haifa_home(workdir))
+    try:
+        return _run(args, names, roster, owner_name, started, owned, workdir)
+    finally:
+        if previous_home is None:
+            os.environ.pop(HOME_ENV, None)
+        else:
+            os.environ[HOME_ENV] = previous_home
+
+
+def _run(
+    args: argparse.Namespace,
+    names: list[str],
+    roster: Path | None,
+    owner_name: str | None,
+    started: str,
+    owned: Owned,
+    workdir: Path,
+) -> int:
 
     moment = datetime.datetime.now()
     out = results_mod.output_dir(args.results_dir.resolve(), args.remote, moment)

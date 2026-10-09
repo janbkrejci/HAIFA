@@ -1,0 +1,89 @@
+{
+  "scenario": "R2",
+  "risk": "Paralelní běhy mění stejné soubory a PR kolidují",
+  "remote": "github",
+  "outcome": "passed",
+  "started_at": "2026-10-09T17:35:45+00:00",
+  "ended_at": "2026-10-09T17:50:38+00:00",
+  "duration_s": 671.854,
+  "checks": [
+    {
+      "name": "both_runs_ok",
+      "ok": true,
+      "detail": "exit 0: run 0cb53d27 succeeded | exit 0: run f830e84f succeeded"
+    },
+    {
+      "name": "runs_overlapped",
+      "ok": true,
+      "detail": "overlap 407.998 s"
+    },
+    {
+      "name": "both_prs_opened",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "distinct_worktrees",
+      "ok": true,
+      "detail": "['/private/var/folders/xs/x1r0h2kn0yn6nrkyzk8_yvkw0000gn/T/haifa-validate-dn7vu413/repo/.factory/worktrees/0cb53d27', '/private/var/folders/xs/x1r0h2kn0yn6nrkyzk8_yvkw0000gn/T/haifa-validate-dn7vu413/repo/.factory/worktrees/f830e84f']"
+    },
+    {
+      "name": "shared_file_touched",
+      "ok": true,
+      "detail": "mathx.py changed per branch: [True, True]"
+    },
+    {
+      "name": "first_merged",
+      "ok": true,
+      "detail": "exit 0; status in base: done"
+    },
+    {
+      "name": "second_reports_conflict",
+      "ok": true,
+      "detail": "exit 2: conflict: PR https://github.com/janbkrejci/haifa-sandbox/pull/56 does not merge into haifa-validate/20261009-192521; run `factory task resolve M01-S01-T02` to rebase it onto haifa-validate/20261009-192521; base 298669a -> 298669a"
+    }
+  ],
+  "observations": [
+    "druhý PR zůstává otevřený, řeší ho scénář RESOLVE (task resolve M01-S01-T02)"
+  ],
+  "evidence": {
+    "run_ids": [
+      "0cb53d27",
+      "f830e84f"
+    ],
+    "prs": [
+      {
+        "task_id": "M01-S01-T01",
+        "branch": "factory/M01-S01-T01-7",
+        "url": "https://github.com/janbkrejci/haifa-sandbox/pull/55",
+        "pr_id": "55",
+        "state": "open"
+      },
+      {
+        "task_id": "M01-S01-T02",
+        "branch": "factory/M01-S01-T02-6",
+        "url": "https://github.com/janbkrejci/haifa-sandbox/pull/56",
+        "pr_id": "56",
+        "state": "open"
+      }
+    ],
+    "commits": [
+      "298669a4d364b7cecf891d02c37ac6db943e4c09"
+    ],
+    "trace": {
+      "db": "trace/sssf.db",
+      "sessions": [
+        "trace/sessions/0cb53d27",
+        "trace/sessions/f830e84f"
+      ],
+      "files": []
+    }
+  },
+  "measurements": {
+    "overlap_s": 407.998,
+    "run_seconds": {
+      "M01-S01-T01": 407.999,
+      "M01-S01-T02": 864.039
+    }
+  }
+}
