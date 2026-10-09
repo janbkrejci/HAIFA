@@ -4,7 +4,7 @@ HAIFA (Helios AI Factory) je lokální řídicí panel a CLI `factory` pro říz
 
 ## Předpoklady
 
-- macOS nebo Linux (Windows jen přes WSL) a `bash`.
+- macOS, Linux nebo Windows 10/11 bez WSL. Na Windows potřebuješ Git for Windows s Git Bash na PATH; Python i HAIFA běží nativně.
 - [uv](https://docs.astral.sh/uv/) na PATH. Instalace: `curl -LsSf https://astral.sh/uv/install.sh | sh` nebo `brew install uv`.
 - `git` a CLI agentů, které budeš používat (například `claude`). Co chybí, ukáže `factory check`.
 
@@ -19,6 +19,20 @@ cd haifa-@VERSION@
 ```
 
 Skript ověří součty v `SHA256SUMS` a nainstaluje nástroj `factory` přes `uv tool install` s verzemi závislostí z `constraints.txt`.
+
+### Windows (PowerShell, bez WSL)
+
+Kompletní instalace prerekvizit od čistého systému je v [README HAIFA](https://github.com/janbkrejci/HAIFA#readme). Potřebuješ Git for Windows, GitHub CLI, uv, Python 3.11+ a alespoň jeden přihlášený harness. Git Bash musí být na PATH před případným WSL `bash.exe`.
+
+```powershell
+Expand-Archive -Path haifa-@VERSION@.zip -DestinationPath .\haifa-install
+Set-Location .\haifa-install\haifa-@VERSION@
+bash ./install.sh
+if ($LASTEXITCODE -ne 0) { throw "Instalace HAIFA selhala." }
+uv tool update-shell
+```
+
+Otevři nový PowerShell a pokračuj ověřením níže. Dashboard spustíš příkazem `factory obs`; terminál nech otevřený.
 
 ## Ověření
 

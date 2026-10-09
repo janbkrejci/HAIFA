@@ -6,7 +6,7 @@ HAIFA je lokální dashboard a CLI `factory` pro práci s agentními úkoly ve v
 
 Pro běžnou instalaci potřebuješ:
 
-- macOS nebo Linux; na Windows použij WSL a následuj linuxový postup.
+- macOS, Linux nebo Windows 10/11 (nativně, bez WSL; postup níže).
 - Bash, `curl` a `unzip` pro instalaci.
 - Git s nastaveným jménem a e-mailem pro vytváření commitů.
 - [GitHub CLI (`gh`)](https://github.com/cli/cli#installation), přihlášené k účtu s přístupem k repozitářům, ve kterých chceš pracovat. Workflow vytvářející PR potřebují GitHub remote a právo zapisovat.
@@ -22,7 +22,7 @@ brew install git gh uv just
 uv python install 3.12
 ```
 
-Na Linuxu/WSL nainstaluj nástroje balíčkovým správcem distribuce, například na Ubuntu 24.04 nebo novějším:
+Na Linuxu nainstaluj nástroje balíčkovým správcem distribuce, například na Ubuntu 24.04 nebo novějším:
 
 ```bash
 sudo apt update
@@ -57,7 +57,98 @@ curl -fsSL https://claude.ai/install.sh | bash
 
 Otevři nový terminál a spusť `claude`, dokonči přihlášení a ověř, že dokáže odpovědět. Alternativou jsou [Codex CLI](https://github.com/openai/codex) nebo [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent); postup instalace a přihlášení je v jejich dokumentaci. Pro HAIFA nemusíš instalovat všechny tři.
 
-## Instalace z distribučního ZIPu
+## Windows bez WSL: od čistého systému po dashboard
+
+Následující postup je pro Windows 10/11 x64 a běžný **PowerShell**. HAIFA i Python běží nativně ve Windows. Git Bash z Git for Windows slouží k instalačnímu skriptu a receptům `just`; WSL ani Linux neinstaluj.
+
+### 1. Nainstaluj nástroje
+
+Otevři PowerShell a ověř `winget --version`. Pokud příkaz chybí, nainstaluj nebo aktualizuj **App Installer** z Microsoft Store podle [návodu Microsoftu](https://learn.microsoft.com/en-us/windows/package-manager/winget/). Potom spusť:
+
+```powershell
+winget install --id Git.Git --exact --source winget
+winget install --id GitHub.cli --exact --source winget
+winget install --id astral-sh.uv --exact --source winget
+```
+
+Instalátor Gitu může požádat o oprávnění správce. Ponech výchozí cestu `C:\Program Files\Git` a zpřístupnění Gitu pro příkazovou řádku. Zavři PowerShell a otevři nový, aby načetl PATH.
+
+Přidej Git Bash před ostatní nástroje na uživatelský PATH. Pokud jsi Git instaloval jinam, uprav první řádek:
+
+```powershell
+$gitBashBin = "$env:ProgramFiles\Git\bin"
+if (-not (Test-Path "$gitBashBin\bash.exe")) { throw "Uprav cestu ke Git Bash." }
+$haifaUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
+if (($haifaUserPath -split ';') -notcontains $gitBashBin) {
+    [Environment]::SetEnvironmentVariable("Path", "$gitBashBin;$haifaUserPath", "User")
+}
+$env:Path = "$gitBashBin;$env:Path"
+
+uv python install 3.12
+uv tool install rust-just
+uv tool update-shell
+```
+
+Zavři PowerShell a otevři nový. Ověř nástroje a nastav svou identitu a GitHub přihlášení:
+
+```powershell
+git --version
+gh --version
+uv --version
+just --version
+bash --version
+
+git config --global user.name "Tvoje jméno"
+git config --global user.email "tvuj@email.cz"
+gh auth login
+gh auth setup-git
+```
+
+`bash --version` musí ukázat Git Bash; pokud se pokusí spustit WSL, zkontroluj pořadí PATH.
+
+### 2. Nainstaluj a přihlas harness
+
+Například nativní [Claude Code pro Windows](https://code.claude.com/docs/en/setup#install-on-native-windows):
+
+```powershell
+winget install --id Anthropic.ClaudeCode --exact --source winget
+```
+
+Otevři nový PowerShell, spusť `claude --version` a potom `claude`. Dokonči přihlášení a ověř odpověď. Git Bash už je nainstalovaný z předchozího kroku. Claude z WinGet aktualizuješ přes `winget upgrade --id Anthropic.ClaudeCode --exact`.
+
+Stačí jeden funkční harness; ostatní můžeš v dashboardu vypnout. Node.js ani Bun nejsou pro tuto instalaci HAIFA a nativního Claude potřeba.
+
+### 3. Stáhni a nainstaluj aktuální ZIP
+
+V PowerShellu přejdi do složky, kam chceš balíček stáhnout. Tyto příkazy vyberou instalační ZIP posledního stabilního vydání, rozbalí ho a spustí dodaný skript přes Git Bash:
+
+```powershell
+$haifaRelease = Invoke-RestMethod "https://api.github.com/repos/janbkrejci/HAIFA/releases/latest"
+$haifaVersion = $haifaRelease.tag_name -replace '^v', ''
+$haifaZipName = "haifa-$haifaVersion.zip"
+$haifaAsset = $haifaRelease.assets | Where-Object { $_.name -eq $haifaZipName }
+if (-not $haifaAsset) { throw "Vydání neobsahuje instalační ZIP." }
+Invoke-WebRequest -UseBasicParsing $haifaAsset.browser_download_url -OutFile $haifaZipName
+Expand-Archive -Path $haifaZipName -DestinationPath ".\haifa-install-$haifaVersion"
+Set-Location ".\haifa-install-$haifaVersion\haifa-$haifaVersion"
+bash ./install.sh
+if ($LASTEXITCODE -ne 0) { throw "Instalace HAIFA selhala." }
+uv tool update-shell
+```
+
+Instalační skript ověří SHA-256 součty a nainstaluje `factory` s připnutými závislostmi do izolovaného prostředí uv. Otevři nový PowerShell a spusť:
+
+```powershell
+factory --version
+factory check
+factory obs
+```
+
+Dashboard běží na <http://127.0.0.1:4700>. Terminál nech otevřený; `Ctrl+C` server zastaví. Další spuštění je `factory obs`. Pokračuj sekcí **První spuštění** níže. Výsledek `factory check` může před prvním nastavením hlásit chybějící knihovnu nebo konfiguraci; dokonči průvodce v dashboardu.
+
+Pokud příkaz není nalezený, znovu spusť `uv tool update-shell` a otevři nový terminál. Nastavení počítače najdeš ve `%USERPROFILE%\.haifa`. Projekty mohou mít vlastní prerekvizity podle použitého jazyka a testovacího příkazu.
+
+## Instalace z distribučního ZIPu na macOS/Linux
 
 Z nejnovějšího vydání tohoto repozitáře na GitHubu stáhni soubor `haifa-<verze>.zip`. Rozbal jej a spusť instalační skript; v příkladu dosaď skutečnou verzi:
 
@@ -103,6 +194,8 @@ Automatická instalace je určená pro distribuční instalaci přes `uv tool`. 
 
 ## Spuštění ze zdrojů a vývoj
 
+Na Windows používej také Git Bash na PATH podle postupu výše. Pro vývoj frontendu nainstaluj Bun v PowerShellu podle [oficiálního návodu](https://bun.com/docs/installation) příkazem `powershell -c "irm bun.sh/install.ps1|iex"` a otevři nový terminál.
+
 Navíc potřebuješ [Bun](https://bun.com/docs/installation) pro frontend. Naklonuj tento repozitář, přejdi do jeho kořene a spusť:
 
 ```bash
@@ -134,6 +227,6 @@ Licence převzatých částí jsou v [THIRD_PARTY_NOTICES](aifactory/THIRD_PARTY
 
 ## Vydávání buildů
 
-[GitHub Actions](.github/workflows/ci.yml) při změně `main` nejdřív spustí frontendové, backendové a browserové testy, typovou kontrolu a lint. Ve veřejném repozitáři potom sestaví distribuční ZIP, ověří čistou instalaci a zveřejní GitHub Release včetně ZIPu. Neúspěšná pipeline aktualizaci nezveřejní; pull requesty pouze testuje.
+[GitHub Actions](.github/workflows/ci.yml) při změně `main` nejdřív spustí frontendové, backendové a browserové testy, typovou kontrolu a lint. Ve veřejném repozitáři po úspěšném ověření bundle testů a čisté nativní instalace na Windows také sestaví distribuční ZIP, ověří čistou instalaci a zveřejní GitHub Release včetně ZIPu. Neúspěšná pipeline aktualizaci nezveřejní; pull requesty pouze testuje.
 
 Verze buildu je `<major>.<minor>.<číslo běhu pipeline>`, například `0.1.42`. Stejná verze je ve wheelu, tagu `v0.1.42` a souboru `haifa-0.1.42.zip`. Opakování téhož běhu již vydaný build nepřepisuje. Zdroj aktualizací se při sestavení nastaví na repozitář, kde pipeline běží. Aktualizační chip porovnává tuto verzi s nainstalovanou; nový úspěšný build tedy rozpozná i bez ručního zvýšení verze ve zdrojích.

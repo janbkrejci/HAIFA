@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs HAIFA (the `factory` tool) from this bundle with uv. Bash on macOS and Linux.
+# Installs HAIFA (the `factory` tool) from this bundle with uv. Bash on macOS/Linux, or Git Bash on native Windows.
 set -euo pipefail
 
 WHEEL="@WHEEL@"

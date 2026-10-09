@@ -1,6 +1,9 @@
 set positional-arguments
 set dotenv-load
 
+# Recipes use Git Bash on native Windows; install it on PATH (see README).
+set windows-shell := ["bash", "-cu"]
+
 default:
     @just --list
 

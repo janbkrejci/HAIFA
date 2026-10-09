@@ -50,8 +50,40 @@ jobs:
           name: tested-frontend
           path: aifactory/src/aifactory/web/static
 
+  windows-install:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      HAIFA_UPDATE_REPO: ''
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.12'
+      - name: Verify bundle and native Windows installation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $env:UV_TOOL_DIR = "$env:RUNNER_TEMP/haifa-tools"
+          $env:UV_TOOL_BIN_DIR = "$env:RUNNER_TEMP/haifa-bin"
+          $env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
+          uv sync --locked --project aifactory
+          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
+          uv run --project aifactory pytest aifactory/tests/test_bundle.py aifactory/tests/test_release.py -n0
+          if ($LASTEXITCODE -ne 0) { throw 'Windows bundle tests failed.' }
+          Set-Location aifactory
+          uv run python -m bundle.build
+          if ($LASTEXITCODE -ne 0) { throw 'Bundle build failed.' }
+          $version = uv run python -c 'from aifactory import __version__; print(__version__)'
+          Expand-Archive -Path "dist/haifa-$version.zip" -DestinationPath "$env:RUNNER_TEMP/haifa-install"
+          Set-Location "$env:RUNNER_TEMP/haifa-install/haifa-$version"
+          bash ./install.sh
+          if ($LASTEXITCODE -ne 0) { throw 'Native Windows installation failed.' }
+          $actual = & "$env:UV_TOOL_BIN_DIR/factory.exe" --version
+          if ($LASTEXITCODE -ne 0 -or $actual -ne "factory $version") { throw 'Installed version does not match.' }
+
   release:
-    needs: test
+    needs: [test, windows-install]
     if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
