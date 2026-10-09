@@ -73,15 +73,11 @@ winget install --id astral-sh.uv --exact --source winget
 
 Instalátor Gitu může požádat o oprávnění správce. Ponech výchozí cestu `C:\Program Files\Git` a zpřístupnění Gitu pro příkazovou řádku. Zavři PowerShell a otevři nový, aby načetl PATH.
 
-Přidej Git Bash před ostatní nástroje na uživatelský PATH. Pokud jsi Git instaloval jinam, uprav první řádek:
+V tomto terminálu dej Git Bash před systémový launcher `bash.exe`. Pokud jsi Git instaloval jinam, uprav první řádek:
 
 ```powershell
 $gitBashBin = "$env:ProgramFiles\Git\bin"
 if (-not (Test-Path "$gitBashBin\bash.exe")) { throw "Uprav cestu ke Git Bash." }
-$haifaUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if (($haifaUserPath -split ';') -notcontains $gitBashBin) {
-    [Environment]::SetEnvironmentVariable("Path", "$gitBashBin;$haifaUserPath", "User")
-}
 $env:Path = "$gitBashBin;$env:Path"
 
 uv python install 3.12
@@ -92,6 +88,7 @@ uv tool update-shell
 Zavři PowerShell a otevři nový. Ověř nástroje a nastav svou identitu a GitHub přihlášení:
 
 ```powershell
+$env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
 git --version
 gh --version
 uv --version
@@ -131,7 +128,7 @@ if (-not $haifaAsset) { throw "Vydání neobsahuje instalační ZIP." }
 Invoke-WebRequest -UseBasicParsing $haifaAsset.browser_download_url -OutFile $haifaZipName
 Expand-Archive -Path $haifaZipName -DestinationPath ".\haifa-install-$haifaVersion"
 Set-Location ".\haifa-install-$haifaVersion\haifa-$haifaVersion"
-bash ./install.sh
+& "$env:ProgramFiles\Git\bin\bash.exe" ./install.sh
 if ($LASTEXITCODE -ne 0) { throw "Instalace HAIFA selhala." }
 uv tool update-shell
 ```
@@ -139,12 +136,13 @@ uv tool update-shell
 Instalační skript ověří SHA-256 součty a nainstaluje `factory` s připnutými závislostmi do izolovaného prostředí uv. Otevři nový PowerShell a spusť:
 
 ```powershell
+$env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
 factory --version
 factory check
 factory obs
 ```
 
-Dashboard běží na <http://127.0.0.1:4700>. Terminál nech otevřený; `Ctrl+C` server zastaví. Další spuštění je `factory obs`. Pokračuj sekcí **První spuštění** níže. Výsledek `factory check` může před prvním nastavením hlásit chybějící knihovnu nebo konfiguraci; dokonči průvodce v dashboardu.
+Dashboard běží na <http://127.0.0.1:4700>. Terminál nech otevřený; `Ctrl+C` server zastaví. Při každém spuštění v novém PowerShellu nejdřív přidej Git Bash na PATH řádkem výše a pak spusť `factory obs`. Pokračuj sekcí **První spuštění** níže. Výsledek `factory check` může před prvním nastavením hlásit chybějící knihovnu nebo konfiguraci; dokonči průvodce v dashboardu.
 
 Pokud příkaz není nalezený, znovu spusť `uv tool update-shell` a otevři nový terminál. Nastavení počítače najdeš ve `%USERPROFILE%\.haifa`. Projekty mohou mít vlastní prerekvizity podle použitého jazyka a testovacího příkazu.
 

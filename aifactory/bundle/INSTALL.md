@@ -27,7 +27,8 @@ Kompletní instalace prerekvizit od čistého systému je v [README HAIFA](https
 ```powershell
 Expand-Archive -Path haifa-@VERSION@.zip -DestinationPath .\haifa-install
 Set-Location .\haifa-install\haifa-@VERSION@
-bash ./install.sh
+$env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
+& "$env:ProgramFiles\Git\bin\bash.exe" ./install.sh
 if ($LASTEXITCODE -ne 0) { throw "Instalace HAIFA selhala." }
 uv tool update-shell
 ```
