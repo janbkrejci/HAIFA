@@ -193,12 +193,10 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     expect(
                         page.locator(f'[data-repo="{id_b}"] [data-test="row-running"]')
                     ).to_have_count(0)
+                    # repo B had no backlog directory: it is created silently, no warning
                     expect(
-                        page.locator(
-                            f'[data-test="overview-card"][data-repo="{id_b}"] '
-                            '[data-test="card-warnings"]'
-                        )
-                    ).to_contain_text("backlog directory 'backlog' does not exist")
+                        page.locator(f'[data-test="overview-card"][data-repo="{id_b}"]')
+                    ).not_to_contain_text("does not exist")
                     release.touch()
 
                     def finished() -> str | None:

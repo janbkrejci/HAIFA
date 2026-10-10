@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S10-T01
 title: "Založit backlog, pokud neexistuje"
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -10,3 +10,4 @@ Tam, kde se dnes píše chyba o tom, že složka pro backlog neexistuje, by se r
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-10 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/2 · náklady $1.35

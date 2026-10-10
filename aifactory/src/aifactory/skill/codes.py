@@ -34,7 +34,8 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "missing_backlog_dir",
         "1|2",
-        "backlog_dir does not exist (1 for backlog list/check, 2 for task commands)",
+        "no backlog directory matches a wildcard backlog_dirs pattern (a missing plain "
+        "backlog_dir is created silently; 1 for backlog list/check, 2 for task commands)",
     ),
     ("unknown_workflow_advice", "2", "dashboard API: workflow advice expired or not found"),
     ("unknown_task", "2", "no task with this id"),

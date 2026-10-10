@@ -119,13 +119,20 @@ def test_loads_every_root(repo: Path) -> None:
     assert owning_root("moduly/M07/other/x.md", backlog.settings) is None
 
 
-def test_missing_plain_root_is_reported(repo: Path) -> None:
+def test_missing_plain_root_is_created(repo: Path) -> None:
     write(repo, ".factory/config.yaml", "backlog_dirs: [backlog, nowhere]\n")
-    issues = check_backlog(load_backlog(repo))
+    backlog = load_backlog(repo)
+    assert check_backlog(backlog) == []
+    assert (repo / "nowhere").is_dir()
+    assert backlog.roots == ["backlog", "nowhere"]
+    assert add_task(repo, "M01-S01", "Další").changed
+
+
+def test_missing_plain_root_is_reported_without_create(repo: Path) -> None:
+    write(repo, ".factory/config.yaml", "backlog_dirs: [backlog, nowhere]\n")
+    issues = check_backlog(load_backlog(repo, create_missing=False))
     assert [(i.code, i.path) for i in issues] == [("missing_backlog_dir", "nowhere")]
-    with pytest.raises(TaskEditError) as info:
-        add_task(repo, "M01-S01", "Další")
-    assert info.value.code == "missing_backlog_dir"
+    assert not (repo / "nowhere").exists()
 
 
 def test_duplicate_id_across_roots(repo: Path, capsys: Capsys) -> None:
