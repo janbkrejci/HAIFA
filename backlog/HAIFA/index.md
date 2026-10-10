@@ -3,7 +3,7 @@ id: HAIFA
 title: Helios AI Factory
 workflow: build-test-review
 writes: [aifactory/, justfile]
-auto_continue: false
+auto_continue: true
 auto_merge: true
 ---
 
