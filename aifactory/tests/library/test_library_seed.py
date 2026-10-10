@@ -85,6 +85,33 @@ PENDING_SEED_BLOCKS: dict[tuple[str, str], bytes] = {
     ),
 }
 
+_BUILDER_OLD_TESTS = (
+    b"- Run only the tests that cover the code you changed (by explicit test file or "
+    b"project), plus the repo's type check and lint for the changed files. Never run "
+    b"the whole suite: the test step after you runs the checks a tester chose and "
+    b"returns every failure to you. A check you could not finish is not a reason to "
+    b"report `fail`.\n"
+)
+_BUILDER_NEW_TESTS = (
+    b"- Only verify your own change, quickly. Run only explicit test files that you "
+    b"changed or that directly cover a module you changed, or single tests in them "
+    b"(`pytest tests/x/test_y.py`, `pytest tests/x/test_y.py::test_name`, "
+    b"`bun run test src/y.test.ts`). Never pass a directory, never start a test runner "
+    b"without a file path, and never run whole-suite commands such as `just check`, "
+    b"`just check-scoped`, `just test`, `just e2e`, `just web-test`, or `pytest` or "
+    b"`bun run test` without a file.\n"
+    b"- Run the type check and lint only on the files you changed.\n"
+    b"- The checks that count are the tester's: the test step after you runs every "
+    b"check the tester chose, also after one fails, and returns every failed check to "
+    b"you. A check you could not finish is not a reason to report `fail`.\n"
+)
+
+# Seed rewrites HAIFA's own `.factory/prompts` may not have picked up yet:
+# (agent, kind) -> (HAIFA's old text, the seed's new text).
+PENDING_SEED_REPLACEMENTS: dict[tuple[str, str], tuple[bytes, bytes]] = {
+    ("builder", "system"): (_BUILDER_OLD_TESTS, _BUILDER_NEW_TESTS),
+}
+
 
 def _haifa_prompt(name: str, kind: str) -> bytes:
     return (HAIFA_ROOT / ".factory/prompts" / name / f"{kind}.md").read_bytes()
@@ -95,6 +122,10 @@ def _pending(name: str) -> bool:
     return any(
         block not in _haifa_prompt(agent, kind)
         for (agent, kind), block in PENDING_SEED_BLOCKS.items()
+        if agent == name
+    ) or any(
+        new not in _haifa_prompt(agent, kind)
+        for (agent, kind), (_old, new) in PENDING_SEED_REPLACEMENTS.items()
         if agent == name
     )
 
@@ -108,6 +139,12 @@ def test_seed_prompts_equal_haifa(name: str, kind: str) -> None:
     if block is not None:
         assert block in seed
         seed, haifa = seed.replace(block, b""), haifa.replace(block, b"")
+    replacement = PENDING_SEED_REPLACEMENTS.get((name, kind))
+    if replacement is not None:
+        old, new = replacement
+        assert new in seed
+        seed = seed.replace(new, old)
+        haifa = haifa.replace(new, old)
     assert seed == haifa
 
 
