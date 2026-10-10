@@ -12,7 +12,6 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -26,16 +25,8 @@ from workflow_fakes import (  # noqa: E402
     install_fake_harnesses,
     ok,
     plan_envelope,
+    triage_envelope,
 )
-
-try:
-    from workflow_fakes import triage_envelope  # type: ignore[attr-defined]  # noqa: E402
-except ImportError:  # not in workflow_fakes yet
-
-    def triage_envelope(cause: str = "code", *argv: str) -> dict[str, Any]:
-        """The tester's verdict on a red test: `cause` with the same check as the plan."""
-        return {**plan_envelope(*argv), "failure_cause": cause}
-
 
 __all__ = [
     "SPEC",
