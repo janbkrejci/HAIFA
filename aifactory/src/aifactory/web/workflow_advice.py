@@ -20,7 +20,9 @@ from aifactory import backlog as core
 from aifactory import oscompat
 from aifactory.config import load_run_config
 from aifactory.errors import UsageError
-from aifactory.harness import canonical
+from aifactory.harness import HARNESSES, canonical
+from aifactory.harness import settings as harness_settings
+from aifactory.home import haifa_home
 from aifactory.run import gitops, mainwrites
 from aifactory.workflow.adaptive import (
     WorkflowRecommendationOutput,
@@ -157,6 +159,24 @@ def _remove_created(target: Path, identity: tuple[int, int], content: bytes) -> 
         target.unlink()
 
 
+def _resolve(repo: Path, explicit: dict[str, str]) -> dict[str, str]:
+    """Advisor harness/model: explicit choice, computer default, else the roster plan agent."""
+    try:
+        selection = harness_settings.effective_override({}, explicit)
+    except ValueError as exc:
+        raise UsageError(str(exc)) from exc
+    if selection.get("harness"):
+        return selection
+    rc = load_run_config(repo)
+    role = rc.config.roles.roles.get("plan")
+    agent = next(
+        (a for a in rc.config.agents.agents if role is not None and a.name == role.agent), None
+    )
+    if agent is None:
+        return {}
+    return {"harness": canonical(agent.coding_agent), "model": agent.model}
+
+
 class AdviceManager:
     def __init__(
         self,
@@ -181,17 +201,33 @@ class AdviceManager:
         }
 
     def options(self, repo: Path) -> dict[str, Any]:
-        rc = load_run_config(repo)
-        return {
-            "agents": [
-                {"name": a.name, "provider": canonical(a.coding_agent), "model": a.model}
-                for a in rc.config.agents.agents
-            ]
-        }
+        data = harness_settings.catalog(haifa_home())
+        configured = data["settings"]["harnesses"]
+        harnesses = [
+            {
+                "name": name,
+                "default_model": configured[name].get("model") or "",
+                "models": list(data["models"][name]),
+            }
+            for name in HARNESSES
+            if configured.get(name, {}).get("enabled") and data["available"].get(name)
+        ]
+        try:
+            resolved = _resolve(repo, {})
+        except UsageError:
+            resolved = {}
+        default = (
+            {"harness": resolved["harness"], "model": resolved.get("model", "")}
+            if resolved.get("harness")
+            else None
+        )
+        return {"default": default, "harnesses": harnesses}
 
     def start(self, repo: Path, body: dict[str, Any]) -> dict[str, Any]:
         if set(body) - (
-            {"task_id", "draft", "agent"} if self.task_parameters else {"task_id", "draft"}
+            {"task_id", "draft", "harness", "model"}
+            if self.task_parameters
+            else {"task_id", "draft"}
         ) or not isinstance(body.get("draft"), dict):
             raise UsageError("expected task_id (optional) and draft object")
         task_id = body.get("task_id")
@@ -200,13 +236,19 @@ class AdviceManager:
         repo = repo.resolve()
         ctx = context(repo, task_id, body["draft"], task_parameters=self.task_parameters)
         if self.task_parameters:
-            options = self.options(repo)["agents"]
-            selected = body.get("agent")
-            if selected is not None and selected not in [a["name"] for a in options]:
-                raise UsageError("choose a configured provider/model")
+            harness = body.get("harness")
+            model = body.get("model")
+            if not isinstance(harness, str | None) or not isinstance(model, str | None):
+                raise UsageError("harness and model must be strings")
+            offered = {h["name"]: h["models"] for h in self.options(repo)["harnesses"]}
+            if harness and harness not in offered:
+                raise UsageError("choose an enabled harness")
+            if model and (not harness or model not in offered[harness]):
+                raise UsageError("choose a model of the selected harness")
             ctx["task_parameters"] = True
-            if selected is not None:
-                ctx["agent"] = selected
+            ctx["advisor"] = _resolve(
+                repo, {k: v for k, v in (("harness", harness), ("model", model)) if v}
+            )
             ctx["available_tasks"] = [
                 {"id": t.id, "title": t.title, "depends_on": t.depends_on}
                 for t in core.load_for_edit(repo).by_id.values()
@@ -284,14 +326,8 @@ class AdviceManager:
                                 "SELECT total_tokens, total_cost FROM sessions WHERE adw_id=?",
                                 (job.id,),
                             ).fetchone()
-                        provider = next(
-                            (
-                                canonical(a["harness"])
-                                for a in job.context["roster"]
-                                if a["name"] == job.context.get("agent")
-                            ),
-                            None,
-                        )
+                        chosen = job.context.get("advisor", {}).get("harness")
+                        provider = canonical(chosen) if chosen else None
                         if usage:
                             job.usage = {
                                 "tokens": usage[0],

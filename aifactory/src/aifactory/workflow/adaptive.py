@@ -277,7 +277,10 @@ def recommend(
     from aifactory.harness.settings import effective_override, ensure_enabled
     from aifactory.run.task import apply_agents_override
 
-    rc = apply_agents_override(rc, effective_override(ctx.get("effective", {}), None))
+    if task_parameters:
+        rc = apply_agents_override(rc, ctx.get("advisor") or {})
+    else:
+        rc = apply_agents_override(rc, effective_override(ctx.get("effective", {}), None))
     role = rc.config.roles.roles.get("plan")
     if role is None:
         raise UsageError("configured plan role is missing")
@@ -306,7 +309,7 @@ def recommend(
         cfg = prepare_cfg(repo, rc, runtime / "prompts")
         if not any(a.name == role.agent for a in cfg.agents):
             raise UsageError(f"configured plan agent {role.agent!r} is missing from the roster")
-        agent = agents.resolve(cfg, ctx.get("agent", role.agent))
+        agent = agents.resolve(cfg, role.agent)
         ensure_enabled(agent.coding_agent)
         status = check_harness(canonical(agent.coding_agent))
         if not status.ok:

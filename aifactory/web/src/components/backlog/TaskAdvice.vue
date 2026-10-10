@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { errorText } from '../../lib/format'
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { getApi, postApi } from '@/lib/api'
-import { currentRepoId, here } from '@/lib/router'
+import { currentRepoId } from '@/lib/router'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 
@@ -26,18 +26,37 @@ interface Job {
 }
 const props = defineProps<{ draft: Record<string, unknown>; taskId?: string; disabled?: boolean }>()
 const emit = defineEmits<{ result: [proposal: TaskProposal]; busy: [value: boolean] }>()
-const choices = ref<{ name: string; provider: string; model: string }[]>([])
-const agent = ref('')
+interface AdvisorHarness { name: string; default_model: string; models: string[] }
+interface AdvisorOptions { default: { harness: string; model: string } | null; harnesses: AdvisorHarness[] }
+const choices = ref<AdvisorOptions | null>(null)
+const harness = ref('')
+const model = ref('')
 const busy = ref(false)
 const error = ref('')
 const result = ref<TaskProposal | null>(null)
 const stale = ref(false)
 const costs = ref<(TaskProposal['usage'])[]>([])
-/** The agent options were loaded (an empty list then means the roster has no agent). */
+/** The harness options were loaded (no default and no harness then means nothing can run). */
 const loaded = ref(false)
-const options = computed(() => choices.value.map(a => ({ value: a.name, label: `${a.provider} · ${a.model} (${a.name})` })))
+const harnessOptions = computed(() => {
+  const fallback = choices.value?.default
+  return [
+    { value: '', label: fallback ? `Systémový default (${fallback.harness} · ${fallback.model || 'model harnessu'})` : 'Systémový default' },
+    ...(choices.value?.harnesses ?? []).map(h => ({ value: h.name, label: h.name })),
+  ]
+})
+const selectedHarness = computed(() => choices.value?.harnesses.find(h => h.name === harness.value))
+const modelOptions = computed(() => [
+  { value: '', label: `Default harnessu (${selectedHarness.value?.default_model || 'nenastaven'})` },
+  ...(selectedHarness.value?.models ?? []).map(m => ({ value: m, label: m })),
+])
+const empty = computed(() => loaded.value && !choices.value?.default && !choices.value?.harnesses.length)
+const canStart = computed(() => loaded.value && (!!choices.value?.default || !!harness.value))
+/** Restoring a stored choice must not reset its model. */
+let restoring = false
+watch(harness, () => { if (!restoring) model.value = '' })
 let scope = currentRepoId()
-const storageKey = () => `haifa.task-advice.agent.${scope || 'default'}`
+const storageKey = () => `haifa.task-advice.choice.${scope || 'default'}`
 let generation = 0
 let timer: ReturnType<typeof setTimeout> | undefined
 let controller: AbortController | undefined
@@ -57,9 +76,12 @@ function scopeChanged() {
   scope = currentRepoId()
   result.value = null
   costs.value = []
-  choices.value = []
+  choices.value = null
   loaded.value = false
-  agent.value = ''
+  restoring = true
+  harness.value = ''
+  model.value = ''
+  restoring = false
   void loadOptions()
 }
 window.addEventListener('hashchange', scopeChanged)
@@ -67,18 +89,25 @@ onBeforeUnmount(() => { stop(); window.removeEventListener('hashchange', scopeCh
 async function loadOptions() {
   const requestedScope = scope
   try {
-    const data = await getApi<{ agents: typeof choices.value }>('/backlog/task-advice/options')
+    const data = await getApi<AdvisorOptions>('/backlog/task-advice/options')
     if (requestedScope !== currentRepoId()) return
-    choices.value = data.agents ?? []
+    choices.value = { default: data.default ?? null, harnesses: data.harnesses ?? [] }
     loaded.value = true
-    let saved = ''
-    try { saved = localStorage.getItem(storageKey()) ?? '' } catch { /* storage is optional */ }
-    agent.value = choices.value.find(a => a.name === saved)?.name ?? choices.value[0]?.name ?? ''
+    let saved: { harness?: unknown; model?: unknown } = {}
+    try { saved = JSON.parse(localStorage.getItem(storageKey()) ?? '{}') ?? {} } catch { /* storage is optional */ }
+    const offered = choices.value.harnesses.find(h => h.name === saved.harness)
+    const savedModel = typeof saved.model === 'string' ? saved.model : ''
+    const valid = offered && (savedModel === '' || offered.models.includes(savedModel))
+    restoring = true
+    harness.value = valid ? offered.name : ''
+    model.value = valid ? savedModel : ''
+    await nextTick()
+    restoring = false
   } catch (e) { if (requestedScope === currentRepoId()) error.value = errorText(e) }
 }
 onMounted(loadOptions)
 async function start() {
-  if (busy.value || props.disabled || !agent.value) return
+  if (busy.value || props.disabled || !canStart.value) return
   stop()
   const token = generation
   const active = () => token === generation && scope === currentRepoId()
@@ -88,7 +117,7 @@ async function start() {
   busy.value = true
   emit('busy', true)
   controller = new AbortController()
-  try { localStorage.setItem(storageKey(), agent.value) } catch { /* storage is optional */ }
+  try { localStorage.setItem(storageKey(), JSON.stringify({ harness: harness.value, model: model.value })) } catch { /* storage is optional */ }
   async function poll(id: string) {
     if (!active()) return
     try {
@@ -115,7 +144,8 @@ async function start() {
   }
   try {
     const job = await postApi<Job>('/backlog/task-advice', {
-      ...(props.taskId ? { task_id: props.taskId } : {}), draft: props.draft, agent: agent.value,
+      ...(props.taskId ? { task_id: props.taskId } : {}), draft: props.draft,
+      ...(harness.value ? { harness: harness.value } : {}), ...(model.value ? { model: model.value } : {}),
     }, controller.signal)
     if (active()) await poll(job.job_id)
   } catch (e) { fail(e) }
@@ -129,14 +159,18 @@ function apply() {
 
 <template>
   <div class="task-advice" data-test="task-advice">
-    <p v-if="loaded && !choices.length" class="no-agents" data-test="advice-no-agents">
-      Návrh potřebuje agenta z rosteru repa, roster je prázdný. Agenty nastav v záložce
-      <a :href="here('factory')">Factory</a>.
+    <p v-if="empty" class="no-agents" data-test="advice-no-agents">
+      Návrh potřebuje povolený harness. Nastav harnessy počítače v nastavení harnessů.
     </p>
-    <label v-else>Provider a model pro návrh
-      <SelectMenu v-model="agent" data-test="advice-agent" label="Provider a model" :options="options" :disabled="busy" />
-    </label>
-    <button type="button" data-test="task-advice-start" :disabled="disabled || busy || !agent" @click="start">
+    <template v-else>
+      <label>Harness pro návrh
+        <SelectMenu v-model="harness" data-test="advice-harness" label="Harness" :options="harnessOptions" :disabled="busy" />
+      </label>
+      <label v-if="harness">Model pro návrh
+        <SelectMenu v-model="model" data-test="advice-model" label="Model" :options="modelOptions" :disabled="busy" />
+      </label>
+    </template>
+    <button type="button" data-test="task-advice-start" :disabled="disabled || busy || !canStart" @click="start">
       <Spinner v-if="busy" />{{ busy ? 'Agent navrhuje parametry…' : 'Navrhnout parametry tasku' }}
     </button>
     <p v-if="error" role="alert">{{ error }}</p>

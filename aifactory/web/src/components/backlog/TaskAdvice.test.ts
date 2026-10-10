@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TaskAdvice from './TaskAdvice.vue'
 import TaskForm from './TaskForm.vue'
-import { chooseOption } from '@/test/select'
+import { chooseOption, selectLabels } from '@/test/select'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
 vi.mock('@/lib/api', () => api)
@@ -16,9 +16,16 @@ beforeEach(() => {
   localStorage.clear()
   api.postApi.mockReset().mockResolvedValue({ job_id: 'job' })
   api.getApi.mockReset().mockImplementation(async (path: string) => path.endsWith('/options')
-    ? { agents: [{ name: 'planner', provider: 'claude', model: 'sonnet' }] }
+    ? options
     : { state: 'succeeded', recommendation: proposal })
 })
+const options = {
+  default: { harness: 'claude', model: 'sonnet' },
+  harnesses: [
+    { name: 'claude', default_model: 'sonnet', models: ['sonnet', 'opus'] },
+    { name: 'codex', default_model: 'gpt-5', models: ['gpt-5', 'gpt-5-mini'] },
+  ],
+}
 afterEach(() => { vi.useRealTimers(); document.body.innerHTML = '' })
 
 describe('TaskAdvice', () => {
@@ -30,9 +37,10 @@ describe('TaskAdvice', () => {
     expect(wrapper.emitted('result')).toBeUndefined()
     expect(wrapper.text()).toContain('$0.0123 USD')
     expect(api.postApi).toHaveBeenCalledWith('/backlog/task-advice', {
-      draft: { title: 'Original' }, agent: 'planner',
+      draft: { title: 'Original' },
     }, expect.any(AbortSignal))
-    expect(localStorage.getItem('haifa.task-advice.agent.haifa')).toBe('planner')
+    expect(wrapper.get('[data-test="advice-harness"]').text()).toContain('Systémový default (claude · sonnet)')
+    expect(wrapper.find('[data-test="advice-model"]').exists()).toBe(false)
     await wrapper.get('[data-test="task-advice-apply"]').trigger('click')
     expect(wrapper.emitted('result')?.[0]).toEqual([proposal])
     await wrapper.get('[data-test="task-advice-start"]').trigger('click')
@@ -43,34 +51,66 @@ describe('TaskAdvice', () => {
     wrapper.unmount()
   })
 
-  it('explains an empty roster instead of an empty selection', async () => {
+  it('sends a chosen harness and model and remembers them', async () => {
     window.location.hash = '#/r/haifa/backlog/new'
-    api.getApi.mockResolvedValue({ agents: [] })
     const wrapper = mount(TaskAdvice, { props: { draft: { title: 'Original' } } })
     await flushPromises()
-    const note = wrapper.get('[data-test="advice-no-agents"]')
-    expect(note.text()).toContain('roster je prázdný')
-    expect(note.get('a').attributes('href')).toBe('#/r/haifa/factory')
-    expect(wrapper.find('[data-test="advice-agent"]').exists()).toBe(false)
+    await chooseOption(wrapper, '[data-test="advice-harness"]', 'codex')
+    expect(await selectLabels(wrapper, '[data-test="advice-model"]')).toEqual(['Default harnessu (gpt-5)', 'gpt-5', 'gpt-5-mini'])
+    await chooseOption(wrapper, '[data-test="advice-model"]', 'gpt-5-mini')
+    await wrapper.get('[data-test="task-advice-start"]').trigger('click')
+    await flushPromises()
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/task-advice', {
+      draft: { title: 'Original' }, harness: 'codex', model: 'gpt-5-mini',
+    }, expect.any(AbortSignal))
+    expect(JSON.parse(localStorage.getItem('haifa.task-advice.choice.haifa') ?? '')).toEqual({ harness: 'codex', model: 'gpt-5-mini' })
+    wrapper.unmount()
+  })
+
+  it('resets the model when the harness changes', async () => {
+    const wrapper = mount(TaskAdvice, { props: { draft: { title: 'Original' } } })
+    await flushPromises()
+    await chooseOption(wrapper, '[data-test="advice-harness"]', 'codex')
+    await chooseOption(wrapper, '[data-test="advice-model"]', 'gpt-5')
+    await chooseOption(wrapper, '[data-test="advice-harness"]', 'claude')
+    expect(wrapper.get('[data-test="advice-model"]').text()).toContain('Default harnessu (sonnet)')
+    wrapper.unmount()
+  })
+
+  it('explains missing harnesses instead of an empty selection', async () => {
+    window.location.hash = '#/r/haifa/backlog/new'
+    api.getApi.mockResolvedValue({ default: null, harnesses: [] })
+    const wrapper = mount(TaskAdvice, { props: { draft: { title: 'Original' } } })
+    await flushPromises()
+    expect(wrapper.get('[data-test="advice-no-agents"]').text()).toContain('povolený harness')
+    expect(wrapper.find('[data-test="advice-harness"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="task-advice-start"]').attributes('disabled')).toBeDefined()
     wrapper.unmount()
   })
 
-  it('restores the last configured selection', async () => {
-    localStorage.setItem('haifa.task-advice.agent.haifa', 'coder')
-    api.getApi.mockResolvedValue({ agents: [
-      { name: 'planner', provider: 'claude', model: 'sonnet' },
-      { name: 'coder', provider: 'codex', model: 'gpt-5' },
-    ] })
+  it('restores a stored choice that is still offered', async () => {
+    window.location.hash = '#/r/haifa/backlog/new'
+    localStorage.setItem('haifa.task-advice.choice.haifa', JSON.stringify({ harness: 'codex', model: 'gpt-5-mini' }))
     const wrapper = mount(TaskAdvice, { props: { draft: { title: 'Original' } } })
     await flushPromises()
-    expect(wrapper.get('[data-test="advice-agent"]').text()).toContain('codex')
+    expect(wrapper.get('[data-test="advice-harness"]').text()).toContain('codex')
+    expect(wrapper.get('[data-test="advice-model"]').text()).toContain('gpt-5-mini')
+    wrapper.unmount()
+  })
+
+  it('drops a stored choice whose harness is no longer offered', async () => {
+    window.location.hash = '#/r/haifa/backlog/new'
+    localStorage.setItem('haifa.task-advice.choice.haifa', JSON.stringify({ harness: 'pi', model: 'x/y' }))
+    const wrapper = mount(TaskAdvice, { props: { draft: { title: 'Original' } } })
+    await flushPromises()
+    expect(wrapper.get('[data-test="advice-harness"]').text()).toContain('Systémový default')
+    expect(wrapper.find('[data-test="advice-model"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
   it('shows unavailable cost instead of zero for providers that do not report it', async () => {
     api.getApi.mockImplementation(async (path: string) => path.endsWith('/options')
-      ? { agents: [{ name: 'planner', provider: 'codex', model: 'gpt-5' }] }
+      ? options
       : { state: 'succeeded', recommendation: { ...proposal, usage: { tokens: 50, cost_usd: null } } })
     const wrapper = mount(TaskAdvice, { props: { draft: { title: 'Original' } } })
     await flushPromises()
