@@ -48,7 +48,7 @@ function stub(...answers: Response[]) {
     if (url.endsWith('/library')) return ok({ exists: true, items: [] })
     if (url.endsWith('/repos')) return ok({ repos: [] })
     if (url.endsWith('/backlog/task-advice/options')) {
-      return ok({ agents: [{ name: 'planner', provider: 'claude', model: 'sonnet' }] })
+      return ok({ default: { harness: 'claude', model: 'sonnet' }, harnesses: [{ name: 'claude', default_model: 'sonnet', models: ['sonnet'] }] })
     }
     return answers.shift() ?? ok(report())
   })
