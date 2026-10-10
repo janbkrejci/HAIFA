@@ -16,6 +16,12 @@ The step before you: the build, a fix or a revision (with the files it changed),
 
 {{previous_envelope}}
 
+### required_coverage
+
+`full`, `scoped` or `any` (your choice):
+
+{{required_coverage}}
+
 ### previous_test_plan
 
 The plan the last test ran, `(none)` for the first plan of the run. Keep each of its checks or name it in `dropped`:
