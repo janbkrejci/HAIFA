@@ -3,6 +3,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import TaskDetail from './TaskDetail.vue'
 import { runCheck, taskDetail } from '@/test/backlogFixtures'
 import { chooseOption } from '@/test/select'
+import { answerDialog, openDialog } from '@/test/modal'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
 vi.mock('@/lib/api', () => api)
@@ -162,6 +163,28 @@ describe('TaskDetail', () => {
     expect(wrapper.emitted('exclude')?.[1]).toEqual(['M01-S01-T02', false])
     await wrapper.setProps({ queueBusy: true })
     expect(wrapper.get('[data-test="auto-queue-toggle"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('cancels a task that has not started after a confirmation', async () => {
+    const wrapper = detailWrapper()
+    await wrapper.get('[data-test="cancel-task"]').trigger('click')
+    expect(openDialog()?.textContent).toContain('Zrušit task M01-S01-T02?')
+    await answerDialog(false)
+    expect(wrapper.emitted('cancel-task')).toBeUndefined()
+    await wrapper.get('[data-test="cancel-task"]').trigger('click')
+    await answerDialog(true)
+    expect(wrapper.emitted('cancel-task')).toEqual([[]])
+    await wrapper.setProps({ busy: true })
+    expect(wrapper.get('[data-test="cancel-task"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it.each(['done', 'cancelled', 'running', 'in review'] as const)('offers no cancel for %s tasks', (state) => {
+    const detail = taskDetail()
+    detail.task.board_state = state
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.find('[data-test="cancel-task"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('links every PR to Review and names its state in Czech', () => {

@@ -521,6 +521,12 @@ async function onEdit(input: EditTaskInput) {
   await afterDetailWrite(await write('edit', () => editTask(id, input)))
 }
 
+async function onCancelTask() {
+  const id = taskId.value
+  if (!id) return
+  await afterDetailWrite(await write('cancel', () => editTask(id, { status: 'cancelled' })))
+}
+
 async function onLink(input: LinkInput) {
   const id = taskId.value
   if (!id) return
@@ -769,6 +775,7 @@ watch(
         :run="run"
         :queue-busy="queueBusy"
         @edit="onEdit"
+        @cancel-task="onCancelTask"
         @exclude="onExclude"
         @link="onLink"
         @assign-workflow="onAssign"

@@ -15,6 +15,7 @@ import { LIVE_DEBOUNCE_MS, resetLiveForTests } from '@/lib/live'
 import { FakeEventSource, filesEvent, traceEvent } from '@/test/fakeEventSource'
 import { chooseOption, openSelect, selectLabels } from '@/test/select'
 import { deferred, type Deferred } from '@/test/deferred'
+import { answerDialog } from '@/test/modal'
 import { HIDE_DONE_KEY, resetTreeForTests } from '@/lib/backlog'
 
 function ok(data: unknown) {
@@ -244,6 +245,26 @@ describe('BacklogView', () => {
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
     expect(post?.[0]).toBe('/api/repos/haifa/backlog/tasks/M01-S01-T02/link')
     expect(post?.[1]?.body).toBe('{"depends_on":["M01-S01-T01"],"remove":true}')
+    const gets = fetchMock.mock.calls.filter(([url, init]) => url === '/api/repos/haifa/backlog/tasks/M01-S01-T02' && !init)
+    expect(gets).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('cancels the open task and reloads its detail', async () => {
+    go('#/r/haifa/backlog/M01-S01-T02')
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return ok({ action: 'edit', changed: true, path: 'x', task: taskNode(), issues: [] })
+      if (url.startsWith('/api/repos/haifa/backlog/tasks/')) return ok(taskDetail())
+      return ok(backlogData())
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await wrapper.get('[data-test="cancel-task"]').trigger('click')
+    await answerDialog(true)
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')
+    expect(post?.[0]).toBe('/api/repos/haifa/backlog/tasks/M01-S01-T02/edit')
+    expect(post?.[1]?.body).toBe('{"status":"cancelled"}')
     const gets = fetchMock.mock.calls.filter(([url, init]) => url === '/api/repos/haifa/backlog/tasks/M01-S01-T02' && !init)
     expect(gets).toHaveLength(2)
     wrapper.unmount()
