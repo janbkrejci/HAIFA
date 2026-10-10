@@ -1,0 +1,19 @@
+# HAIFA-S03-T21: adaptivní workflow
+
+Definice tasku nově nabízí **Navrhnout workflow**: agent podle zadání a jeho souvislostí doporučí existující workflow, případně navrhne nové YAML. Výsledek obsahuje odůvodnění a přehled kroků, takže lze posoudit volbu před uložením.
+
+V novém tasku vyber step, vyplň titulek a spusť návrh u výběru workflow; task ještě nemusí být uložený. U existujícího tasku použij editor nebo stejné tlačítko v sekci Workflow detailu, které editor otevře. Agent dostane aktuální draft, uložené zadání a vazby, popisy rodičů, efektivní nastavení a katalog workflow z base konfigurace doplněný distribuovanými workflow. Používá agenta role `plan` s jeho nakonfigurovaným harness, modelem a thinking a vlastními instrukcemi pro doporučení. Repozitář prohlíží v izolované kopii připnuté na base commit; navržené kroky nespouští.
+
+Výsledek vyplní vlastní workflow tasku. Volba **zděděné** dál přebírá nastavení rodičů. Nové YAML lze rozbalit. Návrh potvrď běžným **Založit/Uložit**, ručně vyber jiné workflow nebo formulář zruš. Analýza sama task ani workflow neukládá. Ruční změna výběru odstraní referenci návrhu, takže nevytvoří navržené YAML. Během analýzy je ukládání zakázané; změna vstupů zneplatní návrh a pozdní odpovědi po změně tasku či repozitáře se ignorují. Změněný serverový kontext vyžaduje nový návrh.
+
+Nové workflow vznikne až při uložení v `.factory/workflows/<jméno>.yaml`. Existující soubor se nepřepisuje. Task i workflow zůstanou necommitnuté; hláška po uložení odkazuje do **Factory · config_commit** příslušného repozitáře. Před během zveřejni konfiguraci i backlog, protože běhy čtou base commit. Návrh ani uložení automaticky nevytvářejí commit, push nebo PR a nespouštějí task.
+
+Implementaci nesou tyto soubory (cesty od kořene repozitáře):
+
+- `aifactory/web/src/components/backlog/WorkflowAdvice.vue` zajišťuje analýzu, polling, chyby a zobrazení výsledku; `TaskForm.vue` předává draft a referenci při uložení, `TaskDetail.vue` otevírá editor. `aifactory/web/src/views/BacklogView.vue` obnovuje data a zobrazuje odkaz ke zveřejnění. Kontrakty a rušení požadavků rozšiřují `aifactory/web/src/lib/backlog.ts` a `api.ts`.
+- `aifactory/src/aifactory/workflow/adaptive.py` sestavuje kontext, volá agenta přes engine a validuje typovaný výstup, YAML, jméno, role a agenty. Používá guard s prázdným rozsahem zápisu a uklízí dočasnou kopii. Změny v `aifactory/src/aifactory/engine/agents.py`, `runner.py` a `utils.py` izolují prostředí subprocessů jednotlivých workerů bez změny globálního prostředí.
+- `aifactory/src/aifactory/web/workflow_advice.py` vlastní frontu a bezpečné uložení: znovu ověřuje kontext pod zámkem, předem validuje zápis tasku, při jeho selhání odstraní pouze vlastní nově vytvořené YAML a úspěšné workflow zaznamená do journalu. `aifactory/src/aifactory/web/app.py` registruje POST/GET `/backlog/workflow-advice`; `backlog.py` přijímá `workflow_advice_id` při add/edit.
+
+Služba má dva workery a nejvýše čtyři aktivní žádosti; totožné souběžné žádosti sdílejí job. Dokončené návrhy expirují po 30 minutách a restart je zruší. Zrušení formuláře ukončí polling, serverová analýza může doběhnout. Chyba zachová draft a umožní opakování. Doporučení je zakázané pro hotové, zrušené, běžící tasky a tasky v review. Draft je omezen na 100 KB; zkrácení okolního kontextu je označené.
+
+Ověření: `just test tests/workflow/test_workflow_advice.py tests/web/test_web_workflow_advice.py` pokrývá kontext, validaci, izolaci, expiraci, stale návrhy, kolize, rollback, opakované uložení a souběžný guard. Frontendové testy u změněných komponent a view pokrývají draft, ruční výběr, pozdní odpovědi a odkaz ke zveřejnění. `just e2e test_workflow_advice_browser.py` ověřuje uložení existujícího i nového workflow přes dashboard s fake agentem. Screenshoty jsou v `aifactory/validation/results/workflow-advice-proposal.png` a `workflow-advice-saved.png`. Diff obsahuje testy, nikoli výsledky jejich spuštění.
