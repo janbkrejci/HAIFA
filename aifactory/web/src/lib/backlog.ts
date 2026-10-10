@@ -1062,10 +1062,25 @@ export function childContainerIds(items: readonly BacklogNode[] | undefined, par
   return parent === null ? childIds(items) : (walk(items) ?? [])
 }
 
+/** A short code of a new container or task: letters, digits, '.' and '_', without '-'. */
+export const CODE_RE = /^[A-Za-z0-9][A-Za-z0-9._]*$/
+
+/** The short code typed for a node under `parent`; a code carrying the parent's prefix loses it. */
+export function shortCode(parent: string | null, code: string): string {
+  const value = code.trim()
+  return parent && value.startsWith(`${parent}-`) ? value.slice(parent.length + 1) : value
+}
+
+/** The full id the server composes from a short code: `S10` under `HAIFA` is `HAIFA-S10`. */
+export function composeId(parent: string | null, code: string): string {
+  const local = shortCode(parent, code)
+  return parent ? `${parent}-${local}` : local
+}
+
 /**
- * A code to suggest for a new container: the next number after the codes of its siblings
- * (`HAIFA-S02` after `HAIFA-S01`), else the first letter of the level with 01
- * (`P01` for a project, `<parent>-S01` for a step).
+ * The short code to suggest for a new container: the next number after the codes of its
+ * siblings (`S02` after `HAIFA-S01`), else the first letter of the level with 01
+ * (`P01` for a project, `S01` for a step).
  */
 export function suggestContainerCode(level: string, parent: string | null, siblings: readonly string[]): string {
   const prefix = parent ? `${parent}-` : ''
@@ -1077,7 +1092,21 @@ export function suggestContainerCode(level: string, parent: string | null, sibli
     const n = Number(m[2])
     if (!best || n > best.n) best = { head: m[1] ?? '', n, width: (m[2] ?? '').length }
   }
-  if (best) return `${prefix}${best.head}${String(best.n + 1).padStart(best.width, '0')}`
+  if (best) return `${best.head}${String(best.n + 1).padStart(best.width, '0')}`
   const letter = (levelLabel(level).trim()[0] ?? 'X').toUpperCase()
-  return `${prefix}${letter}01`
+  return `${letter}01`
+}
+
+/** The next free task code of a step (`T05` after `<step>-T04`), as the server picks it. */
+export function suggestTaskCode(step: string, taskIds: readonly string[]): string {
+  const prefix = `${step}-T`
+  let n = 0
+  let width = 2
+  for (const id of taskIds) {
+    const digits = id.startsWith(prefix) ? id.slice(prefix.length) : ''
+    if (!/^\d+$/.test(digits)) continue
+    n = Math.max(n, Number(digits))
+    width = Math.max(width, digits.length)
+  }
+  return `T${String(n + 1).padStart(width, '0')}`
 }

@@ -70,6 +70,7 @@ _OVERRIDES = ("harness", "model", "thinking")
 _REPEAT_OPTS = frozenset({"max", "until", "when"})
 TEST_PLAN_TYPE = "TestPlanOutput"
 TEST_PLAN_STEP = "test_plan"
+PLAN_REVIEW_STEP = "test_review"
 
 
 def _until_tail(until: Condition | None, steps: Sequence[Step]) -> int | None:
@@ -563,6 +564,7 @@ class _Parser:
             accept=accept,
             source=source,
             warnings=warnings,
+            plan_review=self.roles.roles.get(PLAN_REVIEW_STEP),
         )
 
 

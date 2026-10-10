@@ -22,6 +22,10 @@ agents:
     purpose: Choose the checks that verify the change; change nothing.
     writes: []
 
+  - name: test-reviewer
+    purpose: Judge each test plan before it runs; change nothing.
+    writes: []
+
   - name: reviewer
     purpose: Confirm that what was built is what was asked for; change nothing.
     writes: []

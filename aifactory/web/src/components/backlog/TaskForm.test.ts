@@ -22,9 +22,9 @@ afterEach(() => {
 
 const data = backlogData()
 
-function addForm() {
+function addForm(over = {}) {
   return mount(TaskForm, {
-    props: { mode: 'add', steps: data.steps, workflows: data.workflows, busy: false, error: null },
+    props: { mode: 'add', steps: data.steps, workflows: data.workflows, busy: false, error: null, ...over },
   })
 }
 
@@ -83,7 +83,21 @@ describe('TaskForm', () => {
     ])
   })
 
-  it('sends the workflow, id and body of a new task', async () => {
+  it('suggests the next free code and previews the full id of a new task', async () => {
+    const wrapper = addForm({ taskIds: ['M01-S01-T01', 'M01-S01-T04', 'M02-S01-T09'] })
+    const field = wrapper.find('[data-test="id"]')
+    expect(wrapper.text()).toContain('Kód (volitelné)')
+    expect(field.attributes('placeholder')).toBe('T05')
+    expect(wrapper.find('[data-test="id-preview"]').text()).toBe('Id: M01-S01-T05')
+    await field.setValue('T07')
+    expect(wrapper.find('[data-test="id-preview"]').text()).toBe('Id: M01-S01-T07')
+    await field.setValue('T-7')
+    expect(wrapper.find('[data-test="id-invalid"]').exists()).toBe(true)
+    await wrapper.find('[data-test="title"]').setValue('X')
+    expect(wrapper.find('[data-test="save"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('sends the workflow, short code and body of a new task', async () => {
     const wrapper = addForm()
     await wrapper.find('[data-test="title"]').setValue('X')
     await wrapper.find('[data-test="id"]').setValue('M01-S01-T09')
@@ -91,7 +105,7 @@ describe('TaskForm', () => {
     await wrapper.find('[data-test="body"]').setValue('Text')
     await wrapper.find('form').trigger('submit')
     expect(wrapper.emitted('submit')?.[0]).toEqual([
-      { step: 'M01-S01', title: 'X', id: 'M01-S01-T09', workflow: 'plan', body: 'Text' },
+      { step: 'M01-S01', title: 'X', id: 'T09', workflow: 'plan', body: 'Text' },
     ])
   })
 

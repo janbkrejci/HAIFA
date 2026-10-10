@@ -24,7 +24,7 @@ from run_repo import (
     git,
     make_run_repo,
     ok,
-    plan_envelope,
+    scripted_plan,
     write,
 )
 from workflow_fakes import FakeCodeRunner
@@ -609,7 +609,7 @@ def _conflicting_run(repo: Path, script: Script) -> Any:
 def _resolver(script: Script) -> None:
     script.on("builder", lambda wt: write(wt, "src/app/one.py", "NAME = 'both'\n"))
     script.add("builder", ok(changed_files=["src/app/one.py"], commit_message="Resolve one"))
-    script.add("tester", plan_envelope())
+    scripted_plan(script)
 
 
 def test_conflict_is_resolved_reviewed_and_merged(repo: Path, script: Script) -> None:
@@ -627,7 +627,12 @@ def test_conflict_is_resolved_reviewed_and_merged(repo: Path, script: Script) ->
     assert git(repo, "show", "main:src/app/one.py") == "NAME = 'both'"
     row = pr_row(repo, T01)
     assert row is not None and row.state == "merged" and not row.auto_merge_error
-    assert [c.agent for c in script.calls][-3:] == ["builder", "tester", "reviewer"]
+    assert [c.agent for c in script.calls][-4:] == [
+        "builder",
+        "tester",
+        "test-reviewer",
+        "reviewer",
+    ]
 
 
 def test_rejected_resolution_keeps_the_pr_open(repo: Path, script: Script) -> None:

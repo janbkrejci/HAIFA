@@ -231,7 +231,7 @@ def test_skill_backlog_creation_procedure() -> None:
     section = _section(skill, "Plan -> backlog")
     for text in (
         'factory backlog add --id M01 --title "Core"',
-        'factory backlog add M01 --id M01-S01 --title "API"',
+        'factory backlog add M01 --id S01 --title "API"',
         "factory backlog edit M01 --workflow simple-sdlc",
         "factory task add M01-S01",
         "project → step → task",

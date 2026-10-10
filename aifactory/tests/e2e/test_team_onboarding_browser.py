@@ -115,7 +115,7 @@ def test_team_onboarding_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     wire, marker = diagnostic_tripwire(tmp_path)
     proof = tmp_path / "publication.json"
     violations: list[str] = []
-    logs = [tmp_path / f"{name}.log" for name in ("a", "b", "a-pull")]
+    logs = [tmp_path / f"{name}.log" for name in ("a", "a-onboard", "b", "b-adopt", "a-pull")]
     with sync_playwright() as playwright:
         browser = _launch(playwright)
         try:
@@ -151,14 +151,14 @@ def test_team_onboarding_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                     assert git(library, "rev-parse", "HEAD") == git(
                         library_remote, "rev-parse", "main"
                     )
-                    hook = publication_hook(remote, library_remote, proof)
-                    preview_repo = repo_snapshot(repo, remote)
-                    preview_library = repo_snapshot(library, library_remote)
-                    # Migration is still available from Factory for registered repositories.
-                    # New additions deliberately discard their legacy sssf installation.
-                    response = page.context.request.post("/api/repos", data={"path": str(repo)})
-                    assert response.ok
-                    page.goto(f"/#/r/{registered_id(home_a, repo)}/factory")
+            hook = publication_hook(remote, library_remote, proof)
+            preview_repo = repo_snapshot(repo, remote)
+            preview_library = repo_snapshot(library, library_remote)
+            # `factory obs --repo` registers without installing (the dashboard's Add would
+            # install factory from the library); the sssf repo is onboarded from Factory.
+            with obs_server(repo, script, wire, logs[1], home_a) as obs:
+                with guarded_page(browser, obs.url, violations) as page:
+                    page.goto(f"/#/r/{obs.repo_id}/factory")
                     plan = page.locator('[data-test="onboarding-plan"]')
                     expect(plan).to_contain_text("builder")
                     expect(plan).to_contain_text("simple-sdlc")
@@ -226,7 +226,7 @@ def test_team_onboarding_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                     server = Server(
                         repo,
                         obs.url,
-                        logs[0],
+                        logs[1],
                         script,
                         marker,
                         before,
@@ -249,6 +249,7 @@ def test_team_onboarding_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                         "planner",
                         "builder",
                         "tester",
+                        "test-reviewer",
                         "reviewer",
                         "documenter",
                     ]
@@ -259,7 +260,7 @@ def test_team_onboarding_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             git(tmp_path, "clone", str(remote), str(repo_b))
             git(repo_b, "status", "--porcelain")
             baseline = repo_snapshot(repo_b, remote)
-            with obs_server(None, script, wire, logs[1], home_b) as obs:
+            with obs_server(None, script, wire, logs[2], home_b) as obs:
                 with guarded_page(browser, obs.url, violations) as page:
                     # first visit: the overview's guide leads to this machine's setup
                     page.goto("/")
@@ -279,9 +280,10 @@ def test_team_onboarding_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                     assert git(home_b / "library", "rev-parse", "HEAD") == git(
                         library_remote, "rev-parse", "main"
                     )
-                    response = page.context.request.post("/api/repos", data={"path": str(repo_b)})
-                    assert response.ok
-                    page.goto(f"/#/r/{registered_id(home_b, repo_b)}/factory")
+            # registered without installing: the clone is already onboarded
+            with obs_server(repo_b, script, wire, logs[3], home_b) as obs:
+                with guarded_page(browser, obs.url, violations) as page:
+                    page.goto(f"/#/r/{obs.repo_id}/factory")
                     expect(page.locator('[data-test="factory-state"]')).to_have_text("Onboardováno")
                     expect(page.locator('[data-test="onboarding-panel"]')).not_to_contain_text(
                         "Onboarding — jednou"
@@ -315,7 +317,7 @@ def test_team_onboarding_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                 for rel in (".factory/prompts/builder/system.md", ".factory/manifest.yaml")
             }
             head_a = git(repo, "rev-parse", "HEAD")
-            with obs_server(None, script, wire, logs[2], home_a) as obs:
+            with obs_server(None, script, wire, logs[4], home_a) as obs:
                 with guarded_page(browser, obs.url, violations) as page:
                     page.goto("/#/setup")
                     page.get_by_role("button", name="Stáhnout", exact=True).click()

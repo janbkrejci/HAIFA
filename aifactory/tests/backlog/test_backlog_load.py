@@ -82,7 +82,8 @@ def test_inheritance() -> None:
     view = backlog.by_id["M02-S01-T01"]
     assert isinstance(view, Task)
     assert "owner" not in effective(view)
-    assert effective_writes(view) == []
+    # no level sets writes: the default, the whole repo
+    assert effective_writes(view) == ["**"]
 
 
 def test_derived_states() -> None:

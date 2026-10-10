@@ -42,8 +42,9 @@ from validation.sandbox import SENTINEL, git
 
 # simple-sdlc when the suite passes at once and the review takes one forced round:
 # the reviewer rejects (review_1), the builder revises (revise_1), the tester plans
-# again from the review (replan_1), the new checks run (retest_1) and the reviewer
-# approves (review_2).
+# again from the review (replan_1), the test-reviewer approves it (test_review_1),
+# the new checks run (retest_1) and the reviewer approves (review_2). Every stored
+# test plan gets a plan review (test_review after test_plan).
 # `request` is the engineer phase.
 FORCED_REVIEW_HAPPY: tuple[str, ...] = (
     "request",
@@ -51,10 +52,12 @@ FORCED_REVIEW_HAPPY: tuple[str, ...] = (
     "commit_plan",
     "build",
     "test_plan",
+    "test_review",
     "test_1",
     "review_1",
     "revise_1",
     "replan_1",
+    "test_review_1",
     "retest_1",
     "review_2",
     "commit_build",
@@ -69,6 +72,7 @@ CORE_PHASES: tuple[str, ...] = (
     "commit_plan",
     "build",
     "test_plan",
+    "test_review",
     "test_1",
     "review_1",
     "commit_build",
@@ -77,9 +81,11 @@ CORE_PHASES: tuple[str, ...] = (
     "commit_docs",
 )
 # phases a real model may add: repair rounds with their new plans, review rounds
-# with the new plan and retest after a revision, the tester's triage of a red test
+# with the new plan and retest after a revision, the tester's triage of a red test,
+# plan reviews and the plan revisions they ask for
 EXTRA_PHASE = re.compile(
-    r"^(?:(?:fix|test|test_plan|review|revise|replan|retest)_\d+|triage(?:_\d+)?)$"
+    r"^(?:(?:fix|test|test_plan|review|revise|replan|retest)_\d+"
+    r"|(?:triage|test_review|plan_revision)(?:_\d+)?)$"
 )
 R1_HARNESSES = frozenset({"claude", "codex", "pi"})
 

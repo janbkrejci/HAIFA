@@ -705,6 +705,7 @@ watch(
         v-if="newTaskReady"
         mode="add"
         :steps="steps"
+        :task-ids="Object.keys(names)"
         :initial-step="newTaskStep"
         :workflows="workflows"
         :busy="busy"

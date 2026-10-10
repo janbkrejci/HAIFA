@@ -1,4 +1,4 @@
-"""Empty obs → add/install repos → switch screens → run/review → safe removal."""
+"""Empty obs → add repos (factory committed) → switch screens → run/review → removal."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from f3_repo import (
     run_state,
     wait_for,
 )
-from multi_repo_e2e import diagnostic_tripwire, fresh_repo, repo_snapshot
+from multi_repo_e2e import diagnostic_tripwire, fresh_repo
 from playwright.sync_api import Dialog, Page, Route, expect, sync_playwright
 from test_f3_browser import (
     RUN_TIMEOUT_S,
@@ -118,8 +118,13 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     expect(warning).to_contain_text("Přidej repozitář")
                     warning.locator('a[href="#/repos/add"]').first.click()
                     _inspect(page, repo_a)
+                    fixture = git(repo_a, "rev-parse", "HEAD")
                     page.locator('[data-test="inspect-add"]').click()
                     expect(page.locator('[data-test="repo-added"]')).to_be_visible()
+                    # Adding replaced .factory/ with the library's; the run below needs the
+                    # fixture's fake roster and plan-commit workflow back.
+                    git(repo_a, "checkout", fixture, "--", ".factory")
+                    git(repo_a, "commit", "-q", "-m", "test: restore the f3 factory config")
                     page.locator('[data-test="repo-added-open"]').click()
                     expect(page).to_have_url(re.compile(r"#/r/[^/]+/factory$"))
                     id_a = registered_id(home, repo_a)
@@ -137,34 +142,23 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
                     _menu(page, "switch-add")
                     _inspect(page, repo_b)
-                    page.locator('[data-test="inspect-init"]').click()
-                    expect(page.locator('[data-test="factory-plan"]')).to_be_visible()
+                    assert git(repo_b, "rev-parse", "HEAD") == before_install
+                    assert not (repo_b / ".factory").exists()
+                    page.locator('[data-test="inspect-add"]').click()
+                    done = page.locator('[data-test="repo-added-install"]')
+                    expect(done).to_contain_text("pushnuto")
                     id_b = registered_id(home, repo_b)
-                    expect(page.locator('[data-test="install-provider"]')).to_have_attribute(
-                        "data-value", "local"
-                    )
                     registered = api_get(obs.url, "/api/repos")["repos"]
                     assert {r["id"]: r["path"] for r in registered} == {
                         id_a: str(repo_a),
                         id_b: str(repo_b),
                     }
-                    subject = "HAIFA-S01-T22: install repo B from browser"
-                    page.locator('[data-test="factory-message"]').fill(subject)
-                    assert git(repo_b, "rev-parse", "HEAD") == before_install
-                    assert git(bare, "rev-parse", "main") == before_install
-                    assert not (repo_b / ".factory").exists()
-                    page.locator('[data-test="factory-perform"]').click()
-                    expect(page.locator('[data-test="confirm-dialog"]')).to_contain_text(
-                        "pushnout na origin"
-                    )
-                    page.locator('[data-test="confirm-ok"]').click()
                     page.locator('[data-test="repo-added-open"]').click()
                     expect(page.locator('[data-test="factory-verdict"]')).to_be_visible()
                     installed = git(repo_b, "rev-parse", "main")
                     assert installed != before_install
                     assert git(bare, "rev-parse", "main") == installed
                     for repo in (repo_b, bare):
-                        assert git(repo, "log", "--format=%s", f"{before_install}..main") == subject
                         assert git(repo, "rev-list", "--count", f"{before_install}..main") == "1"
                     assert (repo_b / ".factory/manifest.yaml").is_file()
 
@@ -194,9 +188,9 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                         page.locator(f'[data-repo="{id_b}"] [data-test="row-running"]')
                     ).to_have_count(0)
                     # repo B had no backlog directory: it is created silently, no warning
-                    expect(
-                        page.locator(f'[data-test="overview-card"][data-repo="{id_b}"]')
-                    ).not_to_contain_text("does not exist")
+                    row_b = page.locator(f'[data-repo="{id_b}"]')
+                    expect(row_b).to_be_visible()
+                    expect(row_b).not_to_contain_text("does not exist")
                     release.touch()
 
                     def finished() -> str | None:
@@ -228,11 +222,11 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     _menu(page, "switch-overview")
                     row = page.locator(f'[data-repo="{id_b}"]')
                     expect(row).to_be_visible()
-                    before_remove = repo_snapshot(repo_b, bare)
                     row.locator('[data-test="card-remove"], [data-test="calm-remove"]').click()
                     modal = page.locator('[data-test="confirm-dialog"]')
-                    expect(modal).to_contain_text(f"Odebrat {repo_b.name} z dashboardu?")
-                    expect(modal).to_contain_text("Ve složce")
+                    expect(modal).to_contain_text(f"Odebrat repozitář {repo_b.name}?")
+                    expect(modal).to_contain_text("commitne to do main")
+                    expect(modal.locator('[data-test="removal-blockers"]')).to_have_count(0)
                     modal.locator('[data-test="confirm-ok"]').click()
                     expect(row).to_have_count(0)
                     expect(page.locator(f'[data-repo="{id_a}"]')).to_be_visible()
@@ -243,7 +237,13 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     page.locator('[data-test="switcher-button"]').click()
                     expect(page.locator(f'[data-test="switch-repo-{id_b}"]')).to_have_count(0)
                     expect(page.locator(f'[data-test="switch-repo-{id_a}"]')).to_be_visible()
-                    assert repo_snapshot(repo_b, bare) == before_remove
+                    # the removal is one more commit on base, pushed; .factory/ is gone
+                    removed = git(repo_b, "rev-parse", "main")
+                    assert git(repo_b, "rev-parse", "main~1") == installed
+                    assert git(bare, "rev-parse", "main") == removed
+                    assert git(repo_b, "ls-tree", "-r", "--name-only", "main", ".factory") == ""
+                    assert not (repo_b / ".factory").exists()
+                    assert git(repo_b, "status", "--porcelain") == ""
                 except Exception as exc:
                     report = server.report(T01) if server else log.read_text(encoding="utf-8")
                     raise AssertionError(

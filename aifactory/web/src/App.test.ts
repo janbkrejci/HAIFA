@@ -12,8 +12,7 @@ import type { RepoItem } from './lib/api'
 import { failed, overview, repo as ovRepo, review, running } from './test/overviewFixtures'
 import { answerDialog, openDialog } from './test/modal'
 import { installPlan, factoryCheck } from './test/factoryFixtures'
-import { deferred } from './test/deferred'
-import { pendingInstall, installBusy, installRegistering, installCancelError, lastFactoryResult } from './lib/factory'
+import { lastFactoryResult } from './lib/factory'
 
 function envelope(data: unknown) {
   return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] }))
@@ -63,10 +62,6 @@ function go(hash: string) {
 enableAutoUnmount(afterEach)
 
 afterEach(() => {
-  pendingInstall.value = null
-  installBusy.value = false
-  installRegistering.value = false
-  installCancelError.value = null
   lastFactoryResult.value = null
   vi.unstubAllGlobals()
   resetConfigStatusForTests()
@@ -100,44 +95,6 @@ describe('App', () => {
     wrapper.unmount()
     window.dispatchEvent(new Event('factory-applied')); await flushPromises()
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos')).toHaveLength(before + 2)
-  })
-  it('waits for temporary registration cleanup before internal navigation', async () => {
-    const deletion = deferred<Response>()
-    const fetchMock = stubApi({ handler: (url, init) => {
-      if (url === '/api/repos/haifa' && init?.method === 'DELETE') return deletion.promise
-      if (url.endsWith('/factory/plan')) return envelope(installPlan())
-      if (url === '/api/overview') return envelope(overview([ovRepo('haifa')]))
-    } })
-    go('#/repos/add')
-    pendingInstall.value = { id: 'haifa', created: true }
-    const wrapper = mount(App); await flushPromises()
-    go('#/overview'); await flushPromises()
-    expect(wrapper.find('[data-test="cancel-install"]').exists()).toBe(true)
-    expect(pendingInstall.value?.id).toBe('haifa')
-    deletion.resolve(envelope({ removed: { id: 'haifa' } })); await flushPromises()
-    expect(pendingInstall.value).toBeNull()
-    expect(wrapper.find('[data-test="cancel-install"]').exists()).toBe(false)
-    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE')).toHaveLength(1)
-    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/factory/apply'))).toBe(false)
-  })
-  it('retains successful installation registration and offers its Factory page after refreshing repos', async () => {
-    const fetchMock = stubApi({ handler: (url) => {
-      if (url.endsWith('/factory/plan')) return envelope(installPlan())
-      if (url.endsWith('/factory/apply')) return envelope({ commit: 'installed' })
-      if (url.includes('/factory/check')) return envelope(factoryCheck())
-      if (url === '/api/overview') return envelope(overview([ovRepo('haifa')]))
-    } })
-    go('#/repos/add')
-    pendingInstall.value = { id: 'haifa', created: true }
-    const wrapper = mount(App, { attachTo: document.body }); await flushPromises()
-    await wrapper.get('[data-test="factory-perform"]').trigger('click'); await answerDialog(true)
-    await flushPromises(); go(window.location.hash); await flushPromises()
-    expect(pendingInstall.value).toBeNull()
-    expect(window.location.hash).toBe('#/repos/add')
-    expect(wrapper.get('[data-test="repo-added-open"]').attributes('href')).toBe('#/r/haifa/factory')
-    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'DELETE')).toBe(false)
-    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos').length).toBeGreaterThan(1)
-    expect(wrapper.get('[data-test="repo-added"]').text()).toContain('Repozitář haifa přidán')
   })
   it('opens a config commit preview from the banner and refreshes check/status/repos only after confirmation', async () => {
     let applied = false
@@ -561,7 +518,7 @@ describe('App', () => {
       handler: (url, init) => {
         if (url === '/api/repos' && init?.method === 'POST') {
           added = true
-          return envelope({ repo: NEW, created: true })
+          return envelope({ repo: NEW, created: true, install: { committed: true, commit: 'abcdef12', pushed: false, files: [{ path: '.factory/config.yaml', action: 'create' }] } })
         }
         if (url === '/api/repos') return envelope({ repos: added ? [HAIFA, NEW] : [HAIFA], home: HEALTH.home })
         if (url === '/api/repos/inspect') {
@@ -606,6 +563,9 @@ describe('App', () => {
     const fetchMock = stubApi({
       repos: [HAIFA, GONE],
       handler: (url, init) => {
+        if (url === '/api/repos/gone/removal') {
+          return new Response(JSON.stringify({ ok: false, data: null, error: { code: 'not_git', message: 'folder is gone', path: null, id: null, issues: [] }, warnings: [] }), { status: 400 })
+        }
         if (url === '/api/repos/gone' && init?.method === 'DELETE') {
           removed = true
           return envelope({ removed: { id: 'gone' } })
@@ -621,9 +581,14 @@ describe('App', () => {
     expect(wrapper.get('main h1').text()).toBe('Složka repozitáře gone chybí')
     await wrapper.get('[data-test="missing-remove"]').trigger('click')
     await flushPromises()
-    expect(openDialog()?.textContent).toContain('Odebrat gone z dashboardu?')
+    expect(openDialog()?.textContent).toContain('Odebrat repozitář gone?')
+    expect(openDialog()?.textContent).toContain('Repo se odebere jen z dashboardu')
     await answerDialog(true)
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/gone', { method: 'DELETE' })
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/gone', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ uninstall: false }),
+    })
     expect(window.location.hash).toBe('#/overview')
     wrapper.unmount()
   })

@@ -181,6 +181,10 @@ def test_workflow_with_unknown_agent(repo: Path) -> None:
 
 def test_workflow_unset(repo: Path) -> None:
     write(repo, "backlog/M01-core/index.md", "---\nid: M01\ntitle: Core\n---\n")
+    commit_all(repo, "no workflow key")
+    # no level sets workflow: the tasks use the default workflow
+    assert "workflow_unset" not in _codes(run_check(repo, machine=FakeMachine()))
+    write(repo, "backlog/M01-core/index.md", "---\nid: M01\ntitle: Core\nworkflow: null\n---\n")
     commit_all(repo, "no workflow")
     report = run_check(repo, machine=FakeMachine())
     _assert(report, "workflow_unset", "repo", "warning")

@@ -62,7 +62,7 @@ GITIGNORE_LINES = (
     ".factory/local.yaml",
     ".factory/trace.db*",
 )
-DEFAULT_AGENTS = ("planner", "builder", "tester", "reviewer", "documenter")
+DEFAULT_AGENTS = ("planner", "builder", "tester", "test-reviewer", "reviewer", "documenter")
 DEFAULT_WORKFLOWS = ("simple-sdlc",)
 SSSF_CONFIG_DIR = "adws/adw_sssf_config"
 CONFIG_FILE = ".factory/config.yaml"

@@ -17,6 +17,7 @@ registered repository and closes it when the repository leaves the registry.
 from __future__ import annotations
 
 import os
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ from aifactory.web.backlog import UsageError
 from aifactory.web.factory import FactoryState, onboarding_hint
 from aifactory.web.live import LiveHub
 from aifactory.web.registry import Registry, RegistryState, RepoEntry, RepoError, same_repo
-from aifactory.web.sssf_cleanup import installation_paths, remove_installation
+from aifactory.web.sssf_cleanup import installation_paths
 
 JsonDict = dict[str, Any]
 
@@ -164,23 +165,74 @@ def vet_path(raw: object, state: RegistryState) -> Examined:
     return ex
 
 
-def register_repo(
-    registry: Registry, raw: object, *, remove_sssf: bool = False
-) -> tuple[RepoEntry, bool, list[str]]:
+def register_repo(registry: Registry, raw: object) -> tuple[RepoEntry, bool, list[str]]:
     """Vet the path ``raw`` and register its repository: ``(entry, created, warnings)``.
 
     The validation of ``POST /api/repos`` and ``factory obs --repo``; raises
     ``UsageError`` for a bad value and ``RepoError`` for a refused folder.
-    The dashboard may explicitly acknowledge removal and commit of legacy sssf.
     """
     state, warnings = registry.snapshot()
     examined = vet_path(raw, state)
     root = examined.root
     assert root is not None
-    if remove_sssf:
-        remove_installation(root)
     entry, created = registry.add(root, check=lambda current: check_trace_db(root, current))
     return entry, created, warnings
+
+
+def add_repo(
+    registry: Registry, raw: object, environ: Mapping[str, str] | None = None
+) -> tuple[RepoEntry, bool, JsonDict, list[str]]:
+    """The dashboard's "add": register the repository and install factory in one go.
+
+    The install comes from the library (else the seed) and replaces an existing
+    ``.factory/`` in one commit on base, pushed when there is a remote (see
+    ``plan_init(replace=True)``). A refused install leaves no new registry entry.
+    Returns ``(entry, created, install, warnings)``.
+    """
+    from aifactory.library.install_commit import commit_init
+    from aifactory.library.store import LibraryStoreError
+
+    entry, created, warnings = register_repo(registry, raw)
+    try:
+        result = commit_init(Path(entry.path), replace=True, environ=environ)
+    except LibraryStoreError as exc:
+        if created:
+            registry.remove(entry.id)
+        raise RepoError(exc.code, exc.message, data=dict(exc.data or {})) from exc
+    install = {
+        "committed": result.committed,
+        "commit": result.commit,
+        "pushed": result.pushed,
+        "files": [f.to_json() for f in result.plan.publish.files],
+    }
+    return entry, created, install, [*warnings, *result.warnings]
+
+
+def remove_repo(
+    registry: Registry,
+    repo_id: str,
+    *,
+    export: list[tuple[str, str]],
+    uninstall: bool = True,
+    environ: Mapping[str, str] | None = None,
+) -> tuple[RepoEntry, JsonDict | None]:
+    """The dashboard's "remove": export chosen items, delete ``.factory/``, unregister."""
+    from aifactory.library.store import LibraryStoreError
+    from aifactory.library.uninstall import uninstall as remove_factory
+
+    entry = registry.snapshot()[0].by_id(repo_id)
+    if entry is None:
+        raise RepoError("unknown_repo", f"no registered repository {repo_id!r}")
+    done: JsonDict | None = None
+    if uninstall and (Path(entry.path) / ".git").exists():
+        try:
+            done = remove_factory(Path(entry.path), export=export, environ=environ).to_json()
+        except LibraryStoreError as exc:
+            raise RepoError(exc.code, exc.message, data=dict(exc.data or {})) from exc
+    removed = registry.remove(repo_id)
+    if removed is None:
+        raise RepoError("unknown_repo", f"no registered repository {repo_id!r}")
+    return removed, done
 
 
 def _problem_json(exc: RepoError) -> JsonDict:

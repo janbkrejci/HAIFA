@@ -116,8 +116,10 @@ def test_add_rejects_invalid_duplicate_and_foreign_codes(tmp_path: Path) -> None
     assert body["error"]["code"] == "backlog_invalid"
     assert [i["code"] for i in body["error"]["issues"]] == ["duplicate_id"]
     payload = {"parent": "M01", "id": "M02-S07", "title": "X"}
+    assert _post(client, "/api/backlog/containers", payload, 400)["error"]["code"] == "invalid_id"
+    payload = {"parent": "M01", "id": "S01", "title": "X"}
     body = _post(client, "/api/backlog/containers", payload, 422)
-    assert {i["code"] for i in body["error"]["issues"]} == {"id_prefix"}
+    assert [i["code"] for i in body["error"]["issues"]] == ["duplicate_id"]
     body = _post(client, "/api/backlog/containers", {"title": "X"}, 400)
     assert body["error"]["code"] == "usage_error"
     body = _post(client, "/api/backlog/containers", {"id": "M04", "title": "X", "x": 1}, 400)

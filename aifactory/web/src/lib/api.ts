@@ -277,9 +277,9 @@ export async function fetchOverview(): Promise<OverviewData> {
   }
 }
 
-/** DELETE /api<path> of the dashboard itself (remove a repo); no body. */
-export async function deleteGlobal<T>(path: string): Promise<T> {
-  return request<T>(`/api${path}`, { method: 'DELETE' })
+/** DELETE /api<path> of the dashboard itself (remove a repo), with an optional JSON body. */
+export async function deleteGlobal<T>(path: string, body?: unknown): Promise<T> {
+  return request<T>(`/api${path}`, { ...postInit(body), method: 'DELETE' })
 }
 
 // ── adding and removing repositories ─────────────────────────────────────────
@@ -341,13 +341,76 @@ export function inspectRepo(path: string): Promise<InspectResult> {
   return postGlobal<InspectResult>('/repos/inspect', { path })
 }
 
-export function addRepo(path: string, removeSssf = false): Promise<{ repo: RepoItem; created: boolean }> {
-  return postGlobal<{ repo: RepoItem; created: boolean }>('/repos', { path, ...(removeSssf ? { remove_sssf: true } : {}) })
+/** One file a factory install or removal commits. */
+export interface CommitFile {
+  path: string
+  action: string
 }
 
-/** Removes the repo from the dashboard registry only; nothing in the repo changes. */
-export function removeRepo(id: string): Promise<{ removed: Record<string, unknown> }> {
-  return deleteGlobal<{ removed: Record<string, unknown> }>(`/repos/${encodeURIComponent(id)}`)
+/** `install` of POST /api/repos: the commit of factory from the library on base. */
+export interface RepoInstall {
+  committed: boolean
+  commit: string | null
+  pushed: boolean
+  files: CommitFile[]
+}
+
+export interface AddRepoResult {
+  repo: RepoItem
+  created: boolean
+  install: RepoInstall
+}
+
+/** Registers the repo and installs factory from the library in one commit on base. */
+export function addRepo(path: string): Promise<AddRepoResult> {
+  return postGlobal<AddRepoResult>('/repos', { path })
+}
+
+/** A repo's own agent, workflow, skill or extension: not as the library holds it. */
+export interface OwnItem {
+  type: string
+  name: string
+  state: string
+}
+
+export interface RemovalBlocker {
+  code: string
+  message: string
+  fix?: string
+}
+
+/** GET /api/repos/{id}/removal: what removing the repo commits; writes nothing. */
+export interface RepoRemoval {
+  repo: string
+  base: string
+  base_sha: string
+  target: string
+  digest: string
+  files: CommitFile[]
+  blockers: RemovalBlocker[]
+  own_items: OwnItem[]
+}
+
+export function fetchRepoRemoval(id: string): Promise<RepoRemoval> {
+  return getGlobal<RepoRemoval>(`/repos/${encodeURIComponent(id)}/removal`)
+}
+
+export interface RemoveRepoOptions {
+  export?: { type: string; name: string }[]
+  uninstall?: boolean
+}
+
+export interface RemoveRepoResult {
+  removed: Record<string, unknown>
+  uninstall: { committed: boolean; commit: string | null; pushed: boolean; exported: { type: string; name: string }[] } | null
+}
+
+/**
+ * Removes the repo: exports the chosen items to the library, commits the deletion of
+ * .factory/ on base (unless `uninstall: false`) and unregisters it.
+ */
+export function removeRepo(id: string, options?: RemoveRepoOptions): Promise<RemoveRepoResult> {
+  return deleteGlobal<RemoveRepoResult>(`/repos/${encodeURIComponent(id)}`, options)
 }
 
 /** One subfolder of GET /api/fs/dirs. */

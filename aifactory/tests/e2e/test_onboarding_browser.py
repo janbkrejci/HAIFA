@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 import pytest
-from f3_repo import obs_server, registered_id
+from f3_repo import obs_server
 from multi_repo_e2e import diagnostic_tripwire
 from playwright.sync_api import Route, expect, sync_playwright
 from test_f3_browser import _launch
@@ -49,8 +49,10 @@ def test_onboarding_and_adoption_browser(tmp_path: Path, monkeypatch: pytest.Mon
         browser = _launch(playwright)
         try:
             for machine in (home, tmp_path / "machine2"):
+                # `factory obs --repo` registers without installing; the dashboard's Add
+                # would install factory from the library instead of onboarding sssf.
                 with obs_server(
-                    None, script, wire, tmp_path / f"{machine.name}.log", machine
+                    repo, script, wire, tmp_path / f"{machine.name}.log", machine
                 ) as server:
                     context = browser.new_context(base_url=server.url, service_workers="block")
                     context.set_default_timeout(60_000)
@@ -66,12 +68,8 @@ def test_onboarding_and_adoption_browser(tmp_path: Path, monkeypatch: pytest.Mon
                     context.route("**/*", local_only)
                     page = context.new_page()
                     try:
+                        repo_id = server.repo_id
                         if machine == home:
-                            # Existing registered repositories may still use the Factory-tab
-                            # migration; adding a new repository instead removes legacy sssf.
-                            response = context.request.post("/api/repos", data={"path": str(repo)})
-                            assert response.ok
-                            repo_id = registered_id(machine, repo)
                             page.goto(f"/#/r/{repo_id}/factory")
                             expect(page.locator('[data-test="onboarding-perform"]')).to_be_enabled()
                             page.locator('[data-test="onboarding-perform"]').click()
@@ -87,13 +85,6 @@ def test_onboarding_and_adoption_browser(tmp_path: Path, monkeypatch: pytest.Mon
                                 library_remote, "rev-parse", "main"
                             )
                         else:
-                            page.goto("/#/repos/add")
-                            page.locator('[data-test="add-path"]').fill(str(repo))
-                            page.locator('[data-test="add-inspect"]').click()
-                            expect(page.locator('[data-test="inspect-onboard"]')).to_have_count(0)
-                            page.locator('[data-test="inspect-add"]').click()
-                            expect(page.locator('[data-test="repo-added"]')).to_be_visible()
-                            repo_id = registered_id(machine, repo)
                             page.goto(f"/#/r/{repo_id}/factory")
                             expect(page.locator('[data-test="adopt-clone"]')).to_contain_text(
                                 str(library_remote)
@@ -107,10 +98,8 @@ def test_onboarding_and_adoption_browser(tmp_path: Path, monkeypatch: pytest.Mon
                             expect(
                                 page.locator('[data-test="onboarding-panel"]')
                             ).not_to_contain_text("Onboarding — jednou")
-                        if machine == home:
-                            assert worktree_snapshot(repo / "adws") == adws_before
-                        else:
-                            assert not (repo / "adws").exists()
+                        # neither onboarding nor adoption touches the legacy adws/
+                        assert worktree_snapshot(repo / "adws") == adws_before
                         expect(page.locator('[data-test="factory-recheck"]')).to_be_enabled()
                         page.screenshot(path=str(tmp_path / f"{machine.name}.png"))
                     finally:

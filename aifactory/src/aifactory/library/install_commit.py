@@ -47,6 +47,7 @@ from aifactory.config.settings import ProjectSettings, load_local
 from aifactory.engine.role_registry import Issue
 from aifactory.library.detect import Detected, detect
 from aifactory.library.install import (
+    CONFIG_FILE,
     DEFAULT_AGENTS,
     DEFAULT_WORKFLOWS,
     EXISTING_CONFIG,
@@ -387,6 +388,63 @@ def _harness_warnings(roster: Sequence[Mapping[str, Any]], detected: Detected) -
 # ── blockers and validation ───────────────────────────────────────────────────
 
 
+FACTORY_DIR = ".factory"
+
+
+def _committed_config(root: Path, base_sha: str) -> dict[str, str]:
+    """The folder settings of the committed ``.factory/config.yaml`` (empty when unreadable)."""
+    found = git.blob_at(root, base_sha, CONFIG_FILE)
+    if found is None:
+        return {}
+    try:
+        data = yaml.safe_load(git.read_blob(root, found[1]).decode("utf-8", "replace"))
+    except yaml.YAMLError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    keys = ("backlog_dir", "specs_dir", "docs_dir")
+    return {k: str(data[k]) for k in keys if isinstance(data.get(k), str) and data[k].strip()}
+
+
+def _same_manifest(root: Path, base_sha: str, manifest: Manifest) -> bool:
+    """Whether the committed manifest equals `manifest` apart from the install time."""
+    from aifactory.config.manifest import parse_manifest
+
+    found = git.blob_at(root, base_sha, MANIFEST_FILE)
+    if found is None:
+        return False
+    try:
+        text = git.read_blob(root, found[1]).decode("utf-8", "replace")
+        old = parse_manifest(text, MANIFEST_FILE)
+    except (ConfigError, ValueError):
+        return False
+
+    def stable(m: Manifest) -> Manifest:  # neither when nor from which commit it ran
+        o = m.onboarding
+        return m.model_copy(
+            update={"onboarding": o.model_copy(update={"source_commit": ""}) if o else None}
+        )
+
+    return _stable_manifest(stable(old)) == _stable_manifest(stable(manifest))
+
+
+def _stale_factory_files(
+    root: Path, base_sha: str, contents: Mapping[str, bytes]
+) -> list[PlannedFile]:
+    """Committed files under ``.factory/`` that a replacing install does not write: deleted."""
+    out: list[PlannedFile] = []
+    for rel in _tree_files(root, base_sha, FACTORY_DIR):
+        if rel in contents:
+            continue
+        old = git.blob_at(root, base_sha, rel)
+        if old is None:
+            continue
+        out.append(
+            PlannedFile(rel, "delete", old[0], old[1], None, None, git.read_blob(root, old[1]))
+        )
+    return out
+
+
 def _state_blocker(root: Path, base_sha: str) -> Blocker | None:
     in_base = _committed(root, base_sha, MANIFEST_FILE) or _committed(root, "HEAD", MANIFEST_FILE)
     if in_base:
@@ -535,8 +593,15 @@ def plan_init(
     docs_dir: str | None = None,
     pr: bool = False,
     environ: Mapping[str, str] | None = None,
+    replace: bool = False,
 ) -> InitPlan:
-    """The install plan; see the module docstring. Writes nothing."""
+    """The install plan; see the module docstring. Writes nothing.
+
+    ``replace`` installs over an existing ``.factory/`` (the dashboard's "add"): committed
+    files under ``.factory/`` that the new install does not write are deleted in the same
+    commit, and the folders of the old ``config.yaml`` (backlog, specs, docs) are kept
+    unless given.
+    """
     root = _repo_root(path)
     detected = detect(root)
     if base is not None and not base.strip():
@@ -550,6 +615,11 @@ def plan_init(
     if base_sha is None:
         raise LibraryStoreError("unknown_base", f"base {base!r} does not exist in {root}")
     chosen = provider or detected.provider
+    if replace:
+        old = _committed_config(root, base_sha)
+        backlog_dir = backlog_dir or old.get("backlog_dir")
+        specs_dir = specs_dir or old.get("specs_dir")
+        docs_dir = docs_dir or old.get("docs_dir")
     settings = project_settings(
         base=base,
         provider=chosen,
@@ -572,10 +642,14 @@ def plan_init(
         contents[f"{backlog}/.gitkeep"] = b""
     exclude = _gitignore(root, base_sha, contents, warnings)
     files = plan_contents(root, base_sha, contents)
+    if replace:
+        files += _stale_factory_files(root, base_sha, contents)
+        if [f.path for f in files] == [MANIFEST_FILE] and _same_manifest(root, base_sha, manifest):
+            files = []  # the same install again: only the manifest's time would change
 
     blockers: list[Blocker] = []
     issues: list[Issue] = []
-    state = _state_blocker(root, base_sha)
+    state = None if replace else _state_blocker(root, base_sha)
     if state is not None:
         blockers.append(state)
     else:
@@ -699,6 +773,8 @@ def commit_init(
         first = plan.blockers[0]
         issues = plan.issues if first.code == "invalid_plan" else []
         raise LibraryStoreError(first.code, first.message, data=plan.to_json(), issues=issues)
+    if not plan.publish.files:  # already installed exactly like this: nothing to commit
+        return InitCommitResult(plan, False)
     library = plan.selection.source.library
     default = (
         "factory: install from the seed"

@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 import yaml
-from multi_repo import BASE, multi_client
+from multi_repo import BASE, multi_client, register
 from starlette.testclient import TestClient
 
 from aifactory.config import load_local
@@ -159,9 +159,7 @@ def api(tmp_path: Path) -> Api:
     ids: dict[str, str] = {}
     for name in ("a", "b"):
         root = make_repo(tmp_path, name)
-        resp = client.post("/api/repos", json={"path": str(root)})
-        assert resp.status_code == 201, resp.json()
-        ids[name] = resp.json()["data"]["repo"]["id"]
+        ids[name] = register(client, root)["id"]
     return Api(client, ids)
 
 

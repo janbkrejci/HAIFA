@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // The form for a new project or step (`factory backlog add [PARENT] --id --title --body`).
+// The code is the short one (`S11`); the server composes the id with the parent (`HAIFA-S11`).
 import { computed, ref } from 'vue'
-import { levelNoun, suggestContainerCode, type AddContainerInput, type WriteError } from '@/lib/backlog'
+import { CODE_RE, composeId, levelNoun, shortCode, suggestContainerCode, type AddContainerInput, type WriteError } from '@/lib/backlog'
 import Spinner from '@/components/ui/Spinner.vue'
 import IssueList from './IssueList.vue'
 
@@ -25,17 +26,20 @@ const emit = defineEmits<{
   cancel: []
 }>()
 
-const code = ref('')
+const placeholder = computed(() => suggestContainerCode(props.level, props.parent ?? null, props.siblings ?? []))
+const code = ref(placeholder.value)
 const title = ref('')
 const body = ref('')
 
 const noun = computed(() => levelNoun(props.level))
-const placeholder = computed(() => suggestContainerCode(props.level, props.parent ?? null, props.siblings ?? []))
-const canSubmit = computed(() => !props.busy && !!code.value.trim() && !!title.value.trim())
+const short = computed(() => shortCode(props.parent ?? null, code.value))
+const codeValid = computed(() => CODE_RE.test(short.value))
+const preview = computed(() => composeId(props.parent ?? null, code.value))
+const canSubmit = computed(() => !props.busy && codeValid.value && !!title.value.trim())
 
 function onSubmit() {
   if (!canSubmit.value) return
-  const input: AddContainerInput = { id: code.value.trim(), title: title.value.trim() }
+  const input: AddContainerInput = { id: short.value, title: title.value.trim() }
   if (props.parent) input.parent = props.parent
   if (body.value.trim()) input.body = body.value
   emit('submit', input)
@@ -61,7 +65,8 @@ function onSubmit() {
         :placeholder="placeholder"
         autocomplete="off"
       />
-      <span v-if="parent" class="hint faint">Kód začíná kódem <span class="mono">{{ parent }}-</span>.</span>
+      <span v-if="short && !codeValid" class="hint error" data-test="container-id-invalid">Kód smí obsahovat jen písmena, číslice, „.“ a „_“.</span>
+      <span v-else-if="short" class="hint faint" data-test="container-id-preview">Id: <span class="mono">{{ preview }}</span></span>
     </label>
 
     <label>
@@ -142,6 +147,10 @@ textarea {
 
 .hint {
   font-size: 13px;
+}
+
+.hint.error {
+  color: var(--red);
 }
 
 .actions {

@@ -10,9 +10,11 @@ export interface ConfirmOptions {
   confirmLabel?: string
   cancelLabel?: string
   tone?: ConfirmTone
+  /** Potvrdit stays disabled (e.g. while something blocks the action). */
+  confirmDisabled?: boolean
 }
 
-const DEFAULTS = { message: '', confirmLabel: 'Potvrdit', cancelLabel: 'Zrušit', tone: 'default' as ConfirmTone }
+const DEFAULTS = { message: '', confirmLabel: 'Potvrdit', cancelLabel: 'Zrušit', tone: 'default' as ConfirmTone, confirmDisabled: false }
 
 export function useConfirm() {
   const dialog = reactive({ open: false, title: '', ...DEFAULTS })

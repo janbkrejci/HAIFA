@@ -8,7 +8,7 @@ import tempfile
 from pathlib import Path
 
 import pytest
-from multi_repo import git, write
+from multi_repo import git, register, write
 from starlette.testclient import TestClient
 from test_web_library import client as client
 from test_web_library import initialize, response, state
@@ -137,7 +137,7 @@ def test_harness_repo_counts_follow_registry_with_cached_probes(
         if name == "one":
             git(repo, "add", ".factory", ".gitignore")
             git(repo, "commit", "-m", "install factory")
-        response(client.post("/api/repos", json={"path": str(repo)}), 201)
+        register(client, repo)
     cached = response(client.get("/api/machine/check?offline=1"))
     assert cached["cached"]
     assert cached["harness_repos"] == {"claude": 2, "codex": 0, "pi": 0}

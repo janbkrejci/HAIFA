@@ -1949,7 +1949,11 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
         "parent", nargs="?", metavar="PARENT", help="project id for a new step (none: a project)"
     )
     add.add_argument(
-        "--id", dest="container_id", required=True, metavar="CODE", help="short code, e.g. M01"
+        "--id",
+        dest="container_id",
+        required=True,
+        metavar="CODE",
+        help="short code, e.g. M01 or S10; a step's id is PARENT-CODE",
     )
     add.add_argument("--title", required=True, metavar="TEXT", help="short title")
     add.add_argument("--body", default="", metavar="TEXT", help="description in index.md")
@@ -2377,7 +2381,12 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     )
     add.add_argument("step", metavar="STEP", help="id of the step the task belongs to")
     add.add_argument("title", metavar="TITLE", help="task title")
-    add.add_argument("--id", dest="task_id", metavar="ID", help="task id (default: next free)")
+    add.add_argument(
+        "--id",
+        dest="task_id",
+        metavar="CODE",
+        help="short code, e.g. T05; the id is STEP-CODE (default: the next free)",
+    )
     add.add_argument("--slug", metavar="SLUG", help="file name slug (default: from the title)")
     add.add_argument("--workflow", metavar="NAME", help="workflow (default: inherited)")
     add.add_argument("--writes", nargs="*", metavar="PATH", help="paths the task writes")

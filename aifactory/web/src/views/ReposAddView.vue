@@ -1,16 +1,13 @@
 <script setup lang="ts">
-import { errorText } from '../lib/format'
+import { errorText, shortSha } from '../lib/format'
 // #/repos/add: pick a folder (typed path with suggestions, the folder browser or the system
-// dialog), inspect it and add it from its card. An acknowledged legacy sssf installation
-// is removed and committed before the fresh factory installation.
+// dialog), inspect it and add it from its card. Adding registers the repo and commits
+// factory from the library on its base in one go.
 import { onMounted, ref } from 'vue'
 import { FolderOpen, Search } from 'lucide-vue-next'
-import { ApiError, addRepo, fetchDirs, fetchPickStatus, inspectRepo, pickFolder, type InspectResult } from '@/lib/api'
+import { ApiError, fetchDirs, fetchPickStatus, inspectRepo, pickFolder, type AddRepoResult, type InspectResult, type RepoInstall } from '@/lib/api'
 import { USAGE_ERROR_TEXT, pickErrorText } from '@/lib/addRepo'
 import { OVERVIEW_HREF, repoHref } from '@/lib/router'
-import { pendingInstall as pending, installBusy as operationBusy, installCancelling as cancelling, installCancelError, installRegistering, cancelPendingInstall } from '@/lib/factory'
-import OnboardingPanel from '@/components/factory/OnboardingPanel.vue'
-import FactoryOperation from '@/components/factory/FactoryOperation.vue'
 import BackLink from '@/components/ui/BackLink.vue'
 import FolderBrowser from '@/components/repos/FolderBrowser.vue'
 import InspectCard from '@/components/repos/InspectCard.vue'
@@ -19,38 +16,14 @@ import Spinner from '@/components/ui/Spinner.vue'
 
 const emit = defineEmits<{ added: [id: string] }>()
 
-const pendingAction = ref<'init' | 'onboard'>('init')
-async function onboard(root: string) { pendingAction.value = 'onboard'; await install(root) }
-async function startInstall(root: string, removeSssf = false) { pendingAction.value = 'init'; await install(root, removeSssf) }
-async function install(root: string, removeSssf = false) {
-  if(installRegistering.value) return
-  installRegistering.value = true
-  inspecting.value = true
-  inspectError.value = null
-  try { const answer = await addRepo(root, removeSssf); pending.value = { id: answer.repo.id, created: answer.created } }
-  catch(e) { inspectError.value = errorText(e) }
-  finally { inspecting.value = false; installRegistering.value = false }
-}
-async function cancelInstall() { await cancelPendingInstall() }
-/** The repo just added (and maybe installed): the page stays and says what next. */
-const done = ref<{ id: string; name: string; href: string; installed: boolean } | null>(null)
-function repoName(): string {
-  const root = (result.value?.root ?? result.value?.path ?? '').replace(/[\\/]+$/, '')
-  return root.split(/[\\/]/).pop() || root
-}
-function installed() {
-  if(!pending.value) return
-  const id = pending.value.id
-  pending.value.created = false
-  pending.value = null
-  // A fresh install opens the Factory tab: it lists the next steps (roster, config commit, project).
-  done.value = { id, name: repoName() || id, href: repoHref(id, 'factory'), installed: true }
-  emit('added', id)
-}
-function added(id: string, name: string) {
-  const ready = result.value?.factory?.state === 'onboarded'
-  done.value = { id, name, href: repoHref(id, ready ? 'backlog' : 'factory'), installed: false }
-  emit('added', id)
+/** The repo just added (or synced): the page stays and says what the install committed. */
+const done = ref<{ id: string; name: string; href: string; synced: boolean; install: RepoInstall } | null>(null)
+function added(answer: AddRepoResult) {
+  const synced = result.value?.registered != null
+  const { repo } = answer
+  const install = answer.install ?? { committed: false, commit: null, pushed: false, files: [] }
+  done.value = { id: repo.id, name: repo.name || repo.id, href: repoHref(repo.id, 'factory'), synced, install }
+  emit('added', repo.id)
 }
 function addAnother() {
   done.value = null
@@ -124,15 +97,19 @@ onMounted(async () => {
     <template v-if="done">
       <BackLink :href="OVERVIEW_HREF" label="Přehled" />
       <article class="done-card" data-test="repo-added">
-        <h1>Repozitář {{ done.name }} přidán</h1>
-        <p v-if="done.installed" class="note">Factory je nainstalovaná. V záložce Factory najdeš další kroky.</p>
+        <h1>Repozitář {{ done.name }} {{ done.synced ? 'synchronizován' : 'přidán' }}</h1>
+        <p class="note" data-test="repo-added-install">
+          <template v-if="done.install.committed">Factory z knihovny commitnuta {{ shortSha(done.install.commit) }} ({{ done.install.files.length }} {{ done.install.files.length === 1 ? 'soubor' : (done.install.files.length < 5 ? 'soubory' : 'souborů') }}), {{ done.install.pushed ? 'pushnuto' : 'bez pushe' }}.</template>
+          <template v-else>Factory odpovídá knihovně, beze změny.</template>
+          V záložce Factory najdeš další kroky.
+        </p>
         <div class="done-actions">
           <a :href="done.href" class="btn ok" data-test="repo-added-open">Otevřít repo</a>
           <button type="button" class="btn" data-test="repo-added-another" @click="addAnother">Přidat další repozitář</button>
         </div>
       </article>
     </template>
-    <template v-else-if="!pending">
+    <template v-else>
     <BackLink :href="OVERVIEW_HREF" label="Přehled" />
     <h1>Přidat repozitář</h1>
     <h2 class="step"><span class="step-no">1</span> Složka</h2>
@@ -158,17 +135,8 @@ onMounted(async () => {
       :inspect="result"
       @added="added"
       @reinspect="useFolder"
-      @install="startInstall"
-      @onboard="onboard"
     />
     <FolderBrowser :open="browsing" @choose="chooseFromBrowser" @close="browsing = false" />
-    </template>
-    <template v-else>
-      <h1>Přidat repozitář — {{ pendingAction === 'init' ? 'instalace factory' : 'onboarding' }}</h1>
-      <button type="button" class="btn" :disabled="operationBusy || cancelling" data-test="cancel-install" @click="cancelInstall">Zrušit</button>
-      <p v-if="installCancelError || inspectError" class="error">{{ installCancelError || inspectError }}</p>
-      <OnboardingPanel v-if="pendingAction === 'onboard'" :repo-id="pending.id" action="onboard" @busy="operationBusy = $event" @success="installed" />
-      <FactoryOperation v-else action="init" :repo-id="pending.id" @busy="operationBusy = $event" @success="installed" />
     </template>
   </section>
 </template>

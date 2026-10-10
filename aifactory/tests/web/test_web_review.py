@@ -329,6 +329,7 @@ def test_conflict_offers_resolve(
     script.on("builder", settle)
     script.add("builder", ok(changed_files=[MODEL], commit_message="Resolve model conflict"))
     script.add("tester", plan_envelope())
+    script.add("test-reviewer", ok(approved=True, summary="plan fits", findings=[], blocking=[]))
     calls = spy(monkeypatch, "resolve_task", code=ResolveCode([True]))
     body = _check(client.post(f"/api/review/{T02}/resolve", json={"x": 1}), 400)
     assert body["error"]["code"] == "usage_error"

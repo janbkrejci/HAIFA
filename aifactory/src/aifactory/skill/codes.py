@@ -381,11 +381,6 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("run_worktree", "2", "dashboard API: the path is a worktree of a task run (HTTP 422)"),
     ("no_commits", "2", "dashboard API: the repository has no commit yet (HTTP 422)"),
     (
-        "sssf_cleanup_failed",
-        "2",
-        "dashboard API: legacy sssf removal could not be committed (HTTP 409)",
-    ),
-    (
         "trace_db_shared",
         "2",
         "dashboard API: another registered repository uses the same trace DB (HTTP 409)",

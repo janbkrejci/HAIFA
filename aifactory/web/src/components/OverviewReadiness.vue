@@ -3,13 +3,14 @@ import { Check, TriangleAlert } from 'lucide-vue-next'
 import { useReadiness } from '@/lib/readiness'
 import { useRemoveRepo } from '@/lib/repos'
 import Spinner from '@/components/ui/Spinner.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import RemoveRepoDialog from '@/components/repos/RemoveRepoDialog.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 
 withDefaults(defineProps<{ chip?: boolean }>(), { chip: false })
 const emit = defineEmits<{ changed: [] }>()
 const { phase, issues, recheck } = useReadiness()
-const { dialog, confirm, cancel, remove, removing, error: removeError } = useRemoveRepo(() => { emit('changed'); recheck() })
+const removal = useRemoveRepo(() => { emit('changed'); recheck() })
+const { remove, removing, error: removeError } = removal
 defineExpose({ recheck })
 function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open')) }
 </script>
@@ -38,7 +39,7 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
     </template>
     <button v-if="phase !== 'checking'" type="button" class="action" data-test="readiness-retry" @click="recheck">Zkontrolovat znovu</button>
   </div>
-  <ConfirmDialog v-bind="dialog" @confirm="confirm" @cancel="cancel" />
+  <RemoveRepoDialog :removal="removal" />
 </template>
 
 <style scoped>

@@ -133,7 +133,14 @@ def test_config_is_rendered_and_loads(
     monkeypatch.chdir(repo)
     code, data = _cli_json(capsys, "config", "show")
     assert code == 0, data
-    assert data["data"]["agents"] == ["planner", "builder", "tester", "reviewer", "documenter"]
+    assert data["data"]["agents"] == [
+        "planner",
+        "builder",
+        "tester",
+        "test-reviewer",
+        "reviewer",
+        "documenter",
+    ]
     assert data["data"]["settings"]["git_provider"] == "local"
     assert "simple-sdlc" in data["data"]["workflows"]
     assert data["warnings"] == []

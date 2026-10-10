@@ -79,11 +79,20 @@ def test_add_rejected_keeps_tree(tmp_path: Path) -> None:
     assert exc.value.code == "backlog_invalid"
     with pytest.raises(TaskEditError) as exc:
         add_task(root, "M01-S01", "X", task_id="X-1")
-    _expect(exc, "id_prefix", 1)
+    _expect(exc, "invalid_id", 2)
     with pytest.raises(TaskEditError) as exc:
         add_task(root, "M01-S01", "X", task_id="M01-S01-T01")
     _expect(exc, "duplicate_id", 1)
+    with pytest.raises(TaskEditError) as exc:
+        add_task(root, "M01-S01", "X", task_id="T01")
+    _expect(exc, "duplicate_id", 1)
     assert snapshot(root) == before
+
+
+def test_add_composes_the_id_from_a_short_code(tmp_path: Path) -> None:
+    root = sample_repo(tmp_path)
+    assert add_task(root, "M01-S01", "Krátký", task_id="T05").task.id == "M01-S01-T05"
+    assert add_task(root, "M01-S01", "Plný", task_id="M01-S01-T06").task.id == "M01-S01-T06"
 
 
 @pytest.mark.parametrize(

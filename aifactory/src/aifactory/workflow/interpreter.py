@@ -87,6 +87,10 @@ TRIAGE_DESCRIPTION = (
     "Decide whether the failed checks are wrong themselves or caught a fault in the code"
 )
 MAX_PLAN_REPAIRS = 2
+PLAN_REVIEW_PHASE = "test_review"
+PLAN_REVISION_PHASE = "plan_revision"
+PLAN_REVISION_DESCRIPTION = "Rework the test plan from the test reviewer's findings"
+MAX_PLAN_REVIEWS = 3  # a review, and up to two more after revisions
 NO_INPUT = "(none)"
 
 
@@ -278,6 +282,7 @@ class _Interpreter:
         self.failed_test = ""  # the red test a triage call judges
         self.red_test: dict[str, Any] | None = None
         self.plan_repairs = 0
+        self.reviewing_plan = False
 
     # -- helpers --
 
@@ -439,7 +444,10 @@ class _Interpreter:
     def role(self, step: RoleStep, suffix: tuple[int, ...], *, keep: bool = True) -> Any:
         """Run one agent phase; ``keep=False`` leaves its envelope out of the results."""
         self.before_phase()
-        if step.role.output_type is dt.TestPlanOutput and step.phase_id != TRIAGE_PHASE:
+        if step.role.output_type is dt.TestPlanOutput and step.phase_id not in (
+            TRIAGE_PHASE,
+            PLAN_REVISION_PHASE,
+        ):
             self.plan_step = step
         name = self.phase_name(step.phase_id, suffix)
         role = step.role
@@ -472,7 +480,53 @@ class _Interpreter:
                 )
         if keep:
             self.store(step.key, envelope)
+            if isinstance(envelope, dt.TestPlanOutput):
+                self.review_plan(suffix)
         return envelope
+
+    def review_plan(self, suffix: tuple[int, ...]) -> None:
+        """The test reviewer judges a new plan before its checks run; the tester reworks it.
+
+        At most ``MAX_PLAN_REVIEWS`` reviews; a plan still rejected after that runs anyway,
+        with a warning, and the final reviewer judges it with the code. A workflow whose
+        registry has no ``test_review`` role, or a roster without its agent, skips this.
+        """
+        review_role = self.workflow.plan_review
+        plan_step = self.plan_step
+        if self.reviewing_plan or review_role is None or plan_step is None:
+            return
+        if review_role.agent not in {agent.name for agent in self.run.cfg.agents}:
+            return
+        review_step = RoleStep(
+            name=PLAN_REVIEW_PHASE,
+            role=review_role,
+            phase_id=PLAN_REVIEW_PHASE,
+            description=review_role.description,
+            path=plan_step.path,
+        )
+        revision = dataclasses.replace(
+            plan_step,
+            phase_id=PLAN_REVISION_PHASE,
+            description=PLAN_REVISION_DESCRIPTION,
+            when=None,
+            inputs=(PLAN_REVIEW_PHASE,),
+            variables=(),
+        )
+        self.reviewing_plan = True
+        try:
+            for attempt in range(1, MAX_PLAN_REVIEWS + 1):
+                review = self.role(review_step, suffix)
+                if review.approved:
+                    return
+                if attempt == MAX_PLAN_REVIEWS:
+                    self.run.console.note(
+                        f"test plan still rejected after {MAX_PLAN_REVIEWS} reviews; "
+                        "running it, the final review judges it with the code"
+                    )
+                    return
+                self.role(revision, suffix)
+        finally:
+            self.reviewing_plan = False
 
     def triage(self, step: CodeStep, suffix: tuple[int, ...], report: dict[str, Any]) -> bool:
         """Ask the tester whether a red ``test`` is the plan's fault; True after a plan repair.
@@ -505,6 +559,7 @@ class _Interpreter:
             )
         self.plan_repairs += 1
         self.store(self.plan_step.key, envelope)
+        self.review_plan(suffix)
         return True
 
     def code_step(self, step: CodeStep, suffix: tuple[int, ...]) -> None:

@@ -110,7 +110,7 @@ onMounted(() => { void load() })
     <template v-if="!task">
       <p v-if="loading">Načítám backlog…</p>
       <template v-else-if="data?.steps.length">
-        <TaskForm mode="add" :steps="data.steps" :workflows="data.workflows"
+        <TaskForm mode="add" :steps="data.steps" :task-ids="data.tasks.map((t) => t.id)" :workflows="data.workflows"
           initial-title="Opravit vybrané nálezy Factory" :initial-body="body"
           :busy="busy" :pending="busy" :error="error" @submit="create" @cancel="emit('close')" />
       </template>

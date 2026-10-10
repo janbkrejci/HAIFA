@@ -39,7 +39,7 @@ function reviewAge(opened: string | null, ageS: number | null): string {
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
     <div class="card-actions">
       <button type="button" class="remove" :disabled="removing" data-test="card-remove" @click="emit('remove', repo)">
-        <Trash2 :size="14" aria-hidden="true" /> Odebrat z dashboardu
+        <Trash2 :size="14" aria-hidden="true" /> Odebrat repozitář
       </button>
     </div>
 

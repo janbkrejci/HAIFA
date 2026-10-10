@@ -89,6 +89,17 @@ def team_script(path: Path) -> Path:
                             }
                         }
                     ],
+                    "test-reviewer": [
+                        {
+                            "envelope": {
+                                "status": "success",
+                                "approved": True,
+                                "summary": "plan fits",
+                                "findings": [],
+                                "blocking": [],
+                            }
+                        }
+                    ],
                     "reviewer": [
                         {
                             "envelope": {

@@ -1,7 +1,5 @@
 import { ref } from 'vue'
-import { removeRepo } from './api'
 import type { FactoryOptions, FactoryInitPlan, AgentBinding, FactoryResult } from './api'
-import { errorText } from './format'
 
 export function installOptions(plan: FactoryInitPlan): FactoryOptions {
   const bind: Record<string, AgentBinding> = {}
@@ -15,24 +13,7 @@ export function installOptions(plan: FactoryInitPlan): FactoryOptions {
     agents: [...(plan.agents ?? [])], workflows: [...(plan.workflows ?? [])], bind }
 }
 
-// The App retains ownership while navigation waits for registry cleanup.
-export const pendingInstall = ref<{ id: string; created: boolean } | null>(null)
 export const lastFactoryResult = ref<{ repoId: string; result: FactoryResult; action?: string } | null>(null)
-export const installRegistering = ref(false)
-export const installBusy = ref(false)
-export const installCancelling = ref(false)
-export const installCancelError = ref<string | null>(null)
-export async function cancelPendingInstall(): Promise<void> {
-  if (installBusy.value || installCancelling.value) return
-  installCancelling.value = true
-  installCancelError.value = null
-  try {
-    if (pendingInstall.value?.created) await removeRepo(pendingInstall.value.id)
-    pendingInstall.value = null
-  } catch (e) {
-    installCancelError.value = errorText(e)
-  } finally { installCancelling.value = false }
-}
 
 /** Plain-language texts of plan blocker and item codes; an unknown code shows as it is. */
 const PLAN_CODE_TEXT: Record<string, string> = {

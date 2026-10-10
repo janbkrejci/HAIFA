@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import http.client
 import json
+import os
 import socket
 import subprocess
 import threading
@@ -24,6 +25,7 @@ from multi_repo import (
     init_repo,
     multi_client,
     onboard,
+    register,
     rmtree,
     symlink,
     write,
@@ -270,132 +272,50 @@ def test_inspect_runs_only_read_git(
 # -- add, list, delete -------------------------------------------------------------------
 
 
-def test_add_removes_sssf_only_after_acknowledgement(client: TestClient, tmp_path: Path) -> None:
-    root = init_repo(tmp_path / "legacy")
-    git(root, "config", "user.name", "Test")
-    git(root, "config", "user.email", "test@example.com")
-    write(root, SSSF_ROSTER, "name: legacy\n")
-    write(root, "adws/adw_plan.py", "legacy\n")
-    write(root, "README.md", "original\n")
-    commit_all(root)
-    before = git(root, "rev-parse", "HEAD")
-    write(root, "README.md", "uncommitted work\n")
-    outside = tmp_path / "shared-skill"
-    outside.mkdir()
-    (outside / "keep").write_text("keep", encoding="utf-8")
-    (root / ".claude/skills").mkdir(parents=True)
-    symlink(root / ".claude/skills/sssf", outside)
-    inspected = _inspect(client, root)["data"]
-    assert inspected["sssf_paths"] == ["adws", ".claude/skills/sssf"]
-    assert git(root, "rev-parse", "HEAD") == before
-    _add(client, root)
-    assert (root / SSSF_ROSTER).exists()
-    result = _post(client, "/api/repos", {"path": str(root), "remove_sssf": True})
-    assert result["data"]["repo"]["factory"]["state"] == "none"
-    assert not (root / "adws").exists()
-    assert not (root / ".claude/skills/sssf").is_symlink()
-    assert (outside / "keep").read_text(encoding="utf-8") == "keep"
-    assert git(root, "show", "HEAD:README.md") == "original"
-    assert (root / "README.md").read_text(encoding="utf-8") == "uncommitted work\n"
-    assert set(
-        git(root, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD").splitlines()
-    ) == {
-        SSSF_ROSTER,
-        "adws/adw_plan.py",
-    }
-    head = git(root, "rev-parse", "HEAD")
-    _post(client, "/api/repos", {"path": str(root), "remove_sssf": True})
-    assert git(root, "rev-parse", "HEAD") == head
-
-
-def test_sssf_removal_preserves_staged_changes(client: TestClient, tmp_path: Path) -> None:
-    root = init_repo(tmp_path / "legacy-staged")
-    write(root, SSSF_ROSTER, "name: legacy\n")
-    commit_all(root)
-    write(root, "work.txt", "staged work")
-    git(root, "add", "work.txt")
-    result = _post(client, "/api/repos", {"path": str(root), "remove_sssf": True}, 409)
-    assert result["error"]["code"] == "sssf_cleanup_failed"
-    assert (root / SSSF_ROSTER).exists()
-    assert git(root, "diff", "--cached", "--name-only") == "work.txt"
-
-
-def test_sssf_removal_commits_untracked_installation(client: TestClient, tmp_path: Path) -> None:
-    root = init_repo(tmp_path / "legacy-untracked")
-    git(root, "config", "user.name", "Test")
-    git(root, "config", "user.email", "test@example.com")
-    before = git(root, "rev-parse", "HEAD")
-    write(root, SSSF_ROSTER, "uncommitted: legacy\n")
-    _post(client, "/api/repos", {"path": str(root), "remove_sssf": True}, 201)
-    assert not (root / "adws").exists()
-    assert git(root, "rev-parse", "HEAD~1") == before
-    assert not git(root, "status", "--porcelain")
-
-
-def test_sssf_removal_refuses_symlinked_parent(client: TestClient, tmp_path: Path) -> None:
-    root = init_repo(tmp_path / "legacy-outside")
-    outside = tmp_path / "shared-claude"
-    (outside / "skills/sssf").mkdir(parents=True)
-    (outside / "skills/sssf/keep").write_text("keep", encoding="utf-8")
-    symlink(root / ".claude", outside)
-    result = _post(client, "/api/repos", {"path": str(root), "remove_sssf": True}, 409)
-    assert result["error"]["code"] == "sssf_cleanup_failed"
-    assert (outside / "skills/sssf/keep").exists()
-
-
-def test_sssf_removal_restores_installation_on_commit_failure(
-    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from aifactory.run.gitops import git as real_git
-    from aifactory.web import sssf_cleanup
-
-    root = init_repo(tmp_path / "legacy-failure")
-    write(root, SSSF_ROSTER, "name: legacy\n")
-    write(root, "adws/runtime.log", "untracked runtime")
-    commit_all(root)
-    write(root, "adws/runtime.log", "local runtime")
-    before = git(root, "rev-parse", "HEAD")
-
-    def fail_commit(root: Path, *args: str) -> str:
-        if "commit" in args:
-            raise RuntimeError("commit rejected")
-        return real_git(root, *args)
-
-    monkeypatch.setattr(sssf_cleanup, "git", fail_commit)
-    result = _post(client, "/api/repos", {"path": str(root), "remove_sssf": True}, 409)
-    assert result["error"]["code"] == "sssf_cleanup_failed"
-    assert git(root, "rev-parse", "HEAD") == before
-    assert (root / SSSF_ROSTER).exists()
-    assert (root / "adws/runtime.log").read_text(encoding="utf-8") == "local runtime"
-    assert not git(root, "diff", "--cached", "--name-only")
-    assert _get(client, "/api/repos")["data"]["repos"] == []
-
-
 def _porcelain(root: Path) -> str:
     return git(root, "status", "--porcelain", "--ignored")
 
 
-def test_add_is_idempotent_and_writes_nothing_into_repo(
-    client: TestClient, tmp_path: Path, home: Path
-) -> None:
+def test_add_installs_and_is_idempotent(client: TestClient, tmp_path: Path, home: Path) -> None:
     root = init_repo(tmp_path / "proj")
     (root / "sub").mkdir()
     write(root, "sub/keep.txt", "x")
-    commit_all(root)
-    before = _porcelain(root)
+    head = commit_all(root)
     body = _add(client, root / "sub")
     assert body["data"]["created"] is True
     repo = body["data"]["repo"]
     assert (repo["id"], repo["name"], repo["path"]) == ("proj", "proj", str(root))
-    assert repo["status"] == "not_installed"
+    assert repo["status"] == "ok"
+    install = body["data"]["install"]
+    assert install["committed"] is True and install["pushed"] is False
+    assert git(root, "rev-parse", "HEAD~1") == head
+    assert install["commit"] == git(root, "rev-parse", "HEAD")
+    assert ".factory/manifest.yaml" in {f["path"] for f in install["files"]}
+    installed = _porcelain(root)
     again = _add(client, root, 200)["data"]
     assert again["created"] is False and again["repo"]["id"] == "proj"
+    assert again["install"]["committed"] is False and again["install"]["files"] == []
     link = tmp_path / "link"
     symlink(link, root)
     assert _add(client, link, 200)["data"]["repo"]["id"] == "proj"
     assert len(_registry(home)["repos"]) == 1
-    assert _porcelain(root) == before
-    assert not (root / ".factory").exists()
+    assert _porcelain(root) == installed
+    assert git(root, "rev-parse", "HEAD") == install["commit"]
+
+
+def test_refused_install_leaves_no_registry_entry(
+    client: TestClient, tmp_path: Path, home: Path
+) -> None:
+    root = init_repo(tmp_path / "proj")
+    write(root, ".factory/config.yaml", "base: main\n")  # uncommitted, would be overwritten
+    body = _add(client, root, 409)
+    assert body["error"]["code"] == "dirty_paths"
+    assert _get(client, "/api/repos")["data"]["repos"] == []
+    assert not _registry(home)["repos"]
+    # an already registered repo stays registered when the install is refused
+    register(client, root)
+    assert _add(client, root, 409)["error"]["code"] == "dirty_paths"
+    assert [r["id"] for r in _get(client, "/api/repos")["data"]["repos"]] == ["proj"]
 
 
 def test_list_statuses(client: TestClient, tmp_path: Path) -> None:
@@ -414,7 +334,7 @@ def test_list_statuses(client: TestClient, tmp_path: Path) -> None:
     gone = init_repo(tmp_path / "gone")
     nogit = init_repo(tmp_path / "nogit")
     for root in (done, wt, dirty, plain, sssf, gone, nogit):
-        _add(client, root)
+        register(client, root)
     rmtree(gone)
     rmtree(nogit / ".git")
     data = _get(client, "/api/repos")["data"]
@@ -435,16 +355,65 @@ def test_list_statuses(client: TestClient, tmp_path: Path) -> None:
     assert set(by_id["done"]) >= {"id", "name", "path", "added_at", "status", "factory"}
 
 
-def test_delete_removes_only_the_entry(client: TestClient, tmp_path: Path, home: Path) -> None:
+def _delete(client: TestClient, repo_id: str, payload: Any, status: int = 200) -> Any:
+    return _check(client.request("DELETE", f"/api/repos/{repo_id}", json=payload), status)
+
+
+def test_delete_without_uninstall_removes_only_the_entry(
+    client: TestClient, tmp_path: Path, home: Path
+) -> None:
     root = init_repo(tmp_path / "proj")
     _add(client, root)
     before = _porcelain(root)
-    body = _check(client.delete("/api/repos/proj"), 200)
+    head = git(root, "rev-parse", "HEAD")
+    body = _delete(client, "proj", {"uninstall": False})
     assert body["data"]["removed"]["path"] == str(root)
+    assert body["data"]["uninstall"] is None
     assert _registry(home)["repos"] == []
     assert root.is_dir() and _porcelain(root) == before
+    assert git(root, "rev-parse", "HEAD") == head
     assert _check(client.delete("/api/repos/proj"), 404)["error"]["code"] == "unknown_repo"
     assert _get(client, "/api/repos/proj/backlog", 404)["error"]["code"] == "unknown_repo"
+
+
+def test_delete_uninstalls_and_exports(tmp_path: Path) -> None:
+    from aifactory.library import store
+    from aifactory.web.library import environment
+
+    # the install and export use the process HAIFA_HOME; the dashboard home is the same here
+    home = Path(os.environ["HAIFA_HOME"])
+    client = multi_client(home, tmp_path)
+    bare = tmp_path / "library.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
+    lib = store.init_library("team", environment(home), remote=str(bare))
+    root = init_repo(tmp_path / "proj")
+    _add(client, root)
+    prompt = root / ".factory/prompts/builder/system.md"
+    prompt.write_text(prompt.read_text(encoding="utf-8") + "Repo rule.\n", encoding="utf-8")
+    commit_all(root, "own builder")
+    removal = _get(client, "/api/repos/proj/removal")["data"]
+    own = {(i["type"], i["name"]) for i in removal["own_items"]}
+    assert ("agent", "builder") in own
+    assert ".factory/agents.yaml" in {f["path"] for f in removal["files"]}
+    payload = {"export": [{"type": "agent", "name": "builder"}]}
+    body = _delete(client, "proj", payload)
+    assert body["data"]["uninstall"]["commit"] == git(root, "rev-parse", "HEAD")
+    assert not (root / ".factory").exists()
+    assert not git(root, "ls-files", ".factory")
+    assert _registry(home)["repos"] == []
+    assert _get(client, "/api/repos/proj/removal", 404)["error"]["code"] == "unknown_repo"
+    assert body["data"]["uninstall"]["exported"] == [{"type": "agent", "name": "builder"}]
+    library_root = Path(lib.plan.library)
+    exported = (library_root / "agents/builder/system.md").read_text(encoding="utf-8")
+    assert exported.endswith("Repo rule.\n")
+
+
+def test_delete_body_validation(client: TestClient, tmp_path: Path) -> None:
+    root = init_repo(tmp_path / "proj")
+    register(client, root)
+    for payload in ({"uninstall": "yes"}, {"export": ["agent/x"]}, {"export": [{"type": 1}]}):
+        assert _delete(client, "proj", payload, 400)["error"]["code"] == "usage_error"
+    assert [r["id"] for r in _get(client, "/api/repos")["data"]["repos"]] == ["proj"]
 
 
 def test_unknown_and_missing_repo(client: TestClient, tmp_path: Path) -> None:
@@ -480,8 +449,8 @@ def _two_repos(client: TestClient, tmp_path: Path) -> tuple[Path, Path]:
     git(a, "branch", "-M", "main")
     b = make_backlog_repo(tmp_path / "b", levels=["area", "task"])
     git(b, "branch", "-M", "main")
-    _add(client, a)
-    _add(client, b)
+    register(client, a)
+    register(client, b)
     return a, b
 
 
@@ -570,7 +539,12 @@ def test_live_events_per_repo(tmp_path: Path, home: Path) -> None:
         assert event["paths"] == [a_task]
         # Removing the repo closes its hub, which ends the stream.
         remover = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        remover.request("DELETE", "/api/repos/a", headers={"Host": "127.0.0.1"})
+        remover.request(
+            "DELETE",
+            "/api/repos/a",
+            body=json.dumps({"uninstall": False}),
+            headers={"Host": "127.0.0.1", "Content-Type": "application/json"},
+        )
         assert remover.getresponse().status == 200
         remover.close()
         end = time.monotonic() + 5

@@ -17,6 +17,9 @@ def test_roster_without_tester_gets_the_seed_tester(tmp_path: Path) -> None:
     assert tester.writes == []
     assert "# Tester Agent" in config.prompts["tester"].system
     assert "{{failed_test}}" in config.prompts["tester"].user
+    reviewer = next(a for a in config.agents.agents if a.name == "test-reviewer")
+    assert reviewer.coding_agent == "claude" and reviewer.writes == []
+    assert config.prompts["test-reviewer"].system
 
 
 def test_roster_without_defaults_takes_the_seed_harness(tmp_path: Path) -> None:

@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from multi_repo import BASE, git, rmtree, symlink, write
+from multi_repo import BASE, git, register, rmtree, symlink, write
 from starlette.applications import Starlette
 from starlette.datastructures import State
 from starlette.testclient import TestClient
@@ -345,7 +345,7 @@ def test_usage_two_repositories(client: TestClient, tmp_path: Path) -> None:
                 plan_config("add", repo, type="agent", name="builder", slot="alias", environ=env),
                 environ=env,
             )
-        response(client.post("/api/repos", json={"path": str(repo)}), 201)
+        register(client, repo)
     data = response(client.get("/api/library"))
     item = next(i for i in data["items"] if i["type"] == "agent" and i["name"] == "builder")
     assert item["repo_count"] == 2

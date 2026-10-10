@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import ReposAddView from './ReposAddView.vue'
-import { pendingInstall, installBusy, installCancelling, installCancelError } from '@/lib/factory'
 import type { FsEntry, InspectResult, RepoFactory } from '@/lib/api'
 
 const HOME = '/home/me'
+
+const INSTALL = {
+  committed: true,
+  commit: 'abcdef1234',
+  pushed: true,
+  files: [{ path: '.factory/config.yaml', action: 'create' }, { path: '.factory/agents.yaml', action: 'create' }, { path: '.gitignore', action: 'modify' }],
+}
 
 function envelope(data: unknown, status = 200) {
   return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] }), { status })
@@ -85,7 +91,7 @@ function stub(options: Options = {}) {
     }
     if (url === '/api/repos' && init?.method === 'POST') {
       const body = JSON.parse(String(init.body)) as { path: string }
-      return envelope({ repo: { id: 'repo', name: 'repo', path: body.path }, created: true }, 201)
+      return envelope({ repo: { id: 'repo', name: 'repo', path: body.path }, created: true, install: INSTALL }, 201)
     }
     if (url.startsWith('/api/fs/dirs')) {
       const path = url.includes('?path=') ? decodeURIComponent(url.split('?path=')[1]) : HOME
@@ -146,36 +152,7 @@ describe('ReposAddView', () => {
     expect(inspectCalls(fetchMock)).toEqual(['~/code/repo'])
   })
 
-  it('offers the installation wizard for a repo without factory', async () => {
-    stub({ inspect: inspected({ factory: factory('none') }) })
-    const wrapper = await mountView()
-    await inspectPath(wrapper)
-    const card = wrapper.get('[data-test="inspect-card"]')
-    expect(card.attributes('data-state')).toBe('none')
-    const init = card.get('[data-test="inspect-init"]').text()
-    expect(init).toContain('Pokračovat instalací')
-    expect(card.find('[data-test="inspect-add"]').exists()).toBe(false)
-  })
-
-  it('warns about removing sssf and continues with a fresh installation', async () => {
-    const fetchMock = stub({ inspect: inspected({ factory: factory('sssf') }) })
-    const wrapper = await mountView()
-    await inspectPath(wrapper)
-    const card = wrapper.get('[data-test="inspect-card"]')
-    expect(card.find('[data-test="inspect-onboard"]').exists()).toBe(false)
-    expect(card.get('[data-test="inspect-sssf-warning"]').text()).toContain('smazána')
-    expect(card.get('[data-test="inspect-sssf-warning"]').text()).toContain('commitne')
-    expect(card.find('[data-test="inspect-add"]').exists()).toBe(false)
-    await card.get('[data-test="inspect-init"]').trigger('click')
-    await flushPromises()
-    const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos' && init?.method === 'POST')
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ path: '/w/repo', remove_sssf: true })
-    expect(wrapper.get('h1').text()).toContain('instalace factory')
-    pendingInstall.value = null
-    installBusy.value = false
-  })
-
-  it.each(['pre_library', 'working_tree'] as const)('adds a %s repo by its root and emits its id', async (state) => {
+  it.each(['none', 'sssf', 'pre_library', 'working_tree', 'onboarded'] as const)('adds a %s repo by its root with one button and emits its id', async (state) => {
     const fetchMock = stub({ inspect: inspected({ factory: factory(state) }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
@@ -184,7 +161,10 @@ describe('ReposAddView', () => {
     expect(card.get('[data-test="inspect-branch"]').text()).toBe('main')
     expect(card.get('[data-test="inspect-remote"]').text()).toBe('git@example.com:me/repo.git')
     expect(card.get('[data-test="inspect-trace-db"]').text()).toBe('/w/repo/.factory/data/trace.db')
-    expect(card.find('[data-test="inspect-working-tree"]').exists()).toBe(state === 'working_tree')
+    expect(card.get('[data-test="inspect-install-note"]').text()).toBe(
+      'Přidání zapíše do repa .factory z knihovny (existující nahradí), doplní .gitignore a commitne to do main.',
+    )
+    expect(card.findAll('button').map((b) => b.text())).toEqual(['Přidat'])
     await card.get('[data-test="inspect-add"]').trigger('click')
     await flushPromises()
     const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos' && init?.method === 'POST')
@@ -213,28 +193,44 @@ describe('ReposAddView', () => {
     expect(card.find('[data-test="inspect-add"]').exists()).toBe(true)
   })
 
-  it('offers Open for a registered repo and no Add: Backlog when onboarded, else Factory', async () => {
-    stub({ inspect: inspected({ registered: 'repo', factory: factory('onboarded') }) })
+  it('offers Open and a library sync for a registered repo: Backlog when onboarded, else Factory', async () => {
+    const fetchMock = stub({ inspect: inspected({ registered: 'repo', factory: factory('onboarded') }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
     const card = wrapper.get('[data-test="inspect-card"]')
     expect(card.text()).toContain('Repo už je v dashboardu.')
     expect(card.get('[data-test="inspect-open"]').attributes('href')).toBe('#/r/repo/backlog')
     expect(card.find('[data-test="inspect-add"]').exists()).toBe(false)
-    expect(card.find('[data-test="inspect-init"]').exists()).toBe(false)
+    expect(card.get('[data-test="inspect-install-note"]').text()).toContain('Synchronizace zapíše do repa .factory z knihovny')
+    await card.get('[data-test="inspect-sync"]').trigger('click')
+    await flushPromises()
+    const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos' && init?.method === 'POST')
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ path: '/w/repo' })
+    expect(wrapper.get('[data-test="repo-added"]').text()).toContain('Repozitář repo synchronizován')
   })
 
-  it('opens the Factory tab of a registered repo without factory and offers its install', async () => {
+  it('opens the Factory tab of a registered repo without factory', async () => {
     stub({ inspect: inspected({ registered: 'repo', factory: factory('none') }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
-    const card = wrapper.get('[data-test="inspect-card"]')
-    expect(card.get('[data-test="inspect-open"]').attributes('href')).toBe('#/r/repo/factory')
-    await card.get('[data-test="inspect-init"]').trigger('click')
+    expect(wrapper.get('[data-test="inspect-open"]').attributes('href')).toBe('#/r/repo/factory')
+  })
+
+  it('shows progress while adding', async () => {
+    let release: (r: Response) => void = () => {}
+    stub({
+      handler: (url, init) =>
+        url === '/api/repos' && init?.method === 'POST' ? (new Promise<Response>((resolve) => { release = resolve }) as unknown as Response) : undefined,
+    })
+    const wrapper = await mountView()
+    await inspectPath(wrapper)
+    await wrapper.get('[data-test="inspect-add"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="factory-operation"]').exists()).toBe(true)
-    expect(pendingInstall.value).toEqual({ id: 'repo', created: true })
-    pendingInstall.value = null
+    expect(wrapper.get('[data-test="inspect-adding"]').text()).toContain('commituji do main')
+    expect(wrapper.get('[data-test="inspect-add"]').attributes('disabled')).toBeDefined()
+    release(envelope({ repo: { id: 'repo', name: 'repo', path: '/w/repo' }, created: true, install: { ...INSTALL, committed: false, commit: null, pushed: false, files: [] } }, 201))
+    await flushPromises()
+    expect(wrapper.get('[data-test="repo-added-install"]').text()).toContain('beze změny')
   })
 
   it('stays on the page after adding: a card opens the repo or clears the form for another', async () => {
@@ -245,6 +241,7 @@ describe('ReposAddView', () => {
     await flushPromises()
     const card = wrapper.get('[data-test="repo-added"]')
     expect(card.text()).toContain('Repozitář repo přidán')
+    expect(card.get('[data-test="repo-added-install"]').text()).toContain('commitnuta abcdef1 (3 soubory), pushnuto')
     expect(card.get('[data-test="repo-added-open"]').attributes('href')).toBe('#/r/repo/factory')
     expect(wrapper.find('a[href="#/overview"]').exists()).toBe(true)
     await card.get('[data-test="repo-added-another"]').trigger('click')
@@ -302,6 +299,19 @@ describe('ReposAddView', () => {
     await inspectPath(wrapper, 'code/repo')
     expect(wrapper.get('[data-test="inspect-error"]').text()).toBe('Zadej absolutní cestu nebo cestu začínající ~.')
     expect(wrapper.find('[data-test="inspect-card"]').exists()).toBe(false)
+  })
+
+  it('shows an install error with its message on the card', async () => {
+    stub({
+      handler: (url, init) =>
+        url === '/api/repos' && init?.method === 'POST' ? failure('dirty_paths', 'uncommitted changes in .factory/config.yaml', 409) : undefined,
+    })
+    const wrapper = await mountView()
+    await inspectPath(wrapper)
+    await wrapper.get('[data-test="inspect-add"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="inspect-add-error"]').text()).toBe('uncommitted changes in .factory/config.yaml')
+    expect(wrapper.find('[data-test="repo-added"]').exists()).toBe(false)
   })
 
   it('shows an add error on the card', async () => {
@@ -426,39 +436,6 @@ describe('ReposAddView', () => {
     expect(browser()).toBeNull()
     expect((wrapper.get('[data-test="add-path"]').element as HTMLInputElement).value).toBe(`${HOME}/code`)
     expect(inspectCalls(fetchMock)).toEqual([`${HOME}/code`])
-  })
-})
-
-
-describe('temporary installation registration', () => {
-  afterEach(() => { pendingInstall.value = null; installBusy.value = false; installCancelling.value = false; installCancelError.value = null })
-  it.each([true, false])('cancels created=%s without applying or removing an existing registration', async created => {
-    const fetchMock = stub({ inspect: inspected({ factory: factory('none') }), handler: (url, init) => {
-      if (url === '/api/repos' && init?.method === 'POST') return envelope({ repo: { id: 'temporary' }, created })
-      if (init?.method === 'DELETE') return envelope({ removed: {} })
-    } })
-    const w = await mountView(); await inspectPath(w)
-    await w.get('[data-test="inspect-init"]').trigger('click'); await flushPromises()
-    expect(w.find('[data-test="factory-operation"]').exists()).toBe(true)
-    await w.get('[data-test="cancel-install"]').trigger('click'); await flushPromises()
-    const deletions = fetchMock.mock.calls.filter(([, init]) => init?.method === 'DELETE')
-    expect(deletions).toHaveLength(created ? 1 : 0)
-    expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/factory/apply'))).toBe(false)
-    expect(pendingInstall.value).toBeNull()
-  })
-  it('retains ownership and exposes retry if unregistering fails', async () => {
-    let refusal = true
-    stub({ inspect: inspected({ factory: factory('none') }), handler: (_url, init) => {
-      if (init?.method === 'DELETE') return refusal ? failure('busy', 'cannot unregister') : envelope({ removed: {} })
-    } })
-    const w = await mountView(); await inspectPath(w)
-    await w.get('[data-test="inspect-init"]').trigger('click'); await flushPromises()
-    await w.get('[data-test="cancel-install"]').trigger('click'); await flushPromises()
-    expect(w.text()).toContain('cannot unregister')
-    expect(pendingInstall.value).not.toBeNull()
-    refusal = false
-    await w.get('[data-test="cancel-install"]').trigger('click'); await flushPromises()
-    expect(pendingInstall.value).toBeNull()
   })
 })
 

@@ -91,8 +91,8 @@ class _Reader:
         return self.source.label(rel)
 
 
-SEED_FALLBACK_AGENTS: tuple[str, ...] = ("tester",)
-"""Agents a roster without them gets from the packaged seed (the tester came with 3.0)."""
+SEED_FALLBACK_AGENTS: tuple[str, ...] = ("tester", "test-reviewer")
+"""Agents a roster without them gets from the packaged seed (both came with 3.0)."""
 
 
 def _seed_prompt(agent: str, kind: str) -> str:

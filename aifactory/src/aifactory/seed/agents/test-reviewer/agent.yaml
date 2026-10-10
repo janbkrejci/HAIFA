@@ -1,0 +1,6 @@
+purpose: Judge each test plan before it runs, enough to trust the change and not needlessly broad; change nothing.
+defaults:
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes: []

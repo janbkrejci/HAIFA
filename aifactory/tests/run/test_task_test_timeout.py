@@ -24,7 +24,7 @@ from run_repo import (
     git,
     make_run_repo,
     ok,
-    plan_envelope,
+    scripted_plan,
     triage_envelope,
     write,
 )
@@ -85,9 +85,9 @@ def setup(
 
 
 def scripted(script: Script, argv: list[str] = OK_CMD) -> None:
-    """The planner's envelope, then a tester plan with the single check ``argv``."""
+    """The planner's envelope, then a reviewed tester plan with the single check ``argv``."""
     script.add("planner", ok())
-    script.add("tester", plan_envelope(*argv))
+    scripted_plan(script, *argv)
 
 
 def ran_timeouts(repo: Path, run_id: str) -> list[int]:

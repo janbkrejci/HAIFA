@@ -3,8 +3,9 @@
 // from the left with the used share (neutral colour, not a success one) and the free percent.
 // A failed read shows stale windows or an explicit unavailable status.
 import { computed } from 'vue'
-import { LoaderCircle, TriangleAlert } from 'lucide-vue-next'
+import { TriangleAlert } from 'lucide-vue-next'
 import { pct, unavailableTip, windowTip, type LimitProvider } from '../lib/limits'
+import Spinner from './ui/Spinner.vue'
 import Tooltip from './ui/Tooltip.vue'
 
 const props = withDefaults(defineProps<{ providers: LimitProvider[]; loading?: boolean; usable?: boolean }>(), { usable: undefined })
@@ -18,7 +19,7 @@ const orderedProviders = computed(() =>
 
 <template>
   <button type="button" class="limits-trigger" :class="{ 'harness-loading': loading, 'harness-empty': empty }" :aria-busy="loading || undefined" aria-label="Usage limity a nastavení harnessů" data-test="harness-settings-open" @click="emit('open')">
-  <span v-if="loading" class="harness-status"><LoaderCircle :size="14" class="spinner" aria-hidden="true" />Harnessy</span>
+  <span v-if="loading" class="harness-status"><Spinner />Harnessy</span>
   <span v-else-if="empty" class="harness-status"><TriangleAlert :size="14" aria-hidden="true" />Nakonfigurujte harnessy</span>
   <span v-else-if="!providers.length">Harnessy</span>
   <span v-else class="compact-label">Harnessy</span>
@@ -60,12 +61,11 @@ const orderedProviders = computed(() =>
 <style scoped>
 .limits-trigger { background: none; border: 1px solid transparent; border-radius: 8px; color: var(--dim); font: inherit; padding: 4px 8px; cursor: pointer; text-align: left; }
 .limits-trigger:hover, .limits-trigger:focus-visible { border-color: var(--border); background: var(--panel-2); }
-.harness-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; font-weight: 600; }
-.limits-trigger.harness-loading { color: var(--blue); background: color-mix(in srgb, var(--blue) 10%, var(--panel)); border-color: color-mix(in srgb, var(--blue) 40%, transparent); border-radius: 999px; }
-.limits-trigger.harness-empty { color: var(--red); background: color-mix(in srgb, var(--red) 10%, var(--panel)); border-color: color-mix(in srgb, var(--red) 40%, transparent); border-radius: 999px; }
-.spinner { animation: harness-spin 1s linear infinite; }
-@keyframes harness-spin { to { transform: rotate(360deg); } }
-@media (prefers-reduced-motion: reduce) { .spinner { animation: none; } }
+.harness-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; }
+/* loading and empty look like the other topbar status chips */
+.limits-trigger.harness-loading, .limits-trigger.harness-empty { display: inline-flex; align-items: center; border: 1px solid currentColor; border-radius: 999px; padding: 5px 10px; font-size: 12px; background: var(--panel-2); }
+.limits-trigger.harness-loading { color: var(--blue); }
+.limits-trigger.harness-empty { color: var(--red); }
 .compact-label { display: none; }
 .limits {
   display: flex;

@@ -24,7 +24,7 @@ from run_repo import (
     git,
     make_run_repo,
     ok,
-    plan_envelope,
+    scripted_plan,
     write,
 )
 from workflow_fakes import FakeCodeRunner
@@ -125,7 +125,7 @@ def run_both(repo: Path, script: Script, first: dict[str, str], second: dict[str
 
 
 def resolver(script: Script, *changes: tuple[str, str]) -> None:
-    """The resolver's changes, and the tester's plan of the same resolve run."""
+    """The resolver's changes, and the reviewed test plan of the same resolve run."""
 
     def effect(wt: Path) -> None:
         for rel, text in changes:
@@ -133,7 +133,7 @@ def resolver(script: Script, *changes: tuple[str, str]) -> None:
 
     script.on("builder", effect)
     script.add("builder", ok(changed_files=[rel for rel, _ in changes]))
-    script.add("tester", plan_envelope())
+    scripted_plan(script)
 
 
 def tip(repo: Path) -> str:

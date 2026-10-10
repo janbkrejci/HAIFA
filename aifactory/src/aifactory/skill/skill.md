@@ -179,8 +179,10 @@ YAML front matter; HAIFA writes the keys in this order: `{{field_order}}`.
 - `depends_on` may reference tasks or steps (a step is done when all its tasks are done).
   Store only `depends_on`; "blocks" is computed. `related` is informational.
 - `writes` is the list of paths or globs the agents may change; anything else is rolled back.
-  A task needs `writes` (own or inherited) to run.
-- `workflow` names the workflow (own or inherited).
+  Own or inherited; when no level sets it, the whole repo (`**`), protected files excepted.
+  An explicit empty list `[]` cannot run (`no_writes`).
+- `workflow` names the workflow (own or inherited); when no level sets it, `simple-sdlc`.
+  An explicit `null` means none (`no_workflow`).
 - `test_timeout` is the shared time limit of the checks a workflow's `test` step runs, in
   whole seconds greater than 0 (own, or the nearest `index.md` above); without it `test_timeout` from
   `.factory/config.yaml`, else 600. An invalid value is reported by `factory backlog check`
@@ -607,17 +609,17 @@ There is no importer; converting a plan is this procedure (D12).
    `{{index_file}}`, and every step to a step directory inside it with its own
    `{{index_file}}`. Create them with
    `factory backlog add --id CODE --title TEXT [--body TEXT] --json` (a project) and
-   `factory backlog add PROJECT --id PROJECT-CODE --title TEXT --json` (a step; its id
-   starts with the project id and `-`, its directory drops that prefix:
-   `M01-S03` -> `S03-<slug>`). Put shared defaults (`workflow`, `writes`, ...) into
+   `factory backlog add PROJECT --id CODE --title TEXT --json` (a step). Give only the short
+   code (`S03`); the id is always composed from the parent's id: `M01-S03`, in the directory
+   `S03-<slug>`. Put shared defaults (`workflow`, `writes`, ...) into
    the project or step index with `factory backlog edit ID --workflow NAME --writes PATH ...
    --json` (`--clear KEY ...` removes a key; keys it does not know stay as they are). The
    project id is any short code; keep the module's code from the plan (e.g. `M01`).
-   An invalid code, a duplicate code or a step id outside its project's prefix is
-   rejected with `invalid_id` or `backlog_invalid` (`error.issues`: `duplicate_id`,
-   `id_prefix`) and nothing is written.
+   An invalid code (letters, digits, `.` and `_`, no `-`) or a duplicate is rejected with
+   `invalid_id` or `backlog_invalid` (`error.issues`: `duplicate_id`) and nothing is written.
 3. Add each task, in dependency order:
-   `factory task add STEP TITLE --id ID --writes PATH ... --depends-on ID ... --body TEXT --json`
+   `factory task add STEP TITLE [--id CODE] --writes PATH ... --depends-on ID ... --body TEXT --json`
+   (`--id T05` makes `STEP-T05`; without it the next free `T<nn>`)
    (or write the task files directly in the format above). `--body` is the text of
    `## Zadání`: what, where, "done means", out of scope, hard constraints.
 4. Add references later with `factory task link ID --depends-on ID ... --json`.
@@ -630,8 +632,8 @@ Example with the default project → step → task hierarchy:
 ```bash
 factory backlog add --id M01 --title "Core" --json
 factory backlog edit M01 --workflow simple-sdlc --writes src/ tests/ --json
-factory backlog add M01 --id M01-S01 --title "API" --json
-factory task add M01-S01 "Health endpoint" --id M01-S01-T01 --body "Add GET /health; cover HTTP 200 in tests/api." --json
+factory backlog add M01 --id S01 --title "API" --json
+factory task add M01-S01 "Health endpoint" --id T01 --body "Add GET /health; cover HTTP 200 in tests/api." --json
 factory backlog check --json
 factory backlog commit --json
 ```

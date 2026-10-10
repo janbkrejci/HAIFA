@@ -62,7 +62,6 @@ from aifactory.backlog.validate import check_backlog
 from aifactory.config.settings import check_repo_dir
 
 EDITABLE_STATUSES: tuple[str, ...] = ("todo", "cancelled")
-_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 _SLUG_MAX = 40
 
 
@@ -257,6 +256,28 @@ def _find_step(backlog: Backlog, step: str) -> Container:
     raise TaskEditError("unknown_step", f"unknown {levels[-2]} '{step}'", id=step)
 
 
+_CODE_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._]*$")
+
+
+def compose_id(parent_id: str | None, code: str) -> str:
+    """The full id of a new node from its short code: ``S10`` under ``HAIFA`` is ``HAIFA-S10``.
+
+    The id is always composed (the parent's id, ``-``, the code); a code that already
+    carries the parent's prefix is taken without it. A code is letters, digits, ``.``
+    and ``_``, without ``-``.
+    """
+    value = code.strip()
+    if parent_id and value.startswith(f"{parent_id}-"):
+        value = value[len(parent_id) + 1 :]
+    if not _CODE_RE.match(value):
+        raise TaskEditError(
+            "invalid_id",
+            f"invalid code '{code}': letters, digits, '.' and '_' (e.g. S10, T05)",
+            id=code,
+        )
+    return f"{parent_id}-{value}" if parent_id else value
+
+
 def _next_id(container: Container, step: str) -> str:
     pattern = re.compile(rf"^{re.escape(step)}-T(\d+)$")
     numbers = [m.group(1) for t in container.tasks if (m := pattern.match(t.id))]
@@ -285,10 +306,7 @@ def add_task(
     title = title.strip()
     if not title:
         raise TaskEditError("invalid_value", "title must not be empty")
-    if task_id is None:
-        task_id = _next_id(container, step)
-    elif not _ID_RE.match(task_id):
-        raise TaskEditError("invalid_id", f"invalid task id '{task_id}'", id=task_id)
+    task_id = _next_id(container, step) if task_id is None else compose_id(step, task_id)
     if slug is None:
         slug = slugify(title)
     elif slugify(slug) != slug:
@@ -595,10 +613,10 @@ def add_container(
 ) -> ContainerWriteResult:
     """Create a project (``parent`` is ``None``) or a step of project ``parent``.
 
-    Writes ``<backlog_dir>/<code>-<slug>/index.md`` (a step's directory is in its project's
-    directory and its code drops the project's prefix: ``M01-S03`` -> ``S03-<slug>``). The
-    id matches the task id pattern, is unique and a step's id starts with its project's id
-    and ``-``; a write that breaks the backlog is rejected with ``backlog_invalid``.
+    ``container_id`` is the short code (``S03``); the id is composed with the parent's
+    (``M01-S03``, see ``compose_id``). Writes ``<backlog_dir>/<code>-<slug>/index.md`` (a
+    step's directory is in its project's directory: ``S03-<slug>``). The id is unique; a
+    write that breaks the backlog is rejected with ``backlog_invalid``.
 
     ``backlog_dir`` picks the backlog root of a new project: a directory that matches one
     of the configured roots (it may not exist yet, e.g. ``moduly/M08/backlog`` for
@@ -606,8 +624,7 @@ def add_container(
     """
     backlog = load_for_edit(root)
     levels = backlog.settings.levels
-    if not _ID_RE.match(container_id):
-        raise TaskEditError("invalid_id", f"invalid id '{container_id}'", id=container_id)
+    container_id = compose_id(parent, container_id)
     title = title.strip()
     if not title:
         raise TaskEditError("invalid_value", "title must not be empty", id=container_id)

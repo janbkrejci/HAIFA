@@ -56,7 +56,14 @@ def _roster_without_codex(directory: Path) -> Path:
     workflow = workflow.replace("harness: codex", "harness: claude")
     assert "harness: codex" not in config and "harness: codex" not in workflow
     agents = yaml.safe_load(config)["agents"]
-    assert [a["name"] for a in agents] == ["planner", "builder", "tester", "reviewer", "documenter"]
+    assert [a["name"] for a in agents] == [
+        "planner",
+        "builder",
+        "tester",
+        "test-reviewer",
+        "reviewer",
+        "documenter",
+    ]
     assert all(a["harness"] != "codex" for a in agents)
     return _write_roster(directory, config, workflow)
 

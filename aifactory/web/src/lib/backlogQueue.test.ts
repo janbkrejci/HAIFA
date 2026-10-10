@@ -12,6 +12,10 @@ import {
   setQueueOrder,
   startRun,
   suggestContainerCode,
+  suggestTaskCode,
+  composeId,
+  shortCode,
+  CODE_RE,
 } from './backlog'
 import { prStateLabel } from './runs'
 import { newTaskHref } from './router'
@@ -84,8 +88,21 @@ describe('codes of new containers', () => {
   it('suggests the next code', () => {
     expect(suggestContainerCode('project', null, [])).toBe('P01')
     expect(suggestContainerCode('module', null, ['M01', 'M02'])).toBe('M03')
-    expect(suggestContainerCode('step', 'M01', ['M01-S01', 'M01-S09'])).toBe('M01-S10')
-    expect(suggestContainerCode('step', 'HAIFA', [])).toBe('HAIFA-S01')
+    expect(suggestContainerCode('step', 'M01', ['M01-S01', 'M01-S09'])).toBe('S10')
+    expect(suggestContainerCode('step', 'HAIFA', [])).toBe('S01')
+  })
+
+  it('suggests the next free task code and composes full ids from short codes', () => {
+    expect(suggestTaskCode('HAIFA-S10', [])).toBe('T01')
+    expect(suggestTaskCode('HAIFA-S10', ['HAIFA-S10-T01', 'HAIFA-S10-T04', 'HAIFA-S1-T09', 'HAIFA-S10-X'])).toBe('T05')
+    expect(suggestTaskCode('S', ['S-T099'])).toBe('T100')
+    expect(composeId('HAIFA', 'S10')).toBe('HAIFA-S10')
+    expect(composeId('HAIFA', ' HAIFA-S10 ')).toBe('HAIFA-S10')
+    expect(composeId(null, 'P01')).toBe('P01')
+    expect(shortCode('HAIFA-S10', 'HAIFA-S10-T05')).toBe('T05')
+    expect(CODE_RE.test('T05')).toBe(true)
+    expect(CODE_RE.test('a.b_c')).toBe(true)
+    expect(CODE_RE.test('S-1')).toBe(false)
   })
 })
 

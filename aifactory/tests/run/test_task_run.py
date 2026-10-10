@@ -341,7 +341,7 @@ def test_checks_before_start(
         write(
             repo,
             "backlog/M01-core/S02-api/M01-S02-T01-endpoint.md",
-            "---\nid: M01-S02-T01\ntitle: Endpoint\nstatus: todo\n---\n",
+            "---\nid: M01-S02-T01\ntitle: Endpoint\nstatus: todo\nwrites: []\n---\n",
         )
         commit_all(repo, "no writes")
     elif setup == "unknown_workflow":
@@ -377,6 +377,23 @@ def test_checks_before_start(
     assert exc.value.code == code
     assert_nothing_created(repo)
     assert script.calls == []
+
+
+def test_task_without_writes_runs_with_the_default(repo: Path, script: Script) -> None:
+    """No level sets `writes`: the task may write the whole repo and its workflow runs."""
+    write(repo, "backlog/M01-core/S02-api/index.md", "---\nid: M01-S02\ntitle: Api\n---\n")
+    write(
+        repo,
+        "backlog/M01-core/S02-api/M01-S02-T01-endpoint.md",
+        "---\nid: M01-S02-T01\ntitle: Endpoint\nstatus: todo\n---\n",
+    )
+    commit_all(repo, "no writes key")
+    script.on("planner", lambda wt: write(wt, "docs/endpoint.md", "# endpoint\n"))
+    script.add("planner", ok())
+    result = run_task(repo, "M01-S02-T01")
+    assert result.run.state == "succeeded", result.run.error
+    assert [call.agent for call in script.calls] == ["planner"]
+    assert git(repo, "show", f"{result.run.branch}:docs/endpoint.md") == "# endpoint"
 
 
 def no_run_rows(repo: Path, task_id: str) -> bool:

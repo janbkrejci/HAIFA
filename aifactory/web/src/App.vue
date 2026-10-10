@@ -3,7 +3,6 @@ import { errorText } from './lib/format'
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { Trash2 } from 'lucide-vue-next'
 import { fetchHealth, fetchRepos, type Health, type RepoItem } from './lib/api'
-import { pendingInstall, installBusy, installRegistering, cancelPendingInstall } from './lib/factory'
 import { useCodeState } from './lib/code'
 import { useBacklogStatus } from './lib/backlogStatus'
 import { useLimits } from './lib/limits'
@@ -22,6 +21,7 @@ import OverviewView from './views/OverviewView.vue'
 import ProblemsView from './views/ProblemsView.vue'
 import OverviewReadiness from './components/OverviewReadiness.vue'
 import UpdateChip from './components/UpdateChip.vue'
+import LibraryChip from './components/LibraryChip.vue'
 import { provideReadiness } from './lib/readiness'
 import ReposAddView from './views/ReposAddView.vue'
 import CodeStaleBanner from './components/CodeStaleBanner.vue'
@@ -30,17 +30,14 @@ import LimitsBar from './components/LimitsBar.vue'
 import MachineHarnessesDialog from './components/MachineHarnessesDialog.vue'
 import RepoScreen from './components/RepoScreen.vue'
 import RepoSwitcher from './components/RepoSwitcher.vue'
-import ConfirmDialog from './components/ui/ConfirmDialog.vue'
+import RemoveRepoDialog from './components/repos/RemoveRepoDialog.vue'
 import Spinner from './components/ui/Spinner.vue'
 import Tooltip from './components/ui/Tooltip.vue'
 
 const route = useRoute()
 const readiness = provideReadiness()
 const page = usePage()
-const viewPage = computed(() => (pendingInstall.value || installRegistering.value) ? 'repos-add' : page.value)
-watch([page, installBusy, installRegistering], () => {
-  if (page.value !== 'repos-add' && pendingInstall.value && !installBusy.value && !installRegistering.value) void cancelPendingInstall()
-})
+const viewPage = page
 const repoId = useRepoId()
 const { theme, toggle } = useTheme()
 const themeLabel = computed(() =>
@@ -148,6 +145,7 @@ onBeforeUnmount(() => {
       <div class="topbar-right">
         <UpdateChip />
         <OverviewReadiness chip />
+        <LibraryChip />
         <LimitsBar :providers="limits.providers.value" :loading="limits.loading.value" :usable="limits.usable.value" @open="harnessDialog = true" />
         <Tooltip :text="themeLabel">
         <button class="theme-toggle" type="button" :aria-label="themeLabel" @click="toggle">
@@ -208,11 +206,7 @@ onBeforeUnmount(() => {
             Repo se nepodařilo odebrat: {{ missingRemoval.error.value }}
           </p>
         </EmptyScreen>
-        <ConfirmDialog
-          v-bind="missingRemoval.dialog"
-          @confirm="missingRemoval.confirm"
-          @cancel="missingRemoval.cancel"
-        />
+        <RemoveRepoDialog :removal="missingRemoval" />
       </main>
       <RepoScreen v-else :key="repoId ?? ''" />
     </template>

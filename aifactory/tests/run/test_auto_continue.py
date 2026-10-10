@@ -293,7 +293,7 @@ def test_failure_stops_chain(repo: Path, script: Script, capsys: Capsys) -> None
 
 
 def test_task_that_cannot_start_is_reported(repo: Path, script: Script) -> None:
-    setup_chain(repo, s02_writes="")  # S02 has no writes: its task cannot start
+    setup_chain(repo, s02_writes="writes: []\n")  # S02 has no writes: its task cannot start
     for name in ("one", "two", "three"):
         build(script, name)
     chain = run_chain(repo, T01, auto=True)

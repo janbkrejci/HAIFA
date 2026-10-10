@@ -1,4 +1,5 @@
-"""`workflow: null` on a project, step or task means "no workflow", even under a workflow."""
+"""`workflow: null` on a project, step or task means "no workflow", even under a workflow;
+no `workflow` on any level means the default (`simple-sdlc`)."""
 
 from __future__ import annotations
 
@@ -26,7 +27,9 @@ def _key(value: str | None) -> str:
         ("wf-a", "null", "wf-c", "wf-c"),
         ("null", "wf-b", "", "wf-b"),
         ("null", "", "", None),
-        ("", "", "", None),
+        ("", "", "", "simple-sdlc"),
+        ("", "", "null", None),
+        ("", "null", "", None),
     ],
 )
 def test_nearest_workflow_wins(

@@ -43,10 +43,15 @@ def test_aliases_share_one_role() -> None:
         assert registry.roles[alias] is registry.roles[name]
 
 
-def test_only_revise_resolve_test_plan_command_rebase_and_rebuild_are_extra() -> None:
+def test_only_revise_resolve_test_plan_test_review_command_rebase_and_rebuild_are_extra() -> None:
     vendor = engine.load_engine_module("roles")
     registry = load_roles()
-    assert set(registry.roles) - set(vendor.ROLES) == {"revise", "resolve", "test_plan"}
+    assert set(registry.roles) - set(vendor.ROLES) == {
+        "revise",
+        "resolve",
+        "test_plan",
+        "test_review",
+    }
     assert set(registry.code_steps) - set(vendor.CODE_STEPS) == {"command", "rebase", "rebuild"}
     assert set(vendor.CODE_STEPS) - set(registry.code_steps) == {"quality"}
     test_plan = registry.roles["test_plan"]

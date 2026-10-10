@@ -27,12 +27,20 @@ def effective(task: Task) -> dict[str, object]:
     return {k: values[k] for k in INHERITED_KEYS if k in values}
 
 
+DEFAULT_WORKFLOW = "simple-sdlc"
+"""The workflow of a task when no level sets ``workflow`` (an explicit ``null`` means none)."""
+DEFAULT_WRITES: tuple[str, ...] = ("**",)
+"""The writes of a task when no level sets ``writes``: the whole repo; protected files stay
+protected (``protected_files``, enforced by the engine and the guard)."""
+
+
 def effective_workflow(task: Task) -> object:
-    return effective(task).get("workflow")
+    values = effective(task)
+    return values["workflow"] if "workflow" in values else DEFAULT_WORKFLOW
 
 
 def has_workflow(task: Task) -> bool:
-    """False when the effective ``workflow`` is unset or ``null`` (the nearest level wins)."""
+    """False only when the nearest level sets ``workflow: null``; unset means the default."""
     return effective_workflow(task) is not None
 
 
@@ -61,7 +69,11 @@ def _nearest(task: Task, key: str) -> object:
 
 
 def effective_writes(task: Task) -> list[str]:
-    value = effective(task).get("writes")
+    """The task's writes, inherited; ``DEFAULT_WRITES`` when no level sets the key."""
+    values = effective(task)
+    if "writes" not in values:
+        return list(DEFAULT_WRITES)
+    value = values["writes"]
     if isinstance(value, list):
         return [str(v) for v in value]
     return []

@@ -1,35 +1,28 @@
 <script setup lang="ts">
 import { errorText } from '../../lib/format'
 // The card of an inspected folder on the Add repository page (POST /api/repos/inspect):
-// its repo root, branch, remote, factory state and trace DB, then what can be done with it.
-// Legacy sssf is removed and committed before a fresh factory installation.
+// its repo root, branch, remote, factory state and trace DB, then one action. Adding
+// (or syncing a registered repo) writes .factory/ from the library and commits it on base.
 import { computed, ref } from 'vue'
-import { ApiError, addRepo, type InspectResult, type RepoProblem } from '@/lib/api'
+import { ApiError, addRepo, type AddRepoResult, type InspectResult, type RepoProblem } from '@/lib/api'
 import { problemText } from '@/lib/addRepo'
 import { factoryStateText, onboardingText } from '@/lib/repos'
 import { repoHref } from '@/lib/router'
 import Spinner from '@/components/ui/Spinner.vue'
 
 const props = defineProps<{ inspect: InspectResult }>()
-const emit = defineEmits<{ added: [id: string, name: string]; reinspect: [path: string]; install: [path: string, removeSssf?: boolean]; onboard: [path: string] }>()
-
-const ADDABLE = ['pre_library', 'working_tree', 'onboarded']
+const emit = defineEmits<{ added: [result: AddRepoResult]; reinspect: [path: string] }>()
 
 const adding = ref(false)
 const addError = ref<string | null>(null)
 
 const state = computed(() => props.inspect.factory?.state ?? null)
-const kind = computed<'problem' | 'registered' | 'unknown' | 'none' | 'sssf' | 'add'>(() => {
-  const i = props.inspect
-  if (i.problem !== null) return 'problem'
-  if (i.registered !== null) return 'registered'
-  if (i.factory === null) return 'unknown'
-  if (i.factory.state === 'none') return 'none'
-  if (i.factory.state === 'sssf') return 'sssf'
-  return i.addable && ADDABLE.includes(i.factory.state) ? 'add' : 'unknown'
+const kind = computed<'problem' | 'registered' | 'add'>(() => {
+  if (props.inspect.problem !== null) return 'problem'
+  return props.inspect.registered !== null ? 'registered' : 'add'
 })
 const root = computed(() => props.inspect.root ?? props.inspect.path)
-const hasSssf = computed(() => Boolean(props.inspect.sssf_paths?.length) || state.value === 'sssf' || props.inspect.factory?.sssf_leftover === true)
+const base = computed(() => props.inspect.factory?.base ?? props.inspect.branch ?? 'base')
 /** A registered repo opens on its Backlog once factory is onboarded, else on its Factory tab. */
 const openHref = computed(() => props.inspect.registered
   ? repoHref(props.inspect.registered, state.value === 'onboarded' ? 'backlog' : 'factory') : '')
@@ -38,8 +31,7 @@ async function add() {
   adding.value = true
   addError.value = null
   try {
-    const { repo } = await addRepo(root.value, hasSssf.value)
-    emit('added', repo.id, repo.name)
+    emit('added', await addRepo(root.value))
   } catch (err) {
     if (err instanceof ApiError) {
       const data = (err.data && typeof err.data === 'object' ? err.data : {}) as Partial<RepoProblem>
@@ -86,9 +78,9 @@ async function add() {
       Použije se kořen repozitáře {{ inspect.root }}.
     </p>
 
-      <p v-if="inspect.factory?.onboarding" class="note" data-test="inspect-onboarding">
-        {{ onboardingText(inspect.factory.onboarding) }} · knihovna {{ inspect.factory.library?.name ?? '—' }}
-      </p>
+    <p v-if="inspect.factory?.onboarding" class="note" data-test="inspect-onboarding">
+      {{ onboardingText(inspect.factory.onboarding) }} · knihovna {{ inspect.factory.library?.name ?? '—' }}
+    </p>
 
     <template v-if="kind === 'problem' && inspect.problem">
       <p class="problem" data-test="inspect-problem">{{ problemText(inspect.problem, inspect) }}</p>
@@ -103,38 +95,24 @@ async function add() {
       </button>
     </template>
 
-    <p v-if="hasSssf && kind !== 'problem'" class="warn" data-test="inspect-sssf-warning">
-      Instalace sssf bude při pokračování smazána a odstranění se commitne v tomto repozitáři. Její nastavení se nepřevádí.
-    </p>
-
-    <template v-if="kind === 'registered' && inspect.registered">
-      <button v-if="state === 'pre_library' && !hasSssf" type="button" class="btn" data-test="inspect-onboard" @click="emit('onboard', root)">Onboarding</button>
-      <p class="note" data-test="inspect-registered">Repo už je v dashboardu.<template v-if="state === 'none'"> Factory v něm ještě není.</template></p>
-      <button v-if="state === 'none' || state === 'sssf'" type="button" class="btn ok" data-test="inspect-init" @click="emit('install', root, hasSssf)">Nainstalovat factory</button>
-      <a :href="openHref" class="btn" data-test="inspect-open">Otevřít</a>
-    </template>
-
-    <template v-else-if="kind === 'none'">
-      <p class="note">V repu není factory.</p>
-      <button type="button" class="btn" data-test="inspect-init" @click="emit('install', root, hasSssf)">Pokračovat instalací</button>
-    </template>
-
-    <template v-else-if="kind === 'sssf'">
-      <button type="button" class="btn" data-test="inspect-init" @click="emit('install', root, true)">Pokračovat instalací</button>
-    </template>
-
-    <p v-else-if="kind === 'unknown'" class="problem" data-test="inspect-unknown">Stav factory se nepodařilo zjistit.</p>
-
-    <template v-else-if="kind === 'add'">
-      <button v-if="state === 'pre_library' && !hasSssf" type="button" class="btn" data-test="inspect-onboard" @click="emit('onboard', root)">Onboarding</button>
-      <p v-if="state === 'working_tree'" class="warn" data-test="inspect-working-tree">
-        Konfigurace factory není commitnutá, běhy ji neuvidí. Dořešíš to v záložce Factory nebo příkazem
-        <code>factory config commit</code>.
+    <template v-else>
+      <p v-if="kind === 'registered'" class="note" data-test="inspect-registered">Repo už je v dashboardu.</p>
+      <p class="note" data-test="inspect-install-note">
+        {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory z knihovny (existující nahradí), doplní .gitignore a commitne to do {{ base }}.
       </p>
+      <p v-if="adding" class="note" data-test="inspect-adding">Zapisuji factory a commituji do {{ base }}…</p>
       <p v-if="addError" class="problem" data-test="inspect-add-error">{{ addError }}</p>
-      <button type="button" class="btn ok" :disabled="adding" data-test="inspect-add" @click="add">
-        <Spinner v-if="adding" /> Přidat
-      </button>
+      <div class="actions">
+        <template v-if="kind === 'registered'">
+          <a :href="openHref" class="btn" data-test="inspect-open">Otevřít</a>
+          <button type="button" class="btn ok" :disabled="adding" data-test="inspect-sync" @click="add">
+            <Spinner v-if="adding" /> Synchronizovat s knihovnou
+          </button>
+        </template>
+        <button v-else type="button" class="btn ok" :disabled="adding" data-test="inspect-add" @click="add">
+          <Spinner v-if="adding" /> Přidat
+        </button>
+      </div>
     </template>
   </article>
 </template>
@@ -183,6 +161,11 @@ dd {
   margin: 0;
   color: var(--red);
   font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
 }
 
 .command {

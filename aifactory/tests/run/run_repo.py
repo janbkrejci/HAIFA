@@ -12,6 +12,7 @@ import subprocess
 import sys
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -40,10 +41,21 @@ __all__ = [
     "git",
     "make_run_repo",
     "ok",
+    "PLAN_APPROVED",
     "plan_envelope",
+    "scripted_plan",
     "triage_envelope",
     "write",
 ]
+
+# the test-reviewer's approval of a test plan (seed agent, added to every roster)
+PLAN_APPROVED: dict[str, Any] = {
+    "status": "success",
+    "approved": True,
+    "summary": "plan fits",
+    "findings": [],
+    "blocking": [],
+}
 
 T01 = "M01-S01-T01"
 T02 = "M01-S01-T02"
@@ -92,6 +104,12 @@ def files(harness: str) -> dict[str, str]:
         result[f".factory/prompts/{agent}/system.md"] = f"You are the {agent}.\n"
         result[f".factory/prompts/{agent}/user.md"] = USER_PROMPT
     return result
+
+
+def scripted_plan(script: Script, *argv: str) -> None:
+    """A tester plan with the single check `argv` and the test-reviewer's approval of it."""
+    script.add("tester", plan_envelope(*argv))
+    script.add("test-reviewer", dict(PLAN_APPROVED))
 
 
 def git(repo: Path, *args: str) -> str:

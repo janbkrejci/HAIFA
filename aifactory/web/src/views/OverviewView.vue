@@ -22,7 +22,7 @@ import { REPOS_ADD_HREF, repoHref } from '@/lib/router'
 import { ADD_REPO_HINT, useRemoveRepo } from '@/lib/repos'
 import EmptyScreen from '@/components/EmptyScreen.vue'
 import RepoCard from '@/components/overview/RepoCard.vue'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import RemoveRepoDialog from '@/components/repos/RemoveRepoDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 
 const props = withDefaults(defineProps<{ repos: RepoItem[] | null; error?: string | null }>(), {
@@ -32,17 +32,11 @@ const props = withDefaults(defineProps<{ repos: RepoItem[] | null; error?: strin
 const emit = defineEmits<{ changed: [] }>()
 
 const { data, error: overviewError, loading, refresh } = useOverview()
-const {
-  dialog,
-  confirm,
-  cancel,
-  remove,
-  removing,
-  error: removeError,
-} = useRemoveRepo(() => {
+const removal = useRemoveRepo(() => {
   void refresh()
   emit('changed')
 })
+const { remove, removing, error: removeError } = removal
 const filter = ref<OverviewFilter | null>(null)
 
 const sorted = computed(() => sortRepos(data.value?.repos ?? []))
@@ -125,12 +119,12 @@ function activity(iso: string | null): string {
           <a :href="repoHref(repo.id, 'backlog')" class="calm-name">{{ repo.name }}</a>
           <span class="calm-state">v klidu</span>
           <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>
-          <button type="button" class="calm-remove" :disabled="removing === repo.id" :aria-label="`Odebrat ${repo.name} z dashboardu`" data-test="calm-remove" @click="remove(repo)"><Trash2 :size="14" aria-hidden="true" /></button>
+          <button type="button" class="calm-remove" :disabled="removing === repo.id" :aria-label="`Odebrat repozitář ${repo.name}`" data-test="calm-remove" @click="remove(repo)"><Trash2 :size="14" aria-hidden="true" /></button>
         </li>
       </ul>
     </template>
   </section>
-  <ConfirmDialog v-bind="dialog" @confirm="confirm" @cancel="cancel" />
+  <RemoveRepoDialog :removal="removal" />
 </template>
 
 <style scoped>

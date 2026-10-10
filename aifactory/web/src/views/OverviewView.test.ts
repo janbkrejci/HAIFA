@@ -209,29 +209,93 @@ describe('OverviewView', () => {
     expect(wrapper.get('[data-test="overview-card"]').attributes('data-repo')).toBe('a')
   })
 
-  it('removes a repo whose folder is missing from its card, after asking', async () => {
+  const PLAN = {
+    repo: '/w/gone', base: 'main', base_sha: 'abc', target: 'base', digest: 'd',
+    files: [{ path: '.factory/config.yaml', action: 'delete' }, { path: '.gitignore', action: 'modify' }],
+    blockers: [] as { code: string; message: string; fix?: string }[],
+    own_items: [{ type: 'agent', name: 'mine', state: 'local' }, { type: 'workflow', name: 'flow', state: 'modified' }],
+  }
+
+  function stubRemoval(plan: unknown, deletion?: Response) {
     let removed = false
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url === '/api/repos/gone/removal') {
+        return plan instanceof Response ? plan : envelope(plan)
+      }
       if (url === '/api/repos/gone' && init?.method === 'DELETE') {
+        if (deletion) return deletion
         removed = true
-        return envelope({ removed: { id: 'gone' } })
+        return envelope({ removed: { id: 'gone' }, uninstall: null })
       }
       if (url === '/api/overview') return envelope(removed ? overview([repo('busy', { running: [running()] })]) : DATA)
       throw new Error(`unexpected ${url}`)
     })
     vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+
+  async function openRemoval() {
     const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, attachTo: document.body, global })
     await flushPromises()
-    const card = wrapper.get('[data-test="overview-card"][data-repo="gone"]')
+    await wrapper.get('[data-test="overview-card"][data-repo="gone"] [data-test="card-remove"]').trigger('click')
+    await flushPromises()
+    return wrapper
+  }
+
+  function deleteBody(fetchMock: ReturnType<typeof stubRemoval>): unknown {
+    const call = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos/gone' && init?.method === 'DELETE')
+    return call ? JSON.parse(String(call[1]?.body)) : undefined
+  }
+
+  it('removes a repo after showing its removal plan and exports the checked own items', async () => {
+    const fetchMock = stubRemoval(PLAN)
+    const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, attachTo: document.body, global })
+    await flushPromises()
     expect(wrapper.findAll('[data-test="card-remove"]')).toHaveLength(5)
     expect(wrapper.findAll('[data-test="calm-remove"]')).toHaveLength(2)
-    await card.get('[data-test="card-remove"]').trigger('click')
+    await wrapper.get('[data-test="overview-card"][data-repo="gone"] [data-test="card-remove"]').trigger('click')
     await flushPromises()
-    expect(openDialog()?.textContent).toContain('Odebrat gone z dashboardu?')
+    const dialog = openDialog()!
+    expect(dialog.textContent).toContain('Odebrat repozitář gone?')
+    expect(dialog.textContent).toContain('.factory/ a řádky factory v .gitignore, commitne to do main')
+    expect(dialog.textContent).toContain('Backlog, specifikace a dokumentace v repu zůstanou.')
+    expect(dialog.textContent).toContain('Commit změní 2 soubory.')
+    const boxes = dialog.querySelectorAll<HTMLInputElement>('[data-test="removal-export"]')
+    expect([...boxes].map((b) => b.checked)).toEqual([true, true])
+    expect(dialog.querySelectorAll('[data-test="removal-own-item"]')[0].textContent).toContain('Přesunout do knihovny')
+    boxes[1].click()
+    await flushPromises()
     await answerDialog(true)
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/gone', { method: 'DELETE' })
+    expect(deleteBody(fetchMock)).toEqual({ export: [{ type: 'agent', name: 'mine' }] })
     expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(wrapper.find('[data-test="overview-card"][data-repo="gone"]').exists()).toBe(false)
+  })
+
+  it('lists blockers and keeps Odebrat disabled while any exists', async () => {
+    const fetchMock = stubRemoval({ ...PLAN, own_items: [], blockers: [{ code: 'dirty_paths', message: 'Necommitnuté změny v .factory/.', fix: 'Commitni je.' }] })
+    await openRemoval()
+    const dialog = openDialog()!
+    expect(dialog.querySelector('[data-test="removal-blocker"]')?.textContent).toContain('Necommitnuté změny v .factory/. Commitni je.')
+    expect(dialog.querySelector<HTMLButtonElement>('[data-test="confirm-ok"]')?.disabled).toBe(true)
+    expect(dialog.querySelector('[data-test="removal-own-items"]')).toBeNull()
+    await answerDialog(false)
+    expect(deleteBody(fetchMock)).toBeUndefined()
+  })
+
+  it('removes only the registry entry when the removal plan cannot be read', async () => {
+    const fetchMock = stubRemoval(new Response(JSON.stringify({ ok: false, data: null, error: { code: 'not_git', message: 'folder is gone', path: null, id: null, issues: [] }, warnings: [] }), { status: 400 }))
+    await openRemoval()
+    expect(openDialog()?.textContent).toContain('Plán odebrání se nepodařilo načíst: folder is gone')
+    await answerDialog(true)
+    expect(deleteBody(fetchMock)).toEqual({ uninstall: false })
+  })
+
+  it('reports a failed removal', async () => {
+    stubRemoval(PLAN, new Response(JSON.stringify({ ok: false, data: null, error: { code: 'push_failed', message: 'push refused', path: null, id: null, issues: [] }, warnings: [] }), { status: 409 }))
+    const wrapper = await openRemoval()
+    await answerDialog(true)
+    expect(wrapper.get('[data-test="remove-error"]').text()).toContain('push refused')
+    expect(wrapper.emitted('changed')).toBeUndefined()
   })
 
   it('offers adding a repo when none is registered', async () => {

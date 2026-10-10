@@ -2,6 +2,7 @@
 // One form for a new task (factory task add) and for editing a task (factory task edit).
 import { computed, ref } from 'vue'
 import {
+  CODE_RE,
   INHERIT_LABEL,
   SETTING_LABELS,
   autoMode,
@@ -9,6 +10,8 @@ import {
   levelNoun,
   splitIds,
   splitLines,
+  shortCode,
+  suggestTaskCode,
   type AddTaskInput,
   type EditTaskInput,
   type StepRef,
@@ -39,6 +42,8 @@ const props = defineProps<{
   initialBody?: string
   /** The step a new task starts in (`#/r/<id>/backlog/new/<step id>`). */
   initialStep?: string | null
+  /** Ids of the existing tasks: the suggested code of a new task follows them. */
+  taskIds?: string[]
 }>()
 
 const emit = defineEmits<{
@@ -58,6 +63,11 @@ const step = ref(
 )
 const title = ref(task?.title ?? props.initialTitle ?? '')
 const taskId = ref('')
+/** The short code of a new task (`T05`); empty means the next free one. */
+const taskCode = computed(() => shortCode(step.value || null, taskId.value))
+const taskCodeValid = computed(() => !taskCode.value || CODE_RE.test(taskCode.value))
+const nextTaskCode = computed(() => (step.value ? suggestTaskCode(step.value, props.taskIds ?? []) : 'T01'))
+const taskIdPreview = computed(() => (step.value ? `${step.value}-${taskCode.value || nextTaskCode.value}` : ''))
 const workflow = ref(initialWorkflow)
 const writesText = ref(initialWrites.join('\n'))
 const inheritWrites = ref(initialInherit)
@@ -186,8 +196,7 @@ const workflowOptions = computed<SelectOption[]>(() => [
 
 function addInput(): AddTaskInput {
   const input: AddTaskInput = { step: step.value, title: title.value.trim() }
-  const id = taskId.value.trim()
-  if (id) input.id = id
+  if (taskCode.value) input.id = taskCode.value
   if (workflow.value) input.workflow = workflow.value
   const writes = splitLines(writesText.value)
   if (writes.length || !inheritWrites.value) input.writes = writes
@@ -234,7 +243,7 @@ const editInput = computed<EditTaskInput>(() => {
 
 const canSubmit = computed(() => {
   if (props.busy || adviceBusy.value || parameterBusy.value) return false
-  if (props.mode === 'add') return Boolean(step.value && title.value.trim())
+  if (props.mode === 'add') return Boolean(step.value && title.value.trim() && taskCodeValid.value)
   return Object.keys(editInput.value).length > 0
 })
 
@@ -266,8 +275,10 @@ function onSubmit() {
     </label>
 
     <label v-if="mode === 'add'">
-      Id
-      <input v-model="taskId" data-test="id" type="text" placeholder="další volné" />
+      Kód (volitelné)
+      <input v-model="taskId" data-test="id" type="text" :placeholder="nextTaskCode" autocomplete="off" />
+      <span v-if="!taskCodeValid" class="hint error" data-test="id-invalid">Kód smí obsahovat jen písmena, číslice, „.“ a „_“.</span>
+      <span v-else-if="taskIdPreview" class="hint faint" data-test="id-preview">Id: <span class="mono">{{ taskIdPreview }}</span></span>
     </label>
 
     <label v-if="mode === 'edit'">
@@ -442,6 +453,14 @@ textarea {
 
 .hint {
   font-size: 13px;
+}
+
+.mono {
+  font-family: var(--mono);
+}
+
+.hint.error {
+  color: var(--red);
 }
 
 .no-steps {

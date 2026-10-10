@@ -311,7 +311,7 @@ def test_edit_and_assign_workflow(tmp_path: Path) -> None:
 
     data = _post(client, url, {"clear_workflow": True})["data"]
     assert "workflow:" not in _file(root, B1).read_text(encoding="utf-8")
-    assert data["task"]["board_state"] == "todo"
+    assert data["task"]["board_state"] == "ready"  # no workflow key: the default workflow
 
     data = _post(client, url, {"status": "cancelled"})["data"]
     assert data["task"]["board_state"] == "cancelled"

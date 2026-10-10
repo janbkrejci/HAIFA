@@ -582,10 +582,10 @@ def _check_report() -> dict[str, Any]:
 def test_add_and_remove_repo_in_browser(
     page: Page, server: Server, net: Net, tmp_path: Path
 ) -> None:
-    """A second repo with factory is added by typing its path, its Factory tab checks it on
-    its own, and it is removed from the dashboard again; the repo itself never changes."""
+    """A second repo is added by typing its path (factory from the library is committed on
+    its base), its Factory tab checks it on its own, and it is removed again: the removal
+    commits the deletion of ``.factory/`` and keeps the backlog."""
     second = make_f3_repo(tmp_path / "second-repo")
-    head = git(second, "rev-parse", "HEAD")
     checks: list[str] = []
 
     def canned_check(route: Route) -> None:
@@ -609,7 +609,13 @@ def test_add_and_remove_repo_in_browser(
     expect(card).to_be_visible(timeout=SERVER_TIMEOUT_MS)
     expect(card).not_to_have_attribute("data-state", "problem")
     expect(card.locator('[data-test="inspect-root"]')).to_have_text(str(second))
+    expect(card.locator('[data-test="inspect-install-note"]')).to_contain_text(
+        "commitne to do main"
+    )
     page.locator('[data-test="inspect-add"]').click(timeout=SERVER_TIMEOUT_MS)
+    expect(page.locator('[data-test="repo-added-install"]')).to_be_visible(
+        timeout=SERVER_TIMEOUT_MS
+    )
     page.locator('[data-test="repo-added-open"]').click(timeout=SERVER_TIMEOUT_MS)
 
     # the Factory tab of the new repo runs the check by itself
@@ -621,24 +627,31 @@ def test_add_and_remove_repo_in_browser(
     assert checks and all(f"/api/repos/{second_id}/factory/check" in url for url in checks)
     _no_native_tooltips(page)
 
-    # remove it from the dashboard with the dashboard's own modal
+    assert git(second, "status", "--porcelain") == ""
+    installed = git(second, "rev-parse", "HEAD")
+
+    # remove it with the dashboard's own modal: the removal plan, then a commit on base
     page.goto("/#/overview")
     row = page.locator(f'[data-repo="{second_id}"]')
     expect(row).to_be_visible(timeout=SERVER_TIMEOUT_MS)
     row.locator('[data-test="card-remove"], [data-test="calm-remove"]').click()
     dialog = page.locator('[data-test="confirm-dialog"]')
-    expect(dialog).to_contain_text("z dashboardu?")
-    expect(dialog).to_contain_text(f"Odebrat {second.name} z dashboardu?")
-    expect(dialog).to_contain_text("Ve složce")
+    expect(dialog).to_contain_text(f"Odebrat repozitář {second.name}?")
+    expect(dialog).to_contain_text("commitne to do main", timeout=SERVER_TIMEOUT_MS)
+    expect(dialog).to_contain_text("Backlog, specifikace a dokumentace v repu zůstanou.")
+    expect(dialog.locator('[data-test="removal-blockers"]')).to_have_count(0)
     dialog.locator('[data-test="confirm-ok"]').click()
     expect(row).to_have_count(0, timeout=SERVER_TIMEOUT_MS)
     original = page.locator(f'[data-repo="{server.repo_id}"]')
     expect(original).to_be_visible()
 
-    # only the registry changed: the repo is as it was
+    # unregistered; one more commit deleted .factory/, the backlog stays
     entries = yaml.safe_load((server.home / "dashboard.yaml").read_text(encoding="utf-8"))
     paths = [Path(e["path"]).resolve() for e in entries.get("repos") or []]
     assert second.resolve() not in paths
     assert git(second, "status", "--porcelain") == ""
-    assert git(second, "rev-parse", "HEAD") == head
+    assert git(second, "rev-parse", "HEAD~1") == installed
+    assert git(second, "ls-tree", "-r", "--name-only", "HEAD", ".factory") == ""
+    assert git(second, "ls-tree", "-r", "--name-only", "HEAD", "backlog") != ""
+    assert not (second / ".factory").exists()
     assert net.aborted == []

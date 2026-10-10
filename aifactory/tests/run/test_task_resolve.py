@@ -23,7 +23,7 @@ from run_repo import (
     git,
     make_run_repo,
     ok,
-    plan_envelope,
+    scripted_plan,
     triage_envelope,
     write,
 )
@@ -86,8 +86,8 @@ def run_both(repo: Path, script: Script, second: tuple[str, str] = (MODEL, "VALU
 
 
 def tester(script: Script) -> None:
-    """The tester's plan for the resolve run (one check; the suite result is scripted)."""
-    script.add("tester", plan_envelope())
+    """A reviewed tester plan for the resolve run (one check; the suite result is scripted)."""
+    scripted_plan(script)
 
 
 def triage(script: Script) -> None:
@@ -310,11 +310,13 @@ def test_fix_repairs_what_resolve_broke(repo: Path, script: Script) -> None:
         "rebase",
         "resolve",
         "test_plan",
+        "test_review",
         "rebuild_1",
         "test_1",
         "triage_1",
         "fix_1",
         "test_plan_1",
+        "test_review_1",
         "rebuild_2",
         "test_2",
     ], names

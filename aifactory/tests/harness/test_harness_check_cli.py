@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,8 @@ import yaml
 from aifactory.cli import main
 from aifactory.harness import check
 from cli_json import read_envelope, run_json
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "check"))
 
 VERSIONS = {
     "/bin/claude": ("2.1.0 (Claude Code)\n", ""),
@@ -93,7 +96,7 @@ def test_harness_check_only_what_config_uses(
     assert main(["harness", "check", "--json", "--config", str(path)]) == 0
     data = read_envelope(capsys)["data"]
     assert [(h["name"], h["agents"]) for h in data["harnesses"]] == [
-        ("claude", ["planner", "reviewer", "tester"]),
+        ("claude", ["planner", "reviewer", "tester", "test-reviewer"]),
         ("pi", ["builder"]),
     ]
     assert calls == [["/bin/claude", "--version"], ["/bin/pi", "--version"]]
@@ -155,7 +158,7 @@ def test_harness_check_haifa_roster_relative_path(
     rc, obj = run_json(capsys, ["harness", "check", "--config", ".factory/agents.yaml", "--json"])
     assert rc == 0
     assert [(h["name"], h["agents"]) for h in obj["data"]["harnesses"]] == [
-        ("claude", ["planner", "builder", "tester"])  # tester from the seed
+        ("claude", ["planner", "builder", "tester", "test-reviewer"])  # the last two from the seed
     ]
     assert calls == [["/bin/claude", "--version"]]
     _fake(monkeypatch, set())

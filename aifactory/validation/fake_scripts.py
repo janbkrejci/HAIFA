@@ -20,7 +20,8 @@ The fake tester plans one check, the sandbox's ``just test`` (full coverage),
 for ``test_plan``, again after every fix and for ``replan_1`` after the forced
 revision. A red test goes to the tester first (``triage``): the fake answers
 ``failure_cause: code`` so the builder repairs it. Every plan has the same
-check, so ``plan_keeps_checks`` passes.
+check, so ``plan_keeps_checks`` passes. The fake test-reviewer approves every
+stored plan (``test_review`` after each plan).
 
 Envelope fields follow ``aifactory.engine.data_types`` (PlanOutput,
 BuildOutput, TestPlanOutput, ReviewOutput, DocumentOutput).
@@ -168,6 +169,20 @@ def triage(task_id: str) -> dict[str, Any]:
     return entry
 
 
+PLAN_APPROVED: dict[str, Any] = {
+    "status": "success",
+    "approved": True,
+    "summary": "plan fits",
+    "findings": [],
+    "blocking": [],
+}
+
+
+def plan_review() -> dict[str, Any]:
+    """The fake test-reviewer's approval of a test plan."""
+    return {"envelope": dict(PLAN_APPROVED), "edits": []}
+
+
 def revise_edit(path: str) -> dict[str, Any]:
     """The revision the validation reviewer asks for in its first round."""
     return {"path": path, "append": f"{REVIEW_RULE_MARKER}\n"}
@@ -217,7 +232,8 @@ def _script(
     doc: str = "What changed and why.",
 ) -> dict[str, Any]:
     """Planner, the builds, the forced revision of `revised`, two reviews, the test
-    plans (``test_plan``, a triage and a plan per fix, ``replan_1``), documenter."""
+    plans (``test_plan``, a triage and a plan per fix, ``replan_1``), an approving plan
+    review per stored plan, documenter."""
     return {
         "task": task_id,
         "agents": {
@@ -230,6 +246,8 @@ def _script(
                 *[e for _ in builds[1:] for e in (triage(task_id), test_plan(task_id))],
                 test_plan(task_id),
             ],
+            # one approval per stored plan: test_plan, the plan after each fix, replan_1
+            "test-reviewer": [plan_review() for _ in range(len(builds) + 1)],
             "reviewer": _reviews(task_id, revised),
             "documenter": [_document(task_id, doc)],
         },
@@ -277,7 +295,11 @@ def _lerp_resolve() -> dict[str, Any]:
     }
     return {
         "task": "M01-S01-T02",
-        "agents": {"builder": [resolve], "tester": [test_plan("M01-S01-T02")]},
+        "agents": {
+            "builder": [resolve],
+            "tester": [test_plan("M01-S01-T02")],
+            "test-reviewer": [plan_review()],
+        },
     }
 
 

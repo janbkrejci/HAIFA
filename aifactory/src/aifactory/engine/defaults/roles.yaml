@@ -24,6 +24,12 @@ roles:
     gates: [checks_runnable, plan_keeps_checks, coverage_required]
     description: Choose the checks that verify this change, enough to trust it and nothing beyond
     retries: 1
+  # aifactory 3.0: every new test plan is reviewed before its checks run (interpreter).
+  test_review:
+    agent: test-reviewer
+    output_type: ReviewOutput
+    gates: [verdict_consistent]
+    description: Judge the test plan alone, enough to trust the change and not needlessly broad
   scout:
     agent: scout
     output_type: ScoutOutput

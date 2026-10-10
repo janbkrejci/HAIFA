@@ -17,6 +17,7 @@ from aifactory.backlog import (
     load_backlog,
     parse_frontmatter,
 )
+from aifactory.backlog.edit import compose_id
 from aifactory.cli import main
 from cli_json import run_json
 
@@ -54,7 +55,7 @@ def test_add_project_and_step(tmp_path: Path) -> None:
     assert project.container.level == "module"
     assert _header(root, project.path) == {"id": "M03", "title": "Reporty a exporty"}
     assert "Popis modulu." in project.container.body
-    step = add_container(root, "M03", "M03-S01", "Export CSV")
+    step = add_container(root, "M03", "S01", "Export CSV")
     assert step.path == "backlog/M03-reporty-a-exporty/S01-export-csv/index.md"
     assert step.container.level == "step"
     assert step.container.parent is not None and step.container.parent.id == "M03"
@@ -74,7 +75,7 @@ def test_add_rejects_an_invalid_code(tmp_path: Path, code: str) -> None:
 def test_add_rejects_a_duplicate_code(tmp_path: Path) -> None:
     root = sample_repo(tmp_path)
     before = _snapshot(root)
-    for parent, code in ((None, "M01"), ("M01", "M01-S01"), (None, "M01-S01-T01")):
+    for parent, code in ((None, "M01"), ("M01", "S01"), ("M01", "M01-S01")):
         with pytest.raises(TaskEditError) as exc:
             add_container(root, parent, code, "Jiný název")
         assert exc.value.code == "backlog_invalid"
@@ -88,15 +89,60 @@ def test_add_rejects_a_step_outside_its_project(tmp_path: Path) -> None:
     before = _snapshot(root)
     with pytest.raises(TaskEditError) as exc:
         add_container(root, "M01", "M02-S09", "Cizí step")
-    assert exc.value.code == "backlog_invalid"
-    assert {i.code for i in exc.value.issues} == {"id_prefix"}
+    assert exc.value.code == "invalid_id"  # another project's prefix is not stripped
     with pytest.raises(TaskEditError) as exc:
-        add_container(root, "M09", "M09-S01", "Bez projektu")
+        add_container(root, "M09", "S01", "Bez projektu")
     assert exc.value.code == "unknown_container"
     with pytest.raises(TaskEditError) as exc:
-        add_container(root, "M01-S01", "M01-S01-X01", "Pod stepem")
+        add_container(root, "M01-S01", "X01", "Pod stepem")
     assert exc.value.code == "invalid_value"
     assert _snapshot(root) == before
+
+
+@pytest.mark.parametrize(
+    ("parent", "code", "full"),
+    [
+        (None, "HAIFA", "HAIFA"),
+        (None, " M03 ", "M03"),
+        ("HAIFA", "S10", "HAIFA-S10"),
+        ("HAIFA", "HAIFA-S10", "HAIFA-S10"),
+        ("HAIFA-S10", "T05", "HAIFA-S10-T05"),
+        ("HAIFA-S10", "HAIFA-S10-T05", "HAIFA-S10-T05"),
+        ("HAIFA-S10", "t1.v2_b", "HAIFA-S10-t1.v2_b"),
+    ],
+)
+def test_compose_id(parent: str | None, code: str, full: str) -> None:
+    assert compose_id(parent, code) == full
+
+
+@pytest.mark.parametrize(
+    ("parent", "code"),
+    [
+        (None, "M-01"),
+        (None, ""),
+        ("HAIFA", "HAIFA-"),
+        ("HAIFA", "OTHER-S10"),
+        ("HAIFA", "S-10"),
+        ("HAIFA", "_S10"),
+        ("HAIFA-S10", "HAIFA-T05"),
+        ("HAIFA-S10", "T 5"),
+    ],
+)
+def test_compose_id_rejects_invalid_codes(parent: str | None, code: str) -> None:
+    with pytest.raises(TaskEditError) as exc:
+        compose_id(parent, code)
+    assert exc.value.code == "invalid_id"
+    assert exc.value.exit_code == 2
+
+
+def test_add_step_by_short_code_or_full_id(tmp_path: Path) -> None:
+    root = sample_repo(tmp_path)
+    short = add_container(root, "M01", "S07", "Krátký kód")
+    assert short.container.id == "M01-S07"
+    assert short.path == "backlog/M01-core/S07-kratky-kod/index.md"
+    full = add_container(root, "M01", "M01-S08", "Plné id")
+    assert full.container.id == "M01-S08"
+    assert check_backlog(load_backlog(root)) == []
 
 
 def test_add_rejects_an_empty_title(tmp_path: Path) -> None:
@@ -275,8 +321,8 @@ def test_cli_rejects_invalid_writes(tmp_path: Path, capsys: Capsys) -> None:
     assert [i["code"] for i in env["error"]["issues"]] == ["duplicate_id"]
     add_outside = ["backlog", "add", "M01", "--id", "M02-S05", "--title", "X", "--json"]
     rc, env = run_json(capsys, add_outside + repo)
-    assert rc == 1
-    assert {i["code"] for i in env["error"]["issues"]} == {"id_prefix"}
+    assert rc == 2
+    assert env["error"]["code"] == "invalid_id"
     rc, env = run_json(capsys, ["backlog", "edit", "M01", "--json"] + repo)
     assert rc == 2
     assert env["error"]["code"] == "no_changes"

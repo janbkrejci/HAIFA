@@ -25,7 +25,7 @@ from run_repo import Script, commit_all, fake_env, ok, write  # noqa: E402
 from workflow_fakes import plan_envelope  # noqa: E402
 
 Capsys = pytest.CaptureFixture[str]
-DEFAULT_AGENTS = ["planner", "builder", "tester", "reviewer", "documenter"]
+DEFAULT_AGENTS = ["planner", "builder", "tester", "test-reviewer", "reviewer", "documenter"]
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -122,9 +122,9 @@ def test_init_from_seed_without_library(repo: Path, home: Path, capsys: Capsys) 
     agents = load(repo, ".factory/agents.yaml")["agents"]
     assert [a["name"] for a in agents] == DEFAULT_AGENTS
     assert agents[0]["writes"] == ["specs/"]
-    assert agents[4]["writes"] == ["app_docs/"]
+    assert agents[5]["writes"] == ["app_docs/"]
     prompts = list((repo / ".factory" / "prompts").rglob("*.md"))
-    assert len(prompts) == 10
+    assert len(prompts) == 12
     assert not any(b"haifa-validate" in p.read_bytes() for p in prompts)
     assert (repo / ".factory/workflows/simple-sdlc.yaml").read_bytes() == (
         DEFAULT_WORKFLOWS_DIR / "simple-sdlc.yaml"
@@ -190,7 +190,8 @@ def test_bind_sets_harness_model_and_thinking(repo: Path, capsys: Capsys) -> Non
         "high",
     )
     assert all(
-        agents[n]["harness"] == "claude" for n in ("planner", "tester", "reviewer", "documenter")
+        agents[n]["harness"] == "claude"
+        for n in ("planner", "tester", "test-reviewer", "reviewer", "documenter")
     )
 
 
@@ -344,6 +345,7 @@ def test_task_runs_in_an_installed_repo(repo: Path, capsys: Capsys, script: Scri
     script.on("builder", lambda wt: write(wt, "src/app/model.py", "x = 1\n"))
     script.add("builder", ok(changed_files=["src/app/model.py"], commit_message="Add model"))
     script.add("tester", plan_envelope("git", "--version"))
+    script.add("test-reviewer", ok(approved=True, summary="plan fits", findings=[], blocking=[]))
     script.add("reviewer", ok(approved=True, findings=[{"requirement": "x", "met": True}]))
     script.on("documenter", lambda wt: write(wt, DOC, "# doc\n"))
     script.add("documenter", ok(artifacts=[DOC], commit_message="Document schema"))

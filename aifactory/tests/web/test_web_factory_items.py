@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 import yaml
-from multi_repo import BASE
+from multi_repo import BASE, register
 from starlette.testclient import TestClient
 from test_web_factory import (
     Api,
@@ -151,9 +151,7 @@ def test_onboard_sssf_and_remote_blocker(api: Api, tmp_path: Path) -> None:
     clone = tmp_path / "old-checkout"
     git(tmp_path, "clone", "-q", str(tmp_path / "sssf.git"), str(clone))
     for key, path in (("sssf", root), ("old", clone)):
-        res = api.client.post("/api/repos", json={"path": str(path)})
-        assert res.status_code == 201, res.text
-        api.ids[key] = res.json()["data"]["repo"]["id"]
+        api.ids[key] = register(api.client, path)["id"]
     opts = {
         "names": ["agent/builder=sssf-builder"],
         "keep_local": ["agent/reviewer"],

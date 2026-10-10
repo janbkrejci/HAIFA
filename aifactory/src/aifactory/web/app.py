@@ -134,9 +134,11 @@ the HAIFA home (``registry.py``). ``GET /api/health`` (``app: haifa-dashboard``,
 ``home``), ``GET /api/code`` and ``POST /api/restart`` (as above, no repository needed;
 not served per repository), ``GET /api/limits`` (the machine's subscriptions),
 ``GET /api/repos`` (the repositories with ``status`` and the ``factory`` state),
-``POST /api/repos`` (``{path, remove_sssf?}``, idempotent; HTTP 201 when added;
-``remove_sssf: true`` removes legacy sssf and commits its deletion before registration),
-``POST /api/repos/inspect`` (``{path}``, reads only), ``DELETE /api/repos/{id}`` (only the
+``POST /api/repos`` (``{path}``, idempotent; HTTP 201 when added; registers and installs
+factory from the library in one commit, replacing an existing ``.factory/``),
+``POST /api/repos/inspect`` (``{path}``, reads only), ``GET /api/repos/{id}/removal`` (what
+removing commits, and the repo's own items), ``DELETE /api/repos/{id}`` (``{export?,
+uninstall?}``: exports the chosen items, commits the removal of ``.factory/`` and drops the
 registry entry) and ``GET``/``POST /api/dashboard/settings`` (``port``, ``home``,
 ``restart_required``). Choosing the folder to add (``fs.py``): ``GET /api/fs/dirs?path=``
 lists the visible subdirectories of a directory under the user's home (default: home) as
@@ -206,8 +208,9 @@ from aifactory.web.registry import Registry, RepoError
 from aifactory.web.repos import (
     RepoContext,
     RepoContexts,
+    add_repo,
     inspect_repo,
-    register_repo,
+    remove_repo,
     repo_status,
 )
 from aifactory.web.updates import Updates
@@ -245,7 +248,7 @@ _REPO_ERROR_STATUS = {
     "run_worktree": 422,
     "no_commits": 422,
     "trace_db_shared": 409,
-    "sssf_cleanup_failed": 409,
+    "library_missing": 409,
     "registry_invalid": 409,
     "invalid_value": 422,
     "outside_home": 403,
@@ -255,6 +258,17 @@ _REPO_ERROR_STATUS = {
     "picker_timeout": 504,
     "picker_failed": 502,
     "busy": 409,
+    # install and removal (commit on base)
+    "run_in_progress": 409,
+    "not_on_base": 409,
+    "base_behind": 409,
+    "base_diverged": 409,
+    "dirty_paths": 409,
+    "invalid_plan": 422,
+    "push_failed": 502,
+    "fetch_failed": 502,
+    "commit_failed": 500,
+    "base_moved": 409,
 }
 
 
@@ -1632,26 +1646,51 @@ def _path_body(body: dict[str, Any]) -> object:
 
 
 async def repos_add(request: Request) -> JSONResponse:
-    """Register a repository (idempotent): HTTP 201 when added, 200 when already there."""
+    """Add a repository: register it and install factory from the library in one commit
+    (``web.repos.add_repo``). HTTP 201 when newly registered, 200 when it was there."""
     registry = _registry(request)
 
-    def work(raw: object, remove_sssf: bool) -> tuple[dict[str, Any], bool, list[str]]:
-        entry, created, warnings = register_repo(registry, raw, remove_sssf=remove_sssf)
-        return repo_status(entry), created, warnings
+    def work(raw: object) -> tuple[dict[str, Any], bool, dict[str, Any], list[str]]:
+        entry, created, install, warnings = add_repo(
+            registry, raw, library.environment(request.app.state.home)
+        )
+        return repo_status(entry), created, install, warnings
 
     try:
-        payload = await _json_body(request)
-        remove_sssf = payload.pop("remove_sssf", False)
-        if not isinstance(remove_sssf, bool):
-            raise backlog.UsageError("remove_sssf must be a boolean")
-        raw = _path_body(payload)
-        item, created, warnings = await run_in_threadpool(work, raw, remove_sssf)
+        raw = _path_body(await _json_body(request))
+        item, created, install, warnings = await run_in_threadpool(work, raw)
     except backlog.UsageError as exc:
         return _usage_error(exc.message)
     except RepoError as exc:
         return _repo_error(exc)
-    body = envelope_ok({"repo": item, "created": created}, warnings)
+    body = envelope_ok({"repo": item, "created": created, "install": install}, warnings)
     return JSONResponse(body, status_code=201 if created else 200)
+
+
+async def repos_removal(request: Request) -> JSONResponse:
+    """What removing the repository commits, and its own items the library could keep."""
+    registry = _registry(request)
+    repo_id: str = request.path_params["repo_id"]
+
+    def work() -> dict[str, Any]:
+        from aifactory.library.store import LibraryStoreError
+        from aifactory.library.uninstall import plan_uninstall
+
+        entry = registry.snapshot()[0].by_id(repo_id)
+        if entry is None:
+            raise RepoError("unknown_repo", f"no registered repository {repo_id!r}")
+        try:
+            return plan_uninstall(
+                Path(entry.path), library.environment(request.app.state.home)
+            ).to_json()
+        except LibraryStoreError as exc:
+            raise RepoError(exc.code, exc.message) from exc
+
+    try:
+        data = await run_in_threadpool(work)
+    except RepoError as exc:
+        return _repo_error(exc)
+    return JSONResponse(envelope_ok(data))
 
 
 async def repos_inspect(request: Request) -> JSONResponse:
@@ -1671,18 +1710,36 @@ async def repos_inspect(request: Request) -> JSONResponse:
 
 
 async def repos_remove(request: Request) -> JSONResponse:
-    """Drop a repository from the registry (only the entry) and close its live hub."""
+    """Remove a repository: export the chosen items (``export: [{type, name}]``) to the
+    library, commit the removal of ``.factory/`` (``uninstall: false`` skips it), drop the
+    registry entry and close its live hub."""
     registry = _registry(request)
     repo_id: str = request.path_params["repo_id"]
+    contexts: RepoContexts = request.app.state.repos
     try:
-        entry = await run_in_threadpool(registry.remove, repo_id)
+        payload = await _json_body(request) if await request.body() else {}
+        uninstall = payload.get("uninstall", True)
+        raw_export = payload.get("export") or []
+        if not isinstance(uninstall, bool):
+            raise backlog.UsageError("uninstall must be a boolean")
+        if not isinstance(raw_export, list) or not all(
+            isinstance(e, dict) and all(isinstance(e.get(k), str) for k in ("type", "name"))
+            for e in raw_export
+        ):
+            raise backlog.UsageError("export must be a list of {type, name}")
+        export = [(str(e["type"]), str(e["name"])) for e in raw_export]
+        environ = library.environment(request.app.state.home)
+        entry, done = await run_in_threadpool(
+            lambda: remove_repo(
+                registry, repo_id, export=export, uninstall=uninstall, environ=environ
+            )
+        )
+        await contexts.drop(repo_id)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
     except RepoError as exc:
         return _repo_error(exc)
-    if entry is None:
-        return _repo_error(RepoError("unknown_repo", f"no registered repository {repo_id!r}"))
-    contexts: RepoContexts = request.app.state.repos
-    await contexts.drop(repo_id)
-    return JSONResponse(envelope_ok({"removed": entry.to_json()}))
+    return JSONResponse(envelope_ok({"removed": entry.to_json(), "uninstall": done}))
 
 
 async def fs_dirs(request: Request) -> JSONResponse:
@@ -1917,6 +1974,7 @@ def create_multi_app(
             Route("/repos", repos_add, methods=["POST"]),
             Route("/repos/inspect", repos_inspect, methods=["POST"]),
             Route("/repos/{repo_id}", repos_remove, methods=["DELETE"]),
+            Route("/repos/{repo_id}/removal", repos_removal, methods=["GET"]),
             Route("/dashboard/settings", dashboard_settings_get, methods=["GET"]),
             Route("/dashboard/settings", dashboard_settings_save, methods=["POST"]),
             Route("/fs/dirs", fs_dirs, methods=["GET"]),

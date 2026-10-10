@@ -2,7 +2,7 @@
 
 ``M01`` (workflow ``plan-build``) has ``M01-S01`` with T01 done, T02 ready (depends on
 T01), T03 blocked (depends on T02) and T04 cancelled. ``M02`` (no workflow) has
-``M02-S01`` with T01 (no workflow: ``todo``), T02 and T03 (workflow ``plan``). The indexes
+``M02-S01`` with T01 (``workflow: null``: ``todo``), T02 and T03 (workflow ``plan``). The indexes
 keep a legacy ``owner``, which is ignored. With ``with_trace`` the trace DB (written after
 the commit) has a running run of ``M02-S01-T02`` and a finished run with an open PR of
 ``M02-S01-T03``.
@@ -52,7 +52,7 @@ def _default_files() -> dict[str, str]:
         f"{m1}/{A4}-legacy.md": _task(A4, "Legacy", "cancelled"),
         "backlog/M02-web/index.md": "---\nid: M02\ntitle: Web\nowner: bob\n---\n",
         f"{m2}/index.md": "---\nid: M02-S01\ntitle: UI\n---\n",
-        f"{m2}/{B1}-layout.md": _task(B1, "Layout"),
+        f"{m2}/{B1}-layout.md": _task(B1, "Layout", extra="workflow: null\n"),
         f"{m2}/{B2}-tree.md": _task(B2, "Tree", extra="workflow: plan\n"),
         f"{m2}/{B3}-kanban.md": _task(B3, "Kanban", extra="workflow: plan\n"),
     }

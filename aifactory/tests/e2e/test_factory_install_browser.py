@@ -1,4 +1,4 @@
-"""Install from the dashboard into a fresh local repo and verify its bare origin."""
+"""Add a fresh local repo from the dashboard: factory from the library is committed and pushed."""
 
 from __future__ import annotations
 
@@ -6,10 +6,9 @@ import json
 from pathlib import Path
 
 import pytest
-import yaml
 from f3_repo import git, make_f3_repo, obs_server, registered_id
 from playwright.sync_api import Dialog, Route, expect, sync_playwright
-from test_f3_browser import _choose, _launch
+from test_f3_browser import _launch
 
 from fake_exe import make_executable
 
@@ -90,61 +89,27 @@ def test_factory_install_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                 page.goto("/#/repos/add")
                 page.locator('[data-test="add-path"]').fill(str(repo))
                 page.locator('[data-test="add-inspect"]').click()
-                expect(page.locator('[data-test="inspect-sssf-warning"]')).to_contain_text(
-                    "smazána"
+                card = page.locator('[data-test="inspect-card"]')
+                expect(card.locator('[data-test="inspect-install-note"]')).to_contain_text(
+                    "zapíše do repa .factory z knihovny"
                 )
-                expect(page.locator('[data-test="inspect-onboard"]')).to_have_count(0)
-                page.locator('[data-test="inspect-init"]').click()
-                expect(page.locator('[data-test="factory-plan"]')).to_be_visible()
-                temp_id = registered_id(home, repo)
-                assert not (repo / "adws").exists()
-                assert git(repo, "log", "-1", "--format=%s") == (
-                    "Remove legacy sssf installation before adding HAIFA"
-                )
-                assert git(repo, "rev-parse", "HEAD~1") == before
-                before = git(repo, "rev-parse", "HEAD")
+                expect(card.locator("button")).to_have_count(1)
                 assert not (repo / ".factory").exists()
-                page.locator('[data-test="cancel-install"]').click()
-                expect(page.locator('[data-test="add-path"]')).to_be_visible()
-                # Wait for the install action to return after temporary repo removal.
-                expect(page.locator('[data-test="inspect-init"]')).to_be_visible()
-                registry = context.request.get("/api/repos").json()["data"]["repos"]
-                assert temp_id not in [r["id"] for r in registry]
-                assert not (repo / ".factory").exists()
-                page.locator('[data-test="inspect-init"]').click()
-                expect(page.locator('[data-test="install-provider"]')).to_have_attribute(
-                    "data-value", "local"
+                card.locator('[data-test="inspect-add"]').click()
+                done = page.locator('[data-test="repo-added-install"]')
+                expect(done).to_contain_text("commitnuta")
+                expect(done).to_contain_text("pushnuto")
+                after = git(repo, "rev-parse", "main")
+                assert git(repo, "rev-list", "--count", f"{before}..main") == "1"
+                assert git(bare, "rev-parse", "main") == after
+                assert git(repo, "status", "--porcelain") == ""
+                assert (repo / ".factory/manifest.yaml").is_file()
+                assert ".factory/agents.yaml" in git(
+                    repo, "ls-tree", "-r", "--name-only", "HEAD", ".factory"
                 )
-                _choose(page, '[data-test="harness-builder"]', "codex")
-                page.locator('[data-test="model-builder"]').fill("gpt-6.1-sol")
-                page.locator('[data-test="thinking-builder"]').fill("medium")
-                page.locator('[data-test="factory-message"]').fill("factory from dashboard")
-                expect(page.locator('[data-test="factory-perform"]')).to_be_enabled()
-                assert git(repo, "rev-parse", "HEAD") == before
-                assert git(bare, "rev-parse", "main") == git(repo, "rev-parse", "HEAD~1")
-                assert not (repo / ".factory").exists()
-                page.locator('[data-test="factory-perform"]').click()
-                expect(page.locator('[data-test="confirm-dialog"]')).to_contain_text(
-                    "pushnout na origin"
-                )
-                page.locator('[data-test="confirm-ok"]').click()
+                registered_id(home, repo)
                 page.locator('[data-test="repo-added-open"]').click()
                 expect(page.locator('[data-test="factory-verdict"]')).to_be_visible()
-                after = git(repo, "rev-parse", "main")
-                assert after != before
-                assert git(bare, "rev-parse", "main") == after
-                assert git(repo, "log", "-1", "--format=%s") == "factory from dashboard"
-                assert git(repo, "rev-list", "--count", f"{before}..main") == "1"
-                assert (repo / ".factory/manifest.yaml").is_file()
-                roster = yaml.safe_load((repo / ".factory/agents.yaml").read_text(encoding="utf-8"))
-                agents = {a["name"]: a for a in roster["agents"]}
-                assert agents["builder"]["harness"] == "codex"
-                assert agents["builder"]["model"] == "gpt-6.1-sol"
-                assert agents["builder"]["thinking"] == "medium"
-                assert (
-                    agents["planner"].get("harness", roster.get("defaults", {}).get("harness"))
-                    != "codex"
-                )
             finally:
                 context.close()
                 browser.close()
