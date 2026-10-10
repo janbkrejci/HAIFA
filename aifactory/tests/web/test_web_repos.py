@@ -72,6 +72,18 @@ def _add(client: TestClient, path: Path | str, status: int = 201) -> Any:
     return _post(client, "/api/repos", {"path": str(path)}, status)
 
 
+@pytest.fixture(autouse=True)
+def _git_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Adding a repository commits its install; CI machines have no git identity."""
+    for key, value in (
+        ("GIT_AUTHOR_NAME", "Test"),
+        ("GIT_AUTHOR_EMAIL", "test@example.com"),
+        ("GIT_COMMITTER_NAME", "Test"),
+        ("GIT_COMMITTER_EMAIL", "test@example.com"),
+    ):
+        monkeypatch.setenv(key, value)
+
+
 def _registry(home: Path) -> Any:
     path = home / "dashboard.yaml"
     return yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else None
