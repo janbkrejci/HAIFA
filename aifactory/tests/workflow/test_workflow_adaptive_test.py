@@ -471,3 +471,32 @@ def test_failed_test_is_rendered_only_in_triage(workflow_env: EngineEnv, tmp_pat
     assert failed["builder2"] == "(none)"  # the fixer
     report = json.loads(failed["tester1"])  # the triage
     assert (report["step"], report["phase"], report["passed"]) == ("test", "test_1", False)
+
+
+# ── required coverage ───────────────────────────────────────────────────────
+
+
+def test_plan_keeps_checks_passes_any_full_plan() -> None:
+    full = TestPlanOutput.model_validate(plan_envelope("just", "check", coverage="full"))
+    assert gates.plan_keeps_checks(full, SimpleNamespace(previous_test_plan=PREVIOUS)).passed
+
+
+@pytest.mark.parametrize(
+    ("required", "coverage", "passed"),
+    [(None, "scoped", True), ("full", "full", True), ("full", "scoped", False)],
+)
+def test_coverage_required_gate(required: str | None, coverage: str, passed: bool) -> None:
+    tested = TestPlanOutput.model_validate(plan_envelope(coverage=coverage))
+    report = gates.coverage_required(tested, SimpleNamespace(required_coverage=required))
+    assert report.passed is passed
+
+
+def test_a_scoped_plan_on_a_full_step_is_sent_back(workflow_env: EngineEnv) -> None:
+    text = HEADER + "steps:\n  - test_plan: {coverage: full}\n  - test\n"
+    workflow_env.script.add("tester", plan_envelope(), plan_envelope(coverage="full"))
+    code = FakeCodeRunner([True])
+    result = run_workflow(workflow(text), "do it", workflow_env.cfg, code=code)
+    assert result.accepted
+    assert len(workflow_env.script.calls) == 2
+    assert "requires `full`" in workflow_env.script.calls[1].prompt  # the gate's correction
+    assert code.plans[0].coverage == "full"

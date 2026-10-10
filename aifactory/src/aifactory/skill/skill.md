@@ -361,6 +361,11 @@ packaged workflows: {{workflows}}.
 - A later `test_plan` keeps every check of the previous plan (same argv) or names it in
   `dropped` with a reason (gate `plan_keeps_checks`). Workflows plan again after every
   fix and every revision, from the whole diff since `baseline`.
+- A `test_plan` step may require a coverage: `coverage: full` (every check the repo has)
+  or `coverage: scoped` (only the latest changes); gate `coverage_required`. The result of
+  a `test` repeats the plan's coverage, so conditions can read `test.coverage == "full"`.
+  The packaged `heal` workflow runs the whole suite, repairs until it is green (each repair
+  checked scoped, then confirmed on the whole suite) and commits only on a green full run.
 - A red `test` goes to the tester first (phase `triage`): `failure_cause: plan` (the
   checks themselves were wrong) replaces the plan and runs the test again without a
   repair round and without the builder, at most twice per run; `code` leaves the

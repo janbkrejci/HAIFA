@@ -48,6 +48,8 @@ class RoleStep:
     # Further template variables: (name, steps); each gets the latest result of
     # its steps (``input: {test_result: [test, retest]}``).
     variables: tuple[tuple[str, tuple[str, ...]], ...] = ()
+    # test plan steps only: the coverage the plan must have (`full` or `scoped`)
+    coverage: str | None = None
 
     @property
     def key(self) -> str:

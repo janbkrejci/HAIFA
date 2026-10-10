@@ -61,8 +61,9 @@ RESERVED_VARIABLES = frozenset({"prompt", "context_handoff_dir"})
 
 _TOP_KEYS = frozenset({"name", "description", "steps", "accept"})
 _ROLE_OPTS = frozenset(
-    {"agent", "harness", "model", "thinking", "when", "id", "description", "input"}
+    {"agent", "harness", "model", "thinking", "when", "id", "description", "input", "coverage"}
 )
+PLAN_COVERAGES = ("full", "scoped")
 _CODE_OPTS = frozenset({"when", "id", "description"})
 _COMMAND_OPTS = _CODE_OPTS | {"argv", "timeout"}
 _OVERRIDES = ("harness", "model", "thinking")
@@ -321,6 +322,21 @@ class _Parser:
         when = self.condition(opts.get("when"), f"{path}.when")
         inputs, variables = self.step_inputs(opts.get("input"), f"{path}.input")
         self.namespace[name] = self.roles.result_fields(name)
+        coverage = opts.get("coverage")
+        if coverage is not None and role.output_type_name != TEST_PLAN_TYPE:
+            self.add(
+                "unknown_key",
+                f"`coverage` is an option of test plan steps, not of {name!r}",
+                f"{path}.coverage",
+            )
+            coverage = None
+        elif coverage is not None and coverage not in PLAN_COVERAGES:
+            self.add(
+                "invalid_coverage",
+                f"coverage {coverage!r} is not one of {', '.join(PLAN_COVERAGES)}",
+                f"{path}.coverage",
+            )
+            coverage = None
         return RoleStep(
             name=name,
             role=role,
@@ -334,6 +350,7 @@ class _Parser:
             when=when,
             inputs=inputs,
             variables=variables,
+            coverage=coverage,
         )
 
     def code_step(

@@ -290,3 +290,24 @@ def test_a_test_plan_inside_an_earlier_repeat_counts() -> None:
 def test_removed_test_options_are_rejected(option: str) -> None:
     with pytest.raises(WorkflowError):
         workflow(HEADER + "steps:\n  - test_plan\n  - test: {" + option + "}\n")
+
+
+def test_coverage_option_of_a_test_plan_step() -> None:
+    wf = workflow(HEADER + "steps:\n  - test_plan: {coverage: full}\n  - test_plan\n")
+    first, second = wf.steps
+    assert isinstance(first, RoleStep) and isinstance(second, RoleStep)
+    assert (first.coverage, second.coverage) == ("full", None)
+
+
+@pytest.mark.parametrize(
+    ("step", "code", "path"),
+    [
+        ("build: {coverage: full}", "unknown_key", "steps[0].build.coverage"),
+        ("test_plan: {coverage: none}", "invalid_coverage", "steps[0].test_plan.coverage"),
+        ("test_plan: {coverage: deferred}", "invalid_coverage", "steps[0].test_plan.coverage"),
+    ],
+)
+def test_coverage_option_errors(step: str, code: str, path: str) -> None:
+    with pytest.raises(WorkflowError) as exc:
+        workflow(HEADER + f"steps:\n  - {step}\n")
+    assert [(i.code, i.path) for i in exc.value.issues] == [(code, path)]

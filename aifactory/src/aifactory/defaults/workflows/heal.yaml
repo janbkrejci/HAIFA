@@ -1,0 +1,45 @@
+# Heal a repo whose suite is red: run everything, repair until it is green.
+#
+# Phases: tester(full_plan) -> code(full_test)
+#         [-> builder(fix) -> tester(repair_plan, scoped) -> code(test)
+#            -> when green: tester(confirm_plan, full) -> code(confirm) ... bounded]
+#         -> git(commit)
+#
+# The whole suite runs first and last; in between every repair is verified only on
+# what it touched (a scoped plan from the fix), which is fast. A green repair is
+# confirmed on the whole suite again, and a red whole suite starts the next round.
+# A red test goes to the tester's triage first (interpreter), so a broken check is
+# corrected without a repair round. The run is accepted only on a green full suite.
+name: heal
+description: Run the whole suite and repair until it is green — each repair checked on what it touched, the end confirmed on the whole suite
+steps:
+  - test_plan:
+      id: full_plan
+      coverage: full
+      description: Plan every check the repo has, the way its CI runs them
+  - test:
+      id: full_test
+      description: Run the whole suite once to see what is broken
+  - repeat: {max: 6, until: test.passed and test.coverage == "full", when: not test.passed}
+    steps:
+      - fix:
+          description: Repair what the checks reported, from their verbatim output
+      - test_plan:
+          id: repair_plan
+          coverage: scoped
+          description: Plan the checks of this repair only — the whole suite confirms later
+      - test:
+          description: Check the repair on what it touched
+      - test_plan:
+          id: confirm_plan
+          coverage: full
+          when: test.passed
+          description: Plan the whole suite again to confirm the repairs together
+      - test:
+          id: confirm
+          when: test.passed
+          description: Run the whole suite to confirm the repo is healed
+  - commit:
+      when: test.passed and test.coverage == "full"
+      description: Land the repairs once the whole suite is green
+accept: test.passed and test.coverage == "full"

@@ -163,12 +163,13 @@ def plan_keeps_checks(envelope: EnvelopeBase, run) -> GateReport:
 
     A previous check is kept when a new check runs the same argv; otherwise its
     name must be in `dropped` with a reason. The interpreter puts the previous
-    plan on `run.previous_test_plan` (None for the first plan of a run).
+    plan on `run.previous_test_plan` (None for the first plan of a run). A `full`
+    plan keeps nothing by definition: it runs everything the repo has.
     """
     report = GateReport()
     previous = getattr(run, "previous_test_plan", None)
-    if previous is None:
-        return report
+    if previous is None or getattr(envelope, "coverage", None) == "full":
+        return report  # a full plan runs everything there is
     argvs = [check.argv for check in getattr(envelope, "checks", [])]
     dropped = {d.name for d in getattr(envelope, "dropped", [])}
     for check in previous.checks:
@@ -178,6 +179,17 @@ def plan_keeps_checks(envelope: EnvelopeBase, run) -> GateReport:
             report.check(check.name, check.name in dropped,
                           "dropped with a reason" if check.name in dropped
                           else "left out without a `dropped` entry; keep it or say why it goes")
+    return report
+
+
+def coverage_required(envelope: EnvelopeBase, run) -> GateReport:
+    """aifactory 3.0: a test plan step with `coverage:` gets a plan of that coverage."""
+    report = GateReport()
+    wanted = getattr(run, "required_coverage", None)
+    if wanted:
+        got = getattr(envelope, "coverage", None)
+        report.check("coverage", got == wanted,
+                     f"{got}" if got == wanted else f"the step requires `{wanted}`, the plan is `{got}`")
     return report
 
 

@@ -19,7 +19,6 @@ from aifactory.harness import CLI_BINARIES, HARNESSES
 from aifactory.harness.check import HarnessStatus, harnesses_in_config
 from aifactory.harness.settings import read as read_harness_settings
 from aifactory.harness.settings import test_failed
-from aifactory.library.multi_repo import registered_repos
 from aifactory.library.store import LibraryStoreError
 from aifactory.providers import git
 
@@ -125,6 +124,9 @@ def check_view(
     # Registry changes must be visible even while the machine probes are cached.
     counts = dict.fromkeys(HARNESSES, 0)
     try:
+        # imported here: multi_repo imports aifactory.web, whose package imports this module
+        from aifactory.library.multi_repo import registered_repos
+
         repos = registered_repos(environ={"HAIFA_HOME": str(home)})
     except LibraryStoreError:
         repos = []

@@ -466,6 +466,7 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "missing_argv",
         "invalid_timeout",
         "test_without_plan",
+        "invalid_coverage",
         "unknown_ref",
         "unknown_field",
         "not_a_mapping",

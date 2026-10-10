@@ -8,6 +8,7 @@ rejection is not followed by ``revise_2`` and a last red suite not by ``fix_3``.
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any
 
 from workflow_fakes import (  # noqa: F401
@@ -19,6 +20,7 @@ from workflow_fakes import (  # noqa: F401
     workflow_env_fixture,
 )
 
+from aifactory.testing.model import Evidence
 from aifactory.workflow import DEFAULT_WORKFLOWS_DIR, WorkflowRun, load_workflow, run_workflow
 
 REQUEST = ("request", "engineer")
@@ -373,4 +375,134 @@ def test_simple_sdlc_tests_never_pass(workflow_env: EngineEnv) -> None:
     ]
     assert (result.exit_code, result.accepted) == (1, False)
     assert code.commits == ["Add the plan"]
+    _assert_done(workflow_env, code)
+
+
+# ── heal ──────────────────────────────────────────────────────────────────
+
+FULL = plan_envelope(coverage="full")
+SCOPED = plan_envelope()
+FULL_TRIAGE = {**triage_envelope("code"), "coverage": "full"}  # triage of a full plan step
+SCOPED_TRIAGE = triage_envelope("code")
+COVERAGE_START, COVERAGE_END = "COVERAGE<<", ">>COVERAGE"
+
+
+class PlannedRunner(FakeCodeRunner):
+    """Scripted pass/fail whose evidence comes from the plan, so `test.coverage` is real."""
+
+    def test(self, run: Any, plan: Any) -> Any:
+        result = super().test(run, plan)
+        result.test_plan = Evidence(
+            coverage=plan.coverage,
+            reason=plan.reason,
+            executed=len(plan.checks),
+            commands=[" ".join(check.argv) for check in plan.checks],
+        )
+        return result
+
+
+def _heal(env: EngineEnv, tests: list[bool], tmp_path: Path) -> tuple[WorkflowRun, PlannedRunner]:
+    """Run heal; the tester's prompt shows the coverage its step requires."""
+    user = tmp_path / "tester_user.md"
+    user.write_text(
+        f"{{{{prompt}}}}\n{COVERAGE_START}{{{{required_coverage}}}}{COVERAGE_END}\n",
+        encoding="utf-8",
+    )
+    for agent in env.cfg.agents:
+        if agent.name == "tester":
+            agent.prompt_engineering.user = str(user)
+    code = PlannedRunner(tests)
+    workflow = load_workflow(DEFAULT_WORKFLOWS_DIR / "heal.yaml")
+    return run_workflow(workflow, "heal the repo", env.cfg, code=code), code
+
+
+def _required(env: EngineEnv) -> list[str]:
+    return [
+        call.prompt.split(COVERAGE_START)[1].split(COVERAGE_END)[0]
+        for call in env.script.calls
+        if call.agent == "tester"
+    ]
+
+
+def _round(i: int, confirmed: bool | None) -> list[tuple[str, str, str]]:
+    """One heal round; ``confirmed`` None means the scoped test was red (no confirm)."""
+    phases = [_fix(i), ("repair_plan_" + str(i), "agent", "tester"), _test(i)]
+    if confirmed is None:
+        return [*phases, _triage(i)]
+    phases += [(f"confirm_plan_{i}", "agent", "tester"), (f"confirm_{i}", "code", "quality")]
+    return phases if confirmed else [*phases, _triage(i)]
+
+
+HEAL_HEAD = [REQUEST, ("full_plan", "agent", "tester"), ("full_test", "code", "quality")]
+
+
+def test_heal_green_at_once(workflow_env: EngineEnv, tmp_path: Path) -> None:
+    _script(workflow_env, tester=[FULL])
+    result, code = _heal(workflow_env, [True], tmp_path)
+    assert _phases(result) == [*HEAL_HEAD, COMMIT]
+    assert (result.exit_code, result.accepted) == (0, True)
+    assert result.results["test"]["coverage"] == "full"
+    assert len(code.commits) == 1
+    assert _required(workflow_env) == ["full"]
+    _assert_done(workflow_env, code)
+
+
+def test_heal_repairs_and_confirms_on_the_full_suite(
+    workflow_env: EngineEnv, tmp_path: Path
+) -> None:
+    _script(
+        workflow_env,
+        tester=[FULL, FULL_TRIAGE, SCOPED, FULL],
+        builder=[FIX],
+    )
+    result, code = _heal(workflow_env, [False, True, True], tmp_path)
+    assert _phases(result) == [
+        *HEAL_HEAD,
+        ("triage", "agent", "tester"),
+        *_round(1, confirmed=True),
+        COMMIT,
+    ]
+    assert (result.exit_code, result.accepted) == (0, True)
+    assert [plan.coverage for plan in code.plans] == ["full", "scoped", "full"]
+    # The triage copies the full plan step, so it is asked for `full` too.
+    assert _required(workflow_env) == ["full", "full", "scoped", "full"]
+    assert code.commits == ["Fix the failing test"]
+    _assert_done(workflow_env, code)
+
+
+def test_heal_red_confirmation_starts_the_next_round(
+    workflow_env: EngineEnv, tmp_path: Path
+) -> None:
+    _script(
+        workflow_env,
+        tester=[FULL, FULL_TRIAGE, SCOPED, FULL, FULL_TRIAGE, SCOPED, FULL],
+        builder=[FIX, FIX],
+    )
+    result, code = _heal(workflow_env, [False, True, False, True, True], tmp_path)
+    assert _phases(result) == [
+        *HEAL_HEAD,
+        ("triage", "agent", "tester"),
+        *_round(1, confirmed=False),
+        *_round(2, confirmed=True),
+        COMMIT,
+    ]
+    assert (result.exit_code, result.accepted) == (0, True)
+    assert [plan.coverage for plan in code.plans] == ["full", "scoped", "full", "scoped", "full"]
+    _assert_done(workflow_env, code)
+
+
+def test_heal_never_healed(workflow_env: EngineEnv, tmp_path: Path) -> None:
+    rounds = 6
+    _script(
+        workflow_env,
+        tester=[FULL, FULL_TRIAGE] + [SCOPED, SCOPED_TRIAGE] * rounds,
+        builder=[FIX] * rounds,
+    )
+    result, code = _heal(workflow_env, [False] * (1 + rounds), tmp_path)
+    expected = [*HEAL_HEAD, ("triage", "agent", "tester")]
+    for i in range(1, rounds + 1):
+        expected += _round(i, confirmed=None)
+    assert _phases(result) == expected
+    assert (result.exit_code, result.accepted) == (1, False)
+    assert code.commits == []
     _assert_done(workflow_env, code)

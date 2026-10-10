@@ -171,4 +171,5 @@ def as_envelope(result: QualityResult, what: str) -> VerifyOutput:
         passed=result.passed,
         failures=result.failures,
         test_plan=result.test_plan,  # aifactory 2.15: preserve selection evidence
+        coverage=result.test_plan.coverage if result.test_plan else "",  # aifactory 3.0
     )

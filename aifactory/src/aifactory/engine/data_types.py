@@ -248,8 +248,10 @@ class VerifyOutput(EnvelopeBase):
     the ADW script is the only thing that knows the difference.
     """
 
-    # aifactory 3.0: what the test step ran from the tester's plan.
+    # aifactory 3.0: what the test step ran from the tester's plan; `coverage` repeats
+    # the plan's coverage for conditions (`test.coverage == "full"`), "" for a command.
     test_plan: Evidence | None = None
+    coverage: str = ""
     passed: bool = False
     failures: list[str] = Field(default_factory=list)
 

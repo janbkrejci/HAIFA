@@ -21,7 +21,7 @@ roles:
   test_plan:
     agent: tester
     output_type: TestPlanOutput
-    gates: [checks_runnable, plan_keeps_checks]
+    gates: [checks_runnable, plan_keeps_checks, coverage_required]
     description: Choose the checks that verify this change, enough to trust it and nothing beyond
     retries: 1
   scout:

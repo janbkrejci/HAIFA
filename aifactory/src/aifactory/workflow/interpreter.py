@@ -81,6 +81,7 @@ TEST_RESULT_VARIABLE = "test_result"
 BASELINE_VARIABLE = "baseline"
 PREVIOUS_PLAN_VARIABLE = "previous_test_plan"
 FAILED_TEST_VARIABLE = "failed_test"
+REQUIRED_COVERAGE_VARIABLE = "required_coverage"
 TRIAGE_PHASE = "triage"
 TRIAGE_DESCRIPTION = (
     "Decide whether the failed checks are wrong themselves or caught a fault in the code"
@@ -340,6 +341,7 @@ class _Interpreter:
             BASELINE_VARIABLE: self.baseline or NO_INPUT,
             PREVIOUS_PLAN_VARIABLE: self.latest_plan_json(),
             FAILED_TEST_VARIABLE: self.failed_test or NO_INPUT,
+            REQUIRED_COVERAGE_VARIABLE: step.coverage or "any",
         }
         for name, keys in step.variables:
             variables[name] = self.render_input(keys)
@@ -443,6 +445,7 @@ class _Interpreter:
         role = step.role
         previous = self.previous(step.inputs)
         self.run.previous_test_plan = self.latest_plan()  # for the plan_keeps_checks gate
+        self.run.required_coverage = step.coverage  # for the coverage_required gate
         with step_override(self.run.cfg, role.agent, step.override) as agent:
             params = self.params(name, "agent", role.agent, step.description, role.retries)
             with self.run.phase(params) as ph:
