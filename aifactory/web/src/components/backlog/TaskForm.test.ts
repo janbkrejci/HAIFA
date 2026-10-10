@@ -171,30 +171,30 @@ describe('TaskForm', () => {
     expect(wrapper.find('[data-test="advice-blocker"]').exists()).toBe(false)
   })
 
-  it('offers the parameters without an AI proposal, with Czech labels and one test command', async () => {
+  it('offers the parameters without an AI proposal, with Czech labels', async () => {
     const wrapper = addForm()
     const params = wrapper.get('[data-test="task-parameters"]')
-    expect(params.get('[data-parameter="test"]').text()).toContain('Testovací příkaz')
+    expect(params.find('[data-parameter="test"]').exists()).toBe(false)
+    expect(params.get('[data-parameter="test_timeout"]').text()).toContain('Limit testů (s)')
     expect(params.get('[data-parameter="specs_dir"]').text()).toContain('Adresář specifikací')
     expect(params.find('[data-parameter="auto_merge"]').exists()).toBe(true)
-    expect(params.get('[data-test="test-hint"]').text()).toContain('Jeden příkaz')
     await wrapper.get('[data-test="title"]').setValue('Nový')
-    await wrapper.get('[data-test="parameter-test"]').setValue('pytest -k "a b"')
+    await wrapper.get('[data-test="parameter-test_timeout"]').setValue('300')
     await chooseOption(wrapper, '[data-test="parameter-auto_continue"]', 'false')
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
-      parameters: { test: ['pytest', '-k', 'a b'], auto_continue: false },
+      parameters: { test_timeout: 300, auto_continue: false },
     })
   })
 
   it('shows the own parameters of an edited task and sends only a changed one', async () => {
-    const wrapper = editForm({ own_parameters: { test: ['just', 'test'], specs_dir: 'specs/x' } })
-    expect((wrapper.get('[data-test="parameter-test"]').element as HTMLInputElement).value).toBe('just test')
+    const wrapper = editForm({ own_parameters: { test_timeout: 120, specs_dir: 'specs/x' } })
+    expect((wrapper.get('[data-test="parameter-test_timeout"]').element as HTMLInputElement).value).toBe('120')
     expect((wrapper.get('[data-test="parameter-specs_dir"]').element as HTMLInputElement).value).toBe('specs/x')
     expect(wrapper.get('[data-test="save"]').attributes('disabled')).toBeDefined()
-    await wrapper.get('[data-test="parameter-test"]').setValue('just check')
+    await wrapper.get('[data-test="parameter-test_timeout"]').setValue('600')
     await wrapper.get('form').trigger('submit')
-    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ parameters: { test: ['just', 'check'], auto_merge: null } })
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ parameters: { test_timeout: 600, auto_merge: null } })
   })
 
   it('names the statuses in Czech', async () => {

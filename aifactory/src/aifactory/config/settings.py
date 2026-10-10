@@ -39,6 +39,10 @@ def _relative(value: str, *, allow_dot: bool = True) -> str:
     return text
 
 
+OBSOLETE_KEYS = frozenset({"test_command"})
+"""``test_command``: a tester agent chooses the checks of every run (3.0)."""
+
+
 def split_command(value: object) -> tuple[str, ...]:
     """A command as argv: a string is split like a shell, a list must hold strings.
 
@@ -159,6 +163,14 @@ class ProjectSettings(BaseModel):
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
+    @model_validator(mode="before")
+    @classmethod
+    def _obsolete(cls, value: Any) -> Any:
+        """Keys older configs carry and nothing reads any more; dropped, not refused."""
+        if isinstance(value, dict) and OBSOLETE_KEYS & value.keys():
+            value = {k: v for k, v in value.items() if k not in OBSOLETE_KEYS}
+        return value
+
     workdir: str = Field(default=".", description="Working directory relative to the repository.")
     backlog_dir: str = Field(
         default="backlog", description="Single backlog root; mutually exclusive with backlog_dirs."
@@ -199,20 +211,13 @@ class ProjectSettings(BaseModel):
     merge_strategy: Literal["squash", "merge"] = Field(
         default="squash", description="Strategy for merging approved task pull requests."
     )
-    test_command: tuple[str, ...] | None = Field(
-        default=None,
-        description=(
-            "Default test command as argv or a shell-split string; null falls back to just "
-            "test. Inherited backlog test overrides it."
-        ),
-    )
     test_timeout: int | None = Field(
         default=None,
         gt=0,
         strict=True,
         description=(
-            "Test time limit in positive whole seconds; null means 600. Inherited backlog "
-            "test_timeout overrides it."
+            "Shared time limit in positive whole seconds of the checks a test step runs; "
+            "null means 600. Inherited backlog test_timeout overrides it."
         ),
     )
     test_slots: int = Field(
@@ -328,22 +333,6 @@ class ProjectSettings(BaseModel):
         if not text:
             raise ValueError("must not be empty")
         return text
-
-    @field_validator("test_command", mode="before")
-    @classmethod
-    def _split_command(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            return tuple(shlex.split(value))
-        return value
-
-    @field_validator("test_command")
-    @classmethod
-    def _command(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
-        if value is None:
-            return None
-        if not value or any(not part.strip() for part in value):
-            raise ValueError("must be a non-empty list of non-empty strings")
-        return value
 
 
 DEFAULT_PORT = 4700

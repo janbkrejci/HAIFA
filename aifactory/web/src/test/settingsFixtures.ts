@@ -10,7 +10,6 @@ export const SETTINGS: SettingsData = {
     base: 'main',
     git_provider: 'local',
     merge_strategy: 'squash',
-    test_command: 'uv run pytest',
     protected_files: ['.factory/'],
     max_parallel_runs: 1,
   },

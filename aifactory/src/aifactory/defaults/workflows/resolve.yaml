@@ -1,6 +1,6 @@
 # A pull request that conflicts with base (step 6 of "Běh úkolu"): factory task resolve <task-id>.
 # Phases: engineer(request) -> git(rebase) [-> builder(resolve), only on a conflict]
-#         -> [code(rebuild)] -> code(test) [-> builder(fix) -> ... bounded, only on a conflict]
+#         -> tester(test_plan) -> [code(rebuild)] -> code(test) [-> builder(fix) -> ... bounded, only on a conflict]
 # Code commits and pushes after the workflow: only without conflict markers and with a green suite.
 # `fix` runs only on a conflict: without one the write guard allows no file and
 # finish_resolve commits nothing, so a repair could neither be written nor pushed.
@@ -15,13 +15,15 @@ steps:
   - resolve:
       when: rebase.conflict
       description: Settle every conflict in the files the rebase reported, keeping both sides' intent
+  - test_plan:
+      description: Choose the checks for the rebased branch — a rebase mixes two lines of work, so cover both
   - repeat: {max: 3, until: test.passed}
     steps:
       - rebuild:
           when: rebase.conflict
           description: Rebuild the generated outputs in conflict from the resolved sources
       - test:
-          description: Re-run the suite on the rebased branch before it is pushed
+          description: Run the checks on the rebased branch before it is pushed
       - fix:
           when: rebase.conflict
           description: Repair what the suite reported, from its verbatim output, only in the conflicted files

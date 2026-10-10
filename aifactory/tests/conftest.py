@@ -124,7 +124,7 @@ def _warm_imports() -> None:
         importlib.import_module(module)
 
 
-# Test tiers (justfile check-scoped): tests/tiers.py lists the slow and browser files.
+# Test tiers: tests/tiers.py lists the slow and browser files.
 
 
 def _unavailable_wmi(*args: str) -> NoReturn:

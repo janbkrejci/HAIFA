@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { installPlan } from '@/test/factoryFixtures'
 import { deferred } from '@/test/deferred'
 import { removeRepo } from './api'
-import { cancelPendingInstall, fileActionText, installOptions, planCodeText, suggestedTestCommand, pendingInstall, installBusy, installCancelling, installCancelError } from './factory'
+import { cancelPendingInstall, fileActionText, installOptions, planCodeText, pendingInstall, installBusy, installCancelling, installCancelError } from './factory'
 
 vi.mock('./api', () => ({ removeRepo: vi.fn() }))
 afterEach(() => {
@@ -48,10 +48,8 @@ describe('factory installation state', () => {
     expect(pendingInstall.value?.id).toBe('busy')
     expect(removeRepo).not.toHaveBeenCalled()
   })
-  it('prefills a given or detected test command, never the installer default', () => {
-    expect(installOptions(installPlan({ test_command: { command: 'bun test', source: 'detected', candidates: [], written: true } })).test_command).toBe('bun test')
-    expect(suggestedTestCommand(installPlan({ test_command: { command: 'just test', source: 'default' } }))).toBe('')
-    expect(suggestedTestCommand(installPlan())).toBe('')
+  it('has no test command option', () => {
+    expect(installOptions(installPlan())).not.toHaveProperty('test_command')
   })
   it('names plan codes and file actions in Czech, unknown ones as they are', () => {
     expect(planCodeText('onboarding_pending')).toBe('onboarding čeká v PR')

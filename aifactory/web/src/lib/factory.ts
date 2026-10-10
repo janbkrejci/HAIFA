@@ -3,14 +3,6 @@ import { removeRepo } from './api'
 import type { FactoryOptions, FactoryInitPlan, AgentBinding, FactoryResult } from './api'
 import { errorText } from './format'
 
-/** The installer's suggested test command of an init plan; empty for its default or none. */
-export function suggestedTestCommand(plan: FactoryInitPlan): string {
-  const choice = plan.test_command
-  if (!choice) return ''
-  if (typeof choice === 'string') return choice
-  return choice.source === 'default' ? '' : choice.command
-}
-
 export function installOptions(plan: FactoryInitPlan): FactoryOptions {
   const bind: Record<string, AgentBinding> = {}
   for (const agent of plan.available?.agents ?? []) {
@@ -20,7 +12,6 @@ export function installOptions(plan: FactoryInitPlan): FactoryOptions {
   return { base: plan.base, provider: plan.provider,
     azure: { organization: '', project: '', repository: '', ...plan.azure },
     backlog_dir: plan.backlog_dir, specs_dir: plan.specs_dir, docs_dir: plan.docs_dir,
-    test_command: suggestedTestCommand(plan),
     agents: [...(plan.agents ?? [])], workflows: [...(plan.workflows ?? [])], bind }
 }
 

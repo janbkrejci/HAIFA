@@ -26,8 +26,10 @@ def test_roles_match_vendor_registry() -> None:
         assert all(a is b for a, b in zip(role.gates, spec.gates, strict=True)), name
         assert role.description == spec.description, name
         assert role.retries == spec.retries, name
+    # aifactory 3.0 replaced the vendor's `test` and dropped `quality`.
     for name, spec in vendor.CODE_STEPS.items():
-        assert registry.code_steps[name].description == spec.description, name
+        if name not in ("test", "quality"):
+            assert registry.code_steps[name].description == spec.description, name
 
 
 def test_aliases_share_one_role() -> None:
@@ -41,11 +43,18 @@ def test_aliases_share_one_role() -> None:
         assert registry.roles[alias] is registry.roles[name]
 
 
-def test_only_revise_resolve_command_rebase_and_rebuild_are_extra() -> None:
+def test_only_revise_resolve_test_plan_command_rebase_and_rebuild_are_extra() -> None:
     vendor = engine.load_engine_module("roles")
     registry = load_roles()
-    assert set(registry.roles) - set(vendor.ROLES) == {"revise", "resolve"}
+    assert set(registry.roles) - set(vendor.ROLES) == {"revise", "resolve", "test_plan"}
     assert set(registry.code_steps) - set(vendor.CODE_STEPS) == {"command", "rebase", "rebuild"}
+    assert set(vendor.CODE_STEPS) - set(registry.code_steps) == {"quality"}
+    test_plan = registry.roles["test_plan"]
+    assert (test_plan.agent, test_plan.output_type_name, test_plan.gate_names) == (
+        "tester",
+        "TestPlanOutput",
+        ("checks_runnable",),
+    )
     assert set(registry.code_steps) == set(CODE_ACTIONS)
     revise = registry.roles["revise"]
     assert (revise.agent, revise.output_type_name, revise.gate_names) == (
@@ -64,7 +73,6 @@ def test_only_revise_resolve_command_rebase_and_rebuild_are_extra() -> None:
 CODE_STEPS = """
 code_steps:
   test: {owner: quality, description: Run the suite with a known command}
-  quality: {owner: quality, description: Run lint and typecheck together}
   commit: {owner: git, description: Record the work in its own words}
   changes: {owner: git, description: Diff the run against its baseline}
   command: {owner: quality, description: Run a named command as code}

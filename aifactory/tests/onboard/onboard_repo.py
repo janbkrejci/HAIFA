@@ -179,7 +179,7 @@ def sandbox_factory(repo: Path) -> None:
     from aifactory.library.store import packaged_seed
 
     copy_haifa_factory(repo)
-    for agent in ("planner", "builder", "reviewer", "documenter"):
+    for agent in ("planner", "builder", "tester", "reviewer", "documenter"):
         path = repo / ".factory" / "prompts" / agent / "system.md"
         path.write_text(
             path.read_text(encoding="utf-8") + "\nThis is the sandbox.\n",

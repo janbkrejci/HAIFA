@@ -33,7 +33,7 @@ from aifactory.onboard import repo_state
 from cli_json import run_json
 
 Capsys = pytest.CaptureFixture[str]
-AGENTS = ("planner", "builder", "reviewer", "documenter")
+AGENTS = ("planner", "builder", "tester", "reviewer", "documenter")
 SLUG = "haifa-sandbox"
 
 

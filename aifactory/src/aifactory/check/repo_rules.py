@@ -7,7 +7,6 @@ literal code, which ``tests/test_skill.py`` matches against ``ISSUE_CODES["check
 from __future__ import annotations
 
 import fnmatch
-import re
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
@@ -30,11 +29,7 @@ from aifactory.run.errors import TaskRunError
 from aifactory.run.task import FACTORY_DATA_DIR, named_workflow
 from aifactory.workflow import Issue, RoleStep, Workflow, WorkflowError, preflight, walk
 
-JUSTFILES = ("justfile", "Justfile", ".justfile")
 DEFAULT_TRACE_DB = ".factory/trace.db"
-_RECIPE = re.compile(r"^@?(?P<name>[A-Za-z_][A-Za-z0-9_-]*)\b[^:]*:(?!=)")
-_ALIAS = re.compile(r"^alias\s+(?P<name>[A-Za-z_][\w-]*)\s*:=")
-_IMPORT = re.compile(r"^(import|mod)\b")
 _LIST_MAX = 5
 
 
@@ -400,76 +395,6 @@ def _roster_only(workflow: Workflow, names: set[str]) -> None:
         raise WorkflowError(issues)
 
 
-# -- test command --
-
-
-def justfile_recipes(text: str) -> set[str]:
-    """Names of the recipes (and aliases) a justfile defines."""
-    names: set[str] = set()
-    for line in text.splitlines():
-        if not line or line[0] in " \t#[":
-            continue
-        alias = _ALIAS.match(line)
-        if alias:
-            names.add(alias.group("name"))
-            continue
-        if line.startswith(("set ", "export ", "import ", "mod ")):
-            continue
-        recipe = _RECIPE.match(line)
-        if recipe:
-            names.add(recipe.group("name"))
-    return names
-
-
-def test_rule(ctx: CheckContext) -> Iterator[Finding]:
-    if ctx.commit is None:
-        return
-    argv = ctx.test_argv
-    program = argv[0]
-    shown = " ".join(argv)
-    if program == "just":
-        found: tuple[str, str] | None = None
-        for candidate in JUSTFILES:
-            content = ctx.base_file(candidate)
-            if content is not None:
-                found = (candidate, content)
-                break
-        if found is None:
-            yield Finding(
-                "justfile_missing",
-                "repo",
-                "error",
-                f"the test command '{shown}' needs a justfile, but {ctx.base} has none",
-                "add a justfile with a 'test' recipe and commit it, or set test_command",
-            )
-            return
-        name, text = found
-        recipes = justfile_recipes(text)
-        wanted = next((a for a in argv[1:] if not a.startswith("-")), None)
-        if (wanted is None and recipes) or wanted in recipes:
-            return
-        imports = any(_IMPORT.match(line) for line in text.splitlines())
-        what = f"recipe '{wanted}'" if wanted else "any recipe"
-        yield Finding(
-            "test_recipe_missing",
-            "repo",
-            "warning" if imports else "error",
-            f"the test command '{shown}' needs {what}, but {name} in {ctx.base} has none"
-            + (" (it imports other files, which were not read)" if imports else ""),
-            f"add the recipe to {name} and commit it, or set test_command",
-        )
-    elif "/" in program and not PurePosixPath(program).is_absolute():
-        rel = program.removeprefix("./")
-        if not ctx.base_has(rel):
-            yield Finding(
-                "test_script_missing",
-                "repo",
-                "error",
-                f"the test command '{shown}' runs {program}, which is not in {ctx.base}",
-                "commit the script, or fix test_command",
-            )
-
-
 # -- .gitignore --
 
 
@@ -749,7 +674,6 @@ REPO_GROUP = RuleGroup(
         Rule("disallowed commands", disallowed_commands),
         Rule("backlog", backlog),
         Rule("workflows", workflows),
-        Rule("test", test_rule),
         Rule("gitignore", gitignore),
         Rule("update", update),
         Rule("skills mirror", skills_mirror),

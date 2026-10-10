@@ -67,6 +67,7 @@ _CODE_OPTS = frozenset({"when", "id", "description"})
 _COMMAND_OPTS = _CODE_OPTS | {"argv", "timeout"}
 _OVERRIDES = ("harness", "model", "thinking")
 _REPEAT_OPTS = frozenset({"max", "until", "when"})
+TEST_PLAN_TYPE = "TestPlanOutput"
 
 
 def _until_tail(until: Condition | None, steps: Sequence[Step]) -> int | None:
@@ -338,8 +339,6 @@ class _Parser:
         self, name: str, spec: CodeStepDef, opts: Mapping[Any, Any], path: str
     ) -> CodeStep | None:
         allowed = _COMMAND_OPTS if name == "command" else _CODE_OPTS
-        if name == "test":
-            allowed = allowed | {"selector", "full_argv", "allow_skip", "defer_to"}
         for key in opts:
             if key in _OVERRIDES or key == "agent":
                 self.add(
@@ -403,34 +402,6 @@ class _Parser:
                 )
             else:
                 timeout = raw_timeout
-        adaptive: dict[str, Any] = {}
-        for option in ("selector", "full_argv"):
-            if option in opts:
-                value = opts[option]
-                if (
-                    not isinstance(value, list)
-                    or not value
-                    or not all(isinstance(a, str) and a.strip() for a in value)
-                ):
-                    self.add("invalid_test_plan", f"{option} needs non-empty argv", path)
-                else:
-                    adaptive[option] = tuple(value)
-        if "allow_skip" in opts:
-            if type(opts["allow_skip"]) is not bool:
-                self.add("invalid_test_plan", "allow_skip must be boolean", path)
-            else:
-                adaptive["allow_skip"] = opts["allow_skip"]
-        if "defer_to" in opts:
-            if not isinstance(opts["defer_to"], str) or not opts["defer_to"].strip():
-                self.add("invalid_test_plan", "defer_to needs a task id", path)
-            else:
-                adaptive["defer_to"] = opts["defer_to"].strip()
-            if not adaptive.get("full_argv"):
-                self.add("invalid_test_plan", "defer_to requires full_argv", path)
-        if any(k in opts for k in ("full_argv", "allow_skip", "defer_to")) and not adaptive.get(
-            "selector"
-        ):
-            self.add("invalid_test_plan", "test policy options require selector", path)
         phase = self.phase_id(opts.get("id"), name, f"{path}.id") if ok else key
         description = self.description(
             phase, opts.get("description"), spec.description, f"{path}.description"
@@ -450,7 +421,6 @@ class _Parser:
             argv=argv,
             timeout=timeout,
             when=when,
-            **adaptive,
         )
 
     def check_refs(self) -> None:
@@ -480,6 +450,19 @@ class _Parser:
                     path,
                 )
 
+    def check_test_plans(self, steps: Sequence[Step]) -> None:
+        """Every ``test`` runs the latest test plan, so a test plan step must come first."""
+        planned = False
+        for step in walk(steps):
+            if isinstance(step, RoleStep) and step.role.output_type_name == TEST_PLAN_TYPE:
+                planned = True
+            elif isinstance(step, CodeStep) and step.action == "test" and not planned:
+                self.add(
+                    "test_without_plan",
+                    "a test step runs the checks of a test plan; put a `test_plan` step before it",
+                    step.path,
+                )
+
     def workflow(self, data: object, source: Path | None) -> Workflow | None:
         if not isinstance(data, Mapping):
             self.add("not_a_mapping", "a workflow must be a YAML mapping", "")
@@ -500,6 +483,7 @@ class _Parser:
         steps = self.steps(raw_steps, "steps")
         accept = self.condition(data.get("accept"), "accept")
         self.check_refs()
+        self.check_test_plans(steps)
         if self.issues:
             return None
         return Workflow(
@@ -567,12 +551,5 @@ def outline(steps: Sequence[Step]) -> list[dict[str, Any]]:
                 "owner": step.owner,
                 "when": step.when.source if step.when else None,
             }
-        if isinstance(step, CodeStep) and step.selector:
-            row.update(
-                selector=list(step.selector),
-                full_argv=list(step.full_argv),
-                allow_skip=step.allow_skip,
-                defer_to=step.defer_to,
-            )
         rows.append({k: v for k, v in row.items() if v is not None})
     return rows

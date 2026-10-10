@@ -4,12 +4,9 @@ import { computed, ref } from 'vue'
 import {
   INHERIT_LABEL,
   SETTING_LABELS,
-  TEST_FIELD_HINT,
   autoMode,
-  formatTestField,
   levelLabel,
   levelNoun,
-  parseTestField,
   splitIds,
   splitLines,
   type AddTaskInput,
@@ -68,7 +65,7 @@ const dependsText = ref((task?.depends_on ?? []).join(', '))
 const relatedText = ref((task?.related ?? []).join(', '))
 const parameterBusy = ref(false)
 const parameters = ref<Record<string, unknown> | undefined>()
-const parameterFields = ['harness', 'model', 'thinking', 'source', 'target', 'test', 'test_timeout', 'specs_dir', 'docs_dir', 'auto_continue', 'auto_merge']
+const parameterFields = ['harness', 'model', 'thinking', 'source', 'target', 'test_timeout', 'specs_dir', 'docs_dir', 'auto_continue', 'auto_merge']
 const { harnessOptions, modelOptions } = useHarnessChoices()
 const projectHarness = computed(() => props.steps.find(s => s.id === step.value)?.harness ?? '')
 /** A parameter's value: the typed or proposed one, else the task's own one (edit). */
@@ -80,7 +77,6 @@ function parameterValue(key: string): unknown {
 function parameterText(key: string): string {
   const value = parameterValue(key)
   if (value == null) return ''
-  if (key === 'test') return formatTestField(value)
   return String(value)
 }
 const parameterFlagOptions: SelectOption[] = [
@@ -92,7 +88,7 @@ function setParameter(key: string, event: Event) {
   setParameterText(key, (event.target as HTMLInputElement).value)
 }
 function setParameterText(key: string, text: string) {
-  const value = !text ? null : key === 'test' ? parseTestField(text) : key === 'test_timeout' ? Number(text) : ['auto_continue', 'auto_merge'].includes(key) ? text === 'true' : text
+  const value = !text ? null : key === 'test_timeout' ? Number(text) : ['auto_continue', 'auto_merge'].includes(key) ? text === 'true' : text
   parameters.value = { ...parameters.value, [key]: value }
   if (key === 'harness') parameters.value.model = null
   if (key === 'auto_merge') autoMerge.value = autoMode(value as boolean | null)
@@ -371,16 +367,6 @@ function onSubmit() {
           :options="parameterFlagOptions"
           @update:model-value="setParameterText(key, $event)"
         />
-        <template v-else-if="key === 'test'">
-          <input
-            type="text"
-            :data-test="`parameter-${key}`"
-            :value="parameterText(key)"
-            placeholder="např. just check"
-            @input="setParameter(key, $event)"
-          />
-          <span class="hint faint" data-test="test-hint">{{ TEST_FIELD_HINT }}</span>
-        </template>
         <input
           v-else
           :data-test="`parameter-${key}`"

@@ -54,8 +54,7 @@ def _snapshot(root: Path) -> dict[str, bytes]:
 def test_detail_has_own_and_effective_values_with_origin(tmp_path: Path) -> None:
     root = make_backlog_repo(tmp_path / "repo")
     (root / ".factory/config.yaml").write_text(
-        "base: main\nlevels: [module, step, task]\nbacklog_dir: backlog\n"
-        "test_command: [just, check]\ndocs_dir: docs\n",
+        "base: main\nlevels: [module, step, task]\nbacklog_dir: backlog\ndocs_dir: docs\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -73,11 +72,11 @@ def test_detail_has_own_and_effective_values_with_origin(tmp_path: Path) -> None
         "value": "plan-build",
         "origin": {"source": "inherited", "level": "module", "id": "M01", "path": M01_INDEX},
     }
-    assert effective["test"] == {
-        "value": ["just", "check"],
-        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "test_command"},
+    assert "test" not in effective
+    assert effective["docs_dir"] == {
+        "value": "docs",
+        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "docs_dir"},
     }
-    assert effective["docs_dir"]["value"] == "docs"
     assert effective["auto_continue"] == {"value": False, "origin": {"source": "default"}}
     assert effective["source"] == {"value": None, "origin": None}
 
@@ -132,7 +131,6 @@ def test_edit_sets_clears_and_keeps_unknown_keys(tmp_path: Path) -> None:
     payload = {
         "title": "Jádro",
         "writes": ["src/"],
-        "test": "uv run pytest",
         "source": "src/",
         "target": "src/",
         "specs_dir": "specs/core",
@@ -148,7 +146,6 @@ def test_edit_sets_clears_and_keeps_unknown_keys(tmp_path: Path) -> None:
         "owner": "alice",
         "workflow": "plan-build",
         "writes": ["src/"],
-        "test": "uv run pytest",
         "source": "src/",
         "target": "src/",
         "specs_dir": "specs/core",
@@ -159,7 +156,7 @@ def test_edit_sets_clears_and_keeps_unknown_keys(tmp_path: Path) -> None:
 
     step = _post(client, "/api/backlog/containers/M01-S01/edit", {"workflow": "plan"})["data"]
     assert step["container"]["effective"]["workflow"]["origin"]["id"] == "M01-S01"
-    assert step["container"]["effective"]["test"]["origin"] == {
+    assert step["container"]["effective"]["specs_dir"]["origin"] == {
         "source": "inherited",
         "level": "module",
         "id": "M01",

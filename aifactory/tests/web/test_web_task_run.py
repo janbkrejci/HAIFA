@@ -257,4 +257,4 @@ def test_run_check_reports_the_effective_run(client: TestClient, repo: Path) -> 
     check = _check(client.get(f"/api/backlog/tasks/{T01}/run-check"), 200)["data"]
     assert check["workflow"]
     assert check["writes"]
-    assert isinstance(check["test"], str) and check["test"]
+    assert "test" not in check

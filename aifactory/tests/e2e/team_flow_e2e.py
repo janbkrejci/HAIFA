@@ -78,6 +78,17 @@ def team_script(path: Path) -> Path:
                             },
                         }
                     ],
+                    "tester": [
+                        {
+                            "envelope": {
+                                "status": "success",
+                                "summary": "Check the team feature",
+                                "coverage": "scoped",
+                                "reason": "one new module",
+                                "checks": [{"name": "check", "argv": ["true"]}],
+                            }
+                        }
+                    ],
                     "reviewer": [
                         {
                             "envelope": {

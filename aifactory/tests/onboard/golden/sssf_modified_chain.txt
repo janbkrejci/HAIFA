@@ -6,7 +6,7 @@ linked agent/scout scout
 linked agent/reviewer reviewer
 linked agent/documenter documenter
 changed_meaning agent/documenter/writes -
-converted agent/tester tester
+converted agent/tester tester-chained
 manual agent/tester -
 converted extension/subagents subagents
 converted .factory/agents.yaml -

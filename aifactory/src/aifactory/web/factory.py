@@ -53,7 +53,6 @@ INIT_OPTIONS = (
     "backlog_dir",
     "specs_dir",
     "docs_dir",
-    "test_command",
 )
 UPDATE_OPTIONS = ("item", "take", "merge", "migrate")
 OPTIONS: dict[str, tuple[str, ...]] = {
@@ -485,7 +484,6 @@ def _init_kwargs(options: Mapping[str, Any]) -> JsonDict:
         "backlog_dir": options.get("backlog_dir"),
         "specs_dir": options.get("specs_dir"),
         "docs_dir": options.get("docs_dir"),
-        "test_command": (options.get("test_command") or "").strip() or None,
     }
 
 
@@ -617,8 +615,6 @@ def plan(
     with _core_errors(req.action):
         result = _call(root, req, dry_run=True, environ=environ)
     data = {"action": req.action, **result.to_json()}
-    if req.action == "init":
-        data["test_command"] = _test_command_view(root, req.options.get("test_command"))
     if req.action == "onboard" and any(
         b.code == "onboarding_pending" for b in result.plan.blockers
     ):
@@ -658,20 +654,6 @@ def plan(
     if data.get("remote") and not git.has_remote(root, data["remote"]):
         data["remote"] = None
     return data, list(result.warnings)
-
-
-def _test_command_view(root: Path, given: object) -> JsonDict:
-    """The test command an init plan writes and the candidates detected in the repo root.
-
-    ``source`` is ``option`` (given), ``detected`` (the first candidate, a suggestion: the
-    plan writes it only when it is passed as ``options.test_command``) or ``default``;
-    ``written`` tells whether the plan puts it into ``.factory/config.yaml``.
-    """
-    from aifactory.library.install import choose_test_command
-
-    override = given.strip() if isinstance(given, str) and given.strip() else None
-    with _core_errors():
-        return {**choose_test_command(root, override).to_json(), "written": override is not None}
 
 
 APPLY_FIELDS = ("commit", "pushed", "pr", "committed", "advanced", "branch")

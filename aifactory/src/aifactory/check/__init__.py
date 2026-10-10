@@ -36,7 +36,7 @@ from aifactory.check.model import (
     Severity,
     State,
 )
-from aifactory.check.repo_rules import REPO_GROUP, justfile_recipes
+from aifactory.check.repo_rules import REPO_GROUP
 from aifactory.config.errors import ConfigError
 from aifactory.library.store import LibraryStoreError
 from aifactory.providers.base import ProviderError
@@ -164,7 +164,6 @@ __all__ = [
     "State",
     "SystemMachine",
     "default_machine",
-    "justfile_recipes",
     "main_checkout",
     "run_check",
 ]

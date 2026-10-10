@@ -32,9 +32,7 @@ describe('SettingsForm', () => {
       'squash',
       'merge',
     ])
-    expect((wrapper.get('[data-test="test_command"]').element as HTMLInputElement).value).toBe(
-      'uv run pytest',
-    )
+    expect(wrapper.find('[data-test="test_command"]').exists()).toBe(false)
     expect(
       (wrapper.get('[data-test="protected_files"]').element as HTMLTextAreaElement).value,
     ).toBe('.factory/')
@@ -75,9 +73,8 @@ describe('SettingsForm', () => {
     ])
   })
 
-  it('sends null for an empty test command and lines for protected files', async () => {
+  it('sends lines for protected files', async () => {
     const wrapper = mountForm()
-    await wrapper.get('[data-test="test_command"]').setValue('')
     await wrapper.get('[data-test="protected_files"]').setValue('.factory/\njustfile\n')
     await chooseOption(wrapper, '[data-test="merge_strategy"]', 'merge')
     await wrapper.get('form').trigger('submit')
@@ -85,7 +82,6 @@ describe('SettingsForm', () => {
       {
         shared: {
           merge_strategy: 'merge',
-          test_command: null,
           protected_files: ['.factory/', 'justfile'],
         },
       },

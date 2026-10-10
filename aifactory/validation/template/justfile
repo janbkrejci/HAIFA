@@ -1,4 +1,4 @@
-# the sandbox's test suite; HAIFA's `test` step runs `just test` in the run's worktree.
+# the sandbox's test suite; the tester plans `just test` and HAIFA's `test` step runs it in the run's worktree.
 # Windows has no python3 binary, its interpreter is python.
 python := if os_family() == "windows" { "python" } else { "python3" }
 

@@ -452,8 +452,6 @@ export interface FactoryOptions {
   base?: string; provider?: string
   azure?: { organization: string; project: string; repository: string }
   backlog_dir?: string; specs_dir?: string; docs_dir?: string
-  /** The repo's test command; empty lets the installer suggest one. */
-  test_command?: string
   agents?: string[]; workflows?: string[]; bind?: Record<string, AgentBinding>
   take?: string[]; merge?: string[]; migrate?: string[]
 }
@@ -472,13 +470,10 @@ interface FactoryPlanCommon {
   files: FactoryFile[]; blockers: PlanBlocker[]
   warnings?: PlanWarning[]; envelopeWarnings?: string[]
 }
-/** The test command init writes: given, detected in the repo or the default. */
-export interface TestCommandChoice { command: string; source?: 'option' | 'detected' | 'default'; candidates?: unknown[]; written?: boolean }
 export interface FactoryInitPlan extends FactoryPlanCommon {
   action: 'init'
   provider: string; azure?: FactoryOptions['azure'] | null; backlog_dir: string; specs_dir: string; docs_dir: string
   agents: string[]; workflows: string[]; added_agents: string[]; bindings: Record<string, AgentBinding>
-  test_command?: string | TestCommandChoice | null
   detected: { harnesses: Record<string, { installed: boolean }> }
   available: { agents: (AgentBinding & { name: string; purpose: string; default: boolean })[]; workflows: { name: string; default: boolean }[] }
 }
@@ -506,7 +501,6 @@ export function factoryChoices(action: FactoryRequest['action'], options: Factor
       organization: options.azure.organization, project: options.azure.project, repository: options.azure.repository,
     } : undefined,
     backlog_dir: options.backlog_dir, specs_dir: options.specs_dir, docs_dir: options.docs_dir,
-    ...(options.test_command?.trim() ? { test_command: options.test_command.trim() } : {}),
     agents: options.agents, workflows: options.workflows, bind }
 }
 function factoryUrl(path: string, id?: string): string {

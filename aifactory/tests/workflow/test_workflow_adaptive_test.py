@@ -1,9 +1,8 @@
-"""Real selector and check processes; no live agents or services."""
+"""The tester's plan and the `test` step that runs it: real check processes, no live agents."""
 
 from __future__ import annotations
 
-import json
-import subprocess
+import shlex
 import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -12,62 +11,55 @@ from types import SimpleNamespace
 from typing import Any
 
 import pytest
+import yaml
 from pydantic import ValidationError
-from workflow_fakes import workflow, workflow_env_fixture  # noqa: F401
+from workflow_fakes import (
+    EngineEnv,
+    FakeCodeRunner,
+    ok,
+    plan_envelope,
+    workflow,
+    workflow_env_fixture,  # noqa: F401  (pytest fixture)
+)
 
-from aifactory.testing.context import capture
+from aifactory.engine import gates
+from aifactory.engine.data_types import TestPlanOutput
 from aifactory.testing.executor import execute
-from aifactory.testing.model import Plan
-from aifactory.workflow import WorkflowError
+from aifactory.workflow import run_workflow
+
+HEADER = "name: t\ndescription: A workflow written only to exercise the test plan\n"
 
 
-def repo(tmp_path: Path) -> Any:
-    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
-    subprocess.run(
-        [
-            "git",
-            "-C",
-            str(tmp_path),
-            "-c",
-            "user.name=t",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "--allow-empty",
-            "-qm",
-            "initial",
-        ],
-        check=True,
-    )
-    base = (
-        subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"]).decode().strip()
-    )
+def fake_run(tmp_path: Path, timeout: int = 4) -> Any:
+    """The attributes of a task run that the executor and the quality runner read."""
     return SimpleNamespace(
         repo_root=tmp_path,
-        test_baseline=base,
         context_handoff_dir=tmp_path.parent / (tmp_path.name + "-logs"),
         phases=[SimpleNamespace(seq=1, phase_id="test")],
         adw_id="test",
         console=SimpleNamespace(note=lambda msg: None),
         tracer=SimpleNamespace(event=lambda event: None),
-        test_timeout=4,
+        test_timeout=timeout,
     )
 
 
-def selector(plan: dict[str, Any]) -> list[str]:
-    return [sys.executable, "-c", f"print({json.dumps(plan)!r})"]
+def python(code: str) -> list[str]:
+    return [sys.executable, "-c", code]
 
 
-def plan(*codes: str, coverage: str = "scoped") -> dict[str, Any]:
-    return {
-        "version": 1,
-        "coverage": coverage,
-        "reason": "test policy",
-        "checks": [
-            {"name": f"check{i}", "argv": [sys.executable, "-c", code]}
-            for i, code in enumerate(codes)
-        ],
-    }
+def plan(*codes: str, coverage: str = "scoped") -> TestPlanOutput:
+    """A plan with one Python check per code snippet, named check0, check1, ..."""
+    return TestPlanOutput.model_validate(
+        ok(
+            coverage=coverage,
+            reason="covers the change",
+            checks=[{"name": f"check{i}", "argv": python(code)} for i, code in enumerate(codes)],
+        )
+    )
+
+
+def touch(name: str) -> str:
+    return f"from pathlib import Path; Path({name!r}).touch()"
 
 
 class Slots:
@@ -75,251 +67,78 @@ class Slots:
         self.count = 0
 
     @contextmanager
-    def hold(self, waiting: Any) -> Iterator[None]:
+    def hold(self, waiting: Any) -> Iterator[SimpleNamespace]:
         self.count += 1
-        yield
+        yield SimpleNamespace(slot=0, waited_seconds=0.0)
 
 
-def test_sequential_checks_worktree_and_single_slot(tmp_path: Path) -> None:
-    run = repo(tmp_path)
+# ── executor ────────────────────────────────────────────────────────────────
+
+
+def test_checks_run_in_order_in_the_worktree_under_one_slot(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    run = fake_run(tmp_path)
     run.test_slots = Slots()
-    result = execute(
-        run,
-        selector(plan("from pathlib import Path; Path('ran').write_text('yes')", "print('error')")),
-    )
-    assert result.test_plan is not None
-    assert result.passed and result.test_plan.executed == 2
-    assert (tmp_path / "ran").read_text() == "yes"
+    order = "from pathlib import Path; p = Path('order'); p.write_text(p.read_text() + '{}')"
+    (tmp_path / "order").write_text("")
+    result = execute(run, plan(order.format("a"), order.format("b"), order.format("c")))
+    assert result.passed
+    assert (tmp_path / "order").read_text() == "abc"
+    assert [c.name for c in result.checks] == ["check0", "check1", "check2"]
     assert run.test_slots.count == 1
-
-
-def test_failed_check_stops_without_fallback(tmp_path: Path) -> None:
-    run = repo(tmp_path)
-    result = execute(
-        run,
-        selector(plan("raise SystemExit(3)", "raise SystemExit(0)")),
-        [sys.executable, "-c", "raise SystemExit(0)"],
-    )
-    assert not result.passed and len(result.checks) == 1
-    assert result.checks[0].returncode == 3
     assert result.test_plan is not None
-    assert result.test_plan.fallback_reason is None
+    assert (result.test_plan.coverage, result.test_plan.executed) == ("scoped", 3)
 
 
-@pytest.mark.parametrize(
-    "code", ["print('bad json')", "raise SystemExit(2)", "import time; time.sleep(3)"]
-)
-def test_bad_selector_falls_back(tmp_path: Path, code: str) -> None:
-    run = repo(tmp_path)
-    run.test_timeout = 1
-    result = execute(run, [sys.executable, "-c", code], [sys.executable, "-c", "print('fallback')"])
+def test_first_failure_stops_the_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.chdir(tmp_path)
+    run = fake_run(tmp_path)
+    tested = plan(touch("first"), "raise SystemExit(3)", touch("third"))
+    result = execute(run, tested)
+    assert not result.passed
+    assert [c.returncode for c in result.checks] == [0, 3]
+    assert (tmp_path / "first").exists() and not (tmp_path / "third").exists()
+    assert len(result.failures) == 1 and result.failures[0].startswith("check1:")
     assert result.test_plan is not None
-    assert result.passed and result.test_plan.coverage == "full"
-    assert result.test_plan is not None
-    assert result.test_plan.fallback_reason
-    assert result.test_plan is not None
-    assert result.test_plan.executed == 1
+    assert result.test_plan.executed == 2
+    # The evidence names every planned command, also the one that never ran.
+    assert len(result.test_plan.commands) == 3
+    assert result.test_plan.commands[2] == shlex.join(python(touch("third")))
 
 
-def test_docs_skip_no_slot_and_force_full(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    run = repo(tmp_path)
+def test_coverage_none_passes_with_nothing_executed(tmp_path: Path) -> None:
+    run = fake_run(tmp_path)
     run.test_slots = Slots()
-    (tmp_path / "README.md").write_text("docs")
-    selected = selector(plan(coverage="none"))
-    result = execute(run, selected, allow_skip=True)
-    assert result.passed and not result.checks and run.test_slots.count == 0
-    monkeypatch.setenv("HAIFA_TEST_TIER", "full")
-    result = execute(run, selected, [sys.executable, "-c", "raise SystemExit(0)"], True)
+    result = execute(run, plan(coverage="none"))
+    assert result.passed and result.checks == [] and result.failures == []
+    assert run.test_slots.count == 0  # nothing to run, no slot taken
     assert result.test_plan is not None
-    assert result.passed and result.test_plan.coverage == "full" and len(result.checks) == 1
+    assert result.test_plan.model_dump() == {
+        "coverage": "none",
+        "reason": "covers the change",
+        "executed": 0,
+        "commands": [],
+    }
 
 
-def test_code_skip_is_rejected_and_defer_explicit(tmp_path: Path) -> None:
-    run = repo(tmp_path)
-    (tmp_path / "module.py").write_text("pass")
-    fallback = [sys.executable, "-c", "raise SystemExit(0)"]
-    result = execute(run, selector(plan(coverage="none")), fallback, True)
-    assert result.test_plan is not None
-    assert result.test_plan.fallback_reason
-    result = execute(run, selector(plan(coverage="deferred")), fallback)
-    assert result.test_plan is not None
-    assert result.test_plan.fallback_reason
-    result = execute(run, selector(plan(coverage="deferred")), fallback, defer_to="TASK-2")
-    assert result.test_plan is not None
-    assert result.test_plan.coverage == "deferred" and not result.checks
-    assert result.test_plan is not None
-    assert result.test_plan.defer_to == "TASK-2"
+def test_checks_share_one_time_limit(tmp_path: Path) -> None:
+    run = fake_run(tmp_path, timeout=1)
+    sleep = "import time; time.sleep(0.6)"
+    result = execute(run, plan(sleep, sleep))
+    assert not result.passed
+    assert result.checks[-1].returncode == 124
 
 
-def test_common_timeout(tmp_path: Path) -> None:
-    run = repo(tmp_path)
-    run.test_timeout = 1
-    result = execute(
-        run, selector(plan("import time; time.sleep(.6)", "import time; time.sleep(.6)"))
-    )
-    assert not result.passed and result.checks[-1].returncode == 124
-
-
-def test_context_includes_committed_staged_untracked_and_rename(tmp_path: Path) -> None:
-    run = repo(tmp_path)
-
-    def commit(label: str) -> None:
-        subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
-        subprocess.run(
-            [
-                "git",
-                "-C",
-                str(tmp_path),
-                "-c",
-                "user.name=t",
-                "-c",
-                "user.email=t@t",
-                "commit",
-                "-qm",
-                label,
-            ],
-            check=True,
-        )
-
-    (tmp_path / "deleted.py").write_text("delete me")
-    commit("base")
-    run.test_baseline = (
-        subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"]).decode().strip()
-    )
-    (tmp_path / "old name.py").write_text("old")
-    commit("builder")
-    (tmp_path / "plan.md").write_text("planner output")
-    commit("planner")
-    (tmp_path / "old name.py").rename(tmp_path / "new name.py")
-    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
-    (tmp_path / "new name.py").write_text("unstaged")
-    (tmp_path / "deleted.py").unlink()
-    (tmp_path / "untracked.py").write_text("new")
-    ctx = capture(tmp_path, run.test_baseline, ["test"], 5)
-    assert ctx.changed_paths == [
-        "deleted.py",
-        "new name.py",
-        "old name.py",
-        "plan.md",
-        "untracked.py",
-    ]
-
-
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"checks": []},
-        {"coverage": "none"},
-        {"extra": 3},
-        {"version": 2},
-        {"version": True},
-        {"checks": [{"name": "x", "argv": []}]},
-        {"checks": [{"name": "x", "argv": ["test"], "timeout": True}]},
-        {"checks": [{"name": "x", "argv": ["test"]}] * 2},
-    ],
-)
-def test_strict_plan(change: dict[str, Any]) -> None:
-    with pytest.raises(ValidationError):
-        Plan.model_validate({**plan("pass"), **change})
-
-
-@pytest.mark.parametrize(
-    "options",
-    [
-        "{selector: []}",
-        "{full_argv: [test]}",
-        "{selector: [test], allow_skip: 1}",
-        "{selector: [test], defer_to: T}",
-    ],
-)
-def test_parser_rejects_invalid_policy(options: str) -> None:
-    with pytest.raises(WorkflowError):
-        workflow(f"name: t\ndescription: Verify the current change\nsteps:\n  - test: {options}\n")
-
-
-def test_retest_reselects_and_failure_reaches_fix(workflow_env: Any) -> None:
-    import yaml
-    from workflow_fakes import ok
-
-    from aifactory.workflow import run_workflow
-
-    selected = [
-        sys.executable,
-        "-c",
-        """
-import json
-from pathlib import Path
-context = json.load(__import__('sys').stdin)
-code = 'raise SystemExit(0)' if Path('fixed.py').exists() else 'raise SystemExit(3)'
-print(json.dumps({'version': 1, 'coverage': 'scoped', 'reason': str(context['changed_paths']),
-                 'checks': [{'name': 'target',
-                             'argv': [__import__('sys').executable, '-c', code]}]}))
-""",
-    ]
-    text = yaml.safe_dump(
-        {
-            "name": "adaptive",
-            "description": "Retest after each repair",
-            "steps": [
-                {
-                    "repeat": {"max": 2, "until": "test.passed"},
-                    "steps": [{"test": {"selector": selected}}, "fix"],
-                }
-            ],
-            "accept": "test.passed",
-        }
-    )
-    workflow_env.script.add("builder", ok(summary="fixed", changed_files=["fixed.py"]))
-    workflow_env.script.on("builder", lambda root: (root / "fixed.py").write_text("pass"))
-    result = run_workflow(workflow(text), "fix it", workflow_env.cfg, repo_root=workflow_env.repo)
-    assert result.accepted
-    assert result.results["test"]["test_plan"]["executed"] == 1
-    assert len(workflow_env.script.calls) == 1
-    assert "fixed.py" in result.results["test"]["test_plan"]["reason"]
-
-
-def test_standalone_deferral_requires_resolver(workflow_env: Any) -> None:
-    from aifactory.workflow import run_workflow
-
-    with pytest.raises(WorkflowError, match="invalid_test_deferral"):
-        run_workflow(
-            workflow("""name: t
-description: Verify the change with an aggregate task
-steps:
-  - test: {selector: [selector], full_argv: [just, check], defer_to: T2}
-"""),
-            "do it",
-            workflow_env.cfg,
-        )
-
-
-def test_pr_discloses_zero_checks() -> None:
-    from aifactory.review.prbody import _tests
-    from aifactory.workflow.interpreter import WorkflowRun
-
-    result = WorkflowRun(
-        0,
-        True,
-        "t",
-        results={
-            "test": {
-                "passed": True,
-                "test_plan": {"coverage": "deferred", "executed": 0, "defer_to": "T2"},
-            }
-        },
-    )
-    assert "odloženo na T2 (0 kontrol)" in _tests(result)[0]
-    assert "prošly" not in _tests(result)[0]
-
-
-def test_exhausted_budget_does_not_start_next_command(
+def test_exhausted_budget_does_not_start_the_next_check(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from aifactory.engine import quality
     from aifactory.testing import executor
 
-    run = repo(tmp_path)
-    run.test_timeout = 1
+    monkeypatch.chdir(tmp_path)
+    run = fake_run(tmp_path, timeout=1)
     clock = iter([0.0, 0.25, 1.1])
     monkeypatch.setattr(executor, "time", SimpleNamespace(monotonic=lambda: next(clock)))
     limits: list[float] = []
@@ -330,138 +149,146 @@ def test_exhausted_budget_does_not_start_next_command(
         return original(spec, running)
 
     monkeypatch.setattr(quality, "_run", observed)
-    result = execute(
-        run,
-        selector(
-            plan("print('first')", "from pathlib import Path; Path('must-not-start').touch()")
-        ),
-    )
+    result = execute(run, plan("print('first')", touch("must-not-start")))
     assert limits == [0.75]
     assert not (tmp_path / "must-not-start").exists()
     assert not result.passed and "shared time limit" in result.failures[0]
     assert result.test_plan is not None and result.test_plan.executed == 1
     assert len(result.checks) == 1 and result.checks[0].passed
-    monkeypatch.setattr(executor, "execute", lambda *args, **kwargs: result)
-    monkeypatch.setattr(sys, "argv", ["executor", "--selector-script", "unused"])
-    assert executor.main() == 124
 
 
-@pytest.mark.parametrize("coverage", ["scoped", "none", "deferred"])
-def test_force_full_overrides_every_plan(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, coverage: str
-) -> None:
-    run = repo(tmp_path)
-    (tmp_path / "README.md").write_text("docs")
-    monkeypatch.setenv("HAIFA_TEST_TIER", "full")
-    selected = plan("raise SystemExit(9)") if coverage == "scoped" else plan(coverage=coverage)
-    result = execute(
-        run, selector(selected), [sys.executable, "-c", "print('full')"], True, "AGGREGATE"
-    )
-    assert result.passed and len(result.checks) == 1
-    assert result.test_plan is not None
-    assert result.test_plan.coverage == "full" and result.test_plan.defer_to is None
-    assert "full" in result.checks[0].output_tail
-
-
-@pytest.mark.parametrize("problem", ["invalid-baseline", "missing-main", "git-failure"])
-def test_context_failure_runs_fallback(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, problem: str
-) -> None:
-    from aifactory.testing import context
-
-    run = repo(tmp_path)
-    if problem == "invalid-baseline":
-        run.test_baseline = "not-a-commit"
-    elif problem == "missing-main":
-        run.test_baseline = None
-        monkeypatch.delenv("HAIFA_TEST_BASE", raising=False)
-    else:
-
-        def broken_git(*args: Any) -> str:
-            raise subprocess.CalledProcessError(3, ["git"])
-
-        monkeypatch.setattr(context, "git", broken_git)
-    result = execute(
-        run,
-        [sys.executable, "-c", "from pathlib import Path; Path('selector-ran').touch()"],
-        [sys.executable, "-c", "print('fallback')"],
-    )
-    assert result.passed and result.test_plan is not None
-    assert result.test_plan.fallback_reason and result.test_plan.coverage == "full"
-    assert not (tmp_path / "selector-ran").exists()
-    assert "fallback" in result.checks[0].output_tail
-
-
-@pytest.mark.parametrize("coverage", ["scoped", "none"])
-def test_legacy_workflow_check_reports_full_check_age(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, coverage: str
+def test_a_check_timeout_only_shortens_the_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from aifactory.engine import quality
-    from aifactory.testing import executor
 
-    run = repo(tmp_path)
-    script = tmp_path / "aifactory/tests/select_checks.py"
-    script.parent.mkdir(parents=True)
-    script.write_text("# selector placeholder")
-    (tmp_path / ".git/info").mkdir(exist_ok=True)
-    (tmp_path / ".git/info/exclude").write_text("aifactory/\n")
-    run.test_argv = ["just", "check-scoped"]
-    messages: list[str] = []
-    run.console = SimpleNamespace(note=messages.append)
-    original = executor.execute
-    selected = plan("pass") if coverage == "scoped" else plan(coverage="none")
+    limits: list[float] = []
+    original = quality._run
 
-    def local_selector(running: Any, argv: list[str], *args: Any, **kwargs: Any) -> Any:
-        return original(running, selector(selected), *args, **kwargs)
+    def observed(spec: Any, running: Any) -> Any:
+        limits.append(spec.timeout_seconds)
+        return original(spec, running)
 
-    monkeypatch.setattr(executor, "execute", local_selector)
-    result = quality.run_tests(run)
-    assert result.passed
-    assert any("hint: run just full-check" in message for message in messages)
-    assert not (tmp_path / ".git/haifa/full-check-green").exists()
-
-
-@pytest.mark.parametrize("coverage", ["none", "scoped", "deferred"])
-def test_pr_and_trace_preserve_policy(tmp_path: Path, coverage: str) -> None:
-    import sqlite3
-
-    from aifactory.review.prbody import _tests, run_checks
-    from aifactory.workflow.interpreter import WorkflowRun
-
-    metadata = {
-        "coverage": coverage,
-        "reason": "policy",
-        "executed": 1 if coverage == "scoped" else 0,
-        "defer_to": None if coverage == "none" else "T2",
-    }
-    wf = WorkflowRun(0, True, "run", results={"test": {"passed": True, "test_plan": metadata}})
-    line = _tests(wf)[0]
-    if coverage == "none":
-        assert "neprovedeno" in line and "prošly" not in line
-    else:
-        assert "T2" in line
-        assert ("cílené ověření" if coverage == "scoped" else "0 kontrol") in line
-    database = tmp_path / "trace.db"
-    with sqlite3.connect(database) as db:
-        db.executescript("""
-CREATE TABLE phases (name TEXT, phase_id TEXT, adw_id TEXT, kind TEXT, seq INTEGER);
-CREATE TABLE gate_results (phase_id TEXT, gate TEXT, passed INTEGER, violations_json TEXT,
-                          adw_id TEXT, id INTEGER);
-CREATE TABLE events (phase_id TEXT, type TEXT, payload_json TEXT, started_at TEXT);
-INSERT INTO phases VALUES ('test', 'phase', 'run', 'code', 1);
-""")
-        db.execute(
-            "INSERT INTO events VALUES (?, ?, ?, ?)",
-            (
-                "phase",
-                "log",
-                json.dumps({"passed": True, "checks": "0/0", "test_plan": metadata}),
-                "now",
-            ),
+    monkeypatch.setattr(quality, "_run", observed)
+    tested = TestPlanOutput.model_validate(
+        ok(
+            coverage="full",
+            reason="whole suite",
+            checks=[
+                {"name": "short", "argv": python("pass"), "timeout": 2},
+                {"name": "long", "argv": python("pass"), "timeout": 999},
+            ],
         )
-    checks = run_checks(database, "run")
-    assert len(checks) == 1 and checks[0].passed
-    assert coverage in checks[0].detail
-    assert str(metadata["executed"]) in checks[0].detail
-    if coverage != "none":
-        assert "T2" in checks[0].detail
+    )
+    assert execute(fake_run(tmp_path, timeout=4), tested).passed
+    assert limits[0] == 2
+    assert 3 < limits[1] <= 4
+
+
+# ── TestPlanOutput ──────────────────────────────────────────────────────────
+
+
+def test_valid_plans() -> None:
+    assert TestPlanOutput.model_validate(plan_envelope(coverage="none")).checks == []
+    full = TestPlanOutput.model_validate(plan_envelope("pytest", coverage="full"))
+    assert full.checks[0].argv == ["pytest"]
+
+
+@pytest.mark.parametrize(
+    ("change", "message"),
+    [
+        ({"coverage": "none", "checks": [{"name": "x", "argv": ["true"]}]}, "coverage"),
+        ({"coverage": "full", "checks": []}, "coverage"),
+        ({"coverage": "scoped", "checks": []}, "coverage"),
+        ({"checks": [{"name": "x", "argv": ["true"]}] * 2}, "unique"),
+        ({"checks": [{"name": "a/b", "argv": ["true"]}]}, "safe file names"),
+        ({"checks": [{"name": "..", "argv": ["true"]}]}, "safe file names"),
+        ({"checks": [{"name": "x", "argv": []}]}, "argv"),
+        ({"checks": [{"name": "x", "argv": ["true"], "timeout": 0}]}, "timeout"),
+        ({"checks": [{"name": "x", "argv": ["true"], "shell": True}]}, "shell"),
+        ({"coverage": "deferred"}, "coverage"),
+        ({"reason": ""}, "reason"),
+    ],
+)
+def test_invalid_plans(change: dict[str, Any], message: str) -> None:
+    with pytest.raises(ValidationError, match=message):
+        TestPlanOutput.model_validate({**plan_envelope(), **change})
+
+
+# ── gate checks_runnable ────────────────────────────────────────────────────
+
+
+def test_checks_runnable_finds_programs_on_path_and_in_the_worktree(tmp_path: Path) -> None:
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts/check.sh").write_text("exit 0\n")
+    tested = TestPlanOutput.model_validate(
+        ok(
+            coverage="scoped",
+            reason="covers the change",
+            checks=[
+                {"name": "on_path", "argv": ["true"]},
+                {"name": "local", "argv": ["./scripts/check.sh"]},
+                {"name": "unknown", "argv": ["no-such-program-haifa"]},
+                {"name": "missing", "argv": ["scripts/missing.sh"]},
+            ],
+        )
+    )
+    report = gates.checks_runnable(tested, SimpleNamespace(repo_root=tmp_path))
+    assert not report.passed
+    assert [v.split(":")[0] for v in report.violations] == ["unknown", "missing"]
+
+
+def test_checks_runnable_passes_a_plan_without_checks(tmp_path: Path) -> None:
+    tested = TestPlanOutput.model_validate(plan_envelope(coverage="none"))
+    assert gates.checks_runnable(tested, SimpleNamespace(repo_root=tmp_path)).passed
+
+
+# ── interpreter ─────────────────────────────────────────────────────────────
+
+
+def test_every_test_runs_the_latest_plan(workflow_env: EngineEnv) -> None:
+    text = (
+        HEADER
+        + """\
+steps:
+  - test_plan
+  - test
+  - build
+  - test_plan: {id: replan}
+  - test: {id: retest}
+accept: test.passed
+"""
+    )
+    workflow_env.script.add("tester", plan_envelope("echo", "first"), plan_envelope("echo", "2"))
+    workflow_env.script.add("builder", ok(summary="built", changed_files=[]))
+    code = FakeCodeRunner([True, True])
+    result = run_workflow(workflow(text), "do it", workflow_env.cfg, code=code)
+    assert result.accepted
+    assert [p.checks[0].argv for p in code.plans] == [["echo", "first"], ["echo", "2"]]
+
+
+def test_a_failing_plan_reaches_the_fixer_and_the_retest_passes(
+    workflow_env: EngineEnv,
+) -> None:
+    """Real executor: the check fails until the builder writes ``fixed.py``."""
+    check = "from pathlib import Path; raise SystemExit(0 if Path('fixed.py').exists() else 3)"
+    text = yaml.safe_dump(
+        {
+            "name": "planned",
+            "description": "Retest after each repair",
+            "steps": [
+                "test_plan",
+                {"repeat": {"max": 2, "until": "test.passed"}, "steps": ["test", "fix"]},
+            ],
+            "accept": "test.passed",
+        }
+    )
+    workflow_env.script.add("tester", plan_envelope(*python(check)))
+    workflow_env.script.add("builder", ok(summary="fixed", changed_files=["fixed.py"]))
+    workflow_env.script.on("builder", lambda root: (root / "fixed.py").write_text("pass"))
+    result = run_workflow(workflow(text), "fix it", workflow_env.cfg, repo_root=workflow_env.repo)
+    assert result.accepted
+    assert [call.agent for call in workflow_env.script.calls] == ["tester", "builder"]
+    evidence = result.results["test"]["test_plan"]
+    assert (evidence["coverage"], evidence["executed"]) == ("scoped", 1)
+    assert evidence["commands"] and "fixed.py" in evidence["commands"][0]

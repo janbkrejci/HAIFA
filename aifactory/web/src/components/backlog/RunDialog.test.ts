@@ -106,20 +106,19 @@ describe('RunDialog', () => {
     expect(pending.emitted('cancel')).toHaveLength(1)
   })
 
-  it('summarises the workflow, writes, test command, base and task text', async () => {
-    const wrapper = dialog(runCheck({ workflow: 'simple-sdlc', writes: ['aifactory/'], test: 'just check-scoped' }), {
+  it('summarises the workflow, writes, base and task text', async () => {
+    const wrapper = dialog(runCheck({ workflow: 'simple-sdlc', writes: ['aifactory/'] }), {
       body: 'Udělej **to**.',
     })
     expect(wrapper.get('[data-test="summary-workflow"]').text()).toBe('simple-sdlc')
     expect(wrapper.get('[data-test="summary-writes"]').text()).toBe('aifactory/')
-    expect(wrapper.get('[data-test="summary-test"]').text()).toBe('just check-scoped')
+    expect(wrapper.find('[data-test="summary-test"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="summary-base"]').text()).toBe('main (abcdef1)')
     expect(wrapper.get('[data-test="summary-body"]').html()).toContain('<strong>to</strong>')
     // an older server without the effective values: the task's own
     const older = dialog(runCheck())
     expect(older.get('[data-test="summary-workflow"]').text()).toBe('plan-build')
     expect(older.get('[data-test="summary-writes"]').text()).toBe('src/')
-    expect(older.get('[data-test="summary-test"]').text()).toBe('just test')
   })
 
   it('sends the harness for this run and auto continue', async () => {

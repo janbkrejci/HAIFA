@@ -8,8 +8,6 @@ const emit = defineEmits<{ change: [options: FactoryOptions] }>()
 const DIR_LABELS = { backlog_dir: 'Adresář backlogu', specs_dir: 'Adresář specifikací', docs_dir: 'Adresář dokumentace' } as const
 const AZURE_LABELS = { organization: 'Azure organizace', project: 'Azure projekt', repository: 'Azure repozitář' } as const
 const PROVIDERS = [{ value: 'local', label: 'Jen lokálně' }, { value: 'github', label: 'GitHub' }, { value: 'azure', label: 'Azure DevOps' }]
-/** The installer's own default, used when the field stays empty. */
-const defaultTest = computed(() => typeof props.plan.test_command === 'object' && props.plan.test_command?.source === 'default' ? props.plan.test_command.command : '')
 const harnessOptions = computed(() => Object.keys(props.plan.detected?.harnesses ?? {}).map(name => ({ value: name, label: name })))
 function edit(fn: (value: FactoryOptions) => void) {
   const value = structuredClone(toRaw(props.options))
@@ -33,7 +31,6 @@ function binding(name: string, key: 'harness' | 'model' | 'thinking', value: str
       <label v-for="key in (['organization','project','repository'] as const)" :key="key">{{ AZURE_LABELS[key] }} <input :value="options.azure?.[key]" @input="edit(v => { if(v.azure) v.azure[key] = text($event) })"></label>
     </template>
     <label v-for="key in (['backlog_dir','specs_dir','docs_dir'] as const)" :key="key">{{ DIR_LABELS[key] }} <input :value="options[key]" :data-test="`install-${key}`" @input="edit(v => v[key] = text($event))"></label>
-    <label>Testovací příkaz <input :value="options.test_command ?? ''" :placeholder="defaultTest ? `Prázdné = ${defaultTest}` : 'Prázdné = výchozí instalátoru'" data-test="install-test_command" @input="edit(v => v.test_command = text($event))"></label>
     <h3>Agenti</h3>
     <datalist id="install-models"><option v-for="m in MODEL_SUGGESTIONS" :key="m" :value="m" /></datalist>
     <datalist id="install-thinking"><option v-for="t in THINKING_LEVELS" :key="t" :value="t" /></datalist>

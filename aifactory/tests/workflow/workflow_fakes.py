@@ -20,7 +20,7 @@ from aifactory.engine.role_registry import load_roles
 from aifactory.harness.config import SSSFConfig, load_config
 from aifactory.workflow import CodeStep, RebuildOutput, Workflow, parse_workflow
 
-AGENTS = ("planner", "builder", "reviewer", "documenter", "scout")
+AGENTS = ("planner", "builder", "tester", "reviewer", "documenter", "scout")
 HARNESS_NAMES = ("claude", "codex", "pi")
 PREV_START = "PREV<<"
 PREV_END = ">>PREV"
@@ -121,18 +121,17 @@ class FakeCodeRunner:
         self.commits: list[str] = []
         self.commands: list[tuple[str, ...]] = []
         self.rebuilds: list[list[str]] = []
+        self.plans: list[Any] = []
 
     def _result(self, passed: bool, what: str) -> dt.QualityResult:
         failures = [] if passed else [f"{what}: failed"]
         return dt.QualityResult(passed=passed, checks=[], failures=failures, artifacts=[])
 
-    def test(self, run: Any) -> Any:
+    def test(self, run: Any, plan: Any) -> Any:
         if not self.test_results:
             raise AssertionError("no scripted test result left")
+        self.plans.append(plan)
         return self._result(self.test_results.pop(0), "test")
-
-    def quality(self, run: Any) -> Any:
-        return self._result(True, "quality")
 
     def commit(self, run: Any, message: str) -> str:
         self.commits.append(message)
@@ -160,6 +159,12 @@ class FakeCodeRunner:
 def ok(**fields: Any) -> dict[str, Any]:
     """A successful envelope with the given extra fields."""
     return {"status": "success", "summary": "done", **fields}
+
+
+def plan_envelope(*argv: str, coverage: str = "scoped") -> dict[str, Any]:
+    """A tester envelope with one check (``true`` by default, always on PATH)."""
+    checks = [] if coverage == "none" else [{"name": "check", "argv": list(argv or ("true",))}]
+    return ok(coverage=coverage, reason="covers the change", checks=checks)
 
 
 def workflow(text: str) -> Workflow:
@@ -290,7 +295,7 @@ agents:
 """
 
 FACTORY_FILES = {
-    ".factory/config.yaml": "base: main\ntest_command: [pytest, -q]\n",
+    ".factory/config.yaml": "base: main\n",
     ".factory/agents.yaml": FACTORY_AGENTS_YAML,
     ".factory/prompts/planner/system.md": "You are the planner.\n",
     ".factory/prompts/planner/user.md": "Plan this: {{prompt}}\n",

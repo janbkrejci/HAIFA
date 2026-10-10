@@ -17,6 +17,13 @@ roles:
     gates: [diff_matches_claims]
     description: Implement what the previous step asked for
     aliases: [builder]
+  # aifactory 3.0: the tester chooses the checks every later `test` step runs.
+  test_plan:
+    agent: tester
+    output_type: TestPlanOutput
+    gates: [checks_runnable]
+    description: Choose the checks that verify this change, enough to trust it and nothing beyond
+    retries: 1
   scout:
     agent: scout
     output_type: ScoutOutput
@@ -64,10 +71,7 @@ roles:
 code_steps:
   test:
     owner: quality
-    description: Run the suite — a known command, so code runs it and no agent has to rediscover it
-  quality:
-    owner: quality
-    description: Run lint, typecheck and build — known commands, all of them
+    description: Run the checks of the latest test plan, exactly as the tester wrote them
   commit:
     owner: git
     description: Commit what the previous step produced, in its own words

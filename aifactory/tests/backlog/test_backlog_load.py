@@ -61,7 +61,6 @@ def test_inheritance() -> None:
     eff = effective(loader)
     # `owner` in the module index is a legacy field and is not inherited
     assert "owner" not in eff
-    assert eff["test"] == "uv run pytest"
     assert eff["source"] == "src/"
     assert eff["target"] == "src/"
     # the task's own workflow beats the module's

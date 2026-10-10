@@ -25,7 +25,6 @@ from aifactory.config.settings import (
     check_relative_dir,
     check_timeout,
     parse_project_settings,
-    split_command,
 )
 
 
@@ -162,9 +161,6 @@ class _Loader:
                     if key in FLAG_KEYS and not _flag(value):
                         self.issue("invalid_field", _flag_message(key), index, container.id)
                         continue
-                    if key == "test" and (problem := _test_issue(value)) is not None:
-                        # Kept: a task inheriting it must fail, not fall back silently.
-                        self.issue("invalid_field", problem, index, container.id)
                     if key == "test_timeout" and (problem := _timeout_issue(value)) is not None:
                         # Kept: a task inheriting it must fail, not fall back to 600 s.
                         self.issue("invalid_field", problem, index, container.id)
@@ -241,9 +237,6 @@ class _Loader:
             if not _flag(own.get(key)):
                 self.issue("invalid_field", _flag_message(key), path, task_id)
                 own.pop(key)
-        if (problem := _test_issue(own.get("test"))) is not None:
-            # Kept: running the task must fail, not fall back to an inherited command.
-            self.issue("invalid_field", problem, path, task_id)
         if (problem := _timeout_issue(own.get("test_timeout"))) is not None:
             # Kept: running the task must fail, not fall back to an inherited limit.
             self.issue("invalid_field", problem, path, task_id)
@@ -286,17 +279,6 @@ class _Loader:
 
 def _flag_message(key: str) -> str:
     return f"field '{key}' must be true or false"
-
-
-def _test_issue(value: object) -> str | None:
-    """Why a ``test`` value is invalid; ``None`` when it is missing or a valid command."""
-    if value is None:
-        return None
-    try:
-        split_command(value)
-    except ValueError as exc:
-        return f"field 'test' must be a command string or a list of strings: {exc}"
-    return None
 
 
 def _timeout_issue(value: object) -> str | None:

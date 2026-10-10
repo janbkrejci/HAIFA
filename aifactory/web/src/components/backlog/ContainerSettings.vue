@@ -8,10 +8,7 @@ import {
   CONTAINER_KEYS,
   INHERIT_LABEL,
   SETTING_LABELS,
-  TEST_FIELD_HINT,
-  formatTestField,
   levelNoun,
-  parseTestField,
   originText,
   settingText,
   splitLines,
@@ -43,7 +40,6 @@ const { harnessOptions, modelOptions } = useHarnessChoices()
 
 const HINTS: Partial<Record<ContainerKey, string>> = {
   writes: 'jedna cesta na řádek',
-  test: 'např. just check',
 }
 
 const keys = computed<ContainerKey[]>(() => {
@@ -61,7 +57,6 @@ function hasOwn(key: ContainerKey): boolean {
 function toText(key: ContainerKey, value: unknown): string {
   if (key === 'auto_continue') return value === true ? 'on' : value === false ? 'off' : 'inherit'
   if (value === null || value === undefined) return ''
-  if (key === 'test') return formatTestField(value)
   if (Array.isArray(value)) return value.map(String).join('\n')
   return String(value)
 }
@@ -92,13 +87,10 @@ const rows = reactive(
 function parse(key: ContainerKey, text: string): unknown {
   if (key === 'auto_continue') return text === 'on'
   if (key === 'writes') return splitLines(text)
-  if (key === 'test') return parseTestField(text) ?? []
   return text.trim()
 }
 
-function same(key: ContainerKey, a: unknown, b: unknown): boolean {
-  // a test command in another form (string or argv) is the same command
-  if (key === 'test') return JSON.stringify(parseTestField(formatTestField(a))) === JSON.stringify(parseTestField(formatTestField(b)))
+function same(a: unknown, b: unknown): boolean {
   return JSON.stringify(a) === JSON.stringify(b)
 }
 
@@ -130,7 +122,7 @@ const input = computed<EditContainerInput>(() => {
       continue
     }
     const value = parse(key, row.text)
-    if (!hasOwn(key) || !same(key, value, own[key])) {
+    if (!hasOwn(key) || !same(value, own[key])) {
       ;(out as Record<string, unknown>)[key] = value
     }
   }
@@ -246,10 +238,6 @@ function onSave() {
                 :placeholder="HINTS[key]"
                 rows="2"
               />
-              <template v-else-if="key === 'test'">
-                <input v-model="rows[key].text" :data-test="`edit-${key}`" type="text" :placeholder="HINTS[key]" />
-                <span class="hint faint" data-test="test-hint">{{ TEST_FIELD_HINT }}</span>
-              </template>
               <input v-else v-model="rows[key].text" :data-test="`edit-${key}`" type="text" />
             </template>
             <span v-else class="faint">dědí se</span>

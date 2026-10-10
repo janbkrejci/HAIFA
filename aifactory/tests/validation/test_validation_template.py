@@ -133,7 +133,7 @@ def test_config_is_rendered_and_loads(
     monkeypatch.chdir(repo)
     code, data = _cli_json(capsys, "config", "show")
     assert code == 0, data
-    assert data["data"]["agents"] == ["planner", "builder", "reviewer", "documenter"]
+    assert data["data"]["agents"] == ["planner", "builder", "tester", "reviewer", "documenter"]
     assert data["data"]["settings"]["git_provider"] == "local"
     assert "simple-sdlc" in data["data"]["workflows"]
     assert data["warnings"] == []
@@ -279,6 +279,10 @@ def test_every_scripted_run_revises_the_first_written_file(repo: Path) -> None:
         script = fake_scripts.script_for(task_id, variant)
         agents = script["agents"]
         assert [r["envelope"]["approved"] for r in agents["reviewer"]] == [False, True]
+        # test_plan and replan (the forced revision changed code)
+        assert [p["envelope"]["checks"] for p in agents["tester"]] == [
+            [fake_scripts.TEST_CHECK]
+        ] * 2
         revise = agents["builder"][-1]
         assert revise["edits"] == [fake_scripts.revise_edit(revise["envelope"]["changed_files"][0])]
     breach = fake_scripts.script_for("M01-S01-T03", "breach", repo=repo)

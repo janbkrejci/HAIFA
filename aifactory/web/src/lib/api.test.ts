@@ -213,13 +213,12 @@ describe('repos and the Factory tab', () => {
 describe('factory plan and apply choices', () => {
   it('whitelists update/config choices and drops Azure when provider changes', async () => {
     const { factoryChoices } = await import('./api')
-    const injected = { take: ['agent/builder'], merge: [], migrate: ['m1'], base: 'main', provider: 'local', azure: { organization: 'org', project: 'project', repository: 'repo' }, content: 'forbidden', files: ['forbidden'], path: 'forbidden' }
+    const injected = { take: ['agent/builder'], merge: [], migrate: ['m1'], base: 'main', provider: 'local', azure: { organization: 'org', project: 'project', repository: 'repo' }, content: 'forbidden', files: ['forbidden'], path: 'forbidden', test_command: 'just check' }
     expect(factoryChoices('update', injected)).toEqual({ take: ['agent/builder'], merge: [], migrate: ['m1'] })
     expect(factoryChoices('config_commit', injected)).toEqual({})
     expect(factoryChoices('init', injected).azure).toBeUndefined()
     expect(factoryChoices('init', { ...injected, provider: 'azure' }).azure).toEqual(injected.azure)
-    expect(factoryChoices('init', { ...injected, test_command: '  just check ' }).test_command).toBe('just check')
-    expect('test_command' in factoryChoices('init', { ...injected, test_command: '  ' })).toBe(false)
+    expect('test_command' in factoryChoices('init', injected)).toBe(false)
   })
   it('previews and saves a roster change of the given repo', async () => {
     const { saveFactoryRoster } = await import('./api')

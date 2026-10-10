@@ -14,13 +14,6 @@ describe('settingsDiff', () => {
     expect(input).toEqual({ shared: { base: 'develop' }, local: { trace_db: 'x.db' } })
   })
 
-  it('turns an empty test command into null', () => {
-    const values = formValues(SETTINGS)
-    expect(settingsDiff(values, { ...values, test_command: '  ' })).toEqual({
-      shared: { test_command: null },
-    })
-  })
-
   it('never sends a port: the dashboard port is in the registry', () => {
     const values = formValues(SETTINGS)
     expect(values).not.toHaveProperty('port')

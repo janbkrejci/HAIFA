@@ -66,12 +66,9 @@ validate *ARGS:
 
 check: test typecheck lint
 
-check-scoped:
-    just check
-
 # the whole suite (`just check`) over a fresh checkout of main. Green is remembered in the git common
 # dir; red adds a fix task to step STEP with the failing tests and the commits since the last green
-# check, tested with the whole suite (test: just check)
+# check
 [script("bash")]
 full-check step="HAIFA-S03":
     set -uo pipefail
@@ -130,7 +127,7 @@ full-check step="HAIFA-S03":
     - \`vendor/\` a \`prototype/\` se nemění.
     - Testy nevolají model ani síť."
     body=$(sed 's/^    //' <<<"$body")
-    just factory task add "{{step}}" "Celá sada je červená na ${sha:0:7}" --test just check --body "$body"
+    just factory task add "{{step}}" "Celá sada je červená na ${sha:0:7}" --body "$body"
     just factory backlog commit -m "backlog: celá sada červená na ${sha:0:7}"
     echo "full check red at ${sha:0:7}: fix task added to {{step}}, log $work/check.log"
     exit 1

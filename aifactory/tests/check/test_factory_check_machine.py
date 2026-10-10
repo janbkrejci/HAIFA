@@ -137,18 +137,6 @@ def test_node_missing(repo: Path) -> None:
     assert "node_missing" not in _codes(run_check(repo, machine=FakeMachine(present=present)))
 
 
-def test_test_command_missing(repo: Path) -> None:
-    write(repo, ".factory/config.yaml", "base: main\ntest_command: [nosuchprog, -q]\n")
-    commit_all(repo, "test command")
-    finding = _one(
-        run_check(repo, machine=FakeMachine()), "test_command_missing", "machine", "error"
-    )
-    assert "nosuchprog" in finding.message
-    machine = FakeMachine()
-    machine.present.add("nosuchprog")
-    assert "test_command_missing" not in _codes(run_check(repo, machine=machine))
-
-
 # -- logins --
 
 

@@ -41,7 +41,7 @@ from cli_json import run_json
 
 Capsys = pytest.CaptureFixture[str]
 GOLDEN = Path(__file__).parent / "golden"
-STOCK_AGENTS = ("planner", "builder", "scout", "reviewer", "documenter")
+STOCK_AGENTS = ("planner", "builder", "scout", "tester", "reviewer", "documenter")
 
 
 @pytest.fixture(autouse=True)
@@ -147,7 +147,7 @@ def test_omnibus(tmp_path: Path, library_remote: Path, capsys: Capsys) -> None:
     assert "test_timeout 1800" in _row(data, "converted", f"{quality}:test")["message"]
     assert "just, lint" in _row(data, "not_converted", f"{quality}:lint")["message"]
     config = yaml.safe_load(_planned(data, ".factory/config.yaml"))
-    assert config["test_command"] == ["just", "test"] and config["test_timeout"] == 1800
+    assert "test_command" not in config and config["test_timeout"] == 1800
     assert config["protected_files"] == [
         ".factory/",
         "adws/adw_modules/",
@@ -163,7 +163,10 @@ def test_omnibus(tmp_path: Path, library_remote: Path, capsys: Capsys) -> None:
     assert text.startswith("# agents of this repo, converted by factory onboard from the sssf ")
     assert SSSF_ROSTER in text.splitlines()[0]
     agents = {a["name"]: a for a in yaml.safe_load(text)["agents"]}
-    assert all(a["harness"] == "claude" and a["model"] == "opus" for a in agents.values())
+    # the sssf roster has no tester; it comes from the seed with the seed's model
+    sssf_agents = [a for name, a in agents.items() if name != "tester"]
+    assert all(a["harness"] == "claude" and a["model"] == "opus" for a in sssf_agents)
+    assert agents["tester"]["harness"] == "claude"
     assert agents["scout"]["thinking"] == "medium"
     assert agents["documenter"]["thinking"] == "medium"
     assert agents["planner"]["thinking"] == "high"
@@ -300,14 +303,16 @@ def test_modified_chain(tmp_path: Path, library_remote: Path, capsys: Capsys) ->
     assert "port the change by hand" in _row(data, "manual", "adws/adw_plan.py")["message"]
     assert "    +" + PLANNER_CHANGED_LINE.rstrip("\n") in data["message"]
     tester = next(
-        i for i in data["library_plan"]["items"] if (i["type"], i["name"]) == ("agent", "tester")
+        i
+        for i in data["library_plan"]["items"]
+        if (i["type"], i["name"]) == ("agent", "tester-chained")
     )
     assert tester["action"] == "create"
     from aifactory.onboard import plan_onboard
 
     plan = plan_onboard(repo)
     assert plan.extraction is not None
-    item = next(i for i in plan.extraction.library_items if i.key == "agent/tester")
+    item = next(i for i in plan.extraction.library_items if i.key == "agent/tester-chained")
     meta = yaml.safe_load(next(f for f in item.files if f.path.endswith("agent.yaml")).data)
     assert meta["defaults"]["extensions"] == ["subagents"]
     assert meta["defaults"]["harness"] == "pi"

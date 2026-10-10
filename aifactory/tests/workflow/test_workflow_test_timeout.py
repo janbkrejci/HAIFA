@@ -1,4 +1,4 @@
-"""`run_workflow(test_timeout=...)`: the time limit of every `test` step, real subprocess."""
+"""`run_workflow(test_timeout=...)`: the shared time limit of every `test` step, real subprocess."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from typing import Any
 import pytest
 from workflow_fakes import (
     EngineEnv,
+    plan_envelope,
     workflow,
     workflow_env_fixture,  # noqa: F401  (pytest fixture)
 )
@@ -17,12 +18,14 @@ from workflow_fakes import (
 from aifactory.engine import data_types as dt
 from aifactory.engine import quality as engine_quality
 from aifactory.engine import session
+from aifactory.testing.executor import execute
 from aifactory.workflow import run_workflow
 
 TEXT = """\
 name: t
 description: A workflow written only to exercise the test step
 steps:
+  - test_plan
   - test
 accept: test.passed
 """
@@ -32,19 +35,18 @@ OK = [sys.executable, "-c", "raise SystemExit(0)"]
 
 
 def test_exceeded_timeout_fails_the_step(workflow_env: EngineEnv) -> None:
-    result = run_workflow(
-        workflow(TEXT), "do it", workflow_env.cfg, test_command=SLEEP, test_timeout=1
-    )
+    workflow_env.script.add("tester", plan_envelope(*SLEEP))
+    result = run_workflow(workflow(TEXT), "do it", workflow_env.cfg, test_timeout=1)
     assert result.results["test"]["passed"] is False
-    assert "exceeded the time limit of 1s" in result.results["test"]["failures"][0]
+    assert "exceeded the time limit of" in result.results["test"]["failures"][0]
     assert result.accepted is False
 
 
 def test_within_timeout_passes(workflow_env: EngineEnv) -> None:
-    result = run_workflow(
-        workflow(TEXT), "do it", workflow_env.cfg, test_command=OK, test_timeout=5
-    )
+    workflow_env.script.add("tester", plan_envelope(*OK))
+    result = run_workflow(workflow(TEXT), "do it", workflow_env.cfg, test_timeout=5)
     assert result.results["test"]["passed"] is True
+    assert result.results["test"]["test_plan"]["executed"] == 1
     assert result.accepted is True
 
 
@@ -61,14 +63,16 @@ def test_test_step_timeout(
 
     monkeypatch.setattr(engine_quality, "_run", spy)
     run = session.ensure(workflow_env.cfg, "t0000002")
-    run.test_argv = OK
     run.test_timeout = limit
+    plan = dt.TestPlanOutput.model_validate(plan_envelope(*OK))
     params = dt.PhaseParams(name="test", kind="code", owner="quality", description="Run tests")
     with run.phase(params):
-        check = engine_quality.test(run)
+        result = execute(run, plan)
     run.finish(accepted=True)
-    assert check.passed is True
-    assert seen == [expected]
+    assert result.passed is True
+    # The shared budget: the first check gets what is left of the limit.
+    assert len(seen) == 1
+    assert expected - 1 < seen[0] <= expected
 
 
 def test_timeout_with_partial_output_is_text(workflow_env: EngineEnv) -> None:

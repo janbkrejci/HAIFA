@@ -9,9 +9,6 @@ base: main
 remote: origin
 git_provider: github
 merge_strategy: squash
-test_command:
-- just
-- check-scoped
 test_timeout: 1500
 generated:
 - path: aifactory/src/aifactory/web/static

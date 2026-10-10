@@ -27,16 +27,16 @@ from aifactory import packagedata  # aifactory: packaged data as of process star
 from aifactory.engine import loader as engine
 
 # Deterministic step actions. The step name is the action.
+# aifactory 3.0: `quality` is gone; a tester agent's plan covers lint, types and build.
 CODE_ACTIONS: tuple[str, ...] = (
     "test",
-    "quality",
     "commit",
     "changes",
     "command",
     "rebase",
     "rebuild",
 )
-VERIFY_ACTIONS: tuple[str, ...] = ("test", "quality", "command")
+VERIFY_ACTIONS: tuple[str, ...] = ("test", "command")
 COMMIT_FIELDS: frozenset[str] = frozenset({"sha", "committed", "message"})
 # Fields of ``aifactory.workflow.rebase.RebaseOutput`` (spelled out: workflow imports this module).
 REBASE_FIELDS: frozenset[str] = frozenset(

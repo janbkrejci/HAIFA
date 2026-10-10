@@ -115,7 +115,6 @@ def test_edit_sets_and_clears_keys_and_keeps_unknown_ones(tmp_path: Path) -> Non
         values={
             "workflow": "build-test",
             "writes": ["src/", "tests/"],
-            "test": "just check",
             "specs_dir": "docs/specs",
             "docs_dir": "docs/app",
             "auto_continue": True,
@@ -127,7 +126,6 @@ def test_edit_sets_and_clears_keys_and_keeps_unknown_ones(tmp_path: Path) -> Non
     assert header["title"] == "Jádro"
     assert header["workflow"] == "build-test"
     assert header["writes"] == ["src/", "tests/"]
-    assert header["test"] == "just check"
     assert header["specs_dir"] == "docs/specs"
     assert header["docs_dir"] == "docs/app"
     assert header["auto_continue"] is True
@@ -137,10 +135,10 @@ def test_edit_sets_and_clears_keys_and_keeps_unknown_ones(tmp_path: Path) -> Non
     assert text.endswith("Jádro: datový model a API.\n")
     assert result.container.extra == {"owner": "alice"}
 
-    again = edit_container(root, "M01", values={"test": ["uv", "run", "pytest"]})
-    assert _header(root, M01_INDEX)["test"] == ["uv", "run", "pytest"]
+    again = edit_container(root, "M01", values={"writes": ["lib/"]})
+    assert _header(root, M01_INDEX)["writes"] == ["lib/"]
     assert again.changed
-    same = edit_container(root, "M01", values={"test": ["uv", "run", "pytest"]})
+    same = edit_container(root, "M01", values={"writes": ["lib/"]})
     assert not same.changed
     edit_container(root, "M01", clear=["auto_continue", "workflow"])
     header = _header(root, M01_INDEX)
@@ -158,7 +156,7 @@ def test_edit_rejects_bad_input(tmp_path: Path) -> None:
         ({"values": {"workflow": "x"}, "clear": ["workflow"]}, "conflicting_options"),
         ({"values": {"writes": "src/"}}, "invalid_value"),
         ({"values": {"auto_continue": "yes"}}, "invalid_value"),
-        ({"values": {"test": []}}, "invalid_value"),
+        ({"values": {"test": ["just", "check"]}}, "invalid_value"),  # removed key
         ({"title": " "}, "invalid_value"),
     ]
     for kwargs, code in cases:
@@ -180,9 +178,10 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
     write(
         root,
         ".factory/config.yaml",
-        "levels: [module, step, task]\nbacklog_dir: backlog\ntest_command: [just, check]\n",
+        "levels: [module, step, task]\nbacklog_dir: backlog\ndocs_dir: docs\n",
     )
     edit_container(root, "M01-S01", values={"workflow": "own-flow"})
+    edit_container(root, "M01", values={"docs_dir": "docs/app"})
     backlog = load_backlog(root)
     step = backlog.by_id["M01-S01"]
     sources = effective_sources(step, backlog.settings)
@@ -190,8 +189,8 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
         "value": "own-flow",
         "origin": {"source": "own", "level": "step", "id": "M01-S01", "path": S01_INDEX},
     }
-    assert sources["test"] == {
-        "value": "uv run pytest",
+    assert sources["docs_dir"] == {
+        "value": "docs/app",
         "origin": {"source": "inherited", "level": "module", "id": "M01", "path": M01_INDEX},
     }
     assert sources["specs_dir"] == {
@@ -199,13 +198,14 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
         "origin": {"source": "config", "path": ".factory/config.yaml", "key": "specs_dir"},
     }
     assert sources["auto_continue"] == {"value": False, "origin": {"source": "default"}}
-    edit_container(root, "M01", clear=["test"])
+    edit_container(root, "M01", clear=["docs_dir"])
     backlog = load_backlog(root)
     sources = effective_sources(backlog.by_id["M01-S01"], backlog.settings)
-    assert sources["test"] == {
-        "value": ["just", "check"],
-        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "test_command"},
+    assert sources["docs_dir"] == {
+        "value": "docs",
+        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "docs_dir"},
     }
+    assert "test" not in sources
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -231,7 +231,7 @@ def test_cli_add_and_edit(tmp_path: Path, capsys: Capsys) -> None:
     assert data["issues"] == []
 
     edit = ["backlog", "edit", "M01", "--title", "Jádro", "--workflow", "wf"]
-    edit += ["--writes", "a/", "b/", "--test", "just", "check", "--auto-continue", "on"]
+    edit += ["--writes", "a/", "b/", "--auto-continue", "on"]
     edit += ["--clear", "source", "target", "--json", *repo]
     rc, env = run_json(capsys, edit)
     assert rc == 0
@@ -239,7 +239,6 @@ def test_cli_add_and_edit(tmp_path: Path, capsys: Capsys) -> None:
     assert container["title"] == "Jádro"
     assert container["own"]["workflow"] == "wf"
     assert container["own"]["writes"] == ["a/", "b/"]
-    assert container["own"]["test"] == ["just", "check"]
     assert container["own"]["auto_continue"] is True
     assert "source" not in container["own"]
     assert container["extra"] == {"owner": "alice"}
@@ -248,11 +247,12 @@ def test_cli_add_and_edit(tmp_path: Path, capsys: Capsys) -> None:
     assert header["owner"] == "alice"
     assert "target" not in header
 
-    step_test = ["backlog", "edit", "M01-S01", "--test", "uv run x", "--json"]
-    rc, env = run_json(capsys, step_test + repo)
+    step_edit = ["backlog", "edit", "M01-S01", "--specs-dir", "docs/specs", "--json"]
+    rc, env = run_json(capsys, step_edit + repo)
     assert rc == 0
     effective = env["data"]["container"]["effective"]
-    assert effective["test"]["value"] == "uv run x"
+    assert effective["specs_dir"]["value"] == "docs/specs"
+    assert "test" not in effective
     assert effective["workflow"] == {
         "value": "wf",
         "origin": {"source": "inherited", "level": "module", "id": "M01", "path": M01_INDEX},

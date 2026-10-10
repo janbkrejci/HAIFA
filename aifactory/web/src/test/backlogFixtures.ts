@@ -277,7 +277,6 @@ export function containerDetail(over: Partial<ContainerDetail> = {}): ContainerD
           origin: { source: 'own', level: 'step', id: 'M01-S01', path: 'backlog/M01-core/S01-model/index.md' },
         },
         writes: { value: ['src/'], origin: step },
-        test: { value: 'just check', origin: { source: 'config', path: '.factory/config.yaml', key: 'test_command' } },
         source: { value: null, origin: null },
         target: { value: null, origin: null },
         specs_dir: { value: 'specs', origin: { source: 'config', path: '.factory/config.yaml', key: 'specs_dir' } },
@@ -286,7 +285,7 @@ export function containerDetail(over: Partial<ContainerDetail> = {}): ContainerD
       },
       ...over,
     },
-    editable_keys: ['workflow', 'writes', 'test', 'source', 'target', 'specs_dir', 'docs_dir', 'auto_continue'],
+    editable_keys: ['workflow', 'writes', 'source', 'target', 'specs_dir', 'docs_dir', 'auto_continue'],
     issues: [],
   }
 }

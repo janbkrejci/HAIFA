@@ -30,6 +30,7 @@ steps:
       id: commit_plan
       description: Put the spec on record before any code exists to blur it
   - build
+  - test_plan
   - repeat: {max: 3, until: test.passed}
     steps: [test, fix]
   - repeat: {max: 2, until: review.approved}
@@ -64,7 +65,7 @@ def test_simple_sdlc_structure() -> None:
     review = loops[1].steps[0]
     assert isinstance(review, RoleStep)
     assert review.inputs == ("build", "fix", "revise")
-    retest = wf.steps[5]
+    retest = wf.steps[6]
     assert isinstance(retest, CodeStep)
     assert (retest.key, retest.phase_id) == ("test", "retest")
     assert wf.accept is not None
@@ -95,8 +96,8 @@ def test_simple_sdlc_structure() -> None:
     ],
 )
 def test_until_tail(body: str, tail: int | None) -> None:
-    wf = workflow(HEADER + "steps:\n  - plan\n" + body)
-    loop = wf.steps[1]
+    wf = workflow(HEADER + "steps:\n  - plan\n  - test_plan\n" + body)
+    loop = wf.steps[2]
     assert isinstance(loop, Repeat)
     assert loop.until_tail == tail
 
@@ -221,7 +222,7 @@ def test_custom_role_registry() -> None:
         }
     }
     roles = parse_roles(data)
-    ok = parse_workflow(yaml.safe_load(HEADER + "steps: [draft, test]\n"), roles)
+    ok = parse_workflow(yaml.safe_load(HEADER + "steps: [draft, commit]\n"), roles)
     first = ok.steps[0]
     assert isinstance(first, RoleStep)
     assert first.role.agent == "writer"
@@ -264,3 +265,29 @@ def test_step_agent_replaces_the_role_agent() -> None:
 def test_invalid_step_agent(tmp_path: Path, body: str, code: str, path: str) -> None:
     error = _load(tmp_path, body)
     assert [(i.code, i.path) for i in error.issues] == [(code, path)]
+
+
+@pytest.mark.parametrize(
+    ("steps", "path"),
+    [
+        ("  - test\n", "steps[0]"),
+        ("  - test\n  - test_plan\n", "steps[0]"),
+        ("  - repeat: {max: 2}\n    steps: [test, test_plan]\n", "steps[0].steps[0]"),
+    ],
+)
+def test_test_without_an_earlier_test_plan_is_rejected(steps: str, path: str) -> None:
+    with pytest.raises(WorkflowError) as exc:
+        workflow(HEADER + "steps:\n" + steps)
+    issues = [(i.code, i.path) for i in exc.value.issues]
+    assert issues == [("test_without_plan", path)]
+
+
+def test_a_test_plan_inside_an_earlier_repeat_counts() -> None:
+    wf = workflow(HEADER + "steps:\n  - repeat: {max: 2}\n    steps: [test_plan, test]\n  - test\n")
+    assert isinstance(wf.steps[1], CodeStep)
+
+
+@pytest.mark.parametrize("option", ["selector: [x]", "full_argv: [x]", "allow_skip: true"])
+def test_removed_test_options_are_rejected(option: str) -> None:
+    with pytest.raises(WorkflowError):
+        workflow(HEADER + "steps:\n  - test_plan\n  - test: {" + option + "}\n")

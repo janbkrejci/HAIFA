@@ -17,6 +17,7 @@ from typing import Any
 import pytest
 from workflow_fakes import (
     EngineEnv,
+    plan_envelope,
     workflow,
     workflow_env_fixture,  # noqa: F401  (pytest fixture)
 )
@@ -54,6 +55,7 @@ TEXT = """\
 name: t
 description: A workflow written only to exercise the test step
 steps:
+  - test_plan
   - test
 accept: test.passed
 """
@@ -216,12 +218,14 @@ def test_wait_for_a_slot_is_traced_and_not_part_of_the_timeout(
     # Workflow preparation can take longer than the original fixed hold under load.
     holder = _spawn(procs, slots, "holder", 1.5, log, ready)
     _wait_for(lambda: _started(log, "holder"))
+    workflow_env.script.add(
+        "tester", plan_envelope(sys.executable, "-c", "import time; time.sleep(0.3)")
+    )
     clock = time.monotonic()
     result = run_workflow(
         workflow(TEXT),
         "do it",
         workflow_env.cfg,
-        test_command=[sys.executable, "-c", "import time; time.sleep(0.3)"],
         test_timeout=1,
         test_slots=TestSlots(slots, 1, poll=POLL),
     )
@@ -235,6 +239,7 @@ def test_wait_for_a_slot_is_traced_and_not_part_of_the_timeout(
     assert events[0]["ahead"] == 1
     assert events[0]["slots"] == 1
     assert events[-1]["state"] == "acquired"
+    assert events[-1]["slots"] == 1
     assert float(events[-1]["waited_seconds"]) > 1.0  # type: ignore[arg-type]
 
 
@@ -242,16 +247,18 @@ def test_timeout_still_limits_the_command_inside_a_slot(
     workflow_env: EngineEnv, tmp_path: Path
 ) -> None:
     slots = tmp_path / "slots"
+    workflow_env.script.add(
+        "tester", plan_envelope(sys.executable, "-c", "import time; time.sleep(30)")
+    )
     result = run_workflow(
         workflow(TEXT),
         "do it",
         workflow_env.cfg,
-        test_command=[sys.executable, "-c", "import time; time.sleep(30)"],
         test_timeout=1,
         test_slots=TestSlots(slots, 1, poll=POLL),
     )
     assert result.results["test"]["passed"] is False
-    assert "exceeded the time limit of 1s" in result.results["test"]["failures"][0]
+    assert "exceeded the time limit of" in result.results["test"]["failures"][0]
     # the slot was freed after the failed step
     with TestSlots(slots, 1, poll=POLL).hold() as lease:
         assert lease.waited_seconds < 1

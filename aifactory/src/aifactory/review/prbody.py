@@ -201,14 +201,13 @@ def _tests(wf: WorkflowRun) -> list[str]:
             coverage = plan.get("coverage")
             if coverage == "none":
                 verdict = "neprovedeno"
-            elif coverage == "deferred":
-                verdict = f"odloženo na {plan.get('defer_to')} (0 kontrol)"
             elif coverage == "scoped":
                 verdict = f"cílené ověření: {verdict}"
             elif coverage == "full":
                 verdict = f"plné ověření: {verdict}"
-            if plan.get("defer_to") and coverage != "deferred":
-                verdict += f"; širší ověření odloženo na {plan['defer_to']}"
+            commands = [str(c) for c in plan.get("commands") or []]
+            if commands:
+                verdict += "; " + ", ".join(f"`{c}`" for c in commands)
             summary = str(result.get("summary") or "").strip()
             lines.append(f"- test `{key}`: {verdict}" + (f" ({summary})" if summary else ""))
     return lines

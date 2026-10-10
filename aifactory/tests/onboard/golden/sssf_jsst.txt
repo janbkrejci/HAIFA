@@ -5,6 +5,7 @@ linked agent/scout scout
 converted agent/reviewer reviewer-jsst
 linked agent/documenter documenter
 changed_meaning agent/documenter/writes -
+linked agent/tester tester
 converted extension/subagents subagents
 converted .factory/agents.yaml -
 linked workflow/simple-sdlc simple-sdlc

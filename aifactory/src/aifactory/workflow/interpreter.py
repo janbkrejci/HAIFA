@@ -2,15 +2,17 @@
 
 Role steps go through ``run.phase`` / ``ph.call`` with the step's harness, model
 and thinking override applied for that one phase (``step_override``). Code steps
-(``test``, ``quality``, ``command``, ``commit``, ``changes``, ``rebase``,
-``rebuild``) go through a ``CodeRunner``, which tests swap for a fake. ``rebase``
+(``test``, ``command``, ``commit``, ``changes``, ``rebase``, ``rebuild``) go
+through a ``CodeRunner``, which tests swap for a fake. ``rebase``
 reads its target from the prompt variable ``rebase_onto`` (``factory task
 resolve``). ``rebuild`` rebuilds the generated outputs
 (``run_workflow(generated=...)``) that contain a file the latest ``rebase``
 result reports as conflicted.
-Every ``test`` step runs ``run.test_argv`` (``run_workflow(test_command=...)``,
-resolved by a task run), else ``just test``, with the time limit
-``run.test_timeout`` (``run_workflow(test_timeout=...)``), else 600 s.
+Every ``test`` step runs the checks of the latest test plan (a role step whose
+output is ``TestPlanOutput``; the parser requires one before any ``test``) under
+the shared time limit ``run.test_timeout`` (``run_workflow(test_timeout=...)``),
+else 600 s. Role steps get ``{{baseline}}``, the commit the run started from, so
+a tester can diff the whole change.
 
 Inputs of a role step: ``{{previous_envelope}}`` is the latest result of the
 steps in ``input:`` (any step without it). An ``input:`` mapping adds further
@@ -34,12 +36,10 @@ the run is paused (``factory task pause``). A phase that started always runs to 
 from __future__ import annotations
 
 import json
-import os
-import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Literal, Protocol, cast
+from typing import Any, Literal, Protocol
 
 from aifactory import harness as harness_registry
 from aifactory.engine import changes as engine_changes
@@ -68,14 +68,14 @@ __all__ = [
 PhaseKind = Literal["engineer", "agent", "code"]
 REQUEST_DESCRIPTION = "Capture the incoming ask and the workflow chosen to answer it"
 TEST_RESULT_VARIABLE = "test_result"
+BASELINE_VARIABLE = "baseline"
 NO_INPUT = "(none)"
 
 
 class CodeRunner(Protocol):
     """The deterministic side of a run. Swapped for a fake in tests."""
 
-    def test(self, run: Any) -> Any: ...  # -> QualityResult
-    def quality(self, run: Any) -> Any: ...  # -> QualityResult
+    def test(self, run: Any, plan: Any) -> Any: ...  # TestPlanOutput -> QualityResult
     def commit(self, run: Any, message: str) -> str: ...
     def changes(self, run: Any, base: str) -> Any: ...  # -> ChangeSet
     def command(self, run: Any, step: CodeStep) -> Any: ...  # -> QualityResult
@@ -87,21 +87,10 @@ class CodeRunner(Protocol):
 class EngineCodeRunner:
     """Code steps through the vendored engine: quality, git_helper and changes."""
 
-    def test(self, run: Any) -> Any:
-        from aifactory.testing.executor import full_environment
-
-        with full_environment(bool(getattr(run, "test_force_full", False))):
-            return engine_quality.run_tests(run)
-
-    def planned_test(self, run: Any, step: CodeStep) -> Any:
+    def test(self, run: Any, plan: Any) -> Any:
         from aifactory.testing.executor import execute
 
-        return execute(
-            run, list(step.selector), list(step.full_argv) or None, step.allow_skip, step.defer_to
-        )
-
-    def quality(self, run: Any) -> Any:
-        return engine_quality.run_quality(run)
+        return execute(run, plan)
 
     def commit(self, run: Any, message: str) -> str:
         return str(git_helper.commit_all(message))
@@ -256,7 +245,7 @@ class _Interpreter:
         self.results: dict[str, dict[str, Any]] = {}
         self.envelopes: dict[str, Any] = {}
         self.history: list[tuple[str, Any]] = []  # (key, envelope), oldest first
-        # history index -> what a test/quality/command step ran (passed, command, log)
+        # history index -> what a test/command step ran (passed, command, log)
         self.reports: dict[int, dict[str, Any]] = {}
         self.test_keys = tuple(
             dict.fromkeys(
@@ -308,7 +297,7 @@ class _Interpreter:
     def render_input(self, keys: tuple[str, ...]) -> str:
         """The latest result of ``keys`` as a prompt variable; ``(none)`` before any ran.
 
-        A test, quality or command result reads as its report (passed, command,
+        A test or command result reads as its report (passed, command,
         log); ``code_changed_since`` tells whether an agent changed code after it.
         """
         index = self.latest(keys)
@@ -325,7 +314,10 @@ class _Interpreter:
 
     def variables(self, step: RoleStep) -> dict[str, str]:
         """Extra prompt variables of a role step: ``test_result``, then its ``input:`` mapping."""
-        variables = {TEST_RESULT_VARIABLE: self.render_input(self.test_keys)}
+        variables = {
+            TEST_RESULT_VARIABLE: self.render_input(self.test_keys),
+            BASELINE_VARIABLE: self.baseline or NO_INPUT,
+        }
         for name, keys in step.variables:
             variables[name] = self.render_input(keys)
         return variables
@@ -345,6 +337,13 @@ class _Interpreter:
             "failures": len(getattr(result, "failures", None) or []),
             **({"test_plan": result.test_plan.model_dump()} if result.test_plan else {}),
         }
+
+    def test_plan(self) -> Any:
+        """The latest tester result; the parser guarantees a test plan step precedes a test."""
+        for _, envelope in reversed(self.history):
+            if isinstance(envelope, dt.TestPlanOutput):
+                return envelope
+        raise RuntimeError("no test plan ran before this test step — nothing to run")
 
     def commit_message(self) -> str:
         """The words of the latest agent whose work product is a commit (plan, build, docs)."""
@@ -435,16 +434,9 @@ class _Interpreter:
         name = self.phase_name(step.phase_id, suffix)
         self.records.append(StepRecord(name, step.name, "code", step.owner))
         with self.run.phase(self.params(name, "code", step.owner, step.description)) as ph:
-            if step.action in ("test", "quality", "command"):
+            if step.action in ("test", "command"):
                 if step.action == "test":
-                    result = (
-                        cast(Any, self.code).planned_test(self.run, step)
-                        if step.selector
-                        else self.code.test(self.run)
-                    )
-                    what = "tests"
-                elif step.action == "quality":
-                    result, what = self.code.quality(self.run), "quality"
+                    result, what = self.code.test(self.run, self.test_plan()), "tests"
                 else:
                     result, what = self.code.command(self.run, step), step.key
                 passed = sum(1 for check in result.checks if check.passed)
@@ -483,7 +475,6 @@ class _Interpreter:
                     )
                 self.store(step.key, engine_changes.as_envelope(cs))
             elif step.action == "rebase":
-                self.run.test_force_full = True
                 rebased = self.code.rebase(self.run)
                 ph.log(
                     onto=str(rebased.onto)[:7],
@@ -515,10 +506,7 @@ def run_workflow(
     write_guard: Any = None,
     prompt_variables: Mapping[str, str] | None = None,
     label: str | None = None,
-    test_command: Sequence[str] | None = None,
     test_timeout: int | None = None,
-    test_baseline: str | None = None,
-    defer_resolver: Callable[[CodeStep], None] | None = None,
     generated: Sequence[Generated] = (),
     test_slots: Any = None,
     phase_gate: Callable[[], None] | None = None,
@@ -529,20 +517,12 @@ def run_workflow(
     ``write_guard`` (checks every agent phase instead of ``permissions``),
     ``prompt_variables`` (extra ``{{...}}`` values for the agent prompts) and
     ``label`` (the task id, used in the fallback commit message),
-    ``test_command`` (argv of every ``test`` step; default ``just test``) and
     ``test_timeout`` (time limit in seconds of every ``test`` step; default 600) and
     ``generated`` (the outputs a ``rebuild`` step may rebuild; default none) and
     ``test_slots`` (an ``engine.slots.TestSlots`` every ``test`` step waits for; the wait
     does not count into ``test_timeout``; None means no wait) and
     ``phase_gate`` (called before every role and code phase; see the module docstring).
     """
-    for step in walk(workflow.steps):
-        if isinstance(step, CodeStep) and step.defer_to:
-            if defer_resolver is None:
-                raise WorkflowError(
-                    [Issue("invalid_test_deferral", "defer_to requires a task resolver", step.path)]
-                )
-            defer_resolver(step)
     preflight(workflow, cfg)
     warnings = unenforced_restrictions(workflow, cfg)
     runner: CodeRunner = code if code is not None else EngineCodeRunner()
@@ -551,20 +531,11 @@ def run_workflow(
         run.repo_root = Path(repo_root).resolve()
     run.write_guard = write_guard
     run.prompt_variables = dict(prompt_variables or {})
-    run.test_argv = list(test_command) if test_command else None
     run.test_timeout = test_timeout
     run.generated = tuple(generated)
     run.test_slots = test_slots
     interp = _Interpreter(workflow, prompt, run, runner, label, phase_gate)
     interp.baseline = runner.baseline()  # pinned before this run commits anything
-    run.test_baseline = test_baseline or interp.baseline
-    if test_baseline is None and isinstance(runner, EngineCodeRunner):
-        from aifactory.testing.context import git
-
-        try:
-            run.test_baseline = git(Path(run.repo_root), "rev-parse", "HEAD").strip()
-        except (OSError, subprocess.SubprocessError):
-            run.test_baseline = "invalid-baseline"  # context failure must force fallback
     run.console.note(f"workflow: {workflow.name}")
     request = interp.params("request", "engineer", run.engineer, REQUEST_DESCRIPTION)
     interp.used.add("request")
@@ -573,16 +544,7 @@ def run_workflow(
         for warning in warnings:
             # The harness cannot forbid these commands: say so before any agent runs.
             ph.log(warning=warning)
-    saved_base = os.environ.get("HAIFA_TEST_BASE")
-    try:
-        if run.test_baseline:
-            os.environ["HAIFA_TEST_BASE"] = run.test_baseline
-        interp.execute(workflow.steps)
-    finally:
-        if saved_base is None:
-            os.environ.pop("HAIFA_TEST_BASE", None)
-        else:
-            os.environ["HAIFA_TEST_BASE"] = saved_base
+    interp.execute(workflow.steps)
     accepted = truthy(workflow.accept, interp.results)
     reason = f"accept `{workflow.accept.source}` was not met" if workflow.accept else ""
     exit_code = int(run.finish(accepted=accepted, reason=reason))

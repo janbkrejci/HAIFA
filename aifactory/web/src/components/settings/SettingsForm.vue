@@ -127,19 +127,6 @@ function onReset(): void {
       </label>
 
       <label>
-        Výchozí testovací příkaz
-        <input
-          v-model="values.test_command"
-          type="text"
-          placeholder="žádný"
-          data-test="test_command"
-          :class="{ invalid: invalid('test_command') }"
-          :aria-invalid="invalid('test_command') ? 'true' : undefined"
-        />
-        <span v-for="msg in fieldError('test_command')" :key="msg" class="field-error" data-test="error-test_command">{{ msg }}</span>
-      </label>
-
-      <label>
         Souběžné běhy auto-continue
         <input
           v-model="values.max_parallel_runs"

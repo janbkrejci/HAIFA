@@ -180,26 +180,6 @@ def test_domain_module_imports_without_dashboard_initialization(tmp_path: Path) 
     assert done.returncode == 0, done.stderr
 
 
-@pytest.mark.parametrize("task_id", [None, "P01-S01-T01"])
-def test_context_null_test_inherits_parent(tmp_path: Path, task_id: str | None) -> None:
-    from aifactory import backlog as core
-
-    repo = make_repo(tmp_path / "repo")
-    project = repo / "backlog/P01/index.md"
-    project.write_text(
-        project.read_text().replace("title: Project", "title: Project\ntest: just test")
-    )
-    for path in (
-        repo / "backlog/P01/S01/index.md",
-        repo / "backlog/P01/S01/P01-S01-T01-first.md",
-    ):
-        path.write_text(path.read_text().replace("\n---\n", "\ntest: null\n---\n"))
-    ctx = context(repo, task_id, {} if task_id else {"step": "P01-S01", "title": "Draft"})
-    task = core.load_for_edit(repo).by_id["P01-S01-T01"]
-    assert isinstance(task, core.Task)
-    assert ctx["effective"]["test"] == core.effective_test(task) == "just test"
-
-
 @pytest.mark.parametrize(
     "failure", ["exception", "cancel-before", "cancel-after", "invalid", "write"]
 )

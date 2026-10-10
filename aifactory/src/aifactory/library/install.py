@@ -17,7 +17,6 @@ plans the same files and installs them into base with one commit.
 
 from __future__ import annotations
 
-import shlex
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -53,7 +52,6 @@ from aifactory.library.seed import (
 from aifactory.library.store import LibraryStoreError, library_root, read_meta
 from aifactory.library.tree import read_items
 from aifactory.providers import git
-from aifactory.techstack import DEFAULT_TEST_COMMAND, TestCommandCandidate, suggest_test_commands
 from aifactory.workflow.model import RoleStep, WorkflowError, walk
 from aifactory.workflow.parse import parse_workflow
 
@@ -63,7 +61,7 @@ GITIGNORE_LINES = (
     ".factory/local.yaml",
     ".factory/trace.db*",
 )
-DEFAULT_AGENTS = ("planner", "builder", "reviewer", "documenter")
+DEFAULT_AGENTS = ("planner", "builder", "tester", "reviewer", "documenter")
 DEFAULT_WORKFLOWS = ("simple-sdlc",)
 SSSF_CONFIG_DIR = "adws/adw_sssf_config"
 CONFIG_FILE = ".factory/config.yaml"
@@ -119,43 +117,6 @@ class WrittenFile:
         return {"path": self.path, "action": self.action}
 
 
-TestCommandSource = Literal["option", "detected", "default"]
-
-
-@dataclass(frozen=True)
-class TestCommandChoice:
-    """The ``test_command`` written by init: where it came from and every detected candidate."""
-
-    __test__ = False  # not a pytest class
-
-    command: str
-    source: TestCommandSource
-    candidates: list[TestCommandCandidate]
-
-    def to_json(self) -> dict[str, Any]:
-        return {
-            "command": self.command,
-            "source": self.source,
-            "candidates": [c.to_json() for c in self.candidates],
-        }
-
-
-def choose_test_command(root: Path, override: str | None = None) -> TestCommandChoice:
-    """``override`` if given, else the first detected candidate, else ``just test``."""
-    candidates = suggest_test_commands(root)
-    if override is not None:
-        try:
-            parts = shlex.split(override)
-        except ValueError as exc:
-            raise LibraryStoreError("invalid_value", f"--test-command {override!r}: {exc}") from exc
-        if not parts:
-            raise LibraryStoreError("invalid_value", "--test-command must not be empty")
-        return TestCommandChoice(override.strip(), "option", candidates)
-    if candidates:
-        return TestCommandChoice(candidates[0].command, "detected", candidates)
-    return TestCommandChoice(DEFAULT_TEST_COMMAND, "default", candidates)
-
-
 @dataclass(frozen=True)
 class InitResult:
     repo: Path
@@ -170,7 +131,6 @@ class InitResult:
     gitignore_added: list[str]
     manifest: Manifest
     backlog_dir: str
-    test_command: TestCommandChoice
     warnings: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
@@ -184,7 +144,6 @@ class InitResult:
             "workflows": self.workflows,
             "added_agents": self.added_agents,
             "backlog_dir": self.backlog_dir,
-            "test_command": self.test_command.to_json(),
             "files": [f.to_json() for f in self.files],
             "gitignore": {"path": ".gitignore", "added": self.gitignore_added},
             "manifest": self.manifest.to_json(),
@@ -365,7 +324,8 @@ def _agent_entry(item: Item, settings: ProjectSettings, bind: Binding | None) ->
 
 
 def _yaml(header: str, data: Mapping[str, Any]) -> bytes:
-    body = yaml.safe_dump(dict(data), sort_keys=False, allow_unicode=True)
+    # wide lines: the ruamel round trip of `factory config` (width 4096) rewrites nothing
+    body = yaml.safe_dump(dict(data), sort_keys=False, allow_unicode=True, width=4096)
     return (header + body).encode("utf-8")
 
 
@@ -489,7 +449,6 @@ def render_files(
     manifest: Manifest,
     *,
     write_remote: bool = False,
-    test_command: str | None = None,
 ) -> dict[str, bytes]:
     """``.factory/`` as ``init`` writes it: config, roster, prompts, workflows, manifest."""
     config: dict[str, Any] = {"base": settings.base, "git_provider": settings.git_provider}
@@ -504,8 +463,6 @@ def render_files(
     )
     if settings.azure is not None:
         config["azure"] = settings.azure.model_dump(mode="json")
-    if test_command is not None:
-        config["test_command"] = test_command
     files: dict[str, bytes] = {}
     files[CONFIG_FILE] = _yaml("# factory project settings, written by factory init\n", config)
     library = sel.source.library
@@ -538,7 +495,6 @@ def init_repo(
     specs_dir: str | None = None,
     docs_dir: str | None = None,
     force: bool = False,
-    test_command: str | None = None,
     environ: Mapping[str, str] | None = None,
 ) -> InitResult:
     """Install factory into the git repo at `path`; see the module docstring."""
@@ -550,7 +506,6 @@ def init_repo(
     elif not base.strip():
         raise LibraryStoreError("invalid_value", "--base must not be empty")
     _refuse(root, base)
-    choice = choose_test_command(root, test_command)
     settings = project_settings(
         base=base,
         provider=provider,
@@ -561,12 +516,7 @@ def init_repo(
     )
     sel = Selection(_Source(environ), agents, bindings, workflows)
     manifest = build_manifest(root, sel, _now())
-    files = render_files(
-        sel,
-        settings,
-        manifest,
-        test_command=choice.command if choice.source != "default" else None,
-    )
+    files = render_files(sel, settings, manifest)
     files[f"{settings.backlog_dir.rstrip('/')}/.gitkeep"] = b""
 
     written: list[WrittenFile] = []
@@ -583,11 +533,6 @@ def init_repo(
 
     skipped = sum(1 for f in written if f.action == "skipped")
     warnings = [f"{skipped} existing file(s) skipped; use --force to overwrite"] if skipped else []
-    if choice.source == "default":
-        warnings.append(
-            "no technology recognised in the repo root; test_command stays "
-            f"{DEFAULT_TEST_COMMAND!r}, set it in .factory/config.yaml or pass --test-command"
-        )
     return InitResult(
         repo=root,
         base=base,
@@ -601,6 +546,5 @@ def init_repo(
         gitignore_added=gitignore_added,
         manifest=manifest,
         backlog_dir=settings.backlog_dir,
-        test_command=choice,
         warnings=warnings,
     )

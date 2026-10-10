@@ -277,13 +277,9 @@ def add_task(
     depends_on: list[str] | None = None,
     related: list[str] | None = None,
     body: str = "",
-    test: list[str] | None = None,
     parameters: dict[str, object] | None = None,
 ) -> WriteResult:
-    """Create a new ``todo`` task file in the directory of ``step``.
-
-    ``test`` is the task's own test command (argv), instead of the inherited ``test_command``.
-    """
+    """Create a new ``todo`` task file in the directory of ``step``."""
     backlog = load_for_edit(root)
     container = _find_step(backlog, step)
     title = title.strip()
@@ -301,8 +297,6 @@ def add_task(
         )
     if workflow is not None and not workflow.strip():
         raise TaskEditError("invalid_value", "workflow must not be empty")
-    if test is not None and (not test or any(not arg.strip() for arg in test)):
-        raise TaskEditError("invalid_value", "test must be a non-empty command")
     if related and task_id in related:
         raise TaskEditError("self_ref", f"task '{task_id}' cannot relate to itself", id=task_id)
     name = f"{task_id}-{slug}.md" if slug else f"{task_id}.md"
@@ -317,7 +311,6 @@ def add_task(
         "depends_on": _dedupe(depends_on or []),
         "related": _dedupe(related) if related is not None else None,
         "writes": _dedupe(writes) if writes is not None else None,
-        "test": list(test) if test is not None else None,
     }
     if parameters:
         _validate_parameters(parameters)
@@ -530,7 +523,6 @@ CONTAINER_KEYS: tuple[str, ...] = (
     "thinking",
     "workflow",
     "writes",
-    "test",
     "source",
     "target",
     "specs_dir",
@@ -712,18 +704,6 @@ def _check_container_value(key: str, value: object) -> str | list[str] | bool:
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             raise TaskEditError("invalid_value", "'writes' must be a list of strings")
         return _dedupe([str(v) for v in value])
-    if key == "test":
-        if isinstance(value, str) and value.strip():
-            return value.strip()
-        if (
-            isinstance(value, list)
-            and value
-            and all(isinstance(v, str) and v.strip() for v in value)
-        ):
-            return [str(v) for v in value]
-        raise TaskEditError(
-            "invalid_value", "'test' must be a command string or a non-empty list of strings"
-        )
     if key == "auto_continue":
         if not isinstance(value, bool):
             raise TaskEditError("invalid_value", "'auto_continue' must be true or false")

@@ -49,15 +49,12 @@ def test_cwd(
 
 def test_errors(repo: Path, machine: FakeMachine, capsys: Capsys) -> None:
     machine.present.discard("claude")
-    write(repo, "justfile", "lint:\n    ruff\n")
-    commit_all(repo, "no test recipe")
     rc, obj = run_json(capsys, ["check", "--repo", str(repo), "--json"])
     assert rc == 1
     assert obj["error"]["code"] == "checks_failed"
-    assert "test_recipe_missing" in obj["error"]["message"]
+    assert "harness_missing" in obj["error"]["message"]
     codes = {f["code"]: f for f in obj["data"]["findings"]}
     assert codes["harness_missing"]["scope"] == "machine"
-    assert codes["test_recipe_missing"]["scope"] == "repo"
     assert obj["data"]["ok"] is False
 
 
@@ -87,11 +84,11 @@ def test_text_output(repo: Path, machine: FakeMachine, capsys: Capsys) -> None:
     assert "next: onboard" in out
     assert "0 error(s), 1 warning(s), 1 info" in out
     assert "warning library library_missing:" in out
-    machine.present.discard("just")
+    machine.present.discard("claude")
     assert main(["check", "--repo", str(repo)]) == 1
     out = capsys.readouterr().out
-    assert "error   machine just_missing:" in out
-    assert "fix: install just" in out
+    assert "error   machine harness_missing:" in out
+    assert "fix: install claude" in out
 
 
 def test_outside_a_repository(

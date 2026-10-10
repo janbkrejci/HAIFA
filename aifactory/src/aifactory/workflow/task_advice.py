@@ -21,7 +21,6 @@ class TaskParameters(BaseModel):
     thinking: str | None = None
     source: str | None = None
     target: str | None = None
-    test: list[str] | None = Field(default=None, min_length=1)
     test_timeout: int | None = Field(default=None, gt=0)
     specs_dir: str | None = None
     docs_dir: str | None = None
@@ -59,7 +58,7 @@ Preserve the user's intent and language. Clarify requirements and acceptance cri
 inventing requirements. Propose narrow writes and only real dependencies/related tasks from
 available_tasks. Avoid cycles and self references. Choose a valid existing workflow from the
 catalog or null to inherit. Propose all inherited parameters in parameters: source, target,
-test (argv), test_timeout, specs_dir, docs_dir, auto_continue, auto_merge. Null inherits.
+test_timeout, specs_dir, docs_dir, auto_continue, auto_merge. Null inherits.
 Preserve deliberate overrides; do not enable automatic actions without a clear user request.
 Identity, parent, status and run history remain user controlled.
 Return ONLY JSON matching this schema, with status success and an explanation:\n"""

@@ -6,9 +6,10 @@ outside the sandbox repo and every worktree. ``Context`` points
 the variable is only a channel into ``validation.worker``: the worker pops it
 from ``os.environ`` (agents inherit ``os.environ`` through ``operator_env`` and
 so never see it) and ``install``s a wrapper around the engine's code test step
-(``aifactory.engine.quality.test``). The wrapper ``placed`` the test at
+(``aifactory.testing.executor.execute``, which runs the checks of the
+tester's plan). The wrapper ``placed`` the test at
 ``tests/test_hidden_slugify.py`` of the run's worktree for the duration of
-``just test`` only, where the sandbox's own ``just test`` discovers it, and
+those checks only, where the sandbox's own ``just test`` discovers it, and
 removes it afterwards. ``exclude`` lists that path in the sandbox's
 ``info/exclude`` (not ``.gitignore``, which agents read), so a leftover is
 never committed. The requirement (nothing sluggable gives ``x-empty``) cannot
@@ -77,24 +78,25 @@ def placed(root: Path, source: Path) -> Iterator[Path]:
                 pyc.unlink(missing_ok=True)
 
 
-def wrap_test(original: Callable[[Any], Any], source: Path) -> Callable[[Any], Any]:
+def wrap_test(original: Callable[[Any, Any], Any], source: Path) -> Callable[[Any, Any], Any]:
     """The engine's test step, with the hidden test in the run's worktree while it runs."""
 
-    def test(run: Any) -> Any:
+    def execute(run: Any, plan: Any) -> Any:
         with placed(Path(run.repo_root), source):
-            return original(run)
+            return original(run, plan)
 
-    test._haifa_hidden = True  # type: ignore[attr-defined]
-    return test
+    execute._haifa_hidden = True  # type: ignore[attr-defined]
+    return execute
 
 
 def install(source: Path) -> None:
-    """Wrap ``aifactory.engine.quality.test`` (once): every code test step runs the hidden test."""
-    from aifactory.engine import quality
+    """Wrap ``aifactory.testing.executor.execute`` (once): every code test step runs the
+    hidden test."""
+    from aifactory.testing import executor
 
-    if getattr(quality.test, "_haifa_hidden", False):
+    if getattr(executor.execute, "_haifa_hidden", False):
         return
-    quality.test = wrap_test(quality.test, source)  # type: ignore[assignment]
+    executor.execute = wrap_test(executor.execute, source)  # type: ignore[assignment]
 
 
 def exclude(repo: Path) -> None:

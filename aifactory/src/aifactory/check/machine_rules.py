@@ -280,35 +280,6 @@ def _pi_logins(
 # -- repo-specific machine rules --
 
 
-def just(ctx: CheckContext) -> Iterator[Finding]:
-    if ctx.machine.which("just") is not None:
-        return
-    needed = ctx.test_argv[0] == "just"
-    yield Finding(
-        "just_missing",
-        "machine",
-        "error" if needed else "warning",
-        "just is not on PATH"
-        + (f" (the test command is '{' '.join(ctx.test_argv)}')" if needed else ""),
-        "install just (https://just.systems)",
-    )
-
-
-def test_program(ctx: CheckContext) -> Iterator[Finding]:
-    program = ctx.test_argv[0]
-    if program == "just" or ("/" in program and not program.startswith("/")):
-        return
-    if ctx.machine.which(program) is not None:
-        return
-    yield Finding(
-        "test_command_missing",
-        "machine",
-        "error",
-        f"the test command '{' '.join(ctx.test_argv)}' runs {program}, which is not on PATH",
-        f"install {program}, or fix test_command in .factory/config.yaml",
-    )
-
-
 def local(ctx: CheckContext) -> Iterator[Finding]:
     try:
         _settings, warnings = load_local_checked(ctx.main)
@@ -492,8 +463,6 @@ MACHINE_GROUP = RuleGroup(
         Rule("tools", tools, needs_install=False, needs_repo=False),
         Rule("harnesses", harnesses, needs_install=False, needs_repo=False),
         Rule("node", node),
-        Rule("just", just, needs_install=False),
-        Rule("test program", test_program),
         Rule("local", local),
         Rule("logins", logins, needs_install=False, needs_repo=False),
         Rule("hosting", hosting),

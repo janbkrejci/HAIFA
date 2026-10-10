@@ -106,12 +106,6 @@ def _harnesses() -> str:
     return text
 
 
-def _test_command_rules() -> str:
-    from aifactory.techstack import RULES
-
-    return "\n".join(f"   - {files}: {command}" for files, command in RULES)
-
-
 def placeholders(parser: argparse.ArgumentParser | None = None) -> dict[str, str]:
     """Every ``{{name}}`` of the template and its generated text."""
     from aifactory.backlog.model import INDEX_FILE, INHERITED_KEYS, LIST_FIELDS, VALID_STATUSES
@@ -134,7 +128,6 @@ def placeholders(parser: argparse.ArgumentParser | None = None) -> dict[str, str
         "runs_heading": RUNS_HEADING,
         "runs_placeholder": RUNS_PLACEHOLDER,
         "index_file": INDEX_FILE,
-        "test_command_rules": _test_command_rules(),
         "default_levels": _default_levels(),
         "settings_keys": _settings_keys(),
         "code_actions": _codes(CODE_ACTIONS),

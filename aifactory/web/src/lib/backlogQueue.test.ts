@@ -1,18 +1,15 @@
-// The kanban queue (order, Odloženo), the run payload, the test command field and the
-// codes of new containers (lib/backlog.ts), the Czech PR states (lib/runs.ts) and the
-// new task link with its step (lib/router.ts).
+// The kanban queue (order, Odloženo), the run payload, the codes of new containers
+// (lib/backlog.ts), the Czech PR states (lib/runs.ts) and the new task link with its step
+// (lib/router.ts).
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   BOARD_STATES,
   childContainerIds,
-  formatTestField,
   kanbanColumn,
   kanbanColumns,
   mergeQueueOrder,
-  parseTestField,
   setAutoExcluded,
   setQueueOrder,
-  splitShell,
   startRun,
   suggestContainerCode,
 } from './backlog'
@@ -72,26 +69,6 @@ describe('kanban queue', () => {
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
       force: false, harness: 'codex', model: 'gpt-5', thinking: 'high', auto: true,
     })
-  })
-})
-
-describe('test command field', () => {
-  it('splits like a shell and joins back like shlex', () => {
-    expect(splitShell(`pytest -k "a b" 'c d' e\\ f`)).toEqual(['pytest', '-k', 'a b', 'c d', 'e f'])
-    expect(splitShell('  ')).toEqual([])
-    expect(splitShell(`echo ""`)).toEqual(['echo', ''])
-    expect(formatTestField(['pytest', '-k', 'a b', "it's"])).toBe(`pytest -k 'a b' 'it'"'"'s'`)
-    expect(formatTestField('just check')).toBe('just check')
-    expect(formatTestField(null)).toBe('')
-  })
-
-  it('reads one command as argv, empty as inherited', () => {
-    expect(parseTestField(' just  check ')).toEqual(['just', 'check'])
-    expect(parseTestField('just\ncheck')).toEqual(['just', 'check'])
-    expect(parseTestField('')).toBeNull()
-    for (const argv of [['just', 'test'], ['pytest', '-k', 'a b'], ['sh', '-c', `echo "x'y"`]]) {
-      expect(parseTestField(formatTestField(argv))).toEqual(argv)
-    }
   })
 })
 

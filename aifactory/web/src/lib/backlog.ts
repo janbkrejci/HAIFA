@@ -431,10 +431,9 @@ export interface RunCheck {
   unmet: Unmet[]
   running: TaskRun | null
   launcher_busy: boolean
-  /** Effective workflow, writes and test command of the task in base (newer servers). */
+  /** Effective workflow and writes of the task in base (newer servers). */
   workflow?: string | null
   writes?: string[] | null
-  test?: string | string[] | null
 }
 
 export interface RunStart {
@@ -885,7 +884,6 @@ export const CONTAINER_KEYS = [
   'thinking',
   'workflow',
   'writes',
-  'test',
   'source',
   'target',
   'specs_dir',
@@ -954,7 +952,6 @@ export interface EditContainerInput {
   title?: string
   workflow?: string
   writes?: string[]
-  test?: string | string[]
   source?: string
   target?: string
   specs_dir?: string | null
@@ -1003,7 +1000,7 @@ export function settingText(value: unknown): string {
   return String(value)
 }
 
-/** Where an inherited value comes from: `Projekt M01`, `.factory/config.yaml (test_command)`. */
+/** Where an inherited value comes from: `Projekt M01`, `.factory/config.yaml (docs_dir)`. */
 export function originText(origin: SettingOrigin | null | undefined): string {
   if (!origin) return 'nenastaveno'
   if (origin.source === 'config') return `${origin.path} (${origin.key})`
@@ -1024,71 +1021,6 @@ export function childLevel(levels: readonly string[], parentLevel?: string | nul
   return containers[at + 1] ?? null
 }
 
-// ── Test command field ──────────────────────────────────────────────────────
-// `test` (task, step, project) is ONE command: a string is split like a shell
-// (`config/settings.py split_command`), a list is its argv. Every form shows the command as
-// one line and saves its argv (task parameters accept only a list).
-
-/** Help text of the test command field, the same in every form. */
-export const TEST_FIELD_HINT =
-  'Jeden příkaz na jednom řádku, např. just check. Argumenty se dělí jako v shellu, uvozovky drží mezery.'
-
-const SHELL_SAFE = /^[A-Za-z0-9_@%+=:,./-]+$/
-
-/** One argument quoted like Python's `shlex.quote`. */
-function shellQuote(part: string): string {
-  if (part === '') return "''"
-  if (SHELL_SAFE.test(part)) return part
-  return `'${part.replace(/'/g, `'"'"'`)}'`
-}
-
-/** A command line split like a POSIX shell (`shlex.split`); an unclosed quote runs to the end. */
-export function splitShell(text: string): string[] {
-  const out: string[] = []
-  let cur = ''
-  let has = false
-  let quote: "'" | '"' | null = null
-  for (let i = 0; i < text.length; i++) {
-    const c = text[i] as string
-    if (quote === "'") {
-      if (c === "'") quote = null
-      else cur += c
-    } else if (quote === '"') {
-      if (c === '"') quote = null
-      else if (c === '\\' && i + 1 < text.length && '"\\$`'.includes(text[i + 1] as string)) cur += text[++i]
-      else cur += c
-    } else if (c === "'" || c === '"') {
-      quote = c
-      has = true
-    } else if (c === '\\' && i + 1 < text.length) {
-      cur += text[++i]
-      has = true
-    } else if (/\s/.test(c)) {
-      if (has) out.push(cur)
-      cur = ''
-      has = false
-    } else {
-      cur += c
-      has = true
-    }
-  }
-  if (has) out.push(cur)
-  return out
-}
-
-/** The test command as one line: a string unchanged, a list joined like `shlex.join`. */
-export function formatTestField(value: unknown): string {
-  if (value === null || value === undefined) return ''
-  if (Array.isArray(value)) return value.map((p) => shellQuote(String(p))).join(' ')
-  return String(value)
-}
-
-/** The typed test command as argv; null when empty (inherited). */
-export function parseTestField(text: string): string[] | null {
-  const argv = splitShell(text.replace(/\s*\n\s*/g, ' '))
-  return argv.length ? argv : null
-}
-
 /** Czech labels of the task and container settings (the key stays visible next to them). */
 export const SETTING_LABELS: Record<string, string> = {
   harness: 'Harness',
@@ -1096,7 +1028,6 @@ export const SETTING_LABELS: Record<string, string> = {
   thinking: 'Přemýšlení',
   workflow: 'Workflow',
   writes: 'Zápisy',
-  test: 'Testovací příkaz',
   test_timeout: 'Limit testů (s)',
   source: 'Zdroj',
   target: 'Cíl',

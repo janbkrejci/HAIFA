@@ -16,8 +16,11 @@ F2 (``validation.f2_backlog``): one script per task, and for ``task run
 M04-S01-T02 --auto`` (one process, two runs) the queues of both tasks of the
 chain one after the other (``chain_script``).
 
+The fake tester plans one check, the sandbox's ``just test`` (full coverage),
+for ``test_plan`` and again for ``replan`` after the forced revision.
+
 Envelope fields follow ``aifactory.engine.data_types`` (PlanOutput,
-BuildOutput, ReviewOutput, DocumentOutput).
+BuildOutput, TestPlanOutput, ReviewOutput, DocumentOutput).
 """
 
 from __future__ import annotations
@@ -141,6 +144,20 @@ def _build(summary: str, edits: list[dict[str, Any]], message: str) -> dict[str,
     }
 
 
+TEST_CHECK = {"name": "test", "argv": ["just", "test"]}
+
+
+def test_plan(task_id: str) -> dict[str, Any]:
+    """The fake tester's plan: the sandbox's whole suite (``just test``)."""
+    envelope = _ok(
+        f"the suite covers {task_id}",
+        coverage="full",
+        reason="the sandbox has one small suite; it covers the change",
+        checks=[dict(TEST_CHECK)],
+    )
+    return {"envelope": envelope, "edits": []}
+
+
 def revise_edit(path: str) -> dict[str, Any]:
     """The revision the validation reviewer asks for in its first round."""
     return {"path": path, "append": f"{REVIEW_RULE_MARKER}\n"}
@@ -189,12 +206,14 @@ def _script(
     plan: str = "Implement the task as written.",
     doc: str = "What changed and why.",
 ) -> dict[str, Any]:
-    """Planner, the builds, the forced revision of `revised`, two reviews, documenter."""
+    """Planner, the builds, the forced revision of `revised`, two reviews, two test
+    plans (``test_plan`` and ``replan``), documenter."""
     return {
         "task": task_id,
         "agents": {
             "planner": [_plan(task_id, plan)],
             "builder": [*builds, _revise(revised)],
+            "tester": [test_plan(task_id), test_plan(task_id)],
             "reviewer": _reviews(task_id, revised),
             "documenter": [_document(task_id, doc)],
         },
@@ -240,7 +259,10 @@ def _lerp_resolve() -> dict[str, Any]:
         ),
         "edits": edits,
     }
-    return {"task": "M01-S01-T02", "agents": {"builder": [resolve]}}
+    return {
+        "task": "M01-S01-T02",
+        "agents": {"builder": [resolve], "tester": [test_plan("M01-S01-T02")]},
+    }
 
 
 def _slugify_with_repair() -> dict[str, Any]:

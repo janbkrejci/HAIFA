@@ -11,6 +11,7 @@ Gates check what is mechanically checkable; plan quality is a reviewer's job.
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -136,6 +137,24 @@ def verdict_consistent(envelope: EnvelopeBase, run) -> GateReport:
     report.check("rejection names a problem", approved or bool(blocking or unmet),
                  "verdict is supported" if approved or blocking or unmet
                  else "approved=false but no blocking item or unmet requirement was given")
+    return report
+
+
+def checks_runnable(envelope: EnvelopeBase, run) -> GateReport:
+    """aifactory 3.0: every check of a test plan names a program this checkout can start.
+
+    Only the first argv element is checked (on PATH, or a file in the worktree);
+    whether the checks are the right ones is the reviewer's call.
+    """
+    report = GateReport()
+    root = Path(getattr(run, "repo_root", None) or ".")
+    for check in getattr(envelope, "checks", []):
+        program = check.argv[0]
+        local = (root / program).is_file() if ("/" in program or "\\" in program) else False
+        found = local or shutil.which(program) is not None
+        report.check(check.name, found,
+                     f"`{program}` found" if found
+                     else f"`{program}` is neither on PATH nor a file in the worktree")
     return report
 
 

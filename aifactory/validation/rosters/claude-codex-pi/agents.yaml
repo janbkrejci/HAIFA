@@ -21,6 +21,12 @@ agents:
     model: gpt-5.5
     purpose: Implement the plan exactly; report every changed file.
 
+  - name: tester
+    harness: claude
+    model: sonnet
+    purpose: Choose the checks that verify the change; change nothing.
+    writes: []
+
   - name: reviewer
     harness: pi
     model: nous-portal-api-key/meituan/longcat-2.5-preview:free

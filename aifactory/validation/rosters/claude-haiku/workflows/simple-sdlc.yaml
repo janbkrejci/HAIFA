@@ -15,6 +15,8 @@ steps:
   - build:
       description: Implement the plan exactly
       harness: claude
+  - test_plan:
+      description: Choose the checks that verify the build
   - repeat: {max: 3, until: test.passed}
     steps:
       - test
@@ -29,10 +31,14 @@ steps:
           harness: claude
       - revise:
           harness: claude
+  - test_plan:
+      id: replan
+      when: revise.ran and review.approved
+      description: Choose the checks again — the revision changed code after the last plan
   - test:
       id: retest
       when: revise.ran and review.approved
-      description: Re-run the suite — the revision changed code after the last green result
+      description: Re-run the checks — the revision changed code after the last green result
   - commit:
       id: commit_build
       when: test.passed and review.approved

@@ -106,7 +106,6 @@ FIELD_ORDER: tuple[str, ...] = (
     "depends_on",
     "related",
     "writes",
-    "test",
     "source",
     "target",
     "test_timeout",

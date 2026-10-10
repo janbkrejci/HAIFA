@@ -207,26 +207,10 @@ def test_install_builder_on_other_harness(api: Api, tmp_path: Path) -> None:
     assert not (b / ".factory").exists()
 
 
-def test_install_writes_the_chosen_test_command(api: Api, tmp_path: Path) -> None:
+def test_install_plan_has_no_test_command(api: Api) -> None:
     plain = api.plan("a", "init")
-    # the justfile of the fixture is detected, but only a given command is written
-    assert plain["test_command"]["command"] == "just test"
-    assert plain["test_command"]["source"] == "detected"
-    assert plain["test_command"]["written"] is False
-    options = {"test_command": "uv run pytest -q"}
-    plan = api.plan("a", "init", options=options)
-    assert plan["test_command"]["source"] == "option"
-    assert plan["test_command"]["written"] is True
-    assert plan["digest"] != plain["digest"]
-    done = api.apply("a", plan, options=options)["data"]
-    config = yaml.safe_load(git(tmp_path / "a", "show", f"{done['commit']}:{CONFIG}"))
-    assert config["test_command"] == "uv run pytest -q"
-    # an empty command means the installer's default
-    assert (
-        api.plan("b", "init", options={"test_command": "  "})["digest"]
-        == api.plan("b", "init")["digest"]
-    )
-    bad = api.post("b", "factory/plan", {"action": "init", "options": {"test_command": 1}}, 400)
+    assert "test_command" not in plain
+    bad = api.post("a", "factory/plan", {"action": "init", "options": {"test_command": "x"}}, 400)
     assert code_of(bad) == "usage_error"
 
 

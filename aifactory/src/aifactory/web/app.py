@@ -89,10 +89,9 @@ the same trace DB); the result is kept 60 s per ``offline`` flag and ``fresh=1``
 answers HTTP 200 with the CLI envelope: ``ok``, or ``checks_failed`` with the report in
 ``data``. ``POST /api/factory/plan`` (``{action,
 options?, target?}``) only reads and returns the plan with its ``digest`` (``init`` also
-``detected``, ``available`` and ``test_command``: the command, its ``source``, the detected
-``candidates`` and whether the plan writes it); ``action`` is ``init`` (options ``agents``,
+``detected`` and ``available``); ``action`` is ``init`` (options ``agents``,
 ``bind`` ``{agent: {harness, model?, thinking?}}``, ``workflows``, ``base``, ``provider``,
-``azure``, ``backlog_dir``, ``specs_dir``, ``docs_dir``, ``test_command``), ``update``
+``azure``, ``backlog_dir``, ``specs_dir``, ``docs_dir``), ``update``
 (``item``, ``take``, ``merge``, ``migrate``), ``config_commit``, ``add``, ``set``,
 ``remove``, ``export``, ``revert``, ``onboard`` or ``adopt`` (see factory.py for options);
 ``target`` is ``base`` (default) or ``pr``. ``POST /api/factory/apply``

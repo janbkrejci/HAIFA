@@ -23,7 +23,7 @@ from aifactory.library import (
 from aifactory.workflow import DEFAULT_WORKFLOWS_DIR, load_workflow, preflight
 
 HAIFA_ROOT = Path(__file__).resolve().parents[3]
-HAIFA_AGENTS = ("planner", "builder", "reviewer", "documenter")
+HAIFA_AGENTS = ("planner", "builder", "tester", "reviewer", "documenter")
 VENDOR_SCOUT = HAIFA_ROOT / "vendor/sssf/templates/prompt_engineering/scout"
 HANDOFF = (
     "`<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at "
@@ -39,6 +39,7 @@ GIT_LINE = (
 EXPECTED_WRITES = {
     "planner": ["specs/"],
     "builder": None,
+    "tester": [],
     "reviewer": [],
     "documenter": ["app_docs/"],
 }
@@ -66,14 +67,7 @@ def test_seed_workflows_are_not_copied() -> None:
 
 # Seed additions HAIFA's own `.factory/prompts` (protected, edited by the operator)
 # may not have picked up yet. With or without them the prompts must be equal.
-PENDING_SEED_BLOCKS = {
-    ("reviewer", "user"): (
-        b"### test_result\n\n"
-        b"The test phase already ran the whole suite on this same code. Its result "
-        b"(`passed`, `command`, `log`) is below; do not run the suite again, read the log "
-        b"if you need its output:\n\n{{test_result}}\n\n"
-    ),
-}
+PENDING_SEED_BLOCKS: dict[tuple[str, str], bytes] = {}
 
 
 def _haifa_prompt(name: str, kind: str) -> bytes:

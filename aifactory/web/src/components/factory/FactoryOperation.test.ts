@@ -263,13 +263,10 @@ describe('Factory operations', () => {
     const w = operation('config_commit'); await flushPromises()
     expect(w.get('[data-test="factory-plan-empty"]').text()).toBe('Konfigurace je commitnutá, není co commitnout.')
   })
-  it('prefills the detected test command and sends an edited one', async () => {
-    vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ test_command: { command: 'bun test', source: 'detected', candidates: [], written: true } }))
+  it('has no test command field', async () => {
+    vi.mocked(fetchFactoryPlan).mockResolvedValue(preview())
     const w = operation(); await flushPromises()
-    const field = w.get('[data-test="install-test_command"]')
-    expect((field.element as HTMLInputElement).value).toBe('bun test')
-    await field.setValue('just check'); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options.test_command).toBe('just check')
+    expect(w.find('[data-test="install-test_command"]').exists()).toBe(false)
   })
   it('replans takeover and migration choices', async () => {
     vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ action: 'update', update: {

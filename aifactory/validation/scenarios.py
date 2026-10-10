@@ -42,17 +42,20 @@ from validation.sandbox import SENTINEL, git
 
 # simple-sdlc when the suite passes at once and the review takes one forced round:
 # the reviewer rejects (review_1), the builder revises (revise_1), the reviewer
-# approves (review_2) and the suite runs again because a revision changed code.
+# approves (review_2) and the tester plans again (replan) and the checks run again
+# (retest) because a revision changed code.
 # `request` is the engineer phase.
 FORCED_REVIEW_HAPPY: tuple[str, ...] = (
     "request",
     "plan",
     "commit_plan",
     "build",
+    "test_plan",
     "test_1",
     "review_1",
     "revise_1",
     "review_2",
+    "replan",
     "retest",
     "commit_build",
     "changes",
@@ -65,6 +68,7 @@ CORE_PHASES: tuple[str, ...] = (
     "plan",
     "commit_plan",
     "build",
+    "test_plan",
     "test_1",
     "review_1",
     "commit_build",
@@ -72,8 +76,9 @@ CORE_PHASES: tuple[str, ...] = (
     "document",
     "commit_docs",
 )
-# phases a real model may add: repair rounds, review rounds, the retest after a revision
-EXTRA_PHASE = re.compile(r"^(?:(?:fix|test|review|revise)_\d+|retest)$")
+# phases a real model may add: repair rounds, review rounds, the new plan and the
+# retest after a revision
+EXTRA_PHASE = re.compile(r"^(?:(?:fix|test|review|revise)_\d+|replan|retest)$")
 R1_HARNESSES = frozenset({"claude", "codex", "pi"})
 
 R1_TASK = "M02-S01-T02"  # --version; later merged outside factory (R3)

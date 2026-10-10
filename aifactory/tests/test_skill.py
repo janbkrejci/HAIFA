@@ -217,7 +217,6 @@ def test_skill_agents_prompts_and_manifest() -> None:
         "modified",
         "slot",
         "factory config export agent",
-        "task `test` → step `test` → project `test`",
     ):
         assert text in agents, text
     manifest = _section(skill, "Manifest and item states")
@@ -234,7 +233,6 @@ def test_skill_backlog_creation_procedure() -> None:
         'factory backlog add --id M01 --title "Core"',
         'factory backlog add M01 --id M01-S01 --title "API"',
         "factory backlog edit M01 --workflow simple-sdlc",
-        "factory backlog edit M01-S01 --test",
         "factory task add M01-S01",
         "project → step → task",
         "nearest value wins",

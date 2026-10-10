@@ -14,7 +14,19 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from run_repo import SPEC, T01, T02, Script, commit_all, fake_env, git, make_run_repo, ok, write
+from run_repo import (
+    SPEC,
+    T01,
+    T02,
+    Script,
+    commit_all,
+    fake_env,
+    git,
+    make_run_repo,
+    ok,
+    plan_envelope,
+    write,
+)
 from workflow_fakes import FakeCodeRunner
 
 from aifactory.config import ProjectSettings
@@ -113,12 +125,15 @@ def run_both(repo: Path, script: Script, first: dict[str, str], second: dict[str
 
 
 def resolver(script: Script, *changes: tuple[str, str]) -> None:
+    """The resolver's changes, and the tester's plan of the same resolve run."""
+
     def effect(wt: Path) -> None:
         for rel, text in changes:
             write(wt, rel, text)
 
     script.on("builder", effect)
     script.add("builder", ok(changed_files=[rel for rel, _ in changes]))
+    script.add("tester", plan_envelope())
 
 
 def tip(repo: Path) -> str:

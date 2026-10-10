@@ -19,7 +19,13 @@ import repo_templates
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "workflow"))
 
-from workflow_fakes import FakeHarness, Script, install_fake_harnesses, ok  # noqa: E402
+from workflow_fakes import (  # noqa: E402
+    FakeHarness,
+    Script,
+    install_fake_harnesses,
+    ok,
+    plan_envelope,
+)
 
 __all__ = [
     "SPEC",
@@ -33,6 +39,7 @@ __all__ = [
     "git",
     "make_run_repo",
     "ok",
+    "plan_envelope",
     "write",
 ]
 
@@ -50,7 +57,7 @@ USER_PROMPT = (
 def agents_yaml(harness: str) -> str:
     return (
         f"defaults:\n  harness: {harness}\n  model: sonnet\n"
-        "agents:\n  - name: planner\n  - name: builder\n  - name: documenter\n"
+        "agents:\n  - name: planner\n  - name: builder\n  - name: tester\n  - name: documenter\n"
     )
 
 
@@ -79,7 +86,7 @@ def files(harness: str) -> dict[str, str]:
         "README.md": "readme\n",
         "src/app/__init__.py": "",
     }
-    for agent in ("planner", "builder", "documenter"):
+    for agent in ("planner", "builder", "tester", "documenter"):
         result[f".factory/prompts/{agent}/system.md"] = f"You are the {agent}.\n"
         result[f".factory/prompts/{agent}/user.md"] = USER_PROMPT
     return result

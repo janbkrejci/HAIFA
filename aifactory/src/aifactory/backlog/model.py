@@ -17,7 +17,6 @@ INHERITED_KEYS: tuple[str, ...] = (
     "thinking",
     "source",
     "target",
-    "test",
     "test_timeout",
     "workflow",
     "specs_dir",

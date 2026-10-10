@@ -20,7 +20,6 @@ working tree that differs from the ``base`` commit.
 from __future__ import annotations
 
 import os
-import shlex
 import tempfile
 import typing
 from pathlib import Path
@@ -64,7 +63,6 @@ SHARED_FIELDS = (
     "base",
     "git_provider",
     "merge_strategy",
-    "test_command",
     "protected_files",
     "max_parallel_runs",
 )
@@ -125,8 +123,6 @@ def _issue_dicts(issues: list[ConfigIssue]) -> list[JsonDict]:
 
 def _shared_form(settings: ProjectSettings) -> JsonDict:
     data = {name: getattr(settings, name) for name in SHARED_FIELDS}
-    command = settings.test_command
-    data["test_command"] = shlex.join(command) if command is not None else None
     data["protected_files"] = list(settings.protected_files)
     return data
 
@@ -138,9 +134,7 @@ def _raw_shared(raw: JsonDict | None) -> JsonDict:
         if raw is None or name not in raw:
             continue
         value = raw[name]
-        if name == "test_command" and isinstance(value, list):
-            value = shlex.join(str(part) for part in value)
-        elif name == "protected_files" and isinstance(value, list):
+        if name == "protected_files" and isinstance(value, list):
             value = [str(item) for item in value]
         elif value is not None and not isinstance(value, str | int | float | bool):
             value = str(value)

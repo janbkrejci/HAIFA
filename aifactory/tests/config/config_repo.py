@@ -21,7 +21,7 @@ agents:
 
 FILES = {
     ".gitignore": ".factory/local.yaml\n",
-    ".factory/config.yaml": "base: main\ntest_command: [pytest, -q]\n",
+    ".factory/config.yaml": "base: main\n",
     ".factory/agents.yaml": AGENTS_YAML,
     ".factory/prompts/planner/system.md": "You are the planner.\n",
     ".factory/prompts/planner/user.md": "Plan this: {{prompt}}\n",

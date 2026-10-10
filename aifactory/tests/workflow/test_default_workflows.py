@@ -69,7 +69,14 @@ def test_simple_sdlc_structure() -> None:
     review = loops[1].steps[0]
     assert isinstance(review, RoleStep)
     assert review.inputs == ("build", "fix", "revise")
-    retest = workflow.steps[5]
+    plan, replan, retest = workflow.steps[3], workflow.steps[6], workflow.steps[7]
+    assert isinstance(plan, RoleStep)
+    assert plan.role.output_type_name == "TestPlanOutput"
+    assert plan.role.agent == "tester"
+    assert isinstance(replan, RoleStep)
+    assert (replan.name, replan.phase_id) == ("test_plan", "replan")
+    assert replan.when is not None
+    assert replan.when.source == "revise.ran and review.approved"
     assert isinstance(retest, CodeStep)
     assert (retest.key, retest.phase_id) == ("test", "retest")
     assert workflow.accept is not None
@@ -87,7 +94,7 @@ def test_plan_build_test_structure() -> None:
 
 def test_resolve_structure() -> None:
     workflow = load_workflow(DEFAULT_WORKFLOWS_DIR / "resolve.yaml")
-    rebase, resolve, loop = workflow.steps
+    rebase, resolve, plan, loop = workflow.steps
     assert isinstance(rebase, CodeStep)
     assert rebase.action == "rebase"
     assert rebase.when is None
@@ -96,6 +103,9 @@ def test_resolve_structure() -> None:
     assert resolve.role.agent == "builder"
     assert resolve.when is not None
     assert resolve.when.source == "rebase.conflict"
+    assert isinstance(plan, RoleStep)
+    assert plan.name == "test_plan"
+    assert plan.when is None
     assert isinstance(loop, Repeat)
     assert loop.max == 3
     assert loop.until is not None

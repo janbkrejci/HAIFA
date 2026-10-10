@@ -18,6 +18,7 @@ from workflow_fakes import (
     EngineEnv,
     FakeCodeRunner,
     ok,
+    plan_envelope,
     workflow,
     workflow_env_fixture,  # noqa: F401  (pytest fixture)
 )
@@ -33,12 +34,14 @@ TEST_END = ">>TEST"
 BUILD = ok(summary="built", changed_files=[], commit_message="Build it")
 FIX = ok(summary="fixed", changed_files=[], commit_message="Fix it")
 APPROVE = ok(summary="looks right", approved=True)
+TEST_PLAN = plan_envelope("pytest", "tests")
 
 LOOP = (
     HEADER
     + """\
 steps:
   - build
+  - test_plan
   - repeat: {max: 2, until: test.passed}
     steps: [test, fix]
   - review:
@@ -52,6 +55,7 @@ MAPPED = (
     + """\
 steps:
   - build
+  - test_plan
   - test
   - review:
       input:
@@ -65,13 +69,14 @@ accept: review.approved
 class LoggedTests(FakeCodeRunner):
     """Test steps that ran a real-looking command and wrote a log."""
 
-    def test(self, run: Any) -> Any:
+    def test(self, run: Any, plan: Any) -> Any:
+        self.plans.append(plan)
         passed = self.test_results.pop(0)
         check = dt.QualityCheckResult(
             name="test",
             area="backend",
             operation="build",
-            command="just check-scoped",
+            command="pytest tests",
             returncode=0 if passed else 1,
             passed=passed,
             duration_seconds=1.0,
@@ -109,6 +114,7 @@ def test_review_gets_builder_envelope_and_test_result(
 ) -> None:
     _with_variables(workflow_env, tmp_path)
     workflow_env.script.add("builder", BUILD, FIX)
+    workflow_env.script.add("tester", TEST_PLAN)
     workflow_env.script.add("reviewer", APPROVE)
     code = LoggedTests([False, True])
     result = run_workflow(workflow(LOOP), "do it", workflow_env.cfg, code=code)
@@ -121,7 +127,7 @@ def test_review_gets_builder_envelope_and_test_result(
         "step": "test",
         "phase": "test_2",
         "passed": True,
-        "command": "just check-scoped",
+        "command": "pytest tests",
         "log": "/data/quality/test.log",
         "failures": 0,
         "code_changed_since": False,
@@ -131,8 +137,11 @@ def test_review_gets_builder_envelope_and_test_result(
 def test_test_result_says_when_code_changed_after_it(
     workflow_env: EngineEnv, tmp_path: Path
 ) -> None:
-    text = HEADER + "steps:\n  - test\n  - build\n  - review\naccept: review.approved\n"
+    text = (
+        HEADER + "steps:\n  - test_plan\n  - test\n  - build\n  - review\naccept: review.approved\n"
+    )
     _with_variables(workflow_env, tmp_path)
+    workflow_env.script.add("tester", TEST_PLAN)
     workflow_env.script.add("builder", BUILD)
     workflow_env.script.add("reviewer", APPROVE)
     run_workflow(workflow(text), "do it", workflow_env.cfg, code=LoggedTests([False]))
@@ -155,17 +164,18 @@ def test_test_result_before_any_test_is_none(workflow_env: EngineEnv, tmp_path: 
 def test_input_mapping_adds_a_template_variable(workflow_env: EngineEnv, tmp_path: Path) -> None:
     _with_variables(workflow_env, tmp_path, "suite")
     workflow_env.script.add("builder", BUILD)
+    workflow_env.script.add("tester", TEST_PLAN)
     workflow_env.script.add("reviewer", APPROVE)
     run_workflow(workflow(MAPPED), "do it", workflow_env.cfg, code=LoggedTests([True]))
     review = _call(workflow_env, "reviewer")
     assert json.loads(review.previous())["summary"] == "built"
     suite = json.loads(_between(review.prompt, "SUITE<<", ">>SUITE"))
-    assert (suite["passed"], suite["command"]) == (True, "just check-scoped")
+    assert (suite["passed"], suite["command"]) == (True, "pytest tests")
 
 
 def test_parse_input_mapping() -> None:
     wf = workflow(MAPPED)
-    review = wf.steps[2]
+    review = wf.steps[3]
     assert isinstance(review, RoleStep)
     assert review.inputs == ("build",)
     assert review.variables == (("suite", ("test",)),)
@@ -218,24 +228,22 @@ def test_claude_run_has_nothing_to_report(workflow_env: EngineEnv) -> None:
     assert result.warnings == []
 
 
-@pytest.mark.parametrize("coverage", ["scoped", "none", "deferred"])
-def test_review_receives_adaptive_policy_evidence(
+@pytest.mark.parametrize("coverage", ["scoped", "none"])
+def test_review_receives_test_plan_evidence(
     workflow_env: EngineEnv, tmp_path: Path, coverage: str
 ) -> None:
     from aifactory.testing.model import Evidence
 
-    evidence = Evidence.model_validate(
-        {
-            "coverage": coverage,
-            "reason": "Explicit workflow policy",
-            "executed": 1 if coverage == "scoped" else 0,
-            "defer_to": "M01-S01-T99" if coverage == "deferred" else None,
-        }
+    evidence = Evidence(
+        coverage=coverage,  # type: ignore[arg-type]
+        reason="covers the change",
+        executed=1 if coverage == "scoped" else 0,
+        commands=["pytest tests"] if coverage == "scoped" else [],
     )
 
-    class AdaptiveTests(LoggedTests):
-        def test(self, run: Any) -> dt.QualityResult:
-            result: dt.QualityResult = super().test(run)
+    class PlannedTests(LoggedTests):
+        def test(self, run: Any, plan: Any) -> dt.QualityResult:
+            result: dt.QualityResult = super().test(run, plan)
             result.test_plan = evidence
             if evidence.executed == 0:
                 result.checks = []
@@ -244,9 +252,12 @@ def test_review_receives_adaptive_policy_evidence(
 
     _with_variables(workflow_env, tmp_path)
     workflow_env.script.add("builder", BUILD)
+    workflow_env.script.add("tester", plan_envelope("pytest", "tests", coverage=coverage))
     workflow_env.script.add("reviewer", APPROVE)
-    result = run_workflow(workflow(LOOP), "do it", workflow_env.cfg, code=AdaptiveTests([True]))
+    code = PlannedTests([True])
+    result = run_workflow(workflow(LOOP), "do it", workflow_env.cfg, code=code)
     assert result.accepted
+    assert code.plans[0].coverage == coverage
     review = _call(workflow_env, "reviewer")
     assert json.loads(review.previous())["summary"] == "built"
     report = json.loads(_between(review.prompt, TEST_START, TEST_END))
@@ -254,3 +265,17 @@ def test_review_receives_adaptive_policy_evidence(
     if evidence.executed == 0:
         assert report["command"] is None
         assert report["log"] is None
+
+
+def test_role_steps_get_the_baseline(workflow_env: EngineEnv, tmp_path: Path) -> None:
+    user = tmp_path / "tester_user.md"
+    user.write_text("{{prompt}}\nBASE<<{{baseline}}>>BASE\n", encoding="utf-8", newline="\n")
+    for agent in workflow_env.cfg.agents:
+        if agent.name == "tester":
+            agent.prompt_engineering.user = str(user)
+    workflow_env.script.add("tester", TEST_PLAN)
+    text = HEADER + "steps:\n  - test_plan\n  - test\naccept: test.passed\n"
+    code = FakeCodeRunner([True])
+    run_workflow(workflow(text), "do it", workflow_env.cfg, code=code)
+    tester = _call(workflow_env, "tester")
+    assert _between(tester.prompt, "BASE<<", ">>BASE") == code.baseline()

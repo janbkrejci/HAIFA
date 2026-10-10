@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from aifactory.engine import quality
+from aifactory.testing import executor
 from validation import hidden, worker
 
 
@@ -62,30 +62,30 @@ def test_wrap_test_places_the_test_only_during_the_call(tmp_path: Path) -> None:
     (root / "tests").mkdir(parents=True)
     seen: list[bool] = []
 
-    def original(run: Any) -> str:
+    def original(run: Any, plan: Any) -> str:
         seen.append((Path(run.repo_root) / hidden.HIDDEN_TARGET).exists())
         return "result"
 
     wrapped = hidden.wrap_test(original, _source(tmp_path))
-    assert wrapped(SimpleNamespace(repo_root=str(root))) == "result"
+    assert wrapped(SimpleNamespace(repo_root=str(root)), None) == "result"
     assert seen == [True]
     assert not (root / hidden.HIDDEN_TARGET).exists()
 
 
-def test_install_wraps_quality_test_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_install_wraps_the_executor_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[Any] = []
-    monkeypatch.setattr(quality, "test", lambda run: calls.append(run))
+    monkeypatch.setattr(executor, "execute", lambda run, plan: calls.append(run))
     hidden.install(_source(tmp_path))
-    first = quality.test
+    first = executor.execute
     assert getattr(first, "_haifa_hidden", False)
     hidden.install(_source(tmp_path))
-    assert quality.test is first
+    assert executor.execute is first
 
 
 def test_worker_consumes_the_hidden_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from aifactory import cli
 
-    monkeypatch.setattr(quality, "test", quality.test)  # restored after the test
+    monkeypatch.setattr(executor, "execute", executor.execute)  # restored after the test
     installed: list[Path] = []
     monkeypatch.setattr(hidden, "install", installed.append)
     seen: list[str | None] = []

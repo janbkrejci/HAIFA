@@ -61,7 +61,6 @@ from aifactory.library.install import (
     _Source,
     _workflow_agents,
     build_manifest,
-    choose_test_command,
     project_settings,
     render_files,
 )
@@ -536,17 +535,9 @@ def plan_init(
     docs_dir: str | None = None,
     pr: bool = False,
     environ: Mapping[str, str] | None = None,
-    test_command: str | None = None,
 ) -> InitPlan:
-    """The install plan; see the module docstring. Writes nothing.
-
-    ``test_command`` is written to ``.factory/config.yaml`` as given (validated like
-    ``--test-command``); without it the config keeps the default.
-    """
+    """The install plan; see the module docstring. Writes nothing."""
     root = _repo_root(path)
-    chosen_test = None
-    if test_command is not None:
-        chosen_test = choose_test_command(root, test_command).command
     detected = detect(root)
     if base is not None and not base.strip():
         raise LibraryStoreError("invalid_value", "--base must not be empty")
@@ -575,9 +566,7 @@ def plan_init(
     roster = sel.roster(settings)
     write_remote = detected.remote not in (None, "origin")
     manifest = build_manifest(root, sel, _now())
-    contents = render_files(
-        sel, settings, manifest, write_remote=write_remote, test_command=chosen_test
-    )
+    contents = render_files(sel, settings, manifest, write_remote=write_remote)
     backlog = settings.backlog_dir.strip("/")
     if not _in_tree(root, base_sha, backlog) and not (root / backlog).exists():
         contents[f"{backlog}/.gitkeep"] = b""

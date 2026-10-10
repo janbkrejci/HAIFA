@@ -34,7 +34,6 @@ def test_missing_files_give_defaults(tmp_path: Path) -> None:
     local = load_local(tmp_path)
     assert settings.base == "main"
     assert settings.levels == ("project", "step", "task")
-    assert settings.test_command is None
     assert not hasattr(local, "port")
     assert local.trace_db == ".factory/trace.db"
     assert local.trace_db_path(tmp_path) == (tmp_path / ".factory/trace.db").resolve()
@@ -65,7 +64,7 @@ def test_custom_values(tmp_path: Path) -> None:
     assert settings.levels == ("epic", "task")
     assert settings.git_provider == "github"
     assert settings.merge_strategy == "merge"
-    assert settings.test_command == ("dotnet", "test", "--no-build")
+    assert not hasattr(settings, "test_command")  # obsolete key, dropped silently
     assert settings.workdir == "app"
     local = load_local(tmp_path)
     assert local.trace_db_path(tmp_path) == elsewhere

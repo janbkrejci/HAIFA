@@ -11,10 +11,10 @@ from __future__ import annotations
 
 from typing import Any, Callable, Literal, Optional, Type
 
-from pydantic import BaseModel, Field, ValidationInfo, field_validator
+from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
-# aifactory 2.15: typed, backwards-compatible evidence for adaptive verification.
-from aifactory.testing.model import Evidence
+# aifactory 3.0: the tester agent's checks and the evidence of what the test step ran.
+from aifactory.testing.model import Check, Coverage, Evidence, plan_problems
 
 PhaseKind = Literal["engineer", "agent", "code"]
 PhaseStatus = Literal["queued", "running", "success", "fail"]
@@ -169,7 +169,7 @@ class QualityCheckResult(BaseModel):
 class QualityResult(BaseModel):
     """Aggregate result from a quality block: every check it ran, and the verdict."""
 
-    # aifactory 2.15: adaptive test policy evidence.
+    # aifactory 3.0: which checks of the tester's plan ran.
     test_plan: Evidence | None = None
     passed: bool
     checks: list[QualityCheckResult] = Field(default_factory=list)
@@ -248,10 +248,31 @@ class VerifyOutput(EnvelopeBase):
     the ADW script is the only thing that knows the difference.
     """
 
-    # aifactory 2.15: include coverage and deferred evidence.
+    # aifactory 3.0: what the test step ran from the tester's plan.
     test_plan: Evidence | None = None
     passed: bool = False
     failures: list[str] = Field(default_factory=list)
+
+
+# aifactory 3.0: the tester agent picks the checks; the `test` step runs exactly these.
+class TestPlanOutput(EnvelopeBase):
+    """The checks that verify this change: enough to trust it, nothing beyond.
+
+    `full` runs the whole suite, `scoped` a subset the change can affect, `none`
+    nothing (for example a documentation-only change). The reviewer judges the
+    choice; the harness only checks that the plan is coherent and runnable.
+    """
+
+    coverage: Coverage
+    reason: str = Field(min_length=1)
+    checks: list[Check] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def coherent(self) -> "TestPlanOutput":
+        problems = plan_problems(self.coverage, self.checks)
+        if problems:
+            raise ValueError("; ".join(problems))
+        return self
 
 
 # ── Agent calls ──────────────────────────────────────────────────────────────

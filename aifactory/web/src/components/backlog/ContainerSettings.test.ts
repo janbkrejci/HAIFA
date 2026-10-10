@@ -31,7 +31,8 @@ describe('ContainerSettings', () => {
     expect(row('workflow').get('[data-test="origin"]').text()).toBe('vlastní')
     expect(row('writes').get('[data-test="origin"]').text()).toContain('Modul M01')
     expect(row('writes').get('[data-test="value-writes"]').text()).toContain('src/')
-    expect(row('test').get('[data-test="origin"]').text()).toContain('.factory/config.yaml (test_command)')
+    expect(row('specs_dir').get('[data-test="origin"]').text()).toContain('.factory/config.yaml (specs_dir)')
+    expect(wrapper.find('[data-setting="test"]').exists()).toBe(false)
     expect(row('auto_continue').get('[data-test="value-auto_continue"]').text()).toContain('vypnuto')
     expect(row('auto_continue').get('[data-test="origin"]').text()).toContain('výchozí')
     expect(row('source').get('[data-test="origin"]').text()).toContain('nenastaveno')
@@ -68,8 +69,6 @@ describe('ContainerSettings', () => {
     // an inherited key switched to own starts from the inherited value
     expect((wrapper.get('[data-test="edit-writes"]').element as HTMLTextAreaElement).value).toBe('src/')
     await wrapper.get('[data-test="edit-writes"]').setValue('src/\n\ntests/\n')
-    await wrapper.get('[data-test="inherit-test"]').setValue(false)
-    await wrapper.get('[data-test="edit-test"]').setValue('pytest -k "a b"')
     await wrapper.get('[data-test="inherit-source"]').setValue(false)
     await wrapper.get('[data-test="edit-source"]').setValue(' docs/brief.md ')
     expect(wrapper.find('[data-test="inherit-auto_continue"]').exists()).toBe(false)
@@ -79,7 +78,6 @@ describe('ContainerSettings', () => {
       {
         title: 'Model 2',
         writes: ['src/', 'tests/'],
-        test: ['pytest', '-k', 'a b'],
         source: 'docs/brief.md',
         auto_continue: true,
         clear: ['workflow'],
@@ -87,24 +85,17 @@ describe('ContainerSettings', () => {
     ])
   })
 
-  it('changes an own workflow and sends the test command as its argv', async () => {
+  it('changes an own workflow', async () => {
     const wrapper = panel()
     await chooseOption(wrapper, '[data-test="edit-workflow"]', 'simple-sdlc')
-    await wrapper.get('[data-test="inherit-test"]').setValue(false)
-    expect(wrapper.get('[data-test="test-hint"]').text()).toContain('Jeden příkaz')
-    await wrapper.get('[data-test="edit-test"]').setValue('just check')
     await wrapper.get('form').trigger('submit')
-    expect(wrapper.emitted('save')?.[0]).toEqual([{ workflow: 'simple-sdlc', test: ['just', 'check'] }])
+    expect(wrapper.emitted('save')?.[0]).toEqual([{ workflow: 'simple-sdlc' }])
   })
 
-  it('shows Czech labels with the key and an own test command as one line', () => {
-    const wrapper = panel({ own: { workflow: 'plan', test: ['pytest', '-k', 'a b'] } })
-    expect(wrapper.get('[data-setting="test"] [data-test="setting-label"]').text()).toBe('Testovací příkaz')
+  it('shows Czech labels with the key', () => {
+    const wrapper = panel()
     expect(wrapper.get('[data-setting="specs_dir"] [data-test="setting-label"]').text()).toBe('Adresář specifikací')
-    expect(wrapper.get('[data-setting="test"] th').text()).toContain('test')
-    expect((wrapper.get('[data-test="edit-test"]').element as HTMLInputElement).value).toBe("pytest -k 'a b'")
-    // the same command in one line is no change
-    expect(wrapper.get('[data-test="settings-save"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-setting="specs_dir"] th').text()).toContain('specs_dir')
   })
 
   it('keeps an unset auto continue inherited, never off', async () => {

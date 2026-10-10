@@ -28,7 +28,6 @@ def proposal(**overrides: Any) -> dict[str, Any]:
         "workflow": "plan",
         "reason": "Narrower scope",
         "parameters": {
-            "test": ["uv", "run", "pytest"],
             "test_timeout": 120,
             "auto_merge": False,
             "source": "input.md",

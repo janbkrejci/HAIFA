@@ -36,7 +36,7 @@ from aifactory.run import gitops, task_prs_for, task_runs_for
 from aifactory.run.errors import TaskRunError
 from aifactory.run.scope import effective_task_writes
 from aifactory.run.store import QueuePrefs, TaskRunStore, is_db_busy
-from aifactory.run.task import existing_store, resolve_test_command
+from aifactory.run.task import existing_store
 from aifactory.web.launcher import Launcher
 from aifactory.web.settings import config_status
 from aifactory.workflow import DEFAULT_WORKFLOWS_DIR
@@ -169,7 +169,6 @@ def _task_json(
             "thinking",
             "source",
             "target",
-            "test",
             "test_timeout",
             "specs_dir",
             "docs_dir",
@@ -591,13 +590,12 @@ def run_check(
             if isinstance(base_task, Task)
             else []
         )
-        effective_values: JsonDict = {"workflow": None, "writes": [], "test": None}
+        effective_values: JsonDict = {"workflow": None, "writes": []}
         if isinstance(base_task, Task):
             workflow = core.effective_workflow(base_task)
             effective_values = {
                 "workflow": None if workflow is None else str(workflow),
                 "writes": list(effective_task_writes(base_task)),
-                "test": " ".join(resolve_test_command(base_task, rc.config.settings)),
             }
     running: JsonDict | None = None
     try:

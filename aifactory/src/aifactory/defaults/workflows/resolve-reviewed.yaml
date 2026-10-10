@@ -5,13 +5,15 @@ steps:
   - resolve:
       when: rebase.conflict
       description: Settle every conflict in the files the rebase reported, keeping both sides' intent
+  - test_plan:
+      description: Choose the checks for the rebased branch — a rebase mixes two lines of work, so cover both
   - repeat: {max: 3, until: test.passed}
     steps:
       - rebuild:
           when: rebase.conflict
           description: Rebuild the generated outputs in conflict from the resolved sources
       - test:
-          description: Re-run the whole suite on the rebased branch before it is pushed
+          description: Run the checks on the rebased branch before it is pushed
       - fix:
           when: rebase.conflict
           description: Repair what the suite reported, from its verbatim output, only in the conflicted files

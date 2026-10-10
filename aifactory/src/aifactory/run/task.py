@@ -36,7 +36,6 @@ from aifactory.backlog import (
     Backlog,
     Task,
     effective,
-    effective_test,
     effective_test_timeout,
     effective_workflow,
     has_workflow,
@@ -52,7 +51,6 @@ from aifactory.config import (
     check_timeout,
     load_local,
     load_run_config,
-    split_command,
 )
 from aifactory.config.loader import write_prompts
 from aifactory.engine.quality import DEFAULT_TEST_TIMEOUT
@@ -69,7 +67,6 @@ from aifactory.run.pause import PauseGate
 from aifactory.run.resolve import (
     INTERNAL_WORKFLOWS,
     RESOLVE_WORKFLOW,
-    TEST_TIER_ENV,
     ConflictWriteGuard,
     ResolveSpec,
     finish_resolve,
@@ -186,74 +183,6 @@ def resolve_workflow(task: Task, config: FactoryConfig) -> Workflow:
     if not isinstance(name, str) or not name.strip():
         raise TaskRunError("invalid_workflow", f"task {task.id}: workflow {name!r} is not a name")
     return named_workflow(name, config, task.id)
-
-
-DEFAULT_TEST_COMMAND: tuple[str, ...] = ("just", "test")
-
-
-def resolve_test_command(task: Task, settings: ProjectSettings) -> tuple[str, ...]:
-    """argv of every ``test`` step of the run.
-
-    The task's ``test``, else the nearest ``index.md`` ``test`` above it, else
-    ``test_command`` from ``.factory/config.yaml``, else ``just test``.
-    """
-    value = effective_test(task)
-    if value is not None:
-        try:
-            return split_command(value)
-        except ValueError as exc:
-            raise TaskRunError("invalid_test", f"task {task.id}: test {value!r} {exc}") from exc
-    if settings.test_command is not None:
-        return tuple(settings.test_command)
-    return DEFAULT_TEST_COMMAND
-
-
-def validate_test_deferrals(
-    workflow: Workflow, task: Task, backlog: Backlog, config: FactoryConfig
-) -> tuple[str, ...]:
-    """Resolve explicit aggregate tasks from the same immutable backlog/config snapshot."""
-
-    def project(t: Task) -> str:
-        parent = t.parent
-        while parent.parent is not None:
-            parent = parent.parent
-        return parent.path
-
-    validated = []
-    for step in walk(workflow.steps):
-        if not isinstance(step, CodeStep) or not step.defer_to:
-            continue
-        target = _find_task(backlog, step.defer_to)
-        if (
-            target is None
-            or target.id == task.id
-            or target.status != "todo"
-            or project(target) != project(task)
-        ):
-            raise TaskRunError("invalid_test_deferral", f"invalid aggregate task {step.defer_to}")
-        target_workflow = resolve_workflow(target, config)
-        leaves = list(walk(target_workflow.steps))
-        tests = [s for s in leaves if isinstance(s, CodeStep) and s.action == "test"]
-        if (
-            not tests
-            or any(isinstance(s, CodeStep) and s.defer_to for s in leaves)
-            or effective_test(target) is None
-            or resolve_test_command(target, config.settings) != step.full_argv
-        ):
-            raise TaskRunError(
-                "invalid_test_deferral",
-                f"aggregate task {target.id} needs explicit full test and no deferral",
-            )
-        if any(s.selector and s.full_argv != step.full_argv for s in tests):
-            raise TaskRunError(
-                "invalid_test_deferral", f"aggregate task {target.id} can skip full tests"
-            )
-        if any(s.selector for s in tests):
-            raise TaskRunError(
-                "invalid_test_deferral", f"aggregate task {target.id} needs fixed tests"
-            )
-        validated.append(target.id)
-    return tuple(validated)
 
 
 def resolve_test_timeout(task: Task, settings: ProjectSettings) -> int:
@@ -629,7 +558,6 @@ def run_task(
                     "no_writes",
                     f"task {task_id} has no writes, neither its own nor inherited from index.md",
                 )
-            test_argv = resolve_test_command(task, settings)
             test_timeout = resolve_test_timeout(task, settings)
             if resolve_onto is None:
                 workflow = resolve_workflow(task, rc.config)
@@ -641,15 +569,10 @@ def run_task(
                     raise TaskRunError(
                         "invalid_workflow", f"workflow {resolve_with} needs a rebase step"
                     )
-            validated_deferrals = validate_test_deferrals(workflow, task, backlog, rc.config)
             with tempfile.TemporaryDirectory(prefix="factory-prompts-") as prompts_tmp:
                 probe = prepare_cfg(main, rc, Path(prompts_tmp))
                 try:
                     preflight(workflow, probe)
-                    for target_id in validated_deferrals:
-                        target = _find_task(backlog, target_id)
-                        assert target is not None
-                        preflight(resolve_workflow(target, rc.config), probe)
                 except WorkflowError as exc:
                     raise TaskRunError("invalid_workflow", str(exc)) from exc
 
@@ -709,9 +632,7 @@ def run_task(
                 task,
                 new_branch,
                 resolve,
-                test_argv,
                 test_timeout,
-                validated_deferrals,
                 workdir,
             ),
             code,
@@ -732,9 +653,7 @@ class _Job:
     task: Task
     new_branch: bool
     resolve: ResolveSpec | None = None
-    test_argv: tuple[str, ...] = DEFAULT_TEST_COMMAND
     test_timeout: int = DEFAULT_TEST_TIMEOUT
-    validated_deferrals: tuple[str, ...] = ()
     workdir: str = "."
 
 
@@ -783,18 +702,11 @@ def _execute(
     error: str | None = None
     prev = Path.cwd()
     saved_run_env = os.environ.get(basemoves.RUN_ENV)
-    saved_tier_env = os.environ.get(TEST_TIER_ENV)
-
-    def deferred(step: CodeStep) -> None:
-        if step.defer_to not in job.validated_deferrals:
-            raise TaskRunError("invalid_test_deferral", f"unvalidated {step.defer_to}")
 
     try:
         try:
             os.chdir(worktree)
             os.environ[basemoves.RUN_ENV] = row.run_id
-            if resolve is not None:  # a rebase mixes two lines of work: test everything
-                os.environ[TEST_TIER_ENV] = "full"
             with _signals_restored(), agent_workdir(job.workdir):
                 wf = run_workflow(
                     workflow,
@@ -806,10 +718,7 @@ def _execute(
                     write_guard=guard,
                     prompt_variables=variables,
                     label=row.task_id,
-                    test_command=job.test_argv,
                     test_timeout=job.test_timeout,
-                    test_baseline=row.base_sha,
-                    defer_resolver=deferred,
                     generated=resolve.generated if resolve is not None else (),
                     test_slots=TestSlots(default_slots_dir(), settings.test_slots),
                     phase_gate=PauseGate(store, row.run_id),
@@ -820,10 +729,6 @@ def _execute(
                 os.environ.pop(basemoves.RUN_ENV, None)
             else:
                 os.environ[basemoves.RUN_ENV] = saved_run_env
-            if saved_tier_env is None:
-                os.environ.pop(TEST_TIER_ENV, None)
-            else:
-                os.environ[TEST_TIER_ENV] = saved_tier_env
     except Exception as exc:
         error = str(exc)[:2000] or type(exc).__name__
     except BaseException as exc:

@@ -22,9 +22,10 @@ from cli_json import run_json
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "run"))
 
 from run_repo import Script, commit_all, fake_env, ok, write  # noqa: E402
+from workflow_fakes import plan_envelope  # noqa: E402
 
 Capsys = pytest.CaptureFixture[str]
-DEFAULT_AGENTS = ["planner", "builder", "reviewer", "documenter"]
+DEFAULT_AGENTS = ["planner", "builder", "tester", "reviewer", "documenter"]
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -121,9 +122,9 @@ def test_init_from_seed_without_library(repo: Path, home: Path, capsys: Capsys) 
     agents = load(repo, ".factory/agents.yaml")["agents"]
     assert [a["name"] for a in agents] == DEFAULT_AGENTS
     assert agents[0]["writes"] == ["specs/"]
-    assert agents[3]["writes"] == ["app_docs/"]
+    assert agents[4]["writes"] == ["app_docs/"]
     prompts = list((repo / ".factory" / "prompts").rglob("*.md"))
-    assert len(prompts) == 8
+    assert len(prompts) == 10
     assert not any(b"haifa-validate" in p.read_bytes() for p in prompts)
     assert (repo / ".factory/workflows/simple-sdlc.yaml").read_bytes() == (
         DEFAULT_WORKFLOWS_DIR / "simple-sdlc.yaml"
@@ -188,7 +189,9 @@ def test_bind_sets_harness_model_and_thinking(repo: Path, capsys: Capsys) -> Non
         "gpt-5.5",
         "high",
     )
-    assert all(agents[n]["harness"] == "claude" for n in ("planner", "reviewer", "documenter"))
+    assert all(
+        agents[n]["harness"] == "claude" for n in ("planner", "tester", "reviewer", "documenter")
+    )
 
 
 @pytest.mark.parametrize("bind", ["builder=nope", "scout=claude", "builder", "builder=claude::x"])
@@ -332,8 +335,7 @@ def test_task_runs_in_an_installed_repo(repo: Path, capsys: Capsys, script: Scri
     write(
         repo,
         f"backlog/M01-core/S01-model/{TASK}-schema.md",
-        f"---\nid: {TASK}\ntitle: Schema\nstatus: todo\ntest: git --version\n---\n\n"
-        "## Zadání\nNavrhnout schéma.\n",
+        f"---\nid: {TASK}\ntitle: Schema\nstatus: todo\n---\n\n## Zadání\nNavrhnout schéma.\n",
     )
     commit_all(repo, "install factory")
 
@@ -341,6 +343,7 @@ def test_task_runs_in_an_installed_repo(repo: Path, capsys: Capsys, script: Scri
     script.add("planner", ok(artifacts=[SPEC], commit_message="Add schema spec"))
     script.on("builder", lambda wt: write(wt, "src/app/model.py", "x = 1\n"))
     script.add("builder", ok(changed_files=["src/app/model.py"], commit_message="Add model"))
+    script.add("tester", plan_envelope("git", "--version"))
     script.add("reviewer", ok(approved=True, findings=[{"requirement": "x", "met": True}]))
     script.on("documenter", lambda wt: write(wt, DOC, "# doc\n"))
     script.add("documenter", ok(artifacts=[DOC], commit_message="Document schema"))
@@ -352,64 +355,3 @@ def test_task_runs_in_an_installed_repo(repo: Path, capsys: Capsys, script: Scri
     assert result.workflow_run is not None and result.workflow_run.exit_code == 0
     assert _git(repo, "show", f"{row.branch}:src/app/model.py") == "x = 1"
     assert _git(repo, "show", f"{row.branch}:{DOC}") == "# doc"
-
-
-# ── test_command suggestion (HAIFA-S04-T03) ──────────────────────────────────
-
-
-def test_init_writes_detected_test_command(repo: Path, home: Path, capsys: Capsys) -> None:
-    write(repo, "Cargo.toml", "[package]\n")
-    write(repo, "Makefile", "test:\n\tcargo test\n")
-
-    rc, env = init(capsys, repo)
-
-    assert rc == 0, env
-    choice = env["data"]["test_command"]
-    assert choice["command"] == "cargo test" and choice["source"] == "detected"
-    assert [c["command"] for c in choice["candidates"]] == ["cargo test", "make test"]
-    assert load(repo, ".factory/config.yaml")["test_command"] == "cargo test"
-    assert not any("test_command" in w for w in env["warnings"])
-
-
-def test_init_text_lists_other_candidates(repo: Path, home: Path, capsys: Capsys) -> None:
-    from aifactory.cli import main
-
-    write(repo, "justfile", "test:\n\tpytest\n")
-    write(repo, "go.mod", "module x\n")
-
-    assert main(["init", "--repo", str(repo)]) == 0
-
-    out = capsys.readouterr().out
-    assert "just test (detected)" in out
-    assert "candidate   go test ./... (go.mod)" in out
-    assert load(repo, ".factory/config.yaml")["test_command"] == "just test"
-
-
-def test_init_test_command_option_overrides(repo: Path, home: Path, capsys: Capsys) -> None:
-    write(repo, "go.mod", "module x\n")
-
-    rc, env = init(capsys, repo, "--test-command", "go test -race ./...")
-
-    assert rc == 0, env
-    choice = env["data"]["test_command"]
-    assert choice["command"] == "go test -race ./..." and choice["source"] == "option"
-    assert [c["command"] for c in choice["candidates"]] == ["go test ./..."]
-    assert load(repo, ".factory/config.yaml")["test_command"] == "go test -race ./..."
-
-
-@pytest.mark.parametrize("value", ["", "  ", "pytest 'unclosed"])
-def test_init_rejects_bad_test_command(repo: Path, home: Path, capsys: Capsys, value: str) -> None:
-    rc, env = init(capsys, repo, "--test-command", value)
-
-    assert rc == 2 and env["error"]["code"] == "invalid_value"
-    assert not (repo / ".factory").exists()
-
-
-def test_init_without_candidates_keeps_default(repo: Path, home: Path, capsys: Capsys) -> None:
-    rc, env = init(capsys, repo)
-
-    assert rc == 0, env
-    choice = env["data"]["test_command"]
-    assert choice == {"command": "just test", "source": "default", "candidates": []}
-    assert "test_command" not in load(repo, ".factory/config.yaml")
-    assert any("test_command" in w and "just test" in w for w in env["warnings"])

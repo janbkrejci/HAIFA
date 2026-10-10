@@ -1,62 +1,44 @@
-"""Versioned selector protocol; argv is always executed without a shell."""
+"""The checks a tester agent chose for a run; argv is always executed without a shell."""
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field
 
 Text = Annotated[str, Field(min_length=1, pattern=r"\S")]
 Argv = Annotated[list[Text], Field(min_length=1)]
+Coverage = Literal["full", "scoped", "none"]
+MAX_CHECKS = 32
 
 
-class StrictModel(BaseModel):
-    model_config = ConfigDict(strict=True, extra="forbid")
+class Check(BaseModel):
+    model_config = ConfigDict(extra="forbid")
 
-    @field_validator("version", mode="before", check_fields=False)
-    @classmethod
-    def strict_version(cls, value: object) -> object:
-        if type(value) is not int:
-            raise ValueError("version must be an integer")
-        return value
-
-
-class Check(StrictModel):
     name: Text
     argv: Argv
     timeout: Annotated[int, Field(gt=0)] | None = None
 
 
-class Plan(StrictModel):
-    version: Literal[1] = 1
-    coverage: Literal["full", "scoped", "none", "deferred"]
-    reason: Text
-    checks: Annotated[list[Check], Field(max_length=32)]
-
-    @model_validator(mode="after")
-    def coherent(self) -> "Plan":
-        if bool(self.checks) != (self.coverage in ("full", "scoped")):
-            raise ValueError("coverage and checks disagree")
-        if len({c.name for c in self.checks}) != len(self.checks):
-            raise ValueError("duplicate check names")
-        if any("/" in c.name or "\\" in c.name or c.name in (".", "..") for c in self.checks):
-            raise ValueError("check names must be safe artifact names")
-        return self
+def plan_problems(coverage: str, checks: list[Check]) -> list[str]:
+    """What makes a plan unusable; empty when it can run."""
+    problems = []
+    if bool(checks) != (coverage in ("full", "scoped")):
+        problems.append("coverage `none` has no checks; `full` and `scoped` need at least one")
+    if len(checks) > MAX_CHECKS:
+        problems.append(f"at most {MAX_CHECKS} checks")
+    names = [c.name for c in checks]
+    if len(set(names)) != len(names):
+        problems.append("check names must be unique")
+    if any("/" in n or "\\" in n or n in (".", "..") for n in names):
+        problems.append("check names must be safe file names (no slashes)")
+    return problems
 
 
-class Context(StrictModel):
-    version: Literal[1] = 1
-    repo_root: Text
-    baseline: Text
-    head: Text
-    changed_paths: list[str]
-    force_full: bool
-    fallback_argv: Argv
-    test_timeout: Annotated[int, Field(gt=0)]
-    defer_to: Text | None = None
+class Evidence(BaseModel):
+    """What the `test` step ran, kept on its result for the reviewer and the PR body."""
 
+    model_config = ConfigDict(extra="forbid")
 
-class Evidence(StrictModel):
-    coverage: Literal["full", "scoped", "none", "deferred", "legacy"]
+    coverage: Coverage
     reason: Text
     executed: Annotated[int, Field(ge=0)]
-    defer_to: Text | None = None
-    fallback_reason: str | None = None
+    commands: list[str] = Field(default_factory=list)

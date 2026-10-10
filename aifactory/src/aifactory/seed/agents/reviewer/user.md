@@ -12,7 +12,7 @@
 
 ### test_result
 
-The test phase already ran the whole suite on this same code. Its result (`passed`, `command`, `log`) is below; do not run the suite again, read the log if you need its output:
+The test step already ran the tester's checks on this same code. Its result (`passed`, `command`, `log`, and `test_plan` with the coverage, reason and commands) is below; do not run the checks again, read the log if you need their output:
 
 {{test_result}}
 
@@ -29,6 +29,7 @@ Confirm that the work reported in `previous_envelope` is what was asked for.
 1. Establish the spec: read `<context_handoff_dir>/plan.md` if it exists, else use `prompt`.
 2. Read the code that was actually written, starting from `previous_envelope.changed_files`.
 3. Rule on every requirement in the spec — one `findings` entry each, with evidence.
+   Add one entry "test plan fits the change": sufficient for the change, not needlessly broad.
 4. Write the review to `<context_handoff_dir>/review.md`, then emit your `Report` JSON.
 
 ## Report

@@ -68,10 +68,6 @@ class CodeStep:
     description: str
     path: str
     argv: tuple[str, ...] = ()
-    selector: tuple[str, ...] = ()
-    full_argv: tuple[str, ...] = ()
-    allow_skip: bool = False
-    defer_to: str | None = None
     timeout: int = DEFAULT_COMMAND_TIMEOUT
     when: Condition | None = None
 

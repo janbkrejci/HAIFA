@@ -25,7 +25,7 @@ ROSTER_FILES: tuple[tuple[str, str], ...] = (
 )
 WORKFLOW = ".factory/workflows/simple-sdlc.yaml"
 AGENTS_CONFIG = ".factory/agents.yaml"
-REQUIRED_AGENTS = ("planner", "builder", "reviewer", "documenter")
+REQUIRED_AGENTS = ("planner", "builder", "tester", "reviewer", "documenter")
 
 
 def _agent_names(path: Path) -> list[str]:

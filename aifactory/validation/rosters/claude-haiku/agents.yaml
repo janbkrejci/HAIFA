@@ -18,6 +18,10 @@ agents:
   - name: builder
     purpose: Implement the plan exactly; report every changed file.
 
+  - name: tester
+    purpose: Choose the checks that verify the change; change nothing.
+    writes: []
+
   - name: reviewer
     purpose: Confirm that what was built is what was asked for; change nothing.
     writes: []

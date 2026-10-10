@@ -16,8 +16,8 @@ Only the tree of base is read (``ls-tree`` and ``cat-file``) and of the rosters 
   extension item; the agent binding is ``harness_engineering: [.factory/extensions/...]``.
 - chains: stock chains by blob id are the library workflows of the same name;
   ``simple-sdlc`` is always added, the others with ``--workflows``.
-- ``adws/adw_modules/quality.py``: the test block's literal argv and timeout become
-  ``test_command`` and ``test_timeout`` (read with ``ast``, nothing runs).
+- ``adws/adw_modules/quality.py``: the test block's literal timeout becomes
+  ``test_timeout`` (read with ``ast``, nothing runs); the tester agent picks the checks.
 """
 
 from __future__ import annotations
@@ -378,8 +378,6 @@ class _Converter:
         }
         if detected.provider == "azure" and detected.info.azure is not None:
             values["azure"] = dict(detected.info.azure)
-        if self.test_command is not None:
-            values["test_command"] = list(self.test_command)
         if self.test_timeout is not None:
             values["test_timeout"] = self.test_timeout
         try:
@@ -399,8 +397,6 @@ class _Converter:
             config["azure"] = s.azure.model_dump(mode="json")
         config.update({"backlog_dir": s.backlog_dir, "specs_dir": s.specs_dir})
         config["docs_dir"] = s.docs_dir
-        if s.test_command is not None:
-            config["test_command"] = list(s.test_command)
         if s.test_timeout is not None:
             config["test_timeout"] = s.test_timeout
         config["protected_files"] = list(s.protected_files)
@@ -420,7 +416,6 @@ class _Converter:
         )
 
     def quality(self) -> None:
-        self.test_command: tuple[str, ...] | None = None
         self.test_timeout: int | None = None
         text = self.data(QUALITY_FILE)
         if text is None:
@@ -433,30 +428,15 @@ class _Converter:
             return
         for name, block in blocks.items():
             subject = f"{QUALITY_FILE}:{name}"
-            if name == "test":
-                if block.placeholder:
-                    rows.append(
-                        ReportRow(
-                            "not_converted",
-                            subject,
-                            "placeholder; set test_command in .factory/config.yaml",
-                        )
+            if name == "test" and block.literal and block.timeout is not None:
+                self.test_timeout = block.timeout
+                rows.append(
+                    ReportRow(
+                        "converted",
+                        subject,
+                        f"test_timeout {block.timeout}; the tester agent chooses the checks",
                     )
-                elif not block.literal or block.argv is None:
-                    rows.append(
-                        ReportRow(
-                            "manual",
-                            subject,
-                            "argv or timeout_seconds is not a literal; set test_command and "
-                            "test_timeout in .factory/config.yaml",
-                        )
-                    )
-                else:
-                    self.test_command, self.test_timeout = block.argv, block.timeout
-                    message = f"test_command [{', '.join(block.argv)}]"
-                    if block.timeout is not None:
-                        message += f", test_timeout {block.timeout}"
-                    rows.append(ReportRow("converted", subject, message))
+                )
                 continue
             if block.placeholder:
                 what = "placeholder"
@@ -468,7 +448,7 @@ class _Converter:
                 ReportRow(
                     "not_converted",
                     subject,
-                    f"{what}; HAIFA runs only the test command (test_command)",
+                    f"{what}; the tester agent chooses the checks of every run",
                 )
             )
         if not same_as_stock(source, stock().quality_source):

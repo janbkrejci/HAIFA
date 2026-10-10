@@ -24,7 +24,6 @@ def test_sample_config_loads(tmp_path: Path) -> None:
     assert agents["planner"].prompt_engineering.system == ".factory/prompts/planner/system.md"
     assert "{{prompt}}" in config.prompts["planner"].user
     assert config.prompts["builder"].system == "You are the builder.\n"
-    assert config.settings.test_command == ("pytest", "-q")
     assert config.workflows["plan-build"] == {"name": "plan-build", "steps": ["plan", "build"]}
     assert config.source == str(repo.resolve())
 

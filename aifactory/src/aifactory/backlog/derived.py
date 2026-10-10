@@ -36,16 +36,9 @@ def has_workflow(task: Task) -> bool:
     return effective_workflow(task) is not None
 
 
-def effective_test(task: Task) -> object:
-    """The nearest ``test``: the task's own, then ``index.md`` upwards; ``None`` when unset.
-
-    A level without the key or with ``null`` is skipped.
-    """
-    return _nearest(task, "test")
-
-
 def effective_test_timeout(task: Task) -> object:
-    """The nearest ``test_timeout``, looked up like ``test``; ``None`` when unset."""
+    """The nearest ``test_timeout``: the task's own, then ``index.md`` upwards; ``None``
+    when unset. A level without the key or with ``null`` is skipped."""
     return _nearest(task, "test_timeout")
 
 
@@ -144,7 +137,6 @@ def progress(container: Container) -> tuple[int, int]:
 # keys whose ``null`` at a level is skipped (the next level up decides); for the other
 # inherited keys the nearest level that has the key wins, even with ``null``
 _SKIP_NULL_KEYS: tuple[str, ...] = (
-    "test",
     "test_timeout",
     "specs_dir",
     "docs_dir",
@@ -154,7 +146,6 @@ _SKIP_NULL_KEYS: tuple[str, ...] = (
 )
 # inherited keys with a fallback in ``.factory/config.yaml`` (key -> setting)
 CONFIG_FALLBACK: dict[str, str] = {
-    "test": "test_command",
     "test_timeout": "test_timeout",
     "specs_dir": "specs_dir",
     "docs_dir": "docs_dir",

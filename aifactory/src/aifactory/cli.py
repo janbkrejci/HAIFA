@@ -442,11 +442,7 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
         "library. Workflows add the agents of their steps; --bind sets harness, model and "
         "thinking per agent. Three modes. Without --dry-run and --commit the files are "
         "written to the working tree, existing files are skipped unless --force and nothing "
-        "is committed; test_command in .factory/config.yaml is suggested from the files in "
-        "the repo root (justfile, pyproject.toml/pytest.ini, package.json, *.sln/*.csproj, "
-        "Cargo.toml, go.mod, Makefile): the first candidate is written, the others are "
-        "listed; --test-command overrides it, with no candidate the default just test stays "
-        "and a warning is printed. --dry-run returns the plan: files with content, blockers, "
+        "is committed. --dry-run returns the plan: files with content, blockers, "
         "warnings, digest, the detected remote, base, provider and harness CLIs (detected) "
         "and the agents and workflows on offer (available); it writes nothing. --commit makes "
         "the same plan one commit on base (pushed before base moves; --pr opens a pull "
@@ -488,11 +484,6 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--workflows", metavar="LIST", help="comma-separated workflows (default: simple-sdlc)"
-    )
-    parser.add_argument(
-        "--test-command",
-        metavar="CMD",
-        help="test_command for .factory/config.yaml (default: suggested from the repo root)",
     )
     parser.add_argument("--backlog-dir", metavar="DIR", help="backlog directory (default: backlog)")
     parser.add_argument(
@@ -542,7 +533,7 @@ def _add_onboard_command(parser: argparse.ArgumentParser) -> None:
         "(git merge-file; a changed system.md is merged into the library's, user.md is the "
         "library's), pi extensions from harness_engineering (.ts with its relative imports), "
         "stock chains by blob id -> library workflows (simple-sdlc always, the others with "
-        "--workflows), quality.py -> test_command and test_timeout (read with ast), "
+        "--workflows), quality.py -> test_timeout (read with ast), "
         "defaults.protected_files -> protected_files; adws/ stays byte for byte. Report "
         "codes (data.report[].code): linked, converted, carried_over, changed_meaning, "
         "not_converted, manual, left_in_place. Blockers: already_onboarded, not_installed, "
@@ -758,8 +749,6 @@ def _init_conflict(args: argparse.Namespace) -> str | None:
     azure = [args.azure_org, args.azure_project, args.azure_repo]
     if args.force and plan:
         return "--force only writes the working tree; not with --dry-run or --commit"
-    if args.test_command is not None and plan:
-        return "--test-command only writes the working tree; not with --dry-run or --commit"
     if args.pr and not plan:
         return "--pr needs --commit or --dry-run"
     if args.expect is not None and (args.dry_run or not args.commit):
@@ -815,7 +804,6 @@ def _init(args: argparse.Namespace) -> int:
             azure=azure,
             bindings=bindings,
             force=args.force,
-            test_command=args.test_command,
             **options,
         )
     except (LibraryStoreError, ProviderError) as exc:
@@ -828,11 +816,6 @@ def _init(args: argparse.Namespace) -> int:
         print(f"{'gitignore':<11} {line}")
     library = result.library
     print(f"source      {'seed' if library is None else f'library {library.name}'}")
-    choice = result.test_command
-    print(f"{'test':<11} {choice.command} ({choice.source})")
-    for candidate in choice.candidates:
-        if candidate.command != choice.command:
-            print(f"{'candidate':<11} {candidate.command} ({candidate.reason})")
     print(f"next: review, commit .factory/ {result.backlog_dir}/ .gitignore to {result.base}")
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
@@ -1987,12 +1970,6 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     edit.add_argument("--title", metavar="TEXT", help="new title")
     edit.add_argument("--workflow", metavar="NAME", help="set the workflow")
     edit.add_argument("--writes", nargs="*", metavar="PATH", help="set writes (none = [])")
-    edit.add_argument(
-        "--test",
-        nargs="+",
-        metavar="ARG",
-        help="set the test command: one argument is a shell string, more are argv",
-    )
     edit.add_argument("--source", metavar="TEXT", help="set source")
     edit.add_argument("--target", metavar="TEXT", help="set target")
     edit.add_argument("--specs-dir", metavar="DIR", help="set specs_dir")
@@ -2237,8 +2214,6 @@ def _backlog_container_write(args: argparse.Namespace) -> int:
                 value = getattr(args, key)
                 if value is not None:
                     values[key] = value
-            if args.test is not None:
-                values["test"] = args.test[0] if len(args.test) == 1 else args.test
             if args.auto_continue is not None:
                 values["auto_continue"] = args.auto_continue == "on"
             result = edit_container(
@@ -2409,12 +2384,6 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     add.add_argument("--depends-on", nargs="+", default=[], metavar="ID", help="dependencies")
     add.add_argument("--related", nargs="+", metavar="ID", help="related tasks")
     add.add_argument("--body", default="", metavar="TEXT", help="text of '## Zadání'")
-    add.add_argument(
-        "--test",
-        nargs="+",
-        metavar="ARG",
-        help="test command of the task (argv) instead of the inherited test_command",
-    )
 
     edit = sub.add_parser(
         "edit",
@@ -2791,7 +2760,6 @@ def _task_write(args: argparse.Namespace, root: Path) -> int:
             depends_on=args.depends_on,
             related=args.related,
             body=args.body,
-            test=args.test,
         )
     elif command == "edit":
         result = edit_task(

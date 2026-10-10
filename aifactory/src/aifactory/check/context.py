@@ -33,7 +33,6 @@ from aifactory.library.state import repo_items
 from aifactory.library.store import LibraryStoreError
 from aifactory.onboard.state import RepoState, repo_state
 from aifactory.run.gitops import extract_backlog
-from aifactory.run.task import DEFAULT_TEST_COMMAND
 
 
 class NotARepositoryError(Exception):
@@ -218,12 +217,6 @@ class CheckContext:
         if self.worktree_config is not None:
             return self.worktree_config.agents
         return None
-
-    @cached_property
-    def test_argv(self) -> tuple[str, ...]:
-        if self.settings.test_command is not None:
-            return tuple(self.settings.test_command)
-        return DEFAULT_TEST_COMMAND
 
     # -- remote --
 

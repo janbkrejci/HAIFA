@@ -6,6 +6,7 @@ linked agent/reviewer reviewer
 linked agent/documenter documenter
 changed_meaning agent/documenter/thinking -
 changed_meaning agent/documenter/writes -
+linked agent/tester tester
 not_converted adws/adw_data/harness_engineering/subagents.ts -
 not_converted adws/adw_data/harness_engineering/themeMap.ts -
 converted .factory/agents.yaml -

@@ -99,7 +99,6 @@ def context(
                         for k in (
                             "source",
                             "target",
-                            "test",
                             "test_timeout",
                             "specs_dir",
                             "docs_dir",
@@ -176,17 +175,6 @@ def context(
         if current[key] is not None:
             effective[key] = current[key]
     effective.update({k: v for k, v in current.get("parameters", {}).items() if v is not None})
-    # Like core.effective_test, a null at a nearer level inherits the next value.
-    effective["test"] = next(
-        (
-            values["test"]
-            for values in [current.get("parameters", {})]
-            + ([task.own] if task and "test" not in current.get("parameters", {}) else [])
-            + [ancestor["defaults"] for ancestor in parents]
-            if values.get("test") is not None
-        ),
-        rc.config.settings.test_command,
-    )
     return {
         "task_id": task_id,
         "task_snapshot": fingerprint(
@@ -209,8 +197,6 @@ def context(
             for key in (
                 "writes",
                 "workflow",
-                "test",
-                "test_command",
                 "source",
                 "target",
                 "harness",

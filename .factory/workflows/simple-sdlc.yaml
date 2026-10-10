@@ -1,9 +1,9 @@
 # YAML form of vendor/sssf/templates/adws/adw_simple_sdlc.py.
 #
 # Phases: engineer(request) -> planner -> git(commit_plan)
-#         -> builder -> code(test) [-> builder(fix) -> code(test) ... bounded]
+#         -> builder -> tester(test_plan) -> code(test) [-> builder(fix) -> code(test) ... bounded]
 #         -> reviewer [-> builder(revise) -> reviewer ... bounded]
-#         -> code(retest, only if a revision changed code)
+#         -> tester(replan) -> code(retest), only if a revision changed code
 #         -> git(commit_build) -> code(changes) -> documenter -> git(commit_docs)
 #
 # Loops (2.7): `until` is checked after every body step, and the last round ends
@@ -19,6 +19,7 @@ steps:
       description: Put the spec on record before any code exists to blur it
   - build:
       description: Implement the plan exactly
+  - test_plan
   - repeat: {max: 3, until: test.passed}
     steps:
       - test
@@ -31,10 +32,14 @@ steps:
           input: [build, fix, revise]
           description: Confirm the build matches the plan
       - revise
+  - test_plan:
+      id: replan
+      when: revise.ran and review.approved
+      description: Choose the checks again — the revision changed code after the last plan
   - test:
       id: retest
       when: revise.ran and review.approved
-      description: Re-run the suite — the revision changed code after the last green result
+      description: Re-run the checks — the revision changed code after the last green result
   - commit:
       id: commit_build
       when: test.passed and review.approved

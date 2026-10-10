@@ -13,7 +13,19 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from run_repo import SPEC, T01, T02, Script, commit_all, fake_env, git, make_run_repo, ok, write
+from run_repo import (
+    SPEC,
+    T01,
+    T02,
+    Script,
+    commit_all,
+    fake_env,
+    git,
+    make_run_repo,
+    ok,
+    plan_envelope,
+    write,
+)
 from workflow_fakes import FakeCodeRunner
 
 import aifactory.review
@@ -70,6 +82,11 @@ def run_both(repo: Path, script: Script, second: tuple[str, str] = (MODEL, "VALU
     other = run_task(repo, T02, force=True)
     assert other.ok, (other.run.error, other.pr_error)
     approve_task(repo, T01)
+
+
+def tester(script: Script) -> None:
+    """The tester's plan for the resolve run (one check; the suite result is scripted)."""
+    script.add("tester", plan_envelope())
 
 
 def resolver(script: Script, *effects: Callable[[Path], object], **fields: Any) -> None:
@@ -139,6 +156,7 @@ def test_conflict_resolve_then_approve(
 
     before_pr = stored_pr(repo)
     resolver(script, settle, changed_files=[MODEL], commit_message="Resolve model conflict")
+    tester(script)
     code_runner = ResolveCode([True])
 
     def with_fakes(repo_: Path, task_id: str, **kwargs: Any) -> TaskRunResult:
@@ -180,6 +198,7 @@ def test_clean_rebase_skips_agent(repo: Path, script: Script) -> None:
     run_both(repo, script, ("src/app/loader.py", "LOADER = 1\n"))
     before = tip(repo)
 
+    tester(script)
     result = resolve_task(repo, T02, code=ResolveCode([True]))
 
     assert result.ok, (result.run.error, result.pr_error)
@@ -199,6 +218,7 @@ def test_unresolved_conflict_restores_branch(repo: Path, script: Script) -> None
     base_sha = stored_pr(repo).base_sha
     resolver(script)
 
+    tester(script)
     result = resolve_task(repo, T02, code=ResolveCode([True]))
 
     assert result.run.error is not None and "conflict markers" in result.run.error
@@ -221,6 +241,7 @@ def test_red_suite_restores_branch(repo: Path, script: Script) -> None:
     for value in (4, 5):  # fix_1, fix_2: the suite stays red, test_3 ends the loop
         resolver(script, _writer(f"VALUE = {value}\n"), changed_files=[MODEL])
 
+    tester(script)
     result = resolve_task(repo, T02, code=ResolveCode([False, False, False]))
 
     assert len(builder_calls(script)) == 3
@@ -231,6 +252,7 @@ def test_clean_rebase_red_suite_restores_branch(repo: Path, script: Script) -> N
     run_both(repo, script, ("src/app/loader.py", "LOADER = 1\n"))
     before = tip(repo)
 
+    tester(script)
     result = resolve_task(repo, T02, code=ResolveCode([False, False, False]))
 
     assert builder_calls(script) == []
@@ -240,7 +262,7 @@ def test_clean_rebase_red_suite_restores_branch(repo: Path, script: Script) -> N
 class SuiteCode(ResolveCode):
     """A real ``rebase`` and a suite that is red exactly while the model says ``BROKEN``."""
 
-    def test(self, run: Any) -> Any:
+    def test(self, run: Any, plan: Any) -> Any:
         text = (Path(run.repo_root) / MODEL).read_text(encoding="utf-8")
         return self._result("BROKEN" not in text, "test")
 
@@ -261,6 +283,7 @@ def test_fix_repairs_what_resolve_broke(repo: Path, script: Script) -> None:
         commit_message="Fix model",
     )
 
+    tester(script)
     result = resolve_task(repo, T02, code=SuiteCode([]))
 
     assert result.run.state == "succeeded", result.run.error
@@ -272,6 +295,7 @@ def test_fix_repairs_what_resolve_broke(repo: Path, script: Script) -> None:
         "request",
         "rebase",
         "resolve",
+        "test_plan",
         "rebuild_1",
         "test_1",
         "fix_1",
@@ -293,6 +317,7 @@ def test_resolver_outside_conflict_is_breach(repo: Path, script: Script) -> None
 
     resolver(script, settle_and_more, changed_files=[MODEL, "src/app/other.py"])
 
+    tester(script)
     result = resolve_task(repo, T02, code=ResolveCode([True]))
 
     assert result.run.error is not None and "src/app/other.py" in result.run.error
@@ -312,6 +337,7 @@ def test_resolve_force_pushes(repo: Path, script: Script, tmp_path: Path) -> Non
     assert git(origin, "rev-parse", BRANCH2) == before
     resolver(script, settle, changed_files=[MODEL])
 
+    tester(script)
     result = resolve_task(repo, T02, code=ResolveCode([True]))
 
     assert result.ok, (result.run.error, result.pr_error)
@@ -336,34 +362,3 @@ def test_help_mentions_resolve(capsys: Capsys) -> None:
         main(["task", "resolve", "--help"])
     out = capsys.readouterr().out
     assert "rebase" in out and "before the rebase" in out
-
-
-def test_docs_only_resolve_forces_full_tests(repo: Path, script: Script) -> None:
-    import sys
-
-    from aifactory.testing.context import docs_only
-    from aifactory.testing.executor import execute
-
-    run_both(repo, script, (SPEC2, "# Documentation update\n"))
-
-    class DocsResolve(ResolveCode):
-        def test(self, run: Any) -> Any:
-            return execute(
-                run,
-                [
-                    sys.executable,
-                    "-c",
-                    'print(\'{"version":1,"coverage":"none","reason":"docs","checks":[]}\')',
-                ],
-                [sys.executable, "-c", "print('full verification executed')"],
-                allow_skip=True,
-            )
-
-    result = resolve_task(repo, T02, code=DocsResolve([]))
-    assert result.ok, (result.run.error, result.pr_error)
-    paths = git(repo, "diff", "--name-only", "main", BRANCH2).splitlines()
-    assert paths and docs_only(paths)
-    assert result.workflow_run is not None
-    evidence = result.workflow_run.results["test"]["test_plan"]
-    assert evidence["coverage"] == "full" and evidence["executed"] == 1
-    assert builder_calls(script) == []

@@ -181,16 +181,12 @@ YAML front matter; HAIFA writes the keys in this order: `{{field_order}}`.
 - `writes` is the list of paths or globs the agents may change; anything else is rolled back.
   A task needs `writes` (own or inherited) to run.
 - `workflow` names the workflow (own or inherited).
-- `test` is the command of the workflow's `test` steps (own or inherited): a string split
-  like a shell (`"uv run pytest -q"`) or a list of strings (`[uv, run, pytest, -q]`). An
-  invalid value is reported by `factory backlog check` and stops `factory task run` with
-  `invalid_test`.
-- `test_timeout` is the time limit of the workflow's `test` steps in whole seconds greater
-  than 0 (own or inherited, like `test`); without it `test_timeout` from
+- `test_timeout` is the shared time limit of the checks a workflow's `test` step runs, in
+  whole seconds greater than 0 (own, or the nearest `index.md` above); without it `test_timeout` from
   `.factory/config.yaml`, else 600. An invalid value is reported by `factory backlog check`
   and stops `factory task run` with `invalid_test_timeout`.
 - `specs_dir` and `docs_dir` are the directories of the task's spec and documentation
-  (own or inherited, like `test`); without them those of `.factory/config.yaml`. A value
+  (own or inherited, like `test_timeout`); without them those of `.factory/config.yaml`. A value
   must be a relative path inside the repository; otherwise `factory backlog check` reports
   it and `factory task run` stops with `invalid_output_dir`.
 
@@ -214,7 +210,6 @@ Example `{{index_file}}` of a project (its id is any short code, e.g. `M01` or `
 id: M01
 title: Core
 workflow: plan-build-test
-test: "uv run pytest"
 source: src/
 target: src/
 writes: [src/]
@@ -270,7 +265,7 @@ Hard constraints: do not change `src/model/`.
 
 Shared settings are committed in `.factory/config.yaml`. Create them through
 `factory init` (or retain the configuration converted by `factory onboard`),
-review the detected base, provider and test command, then edit the YAML to fit
+review the detected base and provider, then edit the YAML to fit
 this repository. Validate with `factory check --json` and
 `factory backlog check --json`; review and commit using Commit configuration.
 Runs read these files from base. Machine-local `trace_db` and `database_url`
@@ -319,6 +314,7 @@ double braces around their names:
 | `spec_path`, `doc_path` | Specification and documentation paths relative to the worktree. |
 | `workdir` | Absolute task worktree path. |
 | `test_result` | Latest test results as JSON. |
+| `baseline` | Commit the run started from; `git diff <baseline>` is the whole change. |
 | `rebase_onto` | Target commit, only in conflict resolution runs. |
 
 `<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at exactly that path; never create a directory of the same name inside the repo or the worktree.
@@ -326,9 +322,8 @@ double braces around their names:
 A workflow role step's `input` mapping supplies additional named variables with
 JSON results of the selected earlier steps. Engine variables take precedence on
 a collision; unknown variables remain unchanged. A workflow `test` step executes
-code, not an agent prompt: task `test` → step `test` → project `test` →
-config `test_command` → `just test`. Exit 0 passes; timeout and slots follow the
-Workflow format rules below.
+code, not an agent prompt: it runs the checks the latest `test_plan` step chose.
+Timeout and slots follow the Workflow format rules below.
 
 Editing a tracked agent prompt in this repository makes its item `modified`
 when the library has not moved (or `diverged` if both changed).
@@ -355,13 +350,21 @@ packaged workflows: {{workflows}}.
   `thinking` (one of {{thinking_levels}}), `when`, `id`, `description` and `input`.
 - Code steps are {{code_actions}}. `command` needs `id` and `argv` (a list) and takes an
   optional `timeout`. Code steps reject `agent`, `harness`, `model` and `thinking`.
-- A `test` step (also under another `id`, e.g. `retest`) runs the task's `test`, else the
-  nearest `index.md` `test` above it (step, then project), else `test_command` from
-  `.factory/config.yaml`, else `just test`; it passes when the command exits 0. Its time
-  limit is the task's `test_timeout`, else the nearest `index.md` `test_timeout`, else
-  `test_timeout` from `.factory/config.yaml`, else 600 s; a command over the limit is
-  stopped and the step fails (exit 124, "exceeded the time limit"). The trace event
-  `quality:test` records the command that ran and its `timeout_seconds`.
+- A `test_plan` role step (agent `tester`) reads the change since the `baseline` prompt variable and the
+  repo, and returns `coverage` (`full`, `scoped` or `none`), `reason` and `checks`
+  (`name`, `argv` list, optional `timeout` in seconds): enough checks to trust the
+  change, nothing beyond. There is no configured test command; every repo, whatever its
+  stack, gets its checks from the tester. The gate `checks_runnable` requires the first
+  argv element of every check on PATH or as a file in the worktree.
+- A `test` step (also under another `id`, e.g. `retest`) runs the checks of the latest
+  `test_plan` in order, without a shell, and stops at the first failure; a workflow with a
+  `test` and no earlier `test_plan` is invalid (`test_without_plan`). `none` runs nothing
+  and passes. The checks share one time limit: the task's `test_timeout`, else the
+  nearest `index.md` `test_timeout`, else `test_timeout` from `.factory/config.yaml`,
+  else 600 s; a check over the limit is stopped and the step fails (exit 124). The
+  step's `test_plan` field (also in the `test_result` prompt variable) records coverage, reason, the commands
+  and how many ran. Reviewers judge the plan: enough to trust the change, not wider than
+  it needs.
 - At most `test_slots` (`.factory/config.yaml`, whole number ≥ 1, default 1) `test`
   steps run their command on the machine at once; the others wait in a queue in the
   order they asked (`<HAIFA home>/test_slots`). The wait is traced as `test_slot` events
@@ -404,6 +407,7 @@ steps:
   - build:
       harness: codex
       thinking: high
+  - test_plan
   - repeat: {max: 3, until: test.passed}
     steps:
       - test
@@ -449,8 +453,7 @@ repository, the trace DB, the library or the home directory, and never fetches.
      `factory upgrade`).
    - Platform and tools: `unsupported_platform` (only macOS, Linux and WSL),
      `git_missing`, `git_identity_missing` (`git config --global user.name/user.email`),
-     `uv_missing` (install uv), `just_missing`, `test_command_missing` (the first word of
-     the test command is not on PATH), `node_missing` (a roster with pi needs node).
+     `uv_missing` (install uv), `node_missing` (a roster with pi needs node).
    - Harnesses: `harness_missing` (error for a harness the roster uses; outside a
      repository `info` for each of claude, codex and pi), `harness_login` (`claude auth
      status`, `codex login status`, `pi auth check --model M --json --no-refresh` failed;
@@ -592,7 +595,7 @@ There is no importer; converting a plan is this procedure (D12).
    `factory backlog add --id CODE --title TEXT [--body TEXT] --json` (a project) and
    `factory backlog add PROJECT --id PROJECT-CODE --title TEXT --json` (a step; its id
    starts with the project id and `-`, its directory drops that prefix:
-   `M01-S03` -> `S03-<slug>`). Put shared defaults (`workflow`, `writes`, `test`, ...) into
+   `M01-S03` -> `S03-<slug>`). Put shared defaults (`workflow`, `writes`, ...) into
    the project or step index with `factory backlog edit ID --workflow NAME --writes PATH ...
    --json` (`--clear KEY ...` removes a key; keys it does not know stay as they are). The
    project id is any short code; keep the module's code from the plan (e.g. `M01`).
@@ -612,9 +615,8 @@ Example with the default project → step → task hierarchy:
 
 ```bash
 factory backlog add --id M01 --title "Core" --json
-factory backlog edit M01 --workflow simple-sdlc --writes src/ tests/ --test "uv run pytest" --json
+factory backlog edit M01 --workflow simple-sdlc --writes src/ tests/ --json
 factory backlog add M01 --id M01-S01 --title "API" --json
-factory backlog edit M01-S01 --test "uv run pytest tests/api" --json
 factory task add M01-S01 "Health endpoint" --id M01-S01-T01 --body "Add GET /health; cover HTTP 200 in tests/api." --json
 factory backlog check --json
 factory backlog commit --json
@@ -741,24 +743,6 @@ the rebase. Then approve.
 - `factory backlog sync --json` finds task PRs merged outside factory and opens one sync PR
   that marks them done (never commits to base, never merges it).
 - `factory task clean --json` removes worktrees of merged, closed or abandoned runs.
-
-### Choose the test command
-
-`factory init [--repo PATH] [--test-command CMD] --json` installs factory into a repo that
-has none (see the command list for the other options).
-
-1. `test_command` in `.factory/config.yaml` is suggested from the files directly in the repo
-   root (subdirectories are not searched, nothing is run). Candidates, in this order:
-{{test_command_rules}}
-2. The first candidate is written as `test_command`; `data.test_command` returns `command`,
-   `source` (`detected`, `option` or `default`) and every `candidates[]` (`tech`, `command`,
-   `reason`), and the text output lists the other candidates. Confirm the suggestion or
-   change it in `.factory/config.yaml` before committing.
-3. `--test-command "CMD"` overrides the suggestion (`source` `option`; empty or unparsable
-   is `invalid_value`).
-4. With no candidate no `test_command` is written, the default `just test` stays (`source`
-   `default`) and a warning asks to set it.
-5. Onboarding reuses the same detection: `aifactory.techstack.suggest_test_commands(root)`.
 
 ### Upgrade
 
@@ -1134,8 +1118,8 @@ What is taken from sssf and with which code:
 | stock chain (by blob id) | library workflow of the same name: `simple-sdlc` always, the others with `--workflows` | `linked` / `not_converted` |
 | changed chain, unknown `adw_*.py` | nothing; port by hand | `manual` |
 | other stock scripts, recipes | nothing | `not_converted` |
-| `quality.py` test block (literal argv, `timeout_seconds`) | `test_command`, `test_timeout` | `converted` |
-| `quality.py` lint, typecheck, build | nothing | `not_converted` |
+| `quality.py` test block (literal `timeout_seconds`) | `test_timeout` | `converted` |
+| `quality.py` argv of every block | nothing; the tester agent picks the checks | `not_converted` |
 | other changes of `adw_modules/` | engine code | `manual` |
 | `adws/`, `.claude/skills/sssf/`, `justfile`, `.env`, `.env.sample` | stay | `left_in_place` |
 
@@ -1188,25 +1172,3 @@ a retry of a partially successful batch. Commit message changes do not create an
 PR for the same contents. An edited published branch is skipped with `plan_changed`;
 base and the working tree stay unchanged.
 
-### Adaptive testing in workflows
-
-A `test` code step can opt into `selector: [binary, args...]`, `full_argv:
-[binary, args...]`, `allow_skip: true` and `defer_to: TASK-ID`. These options
-are local to the step; without a selector the task/index/config test command
-keeps its existing priority. A selector reads a version-1 JSON context on stdin
-(repo_root, baseline, head, changed_paths, force_full, fallback_argv,
-test_timeout, defer_to) and emits one JSON plan on stdout. Diagnostics use stderr.
-The plan contains version, coverage (`full`, `scoped`, `none`, `deferred`), reason
-and checks (`name`, argv list, optional positive timeout in seconds).
-
-Checks run sequentially in the worktree, stop at the first failure, share one
-slot and the step timeout. Selector errors fall back to full_argv or the effective
-legacy command with full testing requested. Resolve forces full testing.
-`none` needs allow_skip and a verified documentation-only diff. `deferred` needs
-an existing, unfinished task in the same project, with a fixed test workflow and
-an explicit test command equal to full_argv; targets cannot defer again.
-Task runs validate references before builders start; standalone workflows need a
-resolver. `test_plan` in test_result/reports records coverage, reason, executed
-checks, defer_to and fallback_reason. Passing a skip/deferred policy means zero
-tests ran, and never proves the full suite green. Operators must schedule the
-aggregate task themselves, after the development group or before release.

@@ -13,7 +13,6 @@ export interface SharedSettings {
   base: string
   git_provider: string
   merge_strategy: string
-  test_command: string | null
   protected_files: string[]
   max_parallel_runs: number | string
 }
@@ -59,7 +58,6 @@ export interface SettingsFormValues {
   base: string
   git_provider: string
   merge_strategy: string
-  test_command: string
   protected_files: string
   max_parallel_runs: string
   trace_db: string
@@ -107,7 +105,6 @@ export function formValues(data: SettingsData): SettingsFormValues {
     base: s.base,
     git_provider: s.git_provider,
     merge_strategy: s.merge_strategy,
-    test_command: s.test_command ?? '',
     protected_files: s.protected_files.join('\n'),
     max_parallel_runs: String(s.max_parallel_runs ?? 1),
     trace_db: data.local.trace_db,
@@ -137,8 +134,6 @@ export function settingsDiff(
   if (current.merge_strategy !== initial.merge_strategy) {
     shared.merge_strategy = current.merge_strategy
   }
-  const command = current.test_command.trim()
-  if (command !== initial.test_command.trim()) shared.test_command = command || null
   const protectedFiles = splitLines(current.protected_files)
   if (!sameList(protectedFiles, splitLines(initial.protected_files))) {
     shared.protected_files = protectedFiles

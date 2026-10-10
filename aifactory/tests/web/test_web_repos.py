@@ -496,11 +496,13 @@ def test_two_repos_are_isolated(client: TestClient, tmp_path: Path) -> None:
     assert {r["run_id"] for r in runs_a} == {"r-b2", "r-b3"}
     assert runs_b == []
 
-    _post(client, "/api/repos/a/settings", {"shared": {"test_command": "make test"}})
-    assert "make test" in (a / ".factory" / "config.yaml").read_text(encoding="utf-8")
-    assert "make test" not in (b / ".factory" / "config.yaml").read_text(encoding="utf-8")
+    _post(client, "/api/repos/a/settings", {"shared": {"merge_strategy": "merge"}})
+    assert "merge_strategy: merge" in (a / ".factory" / "config.yaml").read_text(encoding="utf-8")
+    assert "merge_strategy: merge" not in (b / ".factory" / "config.yaml").read_text(
+        encoding="utf-8"
+    )
     shared_b = _get(client, "/api/repos/b/settings")["data"]
-    assert "make test" not in json.dumps(shared_b)
+    assert shared_b["shared"]["merge_strategy"] == "squash"
 
     added = _post(client, "/api/repos/b/backlog/tasks", {"step": "A1", "title": "Nový"})["data"]
     assert (b / added["path"]).is_file()

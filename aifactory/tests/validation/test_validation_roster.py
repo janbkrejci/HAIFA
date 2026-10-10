@@ -26,9 +26,11 @@ PI_HAIKU = Path("aifactory/validation/rosters/pi-haiku")
 TEMPLATE_HARNESSES = {
     "plan": "claude",
     "build": "codex",
+    "test_plan": "claude",
     "fix": "codex",
     "review": "pi",
     "revise": "codex",
+    "replan": "claude",
     "document": "claude",
 }
 
@@ -54,7 +56,7 @@ def _roster_without_codex(directory: Path) -> Path:
     workflow = workflow.replace("harness: codex", "harness: claude")
     assert "harness: codex" not in config and "harness: codex" not in workflow
     agents = yaml.safe_load(config)["agents"]
-    assert [a["name"] for a in agents] == ["planner", "builder", "reviewer", "documenter"]
+    assert [a["name"] for a in agents] == ["planner", "builder", "tester", "reviewer", "documenter"]
     assert all(a["harness"] != "codex" for a in agents)
     return _write_roster(directory, config, workflow)
 

@@ -248,6 +248,7 @@ def test_team_onboarding_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                     assert [c["agent"] for c in _calls(script)] == [
                         "planner",
                         "builder",
+                        "tester",
                         "reviewer",
                         "documenter",
                     ]

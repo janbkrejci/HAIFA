@@ -65,21 +65,6 @@ def test_add_task_with_fields(tmp_path: Path) -> None:
     assert "Zadání tasku." in result.task.body
 
 
-def test_add_task_with_own_test_command(tmp_path: Path) -> None:
-    root = sample_repo(tmp_path)
-    result = add_task(root, "M01-S01", "Celá sada", test=["just", "check"])
-    header = _header(root, result.path)
-    assert header["test"] == ["just", "check"]
-    assert check_backlog(load_backlog(root)) == []
-
-
-def test_add_task_rejects_an_empty_test_command(tmp_path: Path) -> None:
-    root = sample_repo(tmp_path)
-    with pytest.raises(TaskEditError) as exc:
-        add_task(root, "M01-S01", "Bez testu", test=[])
-    assert exc.value.code == "invalid_value"
-
-
 def _expect(exc: pytest.ExceptionInfo[TaskEditError], code: str, exit_code: int) -> None:
     assert exc.value.exit_code == exit_code
     assert exc.value.errors()[0]["code"] == code

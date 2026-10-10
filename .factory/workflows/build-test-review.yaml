@@ -5,6 +5,7 @@ description: Build straight from the task, test with repairs, review with revisi
 steps:
   - build:
       description: Implement the task exactly
+  - test_plan
   - repeat: {max: 3, until: test.passed}
     steps:
       - test
@@ -16,10 +17,14 @@ steps:
           input: [build, fix, revise]
           description: Confirm the build matches the task
       - revise
+  - test_plan:
+      id: replan
+      when: revise.ran and review.approved
+      description: Choose the checks again — the revision changed code after the last plan
   - test:
       id: retest
       when: revise.ran and review.approved
-      description: Re-run the suite — the revision changed code after the last green result
+      description: Re-run the checks — the revision changed code after the last green result
   - commit:
       id: commit_build
       when: test.passed and review.approved

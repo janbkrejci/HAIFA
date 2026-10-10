@@ -31,7 +31,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "run"))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "workflow"))
 
 from run_repo import SPEC, T01, T02, Script, commit_all, fake_env, git, make_run_repo, ok, write  # noqa: E402,I001
-from workflow_fakes import FakeCodeRunner  # noqa: E402
+from workflow_fakes import FakeCodeRunner, plan_envelope  # noqa: E402
 from thread_launcher import ThreadLauncher  # noqa: E402,I001
 
 BASE = "http://127.0.0.1:4700"
@@ -328,6 +328,7 @@ def test_conflict_offers_resolve(
 
     script.on("builder", settle)
     script.add("builder", ok(changed_files=[MODEL], commit_message="Resolve model conflict"))
+    script.add("tester", plan_envelope())
     calls = spy(monkeypatch, "resolve_task", code=ResolveCode([True]))
     body = _check(client.post(f"/api/review/{T02}/resolve", json={"x": 1}), 400)
     assert body["error"]["code"] == "usage_error"

@@ -2,7 +2,8 @@
 # structure, with the harness of every agent step named explicitly:
 #
 # R1: one workflow over three harnesses: plan on claude, build/fix/revise on
-#     codex, review on pi (document keeps the documenter's own harness, claude).
+#     codex, review on pi (test_plan/replan and document keep the tester's and
+#     the documenter's own harness, claude).
 # R10: build and fix both run on codex, so the repair round continues the build's
 #     Codex thread (`codex exec resume`).
 #
@@ -19,6 +20,8 @@ steps:
   - build:
       description: Implement the plan exactly
       harness: codex
+  - test_plan:
+      description: Choose the checks that verify the build
   - repeat: {max: 3, until: test.passed}
     steps:
       - test
@@ -34,10 +37,14 @@ steps:
           harness: pi
       - revise:
           harness: codex
+  - test_plan:
+      id: replan
+      when: revise.ran and review.approved
+      description: Choose the checks again — the revision changed code after the last plan
   - test:
       id: retest
       when: revise.ran and review.approved
-      description: Re-run the suite — the revision changed code after the last green result
+      description: Re-run the checks — the revision changed code after the last green result
   - commit:
       id: commit_build
       when: test.passed and review.approved

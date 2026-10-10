@@ -15,7 +15,7 @@ from aifactory.workflow.parse import DEFAULT_WORKFLOWS_DIR
 
 SEED_DIR = Path(str(resources.files("aifactory") / "seed"))
 SEED_WORKFLOWS_ROOT = DEFAULT_WORKFLOWS_DIR.parent
-SEED_AGENTS: tuple[str, ...] = ("planner", "builder", "reviewer", "documenter", "scout")
+SEED_AGENTS: tuple[str, ...] = ("planner", "builder", "tester", "reviewer", "documenter", "scout")
 
 
 def seed_agent_names() -> list[str]:

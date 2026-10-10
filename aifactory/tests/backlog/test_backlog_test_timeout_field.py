@@ -26,7 +26,7 @@ def _task(root: Path) -> Task:
 
 
 def _module_timeout(root: Path, value: int) -> None:
-    old = 'test: "uv run pytest"\n'
+    old = "workflow: plan-build\n"
     rewrite(root / MODULE_INDEX, old, f"{old}test_timeout: {value}\n")
 
 

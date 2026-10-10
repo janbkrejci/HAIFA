@@ -61,7 +61,7 @@ def test_get_settings(client: TestClient) -> None:
     assert shared["base"] == "main"
     assert shared["git_provider"] == "local"
     assert shared["merge_strategy"] == "squash"
-    assert shared["test_command"] is None
+    assert "test_command" not in shared
     assert shared["protected_files"] == [".factory/"]
     assert shared["max_parallel_runs"] == 1
     assert data["local"] == {"trace_db": ".factory/trace.db"}
@@ -78,21 +78,18 @@ def test_save_shared(client: TestClient, root: Path) -> None:
     payload = {
         "shared": {
             "base": "develop",
-            "test_command": "uv run pytest -q",
             "protected_files": [" .factory/ ", "justfile"],
         }
     }
     body = _post(client, payload)
     assert body["data"]["saved"] == ["shared"]
     assert body["data"]["shared"]["base"] == "develop"
-    assert body["data"]["shared"]["test_command"] == "uv run pytest -q"
     raw = yaml.safe_load((root / CONFIG).read_text(encoding="utf-8"))
     assert raw["levels"] == ["module", "step", "task"]
     assert raw["protected_files"] == [".factory/", "justfile"]
     issues: list[ConfigIssue] = []
     settings = parse_project_settings((root / CONFIG).read_text(), CONFIG, issues)
     assert issues == [] and settings is not None
-    assert settings.test_command == ("uv", "run", "pytest", "-q")
     assert settings.base == "develop"
     # the status still compares with the committed base (main): config.yaml is modified
     git(root, "branch", "develop")
@@ -126,7 +123,6 @@ def test_save_local_is_never_committed(client: TestClient, root: Path) -> None:
         ("shared", {"git_provider": "gitlab"}, "git_provider"),
         ("shared", {"merge_strategy": "rebase"}, "merge_strategy"),
         ("shared", {"git_provider": "azure"}, "git_provider"),
-        ("shared", {"test_command": "a 'b"}, "test_command"),
         ("shared", {"protected_files": ["", "../x"]}, "protected_files"),
         ("shared", {"max_parallel_runs": 0}, "max_parallel_runs"),
         ("shared", {"max_parallel_runs": "2"}, "max_parallel_runs"),
@@ -157,11 +153,11 @@ def test_nothing_saved_when_one_section_is_invalid(client: TestClient, root: Pat
 
 
 def test_null_removes_a_key(client: TestClient, root: Path) -> None:
-    _post(client, {"shared": {"test_command": "make test"}})
-    assert "test_command" in yaml.safe_load((root / CONFIG).read_text())
-    body = _post(client, {"shared": {"test_command": None}})
-    assert body["data"]["shared"]["test_command"] is None
-    assert "test_command" not in yaml.safe_load((root / CONFIG).read_text())
+    _post(client, {"shared": {"merge_strategy": "merge"}})
+    assert "merge_strategy" in yaml.safe_load((root / CONFIG).read_text())
+    body = _post(client, {"shared": {"merge_strategy": None}})
+    assert body["data"]["shared"]["merge_strategy"] == "squash"
+    assert "merge_strategy" not in yaml.safe_load((root / CONFIG).read_text())
 
 
 @pytest.mark.parametrize(
@@ -170,6 +166,7 @@ def test_null_removes_a_key(client: TestClient, root: Path) -> None:
         {"shared": {"levels": ["a", "b"]}},
         {"foo": {}},
         {"shared": {"port": 4700}},
+        {"shared": {"test_command": "make test"}},
         {"local": {"base": "main"}},
         {"shared": "base: main"},
         [1, 2],

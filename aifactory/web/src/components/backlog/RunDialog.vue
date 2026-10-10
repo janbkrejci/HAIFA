@@ -1,13 +1,12 @@
 <script setup lang="ts">
 // Prepare and start a task run (`factory task run [--note] [--force] [--harness] [--model]
-// [--thinking] [--auto]`): what the run uses (workflow, writes, test command, base, task text),
+// [--thinking] [--auto]`): what the run uses (workflow, writes, base, task text),
 // the warnings first (uncommitted config D4, task not in base, unmet dependencies, a running
 // run), a harness for this run only and auto continue.
 import { computed, ref } from 'vue'
 import {
   RUN_HARNESSES,
   THINKING_LEVELS,
-  formatTestField,
   levelLabel,
   levelNoun,
   type RunAction,
@@ -89,10 +88,6 @@ const writes = computed(() => {
   const own = props.check && Array.isArray(props.check.writes) ? props.check.writes : props.task?.writes
   return Array.isArray(own) ? own : []
 })
-const testCommand = computed(() => {
-  const value = props.check && 'test' in props.check ? props.check.test : props.task?.effective?.test
-  return formatTestField(value)
-})
 const baseSha = computed(() => shortSha(config.value?.commit ?? ''))
 const configCommitHref = computed(() => {
   const id = currentRepoId()
@@ -154,8 +149,6 @@ function start(force: boolean) {
         <dd data-test="summary-workflow">{{ workflow ?? 'bez workflow' }}</dd>
         <dt>Zápisy</dt>
         <dd class="mono" data-test="summary-writes">{{ writes.join(', ') || '—' }}</dd>
-        <dt>Testy</dt>
-        <dd class="mono" data-test="summary-test">{{ testCommand || '—' }}</dd>
         <dt>Base</dt>
         <dd data-test="summary-base">
           <code>{{ check.base }}</code><template v-if="baseSha"> (<code>{{ baseSha }}</code>)</template>

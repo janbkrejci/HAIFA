@@ -344,7 +344,7 @@ class Context:
         rows = self.query(
             "SELECT e.payload_json FROM events e JOIN phases p ON p.phase_id = e.phase_id "
             "WHERE e.adw_id = ? AND p.name = ? AND e.type = 'tool_call' "
-            "AND e.name = 'quality:test' ORDER BY e.rowid DESC LIMIT 1",
+            "AND e.name LIKE 'quality:%' ORDER BY e.rowid DESC LIMIT 1",
             run_id,
             phase,
         )
@@ -354,14 +354,17 @@ class Context:
         return payload if isinstance(payload, dict) else None
 
     def test_passed(self, run_id: str, phase: str) -> bool | None:
-        """Whether the suite of test phase `phase` passed (``quality:test`` event), or None."""
+        """Whether test phase `phase` passed (its last ``quality:<check>`` event), or None.
+
+        The test step stops at the first failing check, so the last check decides.
+        """
         payload = self._quality(run_id, phase)
         if payload is None or "passed" not in payload:
             return None
         return bool(payload["passed"])
 
     def test_output(self, run_id: str, phase: str) -> str:
-        """The ``command.log`` of test phase `phase` (the suite's verbatim output), or ''."""
+        """The ``command.log`` of the last check of test phase `phase` (verbatim), or ''."""
         payload = self._quality(run_id, phase) or {}
         path = Path(str(payload.get("output_artifact") or ""))
         if not payload.get("output_artifact") or not path.is_file():

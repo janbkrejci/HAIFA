@@ -81,7 +81,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="replace the template's .factory/agents.yaml and "
         ".factory/workflows/simple-sdlc.yaml with DIR/agents.yaml and "
         "DIR/workflows/simple-sdlc.yaml (relative to the HAIFA root); the roster "
-        "needs the agents planner, builder, reviewer and documenter",
+        "needs the agents planner, builder, tester, reviewer and documenter",
     )
     parser.add_argument(
         "--r5-samples", type=int, default=3, help="worktrees R5 creates and measures"

@@ -186,67 +186,10 @@ def test_workflow_unset(repo: Path) -> None:
     _assert(report, "workflow_unset", "repo", "warning")
 
 
-def test_missing_test_recipe(repo: Path) -> None:
-    write(repo, "justfile", "default:\n    @just --list\n\nlint:\n    ruff\n")
-    commit_all(repo, "no test recipe")
-    report = run_check(repo, machine=FakeMachine())
-    _assert(report, "test_recipe_missing", "repo", "error")
-
-
-def test_test_recipe_with_imports_is_a_warning(repo: Path) -> None:
-    write(repo, "justfile", "import 'more.just'\n\ndefault:\n    @just --list\n")
-    commit_all(repo, "imports")
-    report = run_check(repo, machine=FakeMachine())
-    _assert(report, "test_recipe_missing", "repo", "warning")
-
-
-def test_missing_justfile(repo: Path) -> None:
-    git(repo, "rm", "-q", "justfile")
-    commit_all(repo, "no justfile")
-    report = run_check(repo, machine=FakeMachine())
-    _assert(report, "justfile_missing", "repo", "error")
-
-
-def test_justfile_only_in_working_tree_is_missing(repo: Path) -> None:
-    git(repo, "rm", "-q", "--cached", "justfile")
-    git(repo, "commit", "-q", "-m", "untrack justfile")
-    assert (repo / "justfile").is_file()
-    report = run_check(repo, machine=FakeMachine())
-    _assert(report, "justfile_missing", "repo", "error")
-
-
-def test_test_command_program_missing(repo: Path) -> None:
-    write(repo, ".factory/config.yaml", "base: main\ntest_command: [nosuchprog, -q]\n")
-    commit_all(repo, "test command")
-    report = run_check(repo, machine=FakeMachine())
-    finding = _assert(report, "test_command_missing", "machine", "error")
-    assert "nosuchprog" in finding.message
-    assert "justfile_missing" not in _codes(report)
-
-
-def test_test_command_script_missing(repo: Path) -> None:
-    write(repo, ".factory/config.yaml", "base: main\ntest_command: [./scripts/test.sh]\n")
-    commit_all(repo, "test script")
-    report = run_check(repo, machine=FakeMachine())
-    _assert(report, "test_script_missing", "repo", "error")
-    write(repo, "scripts/test.sh", "#!/bin/sh\n")
-    commit_all(repo, "add script")
-    assert "test_script_missing" not in _codes(run_check(repo, machine=FakeMachine()))
-
-
 def test_missing_harness(repo: Path) -> None:
     report = run_check(repo, machine=FakeMachine(present={"just", "gh"}))
     finding = _assert(report, "harness_missing", "machine", "error")
     assert "claude" in finding.message and "planner" in finding.message
-
-
-def test_missing_just(repo: Path) -> None:
-    report = run_check(repo, machine=FakeMachine(present={"claude"}))
-    _assert(report, "just_missing", "machine", "error")
-    write(repo, ".factory/config.yaml", "base: main\ntest_command: [pytest]\n")
-    commit_all(repo, "pytest")
-    report = run_check(repo, machine=FakeMachine(present={"claude", "pytest"}))
-    _assert(report, "just_missing", "machine", "warning")
 
 
 def _with_remote(repo: Path, tmp_path: Path) -> tuple[Path, Path]:

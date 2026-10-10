@@ -46,8 +46,6 @@ RESOLVE_REVIEWED_WORKFLOW = "resolve-reviewed"
 """``resolve`` plus a review of a resolution the agent wrote; auto-merge resolves with it."""
 # internal workflows: always packaged in a repo with a manifest (D32)
 INTERNAL_WORKFLOWS = frozenset({RESOLVE_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW})
-TEST_TIER_ENV = "HAIFA_TEST_TIER"
-"""Set to ``full`` while a resolve runs: the test command then runs the whole suite."""
 
 
 @dataclass(frozen=True)

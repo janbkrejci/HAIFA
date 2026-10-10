@@ -165,7 +165,13 @@ def test_preview_writes_nothing(repo: Path, home: Path, capsys: Capsys) -> None:
     assert agents["builder"]["harness"] == "claude"
     workflows = {w["name"]: w for w in available["workflows"]}
     assert workflows["simple-sdlc"]["default"]
-    assert workflows["simple-sdlc"]["agents"] == ["planner", "builder", "reviewer", "documenter"]
+    assert workflows["simple-sdlc"]["agents"] == [
+        "planner",
+        "builder",
+        "tester",
+        "reviewer",
+        "documenter",
+    ]
     config = yaml.safe_load(files[".factory/config.yaml"])
     assert config == {
         "base": "main",

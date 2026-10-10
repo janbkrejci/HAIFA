@@ -47,7 +47,7 @@ pythonpath = ["tests", "."]
 # parallel by default (`just test -n0` runs serially; worker count: tests/conftest.py);
 # tests marked xdist_group share a worker and run in file order
 addopts = "-n auto --dist loadgroup"
-# test tiers (justfile check-scoped): files listed in tests/conftest.py get these markers
+# test tiers: files listed in tests/tiers.py get these markers
 markers = [
     "slow: whole-factory integration test, left out of the fast tier",
     "browser: browser acceptance test, run again when the frontend changes",
