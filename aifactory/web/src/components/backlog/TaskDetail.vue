@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { PauseCircle, Play, PlayCircle, X } from 'lucide-vue-next'
+import { Ban, PauseCircle, Play, PlayCircle, X } from 'lucide-vue-next'
 import {
   levelLabel,
   levelNoun,
@@ -27,6 +27,8 @@ import Tooltip from '@/components/ui/Tooltip.vue'
 import CodeTip from '@/components/ui/CodeTip.vue'
 import { useLevels } from '@/lib/names'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import { useConfirm } from '@/lib/confirm'
 import Spinner from '@/components/ui/Spinner.vue'
 import type { SelectOption } from '@/lib/select'
 
@@ -44,6 +46,8 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   edit: [input: EditTaskInput]
+  /** Cancel the task (status `cancelled`), confirmed by the user. */
+  'cancel-task': []
   link: [input: LinkInput]
   'assign-workflow': [workflow: string | null]
   'open-run': []
@@ -88,6 +92,21 @@ const runTooltip = computed(() => {
 const runBlocked = computed(() => noWorkflow.value || finished.value)
 /** The task can wait in the auto-continue queue (it has not started). */
 const queueable = computed(() => DEFERRABLE_STATES.includes(task.value.board_state))
+
+const { dialog, ask, confirm: onDialogConfirm, cancel: onDialogCancel } = useConfirm()
+
+/** Asks first, then sets status `cancelled` on a task that has not started (Zrušeno column). */
+async function cancelTask() {
+  const noun = levelNoun(level.task.value)
+  const ok = await ask({
+    title: `Zrušit ${noun} ${task.value.id}?`,
+    message: `${levelLabel(level.task.value)} se přesune do sloupce Zrušeno a nespustí se. Vrátit ho jde úpravou statusu.`,
+    confirmLabel: `Zrušit ${noun}`,
+    cancelLabel: 'Ponechat',
+    tone: 'danger',
+  })
+  if (ok) emit('cancel-task')
+}
 
 /** An edit was submitted: the next detail (after the write) closes the form. */
 let saving = false
@@ -171,6 +190,18 @@ function onEdit(input: EditTaskInput) {
           >
             Upravit
           </button>
+          <button
+            v-if="queueable"
+            type="button"
+            class="cancel-task"
+            data-test="cancel-task"
+            :disabled="busy || run?.busy || run?.open"
+            :aria-busy="action === 'cancel' || undefined"
+            @click="cancelTask"
+          >
+            <Spinner v-if="action === 'cancel'" />
+            <Ban v-else :size="14" /> Zrušit
+          </button>
         </div>
       </div>
       <dl class="meta">
@@ -210,6 +241,8 @@ function onEdit(input: EditTaskInput) {
         <li v-for="(issue, n) in detail.issues" :key="n">{{ issue.code }}: {{ issue.message }}</li>
       </ul>
     </header>
+
+    <ConfirmDialog v-bind="dialog" @confirm="onDialogConfirm" @cancel="onDialogCancel" />
 
     <RunDialog
       v-if="run?.open"
@@ -536,6 +569,12 @@ button.icon {
   display: flex;
   gap: 8px;
   margin-left: auto;
+}
+
+button.cancel-task {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
 
 button.run {

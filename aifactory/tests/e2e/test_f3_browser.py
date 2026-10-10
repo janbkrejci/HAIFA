@@ -184,8 +184,15 @@ def _no_native_tooltips(page: Page) -> None:
 def _choose(page: Page, selector: str, value: str) -> None:
     """Pick `value` from the dashboard's own dropdown (no native <select> is left)."""
     trigger = page.locator(selector)
-    trigger.click()
     listbox = page.get_by_role("listbox")
+    # a live refresh can re-render the form and close the list just opened: open it again
+    for _ in range(3):
+        trigger.click()
+        try:
+            expect(listbox).to_be_visible(timeout=5000)
+            break
+        except AssertionError:
+            continue
     expect(listbox).to_be_visible()
     expect(trigger).to_have_attribute("aria-expanded", "true")
     listbox.locator(f'[role="option"][data-value="{value}"]').click()
