@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T09
 title: "Builder pouští jen testovací soubory ke své změně, žádné adresáře"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/]
@@ -27,3 +27,4 @@ Pevná omezení:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-10 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/6 · náklady $1.61
