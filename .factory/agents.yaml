@@ -1,31 +1,39 @@
-# Agent roster of HAIFA developing itself. Shared workflows inherit each
-# agent's harness/model/thinking from here; changing the roster also changes
-# existing backlog tasks without duplicating workflows. Override all three
-# fields on an individual agent to mix harnesses (e.g. a Claude reviewer).
-# Prompts are .factory/prompts/<agent>/{system,user}.md.
-defaults:
-  harness: "codex"
-  model: "gpt-6.1-sol"
-  thinking: medium
-
+# agents of this repo, written by factory init from the seed
 agents:
-  - name: planner
-    purpose: Turn the task into a short plan the builder can follow.
-    writes:
-      - specs/
-
-  - name: builder
-    purpose: Implement the plan exactly; report every changed file.
-
-  - name: tester
-    purpose: Choose the checks that verify this change, enough to trust it and nothing beyond; change nothing.
-    writes: []
-
-  - name: reviewer
-    purpose: Confirm that what was built is what was asked for; change nothing.
-    writes: []
-
-  - name: documenter
-    purpose: Write up the change from the diff; document only.
-    writes:
-      - app_docs/
+- name: planner
+  purpose: Turn the task into a short plan the builder can follow.
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes:
+  - specs/
+- name: builder
+  purpose: Implement the plan exactly; report every changed file.
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+- name: tester
+  purpose: Choose the checks that verify this change, enough to trust it and nothing beyond; change nothing.
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes: []
+- name: test-reviewer
+  purpose: Judge each test plan before it runs, enough to trust the change and not needlessly broad; change nothing.
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes: []
+- name: reviewer
+  purpose: Confirm that what was built is what was asked for; change nothing.
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes: []
+- name: documenter
+  purpose: Write up the change from the diff; document only.
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes:
+  - app_docs/
