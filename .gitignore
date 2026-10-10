@@ -1,13 +1,8 @@
 
-# sssf runtime
-adws/adw_data/sessions/
-adws/adw_data/sssf.db*
 .env
 __pycache__/
 *.pyc
 
-# skill symlink to the sssf checkout, machine-local
-.claude/skills/sssf
 
 # prototype runtime: one worktree per run
 .factory/worktrees/

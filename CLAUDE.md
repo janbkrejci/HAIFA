@@ -28,7 +28,7 @@ Packages under `aifactory/src/aifactory/` and how they connect:
 - `config/`: `.factory/` in a target repo. Shared files (`config.yaml`, `agents.yaml`, `roles.yaml`, `prompts/`, `workflows/`) are read from the `base` commit tree, not the working tree. `local.yaml` is machine-local and read from disk.
 - `run/`: `factory task run`. Each run gets its own worktree under `<worktrees_dir>/<run-id>` and a row in `task_runs` in the trace DB (`.factory/trace.db`).
 - `workflow/`: YAML workflows as data. Steps are roles from the registry or code steps (`test`, `quality`, `commit`, `changes`, `command`, `rebase`, `rebuild`), with `repeat`/`until`, `when` and `accept`. Conditions read typed envelope fields and are never evaluated as Python.
-- `engine/`: agent execution ported from sssf (`vendor/sssf/templates/adws/adw_modules`). Most files are excluded from ruff and relaxed in mypy so they stay diffable against sssf. Every logic change there must be marked `# aifactory 2.9:` (or a later version).
+- `engine/`: agent execution ported from sssf (github.com/disler/super-simple-software-factory). Most files are excluded from ruff and relaxed in mypy so they stay diffable against sssf. Every logic change there must be marked `# aifactory 2.9:` (or a later version).
 - `harness/`: adapters for `claude | codex | pi`, registered into `engine.agents.INTERFACES`. The harness is set explicitly on the agent, never inferred from the model name.
 - `providers/`: git hosting (`local`, `github` via `gh`, `azure` via `az`), chosen by `git_provider`.
 - `review/`: PR publish, approve, return, resolve, auto-merge.
@@ -40,6 +40,6 @@ Packages under `aifactory/src/aifactory/` and how they connect:
 
 ## Repository conventions
 
-- This repo is managed by HAIFA itself. `.factory/config.yaml` marks `.factory/`, `.claude/`, `CLAUDE.md`, `vendor/` and `prototype/` as protected files that runs may not change.
+- This repo is managed by HAIFA itself. `.factory/config.yaml` marks `.factory/`, `.claude/`, `CLAUDE.md` and `prototype/` as protected files that runs may not change.
 - Code, comments and docstrings are in English. The README and backlog tasks are in Czech.
 - `prototype/` is a frozen earlier implementation. Do not change it.

@@ -7,7 +7,7 @@ keeps its own licence, reproduced below. HAIFA's own licence is decided by its o
 1. super-simple-software-factory (sssf)
    Source: https://github.com/disler/super-simple-software-factory
    Licence: MIT, Copyright (c) 2026 IndyDevDan
-   Used in: vendor/sssf/, adws/, .env.sample, sssf recipes in justfile,
+   Used in:
    aifactory/src/aifactory/engine/ (engine ported from sssf), aifactory/web/ and
    aifactory/src/aifactory/web/static/ (look and logo of the sssf visualizer),
    .factory/prompts/ (prompts derived from sssf).
