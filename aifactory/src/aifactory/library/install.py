@@ -7,8 +7,8 @@ the home directory, or from the seed in the package when there is no library; th
 never mixed. Nothing is committed and nothing is written to the library or ``$HAIFA_HOME``.
 
 A repo whose manifest is committed (HEAD or base) is installed (``already_installed``); a
-repo with factory or sssf configuration but no manifest needs onboarding
-(``existing_config``). Existing files are skipped unless ``force`` is set.
+repo with factory or sssf configuration but no manifest is refused (``existing_config``);
+HAIFA does not take it over. Existing files are skipped unless ``force`` is set.
 
 ``Selection``, ``project_settings``, ``build_manifest`` and ``render_files`` are shared
 with ``library.install_commit`` (``factory init --dry-run`` and ``--commit``), which
@@ -202,8 +202,8 @@ def _refuse(root: Path, base: str) -> None:
         raise LibraryStoreError(
             "existing_config",
             f"the repo has factory configuration without a manifest ({', '.join(found)}); "
-            "run factory onboard",
-            data={"fix": "factory onboard", "found": found},
+            "HAIFA does not take over existing configuration",
+            data={"found": found},
         )
 
 

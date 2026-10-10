@@ -398,7 +398,8 @@ def test_worktree_expect_and_run_in_progress(repo: Path, capsys: Capsys) -> None
 def test_not_onboarded(tmp_path: Path, capsys: Capsys) -> None:
     path = make_repo(tmp_path)
     error = fail(capsys, path, "not_onboarded", "add", "agent", "builder")
-    assert error["data"]["fix"] == "factory onboard"
+    assert error["data"]["fix"] == "factory init"
+    assert "factory onboard" not in error["message"]
 
 
 def test_option_conflicts(repo: Path, capsys: Capsys) -> None:

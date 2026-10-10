@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 import yaml
-from multi_repo import init_repo, onboard, write
+from multi_repo import init_repo, install, write
 
 from aifactory import __version__, check
 from aifactory.cli import main
@@ -216,7 +216,7 @@ def test_obs_opens_the_backlog_of_a_ready_repo(
     from aifactory.web.repos import repo_status
 
     root = init_repo(tmp_path / "ready")
-    onboard(root)
+    install(root)
     rc, env = run_json(capsys, ["obs", "--repo", str(root), "--json"])
     assert rc == 0
     state, _warnings = Registry(Path(env["data"]["home"])).snapshot()
@@ -311,7 +311,7 @@ def test_old_local_port_is_ignored_everywhere(
     write(root, ".factory/prompts/builder/system.md", "You build.\n")
     write(root, ".factory/prompts/builder/user.md", "Build it.\n")
     write(root, "justfile", "test:\n    echo ok\n")
-    onboard(root)
+    install(root)
     write(root, ".factory/local.yaml", "port: 4811\n")
     rc, env = run_json(capsys, ["obs", "--repo", str(root), "--no-open", "--json"])
     assert rc == 0

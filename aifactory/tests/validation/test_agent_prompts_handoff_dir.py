@@ -12,7 +12,6 @@ import pytest
 from validation.sandbox import AIFACTORY_DIR
 
 PROMPTS = AIFACTORY_DIR / "validation/template/.factory/prompts"
-SSSF_STOCK = AIFACTORY_DIR / "src/aifactory/onboard/sssf_stock"
 RULE = (
     "`<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at "
     "exactly that path; never create a directory of the same name inside the repo"
@@ -25,8 +24,7 @@ def prompt_files() -> list[Path]:
         p
         for root in roots
         for p in root.rglob("*.md")
-        # stock sssf prompts (factory onboard merges against them), not HAIFA prompts
-        if not p.is_relative_to(SSSF_STOCK) and "context_handoff_dir" in p.read_text("utf-8")
+        if "context_handoff_dir" in p.read_text("utf-8")
     )
 
 

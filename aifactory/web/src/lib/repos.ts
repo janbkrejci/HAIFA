@@ -9,7 +9,6 @@ import {
   type OwnItem,
   type RepoRemoval,
   type Onboarding,
-  type OnboardingSource,
   type RepoStatus,
 } from './api'
 import { fmtTime, errorText, shortSha } from './format'
@@ -34,32 +33,27 @@ export function repoStatusText(status: string): string {
 
 export const FACTORY_STATE_TEXT: Record<FactoryState, string> = {
   none: 'Bez factory',
-  working_tree: 'konfigurace jen v pracovním stromu (necommitnutá)',
-  sssf: 'sssf',
-  pre_library: 'HAIFA před knihovnou',
-  onboarded: 'Onboardováno',
+  uncommitted: 'konfigurace jen v pracovním stromu (necommitnutá)',
+  unsupported: 'Nepodporováno: HAIFA tuto konfiguraci nepřevezme',
+  installed: 'Nainstalováno',
 }
 
-export function factoryStateText(state: string | null | undefined, prId?: string): string {
+export function factoryStateText(state: string | null | undefined): string {
   if (!state) return '—'
-  if (state === 'onboarded_in_remote') return 'Onboardováno na remote'
-  if (state === 'onboarding_pending') return `Čeká v PR${prId ? ' #' + prId : ''}`
   return FACTORY_STATE_TEXT[state as FactoryState] ?? state
 }
 
-export const ONBOARDING_SOURCE_TEXT: Record<OnboardingSource, string> = {
+export const ONBOARDING_SOURCE_TEXT: Record<string, string> = {
   init: 'factory init',
-  sssf: 'převod ze sssf',
-  pre_library: 'factory z doby před knihovnou',
 }
 
 export function onboardingSourceText(source: string): string {
-  return ONBOARDING_SOURCE_TEXT[source as OnboardingSource] ?? source
+  return ONBOARDING_SOURCE_TEXT[source] ?? source
 }
 
-/** Who onboarded the repo, when and from what (`Onboardoval … z …`). */
+/** Who installed factory into the repo, when and from what (`Nainstaloval … z …`). */
 export function onboardingText(o: Onboarding): string {
-  const parts = [`Onboardoval ${o.by ?? 'neznámo'} ${fmtTime(o.at)} z ${onboardingSourceText(o.source)}`]
+  const parts = [`Nainstaloval ${o.by ?? 'neznámo'} ${fmtTime(o.at)} z ${onboardingSourceText(o.source)}`]
   if (o.source_commit) parts.push(`commit ${shortSha(o.source_commit, 8)}`)
   if (o.factory) parts.push(`factory ${o.factory}`)
   return parts.join(', ')

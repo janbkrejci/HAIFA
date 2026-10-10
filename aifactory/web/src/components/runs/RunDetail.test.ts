@@ -1,9 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick } from 'vue'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RunDetail from './RunDetail.vue'
 import { detail, events, okResponse, prompts } from '@/test/runsFixtures'
 import { answerDialog, openDialog } from '@/test/modal'
+
+// Unmount every wrapper so no late render runs after the environment is torn down.
+enableAutoUnmount(afterEach)
 
 afterEach(() => {
   vi.restoreAllMocks()

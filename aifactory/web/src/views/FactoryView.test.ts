@@ -14,10 +14,8 @@ function report(extra: Partial<FactoryCheck> = {}): FactoryCheck {
   return {
     in_repo: true,
     repo: '/w/repo',
-    state: 'onboarded',
+    state: 'installed',
     action: null,
-    sssf_leftover: false,
-    alternate_rosters: false,
     onboarding: null,
     base: 'main',
     commit: '0123456789abcdef',
@@ -39,7 +37,6 @@ function report(extra: Partial<FactoryCheck> = {}): FactoryCheck {
 
 function stub(...answers: Response[]) {
   const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
-    if (url.endsWith('/factory/plan') && JSON.parse(String(_init?.body)).action === 'adopt') return ok({ action: 'adopt', digest: 'adopt', base: 'main', items: [], plan: null })
     if (url.endsWith('/factory/plan') && JSON.parse(String(_init?.body)).action === 'config_commit') return ok({ action: 'config_commit', base: 'main', base_sha: 'abc', digest: 'cfg', files: [], blockers: [] })
     if (url.endsWith('/factory/items')) return ok({ items: [] })
     if (url.startsWith('/api/machine/check')) return ok({ ok: true, findings: [], checked_at: 'now', cached: false, harness_repos: { claude: 0, codex: 0 } })
@@ -96,7 +93,7 @@ describe('FactoryView', () => {
     expect(summary.text()).toContain('Factory je v pořádku')
     expect(summary.get('[data-test="factory-manifest"]').text()).toBe('formát 1, zapsal haifa 0.1.0')
     expect(summary.get('[data-test="factory-version"]').text()).toBe('0.1.0')
-    expect(summary.get('[data-test="factory-state"]').text()).toBe('Onboardováno')
+    expect(summary.get('[data-test="factory-state"]').text()).toBe('Nainstalováno')
     expect(summary.get('[data-test="factory-base"]').text()).toContain('main@01234567')
     expect(wrapper.get('[data-test="findings-repo"]').text()).toContain('Bez nálezů')
     expect(wrapper.get('[data-test="findings-local"]').text()).toContain('Bez nálezů')
@@ -132,11 +129,11 @@ describe('FactoryView', () => {
     lastFactoryResult.value = null
   })
 
-  it('says there is no manifest and shows the onboarding', async () => {
+  it('says there is no manifest and shows the installation', async () => {
     stub(
       ok(
         report({
-          state: 'pre_library',
+          state: 'unsupported',
           manifest: null,
           onboarding: { source: 'init', source_commit: null, at: '2026-10-01T10:00:00+00:00', by: 'Ada', factory: '0.1.0', library_commit: null },
           cached: true,
@@ -146,9 +143,24 @@ describe('FactoryView', () => {
     const wrapper = mount(FactoryView)
     await flushPromises()
     expect(wrapper.get('[data-test="factory-manifest"]').text()).toBe('bez manifestu')
-    expect(wrapper.get('[data-test="factory-onboarding"]').text()).toContain('Onboardoval Ada')
+    expect(wrapper.get('[data-test="factory-onboarding"]').text()).toContain('Nainstaloval Ada')
     expect(wrapper.get('[data-test="factory-onboarding"]').text()).toContain('z factory init')
     expect(wrapper.get('[data-test="factory-checked"]').text()).toContain('(z mezipaměti)')
+  })
+
+  it('shows an installed repo without any onboarding or adopt control', async () => {
+    stub(ok(report()))
+    const wrapper = mount(FactoryView)
+    await flushPromises()
+    expect(wrapper.find('[data-test="onboarding-panel"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toMatch(/Onboard|Adopt/i)
+  })
+
+  it('labels an unsupported repo as not taken over by HAIFA', async () => {
+    stub(ok(report({ state: 'unsupported', manifest: null })))
+    const wrapper = mount(FactoryView)
+    await flushPromises()
+    expect(wrapper.get('[data-test="factory-state"]').text()).toContain('Nepodporováno')
   })
 
   it('renders a checks_failed envelope as the report, findings grouped by scope', async () => {

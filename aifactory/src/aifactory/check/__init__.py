@@ -118,8 +118,6 @@ def run_check(
         groups=tuple(group.name for group in selected),
         findings=tuple(findings),
         backlog=backlog,
-        sssf_leftover=ctx.state.sssf_leftover,
-        alternate_rosters=ctx.state.alternate_rosters,
         onboarding=ctx.state.onboarding,
     )
 

@@ -24,7 +24,6 @@ from aifactory.workflow import DEFAULT_WORKFLOWS_DIR, load_workflow, preflight
 
 HAIFA_ROOT = Path(__file__).resolve().parents[3]
 HAIFA_AGENTS = ("planner", "builder", "tester", "reviewer", "documenter")
-VENDOR_SCOUT = HAIFA_ROOT / "vendor/sssf/templates/prompt_engineering/scout"
 HANDOFF = (
     "`<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at "
     "exactly that path; never create a directory of the same name inside the repo or the "
@@ -149,19 +148,11 @@ def test_scout_defaults() -> None:
     ("kind", "inserted"),
     [("system", ["- " + HANDOFF, GIT_LINE]), ("user", [HANDOFF, ""])],
 )
-def test_scout_prompts_adapted_from_vendor(kind: str, inserted: list[str]) -> None:
+def test_scout_prompts_have_handoff_and_git_lines(kind: str, inserted: list[str]) -> None:
     seed = (SEED_DIR / "agents/scout" / f"{kind}.md").read_text(encoding="utf-8")
-    vendor = (VENDOR_SCOUT / f"{kind}.md").read_text(encoding="utf-8")
     assert "adw_id" not in seed
     for line in inserted:
         assert line in seed.splitlines()
-    lines = seed.splitlines(keepends=True)
-    added = [i for i, line in enumerate(lines) if line.rstrip("\n") in inserted[:1] + [GIT_LINE]]
-    if kind == "user":
-        # the handoff paragraph is followed by one blank line
-        added += [added[0] + 1]
-    remaining = "".join(line for i, line in enumerate(lines) if i not in added)
-    assert remaining == vendor
 
 
 def test_seed_roster_passes_config_and_preflight(tmp_path: Path) -> None:

@@ -30,8 +30,6 @@ function factory(state: RepoFactory['state'], extra: Partial<RepoFactory> = {}):
     commit: 'abc',
     state,
     action: null,
-    sssf_leftover: false,
-    alternate_rosters: false,
     onboarding: null,
     library: null,
     manifest_error: null,
@@ -50,7 +48,7 @@ function inspected(extra: Partial<InspectResult> = {}): InspectResult {
     branch: 'main',
     remote: { name: 'origin', url: 'git@example.com:me/repo.git' },
     trace_db: '/w/repo/.factory/data/trace.db',
-    factory: factory('pre_library'),
+    factory: factory('unsupported'),
     ...extra,
   }
 }
@@ -152,7 +150,7 @@ describe('ReposAddView', () => {
     expect(inspectCalls(fetchMock)).toEqual(['~/code/repo'])
   })
 
-  it.each(['none', 'sssf', 'pre_library', 'working_tree', 'onboarded'] as const)('adds a %s repo by its root with one button and emits its id', async (state) => {
+  it.each(['none', 'unsupported', 'uncommitted', 'installed'] as const)('adds a %s repo by its root with one button and emits its id', async (state) => {
     const fetchMock = stub({ inspect: inspected({ factory: factory(state) }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
@@ -172,29 +170,29 @@ describe('ReposAddView', () => {
     expect(wrapper.emitted('added')).toEqual([['repo']])
   })
 
-  it('shows who, when and from what an onboarded repo came, and Add', async () => {
+  it('shows who, when and from what an installed repo came, and Add', async () => {
     const onboarding = {
-      source: 'sssf' as const,
+      source: 'init',
       source_commit: '0123456789abcdef',
       at: '2026-10-01T10:00:00+00:00',
       by: 'Ada',
       factory: '0.1.0',
       library_commit: null,
     }
-    stub({ inspect: inspected({ factory: factory('onboarded', { onboarding }) }) })
+    stub({ inspect: inspected({ factory: factory('installed', { onboarding }) }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
     const card = wrapper.get('[data-test="inspect-card"]')
-    expect(card.get('[data-test="inspect-state"]').text()).toBe('Onboardováno')
+    expect(card.get('[data-test="inspect-state"]').text()).toBe('Nainstalováno')
     const text = card.get('[data-test="inspect-onboarding"]').text()
-    expect(text).toContain('Onboardoval Ada')
-    expect(text).toContain('z převod ze sssf')
+    expect(text).toContain('Nainstaloval Ada')
+    expect(text).toContain('z factory init')
     expect(text).toContain('01234567')
     expect(card.find('[data-test="inspect-add"]').exists()).toBe(true)
   })
 
-  it('offers Open and a library sync for a registered repo: Backlog when onboarded, else Factory', async () => {
-    const fetchMock = stub({ inspect: inspected({ registered: 'repo', factory: factory('onboarded') }) })
+  it('offers Open and a library sync for a registered repo: Backlog when installed, else Factory', async () => {
+    const fetchMock = stub({ inspect: inspected({ registered: 'repo', factory: factory('installed') }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
     const card = wrapper.get('[data-test="inspect-card"]')
@@ -234,7 +232,7 @@ describe('ReposAddView', () => {
   })
 
   it('stays on the page after adding: a card opens the repo or clears the form for another', async () => {
-    stub({ inspect: inspected({ factory: factory('working_tree') }) })
+    stub({ inspect: inspected({ factory: factory('uncommitted') }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
     await wrapper.get('[data-test="inspect-add"]').trigger('click')
@@ -440,9 +438,9 @@ describe('ReposAddView', () => {
 })
 
 
-it.each([['onboarded_in_remote', 'Onboardováno na remote'], ['onboarding_pending', 'Čeká v PR']] as const)('labels known onboarding state %s', async (onboarding_state, label) => {
-  stub({ inspect: inspected({ factory: factory('sssf', { onboarding_state }) }) })
+it('labels an unsupported repo: HAIFA does not take it over', async () => {
+  stub({ inspect: inspected({ factory: factory('unsupported') }) })
   const wrapper = await mountView()
   await inspectPath(wrapper)
-  expect(wrapper.get('[data-test="inspect-state"]').text()).toBe(label)
+  expect(wrapper.get('[data-test="inspect-state"]').text()).toBe('Nepodporováno: HAIFA tuto konfiguraci nepřevezme')
 })

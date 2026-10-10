@@ -1,7 +1,6 @@
 // The dashboard API answers in the same envelope as `factory --json`. Repo endpoints live under
 // /api/repos/<id> of the repo in the URL; health, the repo list, code and restart are global.
 import { currentRepoId } from './router'
-import { onboardingRequest, type OnboardingPlan } from './onboarding'
 
 /** One validation problem (`error.issues[i]`), e.g. a `backlog check` issue. */
 export interface ApiIssue {
@@ -284,12 +283,11 @@ export async function deleteGlobal<T>(path: string, body?: unknown): Promise<T> 
 
 // ── adding and removing repositories ─────────────────────────────────────────
 
-export type FactoryState = 'none' | 'working_tree' | 'sssf' | 'pre_library' | 'onboarded'
-export type OnboardingSource = 'init' | 'sssf' | 'pre_library'
+export type FactoryState = 'none' | 'uncommitted' | 'unsupported' | 'installed'
 
 /** The `onboarding` block of the manifest in base. */
 export interface Onboarding {
-  source: OnboardingSource
+  source: string
   source_commit: string | null
   at: string
   by: string | null
@@ -299,16 +297,11 @@ export interface Onboarding {
 
 /** The factory state of a repo (`factory` of inspect and of a RepoItem). */
 export interface RepoFactory {
-  onboarding_state?: 'onboarded_in_remote' | 'onboarding_pending' | null
-  onboarding_pr?: { id: string; url: string } | null
   repo: string
   base: string | null
   commit: string | null
   state: FactoryState
   action: string | null
-  sssf_leftover: boolean
-  alternate_rosters: boolean
-  rosters?: unknown
   onboarding: Onboarding | null
   library: Record<string, unknown> | null
   manifest_error: string | null
@@ -324,7 +317,6 @@ export interface RepoProblem {
 
 /** POST /api/repos/inspect: what adding the folder would do; reads only. */
 export interface InspectResult {
-  sssf_paths?: string[]
   path: string
   root: string | null
   subdir: string | null
@@ -474,15 +466,11 @@ export interface CheckFinding {
 
 /** GET /api/repos/<id>/factory/check: `factory check` plus the manifest and the version. */
 export interface FactoryCheck {
-  onboarding_state?: 'onboarded_in_remote' | 'onboarding_pending' | null
-  onboarding_pr?: { id: string; url: string } | null
   library?: { name: string; remote?: string | null } | null
   in_repo: boolean
   repo: string | null
   state: FactoryState | null
   action: string | null
-  sssf_leftover: boolean
-  alternate_rosters: boolean
   onboarding: Onboarding | null
   base: string | null
   commit: string | null
@@ -522,7 +510,7 @@ export interface FactoryFile {
   path: string; action: string; diff: string; content: string | null; binary: boolean; mode?: string | null
 }
 export interface UpdateFile { file: string; status: string; diff: string | null; ours_diff: string | null; theirs_diff: string | null }
-/** What stops a plan from being applied (factory, library and onboarding plans alike). */
+/** What stops a plan from being applied (factory and library plans alike). */
 export interface PlanBlocker { code: string; message: string; fix?: string }
 /** A plan warning: plain text or a coded message. */
 export type PlanWarning = string | { code?: string; message: string }
@@ -588,12 +576,6 @@ async function applyEnvelope(url: string, body: unknown): Promise<FactoryResult 
 export function applyFactoryPlan(body: FactoryRequest & { digest: string; message: string }, id?: string): Promise<FactoryResult> {
   return applyEnvelope(factoryUrl('/factory/apply', id), { action: body.action,
     options: factoryChoices(body.action, body.options), target: body.target, digest: body.digest, message: body.message })
-}
-export function previewOnboarding(id: string, action: 'onboard' | 'adopt', target: 'base' | 'pr') {
-  return factoryEnvelope<OnboardingPlan>(factoryUrl('/factory/plan', id), postInit(onboardingRequest(action, target)))
-}
-export function applyOnboarding(id: string, action: 'onboard' | 'adopt', target: 'base' | 'pr', digest: string, message: string) {
-  return applyEnvelope(factoryUrl('/factory/apply', id), onboardingRequest(action, target, digest, message))
 }
 export function fetchBasePullPlan(id?: string): Promise<FactoryPullPlan> {
   return factoryEnvelope<FactoryPullPlan>(factoryUrl('/config/pull/plan', id))

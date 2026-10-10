@@ -1,7 +1,7 @@
 import type { FactoryInitPlan, FactoryCheck } from '@/lib/api'
 
 export function factoryCheck(): FactoryCheck {
-  return { in_repo: true, repo: '/work/HAIFA', state: 'onboarded', action: null, sssf_leftover: false, alternate_rosters: false, onboarding: null,
+  return { in_repo: true, repo: '/work/HAIFA', state: 'installed', action: null, onboarding: null,
     base: 'main', commit: 'abcdef123', remote: 'origin', ahead: 0, behind: 0, offline: false, ok: true, counts: { error: 0, warning: 0, info: 0 }, findings: [], checked_at: '2026-10-07T10:00:00Z', cached: false, manifest: { format: 1, written_by: 'test' }, manifest_error: null, version: 'test' }
 }
 

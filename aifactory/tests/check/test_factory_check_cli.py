@@ -32,7 +32,7 @@ def test_ok(repo: Path, machine: FakeMachine, capsys: Capsys) -> None:
     rc, obj = run_json(capsys, ["check", "--repo", str(repo), "--json"])
     assert rc == 0
     data = obj["data"]
-    assert data["ok"] is True and data["state"] == "pre_library"
+    assert data["ok"] is True and data["state"] == "unsupported"
     assert data["counts"] == {"error": 0, "warning": 2, "info": 1}
     assert data["in_repo"] is True
     assert [set(f) for f in data["findings"]] == [KEYS, KEYS, KEYS]
@@ -80,8 +80,8 @@ def test_not_a_repository(tmp_path: Path, machine: FakeMachine, capsys: Capsys) 
 def test_text_output(repo: Path, machine: FakeMachine, capsys: Capsys) -> None:
     assert main(["check", "--repo", str(repo)]) == 0
     out = capsys.readouterr().out
-    assert out.startswith("state:   pre_library (main @ ")
-    assert "next: onboard" in out
+    assert out.startswith("state:   unsupported (main @ ")
+    assert "next:" not in out.splitlines()[0]
     assert "0 error(s), 1 warning(s), 1 info" in out
     assert "warning library library_missing:" in out
     machine.present.discard("claude")

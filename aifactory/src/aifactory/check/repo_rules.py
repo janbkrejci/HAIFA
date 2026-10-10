@@ -41,9 +41,14 @@ def _ids(ids: list[str]) -> str:
 
 # -- install --
 
+UNSUPPORTED_FIX = (
+    "HAIFA will not convert it; install factory into a repository without .factory/ "
+    "with factory init"
+)
+
 
 def install(ctx: CheckContext) -> Iterator[Finding]:
-    """One finding per onboarding state (AR30), with the action that state calls for."""
+    """One finding per repo state (AR30), with the action that state calls for."""
     state = ctx.state
     if state.state == "none":
         yield Finding(
@@ -55,7 +60,7 @@ def install(ctx: CheckContext) -> Iterator[Finding]:
             "install factory into the repository and commit .factory/ to base",
             "init",
         )
-    elif state.state == "working_tree" and ctx.commit is not None:
+    elif state.state == "uncommitted" and ctx.commit is not None:
         yield Finding(
             "config_not_committed",
             "repo",
@@ -65,55 +70,35 @@ def install(ctx: CheckContext) -> Iterator[Finding]:
             f"commit .factory/ (without local.yaml) to {ctx.base}",
             "config_commit",
         )
-    elif state.state == "sssf":
+    elif state.state == "unsupported":
+        if state.config_in_base:
+            yield Finding(
+                "repo_unsupported",
+                "repo",
+                "info",
+                f".factory/ in {ctx.base} has no manifest.yaml; HAIFA does not take over a "
+                "configuration it did not install",
+                UNSUPPORTED_FIX,
+            )
+        else:
+            yield Finding(
+                "repo_unsupported",
+                "repo",
+                "error",
+                f"{ctx.base} has an sssf installation in adws/ and no .factory/; HAIFA does "
+                "not run or convert sssf",
+                UNSUPPORTED_FIX,
+            )
+    elif state.state == "installed":
         yield Finding(
-            "sssf_not_onboarded",
-            "repo",
-            "error",
-            f"{ctx.base} has an sssf roster ({', '.join(state.rosters)}) and no .factory/; "
-            "factory does not run sssf configuration",
-            "extract it once with factory onboard (on the engineer's machine)",
-            "onboard",
-        )
-    elif state.state == "pre_library":
-        yield Finding(
-            "pre_library_config",
-            "repo",
-            "info",
-            f".factory/ in {ctx.base} has no manifest.yaml; it runs, but its items are not "
-            "linked to the library",
-            "extract it once with factory onboard (on the engineer's machine)",
-            "onboard",
-        )
-    elif state.state == "onboarded":
-        yield Finding(
-            "repo_onboarded",
+            "repo_installed",
             "repo",
             "info" if state.manifest_error is None else "error",
-            _onboarded_message(ctx),
-            "never onboard it again; on another machine run factory adopt to fill the "
-            "library from the committed configuration",
-            "adopt",
-        )
-    if state.sssf_leftover:
-        yield Finding(
-            "sssf_leftover",
-            "repo",
-            "info",
-            f"adws/ is still committed next to .factory/ in {ctx.base}; runs ignore it",
-            "delete adws/ in a separate commit once nobody runs sssf in this repo",
-        )
-    if state.alternate_rosters:
-        yield Finding(
-            "alternate_rosters",
-            "repo",
-            "info",
-            f"{ctx.base} has {len(state.rosters)} sssf rosters: {', '.join(state.rosters)}",
-            "choose the roster to extract when you run factory onboard",
+            _installed_message(ctx),
         )
 
 
-def _onboarded_message(ctx: CheckContext) -> str:
+def _installed_message(ctx: CheckContext) -> str:
     state = ctx.state
     if state.manifest_error is not None:
         return f"the manifest in {ctx.base} cannot be read: {state.manifest_error}"
@@ -124,7 +109,7 @@ def _onboarded_message(ctx: CheckContext) -> str:
     else:
         who = f" by {block['by']}" if block.get("by") else ""
         what = (
-            f"onboarded from {block['source']} at {block['at']}{who} (factory {block['factory']})"
+            f"installed from {block['source']} at {block['at']}{who} (factory {block['factory']})"
         )
     if library is not None:
         what += f", library {library['name']} ({library['id']})"
@@ -224,7 +209,7 @@ def config(ctx: CheckContext) -> Iterator[Finding]:
             f"fix .factory/ and commit it to {ctx.base}",
             "config_commit" if commit_fixes else None,
         )
-    if ctx.state.state == "working_tree" or changes:
+    if ctx.state.state == "uncommitted" or changes:
         for issue in ctx.worktree_issues:
             yield Finding(
                 "worktree_config_invalid",
@@ -457,7 +442,7 @@ def gitignore(ctx: CheckContext) -> Iterator[Finding]:
 
 
 def update(ctx: CheckContext) -> Iterator[Finding]:
-    """Items of an onboarded repo that ``factory update`` can bring, and its migrations.
+    """Items of an installed repo that ``factory update`` can bring, and its migrations.
 
     Reads only: base is unpacked into a temporary directory, the library heads are read
     without fetching and without the history cache.
@@ -468,7 +453,7 @@ def update(ctx: CheckContext) -> Iterator[Finding]:
     from aifactory.library.state import extract_factory, library_side, repo_version
 
     state = ctx.state
-    if state.state != "onboarded" or state.manifest_error is not None or ctx.commit is None:
+    if state.state != "installed" or state.manifest_error is not None or ctx.commit is None:
         return
     with tempfile.TemporaryDirectory(prefix="factory-check-update-") as tmp:
         copy = Path(tmp)
@@ -595,8 +580,9 @@ def items(ctx: CheckContext) -> Iterator[Finding]:
                 "repo",
                 "warning",
                 message,
-                f"the library does not know the version of {what}; fill it with factory adopt",
-                "adopt",
+                f"the library does not know the version of {what}; export it with factory "
+                "config export",
+                "export",
             )
         elif state == "outdated":
             yield Finding(

@@ -17,8 +17,6 @@ export const lastFactoryResult = ref<{ repoId: string; result: FactoryResult; ac
 
 /** Plain-language texts of plan blocker and item codes; an unknown code shows as it is. */
 const PLAN_CODE_TEXT: Record<string, string> = {
-  onboarded_in_remote: 'repo je už onboardované na remote',
-  onboarding_pending: 'onboarding čeká v PR',
   library_missing: 'knihovna na tomto počítači chybí',
   library_mismatch: 'repo používá jinou knihovnu',
   plan_changed: 'plán se mezitím změnil',

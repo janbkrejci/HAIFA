@@ -1,4 +1,4 @@
-"""``factory check`` in an onboarded repo: item states (AR23) and the other repo findings."""
+"""``factory check`` in an installed repo: item states (AR23) and the other repo findings."""
 
 from __future__ import annotations
 
@@ -61,7 +61,7 @@ def _manifest(entries: dict[str, tuple[str, str]]) -> str:
     return yaml.safe_dump(data)
 
 
-def _onboarded(tmp_path: Path) -> Path:
+def _installed(tmp_path: Path) -> Path:
     repo = make_check_repo(tmp_path / "repo")
     v1, v2 = workflow_version(V1.encode()), workflow_version(V2.encode())
     workflows = {
@@ -83,7 +83,7 @@ def _onboarded(tmp_path: Path) -> Path:
         "missing": ("w", v1),
     }
     write(repo, MANIFEST_FILE, _manifest(entries))
-    commit_all(repo, "onboarded")
+    commit_all(repo, "installed")
     return repo
 
 
@@ -96,15 +96,15 @@ def _by_name(report: CheckReport) -> dict[str, Finding]:
 
 
 def test_item_states(tmp_path: Path, library: Path) -> None:
-    repo = _onboarded(tmp_path)
+    repo = _installed(tmp_path)
     report = run_check(repo, machine=_machine(library))
-    assert report.state == "onboarded"
+    assert report.state == "installed"
     found = _by_name(report)
     expected = {
         "own": ("item_local", "info", "export"),
         "plan-build": ("item_local", "info", "export"),
         "missing": ("item_missing", "warning", "update"),
-        "unknown": ("item_unknown", "warning", "adopt"),
+        "unknown": ("item_unknown", "warning", "export"),
         "outdated": ("item_outdated", "info", "update"),
         "modified": ("item_modified", "info", "export"),
         "diverged": ("item_diverged", "warning", "update"),
@@ -121,15 +121,15 @@ def test_item_states(tmp_path: Path, library: Path) -> None:
     assert "is outdated (repo " in found["outdated"].message
 
 
-def test_items_only_for_onboarded_repos(tmp_path: Path, library: Path) -> None:
+def test_items_only_for_installed_repos(tmp_path: Path, library: Path) -> None:
     repo = make_check_repo(tmp_path / "repo")
     report = run_check(repo, machine=_machine(library))
-    assert report.state == "pre_library"
+    assert report.state == "unsupported"
     assert not [f for f in report.findings if f.code.startswith("item_")]
 
 
 def test_workflow_not_in_repo(tmp_path: Path, library: Path) -> None:
-    repo = _onboarded(tmp_path)
+    repo = _installed(tmp_path)
     write(
         repo,
         "backlog/M01-core/S01-model/M01-S01-T02-other.md",
@@ -183,10 +183,12 @@ def test_unknown_thinking(tmp_path: Path) -> None:
     assert "planner" in found[0].message and "'auto'" in found[0].message
 
 
-def test_sssf_leftover(tmp_path: Path) -> None:
-    repo = make_check_repo(tmp_path / "repo")
+def test_installed_repo_with_adws_has_no_sssf_finding(tmp_path: Path, library: Path) -> None:
+    repo = _installed(tmp_path)
     write(repo, "adws/adw_sssf_config/factory.config.yaml", "agents: []\n")
     commit_all(repo, "leftover")
-    report = run_check(repo, machine=FakeMachine())
-    finding = next(f for f in report.findings if f.code == "sssf_leftover")
-    assert (finding.scope, finding.severity) == ("repo", "info")
+    report = run_check(repo, machine=_machine(library))
+    assert (report.state, report.action) == ("installed", None)
+    finding = next(f for f in report.findings if f.code == "repo_installed")
+    assert (finding.scope, finding.severity, finding.action) == ("repo", "info", None)
+    assert not [f for f in report.findings if "sssf" in f.code or f.code == "repo_unsupported"]

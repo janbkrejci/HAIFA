@@ -6,15 +6,15 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Literal
 
-from aifactory.onboard.state import RepoAction, RepoStateName
+from aifactory.config.repo_state import RepoAction, RepoStateName
 
 if TYPE_CHECKING:
     from aifactory.check.context import CheckContext
 
 Scope = Literal["repo", "machine", "library"]
 Severity = Literal["error", "warning", "info"]
-Action = Literal["init", "update", "export", "config_commit", "config_pull", "onboard", "adopt"]
-# the onboarding state of the repo (AR30), see ``aifactory.onboard.state``
+Action = Literal["init", "update", "export", "config_commit", "config_pull"]
+# the state of the repo (AR30), see ``aifactory.config.repo_state``
 State = RepoStateName
 
 SEVERITIES: tuple[Severity, ...] = ("error", "warning", "info")
@@ -86,8 +86,6 @@ class CheckReport:
     groups: tuple[str, ...]
     findings: tuple[Finding, ...]
     backlog: dict[str, int] = field(default_factory=dict)
-    sssf_leftover: bool = False
-    alternate_rosters: bool = False
     onboarding: dict[str, Any] | None = None
     in_repo: bool = True
 
@@ -111,8 +109,6 @@ class CheckReport:
             "repo": self.repo,
             "state": self.state,
             "action": self.action,
-            "sssf_leftover": self.sssf_leftover,
-            "alternate_rosters": self.alternate_rosters,
             "onboarding": self.onboarding,
             "base": self.base,
             "commit": self.commit,

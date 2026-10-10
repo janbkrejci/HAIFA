@@ -39,7 +39,7 @@ def sample() -> Manifest:
         written_by="0.2.0",
         library=LibraryRef(id="2f6c0b1e", name="helios", remote=None),
         onboarding=Onboarding(
-            source="sssf",
+            source="init",
             source_commit="78db8bf",
             at="2026-10-02T18:40:12Z",
             by="Jan",
@@ -99,6 +99,16 @@ def test_newer_format_is_refused(tmp_path: Path) -> None:
     assert exc.value.code == "format_unsupported"
     assert "factory upgrade" in str(exc.value)
     assert "aifactory" in str(exc.value)
+
+
+@pytest.mark.parametrize("source", ["sssf", "pre_library"])
+def test_legacy_onboarding_source_still_loads(source: str) -> None:
+    text = (
+        "format: 1\nwritten_by: 0.1.0\nonboarding:\n"
+        f"  source: {source}\n  at: '2026-10-01T10:00:00Z'\n  factory: 0.1.0\n"
+    )
+    manifest = parse_manifest(text, "m")
+    assert manifest.onboarding is not None and manifest.onboarding.source == source
 
 
 def test_invalid_manifest_is_invalid_config(tmp_path: Path) -> None:

@@ -10,7 +10,7 @@ import type {
 
 export function config(over: Partial<OverviewConfig> = {}): OverviewConfig {
   return {
-    factory_state: 'onboarded',
+    factory_state: 'installed',
     installed: true,
     base: 'main',
     commit: 'abc123',

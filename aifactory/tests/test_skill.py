@@ -154,21 +154,22 @@ def test_skill_settings_reference_tracks_model_changes(monkeypatch: pytest.Monke
     assert '| `base` | `"trunk"` | Changed base description. |' in render_skill()
 
 
-def test_skill_installation_and_onboarding_procedures() -> None:
+def test_skill_installation_procedure() -> None:
     skill = render_skill()
     prerequisites = skill.split("## Prerequisites\n", 1)[1].split("\n## ", 1)[0]
     for text in (
         "factory check --json",
         "data.action",
-        "factory onboard --dry-run --json",
-        "factory onboard --commit --expect <digest> --json",
-        "factory adopt --json",
-        "`sssf`",
-        "`pre_library`",
-        "`onboarded`",
-        "once per repo",
+        "`installed`",
+        "`unsupported`",
+        "`uncommitted`",
+        "`none`",
+        "does not take over",
     ):
         assert text in prerequisites, text
+    assert "repo_unsupported" in skill
+    for text in ("factory onboard", "factory adopt", "pre_library_config", "sssf_leftover"):
+        assert text not in skill, text
     install = _section(skill, "Add factory to an existing repo")
     for text in (
         "factory check --json",
@@ -182,7 +183,6 @@ def test_skill_installation_and_onboarding_procedures() -> None:
         "only with their consent",
         "--pr",
         "factory backlog check --json",
-        "factory onboard",
         "Repeat all selection options",
     ):
         assert text in install, text

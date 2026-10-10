@@ -1,4 +1,4 @@
-"""``.factory/manifest.yaml``: origin of every item and the onboarding mark (AR19).
+"""``.factory/manifest.yaml``: origin of every item and the installation mark (AR19).
 
 A repo without the file is format 0 and runs as before. A repo with it takes workflows
 only from its own ``.factory/workflows/`` (D32). A run reads only ``format`` from it: a
@@ -18,7 +18,9 @@ from aifactory.config.settings import validation_issues
 
 MANIFEST_FILE = ".factory/manifest.yaml"
 MANIFEST_FORMAT = 1
-OnboardingSource = Literal["init", "sssf", "pre_library"]
+OnboardingSource = Literal["init"]
+# written by the removed ``factory onboard``; still read so older manifests load
+LegacyOnboardingSource = Literal["sssf", "pre_library"]
 # manifest key of each item type
 ITEM_KEYS: dict[str, str] = {
     "agent": "agents",
@@ -39,11 +41,11 @@ class LibraryRef(BaseModel):
 
 
 class Onboarding(BaseModel):
-    """Written once by init or onboard and never changed after."""
+    """Written once by factory init and never changed after."""
 
     model_config = ConfigDict(frozen=True, extra="forbid")
 
-    source: OnboardingSource
+    source: OnboardingSource | LegacyOnboardingSource
     source_commit: str | None = None
     at: str
     by: str | None = None

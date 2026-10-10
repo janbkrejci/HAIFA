@@ -1,13 +1,12 @@
 <script setup lang="ts">
 // #/r/<id>/factory: `factory check` of the repo (GET /api/repos/<id>/factory/check) with the
-// manifest, the package version and the onboarding, and the findings in two groups: fix in the
+// manifest, the package version and the installation, and the findings in two groups: fix in the
 // repo and commit, or fix on this machine. Writes use a reviewed and confirmed server plan.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { fetchFactoryCheck, type CheckFinding, type CheckSeverity, type FactoryCheck } from '@/lib/api'
 import { errorText, fmtTime, shortSha } from '@/lib/format'
 import { factoryStateText, onboardingText } from '@/lib/repos'
-import OnboardingPanel from '@/components/factory/OnboardingPanel.vue'
 import FactoryOperation from '@/components/factory/FactoryOperation.vue'
 import FactoryFindingRepair from '@/components/factory/FactoryFindingRepair.vue'
 import { lastFactoryResult } from '@/lib/factory'
@@ -134,7 +133,7 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
         </p>
         <dl class="rows">
           <dt>Stav repa</dt>
-          <dd data-test="factory-state">{{ factoryStateText(report.onboarding_state ?? report.state, report.onboarding_pr?.id) }}</dd>
+          <dd data-test="factory-state">{{ factoryStateText(report.state) }}</dd>
           <dt>Manifest</dt>
           <dd data-test="factory-manifest">
             <template v-if="report.manifest">formát {{ report.manifest.format }}, zapsal {{ report.manifest.written_by }}</template>
@@ -155,7 +154,7 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
             </dd>
           </template>
           <template v-if="report.onboarding">
-            <dt>Onboarding</dt>
+            <dt>Instalace</dt>
             <dd data-test="factory-onboarding">{{ onboardingText(report.onboarding) }} · knihovna {{ report.library?.name ?? '—' }}</dd>
           </template>
           <dt>Zkontrolováno</dt>
@@ -163,15 +162,7 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
             {{ fmtTime(report.checked_at) }}<template v-if="report.cached"> (z mezipaměti)</template>
           </dd>
         </dl>
-        <p v-if="report.sssf_leftover" class="warn" data-test="factory-sssf-leftover">
-          V repu zůstaly soubory instalace sssf.
-        </p>
-        <p v-if="report.alternate_rosters" class="warn" data-test="factory-alternate-rosters">
-          V repu jsou další soupisky agentů vedle .factory/agents.yaml.
-        </p>
       </div>
-
-      <OnboardingPanel v-if="report.state === 'onboarded' || report.state === 'sssf' || report.state === 'pre_library'" :key="`${repoId}-${report.state}`" :disabled="!!operation || itemsBusy || !!repair" :repo-id="repoId" :action="report.state === 'onboarded' ? 'adopt' : 'onboard'" @busy="operationBusy = $event" @success="load(true)" />
 
       <div v-if="findings.length" class="repair-actions">
         <span data-test="factory-selected-count">Vybráno: {{ selected.length }}</span>

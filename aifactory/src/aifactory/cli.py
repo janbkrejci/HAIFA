@@ -5,7 +5,7 @@ Implemented: `check`, `harness check`, `config status`, `config show`,
 `backlog list`, `backlog sync`, `backlog auto-continue`, `backlog auto-merge`, `backlog add`,
 `backlog edit`, `task add`,
 `task edit`, `task link`, `task show`, `task list`, `task run`, `task approve`, `task return`,
-`task resolve`, `task publish`, `task clean`, `init`, `onboard`, `adopt`, `workflow check`,
+`task resolve`, `task publish`, `task clean`, `init`, `workflow check`,
 `skills sync`, `library init`, `library list`, `library show`, `library import`,
 `library clone`, `library status`, `library pull`, `library push`, `library seed`, `upgrade`,
 `obs` (the local dashboard of every registered repository, ``aifactory.web``), and
@@ -43,15 +43,6 @@ if TYPE_CHECKING:
 SUBCOMMANDS: tuple[tuple[str, str], ...] = (
     ("check", "check that factory will run in this repo and on this machine"),
     ("init", "install factory into this repository from the library (or the seed)"),
-    (
-        "onboard",
-        "extract this repo's own factory configuration once into the library and a committed "
-        ".factory/ with a manifest",
-    ),
-    (
-        "adopt",
-        "take over an onboarded repo on this machine: fill the library, never write the repo",
-    ),
     (
         "update",
         "update the repo's items from the library (or the seed) file by file; repo changes "
@@ -113,10 +104,6 @@ def build_parser() -> argparse.ArgumentParser:
             _add_check_command(child)
         elif name == "init":
             _add_init_command(child)
-        elif name == "onboard":
-            _add_onboard_command(child)
-        elif name == "adopt":
-            _add_adopt_command(child)
         elif name == "update":
             _add_update_command(child)
         elif name == "harness":
@@ -143,14 +130,14 @@ def build_parser() -> argparse.ArgumentParser:
 def _add_check_command(parser: argparse.ArgumentParser) -> None:
     parser.description = (
         "Check, only by reading, whether factory will run in this repository and on this "
-        "machine, and what to fix. Reports the onboarding state of the repo read from base "
-        "(onboarded, pre_library, sssf, working_tree or none) with its action (adopt, "
-        "onboard, config_commit or init), the flags sssf_leftover and alternate_rosters, the "
-        "onboarding block of the manifest, and findings {code, scope, severity, message, "
+        "machine, and what to fix. Reports the state of the repo read from base "
+        "(installed, unsupported, uncommitted or none) with its action (config_commit or "
+        "init, or null), the onboarding block of the manifest, and findings {code, scope, "
+        "severity, message, "
         "fix, action}: scope 'repo' is fixed and committed to base, 'machine' is fixed "
         "locally, 'library' is fixed in the library in $HAIFA_HOME; severity is error, "
         "warning or info; action names the fix (init, update, export, config_commit, "
-        "config_pull, onboard, adopt) or is null. Items of base that are not synced with "
+        "config_pull) or is null. Items of base that are not synced with "
         "the library get item_* findings. "
         "Outside a git repository (without --repo) only the machine and the library are "
         "checked (in_repo false). "
@@ -198,7 +185,8 @@ def _check(args: argparse.Namespace) -> int:
         where = (
             f"{report.base} @ {report.commit[:7]}" if report.commit else f"{report.base}, no commit"
         )
-        print(f"state:   {report.state} ({where})  {report.repo}  next: {report.action}")
+        nxt = f"  next: {report.action}" if report.action else ""
+        print(f"state:   {report.state} ({where})  {report.repo}{nxt}")
     if report.ahead is not None and report.behind is not None:
         print(f"remote:  {report.remote}  ahead {report.ahead}, behind {report.behind}")
     for finding in report.findings:
@@ -448,7 +436,8 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
         "the same plan one commit on base (pushed before base moves; --pr opens a pull "
         "request from factory-init/<n> instead); --expect DIGEST refuses a plan that changed "
         "(plan_changed). Blockers: already_installed (run factory update), existing_config "
-        "(run factory onboard), config_not_committed (run factory config commit), "
+        "(HAIFA does not take over existing configuration), config_not_committed (run "
+        "factory config commit), "
         "dirty_paths, invalid_plan, not_on_base, run_in_progress, base_behind, "
         "base_diverged. Nothing is written to the library."
     )
@@ -507,235 +496,6 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-m", "--message", metavar="TEXT", help="with --commit: commit message")
     parser.add_argument("--force", action="store_true", help="overwrite existing files")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
-
-
-def _add_onboard_command(parser: argparse.ArgumentParser) -> None:
-    parser.description = (
-        "Extract the repo's own configuration once (decision 8): a .factory/ from before the "
-        "library (state pre_library) or an sssf installation in adws/ (state sssf) goes into "
-        "the library and into a committed .factory/ with .factory/manifest.yaml and its "
-        "onboarding block (source pre_library or sssf). Without --commit it only returns the "
-        "plan and changes nothing but remote-tracking refs. Procedure: --dry-run, show "
-        "data.report (with detail), data.files, data.library_plan and data.digest to the "
-        "user, then --commit --expect DIGEST. The remote check is the only network step (git "
-        "fetch <remote> <base>, git ls-remote --heads <remote> factory-config/onboarding). "
-        "pre_library: every agent and workflow of .factory/ is hashed: content the library "
-        "has (a version in the history of the item of the same name, or the head of another "
-        "item) is linked; other content becomes a new library item named after the slot when "
-        "free, else <slot>-<slug of the repo folder>. --keep-local TYP/JMENO connects the slot "
-        "to the library item of the same name and keeps the difference in the repo; --name "
-        "TYP/JMENO=NOVE names the new item. Workflows the backlog in base names and the repo "
-        "lacks are added from the library. Existing files of .factory/ stay byte for byte; "
-        "the plan only adds the manifest, missing workflows and .gitignore lines. sssf (only "
-        "adws/adw_sssf_config/sssf.config.yaml is converted, read from base): roster "
-        "bindings (coding_agent -> harness, claude_code -> claude; model, tools, color, "
-        "writes; thinking auto -> medium), prompts merged with the stock sssf text "
-        "(git merge-file; a changed system.md is merged into the library's, user.md is the "
-        "library's), pi extensions from harness_engineering (.ts with its relative imports), "
-        "stock chains by blob id -> library workflows (simple-sdlc always, the others with "
-        "--workflows), quality.py -> test_timeout (read with ast), "
-        "defaults.protected_files -> protected_files; adws/ stays byte for byte. Report "
-        "codes (data.report[].code): linked, converted, carried_over, changed_meaning, "
-        "not_converted, manual, left_in_place. Blockers: already_onboarded, not_installed, "
-        "config_not_committed, sssf_roster_invalid, source_not_committed, library_missing, "
-        "library_dirty, library_behind, library_diverged, onboarded_in_remote, "
-        "onboarding_pending, remote_unchecked, base_behind, base_diverged, not_on_base, "
-        "run_in_progress, dirty_paths, invalid_plan. --commit recomputes the plan "
-        "(plan_changed), writes and pushes the library first (a refusal stops before the "
-        "repo is touched), then commits to base without a checkout, or with --pr to the "
-        "branch factory-config/onboarding with a pull request. A failure after the library "
-        "push carries data.library_commit; run factory onboard again, it connects the items."
-    )
-    parser.add_argument(
-        "--repo", metavar="PATH", help="repository to onboard (default: the current git repo)"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="only print the plan (the default without --commit)"
-    )
-    parser.add_argument(
-        "--commit", action="store_true", help="write the library, then commit the repo plan"
-    )
-    parser.add_argument(
-        "--pr",
-        action="store_true",
-        help="commit to the branch factory-config/onboarding with a PR instead of base",
-    )
-    parser.add_argument(
-        "--expect",
-        metavar="DIGEST",
-        help="with --commit: refuse when the plan's digest differs (plan_changed)",
-    )
-    parser.add_argument("-m", "--message", metavar="TEXT", help="with --commit: commit subject")
-    parser.add_argument(
-        "--keep-local",
-        metavar="TYP/JMÉNO",
-        action="append",
-        default=[],
-        help="connect the slot to the library item of the same name; the difference stays "
-        "in the repo (repeatable)",
-    )
-    parser.add_argument(
-        "--name",
-        metavar="TYP/JMÉNO=NOVÉ",
-        action="append",
-        default=[],
-        help="the name of the new library item of a slot (repeatable)",
-    )
-    parser.add_argument(
-        "--workflows",
-        action="store_true",
-        help="sssf: also add the library workflows of every other recognised stock chain",
-    )
-    parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
-
-
-def _onboard_conflict(args: argparse.Namespace) -> str | None:
-    if args.dry_run and args.commit:
-        return "--dry-run and --commit exclude each other"
-    if args.expect is not None and not args.commit:
-        return "--expect needs --commit"
-    if args.message is not None and not args.commit:
-        return "-m needs --commit"
-    return None
-
-
-def _onboard_key(text: str, option: str) -> tuple[Any, str]:
-    from aifactory.library.model import check_name
-    from aifactory.library.store import LibraryStoreError
-
-    kind, sep, name = text.strip().partition("/")
-    if not sep or kind not in ("agent", "workflow") or not check_name(name):
-        raise LibraryStoreError(
-            "invalid_value", f"{option} {text!r}: expected agent/NAME or workflow/NAME"
-        )
-    return kind, name
-
-
-def _onboard(args: argparse.Namespace) -> int:
-    from aifactory.library.store import LibraryStoreError
-    from aifactory.onboard import run_onboard
-    from aifactory.providers.base import ProviderError
-
-    conflict = _onboard_conflict(args)
-    if conflict is not None:
-        error = LibraryStoreError("conflicting_options", conflict)
-        return _library_fail(error, args.json, "factory onboard")
-    try:
-        keep = [_onboard_key(text, "--keep-local") for text in args.keep_local]
-        names: list[tuple[Any, str, str]] = []
-        for text in args.name:
-            key, sep, new = text.partition("=")
-            if not sep or not new.strip():
-                raise LibraryStoreError(
-                    "invalid_value", f"--name {text!r}: expected TYP/JMÉNO=NOVÉ"
-                )
-            kind, name = _onboard_key(key, "--name")
-            names.append((kind, name, new.strip()))
-        result = run_onboard(
-            Path(args.repo) if args.repo else Path.cwd(),
-            commit=args.commit,
-            pr=args.pr,
-            expect=args.expect,
-            message=args.message,
-            keep_local=keep,
-            names=names,
-            workflows=args.workflows,
-        )
-    except (LibraryStoreError, ProviderError) as exc:
-        return _library_fail(exc, args.json, "factory onboard")
-    if args.json:
-        return _emit_ok(result.to_json(), result.warnings)
-    plan = result.plan
-    publish = plan.publish
-    if result.dry_run:
-        for row in plan.report:
-            item = f" -> {row.item}" if row.item and row.item != row.subject.split("/")[-1] else ""
-            print(f"{row.code:<14} {row.subject}{item}  {row.message}")
-            for line in (row.detail or "").splitlines():
-                print(f"    {line}")
-        if plan.library_plan is not None:
-            for i in plan.library_plan.items:
-                print(f"{'library':<14} {i.action} {i.type}/{i.name}")
-        for f in publish.files:
-            print(f"{f.action:<14} {f.path}")
-        if plan.exclude is not None:
-            for line in plan.exclude["lines"]:
-                print(f"{'exclude':<14} {line}")
-        for b in publish.blockers:
-            print(f"blocked: {b.code}: {b.message}")
-        print(f"digest  {publish.digest}")
-        if not publish.blockers:
-            pr = " --pr" if args.pr else ""
-            print(f"next: factory onboard --commit{pr} --expect {publish.digest}")
-    else:
-        if result.library_commit and plan.library and result.library_commit != plan.library["head"]:
-            print(f"library commit {result.library_commit[:12]}")
-        if result.pr is not None:
-            print(f"opened {result.pr.url} from {result.branch}")
-        else:
-            pushed = "pushed" if result.pushed else "not pushed"
-            moved = "base advanced" if result.advanced else "base not advanced"
-            short = (result.commit or "")[:12]
-            print(
-                f"committed {len(publish.files)} file(s) to {publish.base} "
-                f"({short}, {pushed}, {moved})"
-            )
-    for warning in result.warnings:
-        print(f"warning: {warning}", file=sys.stderr)
-    return 0
-
-
-def _add_adopt_command(parser: argparse.ArgumentParser) -> None:
-    parser.description = (
-        "Take over a repo that was onboarded on another machine (decision 8): it is never "
-        "extracted again. Reads .factory/ from base (no fetch, no checkout) and fills the "
-        "library on this machine to match the committed manifest. Only an onboarded repo is "
-        "accepted (not_onboarded, data.state and data.action). Without a library it is "
-        "library_missing with data.command 'factory library clone <remote of the manifest>'. "
-        "A library with another id gives the warning library_mismatch. An item the library "
-        "does not have at all is imported from its copy in base, all in one library commit "
-        "(library.lock, library_dirty, library_behind, library_diverged, push_failed). A "
-        "version of the manifest missing in an existing item stays unknown with the fix "
-        "factory config export TYP JMENO --as NOVE. Returns items[] with type, name, item, "
-        "state, versions and adopt (present, imported, import, invalid, unknown). Nothing "
-        "is written to the repository."
-    )
-    parser.add_argument(
-        "--repo", metavar="PATH", help="repository to adopt (default: the current git repo)"
-    )
-    parser.add_argument(
-        "--dry-run", action="store_true", help="only print the plan; write nothing to the library"
-    )
-    parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
-
-
-def _adopt(args: argparse.Namespace) -> int:
-    from aifactory.library.store import LibraryStoreError
-    from aifactory.onboard import adopt_repo
-    from aifactory.providers.base import ProviderError
-
-    try:
-        result = adopt_repo(Path(args.repo) if args.repo else Path.cwd(), dry_run=args.dry_run)
-    except (LibraryStoreError, ProviderError) as exc:
-        return _library_fail(exc, args.json, "factory adopt")
-    if args.json:
-        return _emit_ok(result.to_json(), result.warnings)
-    library = result.library
-    print(f"repo     {result.repo.repo} ({result.repo.base} @ {(result.repo.commit or '')[:7]})")
-    print(f"library  {library['path']} ({library['name']}, {library['id']})")
-    for item in result.items:
-        state = item.state
-        print(f"{item.adopt:<9} {state.type}/{state.name} -> {state.item}  {state.state}")
-        if item.fix:
-            print(f"          fix: {item.fix}")
-    if result.dry_run and result.plan is not None:
-        print(f"digest   {result.plan['digest']}")
-    elif result.committed:
-        print(f"library commit {(result.library_commit or '')[:12]}")
-    print("the repository was not changed")
-    for warning in result.warnings:
-        print(f"warning: {warning}", file=sys.stderr)
-    return 0
 
 
 def _split_list(value: str | None) -> list[str] | None:
@@ -1176,7 +936,7 @@ _CONFIG_MODES = (
     "preflight (invalid_plan). Blockers: run_in_progress, invalid_plan (working tree); "
     "dirty_paths, invalid_plan, not_on_base, run_in_progress, base_behind, base_diverged "
     "(--commit); dirty_paths, invalid_plan (--pr). A repo without .factory/manifest.yaml is "
-    "not_onboarded (fix: factory onboard). Nothing to change: changed false, exit 0."
+    "not_onboarded (fix: factory init). Nothing to change: changed false, exit 0."
 )
 
 
@@ -1481,7 +1241,7 @@ def _add_update_command(parser: argparse.ArgumentParser) -> None:
         "Migrations are listed with their diff (data.update.migrations) and run only with "
         "--migrate ID (m001: levels module -> project, comments kept). data.update has "
         "items, conflicts, gitignore, migrations and manifest. Refused: not_onboarded (no "
-        "manifest in base; data.fix factory onboard or factory init), config_not_committed "
+        "manifest in base; data.fix factory init), config_not_committed "
         "(the manifest only in the working tree), format_unsupported. " + _CONFIG_MODES
     )
     parser.add_argument(
@@ -3473,10 +3233,6 @@ def _dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         return _check(args)
     if command == "init":
         return _init(args)
-    if command == "onboard":
-        return _onboard(args)
-    if command == "adopt":
-        return _adopt(args)
     if command == "update":
         return _update(args)
     if command == "harness":

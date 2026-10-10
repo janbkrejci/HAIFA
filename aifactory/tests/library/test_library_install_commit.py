@@ -406,7 +406,8 @@ def test_existing_sssf_config(repo: Path, capsys: Capsys) -> None:
 
     data = preview(capsys, repo)
     assert codes(data["blockers"])[0] == "existing_config"
-    assert data["blockers"][0]["fix"] == "factory onboard"
+    assert "fix" not in data["blockers"][0]
+    assert "does not take over" in data["blockers"][0]["message"]
     rc, env = init(capsys, repo, "--commit")
     assert rc == 2 and env["error"]["code"] == "existing_config"
     assert snapshot(repo) == before

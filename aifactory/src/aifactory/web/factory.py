@@ -3,9 +3,8 @@
 ``check_view`` is ``factory check`` (``run_check``) plus the registry finding
 ``trace_db_shared`` and a 60 s cache per ``offline`` flag (``fresh`` renews it).
 ``plan`` and ``apply`` call the CLI core for init, update, config commit,
-item add/set/remove/export/revert, onboard and adopt. ``items`` returns CLI item states
+item add/set/remove/export/revert. ``items`` returns CLI item states
 without writing the cache. ``pull`` is ``factory config pull`` (``pull_config``).
-Adopt's API digest guards a fresh dry-run result; it writes only the library.
 
 The body of plan and apply carries only the action, its options, the target (``base`` or
 ``pr``), the commit message and the digest; any other key is a ``usage_error``, so no path
@@ -15,8 +14,6 @@ per repository (``busy``).
 
 from __future__ import annotations
 
-import hashlib
-import json
 import threading
 import time
 from collections.abc import Iterator, Mapping
@@ -39,7 +36,7 @@ JsonDict = dict[str, Any]
 CHECK_TTL = 60.0
 """Seconds a check result is reused (``fresh=1`` renews it)."""
 ITEM_ACTIONS = ("add", "set", "remove", "export", "revert")
-ACTIONS = ("init", "update", "config_commit", *ITEM_ACTIONS, "onboard", "adopt")
+ACTIONS = ("init", "update", "config_commit", *ITEM_ACTIONS)
 TARGETS = ("base", "pr")
 PROVIDERS = ("local", "github", "azure")
 AZURE_KEYS = ("organization", "project", "repository")
@@ -64,8 +61,6 @@ OPTIONS: dict[str, tuple[str, ...]] = {
     "remove": ("type", "name", "prune"),
     "export": ("type", "name", "slot"),
     "revert": ("type", "name", "to"),
-    "onboard": ("keep_local", "names", "workflows"),
-    "adopt": (),
 }
 PLAN_KEYS = ("action", "options", "target")
 APPLY_KEYS = ("action", "digest", "options", "target", "message")
@@ -76,23 +71,15 @@ _clock = time.monotonic
 
 STATUS: dict[str, int] = {
     # state conflicts and blockers
-    "name_taken": 409,
     "invalid_library": 422,
     "slot_taken": 409,
     "in_use": 409,
     "item_exists": 409,
     "library_changed_since": 409,
-    "already_onboarded": 409,
-    "not_installed": 409,
-    "source_not_committed": 409,
-    "onboarded_in_remote": 409,
-    "onboarding_pending": 409,
-    "remote_unchecked": 409,
     "library_missing": 409,
     "registry_missing": 409,
     "registry_invalid": 422,
     "unknown_repo": 404,
-    "sssf_roster_invalid": 422,
     "unknown_version": 422,
     "git_identity_missing": 409,
     "plan_changed": 409,
@@ -258,39 +245,11 @@ def check_view(
     return data, report.ok, f"{len(errors)} error(s): {codes}"
 
 
-def onboarding_hint(root: Path) -> JsonDict:
-    """Dashboard label from already known refs; inspecting never fetches a remote."""
-    from aifactory.config.commit import _context
-    from aifactory.onboard.onboard import ONBOARDING_BRANCH
-    from aifactory.onboard.state import repo_state
-    from aifactory.providers import ProviderError, get_provider, git
-
-    state = repo_state(root)
-    if state.state not in ("sssf", "pre_library"):
-        return {"onboarding_state": None}
-    settings = _context(root).settings
-    tip = git.rev_parse(root, f"refs/remotes/{settings.remote}/{state.base}")
-    if tip and git.blob_at(root, tip, ".factory/manifest.yaml") is not None:
-        return {"onboarding_state": "onboarded_in_remote"}
-    if git.rev_parse(root, f"refs/heads/{ONBOARDING_BRANCH}") or git.rev_parse(
-        root, f"refs/remotes/{settings.remote}/{ONBOARDING_BRANCH}"
-    ):
-        data: JsonDict = {"onboarding_state": "onboarding_pending"}
-        try:
-            pr = get_provider(settings, root).find_open_pr(ONBOARDING_BRANCH)
-            if pr is not None:
-                data["onboarding_pr"] = {"id": pr.id, "url": pr.url}
-        except ProviderError:
-            pass
-        return data
-    return {"onboarding_state": None}
-
-
 def _manifest_view(root: Path) -> JsonDict:
     """The manifest in base (``format``, ``written_by``) and the package version; never cached."""
     import aifactory
     from aifactory.config import ConfigError
-    from aifactory.onboard.state import repo_state
+    from aifactory.config.repo_state import repo_state
 
     manifest: JsonDict | None = None
     manifest_error: str | None = None
@@ -306,7 +265,6 @@ def _manifest_view(root: Path) -> JsonDict:
         "manifest": manifest,
         "manifest_error": manifest_error,
         "library": repo.library if repo is not None else None,
-        **(onboarding_hint(root) if repo is not None else {}),
         "version": aifactory.__version__,
     }
 
@@ -344,20 +302,11 @@ def _options(action: str, raw: object) -> JsonDict:
     _keys(raw, OPTIONS[action], f"options for {action}")
     out: JsonDict = {}
     for key, value in raw.items():
-        if key == "prune" or (action == "onboard" and key == "workflows"):
+        if key == "prune":
             if not isinstance(value, bool):
                 raise UsageError(f"options.{key} must be a boolean")
             out[key] = value
-        elif key in (
-            "agents",
-            "workflows",
-            "item",
-            "take",
-            "merge",
-            "migrate",
-            "keep_local",
-            "names",
-        ):
+        elif key in ("agents", "workflows", "item", "take", "merge", "migrate"):
             if value is None and action == "init":
                 continue
             if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
@@ -411,8 +360,6 @@ def _common(body: Mapping[str, Any]) -> tuple[str, JsonDict, str]:
         target = "base"
     if target not in TARGETS:
         raise UsageError(f"target must be one of {', '.join(TARGETS)}, got {target!r}")
-    if action == "adopt" and target == "pr":
-        raise Failure("conflicting_options", "adopt does not support a PR target", 422)
     if "options" in body and not isinstance(body["options"], dict):
         raise UsageError("options must be a JSON object")
     return action, _options(action, body.get("options")), target
@@ -433,8 +380,6 @@ def parse_apply_body(body: Mapping[str, Any]) -> Request:
     if not isinstance(digest, str) or not digest.strip():
         raise UsageError("digest must be the non-empty digest of the reviewed plan")
     message = _opt_str(body.get("message"), "message")
-    if action == "adopt" and message is not None:
-        raise Failure("conflicting_options", "adopt does not support a commit message", 422)
     return Request(action, options, target, digest.strip(), message)
 
 
@@ -575,34 +520,6 @@ def _call(
             environ=environ,
             **req.options,
         )
-    if req.action == "onboard":
-        from aifactory.cli import _onboard_key
-        from aifactory.library.store import LibraryStoreError
-        from aifactory.onboard import run_onboard
-
-        keep = [_onboard_key(text, "--keep-local") for text in req.options.get("keep_local", ())]
-        names = []
-        for text in req.options.get("names", ()):
-            key, sep, new = text.partition("=")
-            if not sep or not new.strip():
-                raise LibraryStoreError("invalid_value", "--name needs TYPE/NAME=NEW")
-            kind, name = _onboard_key(key, "--name")
-            names.append((kind, name, new.strip()))
-        return run_onboard(
-            root,
-            commit=not dry_run,
-            pr=req.pr,
-            expect=expect,
-            message=message,
-            keep_local=keep,
-            names=names,
-            workflows=req.options.get("workflows", False),
-            environ=environ,
-        )
-    if req.action == "adopt":
-        from aifactory.onboard.adopt import adopt_repo
-
-        return adopt_repo(root, dry_run=dry_run, environ=environ)
     from aifactory.config.commit import commit_config
 
     return commit_config(root, pr=req.pr, dry_run=dry_run, expect=expect, message=message)
@@ -615,31 +532,6 @@ def plan(
     with _core_errors(req.action):
         result = _call(root, req, dry_run=True, environ=environ)
     data = {"action": req.action, **result.to_json()}
-    if req.action == "onboard" and any(
-        b.code == "onboarding_pending" for b in result.plan.blockers
-    ):
-        from aifactory.onboard.onboard import ONBOARDING_BRANCH
-        from aifactory.providers import ProviderError, get_provider
-
-        if result.plan.settings is not None:
-            try:
-                pending_pr = get_provider(result.plan.settings, root).find_open_pr(
-                    ONBOARDING_BRANCH
-                )
-                if pending_pr is not None:
-                    data["pending_pr"] = {"id": pending_pr.id, "url": pending_pr.url}
-            except ProviderError:
-                pass  # The blocker still carries the branch when hosting cannot identify its PR.
-    if req.action == "adopt":
-        stable = {
-            "domain": "haifa-adopt-api-plan-v1",
-            "action": "adopt",
-            "root": str(root.resolve()),
-            "result": data,
-        }
-        data["digest"] = hashlib.sha256(
-            json.dumps(stable, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
     if req.action not in ("init", "update", "config_commit"):
         return data, list(result.warnings)
     if "remote" not in data:
@@ -669,12 +561,6 @@ def apply(
     """Recompute the plan, check the digest and blockers, then commit (direct or PR)."""
     try:
         with _core_errors(req.action):
-            if req.action == "adopt":
-                preview, _ = plan(root, req, environ=environ)
-                if req.digest != preview["digest"]:
-                    raise Failure(
-                        "plan_changed", "review the changed adopt plan", 409, data=preview
-                    )
             result = _call(root, req, dry_run=False, environ=environ)
     finally:
         if state is not None:

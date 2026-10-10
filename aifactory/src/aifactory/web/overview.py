@@ -39,9 +39,9 @@ from aifactory import database, oscompat
 from aifactory.backlog import TaskEditError, iter_tasks, load_for_edit
 from aifactory.config import ConfigError
 from aifactory.config.loader import load_config
+from aifactory.config.repo_state import repo_state
 from aifactory.config.source import CommitSource
 from aifactory.config.status import config_changes
-from aifactory.onboard.state import repo_state
 from aifactory.run.gitops import repo_layout
 from aifactory.web.registry import Registry, RepoEntry
 from aifactory.web.repos import trace_db_of
@@ -57,8 +57,6 @@ if sys.platform == "win32":  # a cold repository runs ~8 git processes, each 0.1
 DB_TIMEOUT = 0.5  # s, sqlite busy wait of the read-only connection
 CLOSED_STATUSES = frozenset({"done", "cancelled"})
 FAILED_STATES = frozenset({"failed", "aborted"})
-NOT_INSTALLED = frozenset({"none", "sssf"})
-LOADABLE = frozenset({"onboarded", "pre_library"})
 PROCESS_ENDED = "proces skončil"
 MAX_ISSUES = 20
 WORKERS = 8  # threads computing repositories
@@ -326,7 +324,7 @@ def _config_view(root: Path) -> tuple[JsonDict | None, list[str]]:
     warnings: list[str] = []
     invalid = False
     issues: list[str] = []
-    if st.commit and st.state in LOADABLE:
+    if st.commit and st.config_in_base:
         try:
             load_config(CommitSource(root, st.base, st.commit))
         except ConfigError as exc:
@@ -340,7 +338,7 @@ def _config_view(root: Path) -> tuple[JsonDict | None, list[str]]:
             warnings.append(f"uncommitted configuration is not known: {exc}")
     config = {
         "factory_state": st.state,
-        "installed": st.state not in NOT_INSTALLED,
+        "installed": st.config_in_base or st.state == "uncommitted",
         "base": st.base,
         "commit": st.commit,
         "invalid": invalid,

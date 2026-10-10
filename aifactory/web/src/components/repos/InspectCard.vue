@@ -23,9 +23,9 @@ const kind = computed<'problem' | 'registered' | 'add'>(() => {
 })
 const root = computed(() => props.inspect.root ?? props.inspect.path)
 const base = computed(() => props.inspect.factory?.base ?? props.inspect.branch ?? 'base')
-/** A registered repo opens on its Backlog once factory is onboarded, else on its Factory tab. */
+/** A registered repo opens on its Backlog once factory is installed, else on its Factory tab. */
 const openHref = computed(() => props.inspect.registered
-  ? repoHref(props.inspect.registered, state.value === 'onboarded' ? 'backlog' : 'factory') : '')
+  ? repoHref(props.inspect.registered, state.value === 'installed' ? 'backlog' : 'factory') : '')
 
 async function add() {
   adding.value = true
@@ -66,7 +66,7 @@ async function add() {
       </template>
       <template v-if="inspect.factory">
         <dt>Factory</dt>
-        <dd data-test="inspect-state">{{ factoryStateText(inspect.factory.onboarding_state ?? inspect.factory.state, inspect.factory.onboarding_pr?.id) }}<a v-if="inspect.factory.onboarding_pr" :href="inspect.factory.onboarding_pr.url" target="_blank" rel="noopener"> Otevřít PR</a></dd>
+        <dd data-test="inspect-state">{{ factoryStateText(inspect.factory.state) }}</dd>
       </template>
       <template v-if="inspect.trace_db">
         <dt>Trace DB</dt>

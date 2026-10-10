@@ -102,7 +102,7 @@ export function problems(repo: OverviewRepo): Problem[] {
   if (config) {
     if (!config.installed) kinds.push('not_installed')
     if (config.invalid) kinds.push('invalid')
-    if (config.uncommitted.length > 0 || config.factory_state === 'working_tree') kinds.push('uncommitted')
+    if (config.uncommitted.length > 0 || config.factory_state === 'uncommitted') kinds.push('uncommitted')
   } else if (repo.state === 'not_installed') kinds.push('not_installed')
   else if (repo.state === 'invalid_config') kinds.push('invalid')
   else if (repo.state === 'uncommitted') kinds.push('uncommitted')

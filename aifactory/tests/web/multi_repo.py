@@ -31,7 +31,7 @@ MANIFEST = Manifest(
     written_by="0.1.0",
     library=LibraryRef(id="lib-1", name="team", remote="https://example.com/lib.git"),
     onboarding=Onboarding(
-        source="sssf",
+        source="init",
         source_commit="a" * 40,
         at="2026-10-02T10:00:00Z",
         by="Ada Tester",
@@ -109,12 +109,12 @@ def init_repo(path: Path, *, commit: bool = True) -> Path:
     return path.resolve()
 
 
-def onboard(root: Path) -> None:
-    """Commit config, agents and a manifest: the ``onboarded`` state."""
+def install(root: Path) -> None:
+    """Commit config, agents and a manifest: the ``installed`` state."""
     write(root, ".factory/config.yaml", CONFIG)
     write(root, ".factory/agents.yaml", AGENTS)
     write(root, MANIFEST_FILE, dump_manifest(MANIFEST))
-    commit_all(root, "onboard")
+    commit_all(root, "install")
 
 
 def multi_client(home: Path, tmp_path: Path, **kwargs: Any) -> TestClient:

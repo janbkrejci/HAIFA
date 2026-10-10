@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The preview of a reviewed plan, shared by the factory, library and onboarding operations:
+// The preview of a reviewed plan, shared by the factory and library operations:
 // what it says first (slot), warnings, blockers, library items and the files with their diffs.
 import { computed } from 'vue'
 import type { FactoryFile, PlanBlocker, PlanItem, PlanWarning } from '@/lib/api'
