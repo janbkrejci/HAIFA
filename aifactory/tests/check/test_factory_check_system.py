@@ -202,7 +202,7 @@ def _snapshot(repo: Path) -> dict[str, Any]:
     }
 
 
-def _onboard(repo: Path) -> None:
+def _install(repo: Path) -> None:
     """A manifest whose plan-build has a version the library does not know (reads H)."""
     write(
         repo,
@@ -230,7 +230,7 @@ def test_check_changes_nothing(
         init_library(remote=str(bare))
         monkeypatch.setenv("PATH", limited)
         write(library_root(), "draft.txt", "uncommitted\n")
-        _onboard(repo)
+        _install(repo)
     write(repo, ".factory/prompts/builder/user.md", "Changed: {{prompt}}\n")
     outside = tmp_path / "plain"
     outside.mkdir()

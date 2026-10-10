@@ -88,7 +88,7 @@ describe('App', () => {
     go('#/r/haifa/backlog')
     const wrapper = mount(App); await flushPromises()
     const before = fetchMock.mock.calls.filter(([url]) => url === '/api/repos').length
-    repos[0] = { ...HAIFA, name: 'Installed HAIFA', factory: { state: 'onboarded' } }
+    repos[0] = { ...HAIFA, name: 'Installed HAIFA', factory: { state: 'installed' } }
     window.dispatchEvent(new Event('factory-applied')); await flushPromises()
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos')).toHaveLength(before + 2)
     expect(document.title).toBe('Installed HAIFA · Backlog · HAIFA')
@@ -532,8 +532,8 @@ describe('App', () => {
             branch: 'main',
             remote: null,
             trace_db: '/work/new-repo/.factory/data/trace.db',
-            factory: { repo: '/work/new-repo', base: 'main', commit: 'abc', state: 'pre_library', action: null,
-              sssf_leftover: false, alternate_rosters: false, onboarding: null, library: null, manifest_error: null },
+            factory: { repo: '/work/new-repo', base: 'main', commit: 'abc', state: 'unsupported', action: null,
+              onboarding: null, library: null, manifest_error: null },
           })
         }
         if (url.startsWith('/api/fs/')) return envelope({ path: '/home/me', parent: null, entries: [], truncated: false, available: false })

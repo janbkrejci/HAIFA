@@ -93,7 +93,7 @@ options?, target?}``) only reads and returns the plan with its ``digest`` (``ini
 ``bind`` ``{agent: {harness, model?, thinking?}}``, ``workflows``, ``base``, ``provider``,
 ``azure``, ``backlog_dir``, ``specs_dir``, ``docs_dir``), ``update``
 (``item``, ``take``, ``merge``, ``migrate``), ``config_commit``, ``add``, ``set``,
-``remove``, ``export``, ``revert``, ``onboard`` or ``adopt`` (see factory.py for options);
+``remove``, ``export`` or ``revert`` (see factory.py for options);
 ``target`` is ``base`` (default) or ``pr``. ``POST /api/factory/apply``
 (``{action, digest, options?, target?, message?}``) recomputes the plan like
 ``factory init|update|config commit --commit --expect``: another digest is HTTP
@@ -108,8 +108,7 @@ and thinking, ``presets``, ``thinking_levels`` and the step overrides of the wor
 (``workflow_overrides``); ``POST /api/factory/roster`` (``{preset?, agent?, harness?,
 model?, thinking?, dry_run}``) is ``factory config roster set`` on the working tree and
 returns ``{agents, before, diff, changed, dry_run, comments_preserved}``, an invalid change
-is HTTP 422 ``invalid_config``. Export/onboard/adopt share the global library write lock;
-adopt writes only the library and rejects PR targets and messages.
+is HTTP 422 ``invalid_config``. Export takes the global library write lock.
 
 Limits: ``GET /api/limits`` (``limits.py``) lists the 5-hour and weekly session limits of
 the Claude and Codex subscriptions the repository's harnesses use or this machine has, for
@@ -1317,7 +1316,7 @@ async def factory_apply(request: Request) -> JSONResponse:
     try:
         req = factory.parse_apply_body(await _json_body(request))
         with factory.exclusive(ctx.factory):
-            if req.action in ("export", "onboard", "adopt"):
+            if req.action == "export":
                 with library.exclusive(request.app.state.library):
                     try:
                         data, warnings = await run_in_threadpool(

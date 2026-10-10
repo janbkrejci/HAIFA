@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -10,7 +9,7 @@ from typing import Any
 
 import pytest
 import yaml
-from multi_repo import BASE, register
+from multi_repo import BASE
 from starlette.testclient import TestClient
 from test_web_factory import (
     Api,
@@ -30,10 +29,6 @@ from aifactory.library.state import repo_items
 from aifactory.web import create_app
 from aifactory.web import factory as factory_api
 from aifactory.web.library import environment
-
-# Reuse the real sssf fixture rather than writing a second migration fixture.
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "onboard"))
-from onboard_repo import sssf_repo  # noqa: E402
 
 __all__ = ["api", "home"]
 
@@ -139,75 +134,6 @@ def test_item_stale_push_and_pr(api: Api, tmp_path: Path) -> None:
     assert git(tmp_path / "a", "log", "-1", "--format=%s", result["commit"]) == "review extra agent"
 
 
-def test_onboard_sssf_and_remote_blocker(api: Api, tmp_path: Path) -> None:
-    library(api, tmp_path)
-    root = sssf_repo(tmp_path, "sssf", origin=True)
-    # The fixture has no .factory config: local is the default for its migration.
-    old_adws = {
-        p.relative_to(root).as_posix(): p.read_bytes()
-        for p in (root / "adws").rglob("*")
-        if p.is_file()
-    }
-    clone = tmp_path / "old-checkout"
-    git(tmp_path, "clone", "-q", str(tmp_path / "sssf.git"), str(clone))
-    for key, path in (("sssf", root), ("old", clone)):
-        api.ids[key] = register(api.client, path)["id"]
-    opts = {
-        "names": ["agent/builder=sssf-builder"],
-        "keep_local": ["agent/reviewer"],
-        "workflows": True,
-    }
-    plan = api.plan("sssf", "onboard", options=opts)
-    assert plan["source"] == "sssf" and plan["report"] and plan["message"]
-    assert all("code" in row for row in plan["report"])
-    assert isinstance(plan["remote"], dict)
-    assert plan["library_plan"]
-    done = api.apply("sssf", plan, options=opts)["data"]
-    assert done["library_commit"] and done["report"]
-    assert git(tmp_path / "sssf.git", "show", "main:.factory/manifest.yaml")
-    assert old_adws == {
-        p.relative_to(root).as_posix(): p.read_bytes()
-        for p in (root / "adws").rglob("*")
-        if p.is_file()
-    }
-    blocked = api.plan("old", "onboard")
-    assert "onboarded_in_remote" in [b["code"] for b in blocked["blockers"]]
-    res = api.apply("old", blocked, 409)
-    assert code_of(res) == "onboarded_in_remote"
-    assert res["data"]["blockers"][0]["fix"]
-
-
-def test_adopt_digest_import_and_noop(api: Api, tmp_path: Path) -> None:
-    lib = library(api, tmp_path)
-    install(api, "a")
-    a = tmp_path / "a"
-    root_head = git(a, "rev-parse", "HEAD")
-    remote_head = git(bare_of(tmp_path, "a"), "rev-parse", "main")
-    git(lib, "rm", "-qr", "agents/builder")
-    git(lib, "commit", "-qm", "remove builder")
-    git(lib, "push", "-q", "origin", "main")
-    plan = api.plan("a", "adopt")
-    assert plan["digest"] == api.plan("a", "adopt")["digest"]
-    assert plan["plan"] and not plan["repo_changed"]
-    # Even an unrelated library commit invalidates adopt.
-    write(lib, "note.txt", "note")
-    commit_push(lib, "unrelated library change")
-    res = api.apply("a", plan, 409)
-    assert code_of(res) == "plan_changed"
-    assert res["data"]["digest"] != plan["digest"]
-    plan = api.plan("a", "adopt")
-    done = api.apply("a", plan)["data"]
-    assert done["library_commit"] and done["imported"] and not done["repo_changed"]
-    assert git(a, "rev-parse", "HEAD") == root_head
-    assert git(bare_of(tmp_path, "a"), "rev-parse", "main") == remote_head
-    noop = api.plan("a", "adopt")
-    assert noop["plan"] is None and noop["digest"]
-    assert noop["digest"] == api.plan("a", "adopt")["digest"]
-    assert not api.apply("a", noop)["data"]["committed"]
-    git(a, "commit", "--allow-empty", "-qm", "source moved")
-    assert code_of(api.apply("a", noop, 409)) == "plan_changed"
-
-
 @pytest.mark.parametrize(
     "body",
     [
@@ -215,38 +141,23 @@ def test_adopt_digest_import_and_noop(api: Api, tmp_path: Path) -> None:
         {"action": "add", "options": {"type": "nope", "name": "x"}},
         {"action": "set", "options": {"type": "agent", "name": "x", "tools": []}},
         {"action": "remove", "options": {"type": "agent", "name": "x", "prune": 1}},
-        {"action": "onboard", "options": {"workflows": []}},
-        {"action": "onboard", "options": {"names": "agent/builder=x"}},
         {"action": "update", "options": {"item": "agent/builder"}},
         {"action": "add", "options": {"type": "agent", "name": "x", "files": []}},
-        {"action": "adopt", "path": "/tmp/repo"},
-        {"action": "adopt", "content": "bytes"},
-        {"action": "adopt", "options": None},
-        {"action": "adopt", "options": {"files": []}},
+        {"action": "add", "path": "/tmp/repo"},
+        {"action": "add", "content": "bytes"},
     ],
 )
 def test_strict_options(api: Api, body: dict[str, Any]) -> None:
     assert code_of(api.post("a", "factory/plan", body, 400)) == "usage_error"
 
 
-def test_onboard_selectors_and_adopt_conflicts(api: Api) -> None:
-    for options in ({"keep_local": ["invalid"]}, {"names": ["agent/builder"]}):
-        res = api.post("a", "factory/plan", {"action": "onboard", "options": options}, 422)
-        assert code_of(res) == "invalid_value"
-    assert (
-        code_of(api.post("a", "factory/plan", {"action": "adopt", "target": "pr"}, 422))
-        == "conflicting_options"
-    )
-    assert (
-        code_of(
-            api.post("a", "factory/apply", {"action": "adopt", "digest": "x", "message": "m"}, 422)
-        )
-        == "conflicting_options"
-    )
-    assert (
-        code_of(api.post("a", "factory/apply", {"action": "adopt", "digest": ""}, 400))
-        == "usage_error"
-    )
+@pytest.mark.parametrize("action", ["onboard", "adopt"])
+def test_onboard_and_adopt_are_unknown_actions(api: Api, action: str) -> None:
+    res = api.post("a", "factory/plan", {"action": action}, 400)
+    assert code_of(res) == "usage_error"
+    assert "action must be one of" in res["error"]["message"]
+    res = api.post("a", "factory/apply", {"action": action, "digest": "x"}, 400)
+    assert code_of(res) == "usage_error"
 
 
 def test_library_busy_and_release(
@@ -255,24 +166,29 @@ def test_library_busy_and_release(
     library(api, tmp_path)
     install(api, "a")
     install(api, "b")
+    for key in ("a", "b"):
+        write(tmp_path / key, ".factory/prompts/builder/system.md", f"custom {key}\n")
+        commit_push(tmp_path / key, "modified copy")
     started, release = threading.Event(), threading.Event()
     original = factory_api._call
 
     def slow(root: Path, req: factory_api.Request, *, dry_run: bool, environ: Any = None) -> Any:
-        if req.action == "adopt" and not dry_run:
+        if req.action == "export" and not dry_run:
             started.set()
             assert release.wait(30)
         return original(root, req, dry_run=dry_run, environ=environ)
 
     monkeypatch.setattr(factory_api, "_call", slow)
-    plan = api.plan("a", "adopt")
+    opts = {"type": "agent", "name": "builder", "slot": "exported-a"}
+    b_opts = {"type": "agent", "name": "builder", "slot": "exported-b"}
+    plan = api.plan("a", "export", options=opts)
     with ThreadPoolExecutor() as pool:
-        future = pool.submit(api.apply, "a", plan)
+        future = pool.submit(api.apply, "a", plan, options=opts)
         try:
             assert started.wait(30)
-            assert code_of(api.apply("a", plan, 409)) == "busy"
-            b_plan = api.plan("b", "adopt")
-            assert code_of(api.apply("b", b_plan, 409)) == "busy"
+            assert code_of(api.apply("a", plan, 409, options=opts)) == "busy"
+            b_plan = api.plan("b", "export", options=b_opts)
+            assert code_of(api.apply("b", b_plan, 409, options=b_opts)) == "busy"
             result = api.client.post("/api/library/push", json={})
             assert result.status_code == 409 and result.json()["error"]["code"] == "busy"
             perform(api, "b", "set", type="agent", name="builder", model="opus")
@@ -280,8 +196,11 @@ def test_library_busy_and_release(
             release.set()
         assert future.result()["ok"]
     # A failed digest releases both locks.
-    assert code_of(api.apply("a", {**plan, "digest": "wrong"}, 409)) == "plan_changed"
-    assert api.apply("a", api.plan("a", "adopt"))["ok"]
+    b_plan = api.plan("b", "export", options=b_opts)
+    assert code_of(api.apply("b", {**b_plan, "digest": "wrong"}, 409, options=b_opts)) == (
+        "plan_changed"
+    )
+    assert api.apply("b", api.plan("b", "export", options=b_opts), options=b_opts)["ok"]
 
 
 def test_single_repo_routes(api: Api, tmp_path: Path) -> None:
@@ -301,7 +220,6 @@ def test_single_repo_routes(api: Api, tmp_path: Path) -> None:
             ("revert", {"type": "agent", "name": "extra", "to": "manifest"}),
             ("export", {"type": "agent", "name": "extra", "slot": "solo-extra"}),
             ("remove", {"type": "agent", "name": "extra"}),
-            ("adopt", {}),
         ):
             body = {"action": action, "options": options}
             res = client.post("/api/factory/plan", json=body)
@@ -327,17 +245,6 @@ def test_export_partial_publish_error(api: Api, tmp_path: Path) -> None:
     assert not api.client.app.state.library.lock.locked()  # type: ignore[attr-defined]
     install(api, "b")
     perform(api, "b", "add", type="agent", name="exported")
-
-
-def test_adopt_missing_library_fix(
-    api: Api, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    library(api, tmp_path)
-    install(api, "a")
-    monkeypatch.setenv("HAIFA_LIBRARY", str(tmp_path / "missing-library"))
-    res = api.post("a", "factory/plan", {"action": "adopt"}, 409)
-    assert code_of(res) == "library_missing"
-    assert res["data"]["fix"].startswith("factory library clone ")
 
 
 def test_items_all_states_and_unknown_version(api: Api, tmp_path: Path) -> None:
@@ -375,10 +282,6 @@ def test_items_all_states_and_unknown_version(api: Api, tmp_path: Path) -> None:
         422,
     )
     assert code_of(res) == "unknown_version"
-    # Unknown versions are preserved by adopt with a recommended export.
-    adopt = api.plan("a", "adopt")
-    row = next(i for i in adopt["items"] if i["name"] == "builder")
-    assert row["adopt"] == "unknown" and row["fix"]
     del data["items"]["agents"]["builder"]
     manifest.write_text(yaml.safe_dump(data, sort_keys=False))
     assert state() == "local"
@@ -398,20 +301,6 @@ def test_add_skill_to_agent(api: Api, tmp_path: Path) -> None:
     assert "lint" in builder["skills"]
     perform(api, "a", "remove", type="skill", name="lint")
     assert not (tmp_path / "a/.claude/skills/lint/SKILL.md").exists()
-
-
-def test_solo_onboard(api: Api, tmp_path: Path) -> None:
-    library(api, tmp_path)
-    root = sssf_repo(tmp_path, "solo-sssf", origin=True)
-    with TestClient(create_app(root), base_url=BASE) as client:
-        res = client.post("/api/factory/plan", json={"action": "onboard"})
-        assert res.status_code == 200, res.text
-        plan = res.json()["data"]
-        res = client.post(
-            "/api/factory/apply", json={"action": "onboard", "digest": plan["digest"]}
-        )
-        assert res.status_code == 200, res.text
-        assert res.json()["data"]["library_commit"]
 
 
 def test_roster_and_item_diff_are_read_only(api: Api, tmp_path: Path) -> None:

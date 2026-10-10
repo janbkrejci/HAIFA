@@ -285,7 +285,9 @@ def test_existing_config_is_refused(repo: Path, capsys: Capsys, existing: str) -
 
     assert rc == 2
     assert env["error"]["code"] == "existing_config"
-    assert "factory onboard" in env["error"]["message"]
+    assert "does not take over" in env["error"]["message"]
+    assert "factory onboard" not in env["error"]["message"]
+    assert "fix" not in (env.get("data") or {})
     after = worktree_paths(repo)
     assert after == before
 

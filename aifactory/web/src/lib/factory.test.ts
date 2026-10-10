@@ -17,7 +17,7 @@ describe('factory installation state', () => {
     expect(installOptions(installPlan())).not.toHaveProperty('test_command')
   })
   it('names plan codes and file actions in Czech, unknown ones as they are', () => {
-    expect(planCodeText('onboarding_pending')).toBe('onboarding čeká v PR')
+    expect(planCodeText('plan_changed')).toBe('plán se mezitím změnil')
     expect(planCodeText('something_new')).toBe('something_new')
     expect(fileActionText('create')).toBe('nový')
   })

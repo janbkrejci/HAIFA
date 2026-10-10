@@ -481,7 +481,7 @@ def test_check_carries_manifest_and_version(api: Api, tmp_path: Path) -> None:
     store.init_library("team")
     install(api, "a")
     data = api.get("a", "factory/check?offline=1&fresh=1")["data"]
-    assert data["state"] == "onboarded"
+    assert data["state"] == "installed"
     assert data["library"]["name"]
     assert isinstance(data["manifest"]["format"], int)
     assert data["manifest"]["written_by"]
@@ -491,7 +491,7 @@ def test_check_carries_manifest_and_version(api: Api, tmp_path: Path) -> None:
     write(tmp_path / "b", ".factory/config.yaml", "base: main\n")
     commit_push(tmp_path / "b", "pre-library config")
     old = api.get("b", "factory/check?offline=1&fresh=1")["data"]
-    assert old["state"] == "pre_library"
+    assert old["state"] == "unsupported"
     assert old["manifest"] is None and old["version"] == __version__
 
 
@@ -555,46 +555,3 @@ def test_pull_requires_review_and_rejects_changed_remote(api: Api, tmp_path: Pat
     assert next_plan["files"][0]["content"] == "remote change\n"
     api.post("a", "config/pull", {"digest": next_plan["digest"]})
     assert git(a, "rev-parse", "main") == after
-
-
-def test_dashboard_onboarding_hint_uses_known_refs(api: Api, tmp_path: Path) -> None:
-    install(api, "a")
-    repo = tmp_path / "b"
-    write(repo, ".factory/config.yaml", "base: main\n")
-    commit_push(repo, "pre-library")
-    assert web_factory.onboarding_hint(repo)["onboarding_state"] is None
-    git(repo, "branch", "factory-config/onboarding")
-    assert web_factory.onboarding_hint(repo)["onboarding_state"] == "onboarding_pending"
-    git(repo, "fetch", str(bare_of(tmp_path, "a")), "+main:refs/remotes/origin/main")
-    before = git(repo, "rev-parse", "main")
-    assert web_factory.onboarding_hint(repo)["onboarding_state"] == "onboarded_in_remote"
-    assert git(repo, "rev-parse", "main") == before
-
-
-def test_onboarding_preview_links_pending_pr(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    from types import SimpleNamespace
-
-    from aifactory.config.settings import ProjectSettings
-    from aifactory.providers.base import PullRequest
-    from aifactory.providers.publish import Blocker
-
-    result = SimpleNamespace(
-        to_json=lambda: {"digest": "d", "files": [], "blockers": []},
-        warnings=[],
-        plan=SimpleNamespace(
-            blockers=[Blocker("onboarding_pending", "pending")], settings=ProjectSettings()
-        ),
-    )
-    monkeypatch.setattr(web_factory, "_call", lambda *args, **kwargs: result)
-    pr = PullRequest(
-        "42", "https://example.test/pull/42", "factory-config/onboarding", "main", "Onboard"
-    )
-    monkeypatch.setattr(
-        "aifactory.providers.get_provider",
-        lambda *args: SimpleNamespace(find_open_pr=lambda branch: pr),
-    )
-    req = web_factory.parse_plan_body({"action": "onboard", "options": {}, "target": "base"})
-    data, _ = web_factory.plan(tmp_path, req)
-    assert data["pending_pr"] == {"id": "42", "url": "https://example.test/pull/42"}

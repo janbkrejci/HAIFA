@@ -18,7 +18,7 @@ commit goes to ``factory-init/<n>`` with a pull request; base and the checkout s
 
 Blockers (``data.blockers``; the commit refuses with the first, exit 2):
 ``already_installed`` (manifest in base; ``factory update``), ``existing_config`` (sssf or
-``.factory/`` configuration without a manifest; ``factory onboard``),
+``.factory/`` configuration without a manifest; HAIFA does not take it over),
 ``config_not_committed`` (a manifest only in the working tree; ``factory config commit``),
 ``dirty_paths`` (a planned path on disk with other content), ``invalid_plan`` (the planned
 configuration does not load or a workflow fails its preflight) and, for the direct target,
@@ -463,8 +463,7 @@ def _state_blocker(root: Path, base_sha: str) -> Blocker | None:
         return Blocker(
             "existing_config",
             f"the repo has factory configuration without a manifest ({', '.join(found)}); "
-            "run factory onboard",
-            fix="factory onboard",
+            "HAIFA does not take over existing configuration",
         )
     if on_disk:
         return Blocker(

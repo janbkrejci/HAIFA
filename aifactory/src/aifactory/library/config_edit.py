@@ -40,7 +40,7 @@ Blockers (the first one is raised, exit 2): ``run_in_progress`` and ``invalid_pl
 (worktree); ``dirty_paths``, ``invalid_plan``, ``not_on_base``, ``run_in_progress``,
 ``base_behind`` and ``base_diverged`` (direct); ``dirty_paths`` and ``invalid_plan`` (pr).
 
-Raised: ``not_onboarded`` (no manifest; ``factory onboard``), ``invalid_value``,
+Raised: ``not_onboarded`` (no manifest; ``factory init``), ``invalid_value``,
 ``conflicting_options``, ``unknown_item``, ``invalid_item``, ``slot_taken``, ``in_use``,
 ``unknown_base``, ``invalid_config``, ``plan_changed`` and the publish codes
 (``commit_failed``, ``base_moved``, ``push_failed``, ``fetch_failed``).
@@ -154,13 +154,13 @@ class RepoState:
                 raise LibraryStoreError(
                     "not_onboarded",
                     f"{MANIFEST_FILE} is in the working tree but not in {self.base}; "
-                    "run factory config commit (or factory onboard)",
+                    "run factory config commit",
                     data={"fix": "factory config commit"},
                 )
             raise LibraryStoreError(
                 "not_onboarded",
-                f"the repo has no {MANIFEST_FILE}; run factory onboard",
-                data={"fix": "factory onboard"},
+                f"the repo has no {MANIFEST_FILE}; install factory with factory init",
+                data={"fix": "factory init"},
             )
         try:
             return parse_manifest(data.decode("utf-8"), MANIFEST_FILE)

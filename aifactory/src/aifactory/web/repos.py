@@ -10,7 +10,7 @@ trace DB another registered repository already uses are refused.
 
 ``repo_status`` is one item of ``GET /api/repos``: ``ok``, ``uncommitted``,
 ``not_installed``, ``missing`` or ``not_git``, with the factory state from
-``aifactory.onboard.state.repo_state`` (O1). ``RepoContexts`` keeps one ``LiveHub`` per
+``aifactory.config.repo_state.repo_state``. ``RepoContexts`` keeps one ``LiveHub`` per
 registered repository and closes it when the repository leaves the registry.
 """
 
@@ -23,20 +23,18 @@ from pathlib import Path
 from typing import Any
 
 from aifactory.config import ConfigError
+from aifactory.config.repo_state import RepoState, repo_state
 from aifactory.config.settings import load_local
-from aifactory.onboard.state import repo_state
 from aifactory.run.gitops import read_git, repo_layout
 from aifactory.web import settings as web_settings
 from aifactory.web.backlog import UsageError
-from aifactory.web.factory import FactoryState, onboarding_hint
+from aifactory.web.factory import FactoryState
 from aifactory.web.live import LiveHub
 from aifactory.web.registry import Registry, RegistryState, RepoEntry, RepoError, same_repo
-from aifactory.web.sssf_cleanup import installation_paths
 
 JsonDict = dict[str, Any]
 
 REPO_STATUSES = ("ok", "uncommitted", "not_installed", "missing", "not_git")
-NOT_INSTALLED_STATES = frozenset({"none", "sssf"})
 RUN_WORKTREE_PARTS = (".factory", "worktrees")
 DEFAULT_TRACE_DB = ".factory/trace.db"
 
@@ -239,12 +237,9 @@ def _problem_json(exc: RepoError) -> JsonDict:
     return {"code": exc.code, "message": exc.message, **exc.data}
 
 
-def _factory(root: Path, *, inspect_only: bool = False) -> JsonDict | None:
+def _factory(root: Path) -> RepoState | None:
     try:
-        state = repo_state(root).to_json()
-        if inspect_only and state["state"] == "sssf":
-            return state
-        return {**state, **onboarding_hint(root)}
+        return repo_state(root)
     except (ConfigError, OSError):
         return None
 
@@ -260,7 +255,8 @@ def inspect_repo(raw: object, state: RegistryState) -> JsonDict:
         branch = read_git(root, "rev-parse", "--abbrev-ref", "HEAD") or None
         url = read_git(root, "remote", "get-url", "origin")
         remote = {"name": "origin", "url": url} if url else None
-        factory = _factory(root, inspect_only=True)
+        found = _factory(root)
+        factory = found.to_json() if found is not None else None
     return {
         "path": str(ex.path),
         "root": str(root) if root is not None else None,
@@ -272,7 +268,6 @@ def inspect_repo(raw: object, state: RegistryState) -> JsonDict:
         "remote": remote,
         "trace_db": str(ex.trace_db) if ex.trace_db is not None else None,
         "factory": factory,
-        "sssf_paths": installation_paths(root) if root is not None else [],
     }
 
 
@@ -288,14 +283,14 @@ def repo_status(entry: RepoEntry) -> JsonDict:
         item["status"] = "not_git"
         return item
     factory = _factory(layout.toplevel)
-    item["factory"] = factory
+    item["factory"] = factory.to_json() if factory is not None else None
     if factory is None:
         item["status"] = "not_git"
         return item
-    state = factory["state"]
-    if state in NOT_INSTALLED_STATES:
+    state = factory.state
+    if state == "none" or (state == "unsupported" and not factory.config_in_base):
         item["status"] = "not_installed"
-    elif state == "working_tree":
+    elif state == "uncommitted":
         item["status"] = "uncommitted"
     else:
         data, _warnings = web_settings.config_status(layout.toplevel)

@@ -23,8 +23,8 @@ from multi_repo import (
     commit_all,
     git,
     init_repo,
+    install,
     multi_client,
-    onboard,
     register,
     rmtree,
     symlink,
@@ -210,20 +210,21 @@ def test_inspect_factory_states(client: TestClient, tmp_path: Path) -> None:
     write(sssf, SSSF_ROSTER, "name: sssf\n")
     commit_all(sssf)
     data = _inspect(client, sssf)["data"]
-    assert (data["factory"]["state"], data["factory"]["action"]) == ("sssf", "onboard")
+    assert (data["factory"]["state"], data["factory"]["action"]) == ("unsupported", None)
+    assert "sssf_paths" not in data and "onboarding_state" not in data["factory"]
 
     pre = init_repo(tmp_path / "pre")
     write(pre, ".factory/config.yaml", "base: main\n")
     commit_all(pre)
     data = _inspect(client, pre)["data"]
-    assert (data["factory"]["state"], data["factory"]["action"]) == ("pre_library", "onboard")
+    assert (data["factory"]["state"], data["factory"]["action"]) == ("unsupported", None)
     assert data["factory"]["onboarding"] is None
 
     done = init_repo(tmp_path / "done")
-    onboard(done)
+    install(done)
     git(done, "remote", "add", "origin", "https://example.com/done.git")
     data = _inspect(client, done)["data"]
-    assert (data["factory"]["state"], data["factory"]["action"]) == ("onboarded", "adopt")
+    assert (data["factory"]["state"], data["factory"]["action"]) == ("installed", None)
     assert data["factory"]["onboarding"]["by"] == "Ada Tester"
     assert data["remote"] == {"name": "origin", "url": "https://example.com/done.git"}
 
@@ -248,7 +249,7 @@ def test_inspect_runs_only_read_git(
     client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     root = init_repo(tmp_path / "proj")
-    onboard(root)
+    install(root)
     git(root, "remote", "add", "origin", "https://example.com/proj.git")
     (root / "sub").mkdir()
     other = init_repo(tmp_path / "other")
@@ -332,7 +333,7 @@ def test_refused_install_leaves_no_registry_entry(
 
 def test_list_statuses(client: TestClient, tmp_path: Path) -> None:
     done = init_repo(tmp_path / "done")
-    onboard(done)
+    install(done)
     wt = init_repo(tmp_path / "wt")
     write(wt, ".factory/config.yaml", "base: main\n")
     dirty = init_repo(tmp_path / "dirty")
@@ -360,9 +361,10 @@ def test_list_statuses(client: TestClient, tmp_path: Path) -> None:
         "gone": "missing",
         "nogit": "not_git",
     }
-    assert by_id["done"]["factory"]["state"] == "onboarded"
-    assert by_id["sssf"]["factory"]["state"] == "sssf"
-    assert by_id["dirty"]["factory"]["state"] == "pre_library"
+    assert by_id["done"]["factory"]["state"] == "installed"
+    assert by_id["sssf"]["factory"]["state"] == "unsupported"
+    assert by_id["dirty"]["factory"]["state"] == "unsupported"
+    assert by_id["wt"]["factory"]["state"] == "uncommitted"
     assert by_id["gone"]["factory"] is None
     assert set(by_id["done"]) >= {"id", "name", "path", "added_at", "status", "factory"}
 

@@ -143,8 +143,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "plan_changed",
         "2",
         "config commit/add/set/remove/export/revert, update or init --expect: the plan's digest "
-        "differs (export: also when the library HEAD moved); onboard/adopt or global library API "
-        "plan changed; "
+        "differs (export: also when the library HEAD moved); global library API plan changed; "
         "review the plan again",
     ),
     ("no_remote", "2", "config pull or library status/pull/push: no remote is configured"),
@@ -170,8 +169,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "library_missing",
         "2",
-        "there is no library yet (run factory library init; for factory adopt data.command "
-        "clones the library named by the manifest)",
+        "there is no library yet (run factory library init)",
     ),
     ("library_dirty", "2", "the library has uncommitted changes; commit or discard them"),
     (
@@ -241,7 +239,8 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "existing_config",
         "2",
         "factory init: the repo has factory configuration without a manifest "
-        "(.factory/ or adws/adw_sssf_config/, in base or the working tree); run factory onboard",
+        "(.factory/ or adws/adw_sssf_config/, in base or the working tree); HAIFA does not take "
+        "it over",
     ),
     (
         "config_not_committed",
@@ -266,57 +265,14 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "not_onboarded",
         "2",
-        "factory adopt: the repo is not onboarded in base (data.state and data.action say "
-        "what to run instead); config add/set/remove/export/revert/diff: no "
-        ".factory/manifest.yaml (data.fix: factory onboard); factory update: no manifest in "
-        "base (data.fix: factory onboard or factory init)",
+        "the repo has no .factory/manifest.yaml in base (data.fix: factory init, or factory "
+        "config commit when it is only in the working tree)",
     ),
     (
         "merge_conflict",
         "2",
         "factory update --merge: git merge-file left conflicts or the merged item is not "
         "valid; nothing is written, the repo copy stays (keep it or --take)",
-    ),
-    (
-        "already_onboarded",
-        "2",
-        "factory onboard: the repo is onboarded in base; it is never extracted again "
-        "(data.fix: factory adopt)",
-    ),
-    ("not_installed", "2", "factory onboard: the repo has no factory configuration; factory init"),
-    (
-        "sssf_roster_invalid",
-        "2",
-        "factory onboard: adws/adw_sssf_config/sssf.config.yaml is missing or not a valid "
-        "roster; fix it and commit",
-    ),
-    (
-        "source_not_committed",
-        "2",
-        "factory onboard: .factory/ has uncommitted changes; commit or discard them first",
-    ),
-    (
-        "onboarded_in_remote",
-        "2",
-        "factory onboard: the remote base has .factory/manifest.yaml; run factory config pull, "
-        "then factory adopt",
-    ),
-    (
-        "onboarding_pending",
-        "2",
-        "factory onboard: the branch factory-config/onboarding exists; merge or close its PR "
-        "and delete the branch",
-    ),
-    (
-        "remote_unchecked",
-        "2",
-        "factory onboard: the remote could not be read (fetch or ls-remote failed); try again",
-    ),
-    (
-        "name_taken",
-        "2",
-        "factory onboard: the name of a new library item is another item with other content; "
-        "choose one with --name TYP/JMÉNO=NOVÉ or use --keep-local",
     ),
     # Results of a command that ran.
     ("run_failed", "1", "the run ended failed or accept was not met; worktree and branch kept"),
@@ -505,29 +461,10 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "modified",
         "diverged",
     ),
-    # data.state of `factory check` and the onboarding state of a repo, first match wins
-    "repo_state": ("onboarded", "pre_library", "sssf", "working_tree", "none"),
+    # data.state of `factory check` and the state of a repo, first match wins
+    "repo_state": ("installed", "unsupported", "uncommitted", "none"),
     # data.action of `factory check`: what the repo state calls for
-    "repo_action": ("adopt", "onboard", "config_commit", "init"),
-    # data.report[].code of `factory onboard`
-    "onboard_report": (
-        "linked",
-        "converted",
-        "carried_over",
-        "changed_meaning",
-        "not_converted",
-        "manual",
-        "left_in_place",
-    ),
-    # warnings of `factory onboard`
-    "onboard": (
-        "no_remote",
-        "remote_note",
-        "gitignore_dirty",
-        "harness_missing",
-        "unknown_workflow",
-        "alternate_rosters",
-    ),
+    "repo_action": ("config_commit", "init"),
     # data.update.items[].action of `factory update`
     "update_item": ("same", "update", "keep", "conflict", "unknown", "restore", "absent"),
     # data.update.items[].files[].status of `factory update`
@@ -544,10 +481,6 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
     ),
     # data.update.migrations[].id of `factory update`
     "migration": ("m001",),
-    # data.items[].adopt of `factory adopt`
-    "adopt_item": ("present", "imported", "import", "invalid", "unknown"),
-    # warnings of `factory adopt`
-    "adopt": ("library_mismatch",),
     # data.items[].action of `factory library seed`
     "library_seed": ("create", "update", "unchanged", "kept", "take"),
     # warnings of `factory library status` and `factory library clone`
@@ -581,11 +514,8 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
     "check": (
         "factory_missing",
         "config_not_committed",
-        "sssf_not_onboarded",
-        "pre_library_config",
-        "repo_onboarded",
-        "sssf_leftover",
-        "alternate_rosters",
+        "repo_unsupported",
+        "repo_installed",
         "base_missing",
         "checkout_not_on_base",
         "remote_missing",

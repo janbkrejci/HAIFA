@@ -546,10 +546,8 @@ def _check_report() -> dict[str, Any]:
     return {
         "in_repo": True,
         "repo": None,
-        "state": "pre_library",
+        "state": "unsupported",
         "action": None,
-        "sssf_leftover": False,
-        "alternate_rosters": False,
         "onboarding": None,
         "base": "main",
         "commit": None,

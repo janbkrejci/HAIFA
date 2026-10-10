@@ -248,8 +248,6 @@ def test_no_prompt_names_outputs_by_adw_id() -> None:
         if path.is_file()
         and "__pycache__" not in path.parts
         and not path.is_relative_to(AIFACTORY_DIR / "validation" / "results")
-        # stock sssf prompts: factory onboard merges a repo's sssf prompts against them
-        and not path.is_relative_to(AIFACTORY_DIR / "src" / "aifactory" / "onboard" / "sssf_stock")
         and "<adw_id>_" in path.read_text(encoding="utf-8", errors="ignore")
     ]
     assert offenders == []

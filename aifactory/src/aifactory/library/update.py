@@ -34,7 +34,7 @@ Modes as ``config add`` (``config_edit.finish_plan`` and ``execute_plan``): ``--
 DIGEST] [-m TEXT]`` (one commit on base or a pull request).
 
 Refused before anything else: ``not_onboarded`` (no manifest in base; fix ``factory
-onboard`` or ``factory init``), ``config_not_committed`` (the manifest is only in the
+init`` when the repo has no factory yet), ``config_not_committed`` (the manifest is only in the
 working tree) and ``format_unsupported`` (a manifest format newer than this HAIFA).
 """
 
@@ -124,11 +124,16 @@ def _refuse(root: Path, base: str, base_sha: str, worktree: bool) -> None:
             or (root / CONFIG_FILE).is_file()
             or (root / SSSF_CONFIG_DIR).is_dir()
         )
+        if factory:
+            raise LibraryStoreError(
+                "not_onboarded",
+                f"{root} has no {MANIFEST_FILE} in {base}; HAIFA does not take over a "
+                "configuration without a manifest",
+            )
         raise LibraryStoreError(
             "not_onboarded",
-            f"{root} has no {MANIFEST_FILE} in {base}; run factory onboard (existing .factory/ "
-            "or adws/) or factory init (no factory yet)",
-            data={"fix": "factory onboard" if factory else "factory init"},
+            f"{root} has no {MANIFEST_FILE} in {base}; run factory init",
+            data={"fix": "factory init"},
         )
     _parse(git.read_blob(root, found[1]), f"{MANIFEST_FILE} in {base}")
     disk = root / MANIFEST_FILE

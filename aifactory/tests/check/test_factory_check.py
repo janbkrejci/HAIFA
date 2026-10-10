@@ -54,10 +54,11 @@ def repo(tmp_path: Path) -> Path:
 
 def test_healthy_repo(repo: Path) -> None:
     report = run_check(repo, machine=FakeMachine())
-    assert (report.state, report.action) == ("pre_library", "onboard")
+    assert (report.state, report.action) == ("unsupported", None)
     assert report.ok, report.findings
-    _assert(report, "pre_library_config", "repo", "info", "onboard")
-    assert _codes(report) == ["pre_library_config", "library_missing"]
+    finding = _assert(report, "repo_unsupported", "repo", "info")
+    assert "does not take over" in finding.message
+    assert _codes(report) == ["repo_unsupported", "library_missing"]
     _assert(report, "library_missing", "library", "warning")
     assert report.commit == git(repo, "rev-parse", "HEAD").strip()
     assert report.groups == ("repo", "machine", "library")
@@ -65,8 +66,9 @@ def test_healthy_repo(repo: Path) -> None:
     data = report.to_json()
     assert data["counts"] == {"error": 0, "warning": 1, "info": 1}
     assert data["in_repo"] is True
-    assert data["state"] == "pre_library" and data["action"] == "onboard"
-    assert data["sssf_leftover"] is False and data["onboarding"] is None
+    assert data["state"] == "unsupported" and data["action"] is None
+    assert data["onboarding"] is None
+    assert "sssf_leftover" not in data and "alternate_rosters" not in data
     assert data["ok"] is True
 
 
@@ -81,6 +83,18 @@ def test_repo_without_factory(tmp_path: Path) -> None:
     assert not report.ok
 
 
+def test_sssf_repo_is_unsupported(tmp_path: Path) -> None:
+    repo = init_repo(tmp_path / "sssf")
+    write(repo, "adws/adw_sssf_config/x.yaml", "agents: []\n")
+    commit_all(repo, "sssf")
+    report = run_check(repo, machine=FakeMachine())
+    assert (report.state, report.action) == ("unsupported", None)
+    finding = _assert(report, "repo_unsupported", "repo", "error")
+    assert "sssf" in finding.message and "factory init" in (finding.fix or "")
+    assert [f.code for f in report.findings if f.scope == "repo"] == ["repo_unsupported"]
+    assert not report.ok
+
+
 def test_config_only_in_working_tree(tmp_path: Path) -> None:
     repo = init_repo(tmp_path / "wt")
     write(repo, "README.md", "readme\n")
@@ -89,7 +103,7 @@ def test_config_only_in_working_tree(tmp_path: Path) -> None:
         if rel.startswith(".factory/"):
             write(repo, rel, text)
     report = run_check(repo, machine=FakeMachine())
-    assert (report.state, report.action) == ("working_tree", "config_commit")
+    assert (report.state, report.action) == ("uncommitted", "config_commit")
     _assert(report, "config_not_committed", "repo", "error", "config_commit")
 
 
@@ -211,7 +225,7 @@ def test_behind_and_ahead_of_remote(repo: Path, tmp_path: Path) -> None:
     _remote, other = _with_remote(repo, tmp_path)
     report = run_check(repo, machine=FakeMachine())
     assert (report.remote, report.ahead, report.behind) == ("origin", 0, 0)
-    assert _codes(report) == ["pre_library_config", "library_missing"]
+    assert _codes(report) == ["repo_unsupported", "library_missing"]
 
     write(other, "README.md", "remote change\n")
     commit_all(other, "remote change")
@@ -304,7 +318,7 @@ def test_gitignore_missing(repo: Path) -> None:
     finding = _assert(report, "gitignore_missing", "repo", "warning", "update")
     assert ".factory/local.yaml" in finding.message
     assert [f.code for f in report.findings] == [
-        "pre_library_config",
+        "repo_unsupported",
         "gitignore_missing",
         "library_missing",
     ]
@@ -315,7 +329,7 @@ def test_base_missing(tmp_path: Path) -> None:
     for rel, text in FILES.items():
         write(repo, rel, text)
     report = run_check(repo, machine=FakeMachine())
-    assert report.state == "working_tree" and report.commit is None
+    assert report.state == "uncommitted" and report.commit is None
     _assert(report, "base_missing", "repo", "error")
 
 
@@ -353,9 +367,7 @@ def test_added_rule_group(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     report = run_check(repo, machine=FakeMachine())
     assert report.groups == ("repo", "machine", "library", "extra")
     messages = [
-        f.message
-        for f in report.findings
-        if f.code not in ("pre_library_config", "library_missing")
+        f.message for f in report.findings if f.code not in ("repo_unsupported", "library_missing")
     ]
     assert messages == ["from an added group", "broken: boom"]
     _assert(report, "check_failed", "machine", "info")

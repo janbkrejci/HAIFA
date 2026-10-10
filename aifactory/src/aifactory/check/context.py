@@ -23,6 +23,7 @@ from aifactory.backlog.model import Issue
 from aifactory.check.machine import Machine
 from aifactory.config.errors import ConfigError, ConfigIssue
 from aifactory.config.loader import FactoryConfig, load_config
+from aifactory.config.repo_state import RepoState, repo_state
 from aifactory.config.run import worktree_base
 from aifactory.config.settings import CONFIG_FILE, ProjectSettings, parse_project_settings
 from aifactory.config.source import CommitSource, WorktreeSource, git_try, repo_root
@@ -31,7 +32,6 @@ from aifactory.harness.config import SSSFConfig
 from aifactory.library.remote import library_status
 from aifactory.library.state import repo_items
 from aifactory.library.store import LibraryStoreError
-from aifactory.onboard.state import RepoState, repo_state
 from aifactory.run.gitops import extract_backlog
 
 
@@ -104,8 +104,8 @@ class CheckContext:
 
     @cached_property
     def items(self) -> list[dict[str, Any]]:
-        """States of the items in base (AR23); only for an onboarded repo with a manifest."""
-        if self.state.state != "onboarded" or self.state.manifest_error is not None:
+        """States of the items in base (AR23); only for an installed repo with a manifest."""
+        if self.state.state != "installed" or self.state.manifest_error is not None:
             return []
         if self.commit is None:
             return []
@@ -138,18 +138,18 @@ class CheckContext:
 
     @cached_property
     def state(self) -> RepoState:
-        """The onboarding state of the repo, read from base (AR30)."""
+        """The state of the repo, read from base (AR30)."""
         return repo_state(self.main, self.base)
 
     @property
     def committed(self) -> bool:
-        """The factory configuration is committed to base (onboarded or pre_library)."""
-        return self.state.state in ("onboarded", "pre_library")
+        """The factory configuration is committed to base (``config_in_base``)."""
+        return self.state.config_in_base
 
     @property
     def installed(self) -> bool:
         """Factory is installed, in base or only in the working tree; the rules run."""
-        return self.committed or self.state.state == "working_tree"
+        return self.committed or self.state.state == "uncommitted"
 
     # -- configuration --
 

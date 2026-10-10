@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T10
 title: "Odstranit onboarding (sssf, pre_library) a factory adopt"
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 writes: [aifactory/, docs/sssf/]
@@ -31,3 +31,4 @@ Pevná omezení:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-10 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/5 · náklady $8.67

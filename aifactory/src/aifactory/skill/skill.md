@@ -25,14 +25,13 @@ and `fix`, together with `data.state` and `data.action`, before making changes:
 | State | Action | Next step |
 | --- | --- | --- |
 | `none` (repo without factory) | `init` | Add factory to the existing repo below. |
-| `sssf` or `pre_library` (sssf or `.factory/` without a manifest) | `onboard` | `factory onboard --dry-run --json`; show files, report and digest, then with consent `factory onboard --commit --expect <digest> --json`. Onboard once per repo. |
-| `onboarded` (manifest in base) | `adopt` | `factory adopt --dry-run --json`, then `factory adopt --json` to prepare this machine. Do not onboard again. |
-| `working_tree` (configuration not committed) | `config_commit` | Review and commit configuration using the Commit configuration procedure, then check again. |
+| `uncommitted` (configuration only in the working tree) | `config_commit` | Review and commit configuration using the Commit configuration procedure, then check again. |
+| `installed` (manifest in base) | none | Factory is installed. Run `factory update` to bring items from the library. |
+| `unsupported` (`.factory/` without a manifest, or sssf `adws/`) | none | HAIFA does not take over a configuration it did not install. Tell the user; do not convert it. |
 
 Resolve machine findings (Git, provider CLI, chosen harness CLI and credentials)
-using their `fix`; do not run tasks until error findings are resolved. Other
-machines adopt the already onboarded repository. See Check and Onboarding and
-adopt for the payload details.
+using their `fix`; do not run tasks until error findings are resolved. See Check for
+the payload details.
 
 ## Calling convention
 
@@ -266,7 +265,7 @@ Hard constraints: do not change `src/model/`.
 ### `.factory/config.yaml`
 
 Shared settings are committed in `.factory/config.yaml`. Create them through
-`factory init` (or retain the configuration converted by `factory onboard`),
+`factory init`,
 review the detected base and provider, then edit the YAML to fit
 this repository. Validate with `factory check --json` and
 `factory backlog check --json`; review and commit using Commit configuration.
@@ -442,15 +441,20 @@ accept: test.passed
 `factory check [--repo PATH] [--offline] --json` only reads; it changes nothing in the
 repository, the trace DB, the library or the home directory, and never fetches.
 
-1. `data.state` is the onboarding state of the repo, read from base (see Onboarding and
-   adopt): `onboarded`, `pre_library`, `sssf`, `working_tree` or `none`. `data.action` is
-   what that state calls for (`adopt`, `onboard`, `config_commit`, `init`),
-   `data.sssf_leftover` and `data.alternate_rosters` are its flags and `data.onboarding`
-   is the `onboarding` block of the manifest (who, when, from what), else `null`. The
-   finding of the state carries the same action: `factory_missing` (`init`),
-   `config_not_committed` (`config_commit`), `sssf_not_onboarded` (`onboard`, error),
-   `pre_library_config` (`onboard`, info) and `repo_onboarded` (`adopt`, info), plus
-   `sssf_leftover` and `alternate_rosters` (info).
+1. `data.state` is the state of the repo, read from base, first match wins:
+   - `installed`: `.factory/manifest.yaml` is in base. No action.
+   - `unsupported`: `.factory/config.yaml` or `.factory/agents.yaml` without a manifest,
+     or an sssf installation in `adws/`. No action: HAIFA does not take over a
+     configuration it did not install.
+   - `uncommitted`: the configuration exists only in the working tree. Action
+     `config_commit`.
+   - `none`: no factory. Action `init`.
+
+   `data.action` is what that state calls for (`config_commit`, `init` or `null`) and
+   `data.onboarding` is the `onboarding` block of the manifest (who, when, from what),
+   else `null`. The finding of the state carries the same action: `factory_missing`
+   (`init`), `config_not_committed` (`config_commit`), `repo_unsupported` (info for
+   `.factory/` without a manifest, error for sssf `adws/`) and `repo_installed` (info).
 2. Outside a git repository (no `--repo`) only the machine and the library are checked:
    `data.in_repo` is `false` and `data.repo`, `data.state`, `data.action` and `data.base`
    are `null`. Inside a repository `data.in_repo` is `true`.
@@ -461,11 +465,10 @@ repository, the trace DB, the library or the home directory, and never fetches.
    - `severity`: `error` (factory will not run), `warning` (it runs, but something is off),
      `info`.
    - `fix` says in words what to do. `action` names the fix (`init`, `update`, `export`,
-     `config_commit`, `config_pull`, `onboard`, `adopt`) or is `null` for a manual fix.
+     `config_commit`, `config_pull`) or is `null` for a manual fix.
      `config_commit` and `config_pull` are `factory config commit` and `factory config pull`
-     (see Commit configuration); `init` is `factory init`, `adopt` is `factory adopt`,
-     `update` is `factory update` (see Update from the library); `export` is
-     `factory config export`, and `onboard` is `factory onboard` (once per repo).
+     (see Commit configuration); `init` is `factory init`, `update` is `factory update`
+     (see Update from the library) and `export` is `factory config export`.
 4. Findings and their fixes, by group:
    - Installation: `factory_outdated` (machine, error: the library needs a newer factory;
      `factory upgrade`).
@@ -490,7 +493,7 @@ repository, the trace DB, the library or the home directory, and never fetches.
      `CLAUDE_PERMISSION_MODE`, `CODEX_SAFE_MODE`, `CODEX_SANDBOX`, `PI_SAFE_MODE` is set;
      unset it unless you want it).
    - Items of base that are not `synced` with the library (AR23): `item_local` (info,
-     `export`), `item_missing` (warning, `update`), `item_unknown` (warning, `adopt`),
+     `export`), `item_missing` (warning, `update`), `item_unknown` (warning, `export`),
      `item_outdated` (info, `update`), `item_modified` (info, `export`) and
      `item_diverged` (warning, `update`), and `update_available` (info, `update`: the
      library (or the seed) has new versions of items of the manifest, a missing item can
@@ -498,7 +501,7 @@ repository, the trace DB, the library or the home directory, and never fetches.
    - Repo: `workflow_not_in_repo` (the backlog names a workflow a repo with a manifest does
      not have in `.factory/workflows/`; add it or change the tasks), `roles_full_copy`
      (`.factory/roles.yaml` has `code_steps`; keep only the changed roles),
-     `unknown_thinking` (an agent's `thinking` is not a known level) and `sssf_leftover`.
+     and `unknown_thinking` (an agent's `thinking` is not a known level).
 5. `data.ahead` / `data.behind` compare base with `refs/remotes/<remote>/<base>` as of the
    last `git fetch`; fetch first when you need the current state.
 6. `--offline` skips the calls to the hosting and the harness logins (`gh auth status`,
@@ -514,9 +517,9 @@ repository, the trace DB, the library or the home directory, and never fetches.
 one commit, after the user has seen the plan.
 
 1. `factory check --json`: follow `data.action` and the findings' actions.
-   `init` means a repo without factory; `onboard` means sssf or `.factory/` without
-   a manifest; `adopt` means already onboarded. `config_commit` means configuration
-   exists only in the working tree; commit it before continuing.
+   `init` means a repo without factory. `config_commit` means configuration exists only
+   in the working tree; commit it before continuing. State `installed` needs no init,
+   and HAIFA does not take over a repo in state `unsupported`.
 2. `factory init --dry-run --json [options]` writes nothing and returns the plan:
    - `data.files`: `path`, `action`, `diff` and `content`, including
      `.factory/manifest.yaml`.
@@ -554,9 +557,9 @@ one commit, after the user has seen the plan.
    --json`. The commit then goes to `factory-init/<n>` with a pull request (`data.branch`,
    `data.pr`), and base and the checkout stay as they are.
 7. Blockers (the commit refuses with the first one):
-   - `already_installed`: run `factory adopt` to prepare this machine.
-   - `existing_config`: sssf or `.factory/` configuration without a manifest; run
-     `factory onboard`.
+   - `already_installed`: factory is installed; run `factory update`.
+   - `existing_config`: sssf or `.factory/` configuration without a manifest; HAIFA does
+     not take over existing configuration.
    - `config_not_committed`: run `factory config commit`.
    - `dirty_paths`: the user moves or commits the listed files.
    - `invalid_plan`: see `data.validation.issues`, or `error.issues` on commit; change the
@@ -865,7 +868,8 @@ A new HAIFA can ship new versions of the seed agents and workflows. `seed` in
 `.factory/manifest.yaml` records where the repo's items came from. A repo without it is
 format 0 and runs as before. Keys: `format` (1), `written_by` (the HAIFA version),
 `library` (`id`, `name`, `remote`; `null` when the items came from the seed), `onboarding`
-(`source` `init`, `sssf` or `pre_library`, `source_commit`, `at`, `by`, `factory`,
+(`source` `init`, older manifests may carry `sssf` or `pre_library` and still load;
+`source_commit`, `at`, `by`, `factory`,
 `library_commit`; written once) and `items` by type (`agents`, `workflows`, `skills`,
 `extensions`), each `name in the repo: {item, version}`. It is shared configuration:
 `factory config status` reports it and `factory config commit` commits it.
@@ -923,7 +927,7 @@ factory config remove workflow solo --prune --json
    by another agent. `--prune` also removes manifest dependencies nobody else uses.
 6. Blockers: `run_in_progress`, `invalid_plan` (working tree); `dirty_paths`,
    `invalid_plan`, `not_on_base`, `base_behind`, `base_diverged` (`--commit`). A repo
-   without a manifest is `not_onboarded`: run `factory onboard`.
+   without a manifest is `not_onboarded`: run `factory init`.
 
 ### Repo and library: config export / revert / diff
 
@@ -1008,140 +1012,11 @@ factory update --commit [--pr] [--expect <digest>] [-m TEXT] --json
    default; `run_in_progress` blocks; `factory config commit` commits it later) and
    `--commit [--pr]` (one commit on base or a pull request; `dirty_paths`,
    `plan_changed`, `invalid_plan`). Nothing to change: `changed` false.
-7. Refused: `not_onboarded` (no manifest in base; `data.fix` is `factory onboard` for a
-   repo with `.factory/` or `adws/`, else `factory init`), `config_not_committed` (the
+7. Refused: `not_onboarded` (no manifest in base; `data.fix` is `factory init` for a repo
+   without `.factory/` or `adws/`, HAIFA does not take over the others), `config_not_committed` (the
    manifest is only in the working tree: `factory config commit`), `format_unsupported`
    (`factory upgrade`), `library_mismatch` is a warning (another library than the
    manifest's).
-
-### Onboarding and adopt
-
-A repo is onboarded once, on the engineer's machine: its own configuration (sssf `adws/` or
-a `.factory/` from before the library) goes into the library and into a committed
-`.factory/` with `.factory/manifest.yaml` and its `onboarding` block. Colleagues never
-extract it again; they adopt it.
-
-1. The state comes from base only, read with `git rev-parse`, `git ls-tree` and
-   `git cat-file` (`GIT_OPTIONAL_LOCKS=0`): no fetch, no hooks, the index and refs never
-   change. The first matching row wins:
-   - `onboarded`: `.factory/manifest.yaml` is in base. Action `adopt`.
-   - `pre_library`: `.factory/config.yaml` or `.factory/agents.yaml` without a manifest.
-     Action `onboard`.
-   - `sssf`: `adws/adw_sssf_config/*.yaml` and no factory configuration. Action `onboard`.
-   - `working_tree`: the configuration exists only in the working tree. Action
-     `config_commit`.
-   - `none`: nothing of that. Action `init`.
-   Flags: `sssf_leftover` (`adws/` still next to `.factory/`) and `alternate_rosters`
-   (more than one YAML in `adws/adw_sssf_config/`).
-2. `factory adopt [--repo PATH] [--dry-run] --json` takes over an `onboarded` repo; any
-   other state is `not_onboarded` (`data.state`, `data.action`). It reads `.factory/`
-   from base and never writes the repository (`data.repo_changed` is always `false`).
-3. No library on this machine: `library_missing` with `data.command`
-   (`factory library clone <remote of the manifest>`). Run it, then adopt again.
-4. A library with another `id` than the manifest names: warning `library_mismatch`; items
-   are compared with the library this machine has.
-5. `data.items[]` has every item of the manifest with `type`, `name` (in the repo), `item`,
-   `state` (the item states of Manifest and item states) and `adopt`:
-   - `present`: the library has the item.
-   - `imported`: the library did not have the item at all; it was imported from the copy in
-     base (one library commit for all of them, `data.library_commit`). Two slots of one
-     item import it once.
-   - `import`: with `--dry-run`, it would be imported; `data.plan` is the library plan.
-   - `invalid`: the copy in base is not a valid library item (`issues`); not imported.
-   - `unknown`: the library has the item but not the version of the manifest. It stays so;
-     `fix` is `factory config export TYP JMENO --as NOVE`.
-6. The library write goes like `factory library import` (`library.lock`, `library_dirty`,
-   fetch, `library_behind`, `library_diverged`, push without force, `push_failed`).
-
-`factory onboard` extracts a `pre_library` repo or an sssf installation (`adws/`, state
-`sssf`) once; `data.source` says which. For a `pre_library` repo the existing files of
-`.factory/` stay byte for byte; the commit only adds `.factory/manifest.yaml` (with the
-`onboarding` block: `source: pre_library`, `source_commit`, `at`, `by`, `factory`,
-`library_commit`), the workflows the backlog names and the repo lacks, and the runtime
-lines of `.gitignore`. An sssf repo is described after the steps.
-
-1. `factory check --json`: `data.state` is `pre_library`, `data.action` is `onboard`.
-2. `factory onboard --dry-run --json` (optionally `--keep-local TYP/JMÉNO`,
-   `--name TYP/JMÉNO=NOVÉ`, `--pr`). Nothing is written. The plan fetches `<remote> <base>`
-   and lists the branch `factory-config/onboarding` (`git ls-remote`); that is the only
-   network step. A repo without the remote gets the warning `no_remote` and a local commit.
-3. Show the user `data.report` (by code), `data.files`, `data.library_plan.files` and
-   `data.digest`. Report codes:
-   - `linked`: the library has this content (a version in the history of the item of the
-     same name, or the head of another item); the slot points there.
-   - `converted`: a new library item, named after the slot when free, else
-     `<slot>-<slug of the repo folder>`, or the name of `--name`.
-   - `carried_over`: `--keep-local`; the slot points to the library item of the same name and
-     the difference stays in the repo (the item is `modified` afterwards).
-   - `changed_meaning`: converted, but it works differently in HAIFA (sssf only).
-   - `not_converted`: deliberately not taken over; the message says what replaces it (sssf
-     only).
-   - `manual`: not a valid item or a workflow nobody has; it needs a hand.
-   - `left_in_place`: a file (config.yaml, agents.yaml, ...) or `adws/` that stays as it is.
-   Resolve blockers with their `fix`: `already_onboarded` (factory adopt), `not_installed`
-   (factory init), `config_not_committed` (factory config commit), `sssf_roster_invalid`
-   (fix `adws/adw_sssf_config/sssf.config.yaml` and commit it), `source_not_committed`
-   (commit or discard the changes of `.factory/` or `adws/`), `library_missing`
-   (factory library init or clone), `library_dirty`, `library_behind` (factory library
-   pull), `library_diverged`, `onboarded_in_remote` (factory config pull, then factory
-   adopt), `onboarding_pending` (merge or close the PR of `factory-config/onboarding`),
-   `remote_unchecked` (network), `base_behind`, `base_diverged`, `not_on_base` (use
-   `--pr`), `run_in_progress`, `dirty_paths`, `invalid_plan` (see `error.issues`).
-   `name_taken` and `unknown_item` are errors of `--name` and `--keep-local`.
-4. Only with the user's consent: `factory onboard --commit [--pr] --expect <digest>
-   [-m TEXT] --json`. The plan is recomputed (`plan_changed`: back to step 2). The library
-   gets its commit and push first; a refusal (`push_failed`, `library_behind`) stops before
-   the repo is touched. Then the repo commit goes to base without a checkout, or with
-   `--pr` to `factory-config/onboarding` with a pull request. A repo failure after the
-   library push carries `data.library_commit`: run `factory onboard --dry-run` again, the
-   new items are `linked` now.
-5. Other machines run `factory adopt`. Never onboard a repo twice.
-
-An sssf repo (`adws/adw_sssf_config/*.yaml` in base, no factory configuration) is converted
-into a new `.factory/` (`config.yaml`, `agents.yaml`, `prompts/`, `extensions/`,
-`workflows/`, `manifest.yaml` with `source: sssf`). The conversion reads only the tree of
-base (`git ls-tree`, `git cat-file`) and only the roster
-`adws/adw_sssf_config/sssf.config.yaml`; `adws/` stays byte for byte and nothing runs.
-Without `.factory/config.yaml` the base is the detected one (remote HEAD, else the current
-branch) when the configured `main` is not an sssf repo.
-
-1. `factory check --json`: `data.state` is `sssf`, `data.action` is `onboard`.
-2. `factory onboard --dry-run --json [--workflows]` (optionally `--keep-local agent/NAME`,
-   `--name agent/NAME=NEW`, `--pr`; `--workflows` on a `pre_library` repo is
-   `conflicting_options`).
-3. Show the user `data.report` by code, with each row's `detail` (the quoted change of a
-   `manual` prompt), `data.files`, `data.library_plan.files` and `data.digest`. Warnings:
-   `alternate_rosters` (other rosters were not converted), `no_remote`,
-   `harness_missing`, `unknown_workflow`.
-4. Only with the user's consent: `factory onboard --commit [--workflows] --expect <digest>
-   --json`, as for a `pre_library` repo. Deleting `adws/` is a separate commit later.
-
-What is taken from sssf and with which code:
-
-| sssf | HAIFA | code |
-|---|---|---|
-| agent `coding_agent` | `harness` (`claude_code` -> `claude`, default `pi`) | `linked`/`converted` |
-| `model`, `tools`, `color`, `writes`, `disallowed_commands` | the same keys in `agents.yaml` | |
-| `thinking: auto` | `thinking: medium` | `changed_meaning` |
-| `writes` with `**/*.md` | kept; it covers protected markdown such as `.factory/prompts/` | `changed_meaning` |
-| `defaults.protected_files` | `protected_files` after `.factory/` in `config.yaml` | |
-| `defaults.data_dir`, `observability` | `.factory/` and `factory obs` | `not_converted` |
-| stock `system.md` | the library's prompt | `linked` |
-| changed `system.md` | merged with `git merge-file` (base stock sssf, ours repo, theirs library); insertions only: `--union` | `converted` / `carried_over` |
-| `system.md` conflicting with the library | the library text; the change is quoted in `detail` | `manual` |
-| changed `user.md` | always the library text; the change is quoted | `manual` |
-| agent without a stock template | its prompts unchanged, a new library item | `manual` + `converted` |
-| `harness_engineering` `.ts` with its relative imports | an extension item, bound as `harness_engineering: [.factory/extensions/<name>/<name>.ts]` | `linked`/`converted` |
-| `.ts` no agent loads | nothing | `not_converted` |
-| stock chain (by blob id) | library workflow of the same name: `simple-sdlc` always, the others with `--workflows` | `linked` / `not_converted` |
-| changed chain, unknown `adw_*.py` | nothing; port by hand | `manual` |
-| other stock scripts, recipes | nothing | `not_converted` |
-| `quality.py` test block (literal `timeout_seconds`) | `test_timeout` | `converted` |
-| `quality.py` argv of every block | nothing; the tester agent picks the checks | `not_converted` |
-| other changes of `adw_modules/` | engine code | `manual` |
-| `adws/`, `.claude/skills/sssf/`, `justfile`, `.env`, `.env.sample` | stay | `left_in_place` |
-
-The base, remote and provider of `config.yaml` are detected like `factory init` does.
 
 ### Repo instructions and skills
 
