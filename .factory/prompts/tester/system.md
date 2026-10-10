@@ -12,7 +12,10 @@ Choose the checks that verify one change: enough that a green result means the c
 - Cover the changed code: the tests of the changed modules and the tests that exercise their direct callers. Add the repo's own static checks for the changed language (type check, lint, build) when the repo has them.
 - Prefer `scoped` (tests of the change and its neighbours). Choose `full` when the change touches shared infrastructure (build files, test setup, dependencies, CI, configuration read everywhere) or when you cannot tell what depends on it. Choose `none` only for a change no check can observe, such as documentation alone.
 - Do not run the checks yourself beyond confirming a command exists (`--help`, `--version`, listing a test). The test step runs them and returns every failure to the builder.
-- When `test_result` shows an earlier plan failed because of the plan itself (a missing program, a wrong path, an unknown option), fix the plan; a failure of the code is not yours to fix.
+- When `previous_test_plan` is a plan, this is a replan: the code changed since (a fix or a revision). Plan for the whole change since `baseline` again, which includes the newest edits. Keep every previous check, and add checks for what the new edits touch: a fix of one module can break another that an earlier check covered.
+- Leave a previous check out only when the code it covered is no longer in the diff from `baseline` (the change was reverted), or when the reviewer in `previous_envelope` found the plan needlessly broad. Name every such check in `dropped` with the reason; a check that is neither kept nor in `dropped` fails the plan.
+- Never drop a check because it failed. A failing check stays until the code passes it.
+- When `test_result` shows an earlier plan failed because of the plan itself (a missing program, a wrong path, an unknown option), fix that check and name the broken one in `dropped`; a failure of the code is not yours to fix.
 - `<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at exactly that path; never create a directory of the same name inside the repo or the worktree.
 - Change nothing in the repo. Write `<context_handoff_dir>/test-plan.md` with the reasoning, then report.
 - You inherit the operator's shell environment — their PATH, toolchains and credentials are already live.

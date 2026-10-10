@@ -10,21 +10,22 @@ steps:
     steps:
       - test
       - fix:
-          description: Repair what the suite reported, from its verbatim output
+          description: Repair what the checks reported, from their verbatim output
+      - test_plan:
+          description: Plan the checks again — the fix changed code, keep every earlier check
   - repeat: {max: 2, until: review.approved}
     steps:
       - review:
           input: [build, fix, revise]
-          description: Confirm the build matches the task
+          description: Confirm the build matches the task and the checks fit the change
       - revise
-  - test_plan:
-      id: replan
-      when: revise.ran and review.approved
-      description: Choose the checks again — the revision changed code after the last plan
-  - test:
-      id: retest
-      when: revise.ran and review.approved
-      description: Re-run the checks — the revision changed code after the last green result
+      - test_plan:
+          id: replan
+          input: [review]
+          description: Plan the checks again from the review and the revised code
+      - test:
+          id: retest
+          description: Run the new checks on the revised code before the next review
   - commit:
       id: commit_build
       when: test.passed and review.approved
