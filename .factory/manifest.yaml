@@ -32,5 +32,8 @@ items:
     simple-sdlc:
       item: simple-sdlc
       version: sha256:1d57fd721c4a42b8e8f4af9916485211ef8f612ae2bd69a0f8972194aa5592f7
+    build-test-review:
+      item: build-test-review
+      version: sha256:b79dbaf86a08190f1cf122d7c30e5cf2d1df3395302e8b9e1666a9269b538655
   skills: {}
   extensions: {}
