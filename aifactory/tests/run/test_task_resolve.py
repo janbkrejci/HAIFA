@@ -240,6 +240,7 @@ def test_red_suite_restores_branch(repo: Path, script: Script) -> None:
     resolver(script, settle, changed_files=[MODEL])
     for value in (4, 5):  # fix_1, fix_2: the suite stays red, test_3 ends the loop
         resolver(script, _writer(f"VALUE = {value}\n"), changed_files=[MODEL])
+        tester(script)  # the plan after each fix
 
     tester(script)
     result = resolve_task(repo, T02, code=ResolveCode([False, False, False]))
@@ -282,6 +283,7 @@ def test_fix_repairs_what_resolve_broke(repo: Path, script: Script) -> None:
         changed_files=[MODEL],
         commit_message="Fix model",
     )
+    tester(script)  # the plan after the fix
 
     tester(script)
     result = resolve_task(repo, T02, code=SuiteCode([]))
@@ -299,6 +301,7 @@ def test_fix_repairs_what_resolve_broke(repo: Path, script: Script) -> None:
         "rebuild_1",
         "test_1",
         "fix_1",
+        "test_plan_1",
         "rebuild_2",
         "test_2",
     ], names

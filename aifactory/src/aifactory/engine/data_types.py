@@ -14,7 +14,7 @@ from typing import Any, Callable, Literal, Optional, Type
 from pydantic import BaseModel, Field, ValidationInfo, field_validator, model_validator
 
 # aifactory 3.0: the tester agent's checks and the evidence of what the test step ran.
-from aifactory.testing.model import Check, Coverage, Evidence, plan_problems
+from aifactory.testing.model import Check, Coverage, Dropped, Evidence, plan_problems
 
 PhaseKind = Literal["engineer", "agent", "code"]
 PhaseStatus = Literal["queued", "running", "success", "fail"]
@@ -259,13 +259,16 @@ class TestPlanOutput(EnvelopeBase):
     """The checks that verify this change: enough to trust it, nothing beyond.
 
     `full` runs the whole suite, `scoped` a subset the change can affect, `none`
-    nothing (for example a documentation-only change). The reviewer judges the
-    choice; the harness only checks that the plan is coherent and runnable.
+    nothing (for example a documentation-only change). A later plan keeps every
+    check of the previous one or names it in `dropped` with the reason. The
+    reviewer judges the choice; the harness only checks that the plan is
+    coherent, runnable and drops nothing silently.
     """
 
     coverage: Coverage
     reason: str = Field(min_length=1)
     checks: list[Check] = Field(default_factory=list)
+    dropped: list[Dropped] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def coherent(self) -> "TestPlanOutput":

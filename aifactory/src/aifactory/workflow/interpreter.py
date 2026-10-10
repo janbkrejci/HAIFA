@@ -12,7 +12,9 @@ Every ``test`` step runs the checks of the latest test plan (a role step whose
 output is ``TestPlanOutput``; the parser requires one before any ``test``) under
 the shared time limit ``run.test_timeout`` (``run_workflow(test_timeout=...)``),
 else 600 s. Role steps get ``{{baseline}}``, the commit the run started from, so
-a tester can diff the whole change.
+a tester can diff the whole change, and ``{{previous_test_plan}}``, the latest
+test plan (``(none)`` before the first), which a new plan must keep or say why
+it drops a check (gate ``plan_keeps_checks``).
 
 Inputs of a role step: ``{{previous_envelope}}`` is the latest result of the
 steps in ``input:`` (any step without it). An ``input:`` mapping adds further
@@ -69,6 +71,7 @@ PhaseKind = Literal["engineer", "agent", "code"]
 REQUEST_DESCRIPTION = "Capture the incoming ask and the workflow chosen to answer it"
 TEST_RESULT_VARIABLE = "test_result"
 BASELINE_VARIABLE = "baseline"
+PREVIOUS_PLAN_VARIABLE = "previous_test_plan"
 NO_INPUT = "(none)"
 
 
@@ -317,6 +320,7 @@ class _Interpreter:
         variables = {
             TEST_RESULT_VARIABLE: self.render_input(self.test_keys),
             BASELINE_VARIABLE: self.baseline or NO_INPUT,
+            PREVIOUS_PLAN_VARIABLE: self.latest_plan_json(),
         }
         for name, keys in step.variables:
             variables[name] = self.render_input(keys)
@@ -338,12 +342,25 @@ class _Interpreter:
             **({"test_plan": result.test_plan.model_dump()} if result.test_plan else {}),
         }
 
-    def test_plan(self) -> Any:
-        """The latest tester result; the parser guarantees a test plan step precedes a test."""
+    def latest_plan(self) -> Any:
+        """The latest tester result, or None before any test plan ran."""
         for _, envelope in reversed(self.history):
             if isinstance(envelope, dt.TestPlanOutput):
                 return envelope
-        raise RuntimeError("no test plan ran before this test step — nothing to run")
+        return None
+
+    def latest_plan_json(self) -> str:
+        plan = self.latest_plan()
+        if plan is None:
+            return NO_INPUT
+        return str(plan.model_dump_json(indent=2, include={"coverage", "reason", "checks"}))
+
+    def test_plan(self) -> Any:
+        """The latest tester result; the parser guarantees a test plan step precedes a test."""
+        plan = self.latest_plan()
+        if plan is None:
+            raise RuntimeError("no test plan ran before this test step — nothing to run")
+        return plan
 
     def commit_message(self) -> str:
         """The words of the latest agent whose work product is a commit (plan, build, docs)."""
@@ -403,6 +420,7 @@ class _Interpreter:
         name = self.phase_name(step.phase_id, suffix)
         role = step.role
         previous = self.previous(step.inputs)
+        self.run.previous_test_plan = self.latest_plan()  # for the plan_keeps_checks gate
         with step_override(self.run.cfg, role.agent, step.override) as agent:
             params = self.params(name, "agent", role.agent, step.description, role.retries)
             with self.run.phase(params) as ph:

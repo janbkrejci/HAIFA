@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shlex
 import sys
 from collections.abc import Iterator
@@ -120,6 +121,7 @@ def test_coverage_none_passes_with_nothing_executed(tmp_path: Path) -> None:
         "reason": "covers the change",
         "executed": 0,
         "commands": [],
+        "dropped": [],
     }
 
 
@@ -243,6 +245,51 @@ def test_checks_runnable_passes_a_plan_without_checks(tmp_path: Path) -> None:
     assert gates.checks_runnable(tested, SimpleNamespace(repo_root=tmp_path)).passed
 
 
+# ── gate plan_keeps_checks ──────────────────────────────────────────────────
+
+
+def checks_plan(*checks: tuple[str, list[str]], dropped: tuple[str, ...] = ()) -> TestPlanOutput:
+    return TestPlanOutput.model_validate(
+        ok(
+            coverage="scoped",
+            reason="covers the change",
+            checks=[{"name": name, "argv": argv} for name, argv in checks],
+            dropped=[{"name": name, "reason": "no longer relevant"} for name in dropped],
+        )
+    )
+
+
+PREVIOUS = checks_plan(("unit", ["pytest", "tests/unit"]), ("lint", ["ruff", "check"]))
+
+
+def test_plan_keeps_checks_passes_the_first_plan() -> None:
+    first = checks_plan(("unit", ["pytest"]))
+    assert gates.plan_keeps_checks(first, SimpleNamespace(previous_test_plan=None)).passed
+    assert gates.plan_keeps_checks(first, SimpleNamespace()).passed
+
+
+def test_plan_keeps_checks_matches_by_argv_not_name() -> None:
+    renamed = checks_plan(("tests", ["pytest", "tests/unit"]), ("ruff", ["ruff", "check"]))
+    report = gates.plan_keeps_checks(renamed, SimpleNamespace(previous_test_plan=PREVIOUS))
+    assert report.passed
+    assert [c.item for c in report.checks] == ["unit", "lint"]
+
+
+def test_plan_keeps_checks_accepts_a_dropped_entry() -> None:
+    new = checks_plan(("unit", ["pytest", "tests/unit"]), dropped=("lint",))
+    assert gates.plan_keeps_checks(new, SimpleNamespace(previous_test_plan=PREVIOUS)).passed
+
+
+def test_plan_keeps_checks_fails_a_check_left_out_silently() -> None:
+    # Same name, other argv, and no `dropped` entry: the old check is gone.
+    new = checks_plan(("unit", ["pytest", "tests/unit/test_one.py"]), ("lint", ["ruff", "check"]))
+    report = gates.plan_keeps_checks(new, SimpleNamespace(previous_test_plan=PREVIOUS))
+    assert not report.passed
+    assert len(report.violations) == 1
+    assert report.violations[0].startswith("unit:")
+    assert "dropped" in report.violations[0]
+
+
 # ── interpreter ─────────────────────────────────────────────────────────────
 
 
@@ -259,12 +306,19 @@ steps:
 accept: test.passed
 """
     )
-    workflow_env.script.add("tester", plan_envelope("echo", "first"), plan_envelope("echo", "2"))
+    replan = ok(
+        coverage="scoped",
+        reason="the build replaced the first check",
+        checks=[{"name": "second", "argv": ["echo", "2"]}],
+        dropped=[{"name": "check", "reason": "the build removed what it checked"}],
+    )
+    workflow_env.script.add("tester", plan_envelope("echo", "first"), replan)
     workflow_env.script.add("builder", ok(summary="built", changed_files=[]))
     code = FakeCodeRunner([True, True])
     result = run_workflow(workflow(text), "do it", workflow_env.cfg, code=code)
     assert result.accepted
     assert [p.checks[0].argv for p in code.plans] == [["echo", "first"], ["echo", "2"]]
+    assert [d.name for d in code.plans[1].dropped] == ["check"]
 
 
 def test_a_failing_plan_reaches_the_fixer_and_the_retest_passes(
@@ -292,3 +346,37 @@ def test_a_failing_plan_reaches_the_fixer_and_the_retest_passes(
     evidence = result.results["test"]["test_plan"]
     assert (evidence["coverage"], evidence["executed"]) == ("scoped", 1)
     assert evidence["commands"] and "fixed.py" in evidence["commands"][0]
+
+
+def test_previous_test_plan_is_a_prompt_variable(workflow_env: EngineEnv, tmp_path: Path) -> None:
+    user = tmp_path / "tester_user.md"
+    user.write_text("{{prompt}}\nPLAN<<{{previous_test_plan}}>>PLAN\n", encoding="utf-8")
+    for agent in workflow_env.cfg.agents:
+        if agent.name == "tester":
+            agent.prompt_engineering.user = str(user)
+    text = HEADER + "steps:\n  - test_plan\n  - test\n  - test_plan: {id: replan}\n"
+    first = plan_envelope("echo", "first")
+    workflow_env.script.add("tester", first, first)
+    run_workflow(workflow(text), "do it", workflow_env.cfg, code=FakeCodeRunner([True]))
+    rendered = [
+        call.prompt.split("PLAN<<")[1].split(">>PLAN")[0] for call in workflow_env.script.calls
+    ]
+    assert rendered[0] == "(none)"
+    assert json.loads(rendered[1]) == {
+        "coverage": "scoped",
+        "reason": "covers the change",
+        "checks": [{"name": "check", "argv": ["echo", "first"], "timeout": None}],
+    }
+
+
+def test_a_replan_that_drops_a_check_silently_is_sent_back(workflow_env: EngineEnv) -> None:
+    text = HEADER + "steps:\n  - test_plan\n  - test_plan: {id: replan}\n  - test\n"
+    silent = plan_envelope("echo", "other")  # same name, other argv, no `dropped`
+    kept = plan_envelope("echo", "first")
+    workflow_env.script.add("tester", kept, silent, kept)
+    code = FakeCodeRunner([True])
+    result = run_workflow(workflow(text), "do it", workflow_env.cfg, code=code)
+    assert result.accepted
+    assert len(workflow_env.script.calls) == 3
+    assert "dropped" in workflow_env.script.calls[2].prompt  # the gate's correction
+    assert code.plans[0].checks[0].argv == ["echo", "first"]

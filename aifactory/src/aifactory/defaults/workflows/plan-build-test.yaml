@@ -1,6 +1,6 @@
 # YAML form of adw_plan_build_test.py.
 # Phases: engineer(request) -> planner -> builder -> tester(test_plan) -> code(test)
-#         [-> builder(fix) -> code(test) ... bounded] -> git(commit)
+#         [-> builder(fix) -> tester(test_plan) -> code(test) ... bounded] -> git(commit)
 # Loop (2.7): the last round ends at the test step, so a last red suite is not followed by fix_3.
 name: plan-build-test
 description: Plan and build, repair until the suite is green, and commit only green code
@@ -12,6 +12,8 @@ steps:
     steps:
       - test
       - fix
+      - test_plan:
+          description: Plan the checks again — the fix changed code, keep every earlier check
   - commit:
       when: test.passed
       description: Land the code once the suite has come back green

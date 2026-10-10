@@ -69,16 +69,24 @@ def test_simple_sdlc_structure() -> None:
     review = loops[1].steps[0]
     assert isinstance(review, RoleStep)
     assert review.inputs == ("build", "fix", "revise")
-    plan, replan, retest = workflow.steps[3], workflow.steps[6], workflow.steps[7]
+    plan = workflow.steps[3]
     assert isinstance(plan, RoleStep)
     assert plan.role.output_type_name == "TestPlanOutput"
     assert plan.role.agent == "tester"
+    # A fix changes code, so the fix loop plans the checks again.
+    test, fix, fix_plan = loops[0].steps
+    assert isinstance(test, CodeStep) and test.action == "test"
+    assert isinstance(fix, RoleStep) and fix.name == "fix"
+    assert isinstance(fix_plan, RoleStep) and fix_plan.name == "test_plan"
+    # A revision is replanned (from the review) and retested before the next review.
+    _, revise, replan, retest = loops[1].steps
+    assert isinstance(revise, RoleStep) and revise.name == "revise"
     assert isinstance(replan, RoleStep)
-    assert (replan.name, replan.phase_id) == ("test_plan", "replan")
-    assert replan.when is not None
-    assert replan.when.source == "revise.ran and review.approved"
+    assert (replan.name, replan.phase_id, replan.inputs) == ("test_plan", "replan", ("review",))
+    assert replan.when is None
     assert isinstance(retest, CodeStep)
     assert (retest.key, retest.phase_id) == ("test", "retest")
+    assert not any(isinstance(s, RoleStep) and s.name == "test_plan" for s in workflow.steps[5:])
     assert workflow.accept is not None
 
 
@@ -88,6 +96,8 @@ def test_plan_build_test_structure() -> None:
     assert len(loops) == 1
     assert loops[0].max == 3
     assert loops[0].until_tail == 0
+    names = [s.name for s in loops[0].steps if isinstance(s, (RoleStep, CodeStep))]
+    assert names == ["test", "fix", "test_plan"]
     assert workflow.accept is not None
     assert workflow.accept.source == "test.passed"
 
@@ -110,7 +120,7 @@ def test_resolve_structure() -> None:
     assert loop.max == 3
     assert loop.until is not None
     assert loop.until.source == "test.passed"
-    rebuild, test, fix = loop.steps
+    rebuild, test, fix, replan = loop.steps
     assert isinstance(rebuild, CodeStep)
     assert rebuild.action == "rebuild"
     assert rebuild.when is not None
@@ -122,5 +132,9 @@ def test_resolve_structure() -> None:
     assert fix.role.agent == "builder"
     assert fix.when is not None
     assert fix.when.source == "rebase.conflict"
+    assert isinstance(replan, RoleStep)
+    assert replan.name == "test_plan"
+    assert replan.when is not None
+    assert replan.when.source == "rebase.conflict"
     assert workflow.accept is not None
     assert workflow.accept.source == "test.passed"

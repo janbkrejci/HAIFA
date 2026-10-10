@@ -158,6 +158,29 @@ def checks_runnable(envelope: EnvelopeBase, run) -> GateReport:
     return report
 
 
+def plan_keeps_checks(envelope: EnvelopeBase, run) -> GateReport:
+    """aifactory 3.0: a new test plan drops no check of the previous plan silently.
+
+    A previous check is kept when a new check runs the same argv; otherwise its
+    name must be in `dropped` with a reason. The interpreter puts the previous
+    plan on `run.previous_test_plan` (None for the first plan of a run).
+    """
+    report = GateReport()
+    previous = getattr(run, "previous_test_plan", None)
+    if previous is None:
+        return report
+    argvs = [check.argv for check in getattr(envelope, "checks", [])]
+    dropped = {d.name for d in getattr(envelope, "dropped", [])}
+    for check in previous.checks:
+        if check.argv in argvs:
+            report.check(check.name, True, "kept")
+        else:
+            report.check(check.name, check.name in dropped,
+                          "dropped with a reason" if check.name in dropped
+                          else "left out without a `dropped` entry; keep it or say why it goes")
+    return report
+
+
 def tests_pass(command: str):
     """Gate factory: the given shell command must exit 0."""
     def gate(envelope: EnvelopeBase, run) -> GateReport:

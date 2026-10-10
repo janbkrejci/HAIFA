@@ -279,10 +279,10 @@ def test_every_scripted_run_revises_the_first_written_file(repo: Path) -> None:
         script = fake_scripts.script_for(task_id, variant)
         agents = script["agents"]
         assert [r["envelope"]["approved"] for r in agents["reviewer"]] == [False, True]
-        # test_plan and replan (the forced revision changed code)
-        assert [p["envelope"]["checks"] for p in agents["tester"]] == [
-            [fake_scripts.TEST_CHECK]
-        ] * 2
+        # test_plan, one plan per fix, replan_1 (the forced revision changed code)
+        plans = [p["envelope"]["checks"] for p in agents["tester"]]
+        fixes = 1 if variant == "slugify_with_repair" else 0
+        assert plans == [[fake_scripts.TEST_CHECK]] * (2 + fixes)
         revise = agents["builder"][-1]
         assert revise["edits"] == [fake_scripts.revise_edit(revise["envelope"]["changed_files"][0])]
     breach = fake_scripts.script_for("M01-S01-T03", "breach", repo=repo)

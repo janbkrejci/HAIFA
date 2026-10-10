@@ -17,7 +17,8 @@ M04-S01-T02 --auto`` (one process, two runs) the queues of both tasks of the
 chain one after the other (``chain_script``).
 
 The fake tester plans one check, the sandbox's ``just test`` (full coverage),
-for ``test_plan`` and again for ``replan`` after the forced revision.
+for ``test_plan``, again after every fix and for ``replan_1`` after the forced
+revision. Every plan has the same check, so ``plan_keeps_checks`` passes.
 
 Envelope fields follow ``aifactory.engine.data_types`` (PlanOutput,
 BuildOutput, TestPlanOutput, ReviewOutput, DocumentOutput).
@@ -206,14 +207,15 @@ def _script(
     plan: str = "Implement the task as written.",
     doc: str = "What changed and why.",
 ) -> dict[str, Any]:
-    """Planner, the builds, the forced revision of `revised`, two reviews, two test
-    plans (``test_plan`` and ``replan``), documenter."""
+    """Planner, the builds, the forced revision of `revised`, two reviews, the test
+    plans (``test_plan``, one after every fix, ``replan_1``), documenter."""
     return {
         "task": task_id,
         "agents": {
             "planner": [_plan(task_id, plan)],
             "builder": [*builds, _revise(revised)],
-            "tester": [test_plan(task_id), test_plan(task_id)],
+            # test_plan, one plan after every fix, and replan_1 after the revision
+            "tester": [test_plan(task_id) for _ in range(len(builds) + 1)],
             "reviewer": _reviews(task_id, revised),
             "documenter": [_document(task_id, doc)],
         },

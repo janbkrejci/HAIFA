@@ -1,15 +1,19 @@
 # YAML form of vendor/sssf/templates/adws/adw_simple_sdlc.py.
 #
 # Phases: engineer(request) -> planner -> git(commit_plan)
-#         -> builder -> tester(test_plan) -> code(test) [-> builder(fix) -> code(test) ... bounded]
-#         -> reviewer [-> builder(revise) -> reviewer ... bounded]
-#         -> tester(replan) -> code(retest), only if a revision changed code
+#         -> builder -> tester(test_plan)
+#         -> code(test) [-> builder(fix) -> tester(test_plan) -> code(test) ... bounded]
+#         -> reviewer [-> builder(revise) -> tester(replan) -> code(retest) -> reviewer ... bounded]
 #         -> git(commit_build) -> code(changes) -> documenter -> git(commit_docs)
 #
+# aifactory 3.0: the tester plans the checks again after every change of code (a fix
+# or a revision), from the whole diff since the baseline, keeping or explicitly
+# dropping the previous checks. After a rejection it gets the review, so a plan the
+# reviewer found insufficient or too broad is corrected before the next review.
+#
 # Loops (2.7): `until` is checked after every body step, and the last round ends
-# at the step `until` reads. A last rejection is therefore not followed by
-# revise_2 (as in the Python version), and a last red suite not by fix_3
-# (the Python version still runs fix_3; the outcome is the same: nothing committed).
+# at the step `until` reads. A last red suite is therefore not followed by a fix,
+# and a last rejection not by a revision (the Python version still runs fix_3).
 name: simple-sdlc
 description: Plan, build, test with repairs, review with revision, then document — committing each work product separately
 steps:
@@ -24,26 +28,27 @@ steps:
     steps:
       - test
       - fix:
-          description: Repair what the suite reported, from its verbatim output
+          description: Repair what the checks reported, from their verbatim output
+      - test_plan:
+          description: Plan the checks again — the fix changed code, keep every earlier check
   - repeat: {max: 2, until: review.approved}
     steps:
-      # The reviewer judges the latest code, not the test report before it.
+      # The reviewer judges the latest code, plan and test result.
       - review:
           input: [build, fix, revise]
-          description: Confirm the build matches the plan
+          description: Confirm the build matches the plan and the checks fit the change
       - revise
-  - test_plan:
-      id: replan
-      when: revise.ran and review.approved
-      description: Choose the checks again — the revision changed code after the last plan
-  - test:
-      id: retest
-      when: revise.ran and review.approved
-      description: Re-run the checks — the revision changed code after the last green result
+      - test_plan:
+          id: replan
+          input: [review]
+          description: Plan the checks again from the review and the revised code
+      - test:
+          id: retest
+          description: Run the new checks on the revised code before the next review
   - commit:
       id: commit_build
       when: test.passed and review.approved
-      description: "Land the code only now: green suite, approved review"
+      description: "Land the code only now: green checks, approved review"
   - changes:
       when: test.passed and review.approved
       description: Diff the whole run against its pinned baseline, for the documenter

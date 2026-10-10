@@ -53,7 +53,7 @@ def test_only_revise_resolve_test_plan_command_rebase_and_rebuild_are_extra() ->
     assert (test_plan.agent, test_plan.output_type_name, test_plan.gate_names) == (
         "tester",
         "TestPlanOutput",
-        ("checks_runnable",),
+        ("checks_runnable", "plan_keeps_checks"),
     )
     assert set(registry.code_steps) == set(CODE_ACTIONS)
     revise = registry.roles["revise"]

@@ -18,6 +18,15 @@ class Check(BaseModel):
     timeout: Annotated[int, Field(gt=0)] | None = None
 
 
+class Dropped(BaseModel):
+    """A check of the previous plan that this plan leaves out, and why."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: Text
+    reason: Text
+
+
 def plan_problems(coverage: str, checks: list[Check]) -> list[str]:
     """What makes a plan unusable; empty when it can run."""
     problems = []
@@ -42,3 +51,4 @@ class Evidence(BaseModel):
     reason: Text
     executed: Annotated[int, Field(ge=0)]
     commands: list[str] = Field(default_factory=list)
+    dropped: list[Dropped] = Field(default_factory=list)

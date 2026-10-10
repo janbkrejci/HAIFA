@@ -128,6 +128,7 @@ def execute(run: Any, plan: TestPlanOutput) -> QualityResult:
         reason=plan.reason,
         executed=len(checks),
         commands=[shlex.join(c.argv) for c in plan.checks],
+        dropped=list(plan.dropped),
     )
     return QualityResult(
         passed=not failures,

@@ -27,4 +27,7 @@ steps:
       - fix:
           when: rebase.conflict
           description: Repair what the suite reported, from its verbatim output, only in the conflicted files
+      - test_plan:
+          when: rebase.conflict
+          description: Plan the checks again — the fix changed code, keep every earlier check
 accept: test.passed

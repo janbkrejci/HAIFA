@@ -7,6 +7,7 @@ rejection is not followed by ``revise_2`` and a last red suite not by ``fix_3``.
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from workflow_fakes import (  # noqa: F401
@@ -41,6 +42,12 @@ REJECT = ok(summary="missing X", approved=False, blocking=["missing X"])
 DOCUMENT = ok(summary="documented", commit_message="Document the feature")
 SCOUT = ok(summary="found it")
 TEST_PLAN = plan_envelope()
+# Keeps the first plan's check (gate plan_keeps_checks) and adds one.
+REPLAN = ok(
+    coverage="scoped",
+    reason="the revision touched more",
+    checks=[{"name": "check", "argv": ["true"]}, {"name": "more", "argv": ["echo", "more"]}],
+)
 
 
 def _test(i: int) -> tuple[str, str, str]:
@@ -57,6 +64,14 @@ def _review(i: int) -> tuple[str, str, str]:
 
 def _revise(i: int) -> tuple[str, str, str]:
     return (f"revise_{i}", "agent", "builder")
+
+
+def _replan(i: int, name: str = "test_plan") -> tuple[str, str, str]:
+    return (f"{name}_{i}", "agent", "tester")
+
+
+def _retest(i: int) -> tuple[str, str, str]:
+    return (f"retest_{i}", "code", "quality")
 
 
 def _run(
@@ -147,7 +162,7 @@ def test_plan_build_test_green_first_time(workflow_env: EngineEnv) -> None:
 
 
 def test_plan_build_test_fixed_once(workflow_env: EngineEnv) -> None:
-    _script(workflow_env, planner=[PLAN], builder=[BUILD, FIX], tester=[TEST_PLAN])
+    _script(workflow_env, planner=[PLAN], builder=[BUILD, FIX], tester=[TEST_PLAN, TEST_PLAN])
     result, code = _run(workflow_env, "plan-build-test", [False, True])
     assert _phases(result) == [
         REQUEST,
@@ -156,6 +171,7 @@ def test_plan_build_test_fixed_once(workflow_env: EngineEnv) -> None:
         TEST_PLAN_PHASE,
         _test(1),
         _fix(1),
+        _replan(1),
         _test(2),
         COMMIT,
     ]
@@ -167,7 +183,12 @@ def test_plan_build_test_fixed_once(workflow_env: EngineEnv) -> None:
 def test_plan_build_test_never_green(workflow_env: EngineEnv) -> None:
     # Deliberate difference from adw_plan_build_test.py (2.7): the last red suite
     # is not followed by fix_3. Either way nothing is committed.
-    _script(workflow_env, planner=[PLAN], builder=[BUILD, FIX, FIX], tester=[TEST_PLAN])
+    _script(
+        workflow_env,
+        planner=[PLAN],
+        builder=[BUILD, FIX, FIX],
+        tester=[TEST_PLAN, TEST_PLAN, TEST_PLAN],
+    )
     result, code = _run(workflow_env, "plan-build-test", [False, False, False])
     assert _phases(result) == [
         REQUEST,
@@ -176,8 +197,10 @@ def test_plan_build_test_never_green(workflow_env: EngineEnv) -> None:
         TEST_PLAN_PHASE,
         _test(1),
         _fix(1),
+        _replan(1),
         _test(2),
         _fix(2),
+        _replan(2),
         _test(3),
     ]
     assert (result.exit_code, result.accepted) == (1, False)
@@ -216,17 +239,25 @@ def test_simple_sdlc_tests_fail_once(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX],
-        tester=[TEST_PLAN],
+        tester=[TEST_PLAN, TEST_PLAN],
         reviewer=[APPROVE],
         documenter=[DOCUMENT],
     )
     result, code = _run(workflow_env, "simple-sdlc", [False, True])
-    assert _phases(result) == [*HEAD, _test(1), _fix(1), _test(2), _review(1), *TAIL]
+    assert _phases(result) == [
+        *HEAD,
+        _test(1),
+        _fix(1),
+        _replan(1),
+        _test(2),
+        _review(1),
+        *TAIL,
+    ]
     assert (result.exit_code, result.accepted) == (0, True)
     fix_call = workflow_env.script.calls[3]
     assert fix_call.agent == "builder"
     assert '"passed": false' in fix_call.previous()  # the fixer reads the failing suite
-    review_call = workflow_env.script.calls[4]
+    review_call = workflow_env.script.calls[5]
     assert review_call.agent == "reviewer"
     assert "fixed" in review_call.previous()  # the reviewer reads the latest code
     assert code.commits[1] == "Fix the failing test"
@@ -239,9 +270,48 @@ def test_simple_sdlc_review_rejects_once(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, REVISE],
-        tester=[TEST_PLAN, plan_envelope("echo", "replanned")],
+        tester=[TEST_PLAN, REPLAN],
         reviewer=[REJECT, APPROVE],
         documenter=[DOCUMENT],
+    )
+    result, code = _run(workflow_env, "simple-sdlc", [True, True])
+    # The revision is replanned and retested before the second review sees it.
+    assert _phases(result) == [
+        *HEAD,
+        _test(1),
+        _review(1),
+        _revise(1),
+        _replan(1, "replan"),
+        _retest(1),
+        _review(2),
+        *TAIL,
+    ]
+    assert (result.exit_code, result.accepted) == (0, True)
+    calls = workflow_env.script.calls
+    assert [c.agent for c in calls[3:7]] == ["reviewer", "builder", "tester", "reviewer"]
+    assert "missing X" in calls[4].previous()
+    # The replan reads the review (input: [review]), not the revision.
+    assert json.loads(calls[5].previous())["blocking"] == ["missing X"]
+    assert "revised" in calls[6].previous()
+    # The retest runs the replanned checks, not the first plan.
+    assert [[c.name for c in plan.checks] for plan in code.plans] == [
+        ["check"],
+        ["check", "more"],
+    ]
+    assert code.commits == ["Add the plan", "Close review findings", "Document the feature"]
+    _assert_agent_defaults(workflow_env)
+    _assert_done(workflow_env, code)
+
+
+def test_simple_sdlc_review_rejects_twice(workflow_env: EngineEnv) -> None:
+    # As in adw_simple_sdlc.py: after the last rejection there is no revise_2;
+    # only the plan is committed.
+    _script(
+        workflow_env,
+        planner=[PLAN],
+        builder=[BUILD, REVISE],
+        tester=[TEST_PLAN, TEST_PLAN],
+        reviewer=[REJECT, REJECT],
     )
     result, code = _run(workflow_env, "simple-sdlc", [True, True])
     assert _phases(result) == [
@@ -249,35 +319,10 @@ def test_simple_sdlc_review_rejects_once(workflow_env: EngineEnv) -> None:
         _test(1),
         _review(1),
         _revise(1),
+        _replan(1, "replan"),
+        _retest(1),
         _review(2),
-        ("replan", "agent", "tester"),
-        ("retest", "code", "quality"),
-        *TAIL,
     ]
-    assert (result.exit_code, result.accepted) == (0, True)
-    calls = workflow_env.script.calls
-    assert (calls[4].agent, calls[5].agent) == ("builder", "reviewer")
-    assert "missing X" in calls[4].previous()
-    assert "revised" in calls[5].previous()
-    # The retest runs the replanned checks, not the first plan.
-    assert [plan.checks[0].argv for plan in code.plans] == [["true"], ["echo", "replanned"]]
-    assert code.commits == ["Add the plan", "Close review findings", "Document the feature"]
-    _assert_agent_defaults(workflow_env)
-    _assert_done(workflow_env, code)
-
-
-def test_simple_sdlc_review_rejects_twice(workflow_env: EngineEnv) -> None:
-    # As in adw_simple_sdlc.py: after the last rejection there is no revise_2
-    # and no retest; only the plan is committed.
-    _script(
-        workflow_env,
-        planner=[PLAN],
-        builder=[BUILD, REVISE],
-        tester=[TEST_PLAN],
-        reviewer=[REJECT, REJECT],
-    )
-    result, code = _run(workflow_env, "simple-sdlc", [True])
-    assert _phases(result) == [*HEAD, _test(1), _review(1), _revise(1), _review(2)]
     assert _revise(2) not in _phases(result)
     assert (result.exit_code, result.accepted) == (1, False)
     assert code.commits == ["Add the plan"]
@@ -292,7 +337,7 @@ def test_simple_sdlc_tests_never_pass(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX, FIX],
-        tester=[TEST_PLAN],
+        tester=[TEST_PLAN, TEST_PLAN, TEST_PLAN],
         reviewer=[APPROVE],
     )
     result, code = _run(workflow_env, "simple-sdlc", [False, False, False])
@@ -300,8 +345,10 @@ def test_simple_sdlc_tests_never_pass(workflow_env: EngineEnv) -> None:
         *HEAD,
         _test(1),
         _fix(1),
+        _replan(1),
         _test(2),
         _fix(2),
+        _replan(2),
         _test(3),
         _review(1),
     ]

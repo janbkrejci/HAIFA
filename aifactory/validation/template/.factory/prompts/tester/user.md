@@ -12,7 +12,15 @@
 
 ### previous_envelope
 
+The step before you: the build, a fix or a revision (with the files it changed), or a review whose findings concern the test plan:
+
 {{previous_envelope}}
+
+### previous_test_plan
+
+The plan the last test ran, `(none)` for the first plan of the run. Keep each of its checks or name it in `dropped`:
+
+{{previous_test_plan}}
 
 ### test_result
 
@@ -47,9 +55,12 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
     { "name": "api-tests", "argv": ["uv", "run", "pytest", "tests/api", "-q"] },
     { "name": "types", "argv": ["npm", "run", "typecheck"], "timeout": 300 }
   ],
+  "dropped": [
+    { "name": "old-check", "reason": "<why it no longer applies: reverted code, or the reviewer's finding>" }
+  ],
   "artifacts": ["<context_handoff_dir>/test-plan.md"],
   "notes_for_next_agent": ""
 }
 ```
 
-`coverage` is `full`, `scoped` or `none`; `none` has an empty `checks` list, the others at least one. Check names are unique and contain no `/`. `timeout` (seconds) is optional.
+`coverage` is `full`, `scoped` or `none`; `none` has an empty `checks` list, the others at least one. Check names are unique and contain no `/`. `timeout` (seconds) is optional. `dropped` is empty for a first plan.
