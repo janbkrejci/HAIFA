@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from importlib import resources
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -78,6 +79,7 @@ class _Reader:
         self.source = source
         self.files: dict[str, str] = {}
         self.issues: list[ConfigIssue] = []
+        self.seed_agents: set[str] = set()  # roster agents taken from the packaged seed
 
     def read(self, rel: str) -> str | None:
         text = self.source.read_text(rel)
@@ -87,6 +89,30 @@ class _Reader:
 
     def label(self, rel: str) -> str:
         return self.source.label(rel)
+
+
+SEED_FALLBACK_AGENTS: tuple[str, ...] = ("tester",)
+"""Agents a roster without them gets from the packaged seed (the tester came with 3.0)."""
+
+
+def _seed_prompt(agent: str, kind: str) -> str:
+    return (resources.files("aifactory") / "seed" / "agents" / agent / f"{kind}.md").read_text(
+        encoding="utf-8"
+    )
+
+
+def _seed_entry(agent: str, raw: Mapping[str, Any]) -> dict[str, Any]:
+    """A roster entry for a seed agent: the roster defaults, else the seed agent's own."""
+    text = (resources.files("aifactory") / "seed" / "agents" / agent / "agent.yaml").read_text(
+        encoding="utf-8"
+    )
+    seed = (yaml.safe_load(text) or {}).get("defaults") or {}
+    defaults = raw.get("defaults") or {}
+    entry: dict[str, Any] = {"name": agent, "writes": []}
+    for key in ("harness", "model", "thinking"):
+        if key not in defaults and key in seed:
+            entry[key] = seed[key]
+    return entry
 
 
 def _load_agents(reader: _Reader) -> SSSFConfig | None:
@@ -114,6 +140,12 @@ def _load_agents(reader: _Reader) -> SSSFConfig | None:
             )
     if len(reader.issues) > before:
         return None
+    names = {str(a.get("name") or "") for a in agents}
+    missing = [name for name in SEED_FALLBACK_AGENTS if name not in names]
+    if missing and agents:
+        # A roster from before 3.0 has no tester; it gets the seed's with the roster defaults.
+        raw = {**raw, "agents": [*agents, *(_seed_entry(n, raw) for n in missing)]}
+        reader.seed_agents.update(missing)
     try:
         data = normalize_raw(raw)
     except HarnessConfigError as exc:
@@ -162,6 +194,8 @@ def _load_prompts(reader: _Reader, declared: list[str]) -> dict[str, AgentPrompt
         for kind in PROMPT_KINDS:
             rel = prompt_path(name, kind)
             text = reader.read(rel)
+            if text is None and name in reader.seed_agents:
+                text = _seed_prompt(name, kind)
             if text is None:
                 if name in declared:
                     reader.issues.append(

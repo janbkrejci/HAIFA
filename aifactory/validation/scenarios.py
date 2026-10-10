@@ -77,8 +77,10 @@ CORE_PHASES: tuple[str, ...] = (
     "commit_docs",
 )
 # phases a real model may add: repair rounds with their new plans, review rounds
-# with the new plan and retest after a revision
-EXTRA_PHASE = re.compile(r"^(?:fix|test|test_plan|review|revise|replan|retest)_\d+$")
+# with the new plan and retest after a revision, the tester's triage of a red test
+EXTRA_PHASE = re.compile(
+    r"^(?:(?:fix|test|test_plan|review|revise|replan|retest)_\d+|triage(?:_\d+)?)$"
+)
 R1_HARNESSES = frozenset({"claude", "codex", "pi"})
 
 R1_TASK = "M02-S01-T02"  # --version; later merged outside factory (R3)

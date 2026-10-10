@@ -16,6 +16,13 @@ a tester can diff the whole change, and ``{{previous_test_plan}}``, the latest
 test plan (``(none)`` before the first), which a new plan must keep or say why
 it drops a check (gate ``plan_keeps_checks``).
 
+A red ``test`` goes to the tester first (phase ``triage``, ``{{failed_test}}`` set):
+``failure_cause: plan`` means the checks themselves were wrong (a bad path, an
+unknown option, no tests collected); the corrected plan replaces the old one and
+the test runs again, which is no repair round and never reaches the builder. At
+most ``MAX_PLAN_REPAIRS`` corrections per run, then the run stops. ``code`` leaves
+the red result for the builder.
+
 Inputs of a role step: ``{{previous_envelope}}`` is the latest result of the
 steps in ``input:`` (any step without it). An ``input:`` mapping adds further
 ``{{name}}`` variables, each the latest result of its own steps. Every role step
@@ -37,6 +44,7 @@ the run is paused (``factory task pause``). A phase that started always runs to 
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
@@ -72,6 +80,12 @@ REQUEST_DESCRIPTION = "Capture the incoming ask and the workflow chosen to answe
 TEST_RESULT_VARIABLE = "test_result"
 BASELINE_VARIABLE = "baseline"
 PREVIOUS_PLAN_VARIABLE = "previous_test_plan"
+FAILED_TEST_VARIABLE = "failed_test"
+TRIAGE_PHASE = "triage"
+TRIAGE_DESCRIPTION = (
+    "Decide whether the failed checks are wrong themselves or caught a fault in the code"
+)
+MAX_PLAN_REPAIRS = 2
 NO_INPUT = "(none)"
 
 
@@ -259,6 +273,10 @@ class _Interpreter:
         )
         self.records: list[StepRecord] = []
         self.used: set[str] = set()
+        self.plan_step: RoleStep | None = None  # the latest test plan step, for triage
+        self.failed_test = ""  # the red test a triage call judges
+        self.red_test: dict[str, Any] | None = None
+        self.plan_repairs = 0
 
     # -- helpers --
 
@@ -321,6 +339,7 @@ class _Interpreter:
             TEST_RESULT_VARIABLE: self.render_input(self.test_keys),
             BASELINE_VARIABLE: self.baseline or NO_INPUT,
             PREVIOUS_PLAN_VARIABLE: self.latest_plan_json(),
+            FAILED_TEST_VARIABLE: self.failed_test or NO_INPUT,
         }
         for name, keys in step.variables:
             variables[name] = self.render_input(keys)
@@ -415,8 +434,11 @@ class _Interpreter:
         if self.gate is not None:
             self.gate()
 
-    def role(self, step: RoleStep, suffix: tuple[int, ...]) -> None:
+    def role(self, step: RoleStep, suffix: tuple[int, ...], *, keep: bool = True) -> Any:
+        """Run one agent phase; ``keep=False`` leaves its envelope out of the results."""
         self.before_phase()
+        if step.role.output_type is dt.TestPlanOutput and step.phase_id != TRIAGE_PHASE:
+            self.plan_step = step
         name = self.phase_name(step.phase_id, suffix)
         role = step.role
         previous = self.previous(step.inputs)
@@ -445,9 +467,52 @@ class _Interpreter:
                         variables=self.variables(step),
                     )
                 )
-        self.store(step.key, envelope)
+        if keep:
+            self.store(step.key, envelope)
+        return envelope
+
+    def triage(self, step: CodeStep, suffix: tuple[int, ...], report: dict[str, Any]) -> bool:
+        """Ask the tester whether a red ``test`` is the plan's fault; True after a plan repair.
+
+        A corrected plan replaces the old one and the test runs again: not a repair
+        round, nothing reaches the builder. After ``MAX_PLAN_REPAIRS`` corrected plans
+        that still fail by their own fault the run stops.
+        """
+        if self.plan_step is None:
+            return False
+        check = dataclasses.replace(
+            self.plan_step,
+            phase_id=TRIAGE_PHASE,
+            description=TRIAGE_DESCRIPTION,
+            when=None,
+            inputs=(),
+            variables=(),
+        )
+        self.failed_test = json.dumps(report, indent=2)
+        try:
+            envelope = self.role(check, suffix, keep=False)
+        finally:
+            self.failed_test = ""
+        if envelope.failure_cause != "plan":
+            return False
+        if self.plan_repairs >= MAX_PLAN_REPAIRS:
+            raise RuntimeError(
+                f"the test plan still cannot run after {MAX_PLAN_REPAIRS} corrections: "
+                f"{envelope.reason}"
+            )
+        self.plan_repairs += 1
+        self.store(self.plan_step.key, envelope)
+        return True
 
     def code_step(self, step: CodeStep, suffix: tuple[int, ...]) -> None:
+        self.run_code_step(step, suffix)
+        while step.action == "test" and self.red_test is not None:
+            report, self.red_test = self.red_test, None
+            if not self.triage(step, suffix, report):
+                break
+            self.run_code_step(step, suffix)
+
+    def run_code_step(self, step: CodeStep, suffix: tuple[int, ...]) -> None:
         self.before_phase()
         name = self.phase_name(step.phase_id, suffix)
         self.records.append(StepRecord(name, step.name, "code", step.owner))
@@ -464,8 +529,11 @@ class _Interpreter:
                     checks=f"{passed}/{len(result.checks)}",
                     artifacts=", ".join(result.artifacts),
                 )
-                self.reports[len(self.history)] = self.report(name, step.key, result)
+                report = self.report(name, step.key, result)
+                self.reports[len(self.history)] = report
                 self.store(step.key, engine_quality.as_envelope(result, what))
+                if step.action == "test" and not result.passed:
+                    self.red_test = report
             elif step.action == "commit":
                 message = self.commit_message()
                 # "" means the tree was already clean — a real outcome, not a failure.
@@ -542,7 +610,7 @@ def run_workflow(
     ``phase_gate`` (called before every role and code phase; see the module docstring).
     """
     preflight(workflow, cfg)
-    warnings = unenforced_restrictions(workflow, cfg)
+    warnings = [*workflow.warnings, *unenforced_restrictions(workflow, cfg)]
     runner: CodeRunner = code if code is not None else EngineCodeRunner()
     run = session.ensure(cfg, adw_id)
     if repo_root is not None:

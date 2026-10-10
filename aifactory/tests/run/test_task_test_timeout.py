@@ -16,7 +16,18 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
-from run_repo import T01, Script, commit_all, fake_env, git, make_run_repo, ok, plan_envelope, write
+from run_repo import (
+    T01,
+    Script,
+    commit_all,
+    fake_env,
+    git,
+    make_run_repo,
+    ok,
+    plan_envelope,
+    triage_envelope,
+    write,
+)
 
 from aifactory.config import ConfigError
 from aifactory.run import TaskRunError, run_task
@@ -172,6 +183,7 @@ def test_retest_uses_the_same_timeout(repo: Path, script: Script) -> None:
 def test_exceeded_timeout_fails_the_step(repo: Path, script: Script, code: str) -> None:
     setup(repo, task_timeout=1, step_timeout=600)
     scripted(script, py(code))
+    script.add("tester", triage_envelope("code", *py(code)))  # the red test is the code's
 
     clock = time.monotonic()
     result = run_task(repo, T01)

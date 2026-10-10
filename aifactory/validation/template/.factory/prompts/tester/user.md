@@ -22,6 +22,12 @@ The plan the last test ran, `(none)` for the first plan of the run. Keep each of
 
 {{previous_test_plan}}
 
+### failed_test
+
+`(none)` when you plan. Otherwise you triage: the test that just failed (its checks, exit codes and logs). Decide whether the plan or the code is at fault:
+
+{{failed_test}}
+
 ### test_result
 
 The latest test result, `(none)` before any test ran:
@@ -51,6 +57,7 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
   "summary": "<one sentence: what the checks cover>",
   "coverage": "scoped",
   "reason": "<why these checks are enough, and why nothing wider is needed>",
+  "failure_cause": "",
   "checks": [
     { "name": "api-tests", "argv": ["uv", "run", "pytest", "tests/api", "-q"] },
     { "name": "types", "argv": ["npm", "run", "typecheck"], "timeout": 300 }
@@ -63,4 +70,4 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
 }
 ```
 
-`coverage` is `full`, `scoped` or `none`; `none` has an empty `checks` list, the others at least one. Check names are unique and contain no `/`. `timeout` (seconds) is optional. `dropped` is empty for a first plan.
+`coverage` is `full`, `scoped` or `none`; `none` has an empty `checks` list, the others at least one. Check names are unique and contain no `/`. `timeout` (seconds) is optional. `dropped` is empty for a first plan. `failure_cause` is `""` when you plan, `"plan"` or `"code"` when you triage.

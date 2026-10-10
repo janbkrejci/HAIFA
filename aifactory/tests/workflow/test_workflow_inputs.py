@@ -19,6 +19,7 @@ from workflow_fakes import (
     FakeCodeRunner,
     ok,
     plan_envelope,
+    triage_envelope,
     workflow,
     workflow_env_fixture,  # noqa: F401  (pytest fixture)
 )
@@ -35,6 +36,7 @@ BUILD = ok(summary="built", changed_files=[], commit_message="Build it")
 FIX = ok(summary="fixed", changed_files=[], commit_message="Fix it")
 APPROVE = ok(summary="looks right", approved=True)
 TEST_PLAN = plan_envelope("pytest", "tests")
+CODE_FAULT = triage_envelope("code", "pytest", "tests")
 
 LOOP = (
     HEADER
@@ -114,7 +116,7 @@ def test_review_gets_builder_envelope_and_test_result(
 ) -> None:
     _with_variables(workflow_env, tmp_path)
     workflow_env.script.add("builder", BUILD, FIX)
-    workflow_env.script.add("tester", TEST_PLAN)
+    workflow_env.script.add("tester", TEST_PLAN, CODE_FAULT)
     workflow_env.script.add("reviewer", APPROVE)
     code = LoggedTests([False, True])
     result = run_workflow(workflow(LOOP), "do it", workflow_env.cfg, code=code)
@@ -141,7 +143,7 @@ def test_test_result_says_when_code_changed_after_it(
         HEADER + "steps:\n  - test_plan\n  - test\n  - build\n  - review\naccept: review.approved\n"
     )
     _with_variables(workflow_env, tmp_path)
-    workflow_env.script.add("tester", TEST_PLAN)
+    workflow_env.script.add("tester", TEST_PLAN, CODE_FAULT)
     workflow_env.script.add("builder", BUILD)
     workflow_env.script.add("reviewer", APPROVE)
     run_workflow(workflow(text), "do it", workflow_env.cfg, code=LoggedTests([False]))

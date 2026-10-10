@@ -270,7 +270,6 @@ def test_invalid_step_agent(tmp_path: Path, body: str, code: str, path: str) -> 
 @pytest.mark.parametrize(
     ("steps", "path"),
     [
-        ("  - test\n", "steps[0]"),
         ("  - test\n  - test_plan\n", "steps[0]"),
         ("  - repeat: {max: 2}\n    steps: [test, test_plan]\n", "steps[0].steps[0]"),
     ],

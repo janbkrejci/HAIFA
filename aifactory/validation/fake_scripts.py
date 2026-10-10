@@ -18,7 +18,9 @@ chain one after the other (``chain_script``).
 
 The fake tester plans one check, the sandbox's ``just test`` (full coverage),
 for ``test_plan``, again after every fix and for ``replan_1`` after the forced
-revision. Every plan has the same check, so ``plan_keeps_checks`` passes.
+revision. A red test goes to the tester first (``triage``): the fake answers
+``failure_cause: code`` so the builder repairs it. Every plan has the same
+check, so ``plan_keeps_checks`` passes.
 
 Envelope fields follow ``aifactory.engine.data_types`` (PlanOutput,
 BuildOutput, TestPlanOutput, ReviewOutput, DocumentOutput).
@@ -159,6 +161,13 @@ def test_plan(task_id: str) -> dict[str, Any]:
     return {"envelope": envelope, "edits": []}
 
 
+def triage(task_id: str) -> dict[str, Any]:
+    """The fake tester's verdict on a red test: the code's fault, the plan stays."""
+    entry = test_plan(task_id)
+    entry["envelope"] = {**entry["envelope"], "failure_cause": "code"}
+    return entry
+
+
 def revise_edit(path: str) -> dict[str, Any]:
     """The revision the validation reviewer asks for in its first round."""
     return {"path": path, "append": f"{REVIEW_RULE_MARKER}\n"}
@@ -208,14 +217,19 @@ def _script(
     doc: str = "What changed and why.",
 ) -> dict[str, Any]:
     """Planner, the builds, the forced revision of `revised`, two reviews, the test
-    plans (``test_plan``, one after every fix, ``replan_1``), documenter."""
+    plans (``test_plan``, a triage and a plan per fix, ``replan_1``), documenter."""
     return {
         "task": task_id,
         "agents": {
             "planner": [_plan(task_id, plan)],
             "builder": [*builds, _revise(revised)],
-            # test_plan, one plan after every fix, and replan_1 after the revision
-            "tester": [test_plan(task_id) for _ in range(len(builds) + 1)],
+            # test_plan; per fix the triage of the red test, then the plan after the
+            # fix; replan_1 after the revision
+            "tester": [
+                test_plan(task_id),
+                *[e for _ in builds[1:] for e in (triage(task_id), test_plan(task_id))],
+                test_plan(task_id),
+            ],
             "reviewer": _reviews(task_id, revised),
             "documenter": [_document(task_id, doc)],
         },

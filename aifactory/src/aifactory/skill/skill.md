@@ -315,6 +315,8 @@ double braces around their names:
 | `workdir` | Absolute task worktree path. |
 | `test_result` | Latest test results as JSON. |
 | `baseline` | Commit the run started from; `git diff <baseline>` is the whole change. |
+| `previous_test_plan` | The plan the last test ran, `(none)` before the first. |
+| `failed_test` | In a tester triage: the red test to judge; otherwise `(none)`. |
 | `rebase_onto` | Target commit, only in conflict resolution runs. |
 
 `<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at exactly that path; never create a directory of the same name inside the repo or the worktree.
@@ -356,6 +358,13 @@ packaged workflows: {{workflows}}.
   change, nothing beyond. There is no configured test command; every repo, whatever its
   stack, gets its checks from the tester. The gate `checks_runnable` requires the first
   argv element of every check on PATH or as a file in the worktree.
+- A later `test_plan` keeps every check of the previous plan (same argv) or names it in
+  `dropped` with a reason (gate `plan_keeps_checks`). Workflows plan again after every
+  fix and every revision, from the whole diff since `baseline`.
+- A red `test` goes to the tester first (phase `triage`): `failure_cause: plan` (the
+  checks themselves were wrong) replaces the plan and runs the test again without a
+  repair round and without the builder, at most twice per run; `code` leaves the
+  failure for `fix`.
 - A `test` step (also under another `id`, e.g. `retest`) runs the checks of the latest
   `test_plan` in order, without a shell, and stops at the first failure; a workflow with a
   `test` and no earlier `test_plan` is invalid (`test_without_plan`). `none` runs nothing

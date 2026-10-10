@@ -14,6 +14,7 @@ from workflow_fakes import (
     FakeCodeRunner,
     ok,
     plan_envelope,
+    triage_envelope,
     workflow,
     workflow_env_fixture,  # noqa: F401  (pytest fixture)
 )
@@ -54,6 +55,7 @@ BUILD = ok(summary="built", changed_files=[], commit_message="Build it")
 FIX = ok(summary="fixed", changed_files=[], commit_message="Fix it")
 REVISE = ok(summary="revised", changed_files=[], commit_message="Revise it")
 PLAN = plan_envelope()
+CODE_FAULT = triage_envelope("code")
 APPROVE = ok(summary="looks right", approved=True)
 REJECT = ok(summary="missing X", approved=False, blocking=["missing X"])
 
@@ -77,13 +79,13 @@ def _agents(env: EngineEnv) -> list[str]:
 
 def test_fix_repairs_the_suite(workflow_env: EngineEnv) -> None:
     workflow_env.script.add("builder", BUILD, FIX)
-    workflow_env.script.add("tester", PLAN)
+    workflow_env.script.add("tester", PLAN, CODE_FAULT)
     result, code = _run(workflow_env, TEST_LOOP, [False, True])
-    assert _phases(result) == ["build", "test_plan", "test_1", "fix_1", "test_2"]
+    assert _phases(result) == ["build", "test_plan", "test_1", "triage_1", "fix_1", "test_2"]
     assert (result.exit_code, result.accepted) == (0, True)
     assert code.test_results == []
     assert [check.argv for plan in code.plans for check in plan.checks] == [["true"]] * 2
-    fix_call = workflow_env.script.calls[2]
+    fix_call = workflow_env.script.calls[3]
     previous = json.loads(fix_call.previous())
     assert previous["passed"] is False  # the fixer reads the failing suite
     assert previous["failures"] == ["test: failed"]
@@ -101,9 +103,20 @@ def test_green_suite_skips_fix(workflow_env: EngineEnv) -> None:
 
 def test_max_runs_out_without_a_last_fix(workflow_env: EngineEnv) -> None:
     workflow_env.script.add("builder", BUILD, FIX, FIX)
-    workflow_env.script.add("tester", PLAN)
+    workflow_env.script.add("tester", PLAN, CODE_FAULT, CODE_FAULT, CODE_FAULT)
     result, code = _run(workflow_env, TEST_LOOP, [False, False, False])
-    assert _phases(result) == ["build", "test_plan", "test_1", "fix_1", "test_2", "fix_2", "test_3"]
+    assert _phases(result) == [
+        "build",
+        "test_plan",
+        "test_1",
+        "triage_1",
+        "fix_1",
+        "test_2",
+        "triage_2",
+        "fix_2",
+        "test_3",
+        "triage_3",
+    ]
     assert "fix_3" not in _phases(result)
     assert result.accepted is False
     assert result.exit_code != 0
@@ -184,8 +197,9 @@ accept: test.passed
     assert _agents(workflow_env) == ["tester"]
 
     workflow_env.script.add("builder", FIX)
+    workflow_env.script.add("tester", CODE_FAULT)
     again, _ = _run(workflow_env, text, [False, True])
-    assert _phases(again) == ["test_plan", "test", "fix_1", "test_1"]
+    assert _phases(again) == ["test_plan", "test", "triage", "fix_1", "test_1"]
     assert again.accepted is True
 
 
@@ -204,9 +218,9 @@ accept: test.passed
 """
     )
     workflow_env.script.add("builder", BUILD)
-    workflow_env.script.add("tester", PLAN)
+    workflow_env.script.add("tester", PLAN, CODE_FAULT)
     result, _ = _run(workflow_env, text, [False, True])
-    assert _phases(result) == ["build", "test_plan", "test_1", "test_2"]
+    assert _phases(result) == ["build", "test_plan", "test_1", "triage_1", "test_2"]
     assert result.accepted is True
 
 
@@ -224,9 +238,18 @@ steps:
 """
     )
     workflow_env.script.add("builder", BUILD, FIX, FIX)
-    workflow_env.script.add("tester", PLAN)
+    workflow_env.script.add("tester", PLAN, CODE_FAULT, CODE_FAULT)
     result, _ = _run(workflow_env, text, [False, False])
-    assert _phases(result) == ["build", "test_plan", "test_1", "fix_1", "test_2", "fix_2"]
+    assert _phases(result) == [
+        "build",
+        "test_plan",
+        "test_1",
+        "triage_1",
+        "fix_1",
+        "test_2",
+        "triage_2",
+        "fix_2",
+    ]
     assert result.accepted is True  # no accept: the run is accepted
 
 

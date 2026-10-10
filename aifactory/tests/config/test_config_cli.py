@@ -78,7 +78,7 @@ def test_show_json(
     assert env["ok"] is True
     data = env["data"]
     assert "warnings" not in data
-    assert data["agents"] == ["planner", "builder"]
+    assert data["agents"] == ["planner", "builder", "tester"]  # tester from the seed
     assert data["workflows"] == ["plan-build"]
     assert data["local"] == {"trace_db": ".factory/trace.db"}
     assert any(PLANNER_SYSTEM in w for w in env["warnings"])

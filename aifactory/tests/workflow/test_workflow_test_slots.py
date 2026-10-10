@@ -18,6 +18,7 @@ import pytest
 from workflow_fakes import (
     EngineEnv,
     plan_envelope,
+    triage_envelope,
     workflow,
     workflow_env_fixture,  # noqa: F401  (pytest fixture)
 )
@@ -247,9 +248,8 @@ def test_timeout_still_limits_the_command_inside_a_slot(
     workflow_env: EngineEnv, tmp_path: Path
 ) -> None:
     slots = tmp_path / "slots"
-    workflow_env.script.add(
-        "tester", plan_envelope(sys.executable, "-c", "import time; time.sleep(30)")
-    )
+    sleep = (sys.executable, "-c", "import time; time.sleep(30)")
+    workflow_env.script.add("tester", plan_envelope(*sleep), triage_envelope("code", *sleep))
     result = run_workflow(
         workflow(TEXT),
         "do it",

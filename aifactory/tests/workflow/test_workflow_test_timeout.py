@@ -11,6 +11,7 @@ import pytest
 from workflow_fakes import (
     EngineEnv,
     plan_envelope,
+    triage_envelope,
     workflow,
     workflow_env_fixture,  # noqa: F401  (pytest fixture)
 )
@@ -35,7 +36,7 @@ OK = [sys.executable, "-c", "raise SystemExit(0)"]
 
 
 def test_exceeded_timeout_fails_the_step(workflow_env: EngineEnv) -> None:
-    workflow_env.script.add("tester", plan_envelope(*SLEEP))
+    workflow_env.script.add("tester", plan_envelope(*SLEEP), triage_envelope("code", *SLEEP))
     result = run_workflow(workflow(TEXT), "do it", workflow_env.cfg, test_timeout=1)
     assert result.results["test"]["passed"] is False
     assert "exceeded the time limit of" in result.results["test"]["failures"][0]

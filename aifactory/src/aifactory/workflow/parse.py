@@ -68,6 +68,7 @@ _COMMAND_OPTS = _CODE_OPTS | {"argv", "timeout"}
 _OVERRIDES = ("harness", "model", "thinking")
 _REPEAT_OPTS = frozenset({"max", "until", "when"})
 TEST_PLAN_TYPE = "TestPlanOutput"
+TEST_PLAN_STEP = "test_plan"
 
 
 def _until_tail(until: Condition | None, steps: Sequence[Step]) -> int | None:
@@ -450,6 +451,48 @@ class _Parser:
                     path,
                 )
 
+    def legacy_plan(self, steps: tuple[Step, ...]) -> tuple[tuple[Step, ...], bool]:
+        """An older workflow (no test plan step at all): a ``test_plan`` before its first test.
+
+        Returns the steps and whether one was added. Workflows written before 3.0 ran
+        a configured test command; they keep working with the tester's checks.
+        """
+        role = self.roles.roles.get(TEST_PLAN_STEP)
+        if role is None or role.output_type_name != TEST_PLAN_TYPE:
+            return steps, False
+        if any(
+            isinstance(s, RoleStep) and s.role.output_type_name == TEST_PLAN_TYPE
+            for s in walk(steps)
+        ):
+            return steps, False
+
+        def insert(items: tuple[Step, ...]) -> tuple[tuple[Step, ...], bool]:
+            out: list[Step] = []
+            for index, step in enumerate(items):
+                if isinstance(step, Repeat):
+                    body, done = insert(step.steps)
+                    if done:
+                        changed = dataclasses.replace(
+                            step, steps=body, until_tail=_until_tail(step.until, body)
+                        )
+                        return (*out, changed, *items[index + 1 :]), True
+                elif isinstance(step, CodeStep) and step.action == "test":
+                    plan = RoleStep(
+                        name=TEST_PLAN_STEP,
+                        role=role,
+                        phase_id=TEST_PLAN_STEP,
+                        description=role.description,
+                        path=step.path,
+                    )
+                    return (*out, plan, *items[index:]), True
+                out.append(step)
+            return tuple(out), False
+
+        result, added = insert(steps)
+        if added:
+            self.namespace[TEST_PLAN_STEP] = self.roles.result_fields(TEST_PLAN_STEP)
+        return result, added
+
     def check_test_plans(self, steps: Sequence[Step]) -> None:
         """Every ``test`` runs the latest test plan, so a test plan step must come first."""
         planned = False
@@ -483,11 +526,26 @@ class _Parser:
         steps = self.steps(raw_steps, "steps")
         accept = self.condition(data.get("accept"), "accept")
         self.check_refs()
+        steps, added = self.legacy_plan(steps)
         self.check_test_plans(steps)
         if self.issues:
             return None
+        warnings = (
+            (
+                f"workflow {name.strip()!r} has no test_plan step: one was added before its "
+                "first test (add test_plan steps to the YAML to plan the checks again after "
+                "fixes and revisions)",
+            )
+            if added
+            else ()
+        )
         return Workflow(
-            name=name.strip(), description=description, steps=steps, accept=accept, source=source
+            name=name.strip(),
+            description=description,
+            steps=steps,
+            accept=accept,
+            source=source,
+            warnings=warnings,
         )
 
 

@@ -269,6 +269,9 @@ class TestPlanOutput(EnvelopeBase):
     reason: str = Field(min_length=1)
     checks: list[Check] = Field(default_factory=list)
     dropped: list[Dropped] = Field(default_factory=list)
+    # Set only when the tester triages failed checks: `plan` (the checks themselves
+    # were wrong; this envelope is the corrected plan) or `code` (the plan stands).
+    failure_cause: Literal["", "code", "plan"] = ""
 
     @model_validator(mode="after")
     def coherent(self) -> "TestPlanOutput":

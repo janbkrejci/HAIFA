@@ -101,6 +101,8 @@ class Workflow:
     steps: tuple[Step, ...]
     accept: Condition | None = None
     source: Path | None = None
+    # what the parser changed to load an older workflow, said once per run
+    warnings: tuple[str, ...] = ()
 
 
 def walk(steps: Sequence[Step]) -> Iterator[RoleStep | CodeStep]:

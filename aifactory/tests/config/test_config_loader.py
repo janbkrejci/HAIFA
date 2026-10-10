@@ -16,7 +16,7 @@ def test_sample_config_loads(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     config = load_worktree_config(repo)
     agents = {agent.name: agent for agent in config.agents.agents}
-    assert [a.name for a in config.agents.agents] == ["planner", "builder"]
+    assert [a.name for a in config.agents.agents] == ["planner", "builder", "tester"]
     assert all(a.coding_agent == "claude" for a in agents.values())
     assert agents["planner"].model == "opus"
     assert agents["builder"].model == "sonnet"

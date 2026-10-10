@@ -167,6 +167,14 @@ def plan_envelope(*argv: str, coverage: str = "scoped") -> dict[str, Any]:
     return ok(coverage=coverage, reason="covers the change", checks=checks)
 
 
+def triage_envelope(cause: str = "code", *argv: str) -> dict[str, Any]:
+    """A tester's verdict on a red test: ``code`` keeps the plan, ``plan`` replaces it.
+
+    It carries the same check as ``plan_envelope(*argv)``, so ``plan_keeps_checks`` passes.
+    """
+    return {**plan_envelope(*argv), "failure_cause": cause}
+
+
 def workflow(text: str) -> Workflow:
     """A workflow from a YAML string, against the packaged role registry."""
     return parse_workflow(yaml.safe_load(text), load_roles())

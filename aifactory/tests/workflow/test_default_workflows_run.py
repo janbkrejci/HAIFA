@@ -15,6 +15,7 @@ from workflow_fakes import (  # noqa: F401
     FakeCodeRunner,
     ok,
     plan_envelope,
+    triage_envelope,
     workflow_env_fixture,
 )
 
@@ -42,6 +43,7 @@ REJECT = ok(summary="missing X", approved=False, blocking=["missing X"])
 DOCUMENT = ok(summary="documented", commit_message="Document the feature")
 SCOUT = ok(summary="found it")
 TEST_PLAN = plan_envelope()
+CODE_FAULT = triage_envelope("code")
 # Keeps the first plan's check (gate plan_keeps_checks) and adds one.
 REPLAN = ok(
     coverage="scoped",
@@ -68,6 +70,10 @@ def _revise(i: int) -> tuple[str, str, str]:
 
 def _replan(i: int, name: str = "test_plan") -> tuple[str, str, str]:
     return (f"{name}_{i}", "agent", "tester")
+
+
+def _triage(i: int) -> tuple[str, str, str]:
+    return (f"triage_{i}", "agent", "tester")
 
 
 def _retest(i: int) -> tuple[str, str, str]:
@@ -162,7 +168,12 @@ def test_plan_build_test_green_first_time(workflow_env: EngineEnv) -> None:
 
 
 def test_plan_build_test_fixed_once(workflow_env: EngineEnv) -> None:
-    _script(workflow_env, planner=[PLAN], builder=[BUILD, FIX], tester=[TEST_PLAN, TEST_PLAN])
+    _script(
+        workflow_env,
+        planner=[PLAN],
+        builder=[BUILD, FIX],
+        tester=[TEST_PLAN, CODE_FAULT, TEST_PLAN],
+    )
     result, code = _run(workflow_env, "plan-build-test", [False, True])
     assert _phases(result) == [
         REQUEST,
@@ -170,6 +181,7 @@ def test_plan_build_test_fixed_once(workflow_env: EngineEnv) -> None:
         BUILD_PHASE,
         TEST_PLAN_PHASE,
         _test(1),
+        _triage(1),
         _fix(1),
         _replan(1),
         _test(2),
@@ -187,7 +199,7 @@ def test_plan_build_test_never_green(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX, FIX],
-        tester=[TEST_PLAN, TEST_PLAN, TEST_PLAN],
+        tester=[TEST_PLAN, CODE_FAULT, TEST_PLAN, CODE_FAULT, TEST_PLAN, CODE_FAULT],
     )
     result, code = _run(workflow_env, "plan-build-test", [False, False, False])
     assert _phases(result) == [
@@ -196,12 +208,15 @@ def test_plan_build_test_never_green(workflow_env: EngineEnv) -> None:
         BUILD_PHASE,
         TEST_PLAN_PHASE,
         _test(1),
+        _triage(1),
         _fix(1),
         _replan(1),
         _test(2),
+        _triage(2),
         _fix(2),
         _replan(2),
         _test(3),
+        _triage(3),
     ]
     assert (result.exit_code, result.accepted) == (1, False)
     assert code.commits == []
@@ -239,7 +254,7 @@ def test_simple_sdlc_tests_fail_once(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX],
-        tester=[TEST_PLAN, TEST_PLAN],
+        tester=[TEST_PLAN, CODE_FAULT, TEST_PLAN],
         reviewer=[APPROVE],
         documenter=[DOCUMENT],
     )
@@ -247,6 +262,7 @@ def test_simple_sdlc_tests_fail_once(workflow_env: EngineEnv) -> None:
     assert _phases(result) == [
         *HEAD,
         _test(1),
+        _triage(1),
         _fix(1),
         _replan(1),
         _test(2),
@@ -254,10 +270,10 @@ def test_simple_sdlc_tests_fail_once(workflow_env: EngineEnv) -> None:
         *TAIL,
     ]
     assert (result.exit_code, result.accepted) == (0, True)
-    fix_call = workflow_env.script.calls[3]
+    fix_call = workflow_env.script.calls[4]
     assert fix_call.agent == "builder"
     assert '"passed": false' in fix_call.previous()  # the fixer reads the failing suite
-    review_call = workflow_env.script.calls[5]
+    review_call = workflow_env.script.calls[6]
     assert review_call.agent == "reviewer"
     assert "fixed" in review_call.previous()  # the reviewer reads the latest code
     assert code.commits[1] == "Fix the failing test"
@@ -337,19 +353,22 @@ def test_simple_sdlc_tests_never_pass(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX, FIX],
-        tester=[TEST_PLAN, TEST_PLAN, TEST_PLAN],
+        tester=[TEST_PLAN, CODE_FAULT, TEST_PLAN, CODE_FAULT, TEST_PLAN, CODE_FAULT],
         reviewer=[APPROVE],
     )
     result, code = _run(workflow_env, "simple-sdlc", [False, False, False])
     assert _phases(result) == [
         *HEAD,
         _test(1),
+        _triage(1),
         _fix(1),
         _replan(1),
         _test(2),
+        _triage(2),
         _fix(2),
         _replan(2),
         _test(3),
+        _triage(3),
         _review(1),
     ]
     assert (result.exit_code, result.accepted) == (1, False)

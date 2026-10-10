@@ -28,6 +28,7 @@ import yaml
 from pydantic import ValidationError
 
 from aifactory import __version__, harness
+from aifactory.config.loader import SEED_FALLBACK_AGENTS
 from aifactory.config.manifest import (
     MANIFEST_FILE,
     LibraryRef,
@@ -268,6 +269,8 @@ class _Source:
         out = {}
         for name in names:
             item, issues, files = found[(type, name)]
+            if not files and type == "agent" and name in SEED_FALLBACK_AGENTS:
+                continue  # a library from before 3.0: the repo roster falls back to the seed's
             if not files:
                 raise LibraryStoreError("unknown_item", f"no {type} {name!r} in {where}")
             if item is None or issues:
@@ -372,6 +375,8 @@ class Selection:
                     agent_names.append(agent)
                     self.added.append(agent)
         self.agent_items = source.load("agent", agent_names)
+        agent_names = [n for n in agent_names if n in self.agent_items]
+        self.added = [n for n in self.added if n in self.agent_items]
         self.binds: dict[str, Binding] = {}
         for bind in bindings:
             if bind.agent not in agent_names:
