@@ -2,7 +2,7 @@
 id: HAIFA-REFINEMENT-T08
 title: "Test step: všechny kontroly bez zastavení na první chybě, řazení od nejrychlejší"
 status: todo
-workflow: simple-sdlc
+workflow: build-test-review
 depends_on: []
 writes: [aifactory/]
 ---
