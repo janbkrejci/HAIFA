@@ -358,6 +358,16 @@ class _Interpreter:
         commands = [str(check.command) for check in checks]
         logs = [str(check.output_artifact) for check in checks if check.output_artifact]
         logs += [str(a) for a in getattr(result, "artifacts", None) or [] if str(a) not in logs]
+        failed = [
+            {
+                "name": check.name,
+                "command": check.command,
+                "returncode": check.returncode,
+                "log": check.output_artifact,
+            }
+            for check in checks
+            if not check.passed
+        ]
         return {
             "step": key,
             "phase": phase,
@@ -366,6 +376,8 @@ class _Interpreter:
             "log": logs[0] if len(logs) == 1 else (logs or None),
             "failures": len(getattr(result, "failures", None) or []),
             **({"test_plan": result.test_plan.model_dump()} if result.test_plan else {}),
+            # every failed check, so a triage judges all of them, not just the first
+            **({"failed_checks": failed} if failed else {}),
         }
 
     def latest_plan(self) -> Any:

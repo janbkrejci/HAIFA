@@ -208,6 +208,11 @@ def _tests(wf: WorkflowRun) -> list[str]:
             commands = [str(c) for c in plan.get("commands") or []]
             if commands:
                 verdict += "; " + ", ".join(f"`{c}`" for c in commands)
+            not_run = [n for n in plan.get("not_run") or [] if isinstance(n, dict)]
+            if not_run:
+                verdict += "; nespuštěno: " + ", ".join(
+                    f"`{n.get('name')}` ({n.get('reason')})" for n in not_run
+                )
             summary = str(result.get("summary") or "").strip()
             lines.append(f"- test `{key}`: {verdict}" + (f" ({summary})" if summary else ""))
     return lines

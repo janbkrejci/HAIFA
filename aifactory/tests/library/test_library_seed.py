@@ -67,7 +67,24 @@ def test_seed_workflows_are_not_copied() -> None:
 
 # Seed additions HAIFA's own `.factory/prompts` (protected, edited by the operator)
 # may not have picked up yet. With or without them the prompts must be equal.
-PENDING_SEED_BLOCKS: dict[tuple[str, str], bytes] = {}
+PENDING_SEED_BLOCKS: dict[tuple[str, str], bytes] = {
+    ("tester", "system"): (
+        b"- The test step runs every check, also after one fails, and hands the builder "
+        b"the output of every failed check. Order the checks from the shortest expected "
+        b"run to the longest: lint and type check first, then the targeted tests, then "
+        b"wider suites.\n- Set `stop_on_fail: true` only on a check without which the "
+        b"others make no sense (a build, a dependency install, test collection). Its "
+        b"failure stops the remaining checks, which the result lists in "
+        b"`test_plan.not_run`. Leave it out everywhere else.\n- In a triage, "
+        b"`failed_test.failed_checks` lists every failed check with its log.\n"
+    ),
+    ("tester", "user"): (
+        b"Order the checks from the fastest to the slowest. `stop_on_fail` (optional, "
+        b"default `false`) is only for a prerequisite such as a build or an install "
+        b'whose failure makes the remaining checks pointless: `{ "name": "build", '
+        b'"argv": ["npm", "run", "build"], "stop_on_fail": true }`.\n\n'
+    ),
+}
 
 
 def _haifa_prompt(name: str, kind: str) -> bytes:
