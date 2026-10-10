@@ -1,4 +1,8 @@
-"""Read the backlog tree from disk. Nothing here writes a file."""
+"""Read the backlog tree from disk.
+
+The only write: a missing backlog root without a wildcard is created (empty) so a
+fresh repository starts with an empty backlog instead of an error.
+"""
 
 from __future__ import annotations
 
@@ -47,8 +51,9 @@ def _string_list(value: object) -> list[str] | None:
 
 
 class _Loader:
-    def __init__(self, root: Path, settings: ProjectSettings) -> None:
+    def __init__(self, root: Path, settings: ProjectSettings, create_missing: bool = True) -> None:
         self.root = root
+        self.create_missing = create_missing
         self.settings = settings
         self.levels = settings.levels
         self.issues: list[Issue] = []
@@ -105,6 +110,11 @@ class _Loader:
 
     def load_backlog_dir(self, backlog_dir: str) -> list[Container]:
         backlog_root = self.root / backlog_dir
+        if not backlog_root.is_dir() and self.create_missing and self.root.is_dir():
+            try:
+                backlog_root.mkdir(parents=True, exist_ok=True)
+            except OSError:
+                pass
         if not backlog_root.is_dir():
             self.issue(
                 "missing_backlog_dir",
@@ -339,9 +349,13 @@ def iter_tasks(backlog: Backlog) -> Iterator[Task]:
             yield node
 
 
-def load_backlog(root: Path, settings: ProjectSettings | None = None) -> Backlog:
+def load_backlog(
+    root: Path, settings: ProjectSettings | None = None, *, create_missing: bool = True
+) -> Backlog:
     """Read the backlog tree; in remote mode synchronize its local Markdown mirror.
 
+    A missing backlog root without a wildcard is created silently unless
+    ``create_missing`` is False (then it is a ``missing_backlog_dir`` issue).
     Raises ``ConfigError`` when ``settings`` is not given and ``.factory/config.yaml``
     is invalid.
     """
@@ -350,7 +364,7 @@ def load_backlog(root: Path, settings: ProjectSettings | None = None) -> Backlog
     from aifactory.database.backlog import synchronize
 
     synchronize(root, settings)
-    loader = _Loader(root, settings)
+    loader = _Loader(root, settings, create_missing)
     containers = loader.load_root()
     backlog = Backlog(root=root, settings=settings, containers=containers, issues=loader.issues)
     backlog.roots = [r for r in backlog_roots(root, settings) if (root / r).is_dir()]

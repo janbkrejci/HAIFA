@@ -264,7 +264,7 @@ class CheckContext:
                 extract_backlog(self.main, self.commit, settings.backlog_patterns, dest)
             except subprocess.CalledProcessError as exc:
                 raise RuntimeError(f"cannot read the backlog from {self.base}: {exc}") from exc
-            return load_backlog(dest, settings)
+            return load_backlog(dest, settings, create_missing=False)
 
     @cached_property
     def backlog_issues(self) -> tuple[Issue, ...]:

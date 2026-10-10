@@ -224,9 +224,10 @@ def test_existing_problem_does_not_block(tmp_path: Path) -> None:
     assert [i.code for i in result.issues] == ["unknown_ref"]
 
 
-def test_missing_backlog_dir(tmp_path: Path) -> None:
+def test_missing_backlog_dir_is_created(tmp_path: Path) -> None:
     root = tmp_path / "empty"
     root.mkdir()
     with pytest.raises(TaskEditError) as exc:
         add_task(root, "M01-S01", "X")
-    _expect(exc, "missing_backlog_dir", 2)
+    _expect(exc, "unknown_step", 2)
+    assert (root / "backlog").is_dir()
