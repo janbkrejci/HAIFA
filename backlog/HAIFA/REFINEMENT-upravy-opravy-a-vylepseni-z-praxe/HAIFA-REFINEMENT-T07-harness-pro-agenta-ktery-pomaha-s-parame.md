@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T07
 title: "Harness pro agenta, který pomáhá s parametry tasku"
 status: todo
+workflow: simple-sdlc
 depends_on: []
 ---
 
