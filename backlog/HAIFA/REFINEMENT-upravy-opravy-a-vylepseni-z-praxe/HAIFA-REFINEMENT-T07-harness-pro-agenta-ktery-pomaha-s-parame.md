@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T07
 title: "Harness pro agenta, který pomáhá s parametry tasku"
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 ---
@@ -11,3 +11,4 @@ v parametrech tasku máme jen codex, měli bychom tam mít všechny harnessy a j
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-10 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/3 · náklady $3.26
