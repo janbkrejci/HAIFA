@@ -16,6 +16,7 @@ NAMES = {
     "plan",
     "plan-build",
     "plan-build-test",
+    "build-test-review",
     "simple-sdlc",
     "document",
     "scout",
