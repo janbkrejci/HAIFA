@@ -373,7 +373,9 @@ packaged workflows: {{workflows}}.
   repair round and without the builder, at most twice per run; `code` leaves the
   failure for `fix`.
 - A `test` step (also under another `id`, e.g. `retest`) runs the checks of the latest
-  `test_plan` in order, without a shell, and stops at the first failure; a workflow with a
+  `test_plan` in order, without a shell, and runs every check even after one fails (only
+  a failed check with `stop_on_fail: true` or an exhausted time limit stops the rest,
+  which the result lists in `not_run` with the reason); a workflow with a
   `test` and no earlier `test_plan` is invalid (`test_without_plan`). `none` runs nothing
   and passes. The checks share one time limit: the task's `test_timeout`, else the
   nearest `index.md` `test_timeout`, else `test_timeout` from `.factory/config.yaml`,

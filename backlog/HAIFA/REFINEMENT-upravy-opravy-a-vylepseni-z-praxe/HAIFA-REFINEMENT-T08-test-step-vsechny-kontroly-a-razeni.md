@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T08
 title: "Test step: všechny kontroly bez zastavení na první chybě, řazení od nejrychlejší"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/]
@@ -30,3 +30,4 @@ Pevná omezení:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-10 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/4 · náklady $2.26

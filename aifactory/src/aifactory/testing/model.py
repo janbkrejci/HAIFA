@@ -16,6 +16,8 @@ class Check(BaseModel):
     name: Text
     argv: Argv
     timeout: Annotated[int, Field(gt=0)] | None = None
+    # A prerequisite (build, install, test collection): its failure stops the remaining checks.
+    stop_on_fail: bool = False
 
 
 class Dropped(BaseModel):
@@ -42,6 +44,15 @@ def plan_problems(coverage: str, checks: list[Check]) -> list[str]:
     return problems
 
 
+class NotRun(BaseModel):
+    """A planned check the `test` step did not start, and why."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: Text
+    reason: Text
+
+
 class Evidence(BaseModel):
     """What the `test` step ran, kept on its result for the reviewer and the PR body."""
 
@@ -52,3 +63,4 @@ class Evidence(BaseModel):
     executed: Annotated[int, Field(ge=0)]
     commands: list[str] = Field(default_factory=list)
     dropped: list[Dropped] = Field(default_factory=list)
+    not_run: list[NotRun] = Field(default_factory=list)

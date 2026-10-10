@@ -94,20 +94,65 @@ def test_checks_run_in_order_in_the_worktree_under_one_slot(
     assert (result.test_plan.coverage, result.test_plan.executed) == ("scoped", 3)
 
 
-def test_first_failure_stops_the_plan(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_independent_failures_are_all_returned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     run = fake_run(tmp_path)
-    tested = plan(touch("first"), "raise SystemExit(3)", touch("third"))
+    tested = plan("raise SystemExit(2)", "raise SystemExit(3)", touch("third"))
     result = execute(run, tested)
     assert not result.passed
-    assert [c.returncode for c in result.checks] == [0, 3]
-    assert (tmp_path / "first").exists() and not (tmp_path / "third").exists()
-    assert len(result.failures) == 1 and result.failures[0].startswith("check1:")
+    assert [c.returncode for c in result.checks] == [2, 3, 0]
+    assert (tmp_path / "third").exists()
+    assert [f.split(":")[0] for f in result.failures] == ["check0", "check1"]
     assert result.test_plan is not None
-    assert result.test_plan.executed == 2
-    # The evidence names every planned command, also the one that never ran.
+    assert result.test_plan.executed == 3 and result.test_plan.not_run == []
     assert len(result.test_plan.commands) == 3
-    assert result.test_plan.commands[2] == shlex.join(python(touch("third")))
+
+
+def test_stop_on_fail_stops_the_rest_and_marks_them_not_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    run = fake_run(tmp_path)
+    tested = TestPlanOutput.model_validate(
+        ok(
+            coverage="scoped",
+            reason="covers the change",
+            checks=[
+                {"name": "lint", "argv": python("raise SystemExit(1)")},
+                {"name": "build", "argv": python("raise SystemExit(3)"), "stop_on_fail": True},
+                {"name": "tests", "argv": python(touch("tests"))},
+                {"name": "suite", "argv": python(touch("suite"))},
+            ],
+        )
+    )
+    result = execute(run, tested)
+    assert not result.passed
+    assert [c.name for c in result.checks] == ["lint", "build"]
+    assert not (tmp_path / "tests").exists() and not (tmp_path / "suite").exists()
+    assert [f.split(":")[0] for f in result.failures] == ["lint", "build"]
+    assert result.test_plan is not None and result.test_plan.executed == 2
+    assert [(n.name, n.reason) for n in result.test_plan.not_run] == [
+        ("tests", "build failed and has stop_on_fail"),
+        ("suite", "build failed and has stop_on_fail"),
+    ]
+    # The evidence names every planned command, also those that never ran.
+    assert result.test_plan.commands[2] == shlex.join(python(touch("tests")))
+
+
+def test_plan_without_stop_on_fail_loads_and_runs(tmp_path: Path) -> None:
+    stored = {
+        "status": "success",
+        "summary": "s",
+        "coverage": "scoped",
+        "reason": "covers the change",
+        "checks": [{"name": "old", "argv": python("print('ok')"), "timeout": 30}],
+    }
+    tested = TestPlanOutput.model_validate_json(json.dumps(stored))
+    assert tested.checks[0].stop_on_fail is False
+    result = execute(fake_run(tmp_path), tested)
+    assert result.passed and [c.name for c in result.checks] == ["old"]
 
 
 def test_coverage_none_passes_with_nothing_executed(tmp_path: Path) -> None:
@@ -123,6 +168,7 @@ def test_coverage_none_passes_with_nothing_executed(tmp_path: Path) -> None:
         "executed": 0,
         "commands": [],
         "dropped": [],
+        "not_run": [],
     }
 
 
@@ -152,11 +198,16 @@ def test_exhausted_budget_does_not_start_the_next_check(
         return original(spec, running)
 
     monkeypatch.setattr(quality, "_run", observed)
-    result = execute(run, plan("print('first')", touch("must-not-start")))
+    result = execute(run, plan("print('first')", touch("must-not-start"), touch("nor-this")))
     assert limits == [0.75]
-    assert not (tmp_path / "must-not-start").exists()
+    assert not (tmp_path / "must-not-start").exists() and not (tmp_path / "nor-this").exists()
     assert not result.passed and "shared time limit" in result.failures[0]
+    assert len(result.failures) == 1
     assert result.test_plan is not None and result.test_plan.executed == 1
+    assert [(n.name, n.reason) for n in result.test_plan.not_run] == [
+        ("check1", "shared time limit of 1s exhausted"),
+        ("check2", "shared time limit of 1s exhausted"),
+    ]
     assert len(result.checks) == 1 and result.checks[0].passed
 
 
@@ -368,7 +419,9 @@ def test_previous_test_plan_is_a_prompt_variable(workflow_env: EngineEnv, tmp_pa
     assert json.loads(rendered[1]) == {
         "coverage": "scoped",
         "reason": "covers the change",
-        "checks": [{"name": "check", "argv": ["echo", "first"], "timeout": None}],
+        "checks": [
+            {"name": "check", "argv": ["echo", "first"], "timeout": None, "stop_on_fail": False}
+        ],
     }
 
 
@@ -471,6 +524,30 @@ def test_failed_test_is_rendered_only_in_triage(workflow_env: EngineEnv, tmp_pat
     assert failed["builder2"] == "(none)"  # the fixer
     report = json.loads(failed["tester1"])  # the triage
     assert (report["step"], report["phase"], report["passed"]) == ("test", "test_1", False)
+
+
+def test_triage_gets_every_failed_check(workflow_env: EngineEnv, tmp_path: Path) -> None:
+    user = tmp_path / "user.md"
+    user.write_text("{{prompt}}\nFAILED<<{{failed_test}}>>FAILED\n", encoding="utf-8")
+    for agent in workflow_env.cfg.agents:
+        if agent.name == "tester":
+            agent.prompt_engineering.user = str(user)
+    checks = [
+        {"name": "lint", "argv": python("raise SystemExit(1)")},
+        {"name": "types", "argv": python("raise SystemExit(2)")},
+        {"name": "tests", "argv": python("print('ok')")},
+    ]
+    first = ok(coverage="scoped", reason="covers the change", checks=checks)
+    workflow_env.script.add("tester", first, {**first, "failure_cause": "code"})
+    workflow_env.script.add("builder", ok(summary="fixed", changed_files=[]))
+    run_workflow(workflow(LOOP.replace("MAX", "1")), "do it", workflow_env.cfg)
+    triage = workflow_env.script.calls[1]
+    report = json.loads(triage.prompt.split("FAILED<<")[1].split(">>FAILED")[0])
+    assert [(c["name"], c["returncode"]) for c in report["failed_checks"]] == [
+        ("lint", 1),
+        ("types", 2),
+    ]
+    assert report["failures"] == 2 and report["test_plan"]["executed"] == 3
 
 
 # ── required coverage ───────────────────────────────────────────────────────

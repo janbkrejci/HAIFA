@@ -14,7 +14,7 @@ from typing import Any
 from aifactory import oscompat
 from aifactory.engine import quality
 from aifactory.engine.data_types import QualityCheckSpec, QualityResult, TestPlanOutput
-from aifactory.testing.model import Evidence
+from aifactory.testing.model import Evidence, NotRun
 
 
 @contextlib.contextmanager
@@ -48,10 +48,13 @@ def pytest_environment(enabled: bool) -> Any:
 
 
 def execute(run: Any, plan: TestPlanOutput) -> QualityResult:
-    """Run ``plan.checks`` in order under one shared time limit; stop at the first failure.
+    """Run every check of ``plan.checks`` in order under one shared time limit.
 
-    The limit is ``run.test_timeout`` (else 600 s); a check's own ``timeout`` can only
-    shorten it. With ``run.test_slots`` the checks wait for one machine-wide slot first.
+    A failed check does not stop the others, so the builder gets every failure at once.
+    Only a failed check with ``stop_on_fail`` (a prerequisite) or an exhausted limit stops
+    the rest; those are recorded in ``not_run`` with the reason. The limit is
+    ``run.test_timeout`` (else 600 s); a check's own ``timeout`` can only shorten it.
+    With ``run.test_slots`` the checks wait for one machine-wide slot first.
     """
     timeout = getattr(run, "test_timeout", None) or quality.DEFAULT_TEST_TIMEOUT
     output = quality._check_dir(run, "test_plan")
@@ -61,6 +64,7 @@ def execute(run: Any, plan: TestPlanOutput) -> QualityResult:
     )
     run.console.note(f"test coverage: {plan.coverage} ({plan.reason})")
     checks = []
+    not_run: list[NotRun] = []
     budget_failure: str | None = None
     slots = getattr(run, "test_slots", None)
 
@@ -94,7 +98,11 @@ def execute(run: Any, plan: TestPlanOutput) -> QualityResult:
                 },
             )
         started = time.monotonic()
+        stopped: str | None = None
         for check in plan.checks:
+            if stopped is not None:
+                not_run.append(NotRun(name=check.name, reason=stopped))
+                continue
             remaining = timeout - (time.monotonic() - started)
             if remaining <= 0:
                 budget_failure = (
@@ -102,7 +110,9 @@ def execute(run: Any, plan: TestPlanOutput) -> QualityResult:
                     "command was not started (timeout exit 124)"
                 )
                 run.console.note(budget_failure)
-                break
+                stopped = f"shared time limit of {timeout}s exhausted"
+                not_run.append(NotRun(name=check.name, reason=stopped))
+                continue
             spec = QualityCheckSpec(
                 name=check.name,
                 area="backend",
@@ -114,8 +124,9 @@ def execute(run: Any, plan: TestPlanOutput) -> QualityResult:
             spec.timeout_seconds = min(check.timeout or timeout, remaining)  # type: ignore[assignment]
             result = quality._run(spec, run)
             checks.append(result)
-            if not result.passed:
-                break
+            if not result.passed and check.stop_on_fail:
+                stopped = f"{check.name} failed and has stop_on_fail"
+                run.console.note(f"test: {stopped}; the remaining checks are not run")
     failures = [
         f"{c.name}: `{c.command}` exited {c.returncode}\n{c.output_tail}"
         for c in checks
@@ -129,6 +140,7 @@ def execute(run: Any, plan: TestPlanOutput) -> QualityResult:
         executed=len(checks),
         commands=[shlex.join(c.argv) for c in plan.checks],
         dropped=list(plan.dropped),
+        not_run=not_run,
     )
     return QualityResult(
         passed=not failures,

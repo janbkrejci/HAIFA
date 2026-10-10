@@ -76,4 +76,6 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
 }
 ```
 
+Order the checks from the fastest to the slowest. `stop_on_fail` (optional, default `false`) is only for a prerequisite such as a build or an install whose failure makes the remaining checks pointless: `{ "name": "build", "argv": ["npm", "run", "build"], "stop_on_fail": true }`.
+
 `coverage` is `full`, `scoped` or `none`; `none` has an empty `checks` list, the others at least one. Check names are unique and contain no `/`. `timeout` (seconds) is optional. `dropped` is empty for a first plan. `failure_cause` is `""` when you plan, `"plan"` or `"code"` when you triage.
