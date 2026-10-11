@@ -1,0 +1,20 @@
+# YAML form of adw_build_review.py.
+# Phases: engineer(request) -> builder -> reviewer [-> builder(revise) -> reviewer ... bounded]
+#         -> git(commit)
+# Review is not testing: the reviewer rules whether the code is what the task asked for.
+name: build-review
+description: Build straight from the task, then have a reviewer confirm it is what was asked for, with revisions
+steps:
+  - build:
+      description: Implement the task exactly
+  - repeat: {max: 3, until: review.approved}
+    steps:
+      - review:
+          input: [build, revise]
+          description: Rule on every requirement of the task, against the code on disk
+      - revise:
+          description: Close every blocking finding the reviewer named
+  - commit:
+      when: review.approved
+      description: Land the code once the reviewer approved it
+accept: review.approved

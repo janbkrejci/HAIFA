@@ -15,7 +15,7 @@ import pytest
 import yaml
 from library_tree import SKILL_MD, WORKFLOW, put, skill_files, symlink
 
-from aifactory.library import seed_agent_names, seed_workflow_names, store
+from aifactory.library import seed_agent_names, seed_extension_names, seed_workflow_names, store
 from aifactory.library.history import cache_dir
 from cli_json import run_json
 
@@ -74,6 +74,7 @@ def test_init_creates_library_from_seed(home: Path, capsys: Capsys) -> None:
     assert len(meta["id"]) == 36
     expected = {f"agent/{n}" for n in seed_agent_names()}
     expected |= {f"workflow/{n}" for n in seed_workflow_names()}
+    expected |= {f"extension/{n}" for n in seed_extension_names()}
     assert set(meta["seed"]) == expected
     assert all(v.startswith("sha256:") for v in meta["seed"].values())
     message = _git(lib, "log", "-1", "--format=%B")

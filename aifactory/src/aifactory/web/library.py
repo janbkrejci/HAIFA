@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -21,6 +21,7 @@ from aifactory.providers.publish import PlannedFile
 from aifactory.web.backlog import UsageError
 from aifactory.web.factory import Failure
 from aifactory.web.machine import GlobalState
+from aifactory.web.registry import RepoEntry
 
 OPTIONS = {
     "init": ("name", "remote"),
@@ -37,6 +38,7 @@ CONFLICTS = {
     "library_behind",
     "library_diverged",
     "remote_not_empty",
+    "remote_exists",
     "git_identity_missing",
     "no_remote",
     "invalid_library",
@@ -126,12 +128,17 @@ def warnings(data: Mapping[str, Any]) -> list[str]:
     return result
 
 
-def status(home: Path, *, items: bool = True) -> tuple[dict[str, Any], list[str]]:
-    """Library status; ``items=False`` skips the item list."""
+def status(
+    home: Path, *, items: bool = True, fetch: bool = False
+) -> tuple[dict[str, Any], list[str]]:
+    """Library status; ``items=False`` skips the item list, ``fetch`` fetches the remote
+    first (only when the library has one) so ahead and behind are current."""
     env = environment(home)
     with errors():
         try:
-            data = remote.library_status(fetch=False, environ=env)
+            if fetch and remote.remote_url(store.library_root(env)) is None:
+                fetch = False
+            data = remote.library_status(fetch=fetch, environ=env)
         except store.LibraryStoreError as exc:
             if exc.code == "library_missing":
                 return {"exists": False}, []
@@ -407,6 +414,25 @@ def apply(
             state.invalidate()
 
 
+def parse_remote_body(body: Mapping[str, Any]) -> str:
+    """The URL of ``POST /api/library/remote``: ``{url}`` and nothing else."""
+    if set(body) - {"url"}:
+        raise UsageError("unknown request fields")
+    url = body.get("url")
+    if not isinstance(url, str) or not url.strip():
+        raise UsageError("url must be a non-empty string")
+    return url.strip()
+
+
+def connect(home: Path, state: GlobalState, url: str) -> dict[str, Any]:
+    """Share the library through the empty remote ``url`` (``remote.connect_library``)."""
+    with exclusive(state), errors(write=True):
+        try:
+            return remote.connect_library(url, environ=environment(home))
+        finally:
+            state.invalidate()
+
+
 def sync(home: Path, state: GlobalState, *, push: bool) -> dict[str, Any]:
     with exclusive(state), errors(write=True):
         try:
@@ -414,3 +440,46 @@ def sync(home: Path, state: GlobalState, *, push: bool) -> dict[str, Any]:
             return fn(environ=environment(home))
         finally:
             state.invalidate()
+
+
+def overrides(home: Path, repos: Sequence[RepoEntry]) -> dict[str, Any]:
+    """The repo copies that override a library item, in every registered repository.
+
+    A repo's own copy of an agent, workflow, skill or extension the library (or, without
+    one, the seed) also has wins over it. ``same`` says whether the copy equals the
+    library's current version (None: the copy does not load). A repository whose
+    configuration does not load is listed under ``errors``.
+    """
+    from aifactory.library.inherit import library_snapshot
+    from aifactory.library.load import check_repo_item
+    from aifactory.web import factory
+
+    snapshot = library_snapshot(environment(home))
+    rows: list[dict[str, Any]] = []
+    errors: list[dict[str, str]] = []
+    for entry in repos:
+        root = Path(entry.path)
+        try:
+            listed = factory.items(root)["items"]
+        except factory.Failure as exc:
+            errors.append({"repo": entry.id, "repo_name": entry.name, "message": exc.message})
+            continue
+        except OSError as exc:
+            errors.append({"repo": entry.id, "repo_name": entry.name, "message": str(exc)})
+            continue
+        for row in listed:
+            lib = snapshot.of(row["type"]).get(row["name"])
+            if row["origin"] != "repo" or lib is None:
+                continue
+            own, issues = check_repo_item(root, row["type"], row["name"])
+            same = None if own is None or issues else own.version == lib.version
+            rows.append(
+                {
+                    "repo": entry.id,
+                    "repo_name": entry.name,
+                    "type": row["type"],
+                    "name": row["name"],
+                    "same": same,
+                }
+            )
+    return {"library": snapshot.commit, "overrides": rows, "errors": errors}

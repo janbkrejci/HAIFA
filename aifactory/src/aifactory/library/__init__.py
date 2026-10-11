@@ -26,6 +26,7 @@ from aifactory.library.seed import (
     SEED_AGENTS,
     SEED_DIR,
     seed_agent_names,
+    seed_extension_names,
     seed_items,
     seed_workflow_names,
 )
@@ -52,6 +53,7 @@ __all__ = [
     "load_repo_item",
     "roster_entry",
     "seed_agent_names",
+    "seed_extension_names",
     "seed_items",
     "seed_workflow_names",
     "tree_version",

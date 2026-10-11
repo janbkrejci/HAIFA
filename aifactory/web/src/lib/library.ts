@@ -14,16 +14,38 @@ export interface LibraryItem {
 }
 export interface LibraryStatus {
   exists: boolean; library?: string; remote?: string | null; ahead?: number | null; behind?: number | null
-  dirty?: boolean; items?: LibraryItem[]
+  dirty?: boolean; items?: LibraryItem[]; branch?: string; head?: string; last_fetch?: string | null; fetched?: boolean
+  seed_update_available?: boolean; seed_updates?: string[]
 }
+/** A registered repo's own copy of a library item: it wins over the library (`same`: equal content). */
+export interface LibraryOverride { repo: string; repo_name: string; type: FactoryItemType; name: string; same: boolean | null }
+export interface LibraryOverrides { library: string | null; overrides: LibraryOverride[]; errors: { repo: string; repo_name: string; message: string }[] }
+/** A seed plan item; `kept` (changed by the team) carries the diff the seed would make. */
+export interface SeedPlanItem extends PlanItem { previous_version?: string | null; diff?: FactoryFile[] }
 export interface ItemDetail extends LibraryItem {
   files: { path: string; content: string | null; binary: boolean }[]; history: Revision[]
 }
 export type Blocker = PlanBlocker
 export interface LibraryPlan { digest: string; library?: string | { name: string }; action?: string; apply_target?: 'base' | 'pr'; base?: string
   warnings?: PlanWarning[]; files: FactoryFile[]; items: PlanItem[]; blockers: Blocker[] }
-export interface LibraryRequest { action: 'init' | 'clone' | 'import'; options: { url?: string; path?: string; type?: FactoryItemType } }
-export function fetchLibrary(): Promise<LibraryStatus> { return getGlobal('/library') }
+export interface LibraryRequest { action: 'init' | 'clone' | 'import' | 'seed'; options: { url?: string; path?: string; type?: FactoryItemType; take?: string[] } }
+/** Status with the items; `fetch` fetches the remote first so ahead/behind are current. */
+export function fetchLibrary(fresh = false): Promise<LibraryStatus> { return getGlobal(fresh ? '/library?fetch=1' : '/library') }
+/** Which registered repos override library items with their own copy. */
+export function fetchOverrides(): Promise<LibraryOverrides> { return getGlobal('/library/overrides') }
+/** Shares a library without a remote through an empty git remote (pushes it there). */
+export function connectRemote(url: string): Promise<unknown> { return postGlobal('/library/remote', { url }) }
+/** The sync state of the library with its remote, in words. */
+export function syncState(s: LibraryStatus): { text: string; tone: 'ok' | 'warning' | 'error' | 'dim' } {
+  if (!s.exists) return { text: 'Knihovna není založená', tone: 'dim' }
+  if (s.dirty) return { text: 'Knihovna má necommitnuté změny · synchronizace je zablokovaná', tone: 'error' }
+  if (!s.remote) return { text: 'Bez remote · knihovna je jen na tomto počítači', tone: 'dim' }
+  const ahead = s.ahead ?? 0, behind = s.behind ?? 0
+  if (ahead && behind) return { text: `Rozcházejí se · ${ahead} commitů navíc, ${behind} chybí`, tone: 'error' }
+  if (behind) return { text: `Pozadu o ${behind} · stáhni změny z remote`, tone: 'warning' }
+  if (ahead) return { text: `Napřed o ${ahead} · odešli změny na remote`, tone: 'warning' }
+  return { text: 'Synchronizováno s remote', tone: 'ok' }
+}
 /** Status without the item list: cheap enough for the topbar readiness check. */
 export function fetchLibrarySummary(): Promise<LibraryStatus> { return getGlobal('/library?items=0') }
 export function fetchItem(type: FactoryItemType, name: string, version?: string): Promise<ItemDetail> {

@@ -77,8 +77,21 @@ def test_library_seed_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
                 page.locator('[data-test="library-item"] button').filter(has_text="builder").click()
                 expect(page.locator('[data-test="library-detail"]')).to_contain_text("system.md")
                 expect(page.locator('[data-test="item-history"]')).to_contain_text("v1 ·")
+                expect(page.locator('[data-test="item-no-overrides"]')).to_be_visible()
                 page.locator('[data-test="tab-workflow"]').click()
                 expect(page.locator('[data-test="library-item"]').first).to_be_visible()
+                expect(page.locator('[data-test="library-items"]')).to_contain_text(
+                    "plan-build-test-quality"
+                )
+                page.locator('[data-test="tab-extension"]').click()
+                expect(page.locator('[data-test="library-items"]')).to_contain_text("subagents")
+                expect(page.locator('[data-test="library-sync-state"]')).to_contain_text(
+                    "Bez remote"
+                )
+                page.locator('[data-test="library-reseed"]').click()
+                expect(modal.locator('[data-test="seed-nothing"]')).to_be_visible()
+                modal.locator('[data-test="confirm-cancel"]').click()
+                assert git(home / "library", "rev-list", "--count", "HEAD") == "1"
                 assert api_get(server.url, "/api/library")["exists"]
                 assert api_get(server.url, "/api/repos")["repos"] == []
                 assert not marker.exists()

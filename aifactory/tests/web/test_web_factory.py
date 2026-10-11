@@ -371,6 +371,12 @@ def test_items_and_move_to_the_library(api: Api, tmp_path: Path) -> None:
     roster = api.get("a", "factory/roster")["data"]["agents"]
     assert {r["name"]: r["origin"] for r in roster}["builder"] == "repo"
 
+    overrides = api.client.get("/api/library/overrides").json()["data"]
+    assert overrides["library"] == items["library"] and overrides["errors"] == []
+    assert [(o["repo"], o["type"], o["name"], o["same"]) for o in overrides["overrides"]] == [
+        ("a", "agent", "builder", False)
+    ]
+
     options = {"type": "agent", "name": "builder"}
     plan = api.plan("a", "move", options=options)
     assert plan["blockers"] == [] and plan["library_plan"]["files"]
@@ -382,6 +388,7 @@ def test_items_and_move_to_the_library(api: Api, tmp_path: Path) -> None:
     assert SYSTEM not in git(a, "ls-tree", "-r", "--name-only", "HEAD")
     items = api.get("a", "factory/items")["data"]["items"]
     assert {(i["type"], i["name"]): i["origin"] for i in items}[("agent", "builder")] == "library"
+    assert api.client.get("/api/library/overrides").json()["data"]["overrides"] == []
 
     for action in ("update", "add", "export", "revert"):
         bad = api.post("a", "factory/plan", {"action": action, "options": options}, 400)

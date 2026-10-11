@@ -1,0 +1,28 @@
+# YAML form of adw_plan_build_test_quality.py.
+# Phases: engineer(request) -> planner -> builder -> tester(test_plan, full)
+#         -> code(test) [-> builder(fix) -> tester(test_plan, full) -> code(test) ... bounded]
+#         -> git(commit)
+# sssf runs its quality blocks (lint, typecheck, build and tests) as code. Here the tester
+# plans every check the repo has (coverage full) and the code runs them.
+name: plan-build-test-quality
+description: Plan and build, then lint, typecheck, build and test the whole repo with repairs, and commit only verified code
+steps:
+  - plan
+  - build:
+      description: Implement the plan exactly
+  - test_plan:
+      coverage: full
+      description: Plan every check the repo has — lint, typecheck, build and tests
+  - repeat: {max: 3, until: test.passed}
+    steps:
+      - test:
+          description: Run the quality checks and the tests
+      - fix:
+          description: Repair what the checks reported, from their verbatim output
+      - test_plan:
+          coverage: full
+          description: Plan every check again — the fix changed code
+  - commit:
+      when: test.passed
+      description: Land the code once every check has come back green
+accept: test.passed

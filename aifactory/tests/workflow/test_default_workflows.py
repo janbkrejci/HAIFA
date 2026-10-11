@@ -23,6 +23,11 @@ NAMES = {
     "resolve",
     "resolve-reviewed",
     "heal",
+    "build",
+    "build-review",
+    "build-test",
+    "plan-build-test-quality",
+    "quality",
 }
 
 

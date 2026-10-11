@@ -118,9 +118,14 @@ Global library: ``GET /api/machine/check?offline=&fresh=`` caches the outside-re
 CLI check; the server runs it once at start and again only for ``fresh=1``.
 ``GET /api/library`` returns status without fetch and item metadata (``?items=0``: status
 only); ``GET /api/library/items/{type}/{name}?version=`` returns files and history.
+``GET /api/library/overrides`` lists the registered repositories' own copies of library
+items (``same``: the copy equals the library's version); "Diff" and "Move to library" use
+the move plan of ``/api/repos/{id}/factory/plan``.
 ``POST /api/library/plan`` and ``/apply`` take ``{action, options?, digest?}`` for init,
 clone, import and seed. Apply recomputes the reviewed digest. All writes including
-``POST /api/library/pull`` and ``/push`` share one nonblocking lock. See ``library.py``
+``POST /api/library/pull`` and ``/push`` and ``POST /api/library/remote`` (``{url}``: share a
+library without a remote through an empty git remote) share one nonblocking lock.
+``?fetch=1`` on ``GET /api/library`` fetches the remote first. See ``library.py``
 for validation and core adapters.
 
 More repositories: ``create_multi_app`` serves every repository in ``dashboard.yaml`` of
@@ -158,6 +163,7 @@ sent, ``same-origin``, otherwise HTTP 403 ``cross_origin``; a body that is not
 from __future__ import annotations
 
 import asyncio
+import functools
 import json
 import sqlite3
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
@@ -1828,7 +1834,9 @@ async def library_get(request: Request) -> JSONResponse:
     try:
         items = "items" not in request.query_params or _flag(request, "items")
         data, warnings = await run_in_threadpool(
-            library.status, request.app.state.home, items=items
+            functools.partial(
+                library.status, request.app.state.home, items=items, fetch=_flag(request, "fetch")
+            )
         )
     except factory.Failure as exc:
         return _failure(exc)
@@ -1847,6 +1855,21 @@ async def library_item(request: Request) -> JSONResponse:
     except factory.Failure as exc:
         return _failure(exc)
     return JSONResponse(envelope_ok(data))
+
+
+async def library_overrides(request: Request) -> JSONResponse:
+    """The registered repositories' own copies of library items (reads only)."""
+    registry = _registry(request)
+
+    def build() -> tuple[dict[str, Any], list[str]]:
+        state, warnings = registry.snapshot()
+        return library.overrides(request.app.state.home, state.repos), warnings
+
+    try:
+        data, warnings = await run_in_threadpool(build)
+    except factory.Failure as exc:
+        return _failure(exc)
+    return JSONResponse(envelope_ok(data, warnings))
 
 
 async def library_plan(request: Request) -> JSONResponse:
@@ -1880,6 +1903,20 @@ async def library_apply(request: Request) -> JSONResponse:
     except factory.Failure as exc:
         return _failure(exc)
     return JSONResponse(envelope_ok(data, warnings))
+
+
+async def library_remote(request: Request) -> JSONResponse:
+    """Share a library without a remote through an empty git remote."""
+    try:
+        url = library.parse_remote_body(await _json_body(request))
+        data = await run_in_threadpool(
+            library.connect, request.app.state.home, request.app.state.library, url
+        )
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except factory.Failure as exc:
+        return _failure(exc)
+    return JSONResponse(envelope_ok(data))
 
 
 async def library_sync(request: Request) -> JSONResponse:
@@ -1939,8 +1976,10 @@ def create_multi_app(
             Route("/machine/harnesses/test", machine_harness_test, methods=["POST"]),
             Route("/library", library_get, methods=["GET"]),
             Route("/library/items/{type}/{name}", library_item, methods=["GET"]),
+            Route("/library/overrides", library_overrides, methods=["GET"]),
             Route("/library/plan", library_plan, methods=["POST"]),
             Route("/library/apply", library_apply, methods=["POST"]),
+            Route("/library/remote", library_remote, methods=["POST"]),
             Route("/library/pull", library_sync, methods=["POST"]),
             Route("/library/push", library_sync, methods=["POST"]),
             Route("/code", code_state, methods=["GET"]),

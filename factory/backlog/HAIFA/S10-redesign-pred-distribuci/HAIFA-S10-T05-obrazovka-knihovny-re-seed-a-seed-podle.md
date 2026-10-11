@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S10-T05
 title: "Obrazovka knihovny, re-seed a seed podle sssf"
-status: todo
+status: done
 depends_on: [HAIFA-S10-T04]
 ---
 
@@ -19,3 +19,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-11 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/8 · náklady $5.64

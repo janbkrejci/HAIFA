@@ -1,0 +1,9 @@
+# YAML form of adw_build.py. Phases: engineer(request) -> builder -> git(commit)
+# sssf leaves the build uncommitted; a HAIFA run publishes its branch, so it commits.
+name: build
+description: Implement the task in one shot and commit it, without tests or review
+steps:
+  - build:
+      description: Implement the task exactly
+  - commit:
+      description: Land the builder's changes, using the message it wrote
