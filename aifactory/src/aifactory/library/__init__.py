@@ -1,7 +1,6 @@
 """HAIFA library items: agents, workflows, skills and pi extensions.
 
-Format of items (AR14), their content versions (AR15) and the seed shipped in
-the package (AR16), see ``docs/design/library-onboarding-distribution.md``.
+Each item has a format, a content version and an origin; the seed ships in the package.
 """
 
 from aifactory.library.agent import expand_writes, roster_entry

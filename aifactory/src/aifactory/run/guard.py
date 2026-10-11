@@ -11,7 +11,7 @@ invalid JSON, a gate that stays red). ``TaskWriteGuard`` looks at two trees:
   change; the move is reported as ``HEAD``. The two outputs of the task (spec
   and documentation) are writable for an agent whose own `writes` is a
   non-empty list even when its `writes` do not cover them (``docs/decisions.md``,
-  "Výstupy po projektech"); an agent with ``writes: []`` may not write them.
+  "Výstupy tasku"); an agent with ``writes: []`` may not write them.
   Files already uncommitted before the phase (earlier phases' work) are saved
   too; an agent that may not touch one and reverts or edits it gets it restored.
 * **the main checkout.** An agent of a task run has no business there at all.
@@ -129,7 +129,7 @@ class TaskWriteGuard:
             return False
         if permissions.permitted(path, agent, cfg):
             return True
-        # docs/decisions.md, "Výstupy po projektech": the two outputs of the task are
+        # docs/decisions.md, "Výstupy tasku": the two outputs of the task are
         # writable for an agent that may write at all, even outside its own `writes`.
         return (
             self.scope.is_output(path)

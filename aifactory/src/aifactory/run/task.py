@@ -1,7 +1,6 @@
 """``run_task``: start one backlog task in its own worktree and branch.
 
-Steps 1 to 4 of "Běh úkolu" in ``docs/product-brief.md``: check the task can
-start, create ``<worktrees_dir>/<run-id>`` on a new branch
+Check the task can start, create ``<worktrees_dir>/<run-id>`` on a new branch
 ``factory/<task-id>-<n>`` from ``base``, run the task's workflow there, record
 the run in ``task_runs``. When ``accept`` is met the branch is pushed and its
 pull request opened (or updated) through the configured ``GitProvider``

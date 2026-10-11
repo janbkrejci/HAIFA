@@ -1,7 +1,6 @@
 """``factory task resolve``: the run that brings a conflicting PR up to date with base.
 
-Step 6 of "Běh úkolu" in ``docs/product-brief.md`` (risk R2). The run uses the
-workflow ``resolve`` on the PR's branch: the ``rebase`` code step
+The run uses the workflow ``resolve`` on the PR's branch: the ``rebase`` code step
 (``aifactory.workflow.rebase``) rebases onto the current ``base``; only when that
 leaves conflicts does the ``resolve`` role run, and it may change nothing but
 the conflicted files (``ConflictWriteGuard``). Then the suite runs, with up to

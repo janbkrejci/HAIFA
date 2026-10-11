@@ -1,7 +1,5 @@
 """Pull requests of task runs: publish, approve, return, resolve, clean.
 
-Steps 4 to 7 of "Běh úkolu" in ``docs/product-brief.md``.
-
 * ``publish``: after a run meets ``accept`` its branch is pushed and the PR is
   opened (or its body updated) with the task, agent summaries, gate and test
   results, the reviewer's verdict and the costs (``prbody``); the PR is a row in

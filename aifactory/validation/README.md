@@ -1,6 +1,6 @@
 # Validační scénáře aifactory (`just validate`)
 
-Skript připraví testovací repo se šablonou backlogu (`template/`) a spustí scénáře nad CLI `factory`. Ověřují rizika R1 až R5 a R10 z `docs/product-brief.md`, řešení konfliktu přes `task resolve` (RESOLVE) hlídač zápisů do hlavního checkoutu (B1) a akceptační scénář fáze F2 (F2). Každý běh úkolu má vynucené opravné kolo review → revise. R10 má navíc vynucené kolo test → fix.
+Skript připraví testovací repo se šablonou backlogu (`template/`) a spustí scénáře nad CLI `factory`. Ověřují rizika R1 až R5 a R10 (viz Scénáře), řešení konfliktu přes `task resolve` (RESOLVE), hlídač zápisů do hlavního checkoutu (B1) a akceptační scénář fáze F2 (F2). Každý běh úkolu má vynucené opravné kolo review → revise. R10 má navíc vynucené kolo test → fix.
 
 ```
 just validate --remote local     # bez sítě a bez modelů, zdarma

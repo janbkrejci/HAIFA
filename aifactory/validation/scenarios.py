@@ -1,4 +1,4 @@
-"""The scenarios: R1, R10, R2, R3, R4, R5 of docs/product-brief.md (Rizika), RESOLVE, B1, F2.
+"""The scenarios: R1, R10, R2, R3, R4, R5 (risks), RESOLVE, B1, F2.
 
 Each function takes the shared ``Context`` and returns a ``ScenarioResult``.
 The runner calls them in the order of ``ORDER``; later ones build on earlier

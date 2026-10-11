@@ -1,4 +1,4 @@
-"""The backlog: a tree of markdown files under ``backlog_dir`` (see ``docs/product-brief.md``).
+"""The backlog: a tree of markdown files under ``backlog_dir``.
 
 The tree follows ``levels`` from ``.factory/config.yaml`` (default ``project -> step -> task``).
 Every container directory has an ``index.md`` with defaults its tasks inherit; each task is a

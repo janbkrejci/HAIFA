@@ -62,6 +62,6 @@ Novou verzi nainstaluješ z nového bundlu:
 factory upgrade haifa-<verze>.zip
 ```
 
-## Licence třetích stran
+## Licence
 
-Viz `THIRD_PARTY_NOTICES`.
+HAIFA je pod licencí MIT. Licence převzatých částí jsou v `THIRD_PARTY_NOTICES`.
