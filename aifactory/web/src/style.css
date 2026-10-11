@@ -324,6 +324,33 @@ pre {
   margin: 14px 0;
 }
 
+.md table.md-table {
+  border-collapse: collapse;
+  margin: 10px 0;
+  font-size: 15px;
+}
+
+.md table.md-table th,
+.md table.md-table td {
+  border: 1px solid var(--border-soft);
+  padding: 6px 10px;
+  text-align: left;
+  vertical-align: top;
+}
+
+.md table.md-table th {
+  background: var(--panel-2);
+}
+
+.md table.md-table code {
+  font-size: 14px;
+  padding: 0 5px;
+}
+
+.md a {
+  color: var(--blue);
+}
+
 /* Markdown view tabs (MarkdownView: Náhled / Zdroj). */
 .md-tabs {
   display: flex;

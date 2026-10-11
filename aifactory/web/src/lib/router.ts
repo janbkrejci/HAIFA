@@ -4,12 +4,13 @@ import { ref, type Ref } from 'vue'
 //   #/overview                       the registered repositories and getting started (default)
 //   #/setup · #/library              this machine · the shared library
 //   #/repos/add                      add a repository
+//   #/guide[/<chapter>[/<section>]]  the user and administrator guide
 //   #/r/<id>/<screen>[/<params>]     a screen of repo <id>: backlog · runs · review · factory · settings
 // A screen may carry parameters: #/r/<id>/runs/<run_id>/<phase_id>, #/r/<id>/backlog/<task id>.
 // An unknown hash falls back to the overview.
 // The repo lives only in the URL: currentRepoId() reads the hash at call time.
 export type Screen = 'backlog' | 'runs' | 'review' | 'factory' | 'settings'
-export type Page = 'overview' | 'repos-add' | 'setup' | 'library' | 'problems' | 'repo'
+export type Page = 'overview' | 'repos-add' | 'setup' | 'library' | 'problems' | 'guide' | 'repo'
 
 export const SCREENS: readonly { id: Screen; label: string }[] = [
   { id: 'backlog', label: 'Backlog' },
@@ -27,6 +28,15 @@ const IDS: readonly string[] = SCREENS.map((s) => s.id)
 
 export const OVERVIEW_HREF = '#/overview'
 export const REPOS_ADD_HREF = '#/repos/add'
+export const GUIDE_HREF = '#/guide'
+
+/** Link to the guide, optionally to a chapter and a section of it. */
+export function guideHref(chapter?: string | null, section?: string | null): string {
+  if (!chapter) return GUIDE_HREF
+  const parts = [GUIDE_HREF, encodeURIComponent(chapter)]
+  if (section) parts.push(encodeURIComponent(section))
+  return parts.join('/')
+}
 
 export interface Route {
   page: Page
@@ -45,8 +55,8 @@ function decode(part: string): string {
   }
 }
 
-function page(name: Exclude<Page, 'repo'>, redirect: string | null): Route {
-  return { page: name, repo: null, screen: 'backlog', params: [], redirect }
+function page(name: Exclude<Page, 'repo'>, redirect: string | null, params: string[] = []): Route {
+  return { page: name, repo: null, screen: 'backlog', params, redirect }
 }
 
 export function parseRoute(hash: string): Route {
@@ -54,6 +64,7 @@ export function parseRoute(hash: string): Route {
   const [first, second, third] = parts
   if ((first === 'setup' || first === 'library' || first === 'problems') && parts.length === 1) return page(first, null)
   if (first === 'overview' && parts.length === 1) return page('overview', null)
+  if (first === 'guide' && parts.length <= 3) return page('guide', null, parts.slice(1).map(decode))
   if (first === 'repos' && second === 'add' && parts.length === 2) return page('repos-add', null)
   if (first === 'r' && second !== undefined) {
     const repo = decode(second)

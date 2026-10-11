@@ -9,9 +9,10 @@
  * HTML comments (<!-- … -->, also multi-line) outside fenced code blocks are
  * dropped, so they never show up in the preview.
  *
- * Supported: #–#### headings, fenced code blocks, inline code, bold, links,
- * unordered/ordered lists, blockquotes, horizontal rules, paragraphs
- * (pre-wrap preserves intra-paragraph line breaks).
+ * Supported: #–#### headings, fenced code blocks, inline code, bold, links
+ * (http(s) in a new tab, in-app `#/…` hash links in place), unordered/ordered
+ * lists, pipe tables, blockquotes, horizontal rules, paragraphs (pre-wrap
+ * preserves intra-paragraph line breaks).
  */
 
 import { escapeHtml, highlightJsonText } from './highlight'
@@ -28,6 +29,7 @@ function inline(escaped: string): string {
           /\[([^\]\n]+)\]\((https?:\/\/[^)\s]+)\)/g,
           '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>',
         )
+        .replaceAll(/\[([^\]\n]+)\]\((#\/[^)\s"]+)\)/g, '<a href="$2">$1</a>')
     })
     .join('')
 }
@@ -82,6 +84,19 @@ export function stripComments(lines: string[]): string[] {
   return out
 }
 
+const TABLE_ROW = /^\s*\|.*\|\s*$/
+const TABLE_RULE = /^\s*\|(\s*:?-+:?\s*\|)+\s*$/
+
+/** The cells of a pipe-table row; `\|` is a literal pipe inside a cell. */
+function tableCells(row: string): string[] {
+  const body = row.trim().replace(/^\|/, '').replace(/\|$/, '')
+  return body.split(/(?<!\\)\|/).map((cell) => cell.trim().replaceAll('\\|', '|'))
+}
+
+function tableRow(row: string, tag: 'th' | 'td'): string {
+  return `<tr>${tableCells(row).map((cell) => `<${tag}>${inline(escapeHtml(cell))}</${tag}>`).join('')}</tr>`
+}
+
 export function renderMarkdown(src: string): string {
   const lines = stripComments(src.replaceAll('\r\n', '\n').split('\n'))
   const out: string[] = []
@@ -131,6 +146,19 @@ export function renderMarkdown(src: string): string {
       flushParagraph()
       out.push('<hr>')
       i += 1
+      continue
+    }
+
+    if (TABLE_ROW.test(raw) && TABLE_RULE.test(lines[i + 1] ?? '')) {
+      flushParagraph()
+      const head = tableRow(raw, 'th')
+      const rows: string[] = []
+      i += 2
+      while (i < lines.length && TABLE_ROW.test(lines[i] ?? '')) {
+        rows.push(tableRow(lines[i] ?? '', 'td'))
+        i += 1
+      }
+      out.push(`<table class="md-table"><thead>${head}</thead><tbody>${rows.join('')}</tbody></table>`)
       continue
     }
 

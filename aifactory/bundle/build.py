@@ -3,6 +3,9 @@
 The zip holds one directory ``haifa-<version>/`` with exactly: the ``aifactory`` wheel,
 ``constraints.txt`` (runtime dependencies pinned from ``uv.lock``), ``install.sh``,
 ``INSTALL.md``, ``THIRD_PARTY_NOTICES`` and ``SHA256SUMS`` over all the other files.
+``INSTALL.md`` is the installation chapter of the guide (``src/aifactory/guide``) with
+``<verze>`` replaced by the version and the in-dashboard links (``#/guide/...``) reduced to
+their text, so the standalone guide and the dashboard agree.
 The frontend is not built here: ``just bundle`` runs ``just web-build`` first, and the
 build packages whatever is in ``src/aifactory/web/static/``. No network is needed.
 """
@@ -11,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -91,6 +95,15 @@ def build_wheel(out_dir: Path, project: Path = PROJECT) -> Path:
     return wheels[0]
 
 
+def install_guide(ver: str, project: Path = PROJECT) -> str:
+    """The guide's installation chapter for version ``ver`` (the bundle's ``INSTALL.md``)."""
+    chapters = sorted((project / "src" / "aifactory" / "guide").glob("*-instalace.md"))
+    if len(chapters) != 1:
+        raise BundleError("the guide has no single installation chapter (*-instalace.md)")
+    text = chapters[0].read_text("utf-8").replace("<verze>", ver)
+    return re.sub(r"\[([^\]\n]+)\]\(#/[^)\s]*\)", r"\1", text)
+
+
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
@@ -106,10 +119,10 @@ def build_bundle(out_dir: Path, project: Path = PROJECT) -> Path:
             wheel.name: wheel.read_bytes(),
             "constraints.txt": constraints(project / "uv.lock").encode("utf-8"),
         }
-    for template in ("install.sh", "INSTALL.md"):
-        text = (HERE / template).read_text("utf-8")
-        text = text.replace("@VERSION@", ver).replace("@WHEEL@", wheel.name)
-        files[template] = text.encode("utf-8")
+    text = (HERE / "install.sh").read_text("utf-8")
+    text = text.replace("@VERSION@", ver).replace("@WHEEL@", wheel.name)
+    files["install.sh"] = text.encode("utf-8")
+    files["INSTALL.md"] = install_guide(ver, project).encode("utf-8")
     files["THIRD_PARTY_NOTICES"] = (project / "THIRD_PARTY_NOTICES").read_bytes()
     files["SHA256SUMS"] = "".join(
         f"{_sha256(data)}  {name}\n" for name, data in sorted(files.items())
