@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S07-T04
 title: "Návod pro tým a postupy ve `factory --skill`"
-status: todo
+status: done
 depends_on: [HAIFA-S07-T02, HAIFA-S07-T03, HAIFA-S05-T10, HAIFA-S04-T02, HAIFA-S07-T05, HAIFA-REFINEMENT-T10, HAIFA-S10-T04]
 related: [HAIFA-S06-T02, HAIFA-S06-T04, HAIFA-S05-T09, HAIFA-S07-T06]
 ---
@@ -44,3 +44,4 @@ Pevná omezení:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-11 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/10 · náklady $2.07

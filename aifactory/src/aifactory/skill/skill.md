@@ -1,11 +1,12 @@
 ---
 name: factory
 description: >-
-  Use when a coding agent adds HAIFA to an existing Git repository, configures
-  its agents and workflows, turns a plan into a project/step/task backlog, or
-  drives factory tasks. Do not use for general coding without HAIFA, installing
-  the HAIFA CLI itself, library administration, multi-repository operations,
-  or HAIFA upgrades.
+  Use when a coding agent sets up HAIFA on a machine (check, library), adds HAIFA
+  to an existing Git repository or takes over a repo that already has it,
+  manages its agents and workflows, turns a plan into a project/step/task
+  backlog, drives factory tasks, or upgrades HAIFA. Do not use for general
+  coding without HAIFA, unpacking the first HAIFA bundle (install.sh), or
+  multi-repository operations.
 ---
 
 # HAIFA skill: driving the `factory` CLI (aifactory {{version}})
@@ -436,6 +437,18 @@ accept: test.passed
 
 ## Procedures
 
+### Set up a machine
+
+1. `factory check --json` anywhere (outside a repository only the machine and the library
+   are checked). Resolve the `error` findings of `scope: machine` with their `fix`
+   (Git identity, uv, the provider CLI, harness CLIs and their logins); see Check.
+2. A `library_missing` finding: when the team has a library, `factory library clone URL
+   --json`; when this is the team's first machine, `factory library init [--name N]
+   [--remote URL] --json` from the seed (see Library and Sharing the library). Ask the
+   user which one; never create a second library for a team that has one.
+3. `factory check --json` again until it reports no errors. Then add repositories (Add
+   factory to an existing repo, Take over a repo with committed `.factory/`).
+
 ### Check
 
 `factory check [--repo PATH] [--offline] --json` only reads; it changes nothing in the
@@ -561,6 +574,20 @@ one commit, after the user has seen the plan.
    Resolve findings before creating or running tasks.
 10. Without `--dry-run` and `--commit`, `factory init` writes the files to the working tree,
    skips existing files unless `--force`, and commits nothing.
+
+### Take over a repo with committed `.factory/`
+
+A repo where HAIFA is already installed (another machine ran `factory init`) needs no
+installation on this machine.
+
+1. Clone the repository with git and set up the machine (Set up a machine), with the
+   same library as the team (`factory library clone URL --json`).
+2. `factory check --json` in the clone: `data.state` is `installed`. Never run
+   `factory init` there (`already_installed`). Resolve the machine findings (harnesses
+   of the roster, logins, provider CLI).
+3. Optionally switch the harnesses for this repo (Switch the local roster) and commit
+   it with Commit configuration.
+4. `factory obs --repo PATH` registers the repository in the dashboard and opens it.
 
 ### Commit configuration
 
@@ -776,6 +803,12 @@ download `download_failed`.
    `data.next` reminds to restart a running dashboard (`factory obs`).
 6. Then see "After a HAIFA upgrade" below for the library seed.
 
+In short: `factory upgrade BUNDLE --dry-run --json`, `factory upgrade BUNDLE --json`,
+restart a running dashboard, `factory library seed --dry-run --json`,
+`factory library seed --json` (with a remote the seed write pushes it), then
+`factory check --json`. Repos need no step: they inherit the new item versions at
+their next run, and `factory --skill` must be regenerated for the new version.
+
 ### Library
 
 The library is a git repository in the home directory, `$HAIFA_HOME/library`
@@ -845,6 +878,23 @@ A new HAIFA can ship new versions of the seed agents and workflows. `seed` in
 4. The write goes like `import` (lock, `library_dirty`, fetch, push). A second run without a
    new seed commits nothing (`committed: false`). Repos inherit the new versions at their
    next run; a repo's own copy stays as it is.
+
+### Manage items
+
+Agents, workflows, skills and extensions are inherited: a run looks in the repo's
+`.factory/` (in base) first, then in the library (see Agents and prompts). Use the
+narrowest change that does the job:
+
+- Share an item with every repo: `factory library import PATH --type T --dry-run --json`,
+  review, then without `--dry-run` (see Library). Repos inherit it at their next run.
+- Change an agent's bindings for one repo: `factory config set agent NAME ... --json`.
+- Drop the repo's own copy so the library item applies again:
+  `factory config remove TYPE NAME --json`.
+- Move the repo's own copy to the library: `factory config move TYPE NAME --json`.
+- A repo-only item: write it into `.factory/` (e.g. `.factory/prompts/<name>/`,
+  `.factory/workflows/<name>.yaml`); there is no command that adds one.
+- Every change in the working tree reaches runs only after `factory config commit`
+  (see Commit configuration). Details of set, remove and move are below.
 
 ### Items of the repo: config set / remove / move
 
