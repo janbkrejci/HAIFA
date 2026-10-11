@@ -3003,9 +3003,28 @@ def _workflow(args: argparse.Namespace) -> int:
     return _workflow_check(args)
 
 
+def _leave_deleted_cwd() -> None:
+    """Continue from the home folder when the working directory no longer exists.
+
+    A terminal left in an unpacked bundle that was deleted after the install makes every
+    child process fail (git: "Unable to read current working directory", claude), so the
+    machine check would report a missing git identity and harnesses that are fine.
+    """
+    try:
+        os.getcwd()
+    except FileNotFoundError:
+        home = Path.home()
+        os.chdir(home)
+        print(
+            f"factory: pracovní složka neexistuje, pokračuji z {home}",
+            file=sys.stderr,
+        )
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     if argv is None:
         oscompat.utf8_stdio()
+    _leave_deleted_cwd()
     load_env_file()
     argv_list = list(sys.argv[1:] if argv is None else argv)
     want_json = "--json" in argv_list
