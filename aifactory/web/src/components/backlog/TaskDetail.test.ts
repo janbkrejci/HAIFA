@@ -293,4 +293,66 @@ describe('TaskDetail', () => {
     expect(tip?.textContent).toContain('M01-S01 – step má nehotové tasky: M01-S01-T01')
     wrapper.unmount()
   })
+  it('says the task is ready to run when nothing stops it', () => {
+    const wrapper = detailWrapper()
+    const banner = wrapper.get('[data-test="run-readiness"]')
+    expect(banner.attributes('data-tone')).toBe('ok')
+    expect(banner.text()).toContain('Připraveno ke spuštění')
+    expect(banner.text()).toContain('plan-build')
+    expect(banner.findAll('[data-test="readiness-reason"]')).toHaveLength(0)
+  })
+
+  it('lists what stops a task without a workflow', () => {
+    const detail = taskDetail()
+    detail.task = { ...detail.task, workflow: null }
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    const banner = wrapper.get('[data-test="run-readiness"]')
+    expect(banner.attributes('data-tone')).toBe('warn')
+    expect(banner.findAll('[data-test="readiness-reason"]').map((r) => r.text())).toEqual([
+      'Task nemá workflow – nastav ho na tasku, stepu nebo projektu.',
+    ])
+  })
+
+  it('lists every unmet dependency of a blocked task', () => {
+    const detail = taskDetail()
+    detail.task = {
+      ...detail.task,
+      board_state: 'blocked',
+      blocked_by: [
+        { id: 'M01-S01', reason: 'incomplete', missing: ['M01-S01-T01'] },
+        { id: 'M01-S01-T05', reason: 'not_done', missing: [] },
+      ],
+    }
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    const banner = wrapper.get('[data-test="run-readiness"]')
+    expect(banner.attributes('data-tone')).toBe('warn')
+    const reasons = banner.findAll('[data-test="readiness-reason"]')
+    expect(reasons).toHaveLength(2)
+    expect(reasons[0].text()).toContain('M01-S01 – step má nehotové tasky: M01-S01-T01')
+  })
+
+  it('mutes the banner for a done task', () => {
+    const detail = taskDetail()
+    detail.task = { ...detail.task, board_state: 'done' }
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    const banner = wrapper.get('[data-test="run-readiness"]')
+    expect(banner.attributes('data-tone')).toBe('muted')
+    expect(banner.text()).toContain('Task je hotový, znovu se nespouští.')
+  })
+
+  it('replaces the body with the edit form while editing', async () => {
+    const wrapper = detailWrapper()
+    expect(wrapper.find('.mdview[data-test="body"]').exists()).toBe(true)
+    await wrapper.get('[data-test="edit"]').trigger('click')
+    expect(wrapper.find('.mdview').exists()).toBe(false)
+    expect(wrapper.find('form').exists()).toBe(true)
+  })
+
+  it('adds a dependency on Enter', async () => {
+    const wrapper = detailWrapper()
+    const input = wrapper.get('[data-test="link-input"]')
+    await input.setValue('M02-S01-T01')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(wrapper.emitted('link')).toEqual([[{ depends_on: ['M02-S01-T01'] }]])
+  })
 })
