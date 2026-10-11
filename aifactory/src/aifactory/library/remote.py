@@ -24,6 +24,8 @@ from aifactory.library.store import (
     LIBRARY_FILE,
     REMOTE,
     LibraryStoreError,
+    _check_empty_remote,
+    _connect_remote,
     _dirty,
     _git_detail,
     _home_dir,
@@ -223,6 +225,35 @@ def push_library(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
         "branch": branch,
         "head": head,
         "pushed": ahead,
+    }
+
+
+def connect_library(url: str, environ: Mapping[str, str] | None = None) -> dict[str, Any]:
+    """Share a library that has no remote yet: push its branch to the empty remote `url`
+    and record it as ``origin`` (without user and password).
+
+    Refused with ``remote_exists`` when the library already has ``origin`` and with
+    ``remote_not_empty`` when the remote has refs (join such a remote with clone).
+    """
+    root = library_root(environ)
+    require_library(root)
+    with write_lock(environ):
+        head = require_library(root)
+        existing = _remote(root)
+        if existing is not None:
+            raise LibraryStoreError(
+                "remote_exists", f"the library at {root} is already shared through {existing}"
+            )
+        _check_empty_remote(root, url)
+        branch = current_branch(root)
+        push_commit(root, url, head, branch)
+        _connect_remote(root, url, head, branch)
+    return {
+        "library": str(root),
+        "remote": git.redact_url(url),
+        "branch": branch,
+        "head": head,
+        "pushed": True,
     }
 
 

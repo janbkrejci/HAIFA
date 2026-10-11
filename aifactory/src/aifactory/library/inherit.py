@@ -99,10 +99,16 @@ def seed_snapshot() -> LibrarySnapshot:
     if cached is None:
         from aifactory.library.load import load_library_item
         from aifactory.library.model import ItemFile
-        from aifactory.library.seed import SEED_DIR, seed_agent_names, seed_workflow_names
+        from aifactory.library.seed import (
+            SEED_DIR,
+            seed_agent_names,
+            seed_extension_names,
+            seed_workflow_names,
+        )
         from aifactory.workflow.parse import DEFAULT_WORKFLOWS_DIR
 
         items = [load_library_item(SEED_DIR, "agent", n) for n in seed_agent_names()]
+        items += [load_library_item(SEED_DIR, "extension", n) for n in seed_extension_names()]
         for name in seed_workflow_names():
             data = (DEFAULT_WORKFLOWS_DIR / f"{name}.yaml").read_bytes()
             items.append(Item("workflow", name, (ItemFile(f"{name}.yaml", False, data),)))

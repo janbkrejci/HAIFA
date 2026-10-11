@@ -1,0 +1,21 @@
+# YAML form of adw_build_test.py.
+# Phases: engineer(request) -> builder -> tester(test_plan) -> code(test)
+#         [-> builder(fix) -> tester(test_plan) -> code(test) ... bounded] -> git(commit)
+# sssf runs a fixed suite; here the tester plans the checks (test_plan) and the code runs them.
+name: build-test
+description: Build straight from the task, repair until the checks are green, and commit only green code
+steps:
+  - build:
+      description: Implement the task exactly
+  - test_plan
+  - repeat: {max: 3, until: test.passed}
+    steps:
+      - test
+      - fix:
+          description: Repair what the checks reported, from their verbatim output
+      - test_plan:
+          description: Plan the checks again — the fix changed code, keep every earlier check
+  - commit:
+      when: test.passed
+      description: Land the code once the checks have come back green
+accept: test.passed

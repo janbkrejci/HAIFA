@@ -1,0 +1,12 @@
+# YAML form of adw_quality.py. Phases: engineer(request) -> tester(test_plan, full) -> code(test)
+# sssf runs its fixed quality blocks; here the tester plans every check the repo has and
+# the code runs them. Nothing is changed or committed.
+name: quality
+description: Lint, typecheck, build and test the whole repo without changing it
+steps:
+  - test_plan:
+      coverage: full
+      description: Plan every check the repo has — lint, typecheck, build and tests
+  - test:
+      description: Run the quality checks and the tests
+accept: test.passed

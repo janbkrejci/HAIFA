@@ -136,6 +136,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "plan again",
     ),
     ("no_remote", "2", "config pull or library status/pull/push: no remote is configured"),
+    ("remote_exists", "2", "library remote: the library is already shared through a remote"),
     ("pull_failed", "2", "config pull or library pull: git could not move the branch"),
     ("sync_on_base", "2", "backlog sync refused to commit on the base branch"),
     ("merge_failed", "2", "the hosting did not merge the pull request"),

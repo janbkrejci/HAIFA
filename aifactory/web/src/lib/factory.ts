@@ -28,6 +28,11 @@ const PLAN_CODE_TEXT: Record<string, string> = {
   import: 'import',
   new_item: 'nová položka',
   new_version: 'nová verze',
+  kept: 'změněno týmem, ponecháno',
+  take: 'změněno týmem, přepsáno výchozí verzí',
+  remote_exists: 'knihovna už má remote',
+  remote_not_empty: 'remote není prázdný',
+  no_remote: 'knihovna nemá remote',
 }
 
 export function planCodeText(code: string): string {

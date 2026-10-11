@@ -425,19 +425,27 @@ class SeedItem:
 
 
 def read_seed(agents_root: Path, workflows_root: Path) -> tuple[SeedItem, ...]:
-    """The seed items below `agents_root`/agents and `workflows_root`/workflows, validated."""
+    """The seed items below `agents_root`/{agents,extensions} and `workflows_root`/workflows,
+    validated."""
     keys: list[tuple[ItemType, str]] = []
     agents = agents_root / "agents"
     if agents.is_dir():
         keys += [("agent", p.name) for p in sorted(agents.iterdir()) if p.is_dir()]
+    extensions = agents_root / "extensions"
+    if extensions.is_dir():
+        keys += [("extension", p.name) for p in sorted(extensions.iterdir()) if p.is_dir()]
     workflows = workflows_root / "workflows"
     if workflows.is_dir():
         keys += [("workflow", p.stem) for p in sorted(workflows.glob("*.yaml"))]
     out: list[SeedItem] = []
     for kind, name in sorted(keys, key=lambda k: (ITEM_TYPES.index(k[0]), k[1])):
-        base = agents_root if kind == "agent" else workflows_root
+        base = workflows_root if kind == "workflow" else agents_root
         item = load_library_item(base, kind, name)
         rel = item_library_path(kind, name)
+        if kind == "extension":
+            ext = tuple(NewFile(f"{rel}/{f.path}", f.executable, f.data) for f in item.files)
+            out.append(SeedItem(kind, name, item.version, ext))
+            continue
         names = ["agent.yaml", *PROMPT_FILES] if kind == "agent" else [""]
         files: list[NewFile] = []
         for leaf in names:

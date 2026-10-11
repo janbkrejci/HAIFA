@@ -455,3 +455,32 @@ def test_seed_team_change_take(client: TestClient, monkeypatch: pytest.MonkeyPat
     assert next(i for i in planned["items"] if i["name"] == original.name)["action"] == "take"
     response(apply(client, "seed", planned, **take))
     assert "New seed" in (root / original.files[1].path).read_text()
+
+
+def test_connect_remote_and_fetch_status(client: TestClient, tmp_path: Path) -> None:
+    root = initialize(client)
+    head = git(root, "rev-parse", "HEAD")
+    assert response(client.get("/api/library?fetch=1&items=0"))["remote"] is None
+    bare = tmp_path / "shared.git"
+    git(tmp_path, "init", "--bare", "-b", "main", str(bare))
+    response(client.post("/api/library/remote", json={}), 400, "usage_error")
+    response(
+        client.post("/api/library/remote", json={"url": str(bare), "x": 1}), 400, "usage_error"
+    )
+    done = response(client.post("/api/library/remote", json={"url": str(bare)}))
+    assert done["pushed"] and done["head"] == head
+    assert git(bare, "rev-parse", "main") == head
+    status = response(client.get("/api/library?fetch=1&items=0"))
+    assert status["remote"] == str(bare) and status["fetched"]
+    assert (status["ahead"], status["behind"]) == (0, 0)
+    response(client.post("/api/library/remote", json={"url": str(bare)}), 409, "remote_exists")
+    other = tmp_path / "other.git"
+    git(tmp_path, "init", "--bare", "-b", "main", str(other))
+    git(root, "push", "-q", str(other), "HEAD:refs/heads/main")
+    git(root, "remote", "remove", "origin")
+    response(client.post("/api/library/remote", json={"url": str(other)}), 409, "remote_not_empty")
+
+
+def test_overrides_without_repos(client: TestClient) -> None:
+    data = response(client.get("/api/library/overrides"))
+    assert data == {"library": None, "overrides": [], "errors": []}

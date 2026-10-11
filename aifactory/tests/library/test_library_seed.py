@@ -17,10 +17,17 @@ from aifactory.library import (
     load_repo_item,
     roster_entry,
     seed_agent_names,
+    seed_extension_names,
     seed_items,
     seed_workflow_names,
 )
-from aifactory.workflow import DEFAULT_WORKFLOWS_DIR, load_workflow, preflight
+from aifactory.workflow import (
+    DEFAULT_WORKFLOWS_DIR,
+    CodeStep,
+    RoleStep,
+    load_workflow,
+    preflight,
+)
 
 HAIFA_ROOT = Path(__file__).resolve().parents[3]
 HAIFA_AGENTS = ("planner", "builder", "tester", "reviewer", "documenter")
@@ -59,8 +66,51 @@ def test_seed_items_load() -> None:
     assert [(i.type, i.name) for i in items] == [
         *(("agent", n) for n in sorted(SEED_AGENTS)),
         *(("workflow", n) for n in seed_workflow_names()),
+        ("extension", "subagents"),
     ]
     assert all(i.version.startswith("sha256:") for i in items)
+
+
+# The agents and workflows of sssf (github.com/disler/super-simple-software-factory).
+SSSF_AGENTS = {"planner", "builder", "reviewer", "documenter", "scout"}
+SSSF_WORKFLOWS = {
+    "build",
+    "build-review",
+    "build-test",
+    "document",
+    "plan",
+    "plan-build",
+    "plan-build-test",
+    "plan-build-test-quality",
+    "quality",
+    "scout",
+    "simple-sdlc",
+}
+
+
+def test_seed_follows_sssf() -> None:
+    assert SSSF_AGENTS | {"tester", "test-reviewer"} == set(seed_agent_names())
+    assert SSSF_WORKFLOWS <= set(seed_workflow_names())
+    assert seed_extension_names() == ["subagents"]
+
+
+def test_sssf_workflows_test_through_a_test_plan() -> None:
+    """sssf runs a fixed suite; ours plan the checks (test_plan) and run them (test)."""
+    for name in ("build-test", "plan-build-test-quality", "quality"):
+        workflow = load_workflow(DEFAULT_WORKFLOWS_DIR / f"{name}.yaml")
+        assert workflow.accept is not None and workflow.accept.source == "test.passed"
+        text = (DEFAULT_WORKFLOWS_DIR / f"{name}.yaml").read_text(encoding="utf-8")
+        assert "test_plan" in text
+    quality = load_workflow(DEFAULT_WORKFLOWS_DIR / "quality.yaml")
+    plan, test = quality.steps
+    assert isinstance(plan, RoleStep) and plan.name == "test_plan"
+    assert isinstance(test, CodeStep) and test.action == "test"
+
+
+def test_seed_extension_subagents() -> None:
+    item = load_library_item(SEED_DIR, "extension", "subagents")
+    assert {f.path for f in item.files} == {"subagents.ts", "themeMap.ts"}
+    assert b'from "./themeMap.ts"' in item.file("subagents.ts").data  # type: ignore[union-attr]
 
 
 def test_seed_workflows_are_not_copied() -> None:
