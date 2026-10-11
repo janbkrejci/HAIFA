@@ -53,9 +53,6 @@ def test_factory_install_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         "if sys.argv[1:] in (['--version'], ['auth', 'status'], ['login', 'status'], "
         "['--list-models']):\n"
         "    print('test CLI 1.0')\n"
-        "elif sys.argv[1:] == ['app-server', '--stdio', '-c', 'mcp_servers={}', "
-        "'-c', 'analytics.enabled=false']:\n"
-        "    sys.exit(0)\n"
         f"else:\n    Path({str(marker)!r}).write_text('called')\n    sys.exit(97)\n",
         encoding="utf-8",
     )

@@ -112,8 +112,9 @@ is HTTP 422 ``invalid_config``. Export takes the global library write lock.
 
 Limits: ``GET /api/limits`` (``limits.py``) lists the 5-hour and weekly session limits of
 the Claude and Codex subscriptions the repository's harnesses use or this machine has, for
-the topbar. The multi-repo app also serves the global ``GET /api/limits`` (no repository:
-only the subscriptions available on this machine).
+the topbar, as the harnesses last reported them in their runs and sessions. The multi-repo
+app also serves the global ``GET /api/limits`` (no repository: only the subscriptions
+available on this machine).
 
 Global library: ``GET /api/machine/check?offline=&fresh=`` caches the outside-repo
 CLI check; the server runs it once at start and again only for ``fresh=1``.
@@ -1399,11 +1400,27 @@ async def _http_error(request: Request, exc: Exception) -> Response:
     return PlainTextResponse(str(exc.detail), status_code=exc.status_code, headers=exc.headers)
 
 
+def _raised_at(exc: Exception) -> str:
+    """`` (in function, file.py:line)`` of the innermost frame of HAIFA that raised ``exc``.
+
+    An error such as ``FileNotFoundError`` from ``os.getcwd()`` names no file; the place in
+    the code then says what failed.
+    """
+    place = ""
+    tb = exc.__traceback__
+    while tb is not None:
+        code = tb.tb_frame.f_code
+        if str(tb.tb_frame.f_globals.get("__name__", "")).startswith("aifactory."):
+            place = f" (in {code.co_name}, {Path(code.co_filename).name}:{tb.tb_lineno})"
+        tb = tb.tb_next
+    return place
+
+
 async def _internal_error(request: Request, exc: Exception) -> Response:
     if _is_api(request) and is_db_busy(exc):
         return _db_busy()
     if _is_api(request):
-        message = f"{type(exc).__name__}: {exc}"
+        message = f"{type(exc).__name__}: {exc}{_raised_at(exc)}"
         return JSONResponse(envelope_fail("internal_error", message), status_code=500)
     return PlainTextResponse("Internal Server Error", status_code=500)
 
@@ -1543,7 +1560,17 @@ def _shared_state(
         latest: dict[str, Any] = max(tests.values(), key=lambda t: t.get("at", ""), default={})
         return latest.get("ok") is not False
 
-    app.state.limits = limits_source if limits_source is not None else LimitsSource(enabled=enabled)
+    def roots() -> list[Path]:
+        """Repositories whose HAIFA runs carry the Claude limits: the registered ones."""
+        registry: Registry | None = getattr(app.state, "registry", None)
+        if registry is not None:
+            return [Path(entry.path) for entry in registry.snapshot()[0].repos]
+        repo: Path | None = getattr(app.state, "repo", None)
+        return [repo] if repo is not None else []
+
+    app.state.limits = (
+        limits_source if limits_source is not None else LimitsSource(enabled=enabled, roots=roots)
+    )
     app.state.check_machine = None  # factory check: the real machine (tests set a fake)
 
 

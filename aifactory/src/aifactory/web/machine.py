@@ -92,8 +92,13 @@ class HomeMachine:
 
 
 def outside_repo() -> Path:
-    """Find an existing path outside git, even when cwd or HAIFA_HOME is in a repo."""
-    for path in (Path(tempfile.gettempdir()), Path(Path.cwd().anchor)):
+    """Find an existing path outside git, even when HAIFA_HOME is in a repo.
+
+    The process's working directory is never used: it may have been deleted since the
+    dashboard started (``os.getcwd()`` then fails without naming any file).
+    """
+    temp = Path(tempfile.gettempdir())
+    for path in (temp, Path(temp.anchor)):
         if git.run_bytes(path, ["rev-parse", "--show-toplevel"]).returncode != 0:
             return path
     raise RuntimeError("no outside-repository path available for machine check")

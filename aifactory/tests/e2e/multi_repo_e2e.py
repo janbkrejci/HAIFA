@@ -42,9 +42,6 @@ def diagnostic_tripwire(root: Path) -> tuple[Path, Path]:
         "    print('test CLI 1.0')\n"
         "elif sys.argv[1:] == ['--list-models']:\n"
         "    print('provider model context\\nopenai gpt-5.5 272K')\n"
-        "elif sys.argv[1:] == ['app-server', '--stdio', '-c', 'mcp_servers={}', "
-        "'-c', 'analytics.enabled=false']:\n"
-        "    sys.exit(0)\n"
         f"else:\n    Path({str(marker)!r}).write_text(str(sys.argv))\n    sys.exit(97)\n",
         encoding="utf-8",
     )

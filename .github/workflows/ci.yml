@@ -3,6 +3,8 @@ name: Test and release
 on:
   push:
     branches: [main]
+    # backlog and the operator's .factory/ change no product code: no tests, no new release
+    paths-ignore: ['backlog/**', '.factory/**']
   pull_request:
   workflow_dispatch:
 

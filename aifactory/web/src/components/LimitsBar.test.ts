@@ -61,7 +61,7 @@ describe('LimitsBar', () => {
     const wrapper = mount(LimitsBar, { props: { providers: [CLAUDE, codex] } })
     expect(wrapper.find('[data-test="limits-codex-unavailable"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="limits-claude"]').exists()).toBe(true)
-    expect(wrapper.get('[data-test="limits-codex-unavailable"]').attributes('aria-label')).toContain('codex login')
+    expect(wrapper.get('[data-test="limits-codex-unavailable"]').attributes('aria-label')).toContain('Codex: limity nedostupné · nic')
     const none = mount(LimitsBar, { props: { providers: [codex] } })
     expect(none.text()).toContain('nedostupné')
   })
@@ -92,20 +92,17 @@ describe('LimitsBar', () => {
     expect(rows()[1]!.find('[data-test="limits-codex-unavailable"]').exists()).toBe(true)
   })
 
-  it('keeps the last measured limits of a failed read and says when they were measured', () => {
-    const stale: LimitProvider = {
-      ...CLAUDE,
-      error: 'HTTP 429',
-      stale: true,
-      measured_at: '2026-10-04T12:05:00+00:00',
-    }
-    const wrapper = mount(LimitsBar, { props: { providers: [stale] } })
-    expect(wrapper.find('[data-test="limits-stale"]').exists()).toBe(false)
+  it('says when the harness last reported the limits', () => {
+    const measured: LimitProvider = { ...CLAUDE, measured_at: '2026-10-04T12:05:00+00:00' }
+    const wrapper = mount(LimitsBar, { props: { providers: [measured] } })
     expect(wrapper.get('[data-test="limit-claude-5h"] [data-test="limit-left"]').text()).toBe('30\u00a0%')
-    const tip = windowTip(stale, stale.windows[0]!)
-    expect(tip).toContain('naposledy změřeno')
-    expect(tip).toContain('(HTTP 429)')
+    expect(windowTip(measured, measured.windows[0]!)).toContain('naposledy změřeno')
     expect(windowTip(CLAUDE, CLAUDE.windows[0]!)).not.toContain('naposledy změřeno')
+  })
+
+  it('names the error when the dashboard could not load the limits', () => {
+    const stale: LimitProvider = { ...CLAUDE, stale: true, error: 'dashboard nemohl načíst limity' }
+    expect(windowTip(stale, stale.windows[0]!)).toContain('(dashboard nemohl načíst limity)')
   })
 })
 

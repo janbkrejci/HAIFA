@@ -141,3 +141,34 @@ def test_harness_repo_counts_follow_registry_with_cached_probes(
     cached = response(client.get("/api/machine/check?offline=1"))
     assert cached["cached"]
     assert cached["harness_repos"] == {"claude": 2, "codex": 0, "pi": 0}
+
+
+def test_machine_check_survives_a_deleted_working_directory(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A dashboard started in an unpacked bundle keeps running after the folder is deleted.
+    gone = tmp_path / "unpacked-bundle"
+    gone.mkdir()
+    monkeypatch.chdir(gone)
+    gone.rmdir()
+    with pytest.raises(FileNotFoundError):
+        os.getcwd()
+    assert machine.outside_repo().is_dir()
+    state(client).check_machine = FakeMachine()
+    assert response(client.get("/api/machine/check"))["in_repo"] is False
+
+
+def test_internal_error_says_where_a_nameless_error_was_raised(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(*args: object, **kwargs: object) -> None:
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(machine, "run_check", fail)
+    state(client).check_machine = FakeMachine()
+    server = TestClient(client.app, base_url=str(client.base_url), raise_server_exceptions=False)
+    body = server.get("/api/machine/check").json()
+    assert body["error"]["code"] == "internal_error"
+    message = body["error"]["message"]
+    assert message.startswith("FileNotFoundError: [Errno 2] No such file or directory (in ")
+    assert "machine.py:" in message

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Free session limits of Claude and Codex in the topbar: per window a thin bar that fills
 // from the left with the used share (neutral colour, not a success one) and the free percent.
-// A failed read shows stale windows or an explicit unavailable status.
+// The windows are the last ones the harness reported; none shows an unavailable status.
 import { computed } from 'vue'
 import { TriangleAlert } from 'lucide-vue-next'
 import { pct, unavailableTip, windowTip, type LimitProvider } from '../lib/limits'
@@ -35,7 +35,6 @@ const orderedProviders = computed(() =>
         <Tooltip v-if="!provider.windows.length" :text="unavailableTip(provider)">
           <span tabindex="0" :aria-label="unavailableTip(provider)" :data-test="`limits-${provider.harness}-unavailable`">nedostupné</span>
         </Tooltip>
-        <span v-else-if="provider.stale && provider.harness !== 'claude'" data-test="limits-stale">zastaralé</span>
         <Tooltip v-for="window in provider.windows" :key="window.id" :text="windowTip(provider, window)">
           <span class="limit-window" tabindex="0" :data-test="`limit-${provider.harness}-${window.id}`">
             <span class="limit-label">{{ window.label }}</span>

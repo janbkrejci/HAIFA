@@ -22,10 +22,11 @@ export interface LimitProvider {
   label: string
   /** Empty when the limits were never measured. */
   windows: LimitWindow[]
-  /** Why the last read failed; the windows are then the last measured ones (`stale`). */
+  /** Why there are no windows, or why the dashboard could not load them (`stale`). */
   error: string | null
-  /** When the windows were measured. */
+  /** When the harness last reported the windows in a run or session. */
   measured_at?: string | null
+  /** The dashboard could not load the limits; the windows are the previous answer. */
   stale?: boolean
 }
 
@@ -45,23 +46,20 @@ export function pct(value: number): number {
   return Math.max(0, Math.min(100, Math.round(value)))
 }
 
-/** "zbývá 30 % · obnoví se 4. 10. 12:00" for the tooltip of one window; stale ones say when measured. */
+/** "zbývá 30 % · obnoví se 4. 10. 12:00 · naposledy změřeno …" for the tooltip of one window. */
 export function windowTip(provider: LimitProvider, window: LimitWindow): string {
   const name = window.id === '5h' ? '5hodinový limit' : 'týdenní limit'
   let text = `${provider.label}, ${name}: zbývá ${pct(window.left)} %, využito ${pct(window.used)} %`
   const resets = fmtDayTime(window.resets_at)
   if (resets) text += ` · obnoví se ${resets}`
-  if (provider.stale) {
-    text += ' · zastaralé údaje'
-    const measured = fmtDayTime(provider.measured_at)
-    if (measured) text += ` · naposledy změřeno ${measured}`
-    if (provider.error) text += ` (${provider.error})`
-  }
+  const measured = fmtDayTime(provider.measured_at)
+  if (measured) text += ` · naposledy změřeno ${measured}`
+  if (provider.stale && provider.error) text += ` (${provider.error})`
   return text
 }
 
 export function unavailableTip(provider: LimitProvider): string {
-  return `${provider.label}: limity nedostupné · ${provider.error || 'aktuální limity nebyly změřeny'}${provider.harness === 'codex' ? ' · ověřte codex login a instalaci Codex CLI' : ''}`
+  return `${provider.label}: limity nedostupné · ${provider.error || 'limity zatím nebyly změřeny'}`
 }
 
 /**

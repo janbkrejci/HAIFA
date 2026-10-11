@@ -125,7 +125,7 @@ def fake_script(path: Path) -> Path:
 def tripwire(directory: Path) -> tuple[Path, Path]:
     """An executable that records it ran and fails; returns (tripwire, marker file).
 
-    Offline version/login/catalog probes and the limits RPC never call a model;
+    Offline version/login/catalog probes never call a model;
     allow these explicitly while recording any model/hosting command.
     """
     directory.mkdir(parents=True, exist_ok=True)
@@ -135,7 +135,7 @@ def tripwire(directory: Path) -> tuple[Path, Path]:
         '#!/bin/sh\ncase "$*" in\n'
         '"--version"|"auth status"|"login status") echo "test CLI 1.0"; exit 0 ;;\n'
         '"--list-models") echo "provider model context"; echo "openai gpt-5.5 272K"; exit 0 ;;\n'
-        '"app-server --stdio "*) exit 0 ;;\nesac\n'
+        "esac\n"
         f'echo "$0 $*" >> "{marker}"\nexit 97\n',
         encoding="utf-8",
         newline="\n",
