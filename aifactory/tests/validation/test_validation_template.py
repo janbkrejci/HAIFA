@@ -140,6 +140,7 @@ def test_config_is_rendered_and_loads(
         "test-reviewer",
         "reviewer",
         "documenter",
+        "scout",  # inherited from the seed
     ]
     assert data["data"]["settings"]["git_provider"] == "local"
     assert "simple-sdlc" in data["data"]["workflows"]

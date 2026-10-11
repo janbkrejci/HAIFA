@@ -10,8 +10,6 @@ from typing import Any
 import pytest
 import yaml
 
-from aifactory.config.manifest import MANIFEST_FILE
-from aifactory.library import store
 from aifactory.library.install import GITIGNORE_LINES
 from cli_json import run_json
 
@@ -24,7 +22,6 @@ from gh_fake import install_fake_gh, prepare_shared_gh, reply  # noqa: E402
 from fake_exe import make_executable
 
 Capsys = pytest.CaptureFixture[str]
-PLANNER_PROMPT = ".factory/prompts/planner/system.md"
 JUSTFILE = "test:\n    echo ok\n"
 
 
@@ -139,17 +136,9 @@ def test_preview_writes_nothing(repo: Path, home: Path, capsys: Capsys) -> None:
     assert snapshot(repo) == before and tree(home) == home_before
     assert not home.exists()
     files = files_of(data)
-    assert {
-        ".factory/config.yaml",
-        ".factory/agents.yaml",
-        MANIFEST_FILE,
-        ".factory/workflows/simple-sdlc.yaml",
-        PLANNER_PROMPT,
-        ".gitignore",
-        "factory/backlog/.gitkeep",
-    } <= set(files)
-    manifest = yaml.safe_load(files[MANIFEST_FILE])
-    assert manifest["onboarding"]["source"] == "init" and manifest["library"] is None
+    # agents and workflows are not copied: runs take them from the library (or the seed)
+    assert set(files) == {".factory/config.yaml", ".gitignore", "factory/backlog/.gitkeep"}
+    assert "available" not in data and "manifest" not in data
     assert data["blockers"] == [] and data["validation"] == {"ok": True, "issues": []}
     assert len(data["digest"]) == 64 and data["target"] == "direct"
     assert data["dry_run"] is True and data["committed"] is False
@@ -158,40 +147,13 @@ def test_preview_writes_nothing(repo: Path, home: Path, capsys: Capsys) -> None:
     assert detected["base_source"] == "remote_head" and detected["provider"] == "local"
     assert detected["harnesses"]["claude"]["installed"] is True
     assert detected["harnesses"]["codex"]["installed"] is False
-    available = data["available"]
-    assert available["source"] == "seed" and available["library"] is None
-    agents = {a["name"]: a for a in available["agents"]}
-    assert agents["planner"]["default"] and not agents["scout"]["default"]
-    assert agents["builder"]["harness"] == "claude"
-    workflows = {w["name"]: w for w in available["workflows"]}
-    assert workflows["simple-sdlc"]["default"]
-    assert workflows["simple-sdlc"]["agents"] == [
-        "planner",
-        "builder",
-        "tester",
-        "reviewer",
-        "documenter",
-    ]
     config = yaml.safe_load(files[".factory/config.yaml"])
     assert config == {
         "base": "main",
         "git_provider": "local",
         "docs_root": "factory",
     }
-    # the time in the manifest does not change the digest
     assert preview(capsys, repo)["digest"] == data["digest"]
-
-
-def test_preview_offers_the_library(repo: Path, home: Path, capsys: Capsys) -> None:
-    store.init_library("team")
-    lib = tree(store.library_root())
-
-    data = preview(capsys, repo)
-
-    assert data["available"]["source"] == "library"
-    assert data["available"]["library"]["name"] == "team"
-    assert yaml.safe_load(files_of(data)[MANIFEST_FILE])["library"]["name"] == "team"
-    assert tree(store.library_root()) == lib
 
 
 def test_option_conflicts(repo: Path, capsys: Capsys) -> None:
@@ -227,20 +189,17 @@ def test_commit_and_push(repo: Path, tmp_path: Path, capsys: Capsys) -> None:
     assert rev(repo, f"{sha}^") == base_sha
     names = git(repo, "show", "--name-only", "--format=", sha).split()
     assert sorted(names) == sorted(f["path"] for f in data["files"])
-    assert git(repo, "log", "-1", "--format=%s", sha) == "factory: install from the seed"
+    assert git(repo, "log", "-1", "--format=%s", sha) == "factory: install"
     assert git(repo, "status", "--porcelain") == ""
     for path, content in files_of(data).items():
-        if path != MANIFEST_FILE:
-            assert (repo / path).read_text(encoding="utf-8") == content
-    assert (repo / MANIFEST_FILE).is_file()
+        assert (repo / path).read_text(encoding="utf-8") == content
     assert not (repo / ".factory" / "trace.db").exists()
 
     again = preview(capsys, repo)
     assert codes(again["blockers"]) == ["already_installed"]
-    assert again["blockers"][0]["fix"] == "factory update"
 
 
-def test_after_install_check_and_items(repo: Path, capsys: Capsys) -> None:
+def test_after_install_check(repo: Path, capsys: Capsys) -> None:
     from aifactory.check import run_check
 
     rc, env = init(capsys, repo, "--commit")
@@ -248,12 +207,7 @@ def test_after_install_check_and_items(repo: Path, capsys: Capsys) -> None:
 
     report = run_check(repo, machine=FakeMachine())
     assert [f for f in report.findings if f.severity == "error"] == []
-
-    rc, items = run_json(capsys, ["config", "items", "--repo", str(repo), "--json"])
-    assert rc == 0, items
-    states = {(i["type"], i["name"]): i["state"] for i in items["data"]["items"]}
-    assert states and set(states.values()) == {"synced"}
-    assert ("workflow", "simple-sdlc") in states and ("agent", "builder") in states
+    assert report.state == "installed"
 
 
 def test_rejected_push_changes_nothing(repo: Path, tmp_path: Path, capsys: Capsys) -> None:
@@ -275,7 +229,7 @@ def test_rejected_push_changes_nothing(repo: Path, tmp_path: Path, capsys: Capsy
 
 def test_plan_changed(repo: Path, capsys: Capsys) -> None:
     old = preview(capsys, repo)["digest"]
-    assert preview(capsys, repo, "--bind", "builder=claude:claude-sonnet-4-5")["digest"] != old
+    assert preview(capsys, repo, "--docs-root", "work")["digest"] != old
     (repo / "README.md").write_text("changed\n", encoding="utf-8", newline="\n")
     git(repo, "commit", "-qam", "unrelated")
     git(repo, "push", "-q", "origin", "main")
@@ -328,27 +282,6 @@ def test_pr_through_github(
 
 
 # ── blockers ──────────────────────────────────────────────────────────────────
-
-
-def test_dirty_paths(repo: Path, capsys: Capsys) -> None:
-    target = repo / PLANNER_PROMPT
-    target.parent.mkdir(parents=True)
-    target.write_text("my own planner\n", encoding="utf-8", newline="\n")
-    before = snapshot(repo)
-
-    data = preview(capsys, repo)
-    assert codes(data["blockers"]) == ["dirty_paths"]
-    assert PLANNER_PROMPT in data["blockers"][0]["message"]
-    rc, env = init(capsys, repo, "--commit")
-    assert rc == 2 and env["error"]["code"] == "dirty_paths"
-    assert snapshot(repo) == before
-
-    target.write_text(files_of(data)[PLANNER_PROMPT], encoding="utf-8", newline="\n")
-    data = preview(capsys, repo)
-    assert data["blockers"] == []
-    rc, env = init(capsys, repo, "--commit", "--expect", data["digest"])
-    assert rc == 0, env
-    assert git(repo, "status", "--porcelain") == ""
 
 
 def test_dirty_gitignore_goes_to_info_exclude(repo: Path, capsys: Capsys) -> None:
@@ -421,18 +354,16 @@ def test_config_not_committed(repo: Path, capsys: Capsys) -> None:
     assert data["blockers"][0]["fix"] == "factory config commit"
 
 
-def test_invalid_plan(
-    repo: Path, tmp_path: Path, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    # codex is on this machine; the engine's default model is no Codex model
-    codex = tmp_path / "bin" / "codex"
-    codex.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
-    codex = make_executable(codex)
-    monkeypatch.setenv("CODEX_PATH", str(codex))
-    data = preview(capsys, repo, "--bind", "builder=codex")
+def test_invalid_plan(repo: Path, capsys: Capsys) -> None:
+    (repo / ".factory").mkdir()
+    (repo / ".factory/agents.yaml").write_text("agents: 3\n", encoding="utf-8", newline="\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "a broken roster")
+    git(repo, "push", "-q", "origin", "main")
+    data = preview(capsys, repo)
     assert codes(data["blockers"]) == ["invalid_plan"]
     assert data["validation"]["ok"] is False and data["validation"]["issues"]
-    rc, env = init(capsys, repo, "--commit", "--bind", "builder=codex")
+    rc, env = init(capsys, repo, "--commit")
     assert rc == 2 and env["error"]["code"] == "invalid_plan" and env["error"]["issues"]
 
 
@@ -445,24 +376,17 @@ def test_not_on_base_only_for_direct(repo: Path, capsys: Capsys) -> None:
 # ── choices ───────────────────────────────────────────────────────────────────
 
 
-def test_builder_on_codex_others_on_claude(repo: Path, capsys: Capsys) -> None:
-    data = preview(capsys, repo, "--bind", "builder=codex:gpt-5.5")
+def test_missing_harness_only_warns(
+    repo: Path, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("CLAUDE_CODE_PATH", "claude-not-installed-anywhere")
+
+    data = preview(capsys, repo)
 
     assert data["blockers"] == []
-    roster = {
-        a["name"]: a for a in yaml.safe_load(files_of(data)[".factory/agents.yaml"])["agents"]
-    }
-    assert roster["builder"]["harness"] == "codex" and roster["builder"]["model"] == "gpt-5.5"
-    assert "thinking" not in roster["builder"]
-    for name in ("planner", "reviewer", "documenter"):
-        assert roster[name]["harness"] == "claude"
-    assert data["bindings"]["builder"]["harness"] == "codex"
     missing = [w for w in data["warnings"] if w["code"] == "harness_missing"]
-    assert len(missing) == 1 and "builder" in missing[0]["message"]
-
-    rc, env = init(capsys, repo, "--commit", "--bind", "builder=codex:gpt-5.5")
-    assert rc == 0, env
-    assert any("codex" in w for w in env["warnings"])
+    assert missing and all("claude" in w["message"] for w in missing)
+    assert any("builder" in w["message"] for w in missing)
 
 
 def test_directories(repo: Path, capsys: Capsys) -> None:
@@ -474,9 +398,6 @@ def test_directories(repo: Path, capsys: Capsys) -> None:
     assert config["docs_root"] == "work"
     assert not {"backlog_dir", "specs_dir", "docs_dir"} & config.keys()
     assert data["docs_root"] == "work"
-    roster = {a["name"]: a for a in yaml.safe_load(files[".factory/agents.yaml"])["agents"]}
-    assert roster["planner"]["writes"] == ["work/specs/"]
-    assert roster["documenter"]["writes"] == ["work/docs/"]
     assert data["blockers"] == []
 
     rc, env = init(capsys, repo, "--dry-run", "--docs-root", "../out")
@@ -540,35 +461,3 @@ def test_without_remote_commits_locally(tmp_path: Path, capsys: Capsys) -> None:
     assert rc == 0, env
     assert env["data"]["advanced"] and not env["data"]["pushed"]
     assert git(repo, "status", "--porcelain") == ""
-
-
-def test_builder_on_missing_pi_only_warns(
-    repo: Path, tmp_path: Path, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from aifactory.engine import agent_pi
-
-    # pi lists its models only through its CLI; without pi the catalog is empty
-    monkeypatch.setattr(agent_pi, "_pi_catalog", lambda: [])
-    bind = ("--bind", "builder=pi:openai/gpt-5.5")
-
-    data = preview(capsys, repo, *bind)
-
-    assert data["blockers"] == [] and data["validation"]["ok"] is True
-    missing = [w for w in data["warnings"] if w["code"] == "harness_missing"]
-    assert len(missing) == 1 and "builder" in missing[0]["message"]
-    roster = {
-        a["name"]: a for a in yaml.safe_load(files_of(data)[".factory/agents.yaml"])["agents"]
-    }
-    assert roster["builder"]["harness"] == "pi"
-    rc, env = init(capsys, repo, "--commit", "--expect", data["digest"], *bind)
-    assert rc == 0, env
-
-    # with pi on the machine the model is checked and an unknown one blocks
-    fake = tmp_path / "bin" / "pi"
-    fake.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8", newline="\n")
-    fake = make_executable(fake)
-    monkeypatch.setenv("PI_PATH", str(fake))
-    (tmp_path / "other").mkdir()
-    other = make_repo(tmp_path / "other")
-    blocked = preview(capsys, other, *bind)
-    assert codes(blocked["blockers"]) == ["invalid_plan"]

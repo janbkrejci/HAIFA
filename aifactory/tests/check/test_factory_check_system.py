@@ -19,7 +19,6 @@ import pytest
 from factory_check_repo import GIT_IDENTITY, commit_all, make_check_repo, write
 
 from aifactory.cli import main
-from aifactory.config import MANIFEST_FILE
 from aifactory.home import haifa_home
 from aifactory.library.store import init_library, library_root
 from cli_json import run_json
@@ -202,17 +201,6 @@ def _snapshot(repo: Path) -> dict[str, Any]:
     }
 
 
-def _install(repo: Path) -> None:
-    """A manifest whose plan-build has a version the library does not know (reads H)."""
-    write(
-        repo,
-        MANIFEST_FILE,
-        "format: 1\nwritten_by: 0.2.0\nlibrary: null\nitems:\n  workflows:\n"
-        f"    plan-build:\n      item: plan-build\n      version: sha256:{'0' * 64}\n",
-    )
-    commit_all(repo, "manifest")
-
-
 @pytest.mark.parametrize("with_library", [False, True])
 def test_check_changes_nothing(
     log: Path,
@@ -230,7 +218,6 @@ def test_check_changes_nothing(
         init_library(remote=str(bare))
         monkeypatch.setenv("PATH", limited)
         write(library_root(), "draft.txt", "uncommitted\n")
-        _install(repo)
     write(repo, ".factory/prompts/builder/user.md", "Changed: {{prompt}}\n")
     outside = tmp_path / "plain"
     outside.mkdir()
@@ -256,7 +243,7 @@ def test_check_changes_nothing(
         assert changed == {}, (cwd, offline)
     home = haifa_home()
     if with_library:
-        assert {"item_unknown", "library_dirty"} <= repo_codes
+        assert {"repo_installed", "library_dirty"} <= repo_codes
         assert not (home / "cache").exists()
     else:
         assert not library_root().exists()

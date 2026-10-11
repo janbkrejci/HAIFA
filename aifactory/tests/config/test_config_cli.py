@@ -78,9 +78,10 @@ def test_show_json(
     assert env["ok"] is True
     data = env["data"]
     assert "warnings" not in data
-    # tester and test-reviewer come from the seed
-    assert data["agents"] == ["planner", "builder", "tester", "test-reviewer"]
-    assert data["workflows"] == ["plan-build"]
+    # the repo's agents first, the rest comes from the seed (there is no library)
+    assert data["agents"][:2] == ["planner", "builder"]
+    assert {"tester", "test-reviewer", "reviewer"} <= set(data["agents"])
+    assert "plan-build" in data["workflows"] and "simple-sdlc" in data["workflows"]
     assert data["local"] == {"trace_db": ".factory/trace.db"}
     assert any(PLANNER_SYSTEM in w for w in env["warnings"])
 

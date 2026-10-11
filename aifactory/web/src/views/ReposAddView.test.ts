@@ -30,9 +30,6 @@ function factory(state: RepoFactory['state'], extra: Partial<RepoFactory> = {}):
     commit: 'abc',
     state,
     action: null,
-    onboarding: null,
-    library: null,
-    manifest_error: null,
     ...extra,
   }
 }
@@ -160,7 +157,7 @@ describe('ReposAddView', () => {
     expect(card.get('[data-test="inspect-remote"]').text()).toBe('git@example.com:me/repo.git')
     expect(card.get('[data-test="inspect-trace-db"]').text()).toBe('/w/repo/.factory/data/trace.db')
     expect(card.get('[data-test="inspect-install-note"]').text()).toBe(
-      'Přidání zapíše do repa .factory z knihovny (existující nahradí), doplní .gitignore a commitne to do main.',
+      'Přidání zapíše do repa .factory/config.yaml (existující ponechá), doplní .gitignore a commitne to do main.',
     )
     expect(card.findAll('button').map((b) => b.text())).toEqual(['Přidat'])
     await card.get('[data-test="inspect-add"]').trigger('click')
@@ -170,24 +167,12 @@ describe('ReposAddView', () => {
     expect(wrapper.emitted('added')).toEqual([['repo']])
   })
 
-  it('shows who, when and from what an installed repo came, and Add', async () => {
-    const onboarding = {
-      source: 'init',
-      source_commit: '0123456789abcdef',
-      at: '2026-10-01T10:00:00+00:00',
-      by: 'Ada',
-      factory: '0.1.0',
-      library_commit: null,
-    }
-    stub({ inspect: inspected({ factory: factory('installed', { onboarding }) }) })
+  it('shows the state of an installed repo, and Add', async () => {
+    stub({ inspect: inspected({ factory: factory('installed') }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
     const card = wrapper.get('[data-test="inspect-card"]')
     expect(card.get('[data-test="inspect-state"]').text()).toBe('Nainstalováno')
-    const text = card.get('[data-test="inspect-onboarding"]').text()
-    expect(text).toContain('Nainstaloval Ada')
-    expect(text).toContain('z factory init')
-    expect(text).toContain('01234567')
     expect(card.find('[data-test="inspect-add"]').exists()).toBe(true)
   })
 
@@ -199,7 +184,7 @@ describe('ReposAddView', () => {
     expect(card.text()).toContain('Repo už je v dashboardu.')
     expect(card.get('[data-test="inspect-open"]').attributes('href')).toBe('#/r/repo/backlog')
     expect(card.find('[data-test="inspect-add"]').exists()).toBe(false)
-    expect(card.get('[data-test="inspect-install-note"]').text()).toContain('Synchronizace zapíše do repa .factory z knihovny')
+    expect(card.get('[data-test="inspect-install-note"]').text()).toContain('Synchronizace zapíše do repa .factory/config.yaml')
     await card.get('[data-test="inspect-sync"]').trigger('click')
     await flushPromises()
     const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos' && init?.method === 'POST')

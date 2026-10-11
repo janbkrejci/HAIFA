@@ -1,19 +1,19 @@
 <script setup lang="ts">
 // #/r/<id>/factory: `factory check` of the repo (GET /api/repos/<id>/factory/check) with the
-// manifest, the package version and the installation, and the findings in two groups: fix in the
-// repo and commit, or fix on this machine. Writes use a reviewed and confirmed server plan.
+// package version, and the findings in two groups: fix in the repo and commit, or fix on this
+// machine. Writes use a reviewed and confirmed server plan.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { fetchFactoryCheck, type CheckFinding, type CheckSeverity, type FactoryCheck } from '@/lib/api'
 import { errorText, fmtTime, shortSha } from '@/lib/format'
-import { factoryStateText, onboardingText } from '@/lib/repos'
+import { factoryStateText } from '@/lib/repos'
 import FactoryOperation from '@/components/factory/FactoryOperation.vue'
 import FactoryFindingRepair from '@/components/factory/FactoryFindingRepair.vue'
 import { lastFactoryResult } from '@/lib/factory'
 import { NEW_CONTAINER, currentRepoId, repoHref, useRouteParams } from '@/lib/router'
 import type { FactoryAction } from '@/lib/api'
 import Spinner from '@/components/ui/Spinner.vue'
-import FactoryItems from '@/components/factory/FactoryItems.vue'
+import RepoItems from '@/components/factory/RepoItems.vue'
 import RosterEditor from '@/components/factory/RosterEditor.vue'
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = { error: 0, warning: 1, info: 2 }
@@ -36,7 +36,7 @@ function openOperation(action: FactoryAction) {
 function openConfig() { openOperation('config_commit') }
 const operationBusy = ref(false)
 const itemsBusy = ref(false)
-const itemManager = ref<InstanceType<typeof FactoryItems> | null>(null)
+const itemManager = ref<InstanceType<typeof RepoItems> | null>(null)
 const repoId = currentRepoId() ?? ''
 const params = useRouteParams()
 watch(params, value => { if(value[0] === 'config_commit') openConfig() }, { immediate: true })
@@ -122,7 +122,6 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
     <template v-if="report">
       <div class="actions" :inert="repair || itemsBusy || rosterBusy ? true : undefined">
         <button v-if="report.state === 'none'" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-init" @click="openOperation('init')">Nainstalovat factory</button>
-        <button v-if="report.state !== 'none'" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-update" @click="openOperation('update')">Aktualizovat z knihovny</button>
         <button type="button" class="btn" :disabled="operationBusy" data-test="factory-open-config_commit" @click="openOperation('config_commit')">Commitnout konfiguraci</button>
         <button v-if="completed?.pr || (report.behind ?? 0) > 0 || report.findings.some(f => f.code === 'base_behind')" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-pull" @click="openOperation('pull')">Stáhnout konfiguraci z base</button>
       </div>
@@ -134,14 +133,6 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
         <dl class="rows">
           <dt>Stav repa</dt>
           <dd data-test="factory-state">{{ factoryStateText(report.state) }}</dd>
-          <dt>Manifest</dt>
-          <dd data-test="factory-manifest">
-            <template v-if="report.manifest">formát {{ report.manifest.format }}, zapsal {{ report.manifest.written_by }}</template>
-            <template v-else>bez manifestu</template>
-            <span v-if="report.manifest_error" class="error-inline" data-test="factory-manifest-error">
-              ({{ report.manifest_error }})
-            </span>
-          </dd>
           <dt>Verze balíčku</dt>
           <dd class="mono" data-test="factory-version">{{ report.version }}</dd>
           <template v-if="report.base">
@@ -152,10 +143,6 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
                 · napřed {{ report.ahead }}, pozadu {{ report.behind }}
               </template>
             </dd>
-          </template>
-          <template v-if="report.onboarding">
-            <dt>Instalace</dt>
-            <dd data-test="factory-onboarding">{{ onboardingText(report.onboarding) }} · knihovna {{ report.library?.name ?? '—' }}</dd>
           </template>
           <dt>Zkontrolováno</dt>
           <dd data-test="factory-checked">
@@ -195,7 +182,7 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
     <div v-if="report && report.state !== 'none'" ref="rosterSection">
       <RosterEditor readonly :repo-id="repoId" :disabled="operationBusy || itemsBusy || !!repair" />
     </div>
-    <FactoryItems ref="itemManager" :repo-id="repoId" :disabled="operationBusy || rosterBusy || !!repair" @busy="itemsBusy = $event; if ($event) operation = null" @success="load(true)" />
+    <RepoItems ref="itemManager" :repo-id="repoId" :disabled="operationBusy || rosterBusy || !!repair" @busy="itemsBusy = $event; if ($event) operation = null" @success="load(true)" />
     <FactoryFindingRepair v-if="repair" :findings="repair" @close="repair = null" />
   </section>
 </template>
@@ -392,10 +379,6 @@ dd {
 }
 
 .error {
-  color: var(--red);
-}
-
-.error-inline {
   color: var(--red);
 }
 </style>

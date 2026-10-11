@@ -3,15 +3,14 @@
 The state is decided by the first matching row, read from the tree of ``base``:
 
 ===============  =====================================================================
-``installed``    ``.factory/manifest.yaml``
-``unsupported``  ``.factory/config.yaml`` or ``.factory/agents.yaml`` without a manifest,
-                 or an sssf installation in ``adws/``
-``uncommitted``  configuration only in the working tree (runs do not see it)
+``installed``    ``.factory/config.yaml``
+``unsupported``  an sssf installation in ``adws/`` without ``.factory/config.yaml``
+``uncommitted``  ``.factory/config.yaml`` only in the working tree (runs do not see it)
 ``none``         none of these
 ===============  =====================================================================
 
-HAIFA does not take over a repo in state ``unsupported``: it neither converts nor runs
-a configuration it did not install. A repo gets into HAIFA only through ``factory init``.
+HAIFA does not convert or run sssf. Agents and workflows the repo lacks are inherited
+from the library (``aifactory.library.inherit``), so ``config.yaml`` is all a repo needs.
 
 Reading only: ``git rev-parse``, ``git ls-tree`` and ``git cat-file`` with
 ``GIT_OPTIONAL_LOCKS=0`` (``aifactory.config.source.git``); no fetch, no index refresh
@@ -24,9 +23,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from aifactory.config.errors import ConfigError
-from aifactory.config.manifest import MANIFEST_FILE, Manifest, parse_manifest
 from aifactory.config.run import worktree_base
+from aifactory.config.settings import CONFIG_FILE
 from aifactory.config.source import git, git_try
 
 RepoStateName = Literal["installed", "unsupported", "uncommitted", "none"]
@@ -41,17 +39,14 @@ STATE_ACTIONS: dict[RepoStateName, RepoAction | None] = {
 
 FACTORY_DIR = ".factory"
 SSSF_DIR = "adws"
-CONFIG_FILES = (".factory/config.yaml", ".factory/agents.yaml")
-WORKING_TREE_FILES = (MANIFEST_FILE, *CONFIG_FILES)
 
 
 @dataclass(frozen=True)
 class RepoState:
     """Where the repo stands; ``action`` is what to run next (None when nothing).
 
-    ``config_in_base`` is true when factory configuration is committed in base: always
-    for ``installed``, and for ``unsupported`` with ``.factory/config.yaml`` or
-    ``.factory/agents.yaml``. It is not part of :meth:`to_json`.
+    ``config_in_base`` is true for ``installed`` (``.factory/config.yaml`` in base). It is
+    not part of :meth:`to_json`.
     """
 
     repo: str
@@ -59,26 +54,10 @@ class RepoState:
     commit: str | None
     state: RepoStateName
     config_in_base: bool
-    manifest: Manifest | None = None
-    manifest_error: str | None = None
 
     @property
     def action(self) -> RepoAction | None:
         return STATE_ACTIONS[self.state]
-
-    @property
-    def onboarding(self) -> dict[str, Any] | None:
-        """The ``onboarding`` block of the manifest in base (only ``installed``)."""
-        if self.manifest is None or self.manifest.onboarding is None:
-            return None
-        return self.manifest.onboarding.model_dump(mode="json")
-
-    @property
-    def library(self) -> dict[str, Any] | None:
-        """The ``library`` block of the manifest in base (only ``installed``)."""
-        if self.manifest is None or self.manifest.library is None:
-            return None
-        return self.manifest.library.model_dump(mode="json")
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -87,9 +66,6 @@ class RepoState:
             "commit": self.commit,
             "state": self.state,
             "action": self.action,
-            "onboarding": self.onboarding,
-            "library": self.library,
-            "manifest_error": self.manifest_error,
         }
 
 
@@ -100,7 +76,7 @@ def _base_paths(root: Path, sha: str) -> list[str]:
 
 
 def _working_tree_config(root: Path) -> bool:
-    return any((root / rel).is_file() for rel in WORKING_TREE_FILES)
+    return (root / CONFIG_FILE).is_file()
 
 
 def resolve_base(root: Path, base: str) -> str | None:
@@ -119,22 +95,9 @@ def repo_state(root: Path, base: str | None = None) -> RepoState:
     sha = resolve_base(root, ref)
     paths = _base_paths(root, sha) if sha is not None else []
     has_adws = any(p.startswith(SSSF_DIR + "/") for p in paths)
-    manifest: Manifest | None = None
-    manifest_error: str | None = None
     state: RepoStateName
-    config_in_base = False
-    if MANIFEST_FILE in paths and sha is not None:
+    if CONFIG_FILE in paths:
         state = "installed"
-        config_in_base = True
-        label = f"{ref}@{sha[:7]}:{MANIFEST_FILE}"
-        try:
-            text = git(root, "cat-file", "blob", f"{sha}:{MANIFEST_FILE}")
-            manifest = parse_manifest(text, label)
-        except ConfigError as exc:
-            manifest_error = "; ".join(f"{i.path}: {i.message}" for i in exc.issues) or str(exc)
-    elif any(rel in paths for rel in CONFIG_FILES):
-        state = "unsupported"
-        config_in_base = True
     elif has_adws:
         state = "unsupported"
     elif _working_tree_config(root):
@@ -146,7 +109,5 @@ def repo_state(root: Path, base: str | None = None) -> RepoState:
         base=ref,
         commit=sha,
         state=state,
-        config_in_base=config_in_base,
-        manifest=manifest,
-        manifest_error=manifest_error,
+        config_in_base=state == "installed",
     )

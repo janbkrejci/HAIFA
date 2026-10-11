@@ -120,7 +120,6 @@ def test_harness_repo_counts_follow_registry_with_cached_probes(
     client: TestClient, tmp_path: Path
 ) -> None:
     from aifactory.library.install import init_repo
-    from aifactory.web.library import environment
 
     initialize(client)
     state(client).check_machine = FakeMachine()
@@ -133,7 +132,7 @@ def test_harness_repo_counts_follow_registry_with_cached_probes(
         write(repo, "README.md", "repo\n")
         git(repo, "add", "README.md")
         git(repo, "commit", "-m", "initial")
-        init_repo(repo, agents=["builder"], environ=environment(state(client).home))
+        init_repo(repo)
         if name == "one":
             git(repo, "add", ".factory", ".gitignore")
             git(repo, "commit", "-m", "install factory")

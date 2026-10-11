@@ -34,7 +34,7 @@ it('routes the banner to a reviewed commit and refreshes status only after apply
   const w = mount(RepoScreen, { attachTo: document.body }); await flushPromises()
   await w.get('[data-test="config-commit"]').trigger('click')
   window.dispatchEvent(new HashChangeEvent('hashchange')); await flushPromises()
-  expect(w.get('[data-test="factory-plan"]').text()).toContain('.factory/manifest.yaml')
+  expect(w.get('[data-test="factory-plan"]').text()).toContain('.factory/config.yaml')
   expect(applied).toBe(false)
   await w.get('[data-test="factory-perform"]').trigger('click'); await answerDialog(true)
   expect(applied).toBe(true)

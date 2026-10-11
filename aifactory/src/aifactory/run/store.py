@@ -7,8 +7,10 @@ one row per branch with a pull request (``open``, ``merged`` or ``closed``);
 ``task_prs.auto_merge_error`` why auto-merge left the PR open. ``task_runs.started_by``
 says who started a run: ``manual`` (``factory task run|return|resolve``, the dashboard),
 ``auto-continue`` (a chain) or ``auto-resolve`` (auto-merge resolving a conflict); NULL for
-runs recorded before. Older trace DBs get these columns added when the store opens them,
-and ``task_runs.archived`` too.
+runs recorded before. ``task_runs.library_commit`` is the library commit the run read its
+inherited agents, workflows and skills from (NULL: the seed, or recorded before). Older
+trace DBs get these columns added when the store opens them, and ``task_runs.archived``
+too.
 
 ``task_chains`` has one row per auto-continue chain (``queue.run_chain``): its runs
 in start order, the tasks the last selection skipped and why, the tasks that ran
@@ -98,6 +100,7 @@ CREATE TABLE IF NOT EXISTS task_runs (
   started_by TEXT,
   pause TEXT,
   pr_error TEXT,
+  library_commit TEXT,
   pr_body TEXT
 );
 CREATE INDEX IF NOT EXISTS task_runs_task ON task_runs(task_id);
@@ -231,6 +234,7 @@ _COLUMNS = (
     "started_by",
     "pause",
     "pr_error",
+    "library_commit",
 )
 # columns added to task_runs after its first release; older DBs get them on open
 # (``pr_body``: the PR body a succeeded run could not send; not part of ``TaskRunRow``)
@@ -240,6 +244,7 @@ _RUN_ADDED_COLUMNS = {
     "pause": "TEXT",
     "pr_error": "TEXT",
     "pr_body": "TEXT",
+    "library_commit": "TEXT",
 }
 # who started a run (``task_runs.started_by``)
 STARTED_MANUAL, STARTED_AUTO_CONTINUE, STARTED_AUTO_RESOLVE = (
@@ -279,6 +284,7 @@ class TaskRunRow:
     started_by: str | None = None  # manual, auto-continue, auto-resolve; None: not recorded
     pause: str | None = None  # of a running run: None, PAUSING or PAUSED
     pr_error: str | None = None  # why a succeeded run has no PR (push or hosting failed)
+    library_commit: str | None = None  # the library commit the run read; None: the seed
 
     @property
     def shown_state(self) -> str:

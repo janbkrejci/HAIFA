@@ -84,31 +84,29 @@ against ``base`` (D4), shown on every screen.
 Factory tab (``factory.py``): ``GET /api/factory/check?offline=&fresh=`` is ``factory
 check`` plus the registry finding ``trace_db_shared`` (another registered repository uses
 the same trace DB); the result is kept 60 s per ``offline`` flag and ``fresh=1`` renews it
-(``checked_at``, ``cached``); every answer also carries the base manifest (``manifest``
-``{format, written_by}`` or null, ``manifest_error``) and the package ``version``. It
+(``checked_at``, ``cached``); every answer also carries the package ``version``. It
 answers HTTP 200 with the CLI envelope: ``ok``, or ``checks_failed`` with the report in
 ``data``. ``POST /api/factory/plan`` (``{action,
 options?, target?}``) only reads and returns the plan with its ``digest`` (``init`` also
-``detected`` and ``available``); ``action`` is ``init`` (options ``agents``,
-``bind`` ``{agent: {harness, model?, thinking?}}``, ``workflows``, ``base``, ``provider``,
-``azure``, ``docs_root``), ``update``
-(``item``, ``take``, ``merge``, ``migrate``), ``config_commit``, ``add``, ``set``,
-``remove``, ``export`` or ``revert`` (see factory.py for options);
+``detected``); ``action`` is ``init`` (options ``base``, ``provider``, ``azure``,
+``docs_root``), ``config_commit``, ``set``, ``remove`` or ``move`` ("Move to library";
+see factory.py for options);
 ``target`` is ``base`` (default) or ``pr``. ``POST /api/factory/apply``
 (``{action, digest, options?, target?, message?}``) recomputes the plan like
-``factory init|update|config commit --commit --expect``: another digest is HTTP
+``factory init|config commit --commit --expect``: another digest is HTTP
 409 ``plan_changed`` with the new plan in ``data``, a blocker HTTP 409 with its code, a
 rejected push HTTP 502 ``push_failed``; success is ``{commit, pushed, pr, warnings}``. The
 digest does not depend on the target, so a rejected direct push can go as a PR with the
 same digest. ``POST /api/config/pull`` is ``factory config pull``. Apply and pull run one
 at a time per repository (HTTP 409 ``busy``); apply takes no paths or file contents, any
-other body key is ``usage_error``. ``GET /api/factory/items?base=`` returns CLI item states
-without writing the cache. ``GET /api/factory/roster`` returns the agents with harness, model
+other body key is ``usage_error``. ``GET /api/factory/items`` lists the agents, workflows,
+skills and extensions with their origin (``repo`` or ``library``). ``GET
+/api/factory/roster`` returns the effective agents with harness, model
 and thinking, ``presets``, ``thinking_levels`` and the step overrides of the workflows
 (``workflow_overrides``); ``POST /api/factory/roster`` (``{preset?, agent?, harness?,
 model?, thinking?, dry_run}``) is ``factory config roster set`` on the working tree and
 returns ``{agents, before, diff, changed, dry_run, comments_preserved}``, an invalid change
-is HTTP 422 ``invalid_config``. Export takes the global library write lock.
+is HTTP 422 ``invalid_config``. ``move`` takes the global library write lock.
 
 Limits: ``GET /api/limits`` (``limits.py``) lists the 5-hour and weekly session limits of
 the Claude and Codex subscriptions the repository's harnesses use or this machine has, for
@@ -118,30 +116,26 @@ available on this machine).
 
 Global library: ``GET /api/machine/check?offline=&fresh=`` caches the outside-repo
 CLI check; the server runs it once at start and again only for ``fresh=1``.
-``GET /api/library`` returns status without fetch and item metadata with repo counts
-(``?items=0``: status only); ``GET /api/library/items/{type}/{name}?version=`` returns
-files, history and usage. ``POST /api/library/plan`` and ``/apply`` take
-``{action, options?, digest?}`` for init, clone, import and seed. Apply recomputes the
-reviewed digest. All writes including ``POST /api/library/pull`` and ``/push`` share
-one nonblocking lock. ``POST /api/library/repos-plan`` takes
-``{action: add|update, type, name, repos, options?}`` and returns per-repo plans,
-digests, apply_options and apply_target for individual Factory apply calls. A blocked
-row sets partial=true while preserving the other plans. This route also works in
-create_app. See ``library.py`` for validation and core adapters.
+``GET /api/library`` returns status without fetch and item metadata (``?items=0``: status
+only); ``GET /api/library/items/{type}/{name}?version=`` returns files and history.
+``POST /api/library/plan`` and ``/apply`` take ``{action, options?, digest?}`` for init,
+clone, import and seed. Apply recomputes the reviewed digest. All writes including
+``POST /api/library/pull`` and ``/push`` share one nonblocking lock. See ``library.py``
+for validation and core adapters.
 
 More repositories: ``create_multi_app`` serves every repository in ``dashboard.yaml`` of
 the HAIFA home (``registry.py``). ``GET /api/health`` (``app: haifa-dashboard``, ``version``,
 ``home``), ``GET /api/code`` and ``POST /api/restart`` (as above, no repository needed;
 not served per repository), ``GET /api/limits`` (the machine's subscriptions),
 ``GET /api/repos`` (the repositories with ``status`` and the ``factory`` state),
-``POST /api/repos`` (``{path}``, idempotent; HTTP 201 when added; registers and installs
-factory from the library in one commit, replacing an existing ``.factory/``),
+``POST /api/repos`` (``{path}``, idempotent; HTTP 201 when added; registers the repository
+and commits ``.factory/config.yaml`` and the ``.gitignore`` lines it lacks),
 ``POST /api/repos/inspect`` (``{path}``, reads only), ``GET /api/repos/{id}/removal`` (what
-removing commits, and the repo's own items), ``DELETE /api/repos/{id}`` (``{export?,
-uninstall?}``: exports the chosen items, commits the removal of ``.factory/`` and drops the
-registry entry) and ``GET``/``POST /api/dashboard/settings`` (``port``, ``home``,
-``restart_required``). Choosing the folder to add (``fs.py``): ``GET /api/fs/dirs?path=``
-lists the visible subdirectories of a directory under the user's home (default: home) as
+removing commits), ``DELETE /api/repos/{id}`` (``{uninstall?}``: commits the removal of
+``.factory/`` and drops the registry entry) and ``GET``/``POST /api/dashboard/settings``
+(``port``, ``home``, ``restart_required``). Choosing the folder to add (``fs.py``):
+``GET /api/fs/dirs?path=`` lists the visible subdirectories of a directory under the user's
+home (default: home) as
 ``{path, parent, entries: [{name, path, is_git, has_factory}], truncated}``, HTTP 403
 ``outside_home`` outside it; ``GET /api/fs/pick`` tells ``{available}`` and
 ``POST /api/fs/pick`` opens the system folder dialog on the server's session and answers
@@ -1229,14 +1223,9 @@ async def factory_check(request: Request) -> JSONResponse:
 
 
 async def factory_items(request: Request) -> JSONResponse:
-    """CLI item states against the working tree or the requested base."""
+    """The items of the repository with their origin (the repo's copy or the library)."""
     try:
-        data = await run_in_threadpool(
-            factory.items,
-            _ctx(request).root,
-            base=request.query_params.get("base"),
-            environ=library.environment(request.app.state.home),
-        )
+        data = await run_in_threadpool(factory.items, _ctx(request).root)
     except factory.Failure as exc:
         return _failure(exc)
     return JSONResponse(envelope_ok(data))
@@ -1269,33 +1258,6 @@ async def factory_roster_set(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data))
 
 
-async def factory_item_diff(request: Request) -> JSONResponse:
-    try:
-        data = await run_in_threadpool(
-            factory.item_diff,
-            _ctx(request).root,
-            request.query_params.get("type", ""),
-            request.query_params.get("name", ""),
-            library.environment(request.app.state.home),
-        )
-    except factory.Failure as exc:
-        return _failure(exc)
-    return JSONResponse(envelope_ok(data))
-
-
-async def library_repos_plan(request: Request) -> JSONResponse:
-    """Read-only add/update plans for registered repositories."""
-    try:
-        data = await run_in_threadpool(
-            library.repos_plan, request.app.state.home, await _json_body(request)
-        )
-    except backlog.UsageError as exc:
-        return _usage_error(exc.message)
-    except factory.Failure as exc:
-        return _failure(exc)
-    return JSONResponse(envelope_ok(data))
-
-
 async def factory_plan(request: Request) -> JSONResponse:
     """The core plan of a Factory operation with its digest; reads only."""
     ctx = _ctx(request)
@@ -1317,7 +1279,7 @@ async def factory_apply(request: Request) -> JSONResponse:
     try:
         req = factory.parse_apply_body(await _json_body(request))
         with factory.exclusive(ctx.factory):
-            if req.action == "export":
+            if req.action == "move":
                 with library.exclusive(request.app.state.library):
                     try:
                         data, warnings = await run_in_threadpool(
@@ -1500,7 +1462,6 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/factory/items", factory_items, methods=["GET"]),
         Route("/factory/roster", factory_roster, methods=["GET"]),
         Route("/factory/roster", factory_roster_set, methods=["POST"]),
-        Route("/factory/item-diff", factory_item_diff, methods=["GET"]),
         Route("/factory/plan", factory_plan, methods=["POST"]),
         Route("/factory/apply", factory_apply, methods=["POST"]),
     ]
@@ -1610,7 +1571,6 @@ def create_app(
                     Route("/restart", restart_dashboard, methods=["POST"]),
                     Route("/updates", updates_check, methods=["GET"]),
                     Route("/updates/install", updates_install, methods=["POST"]),
-                    Route("/library/repos-plan", library_repos_plan, methods=["POST"]),
                     *_repo_routes(),
                 ]
             ),
@@ -1672,7 +1632,7 @@ def _path_body(body: dict[str, Any]) -> object:
 
 
 async def repos_add(request: Request) -> JSONResponse:
-    """Add a repository: register it and install factory from the library in one commit
+    """Add a repository: register it and commit ``.factory/config.yaml`` and ``.gitignore``
     (``web.repos.add_repo``). HTTP 201 when newly registered, 200 when it was there."""
     registry = _registry(request)
 
@@ -1694,7 +1654,7 @@ async def repos_add(request: Request) -> JSONResponse:
 
 
 async def repos_removal(request: Request) -> JSONResponse:
-    """What removing the repository commits, and its own items the library could keep."""
+    """What removing the repository commits."""
     registry = _registry(request)
     repo_id: str = request.path_params["repo_id"]
 
@@ -1736,29 +1696,22 @@ async def repos_inspect(request: Request) -> JSONResponse:
 
 
 async def repos_remove(request: Request) -> JSONResponse:
-    """Remove a repository: export the chosen items (``export: [{type, name}]``) to the
-    library, commit the removal of ``.factory/`` (``uninstall: false`` skips it), drop the
-    registry entry and close its live hub."""
+    """Remove a repository: commit the removal of ``.factory/`` (``uninstall: false`` skips
+    it), drop the registry entry and close its live hub."""
     registry = _registry(request)
     repo_id: str = request.path_params["repo_id"]
     contexts: RepoContexts = request.app.state.repos
     try:
         payload = await _json_body(request) if await request.body() else {}
+        unknown = sorted(set(payload) - {"uninstall"})
+        if unknown:
+            raise backlog.UsageError(f"unknown keys: {', '.join(unknown)}")
         uninstall = payload.get("uninstall", True)
-        raw_export = payload.get("export") or []
         if not isinstance(uninstall, bool):
             raise backlog.UsageError("uninstall must be a boolean")
-        if not isinstance(raw_export, list) or not all(
-            isinstance(e, dict) and all(isinstance(e.get(k), str) for k in ("type", "name"))
-            for e in raw_export
-        ):
-            raise backlog.UsageError("export must be a list of {type, name}")
-        export = [(str(e["type"]), str(e["name"])) for e in raw_export]
         environ = library.environment(request.app.state.home)
         entry, done = await run_in_threadpool(
-            lambda: remove_repo(
-                registry, repo_id, export=export, uninstall=uninstall, environ=environ
-            )
+            lambda: remove_repo(registry, repo_id, uninstall=uninstall, environ=environ)
         )
         await contexts.drop(repo_id)
     except backlog.UsageError as exc:
@@ -1986,7 +1939,6 @@ def create_multi_app(
             Route("/machine/harnesses/test", machine_harness_test, methods=["POST"]),
             Route("/library", library_get, methods=["GET"]),
             Route("/library/items/{type}/{name}", library_item, methods=["GET"]),
-            Route("/library/repos-plan", library_repos_plan, methods=["POST"]),
             Route("/library/plan", library_plan, methods=["POST"]),
             Route("/library/apply", library_apply, methods=["POST"]),
             Route("/library/pull", library_sync, methods=["POST"]),

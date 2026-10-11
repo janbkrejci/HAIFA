@@ -532,8 +532,7 @@ describe('App', () => {
             branch: 'main',
             remote: null,
             trace_db: '/work/new-repo/.factory/data/trace.db',
-            factory: { repo: '/work/new-repo', base: 'main', commit: 'abc', state: 'unsupported', action: null,
-              onboarding: null, library: null, manifest_error: null },
+            factory: { repo: '/work/new-repo', base: 'main', commit: 'abc', state: 'unsupported', action: null },
           })
         }
         if (url.startsWith('/api/fs/')) return envelope({ path: '/home/me', parent: null, entries: [], truncated: false, available: false })

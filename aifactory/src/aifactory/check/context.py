@@ -30,7 +30,6 @@ from aifactory.config.source import CommitSource, WorktreeSource, git_try, repo_
 from aifactory.config.status import ConfigChange, config_changes
 from aifactory.harness.config import SSSFConfig
 from aifactory.library.remote import library_status
-from aifactory.library.state import repo_items
 from aifactory.library.store import LibraryStoreError
 from aifactory.run.gitops import extract_backlog
 
@@ -101,16 +100,6 @@ class CheckContext:
             if exc.code == "library_missing":
                 return None
             raise
-
-    @cached_property
-    def items(self) -> list[dict[str, Any]]:
-        """States of the items in base (AR23); only for an installed repo with a manifest."""
-        if self.state.state != "installed" or self.state.manifest_error is not None:
-            return []
-        if self.commit is None:
-            return []
-        data = repo_items(self.main, self.base, self.environ, save_cache=False)
-        return list(data["items"])
 
     # -- base commit --
 

@@ -213,7 +213,6 @@ describe('OverviewView', () => {
     repo: '/w/gone', base: 'main', base_sha: 'abc', target: 'base', digest: 'd',
     files: [{ path: '.factory/config.yaml', action: 'delete' }, { path: '.gitignore', action: 'modify' }],
     blockers: [] as { code: string; message: string; fix?: string }[],
-    own_items: [{ type: 'agent', name: 'mine', state: 'local' }, { type: 'workflow', name: 'flow', state: 'modified' }],
   }
 
   function stubRemoval(plan: unknown, deletion?: Response) {
@@ -247,7 +246,7 @@ describe('OverviewView', () => {
     return call ? JSON.parse(String(call[1]?.body)) : undefined
   }
 
-  it('removes a repo after showing its removal plan and exports the checked own items', async () => {
+  it('removes a repo after showing its removal plan', async () => {
     const fetchMock = stubRemoval(PLAN)
     const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, attachTo: document.body, global })
     await flushPromises()
@@ -260,24 +259,19 @@ describe('OverviewView', () => {
     expect(dialog.textContent).toContain('.factory/ a řádky factory v .gitignore, commitne to do main')
     expect(dialog.textContent).toContain('Backlog, specifikace a dokumentace v repu zůstanou.')
     expect(dialog.textContent).toContain('Commit změní 2 soubory.')
-    const boxes = dialog.querySelectorAll<HTMLInputElement>('[data-test="removal-export"]')
-    expect([...boxes].map((b) => b.checked)).toEqual([true, true])
-    expect(dialog.querySelectorAll('[data-test="removal-own-item"]')[0].textContent).toContain('Přesunout do knihovny')
-    boxes[1].click()
-    await flushPromises()
+    expect(dialog.querySelector('[data-test="removal-export"]')).toBeNull()
     await answerDialog(true)
-    expect(deleteBody(fetchMock)).toEqual({ export: [{ type: 'agent', name: 'mine' }] })
+    expect(deleteBody(fetchMock)).toEqual({})
     expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(wrapper.find('[data-test="overview-card"][data-repo="gone"]').exists()).toBe(false)
   })
 
   it('lists blockers and keeps Odebrat disabled while any exists', async () => {
-    const fetchMock = stubRemoval({ ...PLAN, own_items: [], blockers: [{ code: 'dirty_paths', message: 'Necommitnuté změny v .factory/.', fix: 'Commitni je.' }] })
+    const fetchMock = stubRemoval({ ...PLAN, blockers: [{ code: 'dirty_paths', message: 'Necommitnuté změny v .factory/.', fix: 'Commitni je.' }] })
     await openRemoval()
     const dialog = openDialog()!
     expect(dialog.querySelector('[data-test="removal-blocker"]')?.textContent).toContain('Necommitnuté změny v .factory/. Commitni je.')
     expect(dialog.querySelector<HTMLButtonElement>('[data-test="confirm-ok"]')?.disabled).toBe(true)
-    expect(dialog.querySelector('[data-test="removal-own-items"]')).toBeNull()
     await answerDialog(false)
     expect(deleteBody(fetchMock)).toBeUndefined()
   })

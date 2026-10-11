@@ -18,6 +18,7 @@ first; ``load_*`` raises ``LibraryError`` with all of them.
 
 from __future__ import annotations
 
+import functools
 import os
 import stat
 from pathlib import Path
@@ -34,7 +35,7 @@ from aifactory.config.loader import (
     SKILLS_DIR,
     WORKFLOWS_DIR,
 )
-from aifactory.engine.role_registry import Issue, load_roles
+from aifactory.engine.role_registry import Issue, RoleRegistry, load_roles
 from aifactory.library.model import (
     ITEM_TYPES,
     MAX_ITEM_BYTES,
@@ -369,6 +370,12 @@ def load_repo_item(repo: Path, type: str, name: str) -> Item:
 # ── content rules ─────────────────────────────────────────────────────────────
 
 
+@functools.cache
+def _packaged_roles() -> RoleRegistry:
+    """The packaged role registry, read once: every library workflow is checked against it."""
+    return load_roles()
+
+
 def _validate_workflow(item: Item, rel: str) -> list[Issue]:
     issues: list[Issue] = []
     text = _decode(b"".join(f.data for f in item.files), rel, issues)
@@ -381,7 +388,7 @@ def _validate_workflow(item: Item, rel: str) -> list[Issue]:
         issues.append(Issue("not_a_mapping", "a workflow must be a mapping", rel))
         return issues
     try:
-        parse_workflow(raw, load_roles())
+        parse_workflow(raw, _packaged_roles())
     except WorkflowError as error:
         issues.extend(Issue(i.code, i.message, f"{rel}:{i.path}") for i in error.issues)
     return issues

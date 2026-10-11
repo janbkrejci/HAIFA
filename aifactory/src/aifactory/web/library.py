@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from aifactory.library import multi_repo, remote, reseed, store
+from aifactory.library import remote, reseed, store
 from aifactory.library.model import ITEM_TYPES
 from aifactory.providers import git
 from aifactory.providers.base import ProviderError
@@ -126,17 +126,8 @@ def warnings(data: Mapping[str, Any]) -> list[str]:
     return result
 
 
-def usage(kind: str, name: str, env: Mapping[str, str]) -> list[dict[str, Any]]:
-    try:
-        return list(multi_repo.where(kind, name, environ=env)["repos"])
-    except store.LibraryStoreError as exc:
-        if exc.code == "registry_missing":
-            return []
-        raise
-
-
 def status(home: Path, *, items: bool = True) -> tuple[dict[str, Any], list[str]]:
-    """Library status; ``items=False`` skips the item list and its per-repo usage (slow)."""
+    """Library status; ``items=False`` skips the item list."""
     env = environment(home)
     with errors():
         try:
@@ -149,15 +140,11 @@ def status(home: Path, *, items: bool = True) -> tuple[dict[str, Any], list[str]
             return {"exists": True, **data}, warnings(data)
         listed = store.list_items(environ=env)["items"]
         for item in listed:
-            item["repos"] = usage(item["type"], item["name"], env)
             shown = store.show_item(item["type"], item["name"], environ=env)
             item.update(_metadata(shown))
             item["n"] = next(
                 (r["n"] for r in reversed(shown["history"]) if r["version"] == item["version"]),
                 None,
-            )
-            item["repo_count"] = len(
-                {row["repo"]["id"] for row in item["repos"] if row.get("slot") is not None}
             )
         return {"exists": True, **data, "items": listed}, warnings(data)
 
@@ -188,7 +175,7 @@ def detail(home: Path, kind: str, name: str, version: str | None) -> dict[str, A
     env = environment(home)
     with errors():
         shown = store.show_item(kind, name, version, env)
-        return {**shown, **_metadata(shown), "repos": usage(kind, name, env)}
+        return {**shown, **_metadata(shown)}
 
 
 def _source(options: Mapping[str, Any], user_home: Path) -> Path:
@@ -427,59 +414,3 @@ def sync(home: Path, state: GlobalState, *, push: bool) -> dict[str, Any]:
             return fn(environ=environment(home))
         finally:
             state.invalidate()
-
-
-def repos_plan(home: Path, body: Mapping[str, Any]) -> dict[str, Any]:
-    """Plan through L9 core; each row can be applied through the repository API."""
-    from aifactory.web import factory
-
-    factory._keys(body, ("action", "type", "name", "repos", "options"), "keys")
-    action = body.get("action")
-    if action not in ("add", "update"):
-        raise UsageError("action must be add or update")
-    kind, name = body.get("type"), body.get("name")
-    if kind not in ITEM_TYPES or not isinstance(name, str) or not name.strip():
-        raise UsageError("type and name must identify a library item")
-    selection = body.get("repos")
-    if isinstance(selection, list):
-        if not selection or not all(isinstance(v, str) and v.strip() for v in selection):
-            raise UsageError("repos must be a non-empty list of registered IDs")
-        if any("," in v or v == "all" for v in selection):
-            raise UsageError("repos list must contain individual registered IDs")
-        selection = ",".join(selection)
-    if not isinstance(selection, str) or not selection.strip():
-        raise UsageError("repos must be all, comma-separated IDs, or an ID list")
-    ids = selection.split(",")
-    if any(not v.strip() for v in ids) or len(ids) != len(set(ids)):
-        raise UsageError("repos must contain unique non-empty IDs")
-    raw = body.get("options", {})
-    if not isinstance(raw, dict):
-        raise UsageError("options must be a JSON object")
-    raw = dict(raw)
-    target = raw.pop("target", "base")
-    if target not in factory.TARGETS:
-        raise UsageError("target must be base or pr")
-    allowed = tuple(k for k in factory.OPTIONS[action] if k not in ("type", "name", "item"))
-    factory._keys(raw, allowed, "options")
-    if action == "add":
-        options = factory._options(action, {**raw, "type": kind, "name": name})
-    else:
-        options = factory._options(action, {**raw, "item": [f"{kind}/{name}"]})
-    with factory._core_errors(action):
-        data = multi_repo.run_repos(
-            action,
-            selection,
-            dry_run=True,
-            commit=True,
-            pr=target == "pr",
-            environ=environment(home),
-            **options,
-        )
-    for row in data["repos"]:
-        preview = row["plan"]
-        if preview is not None:
-            preview.update(action=action, apply_options=dict(options), apply_target=target)
-            if preview.get("blockers"):
-                row["status"] = "blocked"
-                data["partial"] = True
-    return data

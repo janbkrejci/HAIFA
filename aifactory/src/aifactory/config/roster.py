@@ -1,4 +1,9 @@
-"""Local roster editing; runs continue to read the committed base."""
+"""Local roster editing; runs continue to read the committed base.
+
+The roster shown is the effective one: the repo's ``agents.yaml`` with the agents it
+inherits from the library. Changing an inherited agent adds an entry to ``agents.yaml``
+that overrides only its bindings; a missing ``agents.yaml`` is created.
+"""
 
 from __future__ import annotations
 
@@ -14,10 +19,9 @@ import yaml
 from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
 from aifactory.config.errors import ConfigError, ConfigIssue
-from aifactory.config.loader import PROMPT_KINDS, prompt_path
-from aifactory.config.source import repo_root
+from aifactory.config.loader import AGENTS_FILE, load_config
+from aifactory.config.source import OverlaySource, WorktreeSource, repo_root
 from aifactory.harness import canonical, load
-from aifactory.harness.config import SSSFConfig, normalize_raw
 from aifactory.harness.override import THINKING_LEVELS
 
 PRESETS = {
@@ -27,37 +31,53 @@ PRESETS = {
 FIELDS = ("harness", "coding_agent", "model", "thinking")
 
 
-def _effective(raw: dict[str, Any]) -> list[dict[str, str]]:
-    if not isinstance(raw.get("agents"), list) or not all(
-        isinstance(a, dict) for a in raw["agents"]
+def _effective(root: Path, text: str) -> list[dict[str, Any]]:
+    """The effective agents with ``agents.yaml`` as `text` (library agents included).
+
+    A ``prompt_engineering`` key a roster may still carry is left out here; only the
+    bindings matter.
+    """
+    raw = yaml.safe_load(text) if text.strip() else None
+    agents = raw.get("agents") if isinstance(raw, dict) else None
+    if (
+        isinstance(raw, dict)
+        and isinstance(agents, list)
+        and any(isinstance(a, dict) and "prompt_engineering" in a for a in agents)
     ):
-        raise ValueError("agents must be a list of mappings")
-    if raw.get("defaults") is not None and not isinstance(raw["defaults"], dict):
-        raise ValueError("defaults must be a mapping")
-    data = normalize_raw(raw)
-    for agent in data["agents"]:
-        agent.setdefault(
-            "prompt_engineering",
-            {kind: prompt_path(str(agent.get("name") or ""), kind) for kind in PROMPT_KINDS},
-        )
-    cfg = SSSFConfig.model_validate(data)
-    names = [a.name for a in cfg.agents]
+        raw = {
+            **raw,
+            "agents": [
+                {k: v for k, v in a.items() if k != "prompt_engineering"}
+                if isinstance(a, dict)
+                else a
+                for a in agents
+            ],
+        }
+        text = yaml.safe_dump(raw, sort_keys=False, allow_unicode=True)
+    source = OverlaySource(WorktreeSource(root), {AGENTS_FILE: text.encode("utf-8")})
+    try:
+        cfg = load_config(source)
+    except ConfigError as exc:
+        raise ValueError("; ".join(f"{i.path}: {i.message}" for i in exc.issues)) from exc
+    names = [a.name for a in cfg.agents.agents]
     if len(names) != len(set(names)):
         raise ValueError("duplicate agent names")
     result = []
-    for agent in cfg.agents:
+    for agent in cfg.agents.agents:
         if agent.thinking not in THINKING_LEVELS:
             raise ValueError(f"agent {agent.name!r}: invalid thinking {agent.thinking!r}")
-        adapter = load(agent.harness)
+        harness = canonical(str(agent.coding_agent))
+        adapter = load(harness)
         adapter.resolve_model(agent.model)
-        if agent.harness == "codex":
+        if harness == "codex":
             adapter.reasoning_effort(agent.model, agent.thinking)
         result.append(
             {
                 "name": agent.name,
-                "harness": agent.harness,
+                "harness": harness,
                 "model": agent.model,
                 "thinking": agent.thinking,
+                "origin": "library" if f"agent/{agent.name}" in cfg.inherited else "repo",
             }
         )
     return result
@@ -132,6 +152,13 @@ def _render(text: str, raw: dict[str, Any], updated: dict[str, Any]) -> tuple[st
     return yaml.safe_dump(updated, sort_keys=False, allow_unicode=True), False
 
 
+def _with_entry(text: str, agent: str) -> str:
+    """`text` with an ``agents.yaml`` entry for `agent` (an override of a library agent)."""
+    from aifactory.config.yamledit import edit_yaml, roster_add
+
+    return edit_yaml(text, lambda doc: roster_add(doc, {"name": agent}))
+
+
 def roster(
     repo: Path,
     *,
@@ -144,13 +171,10 @@ def roster(
     dry_run: bool = False,
 ) -> dict[str, Any]:
     root = repo_root(repo)
-    path = root / ".factory/agents.yaml"
+    path = root / AGENTS_FILE
     try:
-        text = path.read_text(encoding="utf-8")
-        raw = yaml.safe_load(text)
-        if not isinstance(raw, dict):
-            raise ValueError("roster must be a mapping")
-        before = _effective(raw)
+        original = path.read_text(encoding="utf-8") if path.is_file() else ""
+        before = _effective(root, original)
         result: dict[str, Any] = {"path": str(path), "agents": before}
         if not change:
             return result
@@ -166,15 +190,26 @@ def roster(
             raise ValueError("set needs a preset or --harness/--model/--thinking")
         if "thinking" in settings and settings["thinking"] not in THINKING_LEVELS:
             raise ValueError(f"invalid thinking {settings['thinking']!r}")
+        text = original
+        raw = yaml.safe_load(text) if text.strip() else {}
+        if not isinstance(raw, dict):
+            raise ValueError("roster must be a mapping")
+        listed = raw.get("agents") or []
+        if agent is not None and not any(
+            isinstance(a, dict) and a.get("name") == agent for a in listed
+        ):
+            if agent not in {a["name"] for a in before}:
+                raise ValueError(f"unknown agent {agent!r}")
+            text = _with_entry(text, agent)
+            raw = yaml.safe_load(text)
+        raw.setdefault("agents", [])
         updated = copy.deepcopy(raw)
         # YAML aliases may share mappings. Editing a role must not edit its siblings.
         updated["agents"] = [copy.deepcopy(role) for role in raw["agents"]]
         if isinstance(raw.get("defaults"), dict):
             updated["defaults"] = copy.deepcopy(raw["defaults"])
         if agent is not None:
-            target = next((a for a in updated["agents"] if a.get("name") == agent), None)
-            if target is None:
-                raise ValueError(f"unknown agent {agent!r}")
+            target = next(a for a in updated["agents"] if a.get("name") == agent)
         else:
             target = updated.setdefault("defaults", {})
             if target is None:
@@ -186,11 +221,18 @@ def roster(
         if "harness" in settings:
             target.pop("coding_agent", None)
         target.update(settings)
-        after = _effective(updated)
-        rendered, preserved = _render(text, raw, updated)
+        rendered, preserved = (
+            _render(text, raw, updated)
+            if text.strip()
+            else (
+                yaml.safe_dump(updated, sort_keys=False, allow_unicode=True),
+                True,
+            )
+        )
+        after = _effective(root, rendered)
         diff = "".join(
             difflib.unified_diff(
-                text.splitlines(True),
+                original.splitlines(True),
                 rendered.splitlines(True),
                 fromfile="agents.yaml",
                 tofile="agents.yaml",
@@ -205,6 +247,7 @@ def roster(
             comments_preserved=preserved,
         )
         if diff and not dry_run:
+            path.parent.mkdir(parents=True, exist_ok=True)
             fd, temporary = tempfile.mkstemp(prefix=".agents-", suffix=".yaml", dir=path.parent)
             try:
                 with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
@@ -216,5 +259,5 @@ def roster(
                 if os.path.exists(temporary):
                     os.unlink(temporary)
         return result
-    except (OSError, ValueError, TypeError, AttributeError, yaml.YAMLError) as exc:
+    except (OSError, ValueError, TypeError, AttributeError, KeyError, yaml.YAMLError) as exc:
         raise ConfigError([ConfigIssue(str(path), str(exc))]) from exc

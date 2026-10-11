@@ -1,7 +1,7 @@
 """Commit the shared ``.factory/`` configuration to base (``factory config commit``, D4).
 
 The paths come from ``config_changes`` (``config.yaml``, ``agents.yaml``, ``roles.yaml``,
-``manifest.yaml``, ``prompts/``, ``workflows/``, ``extensions/`` and the repo skills in
+``prompts/``, ``workflows/``, ``extensions/`` and the repo skills in
 ``.claude/skills/`` and ``.agents/skills/``; never ``local.yaml``). The plan lists every file (path,
 action, diff against base, content), the blockers and a ``digest``; ``--expect DIGEST``
 refuses a plan that changed since it was reviewed (``plan_changed``). Committing goes

@@ -58,6 +58,7 @@ from aifactory.engine.slots import TestSlots, default_slots_dir
 from aifactory.engine.utils import new_id
 from aifactory.harness.config import SSSFConfig
 from aifactory.harness.override import THINKING_LEVELS
+from aifactory.library.inherit import copy_library_items
 from aifactory.providers import GitProvider, ProviderError, get_provider
 from aifactory.providers import git as provider_git
 from aifactory.run import basemoves, gitops
@@ -206,34 +207,21 @@ def resolve_test_timeout(task: Task, settings: ProjectSettings) -> int:
 def named_workflow(name: str, config: FactoryConfig, task_id: str) -> Workflow:
     """Workflow `name` of a run.
 
-    Without a manifest: ``.factory/workflows/`` in base first, then the packaged ones. A
-    repo with a manifest takes workflows only from its ``.factory/workflows/`` in base, so
-    a task runs the same on every machine (D32); only the internal resolve workflows come
-    from the package.
+    ``.factory/workflows/`` in base first, then the library (the seed without one);
+    ``config.workflows`` holds both. The internal resolve workflows also come from the
+    package.
     """
     try:
-        if config.manifest is not None:
-            if name in INTERNAL_WORKFLOWS:
-                return load_workflow(DEFAULT_WORKFLOWS_DIR / f"{name}.yaml", config.roles)
-            if name in config.workflows:
-                return parse_workflow(config.workflows[name], config.roles)
-            raise TaskRunError(
-                "unknown_workflow",
-                f"workflow {name!r} of task {task_id} is not in .factory/workflows/ in base; "
-                f"a repo with a manifest runs only its own workflows, add it with "
-                f"factory config add workflow {name}",
-            )
         if name in config.workflows:
             return parse_workflow(config.workflows[name], config.roles)
-        packaged = DEFAULT_WORKFLOWS_DIR / f"{name}.yaml"
-        if packaged.is_file():
-            return load_workflow(packaged, config.roles)
+        if name in INTERNAL_WORKFLOWS:
+            return load_workflow(DEFAULT_WORKFLOWS_DIR / f"{name}.yaml", config.roles)
     except WorkflowError as exc:
         raise TaskRunError("invalid_workflow", f"workflow {name}: {exc}") from exc
     raise TaskRunError(
         "unknown_workflow",
         f"workflow {name!r} of task {task_id} is neither in .factory/workflows/ in base "
-        "nor among the packaged workflows",
+        "nor in the library",
     )
 
 
@@ -371,8 +359,6 @@ def _load(main: Path) -> RunConfig:
     try:
         return load_run_config(main)
     except ConfigError as exc:
-        if exc.code == "format_unsupported":
-            raise TaskRunError("format_unsupported", str(exc)) from exc
         raise TaskRunError("invalid_config", str(exc)) from exc
 
 
@@ -613,6 +599,7 @@ def run_task(
             workflow=workflow.name,
             note=note,
             started_by=started_by,
+            library_commit=rc.config.library,
         )
         store.claim(row)
         return _execute(
@@ -676,6 +663,7 @@ def _execute(
                 gitops.git(main, "worktree", "add", "-b", row.branch, str(worktree), rc.commit)
             else:
                 gitops.git(main, "worktree", "add", str(worktree), row.branch)
+        copy_library_items(worktree, rc.config.library)
     except (RuntimeError, OSError) as exc:
         store.finish(row.run_id, FAILED, None, str(exc)[:2000])
         raise TaskRunError("worktree_failed", str(exc)) from exc

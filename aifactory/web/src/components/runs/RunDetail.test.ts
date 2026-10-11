@@ -43,6 +43,13 @@ describe('RunDetail', () => {
     expect(auto.get('[data-test="started-by"]').text()).toBe('Spuštěno automaticky: auto-merge řeší konflikt PR')
   })
 
+  it('names the library commit the run read, seed without one', () => {
+    expect(mount(RunDetail, { props: { detail: detail({ library_commit: '0123456789abcdef' }), events: events() } })
+      .get('[data-test="run-library"]').text()).toBe('0123456')
+    expect(mount(RunDetail, { props: { detail: detail({ library_commit: null }), events: events() } })
+      .get('[data-test="run-library"]').text()).toBe('seed')
+  })
+
   it('shows the selected phase detail', () => {
     const wrapper = mount(RunDetail, { props: { detail: detail(), events: events(), phaseId: 'p2' } })
     expect(wrapper.find('.phase-detail').attributes('data-phase')).toBe('p2')

@@ -1,4 +1,4 @@
-// Harness, model and thinking choices of the roster editor and the install form.
+// Harness, model and thinking choices of the roster editor.
 import type { FactoryRoster, MachineCheck, RosterPreset } from './api'
 
 /** `harness/override.py THINKING_LEVELS`, used when the API sends none. */
@@ -9,9 +9,6 @@ export const DEFAULT_PRESETS: Readonly<Record<string, RosterPreset>> = {
   claude: { harness: 'claude', model: 'claude-opus-5-5', thinking: 'medium' },
   codex: { harness: 'codex', model: 'gpt-6.1-sol', thinking: 'medium' },
 }
-
-/** Model names offered in the model fields (any other name can still be typed). */
-export const MODEL_SUGGESTIONS: readonly string[] = modelSuggestions(DEFAULT_PRESETS, [])
 
 export const PRESET_LABELS: Readonly<Record<string, string>> = { claude: 'Claude', codex: 'Codex' }
 

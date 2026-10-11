@@ -14,8 +14,8 @@ vi.mock('@/lib/api', async (original) => ({
 
 const ROSTER: FactoryRoster = {
   agents: [
-    { name: 'builder', purpose: 'Build code', harness: 'claude', model: 'claude-opus-5-5', thinking: 'medium' },
-    { name: 'reviewer', purpose: 'Review' },
+    { name: 'builder', purpose: 'Build code', harness: 'claude', model: 'claude-opus-5-5', thinking: 'medium', origin: 'repo' },
+    { name: 'reviewer', purpose: 'Review', origin: 'library' },
   ],
   workflow_tasks: {},
   presets: {
@@ -59,6 +59,8 @@ describe('RosterEditor', () => {
     expect(await selectLabels(w, '[data-test="roster-agent-builder"] [data-test="roster-thinking"]')).toEqual(['Podle výchozích', 'off', 'low', 'medium', 'high'])
     const models = [...w.element.querySelectorAll('datalist option')].map((o) => (o as HTMLOptionElement).value)
     expect(models).toEqual(['claude-opus-5-5', 'gpt-6.1-sol'])
+    expect(w.find('[data-test="roster-agent-builder"] [data-test="roster-origin"]').exists()).toBe(false)
+    expect(w.get('[data-test="roster-agent-reviewer"] [data-test="roster-origin"]').text()).toBe('z knihovny')
     expect(w.get('[data-test="roster-overrides"]').text()).toContain('simple-sdlc')
     expect(w.get('[data-test="roster-overrides"]').text()).toContain('codex')
   })

@@ -26,8 +26,8 @@ and `fix`, together with `data.state` and `data.action`, before making changes:
 | --- | --- | --- |
 | `none` (repo without factory) | `init` | Add factory to the existing repo below. |
 | `uncommitted` (configuration only in the working tree) | `config_commit` | Review and commit configuration using the Commit configuration procedure, then check again. |
-| `installed` (manifest in base) | none | Factory is installed. Run `factory update` to bring items from the library. |
-| `unsupported` (`.factory/` without a manifest, or sssf `adws/`) | none | HAIFA does not take over a configuration it did not install. Tell the user; do not convert it. |
+| `installed` (`.factory/config.yaml` in base) | none | Factory is installed. Agents and workflows the repo lacks come from the library. |
+| `unsupported` (sssf `adws/` without `.factory/config.yaml`) | none | HAIFA does not take over sssf. Tell the user; do not convert it. |
 
 Resolve machine findings (Git, provider CLI, chosen harness CLI and credentials)
 using their `fix`; do not run tasks until error findings are resolved. See Check for
@@ -115,8 +115,8 @@ Every command below accepts `--json`.
 {{error_codes}}
 
 Codes that appear in `error.issues[].code` (and in `data.issues[].code`), by source
-(`check`: `data.findings[].code` of `factory check`; `item_state`: `data.items[].state` of
-`factory config items`):
+(`check`: `data.findings[].code` of `factory check`; `item_origin`: the `origin` of an
+agent, workflow, skill or extension in the dashboard, `repo` or `library`):
 
 {{issue_codes}}
 
@@ -134,8 +134,6 @@ What to do with the common ones:
 - `run_failed`: read `data.run.error`; the worktree and branch are kept. Re-run with
   `factory task run ID --note TEXT --json`.
 - `invalid_config`: read `error.issues[].path` and `message`, fix `.factory/`, commit.
-- `format_unsupported`: the repo's `.factory/manifest.yaml` is newer than the installed
-  HAIFA; run `factory upgrade`. Nothing ran.
 - `usage_error`: the arguments are wrong; see the command reference above.
 - `checks_failed`: `factory check` found errors; read `data.findings` (see Procedures,
   Check), fix the `error` findings and run the check again.
@@ -274,12 +272,20 @@ Every key, including nested entries, is generated from the configuration model.
 
 ### Agents and prompts
 
+Agents, workflows, skills and extensions are looked up in the repo first and in the
+library second: `$HAIFA_HOME/library` at its HEAD, or the seed in the package when there
+is no library (never both). A copy in the repo wins. A repo without `.factory/agents.yaml`
+and `.factory/prompts/` runs with the library agents and their default bindings; the
+roster `defaults` still apply to them. The library commit a run read is recorded in
+`task_runs.library_commit` of the trace DB (null for the seed).
+
 `.factory/agents.yaml` contains a `defaults` mapping and an `agents` list.
-Each agent has a unique `name` (its slot). The slot identifies its prompts and is
-what a role's `agent` or a workflow step's `agent` selects. The manifest maps the
-slot to its source `item` and `version`; slot and library item names may differ.
-Bindings (`harness`, `model`, `thinking`, tools and permissions) belong to the
-repository and are separate from the reusable prompt item.
+Each agent has a unique `name`. The name identifies its prompts and is
+what a role's `agent` or a workflow step's `agent` selects. An agent with its prompts in
+`.factory/prompts/<name>/` is the repo's own copy and takes nothing from the library. An
+entry without prompts there overrides only the keys it sets of the library agent of that
+name (for example its `harness` and `model`); prompts, purpose and the rest come from the
+library.
 
 | Key | Meaning |
 | --- | --- |
@@ -295,8 +301,8 @@ repository and are separate from the reusable prompt item.
 | `disallowed_commands` | Shell command patterns denied by the harness; may be inherited. Unsupported enforcement is reported. |
 | `harness_engineering` | Paths to pi extensions; may be inherited, rejected for other harnesses. |
 
-Every declared slot requires both `.factory/prompts/<slot>/system.md` and
-`.factory/prompts/<slot>/user.md`; `prompt_engineering` is forbidden in this
+An agent the library does not have requires both `.factory/prompts/<name>/system.md` and
+`.factory/prompts/<name>/user.md`; `prompt_engineering` is forbidden in this
 roster because the paths are fixed. Put role instructions in system.md and the
 request plus expected output in user.md. Variables are replaced literally using
 double braces around their names:
@@ -323,18 +329,17 @@ a collision; unknown variables remain unchanged. A workflow `test` step executes
 code, not an agent prompt: it runs the checks the latest `test_plan` step chose.
 Timeout and slots follow the Workflow format rules below.
 
-Editing a tracked agent prompt in this repository makes its item `modified`
-when the library has not moved (or `diverged` if both changed).
-`factory config items --json` shows this state. `factory config export agent
-<slot> --dry-run --json` previews returning the prompt to the library; after
-review, `factory config export agent <slot> --expect <digest> --json` writes it
-there and records the new version in the manifest. Commit the shared configuration.
+To change a library agent for one repo, copy its prompts into
+`.factory/prompts/<name>/` and edit them there. To share the repo's copy with every repo,
+move it to the library: `factory config move agent <name> --commit --dry-run --json`
+previews it, `factory config move agent <name> --commit --expect <digest> --json` writes
+the library and deletes the copy from the repo in one commit (see Items of the repo).
 
 
 ## Workflow format
 
 A workflow is YAML in `.factory/workflows/<name>.yaml` (read from base), falling back to the
-packaged workflows: {{workflows}}.
+library (without a library the packaged workflows: {{workflows}}).
 
 - Top-level keys: `name` (required), `description`, `steps` (required), `accept`.
 - A step is one of:
@@ -437,19 +442,18 @@ accept: test.passed
 repository, the trace DB, the library or the home directory, and never fetches.
 
 1. `data.state` is the state of the repo, read from base, first match wins:
-   - `installed`: `.factory/manifest.yaml` is in base. No action.
-   - `unsupported`: `.factory/config.yaml` or `.factory/agents.yaml` without a manifest,
-     or an sssf installation in `adws/`. No action: HAIFA does not take over a
-     configuration it did not install.
+   - `installed`: `.factory/config.yaml` is in base. No action.
+   - `unsupported`: an sssf installation in `adws/` without `.factory/config.yaml`. No
+     action: HAIFA does not take over sssf.
    - `uncommitted`: the configuration exists only in the working tree. Action
      `config_commit`.
    - `none`: no factory. Action `init`.
 
-   `data.action` is what that state calls for (`config_commit`, `init` or `null`) and
-   `data.onboarding` is the `onboarding` block of the manifest (who, when, from what),
-   else `null`. The finding of the state carries the same action: `factory_missing`
-   (`init`), `config_not_committed` (`config_commit`), `repo_unsupported` (info for
-   `.factory/` without a manifest, error for sssf `adws/`) and `repo_installed` (info).
+   `data.action` is what that state calls for (`config_commit`, `init` or `null`). The
+   finding of the state carries the same action: `factory_missing` (`init`),
+   `config_not_committed` (`config_commit`), `repo_unsupported` (error for sssf `adws/`)
+   and `repo_installed` (info, names the library commit or the seed the repo inherits
+   from).
 2. Outside a git repository (no `--repo`) only the machine and the library are checked:
    `data.in_repo` is `false` and `data.repo`, `data.state`, `data.action` and `data.base`
    are `null`. Inside a repository `data.in_repo` is `true`.
@@ -459,11 +463,10 @@ repository, the trace DB, the library or the home directory, and never fetches.
    - `scope: library`: fix it in the library in `$HAIFA_HOME` (`factory library ...`).
    - `severity`: `error` (factory will not run), `warning` (it runs, but something is off),
      `info`.
-   - `fix` says in words what to do. `action` names the fix (`init`, `update`, `export`,
-     `config_commit`, `config_pull`) or is `null` for a manual fix.
+   - `fix` says in words what to do. `action` names the fix (`init`, `config_commit`,
+     `config_pull`) or is `null` for a manual fix.
      `config_commit` and `config_pull` are `factory config commit` and `factory config pull`
-     (see Commit configuration); `init` is `factory init`, `update` is `factory update`
-     (see Update from the library) and `export` is `factory config export`.
+     (see Commit configuration); `init` is `factory init`.
 4. Findings and their fixes, by group:
    - Installation: `factory_outdated` (machine, error: the library needs a newer factory;
      `factory upgrade`).
@@ -487,14 +490,8 @@ repository, the trace DB, the library or the home directory, and never fetches.
      `env_override` (one of `CLAUDE_SAFE_MODE`, `CLAUDE_MCP_CONFIG`,
      `CLAUDE_PERMISSION_MODE`, `CODEX_SAFE_MODE`, `CODEX_SANDBOX`, `PI_SAFE_MODE` is set;
      unset it unless you want it).
-   - Items of base that are not `synced` with the library (AR23): `item_local` (info,
-     `export`), `item_missing` (warning, `update`), `item_unknown` (warning, `export`),
-     `item_outdated` (info, `update`), `item_modified` (info, `export`) and
-     `item_diverged` (warning, `update`), and `update_available` (info, `update`: the
-     library (or the seed) has new versions of items of the manifest, a missing item can
-     be restored or a migration applies).
-   - Repo: `workflow_not_in_repo` (the backlog names a workflow a repo with a manifest does
-     not have in `.factory/workflows/`; add it or change the tasks), `roles_full_copy`
+   - Repo: `workflow_unknown` (the backlog names a workflow neither the repo nor the
+     library has; add it or change the tasks), `roles_full_copy`
      (`.factory/roles.yaml` has `code_steps`; keep only the changed roles),
      and `unknown_thinking` (an agent's `thinking` is not a known level).
 5. `data.ahead` / `data.behind` compare base with `refs/remotes/<remote>/<base>` as of the
@@ -516,32 +513,25 @@ one commit, after the user has seen the plan.
    in the working tree; commit it before continuing. State `installed` needs no init,
    and HAIFA does not take over a repo in state `unsupported`.
 2. `factory init --dry-run --json [options]` writes nothing and returns the plan:
-   - `data.files`: `path`, `action`, `diff` and `content`, including
-     `.factory/manifest.yaml`.
+   - `data.files`: `path`, `action`, `diff` and `content`: `.factory/config.yaml`, the
+     backlog `.gitkeep` and `.gitignore`. Agents and workflows are not copied; runs take
+     them from the library.
    - `data.blockers`: `code`, `message` and `fix` when a command removes the blocker.
    - `data.warnings`: `code` and `message`.
    - `data.digest`, `data.exclude` and `data.validation`.
    - `data.detected`: `remote`, `base` (from `refs/remotes/<remote>/HEAD`, else the current
      branch), `provider` (`github`, `azure` with `azure.organization`, `project` and
      `repository`, or `local`) and `harnesses` (`installed` and `path` per harness CLI).
-   - `data.available`: the `agents` (with default `harness`, `model` and `thinking`) and
-     `workflows` (with their `agents`) of the library, or of the seed without a library.
-     `default` marks the default choice.
    Options:
    - `--base BRANCH` and `--provider local|github|azure`. Azure takes `--azure-org`,
      `--azure-project` and `--azure-repo`, each falling back to the remote URL.
-   - `--agents LIST`, `--workflows LIST` and `--bind AGENT=HARNESS[:MODEL[:THINKING]]` per
-     agent (repeatable, for example `--bind builder=codex:gpt-5.5`).
    - `--docs-root DIR` (default `factory`). `$specs_dir/` and `$docs_dir/` in `writes`
      become `<docs_root>/specs/` and `<docs_root>/docs/`.
    - `--pr` plans a pull request; the direct-only blockers then do not apply.
-   Example (choose agents and bindings for the intended workflow):
-   `factory init --dry-run --json --agents builder,reviewer --workflows simple-sdlc
-   --bind builder=codex --bind reviewer=claude`.
-3. Show the user the files, the bindings, the blockers, the warnings and the digest.
+3. Show the user the files, the blockers, the warnings and the digest.
 4. When the user agrees: `factory init --commit --expect <digest> [-m TEXT] --json`. It is
-   the same plan as one commit on base. Repeat all selection options (`--agents`,
-   `--workflows`, `--bind`, directories and provider) from the preview; `--expect`
+   the same plan as one commit on base. Repeat all options (base, directories and
+   provider) from the preview; `--expect`
    validates the recomputed plan, it does not store those options. The commit is pushed before base moves, and the
    files reach the working tree only after the push (`data.commit`, `data.pushed`,
    `data.advanced`).
@@ -552,21 +542,20 @@ one commit, after the user has seen the plan.
    --json`. The commit then goes to `factory-init/<n>` with a pull request (`data.branch`,
    `data.pr`), and base and the checkout stay as they are.
 7. Blockers (the commit refuses with the first one):
-   - `already_installed`: factory is installed; run `factory update`.
-   - `existing_config`: sssf or `.factory/` configuration without a manifest; HAIFA does
-     not take over existing configuration.
+   - `already_installed`: `.factory/config.yaml` is committed; factory is installed.
+   - `existing_config`: an sssf installation; HAIFA does not take it over.
    - `config_not_committed`: run `factory config commit`.
    - `dirty_paths`: the user moves or commits the listed files.
-   - `invalid_plan`: see `data.validation.issues`, or `error.issues` on commit; change the
-     bindings or the workflows.
+   - `invalid_plan`: see `data.validation.issues`, or `error.issues` on commit.
    - `not_on_base`, `run_in_progress`, `base_behind` and `base_diverged`: as in Commit
      configuration.
 8. Warnings never block:
-   - `harness_missing`: a bound harness CLI is not on PATH; install it before runs.
+   - `harness_missing`: the harness CLI of an agent is not on PATH; install it before runs
+     or switch the agent (Switch the local roster).
    - `gitignore_dirty`: `.gitignore` has uncommitted changes, so the runtime lines go to
      `info/exclude` (`data.exclude`).
    - `foreign_content`: the backlog, specs or docs directory already has files.
-   - `remote_note` and `invalid_item`.
+   - `remote_note`.
 9. After the direct commit (or after the installation PR is merged and base is
    synchronized), verify `factory check --json` and `factory backlog check --json`.
    Resolve findings before creating or running tasks.
@@ -854,164 +843,44 @@ A new HAIFA can ship new versions of the seed agents and workflows. `seed` in
    `factory library seed --take TYP/JMENO --json` (repeatable; action `take`; `not_in_seed`
    when the seed lacks it). Items the seed no longer has are never deleted.
 4. The write goes like `import` (lock, `library_dirty`, fetch, push). A second run without a
-   new seed commits nothing (`committed: false`).
-5. Then run `factory update` in every repo to bring the new library versions into
-   `.factory/`.
+   new seed commits nothing (`committed: false`). Repos inherit the new versions at their
+   next run; a repo's own copy stays as it is.
 
-### Manifest and item states
-
-`.factory/manifest.yaml` records where the repo's items came from. A repo without it is
-format 0 and runs as before. Keys: `format` (1), `written_by` (the HAIFA version),
-`library` (`id`, `name`, `remote`; `null` when the items came from the seed), `onboarding`
-(`source` `init`, older manifests may carry `sssf` or `pre_library` and still load;
-`source_commit`, `at`, `by`, `factory`,
-`library_commit`; written once) and `items` by type (`agents`, `workflows`, `skills`,
-`extensions`), each `name in the repo: {item, version}`. It is shared configuration:
-`factory config status` reports it and `factory config commit` commits it.
-A run reads only `format` from this provenance record; it executes the committed
-repository configuration and prompts, without fetching items from the library.
-
-1. A `format` newer than the installed HAIFA stops `factory config show`, `factory check`
-   and every run before it starts with `format_unsupported`; run `factory upgrade`.
-2. A repo with a manifest runs workflows only from `.factory/workflows/` in base, so a task
-   runs the same on every machine. Only the internal `resolve` and `resolve-reviewed` come
-   from the package. A missing workflow is `unknown_workflow`; add it with
-   `factory config add workflow <name>`.
-3. `factory config items [--repo PATH] [--base [REF]] --json` returns `data.items[]` with
-   `type`, `name` (in the repo), `item` (the library item), `state`, `repo_version` (R),
-   `manifest_version` (M) and `library_version` (L, the library head or, without a library,
-   the seed), plus `data.library.source` (`library` or `seed`). Without `--base` it reads
-   the working tree. States, the first matching wins:
-   - `local`: not in the manifest.
-   - `missing`: in the manifest, but its files are gone.
-   - `synced`: R = L.
-   - `unknown`: M is not in the library item's history.
-   - `outdated`: R = M and the library moved on.
-   - `modified`: R ≠ M and the library did not move.
-   - `diverged`: both changed.
-
-### Items of the repo: config add / set / remove
+### Items of the repo: config set / remove / move
 
 ```bash
-factory config add workflow solo --json            # workflow + the agents of its steps
-factory config add agent builder --as builder2 --model claude-opus-5-5 --thinking high --json
-factory config add skill lint --json               # .claude/skills/lint/ + .agents/skills/lint/
 factory config set agent builder --thinking high --tools read,bash --color '#112233' --json
-factory config remove workflow solo --prune --json
+factory config remove workflow solo --json
+factory config move agent builder --commit --dry-run --json   # library files + repo deletions
+factory config move agent builder --commit --expect <digest> --json
 ```
 
-1. Modes, as `factory init`: `--dry-run` returns the plan (`data.files`, `added`, `kept`,
-   `removed`, `bindings`, `blockers`, `validation`, `digest`) and writes nothing. Without
-   an option the plan is written to the working tree only (nothing committed; commit it
-   later with `factory config commit`). `--commit [--pr] [-m TEXT]` makes it one commit on
-   base (pushed before base moves) or a PR from `factory-config/<n>`. Review first:
+1. Modes, as `factory init`: `--dry-run` returns the plan (`data.files`, `removed`,
+   `bindings`, `blockers`, `validation`, `digest`) and writes nothing. Without an option
+   the plan is written to the working tree only (nothing committed; commit it later with
+   `factory config commit`). `--commit [--pr] [-m TEXT]` makes it one commit on base
+   (pushed before base moves) or a PR from `factory-config/<n>`. Review first:
    `--dry-run` (with `--commit` for the commit plan), check it, then repeat the command
    with `--expect <digest>`; a changed plan is `plan_changed`.
-2. `add` takes the item from the library HEAD (the seed without a library). Closure: a
-   workflow brings the agents of its steps, an agent the skills and extensions of its
-   defaults; what is already in the repo stays (`kept`, reason `present`). Skills go to
-   `.claude/skills/<name>/` with a copy in `.agents/skills/<name>/`. A new agent slot gets
-   the item's defaults, overridden by `--harness`, `--model`, `--thinking`.
-3. A slot with other content is `slot_taken`: pick another one with `--as NEW` (agents and
-   workflows). The same content is a no-op (`changed: false`).
-4. `set agent SLOT` changes only the bindings in `agents.yaml`; comments and key order
-   stay. `--tools`/`--writes` take comma lists (`-` removes the key). An unknown
-   `--thinking` is `invalid_value`.
-5. `remove` refuses an item in use (`in_use`, `data.used_by`): an agent named by a workflow
-   or `roles.yaml`, a workflow named by a backlog task in base, a skill or extension bound
-   by another agent. `--prune` also removes manifest dependencies nobody else uses.
-6. Blockers: `run_in_progress`, `invalid_plan` (working tree); `dirty_paths`,
-   `invalid_plan`, `not_on_base`, `base_behind`, `base_diverged` (`--commit`). A repo
-   without a manifest is `not_onboarded`: run `factory init`.
-
-### Repo and library: config export / revert / diff
-
-```bash
-factory config diff agent builder --json                # repo vs manifest version and vs head
-factory config export agent builder --dry-run --json    # library files + manifest, digest
-factory config export agent builder --expect <digest> --json
-factory config export agent builder --as builder-strict --commit --json
-factory config revert agent builder --to manifest --json   # or --to head
-```
-
-1. `export` writes the repo copy into the library, then records the library item and the
-   version in the manifest. An item of the manifest becomes the next version of its
-   library item; `--as NEW` (agents and workflows) or a `local` item becomes a new library
-   item. A library item of that name with other content is `item_exists` (fix `--as NEW`).
-2. When the library head moved on since the manifest version and the repo copy differs,
-   export is `library_changed_since`: take the library version with `factory update`, or
-   export the copy as a new item with `--as NEW`.
-3. Order: the library first (fetch, push without force), then the repo (working tree,
-   `--commit` or `--commit --pr`, as `config add`). A rejected library push
+2. `set agent NAME` changes only the bindings in `agents.yaml`; comments and key order
+   stay. An agent the repo inherits gets an entry that overrides only these keys.
+   `--tools`/`--writes` take comma lists (`-` removes the key). An unknown `--thinking`
+   is `invalid_value`.
+3. `remove` deletes the repo's own copy; the library item of the same name applies again.
+   When the library lacks it, an item in use is refused (`in_use`, `data.used_by`): an
+   agent named by a workflow or `roles.yaml`, a workflow named by a backlog task in base, a
+   skill or extension bound by a roster agent.
+4. `move` ("Move to library" in the dashboard) writes the repo copy into the library under
+   its name and deletes it from the repo. An agent keeps the `agent.yaml` defaults of its
+   library item with the repo purpose (a new one takes its defaults from the roster entry);
+   its roster entry keeps only its bindings, or goes when nothing else is left. Order:
+   the library first (fetch, push without force), then the repo. A rejected library push
    (`push_failed`, `library_behind`, `library_diverged`, `library_dirty`) leaves the repo
    untouched. When the repo write fails after the library push, `data.library_commit`
-   names the unused library version: run the same export again and it only connects it
-   (`data.export.action` `connect`).
-4. Move a good agent to another repo: `factory config export agent NAME [--as NEW]` in
-   this repo, then `factory config add agent NAME [--as SLOT]` in the other repo (both
-   use the same library; `factory library pull` there first when it is shared).
-5. `revert --to manifest` (default) puts the copy back to the manifest version from the
-   library history (`unknown_version`, state `unknown`, when the history lacks it: use
-   `--to head`); `--to head` takes the library head and moves the manifest version. The
-   bindings in `agents.yaml` stay. A local item is `unknown_item`.
-6. `diff` only reads: `data.manifest` and `data.head` list `files[]` with `status` and a
-   unified `diff` (library version first, then the repo copy).
-
-### Update from the library
-
-```bash
-factory update --dry-run --json                       # the plan: items, files, migrations, digest
-factory update --expect <digest> --json               # write it to the working tree
-factory update --take agent/builder:system.md --json  # take the library version of one file
-factory update --take agent/builder --json            # ... or of every file of the item
-factory update --merge workflow/solo --json           # git merge-file of the conflicting files
-factory update --migrate m001 --json                  # run a listed migration
-factory update --commit [--pr] [--expect <digest>] [-m TEXT] --json
-```
-
-1. `factory update` brings new versions of the items of `.factory/manifest.yaml` from the
-   library head (the seed without a library). It never overwrites a file the repo changed
-   unless you pass `--take` or `--merge`, and it never merges text on its own: ask the
-   user before you pass either.
-2. The unit is a file: an agent's `purpose` (its roster entry), `system.md` and
-   `user.md`; a workflow's file; every file of a skill or extension, also added and
-   deleted ones. base is the manifest version (from the library history), ours the repo
-   copy, theirs the library head. `data.update.items[].files[].status`:
-   - `same`: ours = theirs, nothing to do;
-   - `take`: ours = base, theirs is written;
-   - `keep`: theirs = base, the repo change stays;
-   - `conflict`: both changed; ours stays, `ours_diff` (base -> repo) and `theirs_diff`
-     (base -> library) show both sides, warning `update_conflict`;
-   - `taken`: `--take TYPE/NAME[:FILE]` took theirs;
-   - `merged`: `--merge TYPE/NAME` took the result of `git merge-file`; when it has
-     conflicts or the merged item is not valid the command fails with `merge_conflict`
-     and writes nothing;
-   - `unknown`: the manifest version is not in the library history (item state
-     `unknown`), there is no base; `diff` shows ours against theirs, ours stays, warning
-     `update_unknown`, `--take` takes theirs (`--merge` is `invalid_value`);
-   - `restore`: the item is `missing`; its missing files come back.
-3. `data.update.items[].action` sums the item up: `same`, `update`, `keep`, `conflict`,
-   `unknown`, `restore`, `absent` (the library no longer has the item, warning
-   `item_not_in_library`; it stays as it is).
-4. The same plan moves every manifest entry to the library head, sets `written_by` to the
-   installed HAIFA, restores the missing prompts of agents declared in `agents.yaml`
-   (`data.update.restored`; warning `prompt_missing` when the library has no such agent)
-   and the runtime lines of `.gitignore` (`data.update.gitignore.added`). A skill that
-   changes is copied again to `.agents/skills/`.
-5. Migrations: `data.update.migrations[]` lists each detected migration with `id`,
-   `title` and `diff` (warning `migration_available`); it runs only with `--migrate ID`.
-   `m001` changes `levels: [module, step, task]` in `.factory/config.yaml` to
-   `[project, step, task]`, comments kept. A migration that does not apply any more is
-   `migration_not_needed`. The second run finds nothing to migrate.
-6. Modes as `config add`: `--dry-run` (the plan and its `digest`), the working tree (the
-   default; `run_in_progress` blocks; `factory config commit` commits it later) and
-   `--commit [--pr]` (one commit on base or a pull request; `dirty_paths`,
-   `plan_changed`, `invalid_plan`). Nothing to change: `changed` false.
-7. Refused: `not_onboarded` (no manifest in base; `data.fix` is `factory init` for a repo
-   without `.factory/` or `adws/`, HAIFA does not take over the others), `config_not_committed` (the
-   manifest is only in the working tree: `factory config commit`), `format_unsupported`
-   (`factory upgrade`), `library_mismatch` is a warning (another library than the
-   manifest's).
+   names the library commit; run the same move again. Without a library it is
+   `library_missing`.
+5. Blockers: `run_in_progress`, `invalid_plan` (working tree); `dirty_paths`,
+   `invalid_plan`, `not_on_base`, `base_behind`, `base_diverged` (`--commit`).
 
 ### Repo instructions and skills
 
@@ -1028,7 +897,12 @@ the repo's instructions and skills ride along through each harness's native mech
   (`--approve`); personal skills, extensions and prompt templates are left out
   (`--no-skills`, `--no-extensions`, `--no-prompt-templates`).
 
-A skill has its source in `.claude/skills/<name>/`; edit it there. `.agents/skills/` is
+Library skills and extensions the repo does not have are copied into the run's worktree
+at its start (`.claude/skills/<name>/` and `.agents/skills/<name>/`, extensions to
+`.factory/extensions/<name>/`), each with a `.gitignore` that keeps it out of git; they
+are never committed. A skill of the repo wins over the library's.
+
+A skill of the repo has its source in `.claude/skills/<name>/`; edit it there. `.agents/skills/` is
 its exact copy for codex and pi, with no symlinks. After a change run
 `factory skills sync [--repo PATH] --json` (`data.added`, `data.updated`, `data.removed`;
 `skills_sync_failed` when it cannot write) and commit both trees. `factory check` compares
@@ -1044,19 +918,4 @@ Global files of the operator a harness cannot leave out are reported by `factory
 (claude `--safe-mode`, codex `project_doc_max_bytes=0`, pi without context files, skills,
 extensions and project trust). The default is off: native repo loading.
 
-Registered repositories: `factory library where TYPE NAME --json` reports slots, states
-and versions, including `repo_missing` for missing folders. `factory update --repos
-all|ID,ID [--item TYPE/NAME]` and `factory config add TYPE NAME [--agent A] --repos
-all|ID,ID` plan and execute each repository sequentially. Use `--dry-run --commit`
-to review each digest, then `--commit --expect ID=DIGEST` for every selected repo
-(option repeatable), optionally `--pr` and `-m TEXT`. There is no transaction: inspect
-`data.repos[].status`, `plan`, `result`, `error` and `data.partial`; blocked or failed
-repos are skipped while others continue. Repeating an operation is idempotent.
-Without the registry, these commands return `registry_missing`.
-
-For `config add` and `update` in PR mode, the plan digest identifies the branch.
-Repeating the same plan returns the existing commit, branch and open PR, including
-a retry of a partially successful batch. Commit message changes do not create another
-PR for the same contents. An edited published branch is skipped with `plan_changed`;
-base and the working tree stay unchanged.
 

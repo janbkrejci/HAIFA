@@ -96,7 +96,7 @@ def test_harness_check_only_what_config_uses(
     assert main(["harness", "check", "--json", "--config", str(path)]) == 0
     data = read_envelope(capsys)["data"]
     assert [(h["name"], h["agents"]) for h in data["harnesses"]] == [
-        ("claude", ["planner", "reviewer", "tester", "test-reviewer"]),
+        ("claude", ["planner", "reviewer"]),
         ("pi", ["builder"]),
     ]
     assert calls == [["/bin/claude", "--version"], ["/bin/pi", "--version"]]
@@ -158,7 +158,7 @@ def test_harness_check_haifa_roster_relative_path(
     rc, obj = run_json(capsys, ["harness", "check", "--config", ".factory/agents.yaml", "--json"])
     assert rc == 0
     assert [(h["name"], h["agents"]) for h in obj["data"]["harnesses"]] == [
-        ("claude", ["planner", "builder", "tester", "test-reviewer"])  # the last two from the seed
+        ("claude", ["planner", "builder"])  # a roster file alone inherits nothing
     ]
     assert calls == [["/bin/claude", "--version"]]
     _fake(monkeypatch, set())

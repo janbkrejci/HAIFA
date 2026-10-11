@@ -182,10 +182,10 @@ def add_repo(
 ) -> tuple[RepoEntry, bool, JsonDict, list[str]]:
     """The dashboard's "add": register the repository and install factory in one go.
 
-    The install comes from the library (else the seed) and replaces an existing
-    ``.factory/`` in one commit on base, pushed when there is a remote (see
-    ``plan_init(replace=True)``). A refused install leaves no new registry entry.
-    Returns ``(entry, created, install, warnings)``.
+    The install writes only ``.factory/config.yaml`` (kept when it is committed) and the
+    ``.gitignore`` lines, in one commit on base, pushed when there is a remote (see
+    ``plan_init(replace=True)``); agents and workflows come from the library. A refused
+    install leaves no new registry entry. Returns ``(entry, created, install, warnings)``.
     """
     from aifactory.library.install_commit import commit_init
     from aifactory.library.store import LibraryStoreError
@@ -210,11 +210,10 @@ def remove_repo(
     registry: Registry,
     repo_id: str,
     *,
-    export: list[tuple[str, str]],
     uninstall: bool = True,
     environ: Mapping[str, str] | None = None,
 ) -> tuple[RepoEntry, JsonDict | None]:
-    """The dashboard's "remove": export chosen items, delete ``.factory/``, unregister."""
+    """The dashboard's "remove": delete ``.factory/``, unregister."""
     from aifactory.library.store import LibraryStoreError
     from aifactory.library.uninstall import uninstall as remove_factory
 
@@ -224,7 +223,7 @@ def remove_repo(
     done: JsonDict | None = None
     if uninstall and (Path(entry.path) / ".git").exists():
         try:
-            done = remove_factory(Path(entry.path), export=export, environ=environ).to_json()
+            done = remove_factory(Path(entry.path), environ=environ).to_json()
         except LibraryStoreError as exc:
             raise RepoError(exc.code, exc.message, data=dict(exc.data or {})) from exc
     removed = registry.remove(repo_id)

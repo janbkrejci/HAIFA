@@ -158,7 +158,8 @@ agents:
 """,
     )
     roster(repo, change=True, agent="builder", preset="codex")
-    builder, reviewer = roster(repo)["agents"]
+    agents = {a["name"]: a for a in roster(repo)["agents"]}
+    builder, reviewer = agents["builder"], agents["reviewer"]
     assert builder["harness"] == "codex" and reviewer["harness"] == "claude"
     assert reviewer["model"] == "opus"
     raw = yaml.safe_load((repo / ".factory/agents.yaml").read_text())
@@ -170,7 +171,31 @@ def test_explicit_defaults_leave_role_overrides_and_workflows(tmp_path: Path) ->
     workflow = repo / ".factory/workflows/plan-build.yaml"
     before = workflow.read_bytes()
     roster(repo, change=True, model="haiku", thinking="high")
-    planner, builder = roster(repo)["agents"]
+    agents = {a["name"]: a for a in roster(repo)["agents"]}
+    planner, builder = agents["planner"], agents["builder"]
     assert planner["model"] == "opus" and builder["model"] == "haiku"
     assert planner["thinking"] == builder["thinking"] == "high"
     assert workflow.read_bytes() == before
+
+
+def test_inherited_agent_gets_an_override_entry(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    agents = {a["name"]: a for a in roster(repo)["agents"]}
+    assert agents["reviewer"]["origin"] == "library"
+    assert agents["planner"]["origin"] == "repo"
+    result = roster(repo, change=True, agent="reviewer", harness="codex", model="gpt-6.1-sol")
+    assert result["comments_preserved"] is True
+    raw = yaml.safe_load((repo / ".factory/agents.yaml").read_text())
+    assert raw["agents"][-1] == {"name": "reviewer", "harness": "codex", "model": "gpt-6.1-sol"}
+    reviewer = next(a for a in roster(repo)["agents"] if a["name"] == "reviewer")
+    assert (reviewer["harness"], reviewer["origin"]) == ("codex", "library")
+
+
+def test_roster_without_agents_yaml_is_created(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    (repo / ".factory/agents.yaml").unlink()
+    assert {a["origin"] for a in roster(repo)["agents"]} == {"library"}
+    roster(repo, change=True, preset="codex")
+    raw = yaml.safe_load((repo / ".factory/agents.yaml").read_text())
+    assert raw["defaults"]["harness"] == "codex"
+    assert all(a["harness"] == "codex" for a in roster(repo)["agents"])

@@ -118,13 +118,11 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     expect(warning).to_contain_text("Přidej repozitář")
                     warning.locator('a[href="#/repos/add"]').first.click()
                     _inspect(page, repo_a)
-                    fixture = git(repo_a, "rev-parse", "HEAD")
+                    fixture = git(repo_a, "rev-parse", "HEAD:.factory")
                     page.locator('[data-test="inspect-add"]').click()
                     expect(page.locator('[data-test="repo-added"]')).to_be_visible()
-                    # Adding replaced .factory/ with the library's; the run below needs the
-                    # fixture's fake roster and plan-commit workflow back.
-                    git(repo_a, "checkout", fixture, "--", ".factory")
-                    git(repo_a, "commit", "-q", "-m", "test: restore the f3 factory config")
+                    # adding keeps the fixture's committed .factory/ (roster and workflow)
+                    assert git(repo_a, "rev-parse", "HEAD:.factory") == fixture
                     page.locator('[data-test="repo-added-open"]').click()
                     expect(page).to_have_url(re.compile(r"#/r/[^/]+/factory$"))
                     id_a = registered_id(home, repo_a)
@@ -160,7 +158,7 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     assert git(bare, "rev-parse", "main") == installed
                     for repo in (repo_b, bare):
                         assert git(repo, "rev-list", "--count", f"{before_install}..main") == "1"
-                    assert (repo_b / ".factory/manifest.yaml").is_file()
+                    assert (repo_b / ".factory/config.yaml").is_file()
 
                     _nav(page, "runs")
                     for repo, repo_id in ((repo_a, id_a), (repo_b, id_b), (repo_a, id_a)):

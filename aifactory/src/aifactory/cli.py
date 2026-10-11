@@ -42,12 +42,7 @@ if TYPE_CHECKING:
 
 SUBCOMMANDS: tuple[tuple[str, str], ...] = (
     ("check", "check that factory will run in this repo and on this machine"),
-    ("init", "install factory into this repository from the library (or the seed)"),
-    (
-        "update",
-        "update the repo's items from the library (or the seed) file by file; repo changes "
-        "stay without --take or --merge",
-    ),
+    ("init", "install factory into this repository (agents and workflows come from the library)"),
     ("task", "run and inspect backlog tasks"),
     ("backlog", "load and validate the backlog"),
     ("workflow", "validate and inspect workflows"),
@@ -104,8 +99,6 @@ def build_parser() -> argparse.ArgumentParser:
             _add_check_command(child)
         elif name == "init":
             _add_init_command(child)
-        elif name == "update":
-            _add_update_command(child)
         elif name == "harness":
             _add_harness_commands(child)
         elif name == "skills":
@@ -132,13 +125,11 @@ def _add_check_command(parser: argparse.ArgumentParser) -> None:
         "Check, only by reading, whether factory will run in this repository and on this "
         "machine, and what to fix. Reports the state of the repo read from base "
         "(installed, unsupported, uncommitted or none) with its action (config_commit or "
-        "init, or null), the onboarding block of the manifest, and findings {code, scope, "
-        "severity, message, "
+        "init, or null) and findings {code, scope, severity, message, "
         "fix, action}: scope 'repo' is fixed and committed to base, 'machine' is fixed "
         "locally, 'library' is fixed in the library in $HAIFA_HOME; severity is error, "
-        "warning or info; action names the fix (init, update, export, config_commit, "
-        "config_pull) or is null. Items of base that are not synced with "
-        "the library get item_* findings. "
+        "warning or info; action names the fix (init, config_commit, config_pull) or is "
+        "null. "
         "Outside a git repository (without --repo) only the machine and the library are "
         "checked (in_repo false). "
         "Ahead/behind compare base and the library with local remote-tracking refs (no "
@@ -288,12 +279,6 @@ ITEM_TYPES: tuple[str, ...] = ("agent", "workflow", "skill", "extension")  # lib
 def _add_library_commands(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(library_parser=parser)
     sub = parser.add_subparsers(dest="library_command", metavar="<subcommand>")
-    where = sub.add_parser(
-        "where", help="show registered repos using an item, with slot, state and versions"
-    )
-    where.add_argument("type", choices=("agent", "workflow", "skill", "extension"))
-    where.add_argument("name")
-    where.add_argument("--json", action="store_true")
     init = sub.add_parser(
         "init",
         help="create the library from the seed in one commit",
@@ -422,24 +407,21 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
 
 def _add_init_command(parser: argparse.ArgumentParser) -> None:
     parser.description = (
-        "Install factory into a git repository that has none: .factory/config.yaml, "
-        ".factory/agents.yaml, .factory/prompts/<agent>/{system,user}.md, "
-        ".factory/workflows/<name>.yaml and .factory/manifest.yaml (origin and version of "
-        "every item), the backlog directory and the .gitignore lines. Items come from the "
-        "library in the home directory, or from the seed in the package when there is no "
-        "library. Workflows add the agents of their steps; --bind sets harness, model and "
-        "thinking per agent. Three modes. Without --dry-run and --commit the files are "
-        "written to the working tree, existing files are skipped unless --force and nothing "
-        "is committed. --dry-run returns the plan: files with content, blockers, "
-        "warnings, digest, the detected remote, base, provider and harness CLIs (detected) "
-        "and the agents and workflows on offer (available); it writes nothing. --commit makes "
-        "the same plan one commit on base (pushed before base moves; --pr opens a pull "
-        "request from factory-init/<n> instead); --expect DIGEST refuses a plan that changed "
-        "(plan_changed). Blockers: already_installed (run factory update), existing_config "
-        "(HAIFA does not take over existing configuration), config_not_committed (run "
-        "factory config commit), "
-        "dirty_paths, invalid_plan, not_on_base, run_in_progress, base_behind, "
-        "base_diverged. Nothing is written to the library."
+        "Install factory into a git repository that has none: .factory/config.yaml, the "
+        "backlog directory and the .gitignore lines. Agents, workflows, skills and "
+        "extensions are not copied: runs take them from the library in the home directory "
+        "(the seed in the package without a library); a copy in .factory/ wins. Three "
+        "modes. Without --dry-run and --commit the files are written to the working tree, "
+        "existing files are skipped unless --force and nothing is committed. --dry-run "
+        "returns the plan: files with content, blockers, warnings, digest and the detected "
+        "remote, base, provider and harness CLIs (detected); it writes nothing. --commit "
+        "makes the same plan one commit on base (pushed before base moves; --pr opens a "
+        "pull request from factory-init/<n> instead); --expect DIGEST refuses a plan that "
+        "changed (plan_changed). Blockers: already_installed (config.yaml in base), "
+        "existing_config (an sssf installation; HAIFA does not take it over), "
+        "config_not_committed (run factory config commit), dirty_paths, invalid_plan, "
+        "not_on_base, run_in_progress, base_behind, base_diverged. Nothing is written to "
+        "the library."
     )
     parser.add_argument(
         "--repo", metavar="PATH", help="repository to install into (default: the current git repo)"
@@ -459,21 +441,6 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--azure-org", metavar="ORG", help="Azure DevOps organization")
     parser.add_argument("--azure-project", metavar="PROJECT", help="Azure DevOps project")
     parser.add_argument("--azure-repo", metavar="REPO", help="Azure DevOps repository")
-    parser.add_argument(
-        "--agents",
-        metavar="LIST",
-        help="comma-separated agents (default: planner,builder,reviewer,documenter)",
-    )
-    parser.add_argument(
-        "--bind",
-        action="append",
-        default=[],
-        metavar="AGENT=HARNESS[:MODEL[:THINKING]]",
-        help="bind an agent to a harness, model and thinking level (repeatable)",
-    )
-    parser.add_argument(
-        "--workflows", metavar="LIST", help="comma-separated workflows (default: simple-sdlc)"
-    )
     parser.add_argument(
         "--docs-root",
         metavar="DIR",
@@ -496,12 +463,6 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
 
 
-def _split_list(value: str | None) -> list[str] | None:
-    if value is None:
-        return None
-    return [part.strip() for part in value.split(",") if part.strip()]
-
-
 def _init_conflict(args: argparse.Namespace) -> str | None:
     plan = args.dry_run or args.commit
     azure = [args.azure_org, args.azure_project, args.azure_repo]
@@ -519,7 +480,7 @@ def _init_conflict(args: argparse.Namespace) -> str | None:
 
 
 def _init(args: argparse.Namespace) -> int:
-    from aifactory.library.install import init_repo, parse_binding
+    from aifactory.library.install import init_repo
     from aifactory.library.store import LibraryStoreError
     from aifactory.providers.base import ProviderError
 
@@ -535,17 +496,11 @@ def _init(args: argparse.Namespace) -> int:
     provider = args.provider
     if provider is None and any(azure_given.values()):
         provider = "azure"
-    options: dict[str, Any] = {
-        "base": args.base,
-        "agents": _split_list(args.agents),
-        "workflows": _split_list(args.workflows),
-        "docs_root": args.docs_root,
-    }
+    options: dict[str, Any] = {"base": args.base, "docs_root": args.docs_root}
     repo = Path(args.repo) if args.repo else Path.cwd()
     if args.dry_run or args.commit:
         return _init_plan(args, repo, provider, azure_given, options)
     try:
-        bindings = [parse_binding(text) for text in args.bind]
         azure = None
         if provider == "azure":
             if not all(azure_given.values()):
@@ -558,7 +513,6 @@ def _init(args: argparse.Namespace) -> int:
             repo,
             provider=provider or "local",
             azure=azure,
-            bindings=bindings,
             force=args.force,
             **options,
         )
@@ -570,8 +524,6 @@ def _init(args: argparse.Namespace) -> int:
         print(f"{f.action:<11} {f.path}")
     for line in result.gitignore_added:
         print(f"{'gitignore':<11} {line}")
-    library = result.library
-    print(f"source      {'seed' if library is None else f'library {library.name}'}")
     print(f"next: review, commit .factory/ {result.backlog_dir}/ .gitignore to {result.base}")
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
@@ -586,7 +538,6 @@ def _init_plan(
     options: dict[str, Any],
 ) -> int:
     """``factory init --dry-run`` and ``factory init --commit``."""
-    from aifactory.library.install import parse_binding
     from aifactory.library.install_commit import commit_init
     from aifactory.library.store import LibraryStoreError
     from aifactory.providers.base import ProviderError
@@ -600,7 +551,6 @@ def _init_plan(
             dry_run=args.dry_run,
             provider=provider,
             azure=azure,
-            bindings=[parse_binding(text) for text in args.bind],
             **options,
         )
     except (LibraryStoreError, ProviderError) as exc:
@@ -656,15 +606,6 @@ def _library(args: argparse.Namespace) -> int:
 
     label = f"factory library {args.library_command}"
     try:
-        if args.library_command == "where":
-            from aifactory.library.multi_repo import where
-
-            data = where(args.type, args.name)
-            if args.json:
-                return _emit_ok(data)
-            for row in data["repos"]:
-                print(f"{row['repo']['id']} {row['slot']} {row['state']} {row['version']}")
-            return 0
         if args.library_command in ("clone", "status", "pull", "push"):
             return _library_remote(args)
         if args.library_command == "init":
@@ -860,7 +801,7 @@ def _add_config_commands(parser: argparse.ArgumentParser) -> None:
         "commit",
         help="commit uncommitted shared .factory/ config to base (push first, then move base)",
         description="Commit the uncommitted shared configuration (the paths of config status: "
-        "config.yaml, agents.yaml, roles.yaml, manifest.yaml, prompts/, workflows/, "
+        "config.yaml, agents.yaml, roles.yaml, prompts/, workflows/, "
         "extensions/ and the repo skills in .claude/skills/ and .agents/skills/; never "
         "local.yaml) to base "
         "in one commit, built on base without a checkout; other staged and unstaged work stays. "
@@ -889,29 +830,8 @@ def _add_config_commands(parser: argparse.ArgumentParser) -> None:
         "changes in the checkout on base (dirty_base) or no remote (no_remote) are refused "
         "and nothing changes.",
     )
-    items = sub.add_parser(
-        "items",
-        help="states of the .factory/ items against the library (local, synced, modified, ...)",
-        description="List every agent, workflow, skill and extension of the repo and of "
-        ".factory/manifest.yaml with its state against the library: local (not in the "
-        "manifest), missing (in the manifest, no files), synced (repo = library head), "
-        "unknown (manifest version not in the item's library history), outdated (repo = "
-        "manifest, library moved on), modified (repo changed, library did not) and diverged "
-        "(both changed), checked in this order. Versions: repo_version (R), manifest_version "
-        "(M) and library_version (L, the seed when there is no library). Without --base the "
-        "working tree is compared; --base [REF] compares the tree of base (default: `base` in "
-        ".factory/config.yaml).",
-    )
-    items.add_argument(
-        "--base",
-        nargs="?",
-        const="",
-        default=None,
-        metavar="REF",
-        help="compare the committed tree of base instead of the working tree",
-    )
     _add_config_edit_commands(sub)
-    for child in (commit, pull, items):
+    for child in (commit, pull):
         child.add_argument("--json", action="store_true", help="print machine-readable JSON")
         child.add_argument(
             "--repo",
@@ -921,8 +841,8 @@ def _add_config_commands(parser: argparse.ArgumentParser) -> None:
 
 
 _CONFIG_MODES = (
-    "Modes: --dry-run returns the plan (files {path, action, diff, content}, added, kept, "
-    "removed, bindings, blockers, validation, digest) and writes nothing; without an option "
+    "Modes: --dry-run returns the plan (files {path, action, diff, content}, removed, "
+    "bindings, blockers, validation, digest) and writes nothing; without an option "
     "the plan is written to the working tree (nothing committed; factory config commit "
     "commits it later; --expect DIGEST of a --dry-run refuses a changed plan with "
     "plan_changed; a run in progress blocks with run_in_progress); --commit [--pr] [--expect "
@@ -931,50 +851,25 @@ _CONFIG_MODES = (
     "plan. The planned configuration must load and every workflow of the repo must pass its "
     "preflight (invalid_plan). Blockers: run_in_progress, invalid_plan (working tree); "
     "dirty_paths, invalid_plan, not_on_base, run_in_progress, base_behind, base_diverged "
-    "(--commit); dirty_paths, invalid_plan (--pr). A repo without .factory/manifest.yaml is "
-    "not_onboarded (fix: factory init). Nothing to change: changed false, exit 0."
+    "(--commit); dirty_paths, invalid_plan (--pr). Nothing to change: changed false, exit 0."
 )
 
 
 def _add_config_edit_commands(sub: Any) -> None:
-    """``factory config add``, ``set`` and ``remove``."""
-    add = sub.add_parser(
-        "add",
-        help="add an item from the library (or the seed) to the repo, with its dependencies",
-        description="Copy an agent, workflow, skill or extension from the library HEAD (the "
-        "seed when there is no library) into the repo and record it in "
-        ".factory/manifest.yaml. Closure: a workflow brings the agents of its steps (roles "
-        "from the repo registry or agent: of a step), an agent the skills and extensions of "
-        "its defaults; dependencies already in the repo are kept (kept, reason present). "
-        "Skills go to .claude/skills/<name>/ with a copy in .agents/skills/<name>/. The "
-        "roster entry of a new agent slot takes the item defaults ($specs_dir/ and "
-        "$docs_dir/ under docs_root of config.yaml) overridden by --harness, --model and "
-        "--thinking. "
-        "--as SLOT (agents and workflows) installs under another name; a slot with other "
-        "content is slot_taken (fix: --as NEW), with the same content a no-op. " + _CONFIG_MODES,
-    )
-    add.add_argument("type", choices=("agent", "workflow", "skill", "extension"))
-    add.add_argument("name", help="item name in the library")
-    add.add_argument("--as", dest="slot", metavar="SLOT", help="name in the repo (agent, workflow)")
-    add.add_argument("--agent", metavar="A", help="bind the skill or extension to this agent")
-    add.add_argument(
-        "--repos", metavar="all|ID,ID", help="operate sequentially on registered repos"
-    )
-    add.add_argument("--harness", metavar="NAME", help="harness of the new agent slot")
-    add.add_argument("--model", metavar="ID", help="model of the new agent slot")
-    add.add_argument("--thinking", metavar="LEVEL", help="thinking level of the new agent slot")
+    """``factory config set``, ``remove`` and ``move``."""
     set_ = sub.add_parser(
         "set",
-        help="change the bindings of one agent slot in .factory/agents.yaml",
-        description="Change only the bindings of an agent slot (harness, model, thinking, "
+        help="change the bindings of one agent in .factory/agents.yaml",
+        description="Change only the bindings of an agent (harness, model, thinking, "
         "tools, writes, color) by a round trip that keeps comments and key order; the "
-        "manifest and the prompts stay. --tools and --writes take a comma list ('' = empty "
+        "prompts stay. An agent the repo inherits from the library gets an entry that "
+        "overrides only these keys. --tools and --writes take a comma list ('' = empty "
         "list, '-' removes the key; writes expand $specs_dir/ and $docs_dir/); --color "
         "#rrggbb ('-' removes it). An unknown thinking level or harness is invalid_value, an "
-        "unknown slot unknown_item. " + _CONFIG_MODES,
+        "agent neither in the repo nor in the library unknown_item. " + _CONFIG_MODES,
     )
     set_.add_argument("type", choices=("agent",))
-    set_.add_argument("name", metavar="slot", help="agent slot in .factory/agents.yaml")
+    set_.add_argument("name", metavar="agent", help="agent name")
     set_.add_argument("--harness", metavar="NAME", help="harness (claude, codex, pi)")
     set_.add_argument("--model", metavar="ID", help="model id")
     set_.add_argument("--thinking", metavar="LEVEL", help="thinking level")
@@ -983,70 +878,32 @@ def _add_config_edit_commands(sub: Any) -> None:
     set_.add_argument("--color", metavar="HEX", help="dashboard color #rrggbb")
     remove = sub.add_parser(
         "remove",
-        help="remove an item from the repo (refused while it is in use)",
-        description="Remove an agent (roster entry, prompts), workflow, skill (both "
-        ".claude/skills/ and .agents/skills/) or extension and its manifest entry. Refused "
-        "with in_use (data.used_by) while a workflow of the repo or roles.yaml names the "
-        "agent, a backlog task in base names the workflow, or another agent of the manifest "
-        "binds the skill or extension. --prune also removes the dependencies recorded in "
-        "the manifest that nothing else uses (removed, reason pruned; kept, reason in_use); "
-        "local items are never pruned. " + _CONFIG_MODES,
+        help="remove the repo's own copy of an item (the library's then applies)",
+        description="Remove the repo copy of an agent (roster entry, prompts), workflow, "
+        "skill (both .claude/skills/ and .agents/skills/) or extension; the library item of "
+        "the same name then applies. Without one, refused with in_use (data.used_by) while "
+        "a workflow of the repo or roles.yaml names the agent, a backlog task in base names "
+        "the workflow, or a roster agent binds the skill or extension. " + _CONFIG_MODES,
     )
-    remove.add_argument("type", choices=("agent", "workflow", "skill", "extension"))
-    remove.add_argument("name", help="item name in the repo")
-    remove.add_argument("--prune", action="store_true", help="also remove unused dependencies")
-    export = sub.add_parser(
-        "export",
-        help="write the copy of an item in the repo into the library, then connect it",
+    move = sub.add_parser(
+        "move",
+        help="move the repo's own copy of an item into the library",
         description="Write the repo copy of an agent (roster purpose and prompts), workflow, "
-        "skill or extension into the library and then record it in .factory/manifest.yaml "
-        "(the library item and its version). An item of the manifest becomes the next "
-        "version of its library item; with --as NEW (agents and workflows) or for a local "
-        "item (no manifest entry) it becomes a new library item, and a library item of that "
-        "name with other content is item_exists (fix: --as NEW). When the library head moved "
-        "on since the manifest version and the repo copy differs from it, the export is "
-        "library_changed_since (fix: factory update, or --as NEW). An exported agent keeps "
-        "the agent.yaml of its library item with the roster purpose; a new one gets its "
-        "defaults from the roster entry. Order: the library is written first (library.lock, "
-        "fetch, library_behind, library_diverged, library_dirty, push without force: a "
-        "rejected push is push_failed and the repo is not touched), then the repo. When the "
-        "repo write fails after the library push, the library holds an unused version "
-        "(data.library_commit) and the same export run again connects it. data.export has "
-        "item, action (create, update, connect), version and the repo, manifest and library "
-        "versions; data.library_plan the library files; data.library_commit the library "
-        "commit. Moving an agent to another repo: export it here, then factory config add "
-        "agent NAME in the other repo. The digest covers the library and the repo plan. "
-        + _CONFIG_MODES,
+        "skill or extension into the library under its name (create or replace), then "
+        "delete it from the repo; the repo inherits it from the library from then on. A "
+        "moved agent keeps the agent.yaml defaults of its library item with the repo purpose; "
+        "a new one takes its defaults from the roster entry. Its roster entry keeps only "
+        "the bindings (an override), an entry with nothing else is removed. Order: the "
+        "library is written first (library.lock, fetch, library_behind, library_diverged, "
+        "library_dirty, push without force: a rejected push is push_failed and the repo is "
+        "not touched), then the repo. Without a library: library_missing. data.library_plan "
+        "has the library files, data.library_commit the library commit. The digest covers "
+        "the library and the repo plan. " + _CONFIG_MODES,
     )
-    export.add_argument("type", choices=("agent", "workflow", "skill", "extension"))
-    export.add_argument("name", help="item name in the repo")
-    export.add_argument(
-        "--as",
-        dest="slot",
-        metavar="NEW",
-        help="export as a new library item NEW (agent, workflow)",
-    )
-    revert = sub.add_parser(
-        "revert",
-        help="put the copy of an item in the repo back to the manifest version or the head",
-        description="Replace the repo copy of an item with a library version: --to manifest "
-        "(default) the version recorded in .factory/manifest.yaml, found in the history of "
-        "the library item (unknown_version, state unknown, when it is not there; fix: --to "
-        "head), --to head the library head (the seed without a library), which also moves the "
-        "manifest version. Files the version does not have are removed; the bindings in "
-        "agents.yaml stay, only an agent's purpose follows the version. A local item (no "
-        "manifest entry) is unknown_item. data.revert has to, item, version, commit and the "
-        "repo version before. " + _CONFIG_MODES,
-    )
-    revert.add_argument("type", choices=("agent", "workflow", "skill", "extension"))
-    revert.add_argument("name", help="item name in the repo")
-    revert.add_argument(
-        "--to",
-        choices=("manifest", "head"),
-        default="manifest",
-        help="the version to go back to (default: manifest)",
-    )
-    for child in (add, set_, remove, export, revert):
+    for child in (remove, move):
+        child.add_argument("type", choices=("agent", "workflow", "skill", "extension"))
+        child.add_argument("name", help="item name in the repo")
+    for child in (set_, remove, move):
         child.add_argument("--dry-run", action="store_true", help="only print the plan")
         child.add_argument(
             "--commit", action="store_true", help="commit to base in one commit (default: write)"
@@ -1055,32 +912,13 @@ def _add_config_edit_commands(sub: Any) -> None:
             "--pr", action="store_true", help="with --commit: open a pull request instead"
         )
         child.add_argument(
-            "--expect",
-            action="append",
-            metavar="DIGEST",
-            help="digest (repeat ID=DIGEST with --repos)",
+            "--expect", metavar="DIGEST", help="commit only if the plan still has this digest"
         )
         child.add_argument("-m", "--message", metavar="TEXT", help="commit message (--commit)")
         child.add_argument("--json", action="store_true", help="print machine-readable JSON")
         child.add_argument(
             "--repo", metavar="PATH", help="repository (default: the current git repo)"
         )
-    diff = sub.add_parser(
-        "diff",
-        help="diff the repo copy of an item against the manifest version and the library head",
-        description="Read only. Compare the working-tree copy of an item with the version in "
-        ".factory/manifest.yaml (from the library history) and with the library head (the "
-        "seed without a library). data.manifest and data.head each have available (false "
-        "with reason local, unknown or unknown_item), version, commit, same and files[] "
-        "{path, status (added: only in the repo, removed: only in the library version, "
-        "modified, mode), binary, diff (unified, library version first)}; an agent's purpose "
-        "is the entry .factory/agents.yaml#NAME.purpose. data.state is the item state of "
-        "config items; data.repo_version, manifest_version and library_version are R, M, L.",
-    )
-    diff.add_argument("type", choices=("agent", "workflow", "skill", "extension"))
-    diff.add_argument("name", help="item name in the repo")
-    diff.add_argument("--json", action="store_true", help="print machine-readable JSON")
-    diff.add_argument("--repo", metavar="PATH", help="repository (default: the current git repo)")
 
 
 def _config_edit_conflict(args: argparse.Namespace) -> str | None:
@@ -1094,7 +932,7 @@ def _config_edit_conflict(args: argparse.Namespace) -> str | None:
 
 
 def _config_edit(args: argparse.Namespace) -> int:
-    """``factory config add|set|remove|export|revert``."""
+    """``factory config set|remove|move``."""
     from aifactory.library.config_edit import run_config
     from aifactory.library.store import LibraryStoreError
     from aifactory.providers.base import ProviderError
@@ -1104,26 +942,10 @@ def _config_edit(args: argparse.Namespace) -> int:
     conflict = _config_edit_conflict(args)
     if conflict is not None:
         return _library_fail(LibraryStoreError("conflicting_options", conflict), args.json, label)
-    options: dict[str, Any]
-    if command == "add":
-        options = {k: getattr(args, k) for k in ("slot", "harness", "model", "thinking", "agent")}
-    elif command == "set":
+    options: dict[str, Any] = {}
+    if command == "set":
         keys = ("harness", "model", "thinking", "tools", "writes", "color")
         options = {k: getattr(args, k) for k in keys}
-    elif command == "export":
-        options = {"slot": args.slot}
-    elif command == "revert":
-        options = {"to": args.to}
-    else:
-        options = {"prune": args.prune}
-    if getattr(args, "repos", None) is not None:
-        return _multi_repo(args, "add", options)
-    if args.expect and len(args.expect) != 1:
-        return _library_fail(
-            LibraryStoreError("invalid_value", "use one --expect for a single repo"),
-            args.json,
-            label,
-        )
     try:
         result = run_config(
             command,
@@ -1133,7 +955,7 @@ def _config_edit(args: argparse.Namespace) -> int:
             dry_run=args.dry_run,
             commit=args.commit,
             pr=args.pr,
-            expect=args.expect[0] if args.expect else None,
+            expect=args.expect,
             message=args.message,
             **options,
         )
@@ -1148,18 +970,8 @@ def _config_edit(args: argparse.Namespace) -> int:
             print(f"{f.action:<7} library:{f.path}")
     for f in publish.files:
         print(f"{f.action:<7} {f.path}")
-    for key in ("export", "revert"):
-        info = plan.change.detail.get(key)
-        if info:
-            how = info.get("action", info.get("to"))
-            print(f"{key:<7} {info['item']} {info['short_version']} ({how})")
-    for what, rows in (
-        ("added", plan.change.added),
-        ("kept", plan.change.kept),
-        ("removed", plan.change.removed),
-    ):
-        for row in rows:
-            print(f"{what:<7} {row['type']} {row['name']} ({row['reason']})")
+    for row in plan.change.removed:
+        print(f"removed {row['type']} {row['name']} ({row['reason']})")
     if result.dry_run:
         for b in publish.blockers:
             print(f"blocked: {b.code}: {b.message}")
@@ -1182,229 +994,6 @@ def _config_edit(args: argparse.Namespace) -> int:
         )
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
-    return 0
-
-
-def _multi_repo(args: argparse.Namespace, command: str, options: dict[str, Any]) -> int:
-    from aifactory.library.multi_repo import run_repos
-    from aifactory.library.store import LibraryStoreError
-
-    if args.repo:
-        return _library_fail(
-            LibraryStoreError("conflicting_options", "--repo and --repos conflict"),
-            args.json,
-            "factory " + command,
-        )
-    if command == "add":
-        options = {"type": args.type, "name": args.name, **options}
-    try:
-        data = run_repos(
-            command,
-            args.repos,
-            dry_run=args.dry_run,
-            commit=args.commit,
-            pr=args.pr,
-            expect=args.expect or (),
-            message=args.message,
-            **options,
-        )
-    except LibraryStoreError as exc:
-        return _library_fail(exc, args.json, "factory " + command)
-    if args.json:
-        return _emit_ok(data)
-    for row in data["repos"]:
-        print(f"{row['repo']['id']} {row['status']}")
-        if row["plan"] is not None:
-            print(f"  digest {row['plan']['digest']}")
-    return 0
-
-
-def _add_update_command(parser: argparse.ArgumentParser) -> None:
-    parser.description = (
-        "Bring new versions of the repo's items (.factory/manifest.yaml) from the library "
-        "HEAD, or the seed when there is no library, file by file. Units: an agent's purpose, "
-        "system.md and user.md; a workflow's file; every file of a skill or extension "
-        "(added and deleted ones too). Per unit, base is the manifest version (from the "
-        "library history), ours the repo copy, theirs the library head: ours = base takes "
-        "theirs (take), theirs = base keeps ours (keep), ours = theirs is same, else a "
-        "conflict: ours stays and data.update.items[].files[] shows ours_diff and "
-        "theirs_diff. --take TYPE/NAME[:FILE] takes theirs (taken); --merge TYPE/NAME "
-        "takes the result of git merge-file (merged) only without conflicts and when the "
-        "merged item is valid, else merge_conflict and nothing is written. An item whose "
-        "manifest version is not in the history (state unknown) has no base: diff shows ours "
-        "against theirs, ours stays unless --take. A missing item gets its files back "
-        "(restore). The manifest moves to the head and written_by to this HAIFA; missing "
-        "prompts of declared agents and the runtime lines of .gitignore are added. "
-        "Migrations are listed with their diff (data.update.migrations) and run only with "
-        "--migrate ID (m001: levels module -> project, comments kept). data.update has "
-        "items, conflicts, gitignore, migrations and manifest. Refused: not_onboarded (no "
-        "manifest in base; data.fix factory init), config_not_committed "
-        "(the manifest only in the working tree), format_unsupported. " + _CONFIG_MODES
-    )
-    parser.add_argument(
-        "--take",
-        action="append",
-        default=[],
-        metavar="TYPE/NAME[:FILE]",
-        help="take the library version of an item or of one file of it (repeatable)",
-    )
-    parser.add_argument(
-        "--merge",
-        action="append",
-        default=[],
-        metavar="TYPE/NAME",
-        help="merge the conflicting files of an item with git merge-file (repeatable)",
-    )
-    parser.add_argument(
-        "--migrate",
-        action="append",
-        default=[],
-        metavar="ID",
-        help="run a migration listed by the plan, e.g. m001 (repeatable)",
-    )
-    parser.add_argument(
-        "--repos", metavar="all|ID,ID", help="operate sequentially on registered repos"
-    )
-    parser.add_argument(
-        "--item",
-        action="append",
-        default=[],
-        metavar="TYPE/NAME",
-        help="update only selected items (repeatable)",
-    )
-    parser.add_argument("--dry-run", action="store_true", help="only print the plan")
-    parser.add_argument(
-        "--commit", action="store_true", help="commit to base in one commit (default: write)"
-    )
-    parser.add_argument(
-        "--pr", action="store_true", help="with --commit: open a pull request instead"
-    )
-    parser.add_argument(
-        "--expect", action="append", metavar="DIGEST", help="digest (repeat ID=DIGEST with --repos)"
-    )
-    parser.add_argument("-m", "--message", metavar="TEXT", help="commit message (--commit)")
-    parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
-    parser.add_argument("--repo", metavar="PATH", help="repository (default: the current git repo)")
-
-
-def _update(args: argparse.Namespace) -> int:
-    """``factory update``."""
-    from aifactory.library.config_edit import hist_short
-    from aifactory.library.store import LibraryStoreError
-    from aifactory.library.update import run_update
-    from aifactory.providers.base import ProviderError
-
-    label = "factory update"
-    conflict = _config_edit_conflict(args)
-    if conflict is not None:
-        return _library_fail(LibraryStoreError("conflicting_options", conflict), args.json, label)
-    if args.repos is not None:
-        return _multi_repo(
-            args,
-            "update",
-            {"item": args.item, "take": args.take, "merge": args.merge, "migrate": args.migrate},
-        )
-    if args.expect and len(args.expect) != 1:
-        return _library_fail(
-            LibraryStoreError("invalid_value", "use one --expect for a single repo"),
-            args.json,
-            label,
-        )
-    try:
-        result = run_update(
-            Path(args.repo) if args.repo else Path.cwd(),
-            item=args.item,
-            take=args.take,
-            merge=args.merge,
-            migrate=args.migrate,
-            dry_run=args.dry_run,
-            commit=args.commit,
-            pr=args.pr,
-            expect=args.expect[0] if args.expect else None,
-            message=args.message,
-        )
-    except (LibraryStoreError, ProviderError) as exc:
-        return _library_fail(exc, args.json, label)
-    if args.json:
-        return _emit_ok(result.to_json(), result.warnings)
-    plan = result.plan
-    publish = plan.publish
-    info = plan.change.detail.get("update", {})
-    for item in info.get("items", []):
-        versions = (
-            f"{hist_short(item['manifest_version'])} -> {hist_short(item['library_version'])}"
-        )
-        print(f"{item['action']:<8} {item['type']}/{item['name']} {versions}")
-        for f in item["files"]:
-            if f["status"] == "same":
-                continue
-            print(f"  {f['status']:<8} {f['file']}")
-            for key in ("ours_diff", "theirs_diff", "diff"):
-                text = f.get(key)
-                if text and (f["status"] in ("conflict", "unknown") or result.dry_run):
-                    print(text, end="" if text.endswith("\n") else "\n")
-    for row in info.get("restored", []):
-        print(f"restore  agent/{row['name']} {', '.join(row['files'])}")
-    for line in info.get("gitignore", {}).get("added", []):
-        print(f"add      .gitignore {line}")
-    for migration in info.get("migrations", []):
-        how = "applied" if migration["applied"] else f"run with --migrate {migration['id']}"
-        print(f"migrate  {migration['id']} {migration['title']} ({how})")
-        if migration["diff"]:
-            text = migration["diff"]
-            print(text, end="" if text.endswith("\n") else "\n")
-    for f in publish.files:
-        print(f"{f.action:<7} {f.path}")
-    if result.dry_run:
-        for b in publish.blockers:
-            print(f"blocked: {b.code}: {b.message}")
-        print(f"digest  {publish.digest}")
-        if plan.changed and not publish.blockers:
-            argv = [a for a in sys.argv[1:] if a not in ("--dry-run", "--json")]
-            print(f"next: factory {' '.join(argv)} --expect {publish.digest}")
-    elif not plan.changed:
-        print("nothing to change")
-    elif result.written:
-        print("next: factory config commit")
-    elif result.pr is not None:
-        print(f"opened {result.pr.url} from {result.branch}")
-    else:
-        pushed = "pushed" if result.pushed else "not pushed"
-        moved = "base advanced" if result.advanced else "base not advanced"
-        short = (result.commit or "")[:12]
-        print(
-            f"committed {len(publish.files)} file(s) to {publish.base} ({short}, {pushed}, {moved})"
-        )
-    for warning in result.warnings:
-        print(f"warning: {warning}", file=sys.stderr)
-    return 0
-
-
-def _config_diff(args: argparse.Namespace) -> int:
-    """``factory config diff``: read only."""
-    from aifactory.library.config_transfer import diff_item
-    from aifactory.library.store import LibraryStoreError
-    from aifactory.providers.base import ProviderError
-
-    try:
-        data = diff_item(Path(args.repo) if args.repo else Path.cwd(), args.type, args.name)
-    except (LibraryStoreError, ProviderError) as exc:
-        return _library_fail(exc, args.json, "factory config diff")
-    if args.json:
-        return _emit_ok(data)
-    print(f"{data['type']} {data['name']}: {data['state']}")
-    for label in ("manifest", "head"):
-        side = data[label]
-        if not side["available"]:
-            print(f"-- {label}: not available ({side['reason']})")
-            continue
-        state = "same" if side["same"] else f"{len(side['files'])} file(s) differ"
-        print(f"-- {label} {side['short_version']}: {state}")
-        for f in side["files"]:
-            if f["diff"]:
-                print(f["diff"], end="" if f["diff"].endswith("\n") else "\n")
-            else:
-                print(f"{f['status']} {f['path']}")
     return 0
 
 
@@ -1474,12 +1063,8 @@ def _config(args: argparse.Namespace) -> int:
         return _config_commit(args)
     if args.config_command == "pull":
         return _config_pull(args)
-    if args.config_command == "items":
-        return _config_items(args)
-    if args.config_command in ("add", "set", "remove", "export", "revert"):
+    if args.config_command in ("set", "remove", "move"):
         return _config_edit(args)
-    if args.config_command == "diff":
-        return _config_diff(args)
     if args.config_command == "roster":
         return _config_roster(args)
     return _config_show(args)
@@ -1516,31 +1101,6 @@ def _config_roster(args: argparse.Namespace) -> int:
         print(data["diff"] or "no changes", end="\n")
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)
-    return 0
-
-
-def _config_items(args: argparse.Namespace) -> int:
-    from aifactory.config import ConfigError
-    from aifactory.library.state import repo_items
-    from aifactory.providers.base import ProviderError
-
-    label = "factory config items"
-    try:
-        root = Path(args.repo) if args.repo else Path.cwd()
-        data = repo_items(root, args.base)
-    except ConfigError as exc:
-        return _fail_from_exception(exc, args.json, label)
-    except ProviderError as exc:
-        return _library_fail(exc, args.json, label)
-    if args.json:
-        return _emit_ok(data)
-    if data["manifest"] is None:
-        print("no .factory/manifest.yaml (format 0): every item is local")
-    for item in data["items"]:
-        short = item["short"]
-        versions = " ".join(f"{k}={v or '-'}" for k, v in short.items())
-        origin = f" <- {item['item']}" if item["item"] and item["item"] != item["name"] else ""
-        print(f"{item['type']:<9} {item['name'] + origin:<32} {item['state']:<9} {versions}")
     return 0
 
 
@@ -3240,8 +2800,6 @@ def _dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         return _check(args)
     if command == "init":
         return _init(args)
-    if command == "update":
-        return _update(args)
     if command == "harness":
         return _harness(args)
     if command == "skills":

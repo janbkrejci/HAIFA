@@ -9,6 +9,7 @@ from test_web_factory import AGENTS, Api, api, git, home, install
 
 from aifactory.config.roster import PRESETS
 from aifactory.harness.override import THINKING_LEVELS
+from aifactory.workflow import DEFAULT_WORKFLOWS_DIR
 
 __all__ = ["api", "home"]
 
@@ -28,8 +29,10 @@ def test_roster_lists_presets_thinking_levels_and_step_overrides(api: Api, tmp_p
     assert plain["presets"] == PRESETS
     assert plain["thinking_levels"] == list(THINKING_LEVELS)
     assert plain["workflow_overrides"] == []
+    # the repo's own copy of the library workflow, with step overrides
     workflow = root / WORKFLOW
-    text = workflow.read_text(encoding="utf-8")
+    workflow.parent.mkdir(parents=True, exist_ok=True)
+    text = (DEFAULT_WORKFLOWS_DIR / "simple-sdlc.yaml").read_text(encoding="utf-8")
     assert BUILD in text
     workflow.write_text(
         text.replace(BUILD, BUILD + "      harness: codex\n      thinking: high\n"),
@@ -52,14 +55,15 @@ def test_roster_lists_presets_thinking_levels_and_step_overrides(api: Api, tmp_p
 def test_roster_preview_writes_nothing(api: Api, tmp_path: Path) -> None:
     install(api, "a")
     root = tmp_path / "a"
-    before = (root / AGENTS).read_bytes()
+    assert not (root / AGENTS).exists()  # every agent comes from the library
     data = api.post("a", "factory/roster", {"preset": "codex", "dry_run": True})["data"]
     assert data["changed"] is True and data["dry_run"] is True
     assert "codex" in data["diff"]
     assert {a["harness"] for a in data["agents"]} == {"codex"}
     assert {a["harness"] for a in data["before"]} == {"claude"}
+    assert {a["origin"] for a in data["agents"]} == {"library"}
     assert "path" not in data
-    assert (root / AGENTS).read_bytes() == before
+    assert not (root / AGENTS).exists()
 
 
 def test_roster_change_writes_the_working_tree_only(api: Api, tmp_path: Path) -> None:
@@ -72,7 +76,7 @@ def test_roster_change_writes_the_working_tree_only(api: Api, tmp_path: Path) ->
     assert data["changed"] is True
     builder = next(a for a in data["agents"] if a["name"] == "builder")
     assert builder["thinking"] == "high"
-    assert _agents(root)["builder"]["thinking"] == "high"
+    assert _agents(root)["builder"] == {"name": "builder", "thinking": "high"}
     assert git(root, "rev-parse", "HEAD") == head
     assert AGENTS in git(root, "status", "--porcelain")
     # the same change again changes nothing
@@ -82,7 +86,6 @@ def test_roster_change_writes_the_working_tree_only(api: Api, tmp_path: Path) ->
 
 def test_invalid_roster_change_is_422(api: Api, tmp_path: Path) -> None:
     install(api, "a")
-    before = (tmp_path / "a" / AGENTS).read_bytes()
     for body in (
         {"thinking": "enormous"},
         {"agent": "nobody", "model": "x"},
@@ -91,7 +94,7 @@ def test_invalid_roster_change_is_422(api: Api, tmp_path: Path) -> None:
     ):
         error = api.post("a", "factory/roster", body, status=422)["error"]
         assert error["code"] == "invalid_config", body
-    assert (tmp_path / "a" / AGENTS).read_bytes() == before
+    assert not (tmp_path / "a" / AGENTS).exists()
 
 
 def test_roster_body_validation(api: Api, tmp_path: Path) -> None:

@@ -6,12 +6,10 @@ import {
   fetchRepoRemoval,
   removeRepo,
   type FactoryState,
-  type OwnItem,
   type RepoRemoval,
-  type Onboarding,
   type RepoStatus,
 } from './api'
-import { fmtTime, errorText, shortSha } from './format'
+import { errorText } from './format'
 import { useConfirm, type ConfirmOptions } from './confirm'
 import { OVERVIEW_HREF, currentRepoId } from './router'
 
@@ -43,22 +41,6 @@ export function factoryStateText(state: string | null | undefined): string {
   return FACTORY_STATE_TEXT[state as FactoryState] ?? state
 }
 
-export const ONBOARDING_SOURCE_TEXT: Record<string, string> = {
-  init: 'factory init',
-}
-
-export function onboardingSourceText(source: string): string {
-  return ONBOARDING_SOURCE_TEXT[source] ?? source
-}
-
-/** Who installed factory into the repo, when and from what (`Nainstaloval … z …`). */
-export function onboardingText(o: Onboarding): string {
-  const parts = [`Nainstaloval ${o.by ?? 'neznámo'} ${fmtTime(o.at)} z ${onboardingSourceText(o.source)}`]
-  if (o.source_commit) parts.push(`commit ${shortSha(o.source_commit, 8)}`)
-  if (o.factory) parts.push(`factory ${o.factory}`)
-  return parts.join(', ')
-}
-
 /**
  * The question before a repo is removed: with a removal plan it says what the commit on base
  * deletes and what stays; without one (the plan could not be read) only the registry entry goes.
@@ -82,15 +64,9 @@ export function removeConfirm(
   }
 }
 
-/** One own item of the repo and whether it goes to the library before the removal. */
-export interface ExportChoice {
-  item: OwnItem
-  export: boolean
-}
-
 /**
  * Removing a repo: reads its removal plan (GET .../removal), asks in the shared ConfirmDialog
- * (render `RemoveRepoDialog` with this object), sends DELETE with the chosen exports and
+ * (render `RemoveRepoDialog` with this object), sends DELETE and
  * calls `onRemoved`. A repo removed by someone else (`unknown_repo`) counts as removed.
  * Removing the open repo goes to the overview.
  */
@@ -99,7 +75,6 @@ export function useRemoveRepo(onRemoved: (id: string) => void) {
   const removing = ref<string | null>(null)
   const error = ref<string | null>(null)
   const plan = ref<RepoRemoval | null>(null)
-  const choices = ref<ExportChoice[]>([])
 
   function gone(id: string): true {
     if (currentRepoId() === id) window.location.hash = OVERVIEW_HREF
@@ -110,7 +85,6 @@ export function useRemoveRepo(onRemoved: (id: string) => void) {
   async function remove(repo: { id: string; name: string; path: string }): Promise<boolean> {
     error.value = null
     plan.value = null
-    choices.value = []
     let planError: string | null = null
     removing.value = repo.id
     try {
@@ -125,12 +99,10 @@ export function useRemoveRepo(onRemoved: (id: string) => void) {
       removing.value = null
     }
     const current = plan.value
-    choices.value = (current?.own_items ?? []).map((item) => ({ item, export: true }))
     if (!(await ask(removeConfirm(repo, current, planError)))) return false
     removing.value = repo.id
     try {
-      const exported = choices.value.filter((c) => c.export).map((c) => ({ type: c.item.type, name: c.item.name }))
-      await removeRepo(repo.id, current ? { export: exported } : { uninstall: false })
+      await removeRepo(repo.id, current ? {} : { uninstall: false })
     } catch (err) {
       if (!(err instanceof ApiError && err.code === 'unknown_repo')) {
         error.value = errorText(err)
@@ -142,7 +114,7 @@ export function useRemoveRepo(onRemoved: (id: string) => void) {
     return gone(repo.id)
   }
 
-  return { dialog, confirm, cancel, remove, removing, error, plan, choices }
+  return { dialog, confirm, cancel, remove, removing, error, plan }
 }
 
 export type RepoRemover = ReturnType<typeof useRemoveRepo>

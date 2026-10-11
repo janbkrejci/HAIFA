@@ -20,7 +20,7 @@ SHARED_FILES = (
     ".factory/config.yaml",
     ".factory/agents.yaml",
     ".factory/roles.yaml",
-    ".factory/manifest.yaml",
+    ".factory/manifest.yaml",  # written by older installs; its removal is committed like config
 )
 SHARED_DIRS = (
     ".factory/prompts/",

@@ -285,16 +285,6 @@ export async function deleteGlobal<T>(path: string, body?: unknown): Promise<T> 
 
 export type FactoryState = 'none' | 'uncommitted' | 'unsupported' | 'installed'
 
-/** The `onboarding` block of the manifest in base. */
-export interface Onboarding {
-  source: string
-  source_commit: string | null
-  at: string
-  by: string | null
-  factory: string
-  library_commit: string | null
-}
-
 /** The factory state of a repo (`factory` of inspect and of a RepoItem). */
 export interface RepoFactory {
   repo: string
@@ -302,9 +292,6 @@ export interface RepoFactory {
   commit: string | null
   state: FactoryState
   action: string | null
-  onboarding: Onboarding | null
-  library: Record<string, unknown> | null
-  manifest_error: string | null
 }
 
 /** Why a folder cannot be added (`problem` of inspect). */
@@ -358,13 +345,6 @@ export function addRepo(path: string): Promise<AddRepoResult> {
   return postGlobal<AddRepoResult>('/repos', { path })
 }
 
-/** A repo's own agent, workflow, skill or extension: not as the library holds it. */
-export interface OwnItem {
-  type: string
-  name: string
-  state: string
-}
-
 export interface RemovalBlocker {
   code: string
   message: string
@@ -380,7 +360,6 @@ export interface RepoRemoval {
   digest: string
   files: CommitFile[]
   blockers: RemovalBlocker[]
-  own_items: OwnItem[]
 }
 
 export function fetchRepoRemoval(id: string): Promise<RepoRemoval> {
@@ -388,19 +367,15 @@ export function fetchRepoRemoval(id: string): Promise<RepoRemoval> {
 }
 
 export interface RemoveRepoOptions {
-  export?: { type: string; name: string }[]
   uninstall?: boolean
 }
 
 export interface RemoveRepoResult {
   removed: Record<string, unknown>
-  uninstall: { committed: boolean; commit: string | null; pushed: boolean; exported: { type: string; name: string }[] } | null
+  uninstall: { committed: boolean; commit: string | null; pushed: boolean } | null
 }
 
-/**
- * Removes the repo: exports the chosen items to the library, commits the deletion of
- * .factory/ on base (unless `uninstall: false`) and unregisters it.
- */
+/** Removes the repo: commits the deletion of .factory/ on base (unless `uninstall: false`) and unregisters it. */
 export function removeRepo(id: string, options?: RemoveRepoOptions): Promise<RemoveRepoResult> {
   return deleteGlobal<RemoveRepoResult>(`/repos/${encodeURIComponent(id)}`, options)
 }
@@ -464,14 +439,12 @@ export interface CheckFinding {
   action: string | null
 }
 
-/** GET /api/repos/<id>/factory/check: `factory check` plus the manifest and the version. */
+/** GET /api/repos/<id>/factory/check: `factory check` plus the package version. */
 export interface FactoryCheck {
-  library?: { name: string; remote?: string | null } | null
   in_repo: boolean
   repo: string | null
   state: FactoryState | null
   action: string | null
-  onboarding: Onboarding | null
   base: string | null
   commit: string | null
   remote: string | null
@@ -483,8 +456,6 @@ export interface FactoryCheck {
   findings: CheckFinding[]
   checked_at: string
   cached: boolean
-  manifest: { format: number; written_by: string } | null
-  manifest_error: string | null
   version: string
 }
 
@@ -497,19 +468,15 @@ export async function fetchFactoryCheck({ fresh }: { fresh?: boolean } = {}): Pr
 }
 
 
-export type FactoryAction = 'init' | 'update' | 'config_commit' | 'pull'
-export interface AgentBinding { harness: string; model: string | null; thinking: string | null }
+export type FactoryAction = 'init' | 'config_commit' | 'pull'
 export interface FactoryOptions {
   base?: string; provider?: string
   azure?: { organization: string; project: string; repository: string }
   docs_root?: string
-  agents?: string[]; workflows?: string[]; bind?: Record<string, AgentBinding>
-  take?: string[]; merge?: string[]; migrate?: string[]
 }
 export interface FactoryFile {
   path: string; action: string; diff: string; content: string | null; binary: boolean; mode?: string | null
 }
-export interface UpdateFile { file: string; status: string; diff: string | null; ours_diff: string | null; theirs_diff: string | null }
 /** What stops a plan from being applied (factory and library plans alike). */
 export interface PlanBlocker { code: string; message: string; fix?: string }
 /** A plan warning: plain text or a coded message. */
@@ -524,35 +491,22 @@ interface FactoryPlanCommon {
 export interface FactoryInitPlan extends FactoryPlanCommon {
   action: 'init'
   provider: string; azure?: FactoryOptions['azure'] | null; docs_root: string
-  agents: string[]; workflows: string[]; added_agents: string[]; bindings: Record<string, AgentBinding>
   detected: { harnesses: Record<string, { installed: boolean }> }
-  available: { agents: (AgentBinding & { name: string; purpose: string; default: boolean })[]; workflows: { name: string; default: boolean }[] }
-}
-export interface FactoryUpdatePlan extends FactoryPlanCommon {
-  action: 'update'
-  update: { items: { type: string; name: string; action: string; merge_available: boolean; files: UpdateFile[] }[]; migrations: { id: string; title: string; diff: string; selected: boolean; applied: boolean }[] }
 }
 export interface FactoryConfigCommitPlan extends FactoryPlanCommon { action: 'config_commit' }
 export interface FactoryPullPlan extends FactoryPlanCommon { action: 'pull'; before: string; after: string }
-export type FactoryPlan = FactoryInitPlan | FactoryUpdatePlan | FactoryConfigCommitPlan | FactoryPullPlan
-export interface FactoryResult { library_commit?: string; commit?: string; pr?: { url: string; branch?: string }; after?: string; warnings?: string[] }
+export type FactoryPlan = FactoryInitPlan | FactoryConfigCommitPlan | FactoryPullPlan
+export interface FactoryResult { library_commit?: string | null; commit?: string; pr?: { url: string; branch?: string }; after?: string; warnings?: string[] }
 export interface FactoryRequest { action: Exclude<FactoryAction, 'pull'>; options: FactoryOptions; target: 'base' | 'pr' }
 
 /** Whitelist plan choices; never serialize the returned files, paths or contents. */
 export function factoryChoices(action: FactoryRequest['action'], options: FactoryOptions): FactoryOptions {
   if (action === 'config_commit') return {}
-  if (action === 'update') return { take: options.take ?? [], merge: options.merge ?? [], migrate: options.migrate ?? [] }
-  const bind: Record<string, AgentBinding> = {}
-  for (const name of options.agents ?? []) {
-    const entry = options.bind?.[name]
-    if (entry) bind[name] = { harness: entry.harness, model: entry.model, thinking: entry.thinking }
-  }
   return { base: options.base, provider: options.provider,
     azure: options.provider === 'azure' && options.azure ? {
       organization: options.azure.organization, project: options.azure.project, repository: options.azure.repository,
     } : undefined,
-    docs_root: options.docs_root,
-    agents: options.agents, workflows: options.workflows, bind }
+    docs_root: options.docs_root }
 }
 function factoryUrl(path: string, id?: string): string {
   return (id ? `/api/repos/${encodeURIComponent(id)}` : apiBase()) + path
@@ -593,14 +547,12 @@ export async function fetchMachineCheck(fresh = false): Promise<MachineCheck> {
 }
 
 export type FactoryItemType = 'agent' | 'workflow' | 'skill' | 'extension'
-export type FactoryItemState = 'local' | 'missing' | 'synced' | 'unknown' | 'outdated' | 'modified' | 'diverged'
-export interface FactoryRepoItem {
-  type: FactoryItemType; name: string; item: string | null; state: FactoryItemState
-  repo_version: string | null; manifest_version: string | null; library_version: string | null
-}
+/** `repo`: the repo's own copy in .factory/; `library`: inherited from the system library or the seed. */
+export type FactoryItemOrigin = 'repo' | 'library'
+export interface FactoryRepoItem { type: FactoryItemType; name: string; origin: FactoryItemOrigin }
 export interface FactoryRosterAgent {
   name: string; purpose?: string; harness?: string; coding_agent?: string; model?: string; thinking?: string
-  skills?: string[]; extensions?: string[]; writes?: string[]
+  skills?: string[]; extensions?: string[]; writes?: string[]; origin?: FactoryItemOrigin
 }
 /** A roster preset of `factory roster set --preset`: one harness, model and thinking for every agent. */
 export interface RosterPreset { harness: string; model: string; thinking: string }
@@ -620,26 +572,14 @@ export interface RosterChange {
 export interface RosterChangeResult {
   agents: RosterBinding[]; before: RosterBinding[]; diff: string; changed: boolean; dry_run?: boolean; comments_preserved?: boolean
 }
-export interface FactoryItemDiffSide {
-  available: boolean; reason?: string; version?: string
-  files: { path: string; status: string; binary: boolean; diff: string | null }[]
+/** The item a move plan writes to the library and deletes from the repo. */
+export interface MoveOptions { type: FactoryItemType; name: string }
+export interface FactoryMovePlan extends FactoryPlanCommon {
+  action: 'move'; type: FactoryItemType; name: string; target: string
+  library: string | null
+  library_plan: { digest: string; files: FactoryFile[]; blockers?: PlanBlocker[]; warnings?: PlanWarning[] }
 }
-export interface FactoryItemDiff { manifest: FactoryItemDiffSide; head: FactoryItemDiffSide }
-export type FactoryItemAction = 'add' | 'update' | 'export' | 'revert' | 'remove'
-export interface FactoryItemOptions {
-  type?: FactoryItemType; name?: string; slot?: string; agent?: string
-  harness?: string; model?: string; thinking?: string; to?: 'manifest' | 'head'; prune?: boolean
-  item?: string[]; take?: string[]; merge?: string[]; migrate?: string[]
-}
-export interface FactoryItemRequest { action: FactoryItemAction; options: FactoryItemOptions; target: 'base' | 'pr' }
-export interface FactoryItemPlan extends FactoryPlanCommon {
-  items?: PlanItem[]
-  update?: FactoryUpdatePlan['update']
-  library_plan?: { digest: string; items: PlanItem[]; files: FactoryFile[]; blockers: PlanBlocker[] }
-  added?: { type: string; name: string; action?: string }[]
-  kept?: { type: string; name: string; reason?: string }[]
-}
-export function fetchFactoryItems(id: string): Promise<{ items: FactoryRepoItem[] }> {
+export function fetchFactoryItems(id: string): Promise<{ library: string | null; items: FactoryRepoItem[] }> {
   return request(factoryUrl('/factory/items', id))
 }
 export function fetchFactoryRoster(id: string): Promise<FactoryRoster> {
@@ -649,20 +589,13 @@ export function fetchFactoryRoster(id: string): Promise<FactoryRoster> {
 export function saveFactoryRoster(change: RosterChange, id: string): Promise<RosterChangeResult> {
   return request(factoryUrl('/factory/roster', id), postInit(change))
 }
-export function fetchFactoryItemDiff(item: FactoryRepoItem, id: string): Promise<FactoryItemDiff> {
-  return request(factoryUrl(`/factory/item-diff?type=${item.type}&name=${encodeURIComponent(item.name)}`, id))
+/** Plans moving the repo's own copy of an item to the library; writes nothing. */
+export function previewMove(options: MoveOptions, id: string): Promise<FactoryMovePlan> {
+  return factoryEnvelope<FactoryMovePlan>(factoryUrl('/factory/plan', id),
+    postInit({ action: 'move', options: { type: options.type, name: options.name }, target: 'base' }))
 }
-export function factoryItemChoices(action: FactoryItemAction, options: FactoryItemOptions): FactoryItemOptions {
-  const keys = {
-    add: ['type', 'name', 'slot', 'agent', 'harness', 'model', 'thinking'],
-    update: ['item', 'take', 'merge', 'migrate'], export: ['type', 'name', 'slot'],
-    revert: ['type', 'name', 'to'], remove: ['type', 'name', 'prune'],
-  }[action]
-  return Object.fromEntries(Object.entries(options).filter(([key]) => keys.includes(key)))
-}
-export function previewFactoryItem(body: FactoryItemRequest, id: string): Promise<FactoryItemPlan> {
-  return factoryEnvelope<FactoryItemPlan>(factoryUrl('/factory/plan', id), postInit({ action: body.action, options: factoryItemChoices(body.action, body.options), target: body.target }))
-}
-export function applyFactoryItem(body: FactoryItemRequest, digest: string, message: string, id: string): Promise<FactoryResult> {
-  return factoryEnvelope<FactoryResult>(factoryUrl('/factory/apply', id), postInit({ action: body.action, options: factoryItemChoices(body.action, body.options), target: body.target, digest, message }))
+/** Applies the reviewed move plan: library commit, deletion from the repo and its commit on base. */
+export function applyMove(options: MoveOptions, digest: string, id: string): Promise<FactoryResult> {
+  return applyEnvelope(factoryUrl('/factory/apply', id),
+    { action: 'move', options: { type: options.type, name: options.name }, target: 'base', digest })
 }

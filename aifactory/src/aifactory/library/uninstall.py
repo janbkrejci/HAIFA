@@ -1,15 +1,15 @@
 """Remove factory from a repo: delete ``.factory/`` and its ``.gitignore`` lines in one commit.
 
-The dashboard's "remove repository": the repo's own items (agents, workflows, skills,
-extensions that are not the library's) can go to the library first (``config export``),
-then every committed file under ``.factory/`` is deleted and the runtime lines factory
-added to ``.gitignore`` are taken out, in one commit on base (pushed when there is a
-remote). Nothing else in the repo changes: the backlog, specs and docs stay.
+The dashboard's "remove repository": every committed file under ``.factory/`` is deleted
+and the runtime lines factory added to ``.gitignore`` are taken out, in one commit on base
+(pushed when there is a remote). Nothing else in the repo changes: the backlog, specs and
+docs stay. An item worth keeping goes to the library first ("Move to library",
+``factory config move``).
 """
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -30,22 +30,17 @@ from aifactory.providers.publish import (
     plan_digest,
 )
 
-OWN_STATES = frozenset({"local", "modified", "diverged", "unknown"})
-"""Item states whose repo copy is not (or no longer) what the library holds."""
-
 
 @dataclass
 class UninstallPlan:
     root: Path
     publish: PublishPlan
-    own_items: list[dict[str, Any]] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
         return {
             "repo": str(self.root),
             **self.publish.to_json(),
             "blockers": [b.to_json() for b in self.publish.blockers],
-            "own_items": self.own_items,
         }
 
 
@@ -55,7 +50,6 @@ class UninstallResult:
     committed: bool
     commit: str | None = None
     pushed: bool = False
-    exported: list[dict[str, str]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, Any]:
@@ -64,23 +58,7 @@ class UninstallResult:
             "committed": self.committed,
             "commit": self.commit,
             "pushed": self.pushed,
-            "exported": self.exported,
         }
-
-
-def own_items(root: Path, environ: Mapping[str, str] | None = None) -> list[dict[str, Any]]:
-    """The repo's own items in base: those the library does not hold as they are."""
-    from aifactory.library.state import repo_items
-
-    try:
-        items = repo_items(root, "", environ, save_cache=False)["items"]
-    except (LibraryStoreError, ProviderError, OSError, ValueError):
-        return []
-    return [
-        {"type": i["type"], "name": i["name"], "state": i["state"]}
-        for i in items
-        if i.get("state") in OWN_STATES
-    ]
 
 
 def _without_lines(text: str) -> str:
@@ -161,32 +139,20 @@ def plan_uninstall(path: Path, environ: Mapping[str, str] | None = None) -> Unin
         blockers=tuple(blockers),
         digest=plan_digest(base, base_sha, files),
     )
-    return UninstallPlan(root, publish, own_items(root, environ))
+    return UninstallPlan(root, publish)
 
 
-def uninstall(
-    path: Path,
-    *,
-    export: Sequence[tuple[str, str]] = (),
-    environ: Mapping[str, str] | None = None,
-) -> UninstallResult:
-    """Export `export` (type, name) to the library, then commit the removal of ``.factory/``."""
-    from aifactory.library.config_edit import execute_plan, plan_config
+def uninstall(path: Path, *, environ: Mapping[str, str] | None = None) -> UninstallResult:
+    """Commit the removal of ``.factory/``."""
     from aifactory.providers import publish
 
     root = _repo_root(path)
-    first = plan_uninstall(root, environ)
-    if first.publish.blockers:
-        b = first.publish.blockers[0]
-        raise LibraryStoreError(b.code, b.message, data=first.to_json())
-    exported: list[dict[str, str]] = []
-    for kind, name in export:
-        change = plan_config("export", root, type=kind, name=name, commit=True, environ=environ)
-        execute_plan(change, environ=environ)
-        exported.append({"type": kind, "name": name})
-    plan = plan_uninstall(root, environ) if exported else first
+    plan = plan_uninstall(root, environ)
+    if plan.publish.blockers:
+        b = plan.publish.blockers[0]
+        raise LibraryStoreError(b.code, b.message, data=plan.to_json())
     if not plan.publish.files:
-        return UninstallResult(plan, False, exported=exported)
+        return UninstallResult(plan, False)
     from aifactory.config import ProjectSettings, load_run_config
 
     try:
@@ -218,7 +184,6 @@ def uninstall(
         True,
         commit=result.commit,
         pushed=result.pushed,
-        exported=exported,
         warnings=warnings,
     )
 

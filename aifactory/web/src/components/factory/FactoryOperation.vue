@@ -10,7 +10,6 @@ import SelectMenu from '@/components/ui/SelectMenu.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import PlanView from './PlanView.vue'
 import InstallForm from './InstallForm.vue'
-import UpdateChoices from './UpdateChoices.vue'
 const props = defineProps<{ action: FactoryAction; repoId: string; remote?: string | null }>()
 const emit = defineEmits<{ success: []; busy: [busy: boolean] }>()
 const options = ref<FactoryOptions>({})
@@ -35,7 +34,6 @@ const disabled = computed(() => loading.value || applying.value || !plan.value |
 const remote = computed(() => plan.value?.remote !== undefined ? plan.value.remote : props.remote)
 const EMPTY_PLAN_TEXT: Record<FactoryAction, string> = {
   init: 'Instalace nemá co zapsat.',
-  update: 'Vše je aktuální, z knihovny není co převzít.',
   config_commit: 'Konfigurace je commitnutá, není co commitnout.',
   pull: 'Konfigurace odpovídá base, není co stáhnout.',
 }
@@ -57,14 +55,6 @@ async function load(initial = false) {
     if (next.action === 'init') {
       formPlan.value = next
       if (initial) options.value = installOptions(next)
-      // Workflows can add required agents. Preserve every existing override.
-      for (const name of next.added_agents ?? []) {
-        if (!options.value.agents?.includes(name)) options.value.agents?.push(name)
-        if (next.bindings?.[name] && !options.value.bind?.[name]) {
-          options.value.bind ??= {}
-          options.value.bind[name] = next.bindings[name]!
-        }
-      }
     }
   } catch (e) {
     if (mine !== generation || disposed) return
@@ -143,8 +133,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; ++runGeneration; cancel()
 <template>
   <section class="operation" data-test="factory-operation">
     <fieldset :disabled="applying || !!result">
-      <InstallForm v-if="action === 'init' && formPlan" :options="options" :plan="formPlan" @change="change" />
-      <UpdateChoices v-if="action === 'update' && plan?.action === 'update'" :plan="plan" :options="options" @change="change" />
+      <InstallForm v-if="action === 'init' && formPlan" :options="options" @change="change" />
       <label v-if="action !== 'pull'">Cíl <SelectMenu :model-value="target" label="Cíl" :options="[{value:'base',label:'Base'},{value:'pr',label:'PR'}]" data-test="factory-target" @update:model-value="target = $event as 'base' | 'pr'; load()" /></label>
       <label v-if="action !== 'pull'">Zpráva commitu <input v-model="message" data-test="factory-message"></label>
     </fieldset>

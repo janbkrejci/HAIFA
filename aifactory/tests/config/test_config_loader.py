@@ -16,12 +16,18 @@ def test_sample_config_loads(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     config = load_worktree_config(repo)
     agents = {agent.name: agent for agent in config.agents.agents}
+    # the repo's agents first, then the ones it inherits from the seed (no library here)
     assert [a.name for a in config.agents.agents] == [
         "planner",
         "builder",
-        "tester",
+        "documenter",
+        "reviewer",
+        "scout",
         "test-reviewer",
+        "tester",
     ]
+    assert config.library is None
+    assert "agent/planner" not in config.inherited and "agent/tester" in config.inherited
     assert all(a.coding_agent == "claude" for a in agents.values())
     assert agents["planner"].model == "opus"
     assert agents["builder"].model == "sonnet"
@@ -63,22 +69,41 @@ def test_custom_roles_are_used(tmp_path: Path) -> None:
     assert not config.roles.is_role("scout")
 
 
+HELPER = "  - name: helper\n"
+
+
+def _helper_prompts(repo: Path) -> None:
+    write(repo, ".factory/prompts/helper/system.md", "You help.\n")
+    write(repo, ".factory/prompts/helper/user.md", "{{prompt}}\n")
+
+
 def test_agent_without_harness_is_an_error(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
-    write(repo, ".factory/agents.yaml", AGENTS_YAML.replace("  harness: claude\n", ""))
+    _helper_prompts(repo)
+    write(repo, ".factory/agents.yaml", AGENTS_YAML.replace("  harness: claude\n", "") + HELPER)
     with pytest.raises(ConfigError) as info:
         load_worktree_config(repo)
     assert all(Path(i.path).as_posix().endswith(".factory/agents.yaml") for i in info.value.issues)
     assert "harness is not set" in str(info.value)
+    assert "'helper'" in str(info.value)  # the library agents take the library harness
 
 
 def test_missing_prompt_names_the_file(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
-    (repo / ".factory/prompts/builder/system.md").unlink()
+    _helper_prompts(repo)
+    write(repo, ".factory/agents.yaml", AGENTS_YAML + HELPER)
+    (repo / ".factory/prompts/helper/system.md").unlink()
     with pytest.raises(ConfigError) as info:
         load_worktree_config(repo)
-    assert str(Path(".factory/prompts/builder/system.md")) in str(info.value)
-    assert "missing prompt for agent 'builder'" in str(info.value)
+    assert str(Path(".factory/prompts/helper/system.md")) in str(info.value)
+    assert "missing prompt for agent 'helper'" in str(info.value)
+
+
+def test_missing_prompt_of_an_own_copy_is_not_taken_from_the_library(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    (repo / ".factory/prompts/builder/system.md").unlink()
+    with pytest.raises(ConfigError, match="missing prompt for agent 'builder'"):
+        load_worktree_config(repo)
 
 
 def test_prompt_engineering_in_agents_is_an_error(tmp_path: Path) -> None:
@@ -111,27 +136,40 @@ def test_nested_and_non_yaml_workflow_files_are_ignored(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     write(repo, ".factory/workflows/README.md", "notes\n")
     write(repo, ".factory/workflows/old/x.yaml", "name: x\n")
-    assert list(load_worktree_config(repo).workflows) == ["plan-build"]
+    config = load_worktree_config(repo)
+    own = [n for n in config.workflows if f"workflow/{n}" not in config.inherited]
+    assert own == ["plan-build"]
 
 
-def test_missing_agents_gives_empty_roster(tmp_path: Path) -> None:
+def test_missing_agents_inherits_the_whole_roster(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     (repo / ".factory/agents.yaml").unlink()
     config = load_worktree_config(repo)
-    assert config.agents.agents == []
-    assert set(config.prompts) == {"builder", "planner"}
+    assert {a.name for a in config.agents.agents} == {
+        "builder",
+        "documenter",
+        "planner",
+        "reviewer",
+        "scout",
+        "test-reviewer",
+        "tester",
+    }
+    # prompts in the repo still win over the library's
+    assert config.prompts["planner"].system == "You are the planner.\n"
 
 
 def test_all_issues_are_reported(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     write(repo, ".factory/config.yaml", "git_provider: svn\n")
-    (repo / ".factory/prompts/planner/user.md").unlink()
+    _helper_prompts(repo)
+    write(repo, ".factory/agents.yaml", AGENTS_YAML + HELPER)
+    (repo / ".factory/prompts/helper/user.md").unlink()
     with pytest.raises(ConfigError) as info:
         load_worktree_config(repo)
     paths = [Path(i.path).as_posix() for i in info.value.issues]
     assert len(paths) >= 2
     assert any(p.endswith(".factory/config.yaml") for p in paths)
-    assert any(p.endswith(".factory/prompts/planner/user.md") for p in paths)
+    assert any(p.endswith(".factory/prompts/helper/user.md") for p in paths)
 
 
 def test_write_prompts(tmp_path: Path) -> None:

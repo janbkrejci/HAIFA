@@ -196,13 +196,13 @@ describe('repos and the Factory tab', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/a%20b', { method: 'DELETE' })
   })
 
-  it('removes a repo with its exports as the JSON body and reads the removal plan', async () => {
+  it('removes a repo with only `uninstall` as the JSON body and reads the removal plan', async () => {
     const fetchMock = stubFetch({ ok: true, data: { removed: { id: 'a' }, uninstall: null }, error: null, warnings: [] })
-    await removeRepo('a', { export: [{ type: 'agent', name: 'mine' }] })
+    await removeRepo('a', { uninstall: false })
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/a', {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ export: [{ type: 'agent', name: 'mine' }] }),
+      body: JSON.stringify({ uninstall: false }),
     })
     await fetchRepoRemoval('a b')
     expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/a%20b/removal')
@@ -230,10 +230,10 @@ describe('repos and the Factory tab', () => {
 
 
 describe('factory plan and apply choices', () => {
-  it('whitelists update/config choices and drops Azure when provider changes', async () => {
+  it('whitelists init/config choices and drops Azure when provider changes', async () => {
     const { factoryChoices } = await import('./api')
-    const injected = { take: ['agent/builder'], merge: [], migrate: ['m1'], base: 'main', provider: 'local', azure: { organization: 'org', project: 'project', repository: 'repo' }, content: 'forbidden', files: ['forbidden'], path: 'forbidden', test_command: 'just check' }
-    expect(factoryChoices('update', injected)).toEqual({ take: ['agent/builder'], merge: [], migrate: ['m1'] })
+    const injected = { agents: ['builder'], base: 'main', provider: 'local', azure: { organization: 'org', project: 'project', repository: 'repo' }, content: 'forbidden', files: ['forbidden'], path: 'forbidden', test_command: 'just check' }
+    expect('agents' in factoryChoices('init', injected)).toBe(false)
     expect(factoryChoices('config_commit', injected)).toEqual({})
     expect(factoryChoices('init', injected).azure).toBeUndefined()
     expect(factoryChoices('init', { ...injected, provider: 'azure' }).azure).toEqual(injected.azure)
@@ -262,7 +262,7 @@ describe('factory plan and apply choices', () => {
     await applyFactoryPlan({ action: 'init', options, target: 'pr', digest: 'd', message: 'install' }, 'repo id')
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(['/api/repos/repo%20id/factory/plan', '/api/repos/repo%20id/factory/apply'])
     const body = JSON.parse(String((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body))
-    expect(body).toEqual({ action: 'init', target: 'pr', digest: 'd', message: 'install', options: { base: 'main', provider: 'local', agents: ['builder'], bind: { builder: { harness: 'codex', model: 'gpt-6.1-sol', thinking: 'medium' } } } })
+    expect(body).toEqual({ action: 'init', target: 'pr', digest: 'd', message: 'install', options: { base: 'main', provider: 'local' } })
     vi.unstubAllGlobals()
   })
 })

@@ -16,7 +16,6 @@ function report(extra: Partial<FactoryCheck> = {}): FactoryCheck {
     repo: '/w/repo',
     state: 'installed',
     action: null,
-    onboarding: null,
     base: 'main',
     commit: '0123456789abcdef',
     remote: 'origin',
@@ -28,8 +27,6 @@ function report(extra: Partial<FactoryCheck> = {}): FactoryCheck {
     findings: [],
     checked_at: '2026-10-01T10:00:00+00:00',
     cached: false,
-    manifest: { format: 1, written_by: 'haifa 0.1.0' },
-    manifest_error: null,
     version: '0.1.0',
     ...extra,
   }
@@ -38,7 +35,7 @@ function report(extra: Partial<FactoryCheck> = {}): FactoryCheck {
 function stub(...answers: Response[]) {
   const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
     if (url.endsWith('/factory/plan') && JSON.parse(String(_init?.body)).action === 'config_commit') return ok({ action: 'config_commit', base: 'main', base_sha: 'abc', digest: 'cfg', files: [], blockers: [] })
-    if (url.endsWith('/factory/items')) return ok({ items: [] })
+    if (url.endsWith('/factory/items')) return ok({ library: null, items: [] })
     if (url.startsWith('/api/machine/check')) return ok({ ok: true, findings: [], checked_at: 'now', cached: false, harness_repos: { claude: 0, codex: 0 } })
     if (url === '/api/machine/harnesses') return ok({ settings: { harnesses: {} }, available: {}, models: {} })
     if (url.endsWith('/factory/roster')) return ok({ agents: [], workflow_tasks: {} })
@@ -83,7 +80,7 @@ describe('FactoryView', () => {
     expect(fetchMock.mock.calls.some(([url, init]) => url.endsWith('/factory/plan') && JSON.parse(String(init?.body)).action === 'config_commit')).toBe(true)
   })
 
-  it('runs the check on mount and shows the manifest, the version and the state', async () => {
+  it('runs the check on mount and shows the version and the state', async () => {
     const fetchMock = stub(ok(report()))
     const wrapper = mount(FactoryView)
     expect(wrapper.find('[data-test="factory-loading"]').exists()).toBe(true)
@@ -91,7 +88,6 @@ describe('FactoryView', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/factory/check')
     const summary = wrapper.get('[data-test="factory-summary"]')
     expect(summary.text()).toContain('Factory je v pořádku')
-    expect(summary.get('[data-test="factory-manifest"]').text()).toBe('formát 1, zapsal haifa 0.1.0')
     expect(summary.get('[data-test="factory-version"]').text()).toBe('0.1.0')
     expect(summary.get('[data-test="factory-state"]').text()).toBe('Nainstalováno')
     expect(summary.get('[data-test="factory-base"]').text()).toContain('main@01234567')
@@ -100,7 +96,7 @@ describe('FactoryView', () => {
   })
 
   it('offers install without update or roster on a repo without factory', async () => {
-    stub(ok(report({ state: 'none', manifest: null })))
+    stub(ok(report({ state: 'none' })))
     const wrapper = mount(FactoryView)
     await flushPromises()
     expect(wrapper.find('[data-test="factory-open-init"]').exists()).toBe(true)
@@ -129,22 +125,10 @@ describe('FactoryView', () => {
     lastFactoryResult.value = null
   })
 
-  it('says there is no manifest and shows the installation', async () => {
-    stub(
-      ok(
-        report({
-          state: 'unsupported',
-          manifest: null,
-          onboarding: { source: 'init', source_commit: null, at: '2026-10-01T10:00:00+00:00', by: 'Ada', factory: '0.1.0', library_commit: null },
-          cached: true,
-        }),
-      ),
-    )
+  it('marks a cached check', async () => {
+    stub(ok(report({ cached: true })))
     const wrapper = mount(FactoryView)
     await flushPromises()
-    expect(wrapper.get('[data-test="factory-manifest"]').text()).toBe('bez manifestu')
-    expect(wrapper.get('[data-test="factory-onboarding"]').text()).toContain('Nainstaloval Ada')
-    expect(wrapper.get('[data-test="factory-onboarding"]').text()).toContain('z factory init')
     expect(wrapper.get('[data-test="factory-checked"]').text()).toContain('(z mezipaměti)')
   })
 
@@ -157,7 +141,7 @@ describe('FactoryView', () => {
   })
 
   it('labels an unsupported repo as not taken over by HAIFA', async () => {
-    stub(ok(report({ state: 'unsupported', manifest: null })))
+    stub(ok(report({ state: 'unsupported' })))
     const wrapper = mount(FactoryView)
     await flushPromises()
     expect(wrapper.get('[data-test="factory-state"]').text()).toContain('Nepodporováno')

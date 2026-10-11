@@ -10,7 +10,6 @@ import fnmatch
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path, PurePosixPath
-from typing import Any
 
 import yaml
 
@@ -41,10 +40,7 @@ def _ids(ids: list[str]) -> str:
 
 # -- install --
 
-UNSUPPORTED_FIX = (
-    "HAIFA will not convert it; install factory into a repository without .factory/ "
-    "with factory init"
-)
+UNSUPPORTED_FIX = "HAIFA will not convert it; install factory with factory init"
 
 
 def install(ctx: CheckContext) -> Iterator[Finding]:
@@ -71,49 +67,24 @@ def install(ctx: CheckContext) -> Iterator[Finding]:
             "config_commit",
         )
     elif state.state == "unsupported":
-        if state.config_in_base:
-            yield Finding(
-                "repo_unsupported",
-                "repo",
-                "info",
-                f".factory/ in {ctx.base} has no manifest.yaml; HAIFA does not take over a "
-                "configuration it did not install",
-                UNSUPPORTED_FIX,
-            )
-        else:
-            yield Finding(
-                "repo_unsupported",
-                "repo",
-                "error",
-                f"{ctx.base} has an sssf installation in adws/ and no .factory/; HAIFA does "
-                "not run or convert sssf",
-                UNSUPPORTED_FIX,
-            )
+        yield Finding(
+            "repo_unsupported",
+            "repo",
+            "error",
+            f"{ctx.base} has an sssf installation in adws/ and no .factory/config.yaml; "
+            "HAIFA does not run or convert sssf",
+            UNSUPPORTED_FIX,
+        )
     elif state.state == "installed":
+        cfg = ctx.base_config
+        origin = "the seed" if cfg is None or cfg.library is None else f"library {cfg.library[:7]}"
         yield Finding(
             "repo_installed",
             "repo",
-            "info" if state.manifest_error is None else "error",
-            _installed_message(ctx),
+            "info",
+            f"factory is installed in {ctx.base}; agents and workflows the repo lacks come "
+            f"from {origin}",
         )
-
-
-def _installed_message(ctx: CheckContext) -> str:
-    state = ctx.state
-    if state.manifest_error is not None:
-        return f"the manifest in {ctx.base} cannot be read: {state.manifest_error}"
-    block = state.onboarding
-    library = state.library
-    if block is None:
-        what = f"{ctx.base} has .factory/manifest.yaml without an onboarding block"
-    else:
-        who = f" by {block['by']}" if block.get("by") else ""
-        what = (
-            f"installed from {block['source']} at {block['at']}{who} (factory {block['factory']})"
-        )
-    if library is not None:
-        what += f", library {library['name']} ({library['id']})"
-    return what
 
 
 # -- base and checkout --
@@ -320,23 +291,15 @@ def workflows(ctx: CheckContext) -> Iterator[Finding]:
         try:
             workflow = named_workflow(name, cfg, ids[0])
         except TaskRunError as exc:
-            if exc.code == "unknown_workflow" and cfg.manifest is not None:
-                yield Finding(
-                    "workflow_not_in_repo",
-                    "repo",
-                    "error",
-                    f"backlog in {ctx.base} names workflow '{name}' (tasks {_ids(ids)}), which "
-                    "this repo with a manifest does not have in .factory/workflows/",
-                    f"factory config add workflow {name}, or change the tasks",
-                )
-            elif exc.code == "unknown_workflow":
+            if exc.code == "unknown_workflow":
                 yield Finding(
                     "workflow_unknown",
                     "repo",
                     "error",
                     f"workflow '{name}' (tasks {_ids(ids)}) is neither in .factory/workflows/ "
-                    f"in {ctx.base} nor packaged",
-                    f"add .factory/workflows/{name}.yaml and commit it, or change the tasks",
+                    f"in {ctx.base} nor in the library",
+                    f"add .factory/workflows/{name}.yaml or put it in the library, or change "
+                    "the tasks",
                 )
             else:
                 yield Finding(
@@ -437,68 +400,7 @@ def gitignore(ctx: CheckContext) -> Iterator[Finding]:
             "warning",
             f".gitignore in {ctx.base} does not ignore {entry} (factory runtime)",
             f"add '{entry}' to .gitignore and commit it",
-            "update",
         )
-
-
-def update(ctx: CheckContext) -> Iterator[Finding]:
-    """Items of an installed repo that ``factory update`` can bring, and its migrations.
-
-    Reads only: base is unpacked into a temporary directory, the library heads are read
-    without fetching and without the history cache.
-    """
-    from aifactory.config.manifest import read_manifest
-    from aifactory.library import migrations
-    from aifactory.library.model import ITEM_TYPES
-    from aifactory.library.state import extract_factory, library_side, repo_version
-
-    state = ctx.state
-    if state.state != "installed" or state.manifest_error is not None or ctx.commit is None:
-        return
-    with tempfile.TemporaryDirectory(prefix="factory-check-update-") as tmp:
-        copy = Path(tmp)
-        try:
-            extract_factory(ctx.main, ctx.commit, copy)
-            manifest = read_manifest(copy)
-        except Exception:  # noqa: BLE001 - the config rules report a broken base
-            return
-        if manifest is None:
-            return
-        side = library_side()
-        entries = [
-            (kind, name, entry)
-            for kind in ITEM_TYPES
-            for name, entry in sorted(manifest.items.of(kind).items())
-        ]
-        try:
-            heads = side.heads({(kind, e.item) for kind, _, e in entries})
-        except Exception:  # noqa: BLE001 - an unreadable library is not this rule's problem
-            return
-        names: list[str] = []
-        for kind, name, entry in entries:
-            r = repo_version(copy, kind, name)
-            lib = heads.get((kind, entry.item))
-            if r is None or (lib is not None and lib != entry.version and r != lib):
-                names.append(f"{kind}/{name}")
-        config = copy / ".factory" / "config.yaml"
-        files = {".factory/config.yaml": config.read_bytes()} if config.is_file() else {}
-        found = [m.id for m in migrations.detected(files)]
-    if not names and not found:
-        return
-    origin = "the seed" if side.root is None else "the library"
-    parts = []
-    if names:
-        parts.append(f"{len(names)} item(s) can be updated from {origin}: {_ids(names)}")
-    if found:
-        parts.append(f"migrations: {', '.join(found)}")
-    yield Finding(
-        "update_available",
-        "repo",
-        "info",
-        "; ".join(parts),
-        "review factory update --dry-run, then factory update --commit",
-        "update",
-    )
 
 
 def skills_mirror(ctx: CheckContext) -> Iterator[Finding]:
@@ -539,79 +441,7 @@ def skills_mirror(ctx: CheckContext) -> Iterator[Finding]:
         )
 
 
-# -- items, roles and thinking --
-
-
-def _item_message(row: dict[str, Any]) -> str:
-    short = row.get("short") or {}
-    return (
-        f"{row['type']} {row['name']} is {row['state']} (repo {short.get('repo') or '-'}, "
-        f"manifest {short.get('manifest') or '-'}, library {short.get('library') or '-'})"
-    )
-
-
-def items(ctx: CheckContext) -> Iterator[Finding]:
-    """One finding per item of base that is not ``synced`` with the library (AR23)."""
-    for row in ctx.items:
-        state = row["state"]
-        what = f"{row['type']} {row['name']}"
-        message = _item_message(row)
-        if state == "local":
-            yield Finding(
-                "item_local",
-                "repo",
-                "info",
-                message,
-                f"export {what} to the library (factory config export)",
-                "export",
-            )
-        elif state == "missing":
-            yield Finding(
-                "item_missing",
-                "repo",
-                "warning",
-                message,
-                f"restore the files of {what} from the library (factory config update)",
-                "update",
-            )
-        elif state == "unknown":
-            yield Finding(
-                "item_unknown",
-                "repo",
-                "warning",
-                message,
-                f"the library does not know the version of {what}; export it with factory "
-                "config export",
-                "export",
-            )
-        elif state == "outdated":
-            yield Finding(
-                "item_outdated",
-                "repo",
-                "info",
-                message,
-                f"take the library version of {what} (factory config update)",
-                "update",
-            )
-        elif state == "modified":
-            yield Finding(
-                "item_modified",
-                "repo",
-                "info",
-                message,
-                f"export the change of {what} to the library (factory config export)",
-                "export",
-            )
-        elif state == "diverged":
-            yield Finding(
-                "item_diverged",
-                "repo",
-                "warning",
-                message,
-                f"{what} changed both in the repo and in the library; merge them "
-                "(factory config update)",
-                "update",
-            )
+# -- roles and thinking --
 
 
 def roles(ctx: CheckContext) -> Iterator[Finding]:
@@ -661,9 +491,7 @@ REPO_GROUP = RuleGroup(
         Rule("backlog", backlog),
         Rule("workflows", workflows),
         Rule("gitignore", gitignore),
-        Rule("update", update),
         Rule("skills mirror", skills_mirror),
-        Rule("items", items),
         Rule("roles", roles),
         Rule("thinking", thinking),
     ),

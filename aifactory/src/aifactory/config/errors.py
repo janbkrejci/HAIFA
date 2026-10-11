@@ -19,8 +19,7 @@ class ConfigIssue:
 class ConfigError(Exception):
     """The configuration is invalid or unreadable. ``issues`` lists every problem.
 
-    ``code`` is the ``error.code``: ``invalid_config``, or ``format_unsupported`` for a
-    manifest format this HAIFA does not know.
+    ``code`` is the ``error.code`` (``invalid_config``).
     """
 
     def __init__(self, issues: list[ConfigIssue], code: str = "invalid_config") -> None:

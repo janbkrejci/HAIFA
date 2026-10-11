@@ -22,15 +22,9 @@ class ErrorCode:
 
 
 _CODES: tuple[tuple[str, str, str], ...] = (
-    ("registry_missing", "2", "--repos requires dashboard.yaml in HAIFA_HOME"),
     ("repo_io_error", "2", "a registered repository could not be read or written"),
     # Task and backlog input.
     ("invalid_config", "2", "the configuration (.factory/, roster, provider) is invalid"),
-    (
-        "format_unsupported",
-        "2",
-        ".factory/manifest.yaml has a format newer than this HAIFA; run factory upgrade",
-    ),
     (
         "missing_backlog_dir",
         "1|2",
@@ -74,8 +68,8 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "unknown_workflow",
         "2",
-        "the workflow is neither in .factory/workflows nor packaged (with a manifest: not in "
-        ".factory/workflows; add it with factory config add workflow NAME)",
+        "the workflow is neither in .factory/workflows in base nor in the library (the seed "
+        "without a library)",
     ),
     ("invalid_workflow", "2", "the task's workflow does not validate"),
     (
@@ -131,15 +125,15 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "run_in_progress",
         "2",
-        "a run with a live process is in progress in the repository (blocks base moves, "
-        "config add/set/remove/export/revert and factory update)",
+        "a run with a live process is in progress in the repository (blocks base moves and "
+        "config set/remove/move)",
     ),
     (
         "plan_changed",
         "2",
-        "config commit/add/set/remove/export/revert, update or init --expect: the plan's digest "
-        "differs (export: also when the library HEAD moved); global library API plan changed; "
-        "review the plan again",
+        "config commit/set/remove/move or init --expect: the plan's digest differs (move: "
+        "also when the library HEAD moved); global library API plan changed; review the "
+        "plan again",
     ),
     ("no_remote", "2", "config pull or library status/pull/push: no remote is configured"),
     ("pull_failed", "2", "config pull or library pull: git could not move the branch"),
@@ -164,7 +158,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "library_missing",
         "2",
-        "there is no library yet (run factory library init)",
+        "there is no library yet (run factory library init); config move needs one",
     ),
     ("library_dirty", "2", "the library has uncommitted changes; commit or discard them"),
     (
@@ -190,84 +184,41 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "unknown_item",
         "2",
-        "no item of this type and name in the library (config set/remove/export/diff: in the "
-        "repo; config revert and update --take/--merge: the item is local, not in the "
-        "manifest)",
-    ),
-    (
-        "slot_taken",
-        "2",
-        "config add: the slot holds other content; data.fix is --as NEW (another slot)",
+        "no item of this type and name in the library (config remove/move: no own copy in "
+        "the repo; config set: the agent is neither in the repo nor in the library)",
     ),
     (
         "in_use",
         "2",
-        "config remove: a workflow, roles.yaml, another agent or a backlog task in base "
-        "uses the item; see data.used_by",
+        "config remove: the library lacks the item and a workflow, roles.yaml, an agent or a "
+        "backlog task in base uses it; see data.used_by",
     ),
-    (
-        "unknown_version",
-        "2",
-        "the item has no such version in its history (or it is ambiguous); config revert: "
-        "the manifest version is not in the library history (state unknown, fix --to head)",
-    ),
-    (
-        "library_changed_since",
-        "2",
-        "config export: the library head moved on since the manifest version and the repo "
-        "copy differs from it; data.fix: factory update, or --as NEW (a new library item)",
-    ),
-    (
-        "item_exists",
-        "2",
-        "config export --as NEW or of a local item: the library has an item of that name "
-        "with other content; data.fix: --as NEW (another name)",
-    ),
+    ("unknown_version", "2", "the item has no such version in its history (or it is ambiguous)"),
     ("not_in_seed", "2", "library seed --take: the installed seed has no such item"),
-    (
-        "already_installed",
-        "2",
-        "factory init: .factory/manifest.yaml is committed; the repo is installed, "
-        "run factory update",
-    ),
+    ("already_installed", "2", "factory init: .factory/config.yaml is committed"),
     (
         "existing_config",
         "2",
-        "factory init: the repo has factory configuration without a manifest "
-        "(.factory/ or adws/adw_sssf_config/, in base or the working tree); HAIFA does not take "
-        "it over",
+        "factory init: the repo has an sssf installation (adws/adw_sssf_config/); HAIFA does "
+        "not take it over",
     ),
     (
         "config_not_committed",
         "2",
-        "factory init --commit: factory is installed only in the working tree; factory "
-        "update: the manifest is only in the working tree; run factory config commit",
+        "factory init --commit: .factory/config.yaml is only in the working tree; run factory "
+        "config commit",
     ),
     (
         "dirty_paths",
         "2",
-        "init --commit, config add/set/remove/export/revert and update --commit: planned "
-        "paths exist "
-        "in the working tree with other content",
+        "init --commit and config set/remove/move --commit: planned paths exist in the "
+        "working tree with other content",
     ),
     (
         "invalid_plan",
         "2",
-        "init --commit, config add/set/remove/export/revert, update: the planned "
-        "configuration does "
-        "not load or a workflow fails its preflight; see error.issues",
-    ),
-    (
-        "not_onboarded",
-        "2",
-        "the repo has no .factory/manifest.yaml in base (data.fix: factory init, or factory "
-        "config commit when it is only in the working tree)",
-    ),
-    (
-        "merge_conflict",
-        "2",
-        "factory update --merge: git merge-file left conflicts or the merged item is not "
-        "valid; nothing is written, the repo copy stays (keep it or --take)",
+        "init --commit and config set/remove/move: the planned configuration does not load "
+        "or a workflow fails its preflight; see error.issues",
     ),
     # Results of a command that ran.
     ("run_failed", "1", "the run ended failed or accept was not met; worktree and branch kept"),
@@ -445,37 +396,13 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "missing_file",
         "invalid_yaml",
     ),
-    "config": ("invalid_config", "format_unsupported"),
-    # data.items[].state of `factory config items`
-    "item_state": (
-        "local",
-        "missing",
-        "synced",
-        "unknown",
-        "outdated",
-        "modified",
-        "diverged",
-    ),
+    "config": ("invalid_config",),
+    # data.items[].origin of the dashboard's factory items and roster
+    "item_origin": ("repo", "library"),
     # data.state of `factory check` and the state of a repo, first match wins
     "repo_state": ("installed", "unsupported", "uncommitted", "none"),
     # data.action of `factory check`: what the repo state calls for
     "repo_action": ("config_commit", "init"),
-    # data.update.items[].action of `factory update`
-    "update_item": ("same", "update", "keep", "conflict", "unknown", "restore", "absent"),
-    # data.update.items[].files[].status of `factory update`
-    "update_file": ("same", "take", "keep", "conflict", "unknown", "taken", "merged", "restore"),
-    # warnings of `factory update`
-    "update": (
-        "update_conflict",
-        "update_unknown",
-        "migration_available",
-        "migration_not_needed",
-        "item_not_in_library",
-        "prompt_missing",
-        "library_mismatch",
-    ),
-    # data.update.migrations[].id of `factory update`
-    "migration": ("m001",),
     # data.items[].action of `factory library seed`
     "library_seed": ("create", "update", "unchanged", "kept", "take"),
     # warnings of `factory library status` and `factory library clone`
@@ -527,7 +454,6 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "workflow_unknown",
         "workflow_invalid",
         "gitignore_missing",
-        "update_available",
         "skill_mirror_missing",
         "skill_mirror_differs",
         "skill_mirror_extra",
@@ -558,13 +484,6 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "library_behind",
         "library_unpushed",
         "seed_update_available",
-        "item_local",
-        "item_missing",
-        "item_unknown",
-        "item_outdated",
-        "item_modified",
-        "item_diverged",
-        "workflow_not_in_repo",
         "roles_full_copy",
         "unknown_thinking",
         "check_failed",

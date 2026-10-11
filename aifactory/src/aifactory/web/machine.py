@@ -19,7 +19,6 @@ from aifactory.harness import CLI_BINARIES, HARNESSES
 from aifactory.harness.check import HarnessStatus, harnesses_in_config
 from aifactory.harness.settings import read as read_harness_settings
 from aifactory.harness.settings import test_failed
-from aifactory.library.store import LibraryStoreError
 from aifactory.providers import git
 
 _clock = time.monotonic
@@ -91,6 +90,17 @@ class HomeMachine:
         return self.delegate.file_mode(path)
 
 
+def _registered(home: Path) -> list[Any]:
+    """The registered repositories of ``home``; none when the registry is missing or bad."""
+    from aifactory.web.registry import RepoError, parse_registry, registry_path
+
+    path = registry_path(home)
+    try:
+        return list(parse_registry(path.read_text(encoding="utf-8"), str(path))[0].repos)
+    except (OSError, UnicodeError, RepoError):
+        return []
+
+
 def outside_repo() -> Path:
     """Find an existing path outside git, even when HAIFA_HOME is in a repo.
 
@@ -128,13 +138,7 @@ def check_view(
         view = {**copy.deepcopy(data), "cached": cached}
     # Registry changes must be visible even while the machine probes are cached.
     counts = dict.fromkeys(HARNESSES, 0)
-    try:
-        # imported here: multi_repo imports aifactory.web, whose package imports this module
-        from aifactory.library.multi_repo import registered_repos
-
-        repos = registered_repos(environ={"HAIFA_HOME": str(home)})
-    except LibraryStoreError:
-        repos = []
+    repos = _registered(home)
     adapter = HomeMachine(machine or SystemMachine(), home)
     for repo in repos:
         try:

@@ -77,11 +77,13 @@ def test_roles_from_factory(
 def test_agent_missing_from_roster(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    path = _repo(tmp_path, monkeypatch, HEADER + "steps: [plan, build, review]\n")
+    # reviewer comes from the library (the seed here); ghost is nowhere
+    steps = "steps:\n  - plan\n  - build\n  - review:\n      agent: ghost\n"
+    path = _repo(tmp_path, monkeypatch, HEADER + steps)
     assert main(["workflow", "check", str(path)]) == 1
     out = capsys.readouterr().out
     assert "unknown_agent" in out
-    assert "'reviewer'" in out
+    assert "'ghost'" in out
     assert "1 error(s)" in out
 
 

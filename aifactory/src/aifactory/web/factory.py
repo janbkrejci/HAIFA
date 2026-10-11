@@ -2,9 +2,10 @@
 
 ``check_view`` is ``factory check`` (``run_check``) plus the registry finding
 ``trace_db_shared`` and a 60 s cache per ``offline`` flag (``fresh`` renews it).
-``plan`` and ``apply`` call the CLI core for init, update, config commit,
-item add/set/remove/export/revert. ``items`` returns CLI item states
-without writing the cache. ``pull`` is ``factory config pull`` (``pull_config``).
+``plan`` and ``apply`` call the CLI core for init, config commit and item
+set/remove/move (``move``: "Move to library"). ``items`` lists the agents, workflows,
+skills and extensions of the repo with their origin (the repo's own copy or the library).
+``pull`` is ``factory config pull`` (``pull_config``).
 
 The body of plan and apply carries only the action, its options, the target (``base`` or
 ``pr``), the commit message and the digest; any other key is a ``usage_error``, so no path
@@ -35,30 +36,18 @@ JsonDict = dict[str, Any]
 
 CHECK_TTL = 60.0
 """Seconds a check result is reused (``fresh=1`` renews it)."""
-ITEM_ACTIONS = ("add", "set", "remove", "export", "revert")
-ACTIONS = ("init", "update", "config_commit", *ITEM_ACTIONS)
+ITEM_ACTIONS = ("set", "remove", "move")
+ACTIONS = ("init", "config_commit", *ITEM_ACTIONS)
 TARGETS = ("base", "pr")
 PROVIDERS = ("local", "github", "azure")
 AZURE_KEYS = ("organization", "project", "repository")
-INIT_OPTIONS = (
-    "agents",
-    "bind",
-    "workflows",
-    "base",
-    "provider",
-    "azure",
-    "docs_root",
-)
-UPDATE_OPTIONS = ("item", "take", "merge", "migrate")
+INIT_OPTIONS = ("base", "provider", "azure", "docs_root")
 OPTIONS: dict[str, tuple[str, ...]] = {
     "init": INIT_OPTIONS,
-    "update": UPDATE_OPTIONS,
     "config_commit": (),
-    "add": ("type", "name", "slot", "harness", "model", "thinking", "agent"),
     "set": ("type", "name", "harness", "model", "thinking", "tools", "writes", "color"),
-    "remove": ("type", "name", "prune"),
-    "export": ("type", "name", "slot"),
-    "revert": ("type", "name", "to"),
+    "remove": ("type", "name"),
+    "move": ("type", "name"),
 }
 PLAN_KEYS = ("action", "options", "target")
 APPLY_KEYS = ("action", "digest", "options", "target", "message")
@@ -70,15 +59,10 @@ _clock = time.monotonic
 STATUS: dict[str, int] = {
     # state conflicts and blockers
     "invalid_library": 422,
-    "slot_taken": 409,
     "in_use": 409,
-    "item_exists": 409,
-    "library_changed_since": 409,
     "library_missing": 409,
-    "registry_missing": 409,
     "registry_invalid": 422,
     "unknown_repo": 404,
-    "unknown_version": 422,
     "git_identity_missing": 409,
     "plan_changed": 409,
     "busy": 409,
@@ -92,8 +76,6 @@ STATUS: dict[str, int] = {
     "already_installed": 409,
     "existing_config": 409,
     "config_not_committed": 409,
-    "not_onboarded": 409,
-    "merge_conflict": 409,
     "no_remote": 409,
     "library_dirty": 409,
     "library_behind": 409,
@@ -106,7 +88,6 @@ STATUS: dict[str, int] = {
     "unknown_item": 422,
     "invalid_item": 422,
     "invalid_config": 422,
-    "format_unsupported": 422,
     "not_a_repository": 422,
     # remote and hosting
     "push_failed": 502,
@@ -236,35 +217,17 @@ def check_view(
         **report.to_json(),
         "checked_at": checked_at,
         "cached": cached,
-        **_manifest_view(root),
+        "version": _version(),
     }
     errors = report.errors()
     codes = ", ".join(dict.fromkeys(f.code for f in errors))
     return data, report.ok, f"{len(errors)} error(s): {codes}"
 
 
-def _manifest_view(root: Path) -> JsonDict:
-    """The manifest in base (``format``, ``written_by``) and the package version; never cached."""
+def _version() -> str:
     import aifactory
-    from aifactory.config import ConfigError
-    from aifactory.config.repo_state import repo_state
 
-    manifest: JsonDict | None = None
-    manifest_error: str | None = None
-    try:
-        repo = repo_state(root)
-    except (ConfigError, OSError):
-        repo = None
-    if repo is not None:
-        if repo.manifest is not None:
-            manifest = {"format": repo.manifest.format, "written_by": repo.manifest.written_by}
-        manifest_error = repo.manifest_error
-    return {
-        "manifest": manifest,
-        "manifest_error": manifest_error,
-        "library": repo.library if repo is not None else None,
-        "version": aifactory.__version__,
-    }
+    return aifactory.__version__
 
 
 # ── body validation ───────────────────────────────────────────────────────────
@@ -300,19 +263,7 @@ def _options(action: str, raw: object) -> JsonDict:
     _keys(raw, OPTIONS[action], f"options for {action}")
     out: JsonDict = {}
     for key, value in raw.items():
-        if key == "prune":
-            if not isinstance(value, bool):
-                raise UsageError(f"options.{key} must be a boolean")
-            out[key] = value
-        elif key in ("agents", "workflows", "item", "take", "merge", "migrate"):
-            if value is None and action == "init":
-                continue
-            if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
-                raise UsageError(f"options.{key} must be a list of strings")
-            out[key] = list(value)
-        elif key == "bind":
-            out[key] = _bind(value)
-        elif key == "azure":
+        if key == "azure":
             out[key] = _azure(value)
         else:
             if value is None and action == "init":
@@ -325,20 +276,6 @@ def _options(action: str, raw: object) -> JsonDict:
             raise UsageError("options.type and options.name are required non-empty strings")
         if out["type"] not in ITEM_TYPES:
             raise UsageError("unknown item type")
-    return out
-
-
-def _bind(value: object) -> dict[str, JsonDict]:
-    if not isinstance(value, dict):
-        raise UsageError("options.bind must be an object {agent: {harness, model?, thinking?}}")
-    out: dict[str, JsonDict] = {}
-    for agent, spec in value.items():
-        if not isinstance(spec, dict):
-            raise UsageError(
-                f"options.bind.{agent} must be an object {{harness, model?, thinking?}}"
-            )
-        _keys(spec, ("harness", "model", "thinking"), f"keys in options.bind.{agent}")
-        out[agent] = {k: _opt_str(spec.get(k), f"options.bind.{agent}.{k}") for k in spec}
     return out
 
 
@@ -384,23 +321,7 @@ def parse_apply_body(body: Mapping[str, Any]) -> Request:
 # ── core calls ────────────────────────────────────────────────────────────────
 
 
-def _bind_text(agent: str, spec: Mapping[str, str | None]) -> str:
-    from aifactory.library.store import LibraryStoreError
-
-    harness = (spec.get("harness") or "").strip()
-    if not harness:
-        raise LibraryStoreError("invalid_value", f"bind {agent}: harness is required")
-    parts = [harness, spec.get("model") or "", spec.get("thinking") or ""]
-    for part in (agent, *parts):
-        if any(ch in part for ch in ":=,"):
-            raise LibraryStoreError(
-                "invalid_value", f"bind {agent}: {part!r} must not contain ':', '=' or ','"
-            )
-    return f"{agent}={':'.join(parts).rstrip(':')}"
-
-
 def _init_kwargs(options: Mapping[str, Any]) -> JsonDict:
-    from aifactory.library.install import parse_binding
     from aifactory.library.store import LibraryStoreError
 
     provider = options.get("provider")
@@ -416,14 +337,10 @@ def _init_kwargs(options: Mapping[str, Any]) -> JsonDict:
         )
     if provider is None and azure_given:
         provider = "azure"
-    bind: Mapping[str, Mapping[str, str | None]] = options.get("bind") or {}
     return {
         "base": options.get("base"),
         "provider": provider,
         "azure": azure if azure_given else None,
-        "bindings": [parse_binding(_bind_text(agent, spec)) for agent, spec in bind.items()],
-        "agents": options.get("agents"),
-        "workflows": options.get("workflows"),
         "docs_root": options.get("docs_root"),
     }
 
@@ -486,22 +403,6 @@ def _call(
             environ=environ,
             **_init_kwargs(req.options),
         )
-    if req.action == "update":
-        from aifactory.library.update import run_update
-
-        return run_update(
-            root,
-            item=req.options.get("item") or (),
-            environ=environ,
-            take=req.options.get("take") or (),
-            merge=req.options.get("merge") or (),
-            migrate=req.options.get("migrate") or (),
-            dry_run=dry_run,
-            commit=True,
-            pr=req.pr,
-            expect=expect,
-            message=message,
-        )
     if req.action in ITEM_ACTIONS:
         from aifactory.library.config_edit import Command, run_config
 
@@ -528,15 +429,12 @@ def plan(
     with _core_errors(req.action):
         result = _call(root, req, dry_run=True, environ=environ)
     data = {"action": req.action, **result.to_json()}
-    if req.action not in ("init", "update", "config_commit"):
+    if req.action not in ("init", "config_commit"):
         return data, list(result.warnings)
     if "remote" not in data:
-        if req.action == "update":
-            data["remote"] = result.plan.state.settings.remote
-        else:
-            from aifactory.config.commit import _context
+        from aifactory.config.commit import _context
 
-            data["remote"] = _context(root).settings.remote
+        data["remote"] = _context(root).settings.remote
     from aifactory.providers import git
 
     if data.get("remote") and not git.has_remote(root, data["remote"]):
@@ -562,7 +460,7 @@ def apply(
         if state is not None:
             state.checks.clear()
     full = result.to_json()
-    if req.action not in ("init", "update", "config_commit"):
+    if req.action not in ("init", "config_commit"):
         return {"action": req.action, **full, "warnings": list(result.warnings)}, list(
             result.warnings
         )
@@ -591,14 +489,43 @@ def pull_plan(root: Path) -> tuple[JsonDict, list[str]]:
         return plan_pull_config(root), []
 
 
-def items(
-    root: Path, *, base: str | None = None, environ: Mapping[str, str] | None = None
-) -> JsonDict:
-    """The CLI item states, without writing its optional cache."""
-    from aifactory.library.state import repo_items
+def items(root: Path) -> JsonDict:
+    """Agents, workflows, skills and extensions of the working tree's configuration.
+
+    ``origin`` is ``repo`` for the repo's own copy and ``library`` for an inherited item;
+    ``library`` is the library commit (None: the seed).
+    """
+    from aifactory.config.loader import load_worktree_config
+    from aifactory.harness.repo_skills import SOURCE
+    from aifactory.library.inherit import snapshot_at
 
     with _core_errors():
-        return repo_items(root, base=base, environ=environ, save_cache=False)
+        cfg = load_worktree_config(root)
+
+    def origin(key: str) -> str:
+        return "library" if key in cfg.inherited else "repo"
+
+    rows: list[JsonDict] = [
+        {"type": "agent", "name": a.name, "origin": origin(f"agent/{a.name}")}
+        for a in cfg.agents.agents
+    ]
+    rows += [
+        {"type": "workflow", "name": n, "origin": origin(f"workflow/{n}")}
+        for n in sorted(cfg.workflows)
+    ]
+    library = snapshot_at(cfg.library)
+    for kind, folder, inherited in (
+        ("skill", root / SOURCE, library.skills),
+        ("extension", root / ".factory" / "extensions", library.extensions),
+    ):
+        own = sorted(p.name for p in folder.iterdir() if p.is_dir()) if folder.is_dir() else []
+        rows += [{"type": kind, "name": n, "origin": "repo"} for n in own]
+        rows += [
+            {"type": kind, "name": n, "origin": "library"}
+            for n in sorted(inherited)
+            if n not in own
+        ]
+    return {"library": cfg.library, "items": rows}
 
 
 def workflow_overrides(root: Path) -> list[JsonDict]:
@@ -643,23 +570,39 @@ def workflow_overrides(root: Path) -> list[JsonDict]:
 
 
 def roster(root: Path) -> JsonDict:
-    """Read bindings and backlog usage without sending editable file contents.
+    """The effective agents (the repo's and the inherited ones) and backlog usage.
 
     Also the presets and thinking levels the editor offers and the step overrides of the
-    workflows (``workflow_overrides``).
+    workflows (``workflow_overrides``). Each agent has ``origin``: ``repo`` or ``library``.
     """
+    from aifactory.config.loader import load_worktree_config
     from aifactory.config.roster import PRESETS
+    from aifactory.harness import canonical
     from aifactory.harness.override import THINKING_LEVELS
     from aifactory.library.config_edit import _base_tasks, read_state
 
     with _core_errors():
+        cfg = load_worktree_config(root)
         state = read_state(root, "worktree")
         counts: dict[str, int] = {}
         for _, workflow in _base_tasks(state):
             if isinstance(workflow, str):
                 counts[workflow] = counts.get(workflow, 0) + 1
+        agents = [
+            {
+                "name": a.name,
+                "purpose": a.purpose,
+                "harness": canonical(str(a.coding_agent)),
+                "model": a.model,
+                "thinking": a.thinking,
+                "skills": list(a.skills),
+                "writes": a.writes,
+                "origin": "library" if f"agent/{a.name}" in cfg.inherited else "repo",
+            }
+            for a in cfg.agents.agents
+        ]
         return {
-            "agents": state.roster,
+            "agents": agents,
             "workflow_tasks": counts,
             "presets": {name: dict(values) for name, values in PRESETS.items()},
             "thinking_levels": list(THINKING_LEVELS),
@@ -716,10 +659,3 @@ def roster_change(root: Path, change: RosterChange, state: FactoryState | None =
         if state is not None and not change.dry_run:
             state.checks.clear()
     return {k: v for k, v in result.items() if k != "path"}
-
-
-def item_diff(root: Path, kind: str, name: str, environ: Mapping[str, str]) -> JsonDict:
-    from aifactory.library.config_transfer import diff_item
-
-    with _core_errors():
-        return diff_item(root, kind, name, environ)

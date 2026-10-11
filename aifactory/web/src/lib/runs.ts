@@ -98,6 +98,8 @@ export interface RunSummary {
   pause?: RunPause | null
   /** Why a succeeded run has no PR (push or hosting failed); `task publish` retries. */
   pr_error?: string | null
+  /** The library commit the run read; null for the packaged seed or an older run. */
+  library_commit?: string | null
   pr: RunPr | null
   phases: PhaseDot[]
 }

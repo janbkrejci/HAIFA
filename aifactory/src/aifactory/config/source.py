@@ -237,7 +237,7 @@ class CommitSource:
 class OverlaySource:
     """Files of a plan laid over another source (or over nothing): the plan wins.
 
-    ``factory init`` and ``factory config add|set|remove`` validate the configuration
+    ``factory init`` and ``factory config set|remove|move`` validate the configuration
     base (or the working tree) will have once the planned files are written, without
     writing them anywhere. An overlay value of None is a deleted file.
     """

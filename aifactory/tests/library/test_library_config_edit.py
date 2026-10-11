@@ -1,9 +1,10 @@
-"""``factory config add|set|remove`` with a temporary library and a bare remote (no network)."""
+"""``factory config set|remove|move`` with a temporary library and a bare remote (no network)."""
 
 from __future__ import annotations
 
 import difflib
 import os
+import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -12,7 +13,6 @@ import pytest
 import yaml
 
 from aifactory.config.loader import load_config
-from aifactory.config.manifest import MANIFEST_FILE
 from aifactory.config.source import WorktreeSource
 from aifactory.config.yamledit import edit_yaml, roster_set
 from aifactory.library import store
@@ -96,12 +96,33 @@ def make_library() -> Path:
     return root
 
 
+OWN_BUILDER = "You are our own builder.\n"
+MINE = "name: mine\ndescription: Our own workflow.\nsteps:\n  - plan:\n      agent: helper\n"
+
+
 @pytest.fixture
 def repo(tmp_path: Path, capsys: Capsys) -> Path:
-    """An onboarded repo (factory init --commit from the seed) and a library with extras."""
+    """An installed repo with its own builder, helper, workflow mine and skill tidy; and a
+    library from the seed with the skill lint and the workflow solo."""
     path = make_repo(tmp_path)
     rc, env = run_json(capsys, ["init", "--repo", str(path), "--commit", "--json"])
     assert rc == 0, env
+    put(
+        path,
+        AGENTS,
+        "agents:\n"
+        "  - name: builder\n    purpose: Build it our way.\n    harness: claude\n"
+        "    model: claude-opus-5-5\n    thinking: medium\n"
+        "  - name: helper\n    purpose: Help.\n    harness: claude\n"
+        "    model: claude-opus-5-5\n",
+    )
+    for agent, system in (("builder", OWN_BUILDER), ("helper", "Help.\n")):
+        put(path, f".factory/prompts/{agent}/system.md", system)
+        put(path, f".factory/prompts/{agent}/user.md", "{{prompt}}\n")
+    put(path, ".factory/workflows/mine.yaml", MINE)
+    for top in (".claude/skills", ".agents/skills"):
+        put(path, f"{top}/tidy/SKILL.md", SKILL_MD.replace("lint", "tidy"))
+    commit_all(path, "own items")
     make_library()
     return path
 
@@ -128,11 +149,6 @@ def rev(repo: Path, ref: str = "main") -> str:
     return git(repo, "rev-parse", ref)
 
 
-def manifest(repo: Path) -> dict[str, Any]:
-    data: dict[str, Any] = yaml.safe_load((repo / MANIFEST_FILE).read_text(encoding="utf-8"))
-    return data
-
-
 def roster(repo: Path) -> dict[str, dict[str, Any]]:
     raw = yaml.safe_load((repo / AGENTS).read_text(encoding="utf-8"))
     return {a["name"]: a for a in raw["agents"]}
@@ -150,6 +166,10 @@ def commit_all(repo: Path, message: str) -> None:
     git(repo, "add", "-A")
     git(repo, "commit", "-q", "-m", message)
     git(repo, "push", "-q", "origin", "main")
+
+
+def library_file(rel: str) -> str:
+    return git(store.library_root(), "show", f"HEAD:{rel}")
 
 
 def _claim(repo: Path, pid: int) -> None:
@@ -176,80 +196,6 @@ def _claim(repo: Path, pid: int) -> None:
         runs.close()
 
 
-# ── add ───────────────────────────────────────────────────────────────────────
-
-
-def test_add_workflow_with_closure(repo: Path, capsys: Capsys) -> None:
-    base = rev(repo)
-
-    data = ok(capsys, repo, "add", "workflow", "solo")
-
-    assert data["written"] and not data["committed"] and data["target"] == "worktree"
-    added = {(a["type"], a["name"]): a["reason"] for a in data["added"]}
-    assert added == {("workflow", "solo"): "requested", ("agent", "scout"): "dependency"}
-    assert {"type": "agent", "name": "reviewer", "reason": "present"} in data["kept"]
-    assert (repo / ".factory/workflows/solo.yaml").read_text(encoding="utf-8") == SOLO
-    assert (repo / ".factory/prompts/scout/system.md").is_file()
-    items = manifest(repo)["items"]
-    assert items["workflows"]["solo"]["item"] == "solo" and items["workflows"]["solo"]["version"]
-    assert items["agents"]["scout"]["version"]
-    assert "scout" in roster(repo)
-    load_config(WorktreeSource(repo))
-    assert rev(repo) == base
-    # the same again: nothing to change
-    assert ok(capsys, repo, "add", "workflow", "solo")["changed"] is False
-
-
-def test_add_agent_as_other_slot(repo: Path, capsys: Capsys) -> None:
-    base = rev(repo)
-
-    data = ok(
-        capsys, repo, "add", "agent", "planner", "--as", "planner2", "--thinking", "high",
-        "--model", "claude-opus-5-5",
-    )  # fmt: skip
-
-    entry = roster(repo)["planner2"]
-    assert entry["thinking"] == "high" and entry["model"] == "claude-opus-5-5"
-    assert entry["harness"] == "claude" and entry["writes"] == ["factory/specs/"]
-    assert data["bindings"]["planner2"]["thinking"] == "high"
-    assert (repo / ".factory/prompts/planner2/system.md").read_bytes() == (
-        repo / ".factory/prompts/planner/system.md"
-    ).read_bytes()
-    assert manifest(repo)["items"]["agents"]["planner2"]["item"] == "planner"
-    assert rev(repo) == base
-
-
-def test_slot_taken_and_same_content_noop(repo: Path, capsys: Capsys) -> None:
-    before = files(repo)
-    data = ok(capsys, repo, "add", "agent", "builder")
-    assert data["changed"] is False and data["kept"][0]["reason"] == "same_content"
-    assert files(repo) == before
-
-    prompt = repo / ".factory/prompts/builder/system.md"
-    prompt.write_text("changed\n", encoding="utf-8")
-    before = files(repo)
-    error = fail(capsys, repo, "slot_taken", "add", "agent", "builder")
-    assert "--as" in error["data"]["fix"]
-    assert files(repo) == before
-
-
-def test_add_skill_to_both_trees(repo: Path, capsys: Capsys) -> None:
-    base = rev(repo)
-
-    data = ok(capsys, repo, "add", "skill", "lint")
-
-    assert [a["name"] for a in data["added"]] == ["lint"]
-    for top in (".claude/skills/lint", ".agents/skills/lint"):
-        assert (repo / top / "SKILL.md").read_text(encoding="utf-8") == SKILL_MD
-        assert os.access(repo / top / "bin/run.sh", os.X_OK)
-    assert manifest(repo)["items"]["skills"]["lint"]["item"] == "lint"
-    rc, env = run_json(capsys, ["skills", "sync", "--repo", str(repo), "--json"])
-    assert rc == 0, env
-    assert env["data"]["added"] == env["data"]["updated"] == env["data"]["removed"] == []
-    assert rev(repo) == base
-    fail(capsys, repo, "conflicting_options", "add", "skill", "lint", "--as", "other")
-
-
 # ── set ───────────────────────────────────────────────────────────────────────
 
 
@@ -259,7 +205,7 @@ def test_set_keeps_comments_and_order(repo: Path, capsys: Capsys) -> None:
     text = "# our agents\n" + text.replace("- name: builder\n", "- name: builder  # builds\n")
     path.write_text(text, encoding="utf-8", newline="\n")
     commit_all(repo, "comment the roster")
-    base, before_manifest = rev(repo), manifest(repo)
+    base = rev(repo)
 
     data = ok(
         capsys, repo, "set", "agent", "builder", "--thinking", "high", "--tools", "read,bash",
@@ -270,12 +216,29 @@ def test_set_keeps_comments_and_order(repo: Path, capsys: Capsys) -> None:
     diff = list(difflib.ndiff(text.splitlines(), after.splitlines()))
     removed = [line[2:] for line in diff if line.startswith("- ")]
     added = [line[2:] for line in diff if line.startswith("+ ")]
-    assert removed == ["  thinking: medium"]
-    assert added == ["  thinking: high", "  tools:", "  - read", "  - bash", "  color: '#112233'"]
+    assert removed == ["    thinking: medium"]
+    assert added == [
+        "    thinking: high",
+        "    tools:",
+        "      - read",
+        "      - bash",
+        "    color: '#112233'",
+    ]
     assert after.startswith("# our agents\n") and "- name: builder  # builds\n" in after
     assert data["bindings"]["builder"]["tools"] == ["read", "bash"]
-    assert manifest(repo) == before_manifest
     assert rev(repo) == base
+
+
+def test_set_inherited_agent_adds_an_override(repo: Path, capsys: Capsys) -> None:
+    data = ok(capsys, repo, "set", "agent", "reviewer", "--thinking", "high")
+
+    assert roster(repo)["reviewer"] == {"name": "reviewer", "thinking": "high"}
+    assert data["bindings"]["reviewer"]["thinking"] == "high"
+    config = load_config(WorktreeSource(repo))
+    reviewer = next(a for a in config.agents.agents if a.name == "reviewer")
+    assert reviewer.thinking == "high" and reviewer.purpose
+    assert "agent/reviewer" in config.inherited
+    assert config.prompts["reviewer"].system  # the library prompt
 
 
 def test_set_invalid_thinking(repo: Path, capsys: Capsys) -> None:
@@ -298,48 +261,99 @@ def test_yamledit_roundtrip() -> None:
 # ── remove ────────────────────────────────────────────────────────────────────
 
 
-def test_remove_in_use_and_prune(repo: Path, capsys: Capsys) -> None:
-    ok(capsys, repo, "add", "workflow", "solo")
-    base = rev(repo)
-    error = fail(capsys, repo, "in_use", "remove", "agent", "reviewer")
-    assert any(u.startswith("workflow simple-sdlc") for u in error["data"]["used_by"])
+def test_remove_own_copy_falls_back_to_the_library(repo: Path, capsys: Capsys) -> None:
+    data = ok(capsys, repo, "remove", "agent", "builder")
 
-    data = ok(capsys, repo, "remove", "workflow", "solo", "--prune")
-
-    removed = {(r["type"], r["name"]): r["reason"] for r in data["removed"]}
-    assert removed == {("workflow", "solo"): "requested", ("agent", "scout"): "pruned"}
-    assert {"type": "agent", "name": "reviewer"}.items() <= next(
-        k for k in data["kept"] if k["name"] == "reviewer"
-    ).items()
-    assert not (repo / ".factory/workflows/solo.yaml").exists()
-    assert not (repo / ".factory/prompts/scout").exists()
-    assert "scout" not in roster(repo) and "reviewer" in roster(repo)
-    assert "scout" not in manifest(repo)["items"]["agents"]
-    assert rev(repo) == base
+    assert data["removed"] == [{"type": "agent", "name": "builder", "reason": "requested"}]
+    assert not (repo / ".factory/prompts/builder").exists()
+    assert "builder" not in roster(repo)
+    config = load_config(WorktreeSource(repo))
+    assert "agent/builder" in config.inherited
+    assert config.prompts["builder"].system != OWN_BUILDER
 
 
-def test_remove_keeps_local_and_backlog_in_base(repo: Path, capsys: Capsys) -> None:
-    ok(capsys, repo, "add", "workflow", "solo")
-    # scout becomes local: no manifest entry, so --prune leaves it
-    path = repo / MANIFEST_FILE
-    raw = manifest(repo)
-    del raw["items"]["agents"]["scout"]
-    path.write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")
-    data = ok(capsys, repo, "remove", "workflow", "solo", "--prune", "--dry-run")
-    assert {"type": "agent", "name": "scout", "reason": "local"} in data["kept"]
+def test_remove_in_use_without_the_library(repo: Path, capsys: Capsys) -> None:
+    error = fail(capsys, repo, "in_use", "remove", "agent", "helper")
+    assert error["data"]["used_by"] == ["workflow mine step steps[0].plan"]
 
     put(repo, "factory/backlog/M01-core/index.md", "---\nid: M01\ntitle: M01\n---\n")
     put(repo, "factory/backlog/M01-core/S01-a/index.md", "---\nid: M01-S01\ntitle: S\n---\n")
     put(
         repo,
         "factory/backlog/M01-core/S01-a/M01-S01-T01-x.md",
-        "---\nid: M01-S01-T01\ntitle: T\nstatus: todo\nworkflow: solo\n---\n\nbody\n",
+        "---\nid: M01-S01-T01\ntitle: T\nstatus: todo\nworkflow: mine\n---\n\nbody\n",
     )
-    git(repo, "add", "factory")
-    git(repo, "commit", "-q", "-m", "backlog")
-    git(repo, "push", "-q", "origin", "main")
-    error = fail(capsys, repo, "in_use", "remove", "workflow", "solo")
+    commit_all(repo, "backlog")
+    error = fail(capsys, repo, "in_use", "remove", "workflow", "mine")
     assert error["data"]["used_by"] == ["backlog task M01-S01-T01"]
+    fail(capsys, repo, "unknown_item", "remove", "workflow", "solo")
+
+
+# ── move ──────────────────────────────────────────────────────────────────────
+
+
+def test_move_agent_to_the_library(repo: Path, capsys: Capsys, tmp_path: Path) -> None:
+    library_head = rev(store.library_root(), "HEAD")
+    before = files(repo)
+    plan = ok(capsys, repo, "move", "agent", "builder", "--commit", "--dry-run")
+    assert files(repo) == before and rev(store.library_root(), "HEAD") == library_head
+    assert plan["blockers"] == [] and plan["library_plan"]["files"]
+
+    data = ok(capsys, repo, "move", "agent", "builder", "--commit", "--expect", plan["digest"])
+
+    assert data["committed"] and data["pushed"]
+    assert data["library_commit"] == rev(store.library_root(), "HEAD") != library_head
+    assert library_file("agents/builder/system.md") + "\n" == OWN_BUILDER
+    agent_yaml = yaml.safe_load(library_file("agents/builder/agent.yaml"))
+    assert agent_yaml["purpose"] == "Build it our way."
+    assert agent_yaml["defaults"]["harness"] == "claude"  # the library builder's defaults
+    assert not (repo / ".factory/prompts/builder").exists()
+    # the roster entry keeps the bindings only: an override of the library agent
+    assert roster(repo)["builder"] == {
+        "name": "builder",
+        "harness": "claude",
+        "model": "claude-opus-5-5",
+        "thinking": "medium",
+    }
+    assert git(repo, "status", "--porcelain") == ""
+    assert git(tmp_path / "origin.git", "rev-parse", "main") == rev(repo)
+    config = load_config(WorktreeSource(repo))
+    assert "agent/builder" in config.inherited
+    assert config.prompts["builder"].system == OWN_BUILDER
+
+
+def test_move_workflow_and_skill(repo: Path, capsys: Capsys) -> None:
+    ok(capsys, repo, "move", "agent", "helper", "--commit")
+    ok(capsys, repo, "move", "workflow", "mine", "--commit")
+    data = ok(capsys, repo, "move", "skill", "tidy", "--commit")
+
+    assert library_file("workflows/mine.yaml") + "\n" == MINE
+    assert "name: tidy" in library_file("skills/tidy/SKILL.md")
+    for rel in (".factory/workflows/mine.yaml", ".claude/skills/tidy", ".agents/skills/tidy"):
+        assert not (repo / rel).exists(), rel
+    assert "helper" not in roster(repo) or set(roster(repo)["helper"]) != {"name"}
+    assert data["committed"] and git(repo, "status", "--porcelain") == ""
+    config = load_config(WorktreeSource(repo))
+    assert {"workflow/mine", "agent/helper"} <= config.inherited
+
+
+def test_move_refusals(repo: Path, capsys: Capsys) -> None:
+    fail(capsys, repo, "unknown_item", "move", "workflow", "solo")
+    fail(capsys, repo, "unknown_item", "move", "agent", "reviewer")
+    shutil.rmtree(store.library_root())
+    error = fail(capsys, repo, "library_missing", "move", "agent", "builder", "--commit")
+    assert "factory library init" in error["message"]
+
+
+def test_move_plan_changed_when_the_library_moves(repo: Path, capsys: Capsys) -> None:
+    old = ok(capsys, repo, "move", "workflow", "mine", "--commit", "--dry-run")
+    root = store.library_root()
+    put(root, "workflows/other.yaml", "name: other\nsteps: [plan]\n")
+    git(root, "add", "-A")
+    git(root, "commit", "-q", "-m", "other")
+    fail(capsys, repo, "plan_changed", "move", "workflow", "mine", "--commit", "--expect",
+         old["digest"])  # fmt: skip
+    assert (repo / ".factory/workflows/mine.yaml").is_file()
 
 
 # ── commit and blockers ───────────────────────────────────────────────────────
@@ -347,64 +361,53 @@ def test_remove_keeps_local_and_backlog_in_base(repo: Path, capsys: Capsys) -> N
 
 def test_commit_and_plan_changed(repo: Path, capsys: Capsys, tmp_path: Path) -> None:
     before = files(repo)
-    old = ok(capsys, repo, "add", "workflow", "solo", "--commit", "--dry-run")
+    old = ok(capsys, repo, "remove", "agent", "builder", "--commit", "--dry-run")
     assert old["dry_run"] and old["target"] == "direct" and old["blockers"] == []
     assert files(repo) == before
 
     put(repo, "notes.txt", "unrelated\n")
     commit_all(repo, "unrelated")
     head = rev(repo)
-    fail(capsys, repo, "plan_changed", "add", "workflow", "solo", "--commit", "--expect",
+    fail(capsys, repo, "plan_changed", "remove", "agent", "builder", "--commit", "--expect",
          old["digest"])  # fmt: skip
-    assert rev(repo) == head and not (repo / ".factory/workflows/solo.yaml").exists()
+    assert rev(repo) == head
 
-    new = ok(capsys, repo, "add", "workflow", "solo", "--commit", "--dry-run")
-    data = ok(capsys, repo, "add", "workflow", "solo", "--commit", "--expect", new["digest"],
-              "-m", "add solo")  # fmt: skip
+    new = ok(capsys, repo, "remove", "agent", "builder", "--commit", "--dry-run")
+    data = ok(capsys, repo, "remove", "agent", "builder", "--commit", "--expect", new["digest"],
+              "-m", "drop builder")  # fmt: skip
 
     assert data["committed"] and data["pushed"] and data["advanced"]
     assert git(repo, "rev-parse", "main~1") == head
     assert git(tmp_path / "origin.git", "rev-parse", "main") == rev(repo)
-    assert git(repo, "log", "-1", "--format=%s") == "add solo"
-    assert (repo / ".factory/workflows/solo.yaml").read_text(encoding="utf-8") == SOLO
+    assert git(repo, "log", "-1", "--format=%s") == "drop builder"
     assert git(repo, "status", "--porcelain") == ""
-
-    data = ok(capsys, repo, "remove", "workflow", "solo", "--commit")
-    assert data["committed"]
-    assert not (repo / ".factory/workflows/solo.yaml").exists()
-    assert git(repo, "status", "--porcelain") == ""
-    assert git(tmp_path / "origin.git", "rev-parse", "main") == rev(repo)
 
 
 def test_worktree_expect_and_run_in_progress(repo: Path, capsys: Capsys) -> None:
     base = rev(repo)
     before = files(repo)
-    plan = ok(capsys, repo, "add", "workflow", "solo", "--dry-run")
+    plan = ok(capsys, repo, "set", "agent", "builder", "--thinking", "high", "--dry-run")
     assert files(repo) == before
-    fail(capsys, repo, "plan_changed", "add", "workflow", "solo", "--expect", "0" * 64)
+    fail(capsys, repo, "plan_changed", "set", "agent", "builder", "--thinking", "high",
+         "--expect", "0" * 64)  # fmt: skip
     assert files(repo) == before
-    data = ok(capsys, repo, "add", "workflow", "solo", "--expect", plan["digest"])
+    data = ok(capsys, repo, "set", "agent", "builder", "--thinking", "high", "--expect",
+              plan["digest"])  # fmt: skip
     assert data["written"]
-    ok(capsys, repo, "remove", "workflow", "solo", "--prune")
 
     _claim(repo, os.getpid())
     before = files(repo)
-    fail(capsys, repo, "run_in_progress", "add", "workflow", "solo")
-    fail(capsys, repo, "run_in_progress", "add", "workflow", "solo", "--commit")
+    fail(capsys, repo, "run_in_progress", "set", "agent", "builder", "--thinking", "low")
+    fail(capsys, repo, "run_in_progress", "remove", "workflow", "mine", "--commit")
     assert files(repo) == before
     assert rev(repo) == base
 
 
-def test_not_onboarded(tmp_path: Path, capsys: Capsys) -> None:
-    path = make_repo(tmp_path)
-    error = fail(capsys, path, "not_onboarded", "add", "agent", "builder")
-    assert error["data"]["fix"] == "factory init"
-    assert "factory onboard" not in error["message"]
-
-
 def test_option_conflicts(repo: Path, capsys: Capsys) -> None:
-    fail(capsys, repo, "conflicting_options", "add", "workflow", "solo", "--pr")
-    fail(capsys, repo, "conflicting_options", "add", "workflow", "solo", "-m", "x")
-    fail(capsys, repo, "conflicting_options", "add", "workflow", "solo", "--dry-run",
+    fail(capsys, repo, "conflicting_options", "remove", "agent", "builder", "--pr")
+    fail(capsys, repo, "conflicting_options", "remove", "agent", "builder", "-m", "x")
+    fail(capsys, repo, "conflicting_options", "move", "agent", "builder", "--dry-run",
          "--expect", "abc")  # fmt: skip
-    fail(capsys, repo, "conflicting_options", "add", "workflow", "solo", "--harness", "claude")
+    for command in ("add", "export", "revert", "items", "diff"):
+        rc, env = run_json(capsys, ["config", command, "--json"])
+        assert rc == 2 and env["error"]["code"] == "usage_error", command

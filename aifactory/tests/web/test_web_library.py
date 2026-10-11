@@ -9,15 +9,14 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
-from multi_repo import BASE, git, register, rmtree, symlink, write
+from multi_repo import BASE, git, symlink, write
 from starlette.applications import Starlette
 from starlette.datastructures import State
 from starlette.testclient import TestClient
 
 from aifactory.library import store
-from aifactory.library.install import init_repo
 from aifactory.skill import envelope_problems
-from aifactory.web import create_multi_app, library
+from aifactory.web import create_multi_app
 from fake_exe import make_executable
 
 
@@ -92,7 +91,7 @@ def test_empty_home_and_read_only_init(client: TestClient) -> None:
     summary = response(client.get("/api/library?items=0"))
     assert summary == {k: v for k, v in data.items() if k != "items"}
     for item in data["items"]:
-        assert item["repo_count"] == 0
+        assert "repos" not in item and "repo_count" not in item
         assert all(item[k] for k in ("version", "date", "author", "commit"))
     changed = preview(client, "init", name="team")
     assert changed["blockers"][0]["code"] == "library_exists"
@@ -164,7 +163,7 @@ def test_import_history_digest_and_noop(client: TestClient) -> None:
     assert git(root, "rev-parse", "HEAD") == head
     response(apply(client, "import", changed, **options))
     detail = response(client.get("/api/library/items/skill/demo"))
-    assert len(detail["history"]) == 2 and detail["repos"] == []
+    assert len(detail["history"]) == 2 and "repos" not in detail
     assert detail["description"] == "Test"
     listed = response(client.get("/api/library"))
     item = next(i for i in listed["items"] if i["name"] == "demo")
@@ -325,54 +324,6 @@ def test_rejected_push_and_cache_invalidation(client: TestClient, tmp_path: Path
     assert git(root, "rev-parse", "HEAD") == git(bare, "rev-parse", "main") == head
     hook.unlink()
     response(apply(client, "import", planned, **options))
-
-
-def test_usage_two_repositories(client: TestClient, tmp_path: Path) -> None:
-    root = initialize(client)
-    env = library.environment(state(client).home)
-    from aifactory.library.config_edit import execute_plan, plan_config
-
-    for name in ("first", "second"):
-        repo = tmp_path / name
-        repo.mkdir()
-        git(repo, "init", "-b", "main")
-        write(repo, "README.md", "readme\n")
-        git(repo, "add", "README.md")
-        git(repo, "commit", "-m", "init")
-        init_repo(repo, agents=["builder"], workflows=["plan-build"], environ=env)
-        if name == "first":
-            execute_plan(
-                plan_config("add", repo, type="agent", name="builder", slot="alias", environ=env),
-                environ=env,
-            )
-        register(client, repo)
-    data = response(client.get("/api/library"))
-    item = next(i for i in data["items"] if i["type"] == "agent" and i["name"] == "builder")
-    assert item["repo_count"] == 2
-    assert item["n"] == 1 and item["purpose"]
-    assert len(item["repos"]) == 3  # builder plus its alias in the first repo
-    assert all(row["state"] == "synced" for row in item["repos"])
-    detail = response(client.get("/api/library/items/agent/builder"))
-    assert {r["slot"] for r in detail["repos"]} == {"builder", "alias"}
-    assert all(r["state"] == "synced" for r in detail["repos"])
-    assert not (root / ".git/FETCH_HEAD").exists()
-    write(tmp_path / "first", ".factory/prompts/builder/system.md", "Locally modified.\n")
-    detail = response(client.get("/api/library/items/agent/builder"))
-    assert any(r["state"] == "modified" for r in detail["repos"])
-    source = state(client).user_home / "builder-source"
-    for leaf in ("agent.yaml", "system.md", "user.md"):
-        text = (root / "agents/builder" / leaf).read_text()
-        write(source, leaf, text + ("\nLibrary update.\n" if leaf == "system.md" else ""))
-    opts = {"path": str(source), "type": "agent", "name": "builder"}
-    response(apply(client, "import", preview(client, "import", **opts), **opts))
-    detail = response(client.get("/api/library/items/agent/builder"))
-    assert any(r["state"] == "outdated" for r in detail["repos"])
-    rmtree(tmp_path / "second")
-    detail = response(client.get("/api/library/items/agent/builder"))
-    assert any(r["state"] == "repo_missing" for r in detail["repos"])
-    data = response(client.get("/api/library"))
-    item = next(i for i in data["items"] if i["type"] == "agent" and i["name"] == "builder")
-    assert item["repo_count"] == 1
 
 
 def test_head_and_options_digest_and_read_only_get(

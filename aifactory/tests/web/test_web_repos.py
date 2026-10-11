@@ -211,21 +211,20 @@ def test_inspect_factory_states(client: TestClient, tmp_path: Path) -> None:
     commit_all(sssf)
     data = _inspect(client, sssf)["data"]
     assert (data["factory"]["state"], data["factory"]["action"]) == ("unsupported", None)
-    assert "sssf_paths" not in data and "onboarding_state" not in data["factory"]
+    assert "sssf_paths" not in data and "onboarding" not in data["factory"]
 
     pre = init_repo(tmp_path / "pre")
-    write(pre, ".factory/config.yaml", "base: main\n")
+    write(pre, ".factory/agents.yaml", "agents: []\n")
     commit_all(pre)
     data = _inspect(client, pre)["data"]
-    assert (data["factory"]["state"], data["factory"]["action"]) == ("unsupported", None)
-    assert data["factory"]["onboarding"] is None
+    assert (data["factory"]["state"], data["factory"]["action"]) == ("none", "init")
 
     done = init_repo(tmp_path / "done")
     install(done)
     git(done, "remote", "add", "origin", "https://example.com/done.git")
     data = _inspect(client, done)["data"]
     assert (data["factory"]["state"], data["factory"]["action"]) == ("installed", None)
-    assert data["factory"]["onboarding"]["by"] == "Ada Tester"
+    assert list(data["factory"]) == ["repo", "base", "commit", "state", "action"]
     assert data["remote"] == {"name": "origin", "url": "https://example.com/done.git"}
 
 
@@ -303,7 +302,11 @@ def test_add_installs_and_is_idempotent(client: TestClient, tmp_path: Path, home
     assert install["committed"] is True and install["pushed"] is False
     assert git(root, "rev-parse", "HEAD~1") == head
     assert install["commit"] == git(root, "rev-parse", "HEAD")
-    assert ".factory/manifest.yaml" in {f["path"] for f in install["files"]}
+    assert {f["path"] for f in install["files"]} == {
+        ".factory/config.yaml",
+        ".gitignore",
+        "factory/backlog/.gitkeep",
+    }
     installed = _porcelain(root)
     again = _add(client, root, 200)["data"]
     assert again["created"] is False and again["repo"]["id"] == "proj"
@@ -363,7 +366,7 @@ def test_list_statuses(client: TestClient, tmp_path: Path) -> None:
     }
     assert by_id["done"]["factory"]["state"] == "installed"
     assert by_id["sssf"]["factory"]["state"] == "unsupported"
-    assert by_id["dirty"]["factory"]["state"] == "unsupported"
+    assert by_id["dirty"]["factory"]["state"] == "installed"
     assert by_id["wt"]["factory"]["state"] == "uncommitted"
     assert by_id["gone"]["factory"] is None
     assert set(by_id["done"]) >= {"id", "name", "path", "added_at", "status", "factory"}
@@ -390,42 +393,27 @@ def test_delete_without_uninstall_removes_only_the_entry(
     assert _get(client, "/api/repos/proj/backlog", 404)["error"]["code"] == "unknown_repo"
 
 
-def test_delete_uninstalls_and_exports(tmp_path: Path) -> None:
-    from aifactory.library import store
-    from aifactory.web.library import environment
-
-    # the install and export use the process HAIFA_HOME; the dashboard home is the same here
+def test_delete_uninstalls(tmp_path: Path) -> None:
     home = Path(os.environ["HAIFA_HOME"])
     client = multi_client(home, tmp_path)
-    bare = tmp_path / "library.git"
-    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
-    lib = store.init_library("team", environment(home), remote=str(bare))
     root = init_repo(tmp_path / "proj")
     _add(client, root)
-    prompt = root / ".factory/prompts/builder/system.md"
-    prompt.write_text(prompt.read_text(encoding="utf-8") + "Repo rule.\n", encoding="utf-8")
-    commit_all(root, "own builder")
     removal = _get(client, "/api/repos/proj/removal")["data"]
-    own = {(i["type"], i["name"]) for i in removal["own_items"]}
-    assert ("agent", "builder") in own
-    assert ".factory/agents.yaml" in {f["path"] for f in removal["files"]}
-    payload = {"export": [{"type": "agent", "name": "builder"}]}
-    body = _delete(client, "proj", payload)
+    assert "own_items" not in removal
+    assert ".factory/config.yaml" in {f["path"] for f in removal["files"]}
+    body = _delete(client, "proj", {"uninstall": True})
     assert body["data"]["uninstall"]["commit"] == git(root, "rev-parse", "HEAD")
+    assert "exported" not in body["data"]["uninstall"]
     assert not (root / ".factory").exists()
     assert not git(root, "ls-files", ".factory")
     assert _registry(home)["repos"] == []
     assert _get(client, "/api/repos/proj/removal", 404)["error"]["code"] == "unknown_repo"
-    assert body["data"]["uninstall"]["exported"] == [{"type": "agent", "name": "builder"}]
-    library_root = Path(lib.plan.library)
-    exported = (library_root / "agents/builder/system.md").read_text(encoding="utf-8")
-    assert exported.endswith("Repo rule.\n")
 
 
 def test_delete_body_validation(client: TestClient, tmp_path: Path) -> None:
     root = init_repo(tmp_path / "proj")
     register(client, root)
-    for payload in ({"uninstall": "yes"}, {"export": ["agent/x"]}, {"export": [{"type": 1}]}):
+    for payload in ({"uninstall": "yes"}, {"export": [{"type": "agent", "name": "x"}]}):
         assert _delete(client, "proj", payload, 400)["error"]["code"] == "usage_error"
     assert [r["id"] for r in _get(client, "/api/repos")["data"]["repos"]] == ["proj"]
 

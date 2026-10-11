@@ -88,7 +88,7 @@ def test_factory_install_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                 page.locator('[data-test="add-inspect"]').click()
                 card = page.locator('[data-test="inspect-card"]')
                 expect(card.locator('[data-test="inspect-install-note"]')).to_contain_text(
-                    "zapíše do repa .factory z knihovny"
+                    "zapíše do repa .factory/config.yaml"
                 )
                 expect(card.locator("button")).to_have_count(1)
                 assert not (repo / ".factory").exists()
@@ -100,9 +100,8 @@ def test_factory_install_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                 assert git(repo, "rev-list", "--count", f"{before}..main") == "1"
                 assert git(bare, "rev-parse", "main") == after
                 assert git(repo, "status", "--porcelain") == ""
-                assert (repo / ".factory/manifest.yaml").is_file()
-                assert ".factory/agents.yaml" in git(
-                    repo, "ls-tree", "-r", "--name-only", "HEAD", ".factory"
+                assert git(repo, "ls-tree", "-r", "--name-only", "HEAD", ".factory") == (
+                    ".factory/config.yaml"
                 )
                 registered_id(home, repo)
                 page.locator('[data-test="repo-added-open"]').click()

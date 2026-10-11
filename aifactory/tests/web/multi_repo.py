@@ -14,31 +14,12 @@ from typing import Any
 import pytest
 from starlette.testclient import TestClient
 
-from aifactory.config.manifest import (
-    MANIFEST_FILE,
-    LibraryRef,
-    Manifest,
-    Onboarding,
-    dump_manifest,
-)
 from aifactory.web import create_multi_app
 
 BASE = "http://127.0.0.1:4700"
 CONFIG = "base: main\ndocs_root: .\n"
 AGENTS = "defaults:\n  harness: claude\nagents:\n  - name: builder\n    purpose: Build.\n"
 SSSF_ROSTER = "adws/adw_sssf_config/sssf.config.yaml"
-MANIFEST = Manifest(
-    written_by="0.1.0",
-    library=LibraryRef(id="lib-1", name="team", remote="https://example.com/lib.git"),
-    onboarding=Onboarding(
-        source="init",
-        source_commit="a" * 40,
-        at="2026-10-02T10:00:00Z",
-        by="Ada Tester",
-        factory="0.1.0",
-        library_commit="b" * 40,
-    ),
-)
 
 
 def git(root: Path, *args: str) -> str:
@@ -110,10 +91,9 @@ def init_repo(path: Path, *, commit: bool = True) -> Path:
 
 
 def install(root: Path) -> None:
-    """Commit config, agents and a manifest: the ``installed`` state."""
+    """Commit config and agents: the ``installed`` state."""
     write(root, ".factory/config.yaml", CONFIG)
     write(root, ".factory/agents.yaml", AGENTS)
-    write(root, MANIFEST_FILE, dump_manifest(MANIFEST))
     commit_all(root, "install")
 
 

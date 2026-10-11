@@ -11,7 +11,7 @@ the harness logins (``gh auth status``, ``az account show``, ``claude auth statu
 ``codex login status``, ``pi auth check``, ``pi --list-models``).
 
 Rules are registered in ``RULE_GROUPS``, a list of ``RuleGroup``; another group (for
-example onboarding or harness logins) is added with ``RULE_GROUPS.append(...)``,
+example harness logins) is added with ``RULE_GROUPS.append(...)``,
 without touching the CLI. A rule that raises an expected error (git, configuration,
 I/O) becomes a ``check_failed`` finding instead of stopping the check.
 """
@@ -118,7 +118,6 @@ def run_check(
         groups=tuple(group.name for group in selected),
         findings=tuple(findings),
         backlog=backlog,
-        onboarding=ctx.state.onboarding,
     )
 
 

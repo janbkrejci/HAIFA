@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import { CircleStop, Pause, Play, Upload } from 'lucide-vue-next'
 import { useNow } from '@/lib/clock'
-import { fmtTime, ts } from '@/lib/format'
+import { fmtTime, shortSha, ts } from '@/lib/format'
 import { reviewHref, runHref, taskHref } from '@/lib/router'
 import {
   bySeq,
@@ -127,6 +127,7 @@ async function onStop() {
         <div><dt>Běh</dt><dd class="mono">{{ run.run_id }}</dd></div>
         <div><dt>Workflow</dt><dd>{{ run.workflow ?? '—' }}</dd></div>
         <div><dt>Větev</dt><dd class="mono">{{ run.branch }}</dd></div>
+        <div><dt>Knihovna</dt><dd class="mono" data-test="run-library">{{ run.library_commit ? shortSha(run.library_commit) : 'seed' }}</dd></div>
         <div><dt>Začátek</dt><dd>{{ fmtTime(run.started_at) }}</dd></div>
         <div><dt>Konec</dt><dd>{{ fmtTime(run.ended_at) }}</dd></div>
         <div>

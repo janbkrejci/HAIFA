@@ -86,7 +86,7 @@ def test_skill_sections() -> None:
         "## Prerequisites",
         "### Add factory to an existing repo",
         "### Agents and prompts",
-        "### Manifest and item states",
+        "### Items of the repo: config set / remove / move",
         "## Calling convention",
         "## Commands",
         "## Error codes",
@@ -168,14 +168,21 @@ def test_skill_installation_procedure() -> None:
     ):
         assert text in prerequisites, text
     assert "repo_unsupported" in skill
-    for text in ("factory onboard", "factory adopt", "pre_library_config", "sssf_leftover"):
+    for text in (
+        "factory onboard",
+        "factory adopt",
+        "pre_library_config",
+        "sssf_leftover",
+        "factory update",
+        "config export",
+        "config add",
+        "manifest.yaml",
+    ):
         assert text not in skill, text
     install = _section(skill, "Add factory to an existing repo")
     for text in (
         "factory check --json",
         "factory init --dry-run --json",
-        "--agents",
-        "--bind",
         "Show the user the files",
         "digest",
         "factory init --commit --expect <digest>",
@@ -183,12 +190,12 @@ def test_skill_installation_procedure() -> None:
         "only with their consent",
         "--pr",
         "factory backlog check --json",
-        "Repeat all selection options",
+        "Repeat all options",
     ):
         assert text in install, text
 
 
-def test_skill_agents_prompts_and_manifest() -> None:
+def test_skill_agents_prompts_and_library() -> None:
     skill = render_skill()
     agents = _section(skill, "Agents and prompts")
     for text in (
@@ -203,8 +210,8 @@ def test_skill_agents_prompts_and_manifest() -> None:
         "disallowed_commands",
         "harness_engineering",
         "prompt_engineering",
-        ".factory/prompts/<slot>/system.md",
-        ".factory/prompts/<slot>/user.md",
+        ".factory/prompts/<name>/system.md",
+        ".factory/prompts/<name>/user.md",
         "prompt",
         "previous_envelope",
         "context_handoff_dir",
@@ -214,14 +221,15 @@ def test_skill_agents_prompts_and_manifest() -> None:
         "workdir",
         "test_result",
         "rebase_onto",
-        "modified",
-        "slot",
-        "factory config export agent",
+        "library",
+        "the seed",
+        "library_commit",
+        "factory config move agent",
     ):
         assert text in agents, text
-    manifest = _section(skill, "Manifest and item states")
-    for text in ("onboarding", "source_commit", "items", "version", "reads only `format`"):
-        assert text in manifest, text
+    items = _section(skill, "Items of the repo: config set / remove / move")
+    for text in ("factory config move", "library_missing", "in_use", "--expect <digest>"):
+        assert text in items, text
 
 
 def test_skill_backlog_creation_procedure() -> None:
@@ -239,14 +247,9 @@ def test_skill_backlog_creation_procedure() -> None:
         "factory backlog commit --json",
     ):
         assert text in section, text
-    install = _section(skill, "Add factory to an existing repo")
-    installed = re.findall(
-        r"factory init --dry-run --json --agents [\w,-]+ --workflows ([\w-]+)", install
-    )
     assigned = re.findall(r"factory backlog edit M01 --workflow ([\w-]+)", section)
-    assert installed and assigned
-    assert set(installed) <= set(seed_workflow_names())
-    assert set(assigned) <= set(installed)
+    assert assigned
+    assert set(assigned) <= set(seed_workflow_names())
 
 
 def test_skill_uses_project_level() -> None:

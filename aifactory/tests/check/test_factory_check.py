@@ -54,11 +54,11 @@ def repo(tmp_path: Path) -> Path:
 
 def test_healthy_repo(repo: Path) -> None:
     report = run_check(repo, machine=FakeMachine())
-    assert (report.state, report.action) == ("unsupported", None)
+    assert (report.state, report.action) == ("installed", None)
     assert report.ok, report.findings
-    finding = _assert(report, "repo_unsupported", "repo", "info")
-    assert "does not take over" in finding.message
-    assert _codes(report) == ["repo_unsupported", "library_missing"]
+    finding = _assert(report, "repo_installed", "repo", "info")
+    assert "the seed" in finding.message
+    assert _codes(report) == ["repo_installed", "library_missing"]
     _assert(report, "library_missing", "library", "warning")
     assert report.commit == git(repo, "rev-parse", "HEAD").strip()
     assert report.groups == ("repo", "machine", "library")
@@ -66,8 +66,8 @@ def test_healthy_repo(repo: Path) -> None:
     data = report.to_json()
     assert data["counts"] == {"error": 0, "warning": 1, "info": 1}
     assert data["in_repo"] is True
-    assert data["state"] == "unsupported" and data["action"] is None
-    assert data["onboarding"] is None
+    assert data["state"] == "installed" and data["action"] is None
+    assert "onboarding" not in data
     assert "sssf_leftover" not in data and "alternate_rosters" not in data
     assert data["ok"] is True
 
@@ -180,17 +180,15 @@ def test_unknown_workflow(repo: Path) -> None:
 
 
 def test_workflow_with_unknown_agent(repo: Path) -> None:
-    write(
-        repo,
-        ".factory/agents.yaml",
-        "defaults:\n  harness: claude\n  model: sonnet\nagents:\n  - name: planner\n",
-    )
-    (repo / ".factory/prompts/builder/user.md").unlink()
-    (repo / ".factory/prompts/builder/system.md").unlink()
-    commit_all(repo, "no builder")
+    workflows = list((repo / ".factory/workflows").glob("*.yaml"))
+    assert workflows
+    for path in workflows:
+        text = f"name: {path.stem}\ndescription: Plan.\nsteps:\n  - plan:\n      agent: ghost\n"
+        write(repo, path.relative_to(repo).as_posix(), text)
+    commit_all(repo, "an agent neither the repo nor the library has")
     report = run_check(repo, machine=FakeMachine())
     finding = _assert(report, "workflow_invalid", "repo", "error")
-    assert "builder" in finding.message
+    assert "ghost" in finding.message
 
 
 def test_workflow_unset(repo: Path) -> None:
@@ -225,7 +223,7 @@ def test_behind_and_ahead_of_remote(repo: Path, tmp_path: Path) -> None:
     _remote, other = _with_remote(repo, tmp_path)
     report = run_check(repo, machine=FakeMachine())
     assert (report.remote, report.ahead, report.behind) == ("origin", 0, 0)
-    assert _codes(report) == ["repo_unsupported", "library_missing"]
+    assert _codes(report) == ["repo_installed", "library_missing"]
 
     write(other, "README.md", "remote change\n")
     commit_all(other, "remote change")
@@ -315,10 +313,10 @@ def test_gitignore_missing(repo: Path) -> None:
     write(repo, ".gitignore", ".factory/trace.db*\n/.factory/worktrees\n.factory/data/\n")
     commit_all(repo, "gitignore")
     report = run_check(repo, machine=FakeMachine())
-    finding = _assert(report, "gitignore_missing", "repo", "warning", "update")
+    finding = _assert(report, "gitignore_missing", "repo", "warning")
     assert ".factory/local.yaml" in finding.message
     assert [f.code for f in report.findings] == [
-        "repo_unsupported",
+        "repo_installed",
         "gitignore_missing",
         "library_missing",
     ]
@@ -367,7 +365,7 @@ def test_added_rule_group(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     report = run_check(repo, machine=FakeMachine())
     assert report.groups == ("repo", "machine", "library", "extra")
     messages = [
-        f.message for f in report.findings if f.code not in ("repo_unsupported", "library_missing")
+        f.message for f in report.findings if f.code not in ("repo_installed", "library_missing")
     ]
     assert messages == ["from an added group", "broken: boom"]
     _assert(report, "check_failed", "machine", "info")

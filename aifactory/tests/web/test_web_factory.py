@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-import yaml
 from multi_repo import BASE, multi_client, register
 from starlette.testclient import TestClient
 
@@ -177,30 +176,26 @@ def code_of(body: dict[str, Any]) -> str:
 # ── install ───────────────────────────────────────────────────────────────────
 
 
-def test_install_builder_on_other_harness(api: Api, tmp_path: Path) -> None:
+def test_install_writes_only_config(api: Api, tmp_path: Path) -> None:
     a, b = tmp_path / "a", tmp_path / "b"
     b_before = (git(b, "rev-parse", "main"), git(b, "status", "--porcelain"))
-    options = {"bind": {"builder": {"harness": "codex", "model": "gpt-5.5"}}}
 
-    body = api.post("a", "factory/plan", {"action": "init", "options": options})
+    body = api.post("a", "factory/plan", {"action": "init"})
     plan = body["data"]
     assert plan["digest"] and plan["blockers"] == []
-    assert "detected" in plan and "available" in plan
-    assert plan["bindings"]["builder"]["harness"] == "codex"
-    assert plan["bindings"]["builder"]["model"] == "gpt-5.5"
-    assert any("codex" in w for w in body["warnings"])
+    assert "detected" in plan and "available" not in plan and "bindings" not in plan
+    assert {f["path"] for f in plan["files"]} == {
+        CONFIG,
+        ".gitignore",
+        "factory/backlog/.gitkeep",
+    }
     assert not (a / ".factory").exists()
 
-    done = api.apply("a", plan, options=options)["data"]
+    done = api.apply("a", plan)["data"]
     assert done["commit"] and done["pushed"] is True and done["pr"] is None
     assert set(done) >= {"commit", "pushed", "pr", "warnings"}
     assert git(bare_of(tmp_path, "a"), "rev-parse", "main") == done["commit"]
-    roster = yaml.safe_load(git(a, "show", f"{done['commit']}:{AGENTS}"))
-    by_name = {e["name"]: e for e in roster["agents"]}
-    assert by_name["builder"]["harness"] == "codex"
-    default = roster.get("defaults", {}).get("harness")
-    others = {n: e.get("harness", default) for n, e in by_name.items() if n != "builder"}
-    assert others and set(others.values()) == {"claude"}
+    assert AGENTS not in git(a, "ls-tree", "-r", "--name-only", done["commit"])
     assert (git(b, "rev-parse", "main"), git(b, "status", "--porcelain")) == b_before
     assert not (b / ".factory").exists()
 
@@ -353,54 +348,45 @@ def test_run_in_progress(api: Api, tmp_path: Path) -> None:
     )
 
 
-# ── update ────────────────────────────────────────────────────────────────────
+# ── items and move to the library ─────────────────────────────────────────────
 
 
-def _units(plan: dict[str, Any], kind: str, name: str) -> dict[str, dict[str, Any]]:
-    item = next(i for i in plan["update"]["items"] if (i["type"], i["name"]) == (kind, name))
-    return {f["file"]: f for f in item["files"]}
-
-
-def test_update_with_take_and_migrate(api: Api, tmp_path: Path) -> None:
+def test_items_and_move_to_the_library(api: Api, tmp_path: Path) -> None:
     library_bare = tmp_path / "library-origin.git"
     git(tmp_path, "init", "-q", "--bare", "-b", "main", str(library_bare))
     store.init_library("team", remote=str(library_bare))
     a = tmp_path / "a"
     install(api, "a")
+    write(a, SYSTEM, "our builder\n")
+    write(a, ".factory/prompts/builder/user.md", "{{prompt}}\n")
+    write(a, AGENTS, "agents:\n  - name: builder\n    purpose: Build ours.\n    harness: claude\n")
+    commit_push(a, "own builder")
 
-    # take: the repo and the library both changed builder's system.md
-    write(a, SYSTEM, "repo text\n")
-    commit_push(a, "repo change")
-    lib = store.library_root()
-    write(lib, LIB_SYSTEM, "library text\n")
-    git(lib, "add", "-A")
-    git(lib, "commit", "-q", "-m", "library change")
-    git(lib, "push", "-q", "origin", "main")
-    plan = api.plan("a", "update")
-    assert plan["update"]["conflicts"] == ["agent/builder:system.md"]
-    options = {"take": ["agent/builder:system.md"]}
-    plan = api.plan("a", "update", options=options)
-    assert _units(plan, "agent", "builder")["system.md"]["status"] == "taken"
+    items = api.get("a", "factory/items")["data"]
+    origins = {(i["type"], i["name"]): i["origin"] for i in items["items"]}
+    assert origins[("agent", "builder")] == "repo"
+    assert origins[("agent", "planner")] == "library"
+    assert origins[("workflow", "simple-sdlc")] == "library"
+    assert items["library"] == git(store.library_root(), "rev-parse", "HEAD")
+    roster = api.get("a", "factory/roster")["data"]["agents"]
+    assert {r["name"]: r["origin"] for r in roster}["builder"] == "repo"
+
+    options = {"type": "agent", "name": "builder"}
+    plan = api.plan("a", "move", options=options)
+    assert plan["blockers"] == [] and plan["library_plan"]["files"]
     done = api.apply("a", plan, options=options)["data"]
     assert done["committed"] and done["pushed"]
-    bare = bare_of(tmp_path, "a")
-    assert git(bare, "show", f"main:{SYSTEM}") == "library text"
+    assert done["library_commit"] == git(store.library_root(), "rev-parse", "HEAD")
+    assert git(store.library_root(), "show", f"HEAD:{LIB_SYSTEM}") == "our builder"
+    assert git(library_bare, "rev-parse", "main") == done["library_commit"]
+    assert SYSTEM not in git(a, "ls-tree", "-r", "--name-only", "HEAD")
+    items = api.get("a", "factory/items")["data"]["items"]
+    assert {(i["type"], i["name"]): i["origin"] for i in items}[("agent", "builder")] == "library"
 
-    # migrate: an old levels key in the committed config
-    git(a, "pull", "-q", "--ff-only", "origin", "main")
-    write(a, CONFIG, (a / CONFIG).read_text(encoding="utf-8") + "levels: [module, step, task]\n")
-    commit_push(a, "old levels")
-    plan = api.plan("a", "update")
-    found = plan["update"]["migrations"][0]
-    assert found["id"] == "m001" and not found["applied"]
-    options = {"migrate": ["m001"]}
-    plan = api.plan("a", "update", options=options)
-    assert plan["update"]["migrations"][0]["applied"]
-    api.apply("a", plan, options=options)
-    assert "levels: [project, step, task]" in git(bare, "show", f"main:{CONFIG}")
-
-    bad = api.post("a", "factory/plan", {"action": "update", "options": {"migrate": ["m999"]}}, 422)
-    assert code_of(bad) == "invalid_value"
+    for action in ("update", "add", "export", "revert"):
+        bad = api.post("a", "factory/plan", {"action": action, "options": options}, 400)
+        assert code_of(bad) == "usage_error"
+    assert api.client.get(api.url("a", "factory/item-diff")).status_code == 404
 
 
 # ── config commit and pull ────────────────────────────────────────────────────
@@ -475,24 +461,19 @@ def test_check_cache_and_trace_db_shared(
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "usage_error"
 
 
-def test_check_carries_manifest_and_version(api: Api, tmp_path: Path) -> None:
+def test_check_carries_the_version(api: Api, tmp_path: Path) -> None:
     from aifactory import __version__
 
     store.init_library("team")
     install(api, "a")
     data = api.get("a", "factory/check?offline=1&fresh=1")["data"]
     assert data["state"] == "installed"
-    assert data["library"]["name"]
-    assert isinstance(data["manifest"]["format"], int)
-    assert data["manifest"]["written_by"]
-    assert data["manifest_error"] is None
     assert data["version"] == __version__
+    assert not {"manifest", "manifest_error", "library", "onboarding"} & set(data)
 
     write(tmp_path / "b", ".factory/config.yaml", "base: main\n")
-    commit_push(tmp_path / "b", "pre-library config")
-    old = api.get("b", "factory/check?offline=1&fresh=1")["data"]
-    assert old["state"] == "unsupported"
-    assert old["manifest"] is None and old["version"] == __version__
+    commit_push(tmp_path / "b", "only config.yaml")
+    assert api.get("b", "factory/check?offline=1&fresh=1")["data"]["state"] == "installed"
 
 
 # ── validation ────────────────────────────────────────────────────────────────
@@ -506,12 +487,16 @@ def test_validation(api: Api) -> None:
     usage("factory/apply", {"action": "init", "digest": "x", "path": "/tmp"})
     usage("factory/plan", {"action": "install"})
     usage("factory/apply", {"action": "init"})
-    usage("factory/plan", {"action": "update", "options": {"agents": ["builder"]}})
+    usage("factory/plan", {"action": "update"})
     usage("factory/plan", {"action": "config_commit", "options": {"take": []}})
     usage("factory/plan", {"action": "init", "target": "elsewhere"})
-    usage("factory/plan", {"action": "init", "options": {"agents": "builder"}})
-    bad_harness = {"action": "init", "options": {"bind": {"builder": {"harness": "nope"}}}}
-    assert code_of(api.post("a", "factory/plan", bad_harness, 422)) == "invalid_value"
+    usage("factory/plan", {"action": "init", "options": {"agents": ["builder"]}})
+    usage("factory/plan", {"action": "init", "options": {"bind": {"builder": {"harness": "x"}}}})
+    usage("factory/plan", {"action": "move", "options": {"type": "agent"}})
+    usage(
+        "factory/plan",
+        {"action": "remove", "options": {"type": "agent", "name": "x", "prune": True}},
+    )
     conflict = {
         "action": "init",
         "options": {"provider": "github", "azure": {"organization": "o"}},

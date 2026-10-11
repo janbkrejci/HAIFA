@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 
 Scope = Literal["repo", "machine", "library"]
 Severity = Literal["error", "warning", "info"]
-Action = Literal["init", "update", "export", "config_commit", "config_pull"]
+Action = Literal["init", "config_commit", "config_pull"]
 # the state of the repo (AR30), see ``aifactory.config.repo_state``
 State = RepoStateName
 
@@ -86,7 +86,6 @@ class CheckReport:
     groups: tuple[str, ...]
     findings: tuple[Finding, ...]
     backlog: dict[str, int] = field(default_factory=dict)
-    onboarding: dict[str, Any] | None = None
     in_repo: bool = True
 
     @property
@@ -109,7 +108,6 @@ class CheckReport:
             "repo": self.repo,
             "state": self.state,
             "action": self.action,
-            "onboarding": self.onboarding,
             "base": self.base,
             "commit": self.commit,
             "remote": self.remote,

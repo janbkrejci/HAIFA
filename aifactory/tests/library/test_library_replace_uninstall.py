@@ -1,23 +1,20 @@
-"""``plan_init(replace=True)`` (install over an existing ``.factory/``) and ``uninstall``."""
+"""``plan_init(replace=True)`` (the dashboard's "add repository") and ``uninstall``."""
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 
 import pytest
 import yaml
 from test_library_install_commit import git, home, make_repo
 
-from aifactory.library import store
 from aifactory.library.install import GITIGNORE_LINES
 from aifactory.library.install_commit import commit_init, plan_init
 from aifactory.library.uninstall import plan_uninstall, uninstall
 
 __all__ = ["home"]
 
-STALE = ".factory/prompts/retired/system.md"
-BUILDER_PROMPT = ".factory/prompts/builder/system.md"
+OWN_PROMPT = ".factory/prompts/builder/system.md"
 
 
 def commit_push(root: Path, message: str) -> str:
@@ -58,53 +55,42 @@ def installed(repo: Path) -> Path:
 # ── plan_init(replace=True) ──────────────────────────────────────────────────
 
 
-def test_replace_installs_over_an_installed_repo(installed: Path) -> None:
+def test_replace_keeps_an_installed_repo_as_it_is(installed: Path) -> None:
     repo = installed
-    write(repo, STALE, "retired\n")
+    write(repo, OWN_PROMPT, "our builder\n")
     text = (repo / ".factory/config.yaml").read_text(encoding="utf-8")
     write(repo, ".factory/config.yaml", text.replace("docs_root: factory\n", "docs_root: work\n"))
-    commit_push(repo, "own folder and a retired prompt")
+    commit_push(repo, "own folder and an own prompt")
     assert [b.code for b in plan_init(repo).blockers] == ["already_installed"]
+    head = git(repo, "rev-parse", "HEAD")
 
     plan = plan_init(repo, replace=True)
-    assert plan.blockers == ()
-    actions = {f.path: f.action for f in plan.publish.files}
-    assert actions[STALE] == "delete"
-    head = git(repo, "rev-parse", "HEAD")
-    assert git(repo, "rev-parse", "HEAD") == head  # planning writes nothing
 
-    result = commit_init(repo, replace=True)
-    assert result.committed and result.pushed
-    assert git(repo, "rev-parse", "HEAD~1") == head
-    assert git(repo, "rev-parse", "origin/main") == result.commit
-    assert STALE not in tree(repo) and not (repo / STALE).exists()
-    assert config(repo)["docs_root"] == "work"  # the old folder is kept
-    assert ".factory/manifest.yaml" in tree(repo)
-
-
-def test_replace_installs_over_a_pre_library_config(repo: Path) -> None:
-    write(repo, ".factory/config.yaml", "base: main\nbacklog_dir: tasks\ndocs_root: work\n")
-    write(repo, ".factory/agents.yaml", "agents:\n- name: old\n  purpose: Old.\n")
-    commit_push(repo, "pre-library config")
-    assert plan_init(repo).blockers  # without replace: refused
-    result = commit_init(repo, replace=True)
-    assert result.committed
-    assert config(repo)["docs_root"] == "work"
-    assert "backlog_dir" not in config(repo)  # old keys are not written again
-    agents = yaml.safe_load(git(repo, "show", "HEAD:.factory/agents.yaml"))
-    assert "old" not in {a["name"] for a in agents["agents"]}
-    assert "work/backlog/.gitkeep" in tree(repo)
-
-
-def test_replace_with_the_same_install_commits_nothing(installed: Path) -> None:
-    repo = installed
-    head = git(repo, "rev-parse", "HEAD")
-    plan = plan_init(repo, replace=True)
     assert plan.blockers == () and plan.publish.files == ()
     result = commit_init(repo, replace=True)
-    assert result.committed is False and result.commit is None
+    assert result.committed is False
     assert git(repo, "rev-parse", "HEAD") == head
-    assert git(repo, "status", "--porcelain") == ""
+    assert OWN_PROMPT in tree(repo) and config(repo)["docs_root"] == "work"
+
+
+def test_replace_adds_only_the_missing_gitignore_lines(installed: Path) -> None:
+    repo = installed
+    write(repo, ".gitignore", "node_modules/\n")
+    commit_push(repo, "lose the factory lines")
+
+    result = commit_init(repo, replace=True)
+
+    assert result.committed and result.pushed
+    assert [f.path for f in result.plan.publish.files] == [".gitignore"]
+    lines = git(repo, "show", "HEAD:.gitignore").splitlines()
+    assert lines == ["node_modules/", *GITIGNORE_LINES]
+
+
+def test_replace_installs_config_into_a_repo_without_it(repo: Path) -> None:
+    result = commit_init(repo, replace=True)
+    assert result.committed
+    paths = {f.path for f in result.plan.publish.files}
+    assert paths == {".factory/config.yaml", ".gitignore", "factory/backlog/.gitkeep"}
 
 
 # ── uninstall ────────────────────────────────────────────────────────────────
@@ -146,27 +132,6 @@ def test_uninstall_keeps_other_gitignore_lines(repo: Path) -> None:
     uninstall(repo)
     assert git(repo, "show", "HEAD:.gitignore") == "node_modules/"
     assert (repo / ".gitignore").read_text(encoding="utf-8") == "node_modules/\n"
-
-
-def test_uninstall_exports_own_items_to_the_library(repo: Path, tmp_path: Path, home: Path) -> None:
-    environ = {**os.environ, "HAIFA_HOME": str(home)}
-    bare = tmp_path / "library.git"
-    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
-    library = Path(store.init_library("team", environ, remote=str(bare)).plan.library)
-    commit_init(repo)
-    assert plan_uninstall(repo).own_items == []
-    prompt = repo / BUILDER_PROMPT
-    prompt.write_text(prompt.read_text(encoding="utf-8") + "Repo rule.\n", encoding="utf-8")
-    commit_push(repo, "own builder")
-    own = plan_uninstall(repo).own_items
-    assert [(i["type"], i["name"]) for i in own] == [("agent", "builder")]
-
-    result = uninstall(repo, export=[("agent", "builder")])
-    assert result.exported == [{"type": "agent", "name": "builder"}]
-    assert result.committed
-    exported = (library / "agents/builder/system.md").read_text(encoding="utf-8")
-    assert exported.endswith("Repo rule.\n")
-    assert not (repo / ".factory").exists()
 
 
 def test_uninstall_without_factory_commits_nothing(repo: Path) -> None:

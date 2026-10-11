@@ -190,7 +190,7 @@ defineExpose({ reload: load })
         <thead><tr><th>Agent</th><th>Harness</th><th>Model</th><th>Přemýšlení</th><th /></tr></thead>
         <tbody>
           <tr v-for="agent in agents" :key="agent.name" :data-test="`roster-agent-${agent.name}`">
-            <td>{{ agent.name }}<small v-if="agent.purpose" class="purpose">{{ agent.purpose }}</small></td>
+            <td>{{ agent.name }} <span v-if="agent.origin === 'library'" class="origin" data-test="roster-origin">z knihovny</span><small v-if="agent.purpose" class="purpose">{{ agent.purpose }}</small></td>
             <template v-if="readonly"><td>{{ agent.harness ?? agent.coding_agent }}</td><td>{{ agent.model }}</td><td>{{ agent.thinking }}</td><td /></template>
             <template v-else-if="rows[agent.name]">
               <td><SelectMenu v-model="rows[agent.name]!.harness" :label="`Harness agenta ${agent.name}`" :options="harnessOptions" :disabled="locked" data-test="roster-harness" /></td>
@@ -253,6 +253,7 @@ table { width: 100%; border-collapse: collapse; }
 th, td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: middle; }
 th { color: var(--dim); font-weight: 600; }
 .purpose { display: block; color: var(--faint); }
+.origin { padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; color: var(--dim); font-size: 12px; }
 input { max-width: 200px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--text); font: inherit; }
 .btn { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); color: var(--text); font: inherit; font-size: 14px; cursor: pointer; }
 .btn:disabled { cursor: default; opacity: 0.6; }

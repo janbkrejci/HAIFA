@@ -6,7 +6,7 @@ indentation is taken from the text (``- `` flush under its key, as PyYAML writes
 indented ``  - ``). Every change of these files in code goes through ``edit_yaml``, never
 through ``yaml.safe_dump`` of the parsed data, which would drop the comments.
 
-``factory config add|set|remove`` change only ``agents.yaml``; ``config.yaml`` and
+``factory config set|remove|move`` change only ``agents.yaml``; ``config.yaml`` and
 ``roles.yaml`` are only read by them.
 """
 

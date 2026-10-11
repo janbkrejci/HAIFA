@@ -6,7 +6,7 @@ import { errorText } from '../../lib/format'
 import { computed, ref } from 'vue'
 import { ApiError, addRepo, type AddRepoResult, type InspectResult, type RepoProblem } from '@/lib/api'
 import { problemText } from '@/lib/addRepo'
-import { factoryStateText, onboardingText } from '@/lib/repos'
+import { factoryStateText } from '@/lib/repos'
 import { repoHref } from '@/lib/router'
 import Spinner from '@/components/ui/Spinner.vue'
 
@@ -78,10 +78,6 @@ async function add() {
       Použije se kořen repozitáře {{ inspect.root }}.
     </p>
 
-    <p v-if="inspect.factory?.onboarding" class="note" data-test="inspect-onboarding">
-      {{ onboardingText(inspect.factory.onboarding) }} · knihovna {{ inspect.factory.library?.name ?? '—' }}
-    </p>
-
     <template v-if="kind === 'problem' && inspect.problem">
       <p class="problem" data-test="inspect-problem">{{ problemText(inspect.problem, inspect) }}</p>
       <button
@@ -98,7 +94,7 @@ async function add() {
     <template v-else>
       <p v-if="kind === 'registered'" class="note" data-test="inspect-registered">Repo už je v dashboardu.</p>
       <p class="note" data-test="inspect-install-note">
-        {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory z knihovny (existující nahradí), doplní .gitignore a commitne to do {{ base }}.
+        {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory/config.yaml (existující ponechá), doplní .gitignore a commitne to do {{ base }}.
       </p>
       <p v-if="adding" class="note" data-test="inspect-adding">Zapisuji factory a commituji do {{ base }}…</p>
       <p v-if="addError" class="problem" data-test="inspect-add-error">{{ addError }}</p>

@@ -1,16 +1,10 @@
 import { ref } from 'vue'
-import type { FactoryOptions, FactoryInitPlan, AgentBinding, FactoryResult } from './api'
+import type { FactoryOptions, FactoryInitPlan, FactoryResult } from './api'
 
 export function installOptions(plan: FactoryInitPlan): FactoryOptions {
-  const bind: Record<string, AgentBinding> = {}
-  for (const agent of plan.available?.agents ?? []) {
-    bind[agent.name] = { harness: agent.harness, model: agent.model, thinking: agent.thinking }
-  }
-  Object.assign(bind, structuredClone(plan.bindings ?? {}))
   return { base: plan.base, provider: plan.provider,
     azure: { organization: '', project: '', repository: '', ...plan.azure },
-    docs_root: plan.docs_root,
-    agents: [...(plan.agents ?? [])], workflows: [...(plan.workflows ?? [])], bind }
+    docs_root: plan.docs_root }
 }
 
 export const lastFactoryResult = ref<{ repoId: string; result: FactoryResult; action?: string } | null>(null)
@@ -18,7 +12,9 @@ export const lastFactoryResult = ref<{ repoId: string; result: FactoryResult; ac
 /** Plain-language texts of plan blocker and item codes; an unknown code shows as it is. */
 const PLAN_CODE_TEXT: Record<string, string> = {
   library_missing: 'knihovna na tomto počítači chybí',
-  library_mismatch: 'repo používá jinou knihovnu',
+  library_dirty: 'knihovna má necommitnuté změny',
+  library_behind: 'knihovna je pozadu za remote',
+  library_diverged: 'knihovna se rozešla s remote',
   plan_changed: 'plán se mezitím změnil',
   run_in_progress: 'v repu běží běhy',
   dirty_paths: 'necommitnuté změny v souborech factory',

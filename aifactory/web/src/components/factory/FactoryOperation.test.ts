@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import { ApiError, applyBasePull, fetchBasePullPlan, applyFactoryPlan, fetchFactoryPlan, fetchOverview, type FactoryPlan, type FactoryInitPlan, type FactoryUpdatePlan, type FactoryPullPlan } from '@/lib/api'
+import { ApiError, applyBasePull, fetchBasePullPlan, applyFactoryPlan, fetchFactoryPlan, fetchOverview, type FactoryPlan, type FactoryInitPlan, type FactoryPullPlan } from '@/lib/api'
 import { useLive, type LiveHandlers } from '@/lib/live'
 import FactoryOperation from './FactoryOperation.vue'
 import { answerDialog, openDialog } from '@/test/modal'
@@ -10,18 +10,14 @@ import { installPlan } from '@/test/factoryFixtures'
 vi.mock('@/lib/api', async importOriginal => ({ ...await importOriginal<typeof import('@/lib/api')>(), fetchFactoryPlan: vi.fn(), applyFactoryPlan: vi.fn(), fetchOverview: vi.fn(), fetchBasePullPlan: vi.fn(), applyBasePull: vi.fn() }))
 vi.mock('@/lib/live', () => ({ useLive: vi.fn() }))
 enableAutoUnmount(afterEach)
-const binding = { harness: 'claude', model: 'sonnet', thinking: 'medium' }
 function preview(extra: Partial<FactoryPullPlan> & { action: 'pull' }): FactoryPullPlan
-function preview(extra: Partial<FactoryUpdatePlan> & { action: 'update' }): FactoryUpdatePlan
 function preview(extra?: Partial<FactoryInitPlan>): FactoryInitPlan
 function preview(extra: Partial<FactoryPlan> = {}): FactoryPlan {
   return { action: 'init', base: 'main', base_sha: 'a6f3e1c01234', remote: 'origin', digest: 'same-digest', blockers: [],
-    files: [{ path: '.factory/manifest.yaml', action: 'create', diff: '', content: 'format: 1', binary: false }],
-    provider: 'local', docs_root: 'factory', agents: ['planner','builder'], workflows: ['simple-sdlc'],
-    bindings: { planner: { ...binding }, builder: { ...binding } }, detected: { harnesses: { claude: { installed: true }, codex: { installed: false } } },
-    available: { agents: ['planner','builder','reviewer','documenter','scout'].map(name => ({ name, purpose: name, default: name !== 'scout', ...binding })), workflows: [{ name: 'simple-sdlc', default: true }, { name: 'scout', default: false }] }, ...extra } as FactoryPlan
+    files: [{ path: '.factory/config.yaml', action: 'create', diff: '', content: 'base: main', binary: false }],
+    provider: 'local', docs_root: 'factory', detected: { harnesses: { claude: { installed: true }, codex: { installed: false } } }, ...extra } as FactoryPlan
 }
-function operation(action: 'init' | 'update' | 'config_commit' | 'pull' = 'init') { return mount(FactoryOperation, { props: { repoId: 'a', action }, attachTo: document.body }) }
+function operation(action: 'init' | 'config_commit' | 'pull' = 'init') { return mount(FactoryOperation, { props: { repoId: 'a', action }, attachTo: document.body }) }
 beforeEach(() => {
   vi.resetAllMocks()
   vi.mocked(fetchFactoryPlan).mockResolvedValue(preview())
@@ -30,49 +26,19 @@ beforeEach(() => {
 })
 afterEach(() => { document.body.innerHTML = '' })
 describe('Factory operations', () => {
-  it('replans thinking/null, every directory and agent/workflow selections, retaining overrides for added agents', async () => {
+  it('replans the docs root and offers no agent or workflow selection', async () => {
     vi.mocked(fetchFactoryPlan).mockResolvedValue(installPlan())
     const w = operation(); await flushPromises()
-    for (const name of ['planner', 'builder', 'reviewer', 'documenter']) {
-      expect(w.get(`[data-test="model-${name}"]`).element).toHaveProperty('value', 'sonnet')
-      expect(w.get(`[data-test="thinking-${name}"]`).element).toHaveProperty('value', 'medium')
-    }
-    for (const key of ['docs_root'] as const) {
-      const count = vi.mocked(fetchFactoryPlan).mock.calls.length
-      await w.get(`[data-test="install-${key}"]`).setValue(`custom-${key}`); await flushPromises()
-      expect(fetchFactoryPlan).toHaveBeenCalledTimes(count + 1)
-      expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options[key]).toBe(`custom-${key}`)
-    }
-    await w.get('[data-test="thinking-builder"]').setValue('high'); await flushPromises()
-    await w.get('[data-test="model-builder"]').setValue(''); await flushPromises()
-    await w.get('[data-test="thinking-reviewer"]').setValue(''); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options.bind).toMatchObject({ builder: { thinking: 'high', model: null }, reviewer: { thinking: null }, planner: binding })
-    const checkbox = (name: string) => w.findAll('label').find(label => label.text().startsWith(name) && label.find('input[type="checkbox"]').exists())!.get('input')
-    await checkbox('documenter').setValue(false); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options.agents).not.toContain('documenter')
-    const scout = { harness: 'pi', model: null, thinking: null }
-    vi.mocked(fetchFactoryPlan).mockResolvedValue(installPlan({ added_agents: ['scout'], bindings: { scout } }))
-    await checkbox('scout').setValue(true); await flushPromises()
-    // Select the workflow as well; the response includes the required scout binding.
-    await w.findAll('label').filter(label => label.text() === 'scout').at(-1)!.get('input').setValue(true); await flushPromises()
-    await w.get('[data-test="install-base"]').setValue('develop'); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options).toMatchObject({ workflows: ['simple-sdlc', 'scout'], agents: ['planner', 'builder', 'reviewer', 'scout'], bind: { builder: { model: null, thinking: 'high' } } })
-  })
-  it('adds workflow-required bindings without losing an existing override', async () => {
-    const initial = preview()
-    initial.available.agents = initial.available.agents.filter(agent => agent.name !== 'scout')
-    vi.mocked(fetchFactoryPlan).mockResolvedValue(initial)
-    const w = operation(); await flushPromises()
-    await w.get('[data-test="model-builder"]').setValue('custom'); await flushPromises()
-    vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ added_agents: ['scout'], bindings: { scout: { harness: 'pi', model: null, thinking: null } } }))
-    await w.findAll('label').find(label => label.text() === 'scout')!.get('input').setValue(true); await flushPromises()
-    expect(w.get('[data-test="model-scout"]').element).toHaveProperty('value', '')
-    await w.get('[data-test="install-base"]').setValue('develop'); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options.bind).toMatchObject({ scout: { harness: 'pi', model: null, thinking: null }, builder: { model: 'custom' } })
+    expect(w.find('input[type="checkbox"]').exists()).toBe(false)
+    const count = vi.mocked(fetchFactoryPlan).mock.calls.length
+    await w.get('[data-test="install-docs_root"]').setValue('custom-docs'); await flushPromises()
+    expect(fetchFactoryPlan).toHaveBeenCalledTimes(count + 1)
+    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options).toEqual({ base: 'main', provider: 'local',
+      azure: { organization: '', project: '', repository: '' }, docs_root: 'custom-docs' })
   })
   it('renders full content, text patches, binary and mode-only changes', async () => {
     vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ files: [
-      { path: '.factory/manifest.yaml', action: 'create', diff: '', content: 'format: 1\n' + 'full-content\n'.repeat(200), binary: false },
+      { path: '.factory/config.yaml', action: 'create', diff: '', content: 'base: main\n' + 'full-content\n'.repeat(200), binary: false },
       { path: 'changed.txt', action: 'modify', diff: '@@ -1 +1 @@\n-old\n+new', content: null, binary: false },
       { path: 'asset.bin', action: 'modify', diff: '', content: null, binary: true },
       { path: 'script', action: 'modify', diff: '', content: null, binary: false, mode: '100755' },
@@ -152,17 +118,10 @@ describe('Factory operations', () => {
     expect(next.text()).not.toContain('stale-repo')
     expect(applyFactoryPlan).not.toHaveBeenCalled()
   })
-  it('keeps bindings per agent, replans each edit and warns about absent CLI', async () => {
+  it('says what the plan commits', async () => {
     const w = operation(); await flushPromises()
-    expect(w.text()).toContain('format: 1')
+    expect(w.text()).toContain('base: main')
     expect(w.text()).toContain('1 commit na main (a6f3e1c → nový), push na origin/main')
-    await chooseOption(w, '[data-test="harness-builder"]', 'codex'); await flushPromises()
-    const options = vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options
-    expect(options.bind?.builder?.harness).toBe('codex')
-    expect(options.bind?.planner?.harness).toBe('claude')
-    expect(w.text()).toContain('CLI pro codex není nainstalované')
-    await w.get('[data-test="model-builder"]').setValue('gpt-6.1-sol'); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options.bind?.builder?.model).toBe('gpt-6.1-sol')
   })
   it('requires its own modal and cancellation never applies', async () => {
     const w = operation(); await flushPromises()
@@ -193,9 +152,9 @@ describe('Factory operations', () => {
     vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ warnings: [{ code: 'cli', message: 'machine warning' }] }))
     const w = operation(); await flushPromises()
     expect(w.get('[data-test="factory-perform"]').attributes('disabled')).toBeUndefined()
-    vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ blockers: [{ code: 'not_onboarded', message: 'requires manifest' }] }))
+    vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ blockers: [{ code: 'dirty_paths', message: 'planned paths are dirty' }] }))
     await w.get('[data-test="install-base"]').setValue('develop'); await flushPromises()
-    expect(w.text()).toContain('not_onboarded: requires manifest')
+    expect(w.text()).toContain('planned paths are dirty')
     expect(w.get('[data-test="factory-perform"]').attributes('disabled')).toBeDefined()
     w.unmount()
     vi.mocked(fetchOverview).mockResolvedValue({ repos: [{ id: 'a', state: 'ok', running: [{ run_id: 'live', process: 'alive' }, { run_id: 'gone', process: 'ended' }] } as never], totals: {} })
@@ -267,20 +226,5 @@ describe('Factory operations', () => {
     vi.mocked(fetchFactoryPlan).mockResolvedValue(preview())
     const w = operation(); await flushPromises()
     expect(w.find('[data-test="install-test_command"]').exists()).toBe(false)
-  })
-  it('replans takeover and migration choices', async () => {
-    vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ action: 'update', update: {
-      items: [{ type: 'agent', name: 'builder', action: 'conflict', merge_available: true, files: [{ file: 'system.md', status: 'conflict', diff: null, ours_diff: '+ours', theirs_diff: '+theirs' }] }],
-      migrations: [{ id: 'm1', title: 'Migration one', diff: '+migrate', selected: false, applied: false }],
-    } }))
-    const w = operation('update'); await flushPromises()
-    expect(w.text()).toContain('Změněno v obou')
-    expect(w.text()).toContain('+ours'); expect(w.text()).toContain('+theirs')
-    await w.findAll('input[type="checkbox"]')[0]!.setValue(true); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options.take).toEqual(['agent/builder:system.md'])
-    await w.findAll('input[type="checkbox"]')[2]!.setValue(true); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options.migrate).toEqual(['m1'])
-    await w.findAll('input[type="checkbox"]')[1]!.setValue(true); await flushPromises()
-    expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options).toMatchObject({ take: [], merge: ['agent/builder'] })
   })
 })

@@ -1,4 +1,4 @@
-"""``factory init``: install factory into a repo from the library or the seed (HAIFA-S04-T01)."""
+"""``factory init``: install factory into a repo; agents and workflows stay in the library."""
 
 from __future__ import annotations
 
@@ -11,12 +11,8 @@ from typing import Any
 import pytest
 import yaml
 
-from aifactory import __version__
-from aifactory.config.manifest import MANIFEST_FILE
 from aifactory.library import store
 from aifactory.library.install import GITIGNORE_LINES, init_repo
-from aifactory.library.seed import seed_items
-from aifactory.workflow.parse import DEFAULT_WORKFLOWS_DIR
 from cli_json import run_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "run"))
@@ -25,7 +21,6 @@ from run_repo import Script, commit_all, fake_env, ok, write  # noqa: E402
 from workflow_fakes import plan_envelope  # noqa: E402
 
 Capsys = pytest.CaptureFixture[str]
-DEFAULT_AGENTS = ["planner", "builder", "tester", "test-reviewer", "reviewer", "documenter"]
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -61,28 +56,6 @@ def repo(tmp_path: Path, home: Path) -> Path:
     return path.resolve()
 
 
-BUILDER_PROMPT = b"You are the team builder.\n"
-
-
-@pytest.fixture
-def library(home: Path) -> Path:
-    """A library from the seed with a team builder and a remote with credentials."""
-    store.init_library("team")
-    root = store.library_root()
-    (root / "agents" / "builder" / "system.md").write_bytes(BUILDER_PROMPT)
-    _git(root, "commit", "-q", "-am", "team builder")
-    _git(root, "remote", "add", "origin", "https://user:secret@example.com/lib.git")
-    return root
-
-
-def snapshot(path: Path) -> list[tuple[str, bytes]]:
-    if not path.exists():
-        return []
-    return sorted(
-        (p.relative_to(path).as_posix(), p.read_bytes()) for p in path.rglob("*") if p.is_file()
-    )
-
-
 def factory_files(repo: Path) -> dict[str, bytes]:
     out = {
         p.relative_to(repo).as_posix(): p.read_bytes()
@@ -101,119 +74,18 @@ def init(capsys: Capsys, repo: Path, *args: str) -> tuple[int, Any]:
     return run_json(capsys, ["init", "--repo", str(repo), *args, "--json"])
 
 
-def load(repo: Path, rel: str) -> Any:
-    return yaml.safe_load((repo / rel).read_text(encoding="utf-8"))
-
-
-def roster(repo: Path) -> dict[str, dict[str, Any]]:
-    return {a["name"]: a for a in load(repo, ".factory/agents.yaml")["agents"]}
-
-
-def test_init_from_seed_without_library(repo: Path, home: Path, capsys: Capsys) -> None:
+def test_init_writes_only_config_backlog_and_gitignore(repo: Path, capsys: Capsys) -> None:
     rc, env = init(capsys, repo)
 
     assert rc == 0, env
-    data = env["data"]
-    assert data["source"] == "seed" and data["library"] is None
-    assert data["agents"] == DEFAULT_AGENTS and data["workflows"] == ["simple-sdlc"]
-    assert {f["action"] for f in data["files"]} == {"created"}
-    config = load(repo, ".factory/config.yaml")
-    assert config["base"] == "main" and config["git_provider"] == "local"
-    agents = load(repo, ".factory/agents.yaml")["agents"]
-    assert [a["name"] for a in agents] == DEFAULT_AGENTS
-    assert config["docs_root"] == "factory"
-    assert agents[0]["writes"] == ["factory/specs/"]
-    assert agents[5]["writes"] == ["factory/docs/"]
-    prompts = list((repo / ".factory" / "prompts").rglob("*.md"))
-    assert len(prompts) == 12
-    assert not any(b"haifa-validate" in p.read_bytes() for p in prompts)
-    assert (repo / ".factory/workflows/simple-sdlc.yaml").read_bytes() == (
-        DEFAULT_WORKFLOWS_DIR / "simple-sdlc.yaml"
-    ).read_bytes()
-    assert (repo / "factory" / "backlog" / ".gitkeep").is_file()
-    manifest = load(repo, MANIFEST_FILE)
-    assert manifest["format"] == 1 and manifest["written_by"] == __version__
-    assert manifest["library"] is None
-    assert manifest["onboarding"]["source"] == "init"
-    assert manifest["onboarding"]["source_commit"] == _git(repo, "rev-parse", "HEAD")
-    versions = {(i.type, i.name): i.version for i in seed_items()}
-    for name, entry in manifest["items"]["agents"].items():
-        assert entry == {"item": name, "version": versions[("agent", name)]}
-    assert (
-        manifest["items"]["workflows"]["simple-sdlc"]["version"]
-        == versions[("workflow", "simple-sdlc")]
-    )
-    assert _git(repo, "rev-list", "--count", "HEAD") == "1"
-    status = _git(repo, "status", "--porcelain").splitlines()
-    assert status and all(line.startswith("??") for line in status)
-    assert not home.exists()
-
-
-def test_init_from_library_with_team_builder(
-    repo: Path, home: Path, library: Path, capsys: Capsys
-) -> None:
-    before = snapshot(home)
-    rc, env = init(capsys, repo)
-
-    assert rc == 0, env
-    assert snapshot(home) == before
-    assert env["data"]["source"] == "library"
-    meta = yaml.safe_load((library / "library.yaml").read_text(encoding="utf-8"))
-    manifest = load(repo, MANIFEST_FILE)
-    assert manifest["library"] == {
-        "id": meta["id"],
-        "name": meta["name"],
-        "remote": "https://example.com/lib.git",
-    }
-    assert "secret" not in (repo / MANIFEST_FILE).read_text(encoding="utf-8")
-    assert manifest["onboarding"]["library_commit"] == _git(library, "rev-parse", "HEAD")
-    seed_builder = next(i for i in seed_items() if (i.type, i.name) == ("agent", "builder"))
-    version = manifest["items"]["agents"]["builder"]["version"]
-    assert version != seed_builder.version
-    assert (repo / ".factory/prompts/builder/system.md").read_bytes() == BUILDER_PROMPT
-
-    commit_all(repo, "install factory")
-    rc, env = run_json(capsys, ["config", "items", "--repo", str(repo), "--json"])
-    assert rc == 0, env
-    assert env["data"]["library"]["source"] == "library"
-    assert {i["state"] for i in env["data"]["items"]} == {"synced"}
-
-
-def test_bind_sets_harness_model_and_thinking(repo: Path, capsys: Capsys) -> None:
-    rc, env = init(capsys, repo, "--bind", "builder=codex:gpt-5.5:high")
-
-    assert rc == 0, env
-    agents = roster(repo)
-    builder = agents["builder"]
-    assert (builder["harness"], builder["model"], builder["thinking"]) == (
-        "codex",
-        "gpt-5.5",
-        "high",
-    )
-    assert all(
-        agents[n]["harness"] == "claude"
-        for n in ("planner", "tester", "test-reviewer", "reviewer", "documenter")
-    )
-
-
-@pytest.mark.parametrize("bind", ["builder=nope", "scout=claude", "builder", "builder=claude::x"])
-def test_bad_bind_is_refused(repo: Path, capsys: Capsys, bind: str) -> None:
-    rc, env = init(capsys, repo, "--bind", bind)
-
-    assert rc == 2
-    assert env["error"]["code"] == "invalid_value"
-    assert not (repo / ".factory").exists()
-
-
-def test_workflow_adds_its_agents(repo: Path, capsys: Capsys) -> None:
-    rc, env = init(capsys, repo, "--workflows", "scout")
-
-    assert rc == 0, env
-    assert env["data"]["added_agents"] == ["scout"]
-    assert list(roster(repo)) == [*DEFAULT_AGENTS, "scout"]
-    assert (repo / ".factory/prompts/scout/system.md").is_file()
-    assert (repo / ".factory/workflows/scout.yaml").is_file()
-    assert not (repo / ".factory/workflows/simple-sdlc.yaml").exists()
+    paths = [f["path"] for f in env["data"]["files"]]
+    assert paths == [".factory/config.yaml", "factory/backlog/.gitkeep"]
+    assert {f["action"] for f in env["data"]["files"]} == {"created"}
+    assert env["data"]["gitignore"]["added"] == list(GITIGNORE_LINES)
+    assert sorted(factory_files(repo)) == [".factory/config.yaml", ".gitignore"]
+    config = yaml.safe_load((repo / ".factory/config.yaml").read_text(encoding="utf-8"))
+    assert config == {"base": "main", "git_provider": "local", "docs_root": "factory"}
+    assert _git(repo, "log", "--oneline").count("\n") == 0  # nothing committed
 
 
 def test_second_run_skips_everything(repo: Path, capsys: Capsys) -> None:
@@ -232,16 +104,13 @@ def test_second_run_skips_everything(repo: Path, capsys: Capsys) -> None:
 def test_force_overwrites(repo: Path, capsys: Capsys) -> None:
     assert init(capsys, repo)[0] == 0
     first = factory_files(repo)
-    write(repo, ".factory/prompts/builder/system.md", "changed\n")
     write(repo, ".factory/config.yaml", "base: other\n")
 
     rc, env = init(capsys, repo, "--force")
 
     assert rc == 0, env
     assert {f["action"] for f in env["data"]["files"]} == {"overwritten"}
-    after = factory_files(repo)
-    for rel in (".factory/prompts/builder/system.md", ".factory/config.yaml"):
-        assert after[rel] == first[rel]
+    assert factory_files(repo)[".factory/config.yaml"] == first[".factory/config.yaml"]
 
 
 def test_gitignore_lines_are_added_once(repo: Path, capsys: Capsys) -> None:
@@ -270,16 +139,11 @@ def test_installed_repo_is_refused(repo: Path, capsys: Capsys, force: bool) -> N
 
     assert rc == 2
     assert env["error"]["code"] == "already_installed"
-    assert "factory update" in env["error"]["message"]
     assert _git(repo, "status", "--porcelain") == ""
 
 
-@pytest.mark.parametrize(
-    "existing",
-    [".factory/config.yaml", ".factory/agents.yaml", "adws/adw_sssf_config/sssf.config.yaml"],
-)
-def test_existing_config_is_refused(repo: Path, capsys: Capsys, existing: str) -> None:
-    write(repo, existing, "x: 1\n")
+def test_sssf_is_refused(repo: Path, capsys: Capsys) -> None:
+    write(repo, "adws/adw_sssf_config/sssf.config.yaml", "x: 1\n")
     before = worktree_paths(repo)
 
     rc, env = init(capsys, repo, "--force")
@@ -300,13 +164,10 @@ def test_result_is_valid(repo: Path, capsys: Capsys, monkeypatch: pytest.MonkeyP
     monkeypatch.chdir(repo)
     rc, env = run_json(capsys, ["config", "show", "--json"])
     assert rc == 0, env
+    assert {"planner", "builder", "tester", "reviewer"} <= set(env["data"]["agents"])
+    assert "simple-sdlc" in env["data"]["workflows"]
     rc, env = run_json(capsys, ["backlog", "check", "--repo", str(repo), "--json"])
     assert rc == 0, env
-    rc, env = run_json(capsys, ["config", "items", "--repo", str(repo), "--json"])
-    assert rc == 0, env
-    states = {(i["type"], i["name"]): i["state"] for i in env["data"]["items"]}
-    assert set(states) == {("agent", n) for n in DEFAULT_AGENTS} | {("workflow", "simple-sdlc")}
-    assert set(states.values()) == {"synced"}
 
 
 def test_init_refuses_detached_head_without_base(repo: Path) -> None:
