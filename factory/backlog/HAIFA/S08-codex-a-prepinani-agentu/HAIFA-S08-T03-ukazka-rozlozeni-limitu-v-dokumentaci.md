@@ -4,7 +4,7 @@ title: Ukázka rozložení limitů v dokumentaci
 status: done
 workflow: build-test-review
 depends_on: [HAIFA-S08-T01]
-writes: [app_docs/]
+writes: [factory/docs/]
 auto_merge: false
 ---
 

@@ -32,5 +32,5 @@ neznamená, že informační nález `item_local` zmizel.
 ## Výstup
 
 Výsledky, omezení a příkazy pro operátora jsou v
-[dokumentaci úkolu](../app_docs/HAIFA-REFINEMENT-T06-opravit-vybrane-nalezy-factory.md).
+[dokumentaci úkolu](../../../docs/HAIFA/REFINEMENT-upravy-opravy-a-vylepseni-z-praxe/HAIFA-REFINEMENT-T06-opravit-vybrane-nalezy-factory.md).
 Produktový kód ani konfigurace se pro tento výstup nemění.

@@ -65,7 +65,7 @@ def github_repo(repo: Path, tmp_path: Path) -> Path:
         ["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True, capture_output=True
     )
     git(repo, "remote", "add", "origin", str(origin))
-    write(repo, ".factory/config.yaml", "base: main\ngit_provider: github\n")
+    write(repo, ".factory/config.yaml", "base: main\ndocs_root: .\ngit_provider: github\n")
     commit_all(repo, "github")
     git(repo, "push", "-q", "-u", "origin", "main")
     return origin

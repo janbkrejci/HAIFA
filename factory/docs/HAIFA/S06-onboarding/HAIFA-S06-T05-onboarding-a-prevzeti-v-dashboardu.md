@@ -16,5 +16,5 @@ nikoli další vytěžení. Chybí-li knihovna, Naklonovat knihovnu použije rem
 z manifestu a vyžádá potvrzení. Doplnit knihovnu importuje chybějící položky
 podle plánu adopt. Jiná knihovna zobrazí varování. Převzetí repo nemění.
 
-Screenshoty: [onboardované repo](../aifactory/validation/artifacts/HAIFA-S06-T05/onboarded.png)
-a [převzetí na druhém stroji](../aifactory/validation/artifacts/HAIFA-S06-T05/adopted.png).
+Screenshoty: [onboardované repo](../../../../aifactory/validation/artifacts/HAIFA-S06-T05/onboarded.png)
+a [převzetí na druhém stroji](../../../../aifactory/validation/artifacts/HAIFA-S06-T05/adopted.png).

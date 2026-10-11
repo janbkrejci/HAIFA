@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S10-T03
 title: Jedna kořenová složka dokumentů factory
-status: todo
+status: done
 depends_on: []
 ---
 

@@ -1,6 +1,4 @@
 # factory project settings, written by factory init
 base: main
 git_provider: github
-backlog_dir: backlog
-specs_dir: specs
-docs_dir: app_docs
+docs_root: factory

@@ -4,7 +4,7 @@ title: OB6 Doba testové sady
 status: cancelled
 workflow: manual-test-duration
 depends_on: []
-writes: [docs/decisions.md, "backlog/HAIFA/REFINEMENT-upravy-opravy-a-vylepseni-z-praxe/HAIFA-REFINEMENT-T*-zrychlit-testovou-sadu.md"]
+writes: [docs/decisions.md, "factory/backlog/HAIFA/REFINEMENT-upravy-opravy-a-vylepseni-z-praxe/HAIFA-REFINEMENT-T*-zrychlit-testovou-sadu.md"]
 ---
 
 ## Zadání

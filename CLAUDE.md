@@ -24,7 +24,7 @@ HAIFA is a local dashboard plus the `factory` CLI (`aifactory.cli:main`) that ru
 
 Packages under `aifactory/src/aifactory/` and how they connect:
 
-- `backlog/`: the backlog is a tree of markdown files with YAML front matter (`backlog/<project>/<step>/<task>.md`, each container has `index.md` with inherited defaults). `loader` only reads. Writes go through `edit` and `taskfile`, and `commit` commits them to `base`.
+- `backlog/`: the backlog is a tree of markdown files with YAML front matter (`factory/backlog/<project>/<step>/<task>.md`, each container has `index.md` with inherited defaults). `loader` only reads. Writes go through `edit` and `taskfile`, and `commit` commits them to `base`.
 - `config/`: `.factory/` in a target repo. Shared files (`config.yaml`, `agents.yaml`, `roles.yaml`, `prompts/`, `workflows/`) are read from the `base` commit tree, not the working tree. `local.yaml` is machine-local and read from disk.
 - `run/`: `factory task run`. Each run gets its own worktree under `<worktrees_dir>/<run-id>` and a row in `task_runs` in the trace DB (`.factory/trace.db`).
 - `workflow/`: YAML workflows as data. Steps are roles from the registry or code steps (`test`, `quality`, `commit`, `changes`, `command`, `rebase`, `rebuild`), with `repeat`/`until`, `when` and `accept`. Conditions read typed envelope fields and are never evaluated as Python.

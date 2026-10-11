@@ -9,4 +9,4 @@ Opravný úkol zůstává v backlogu i po zavření panelu. Nová kontrola Facto
 
 Implementace používá stávající API pro založení, commit a spuštění úkolu. Není potřeba nová konfigurace ani migrace.
 
-Vizuální ukázka: [panel opravy](../aifactory/validation/artifacts/HAIFA-S05-T16-factory-repair.png).
+Vizuální ukázka: [panel opravy](../../../../aifactory/validation/artifacts/HAIFA-S05-T16-factory-repair.png).

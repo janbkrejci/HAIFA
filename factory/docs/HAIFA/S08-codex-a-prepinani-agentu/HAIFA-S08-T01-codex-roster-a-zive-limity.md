@@ -64,6 +64,6 @@ a doporučením ověřit `codex login` a instalaci CLI.
 Oficiální zdroje: [model GPT-6.1-Sol](https://developers.openai.com/api/docs/models/gpt-6.1-sol)
 a [protokol app-server](https://learn.chatgpt.com/docs/app-server).
 
-![Ukázkové limity Claude nad Codex v topbaru](images/HAIFA-S08-T01-limits.png)
+![Ukázkové limity Claude nad Codex v topbaru](../../images/HAIFA-S08-T01-limits.png)
 
 Ukázka topbaru při šířce 1366 px: Claude nad Codex. Hodnoty limitů jsou ukázková data (SAMPLE), nikoli živé využití účtu.
