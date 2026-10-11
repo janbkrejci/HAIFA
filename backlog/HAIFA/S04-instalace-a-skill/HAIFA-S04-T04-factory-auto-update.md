@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S04-T04
 title: factory auto update
-status: todo
+status: cancelled
 depends_on: []
 ---
 
