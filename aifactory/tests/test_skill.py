@@ -397,3 +397,127 @@ def test_skill_describes_repo_instructions_and_skills() -> None:
         "pi_not_isolated",
     ):
         assert needle in text, needle
+
+
+README = ROOT / "README.md"
+
+
+def _code_spans(text: str) -> list[str]:
+    """Fenced code lines and inline code spans of markdown, whitespace collapsed."""
+    spans: list[str] = []
+    fences = re.compile(r"^[ \t]*```[^\n]*\n(.*?)^[ \t]*```", re.M | re.S)
+    for block in fences.findall(text):
+        spans += [line.strip() for line in block.splitlines()]
+    spans += [" ".join(s.split()) for s in re.findall(r"`([^`]+)`", fences.sub("", text))]
+    return spans
+
+
+def _factory_commands(text: str) -> set[tuple[str, ...]]:
+    """Every ``factory <word> ...`` in code: the leading lowercase words after ``factory``."""
+    found: set[tuple[str, ...]] = set()
+    for span in _code_spans(text):
+        for match in re.finditer(r"(?:^|[\s(])factory((?:\s+[a-z][a-z-]*)*)", span):
+            found.add(tuple(match.group(1).split()))
+    return found
+
+
+def _unknown_commands(text: str) -> list[str]:
+    """Commands of ``text`` the CLI parser does not have."""
+    unknown: list[str] = []
+    for words in sorted(_factory_commands(text)):
+        parser = build_parser()
+        for word in words:
+            subs = [a for a in parser._actions if isinstance(a, argparse._SubParsersAction)]
+            if not subs:
+                break  # a leaf: the rest are arguments
+            if word not in subs[0].choices:
+                unknown.append("factory " + " ".join(words))
+                break
+            parser = subs[0].choices[word]
+    return unknown
+
+
+def _check_codes(*files: str) -> set[str]:
+    codes: set[str] = set()
+    for name in files:
+        for call in _calls(SRC / "check" / name):
+            if _name(call) == "Finding":
+                codes.add(str(call.args[0].value))  # type: ignore[attr-defined]
+    return codes
+
+
+def test_readme_lists_machine_and_library_check_codes() -> None:
+    readme = README.read_text(encoding="utf-8")
+    codes = _check_codes("machine_rules.py", "library_rules.py")
+    assert codes and codes <= set(ISSUE_CODES["check"])
+    assert sorted(c for c in codes if f"`{c}`" not in readme) == []
+
+
+def test_readme_sections() -> None:
+    readme = README.read_text(encoding="utf-8")
+    for text in (
+        "## Předpoklady",
+        "## Instalace z bundlu",
+        "./install.sh",
+        "## Kontrola",
+        "factory check",
+        "## Knihovna",
+        "factory library clone",
+        "factory library init",
+        "## Přidání repa",
+        "factory init",
+        "factory obs",
+        "## Aktualizace HAIFA",
+        "factory upgrade",
+        "factory library seed",
+        "## Vydání (pro engineera)",
+        "__init__.py",
+        "just check",
+        "just bundle",
+        "min_factory_version",
+        "## Řešení problémů",
+    ):
+        assert text in readme, text
+    for removed in ("factory adopt", "factory update", "config export", "library where"):
+        assert removed not in readme, removed
+
+
+def test_pyproject_readme() -> None:
+    data = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    assert data["project"]["readme"] == "README.md"
+
+
+def test_factory_commands_exist_in_parser() -> None:
+    readme = README.read_text(encoding="utf-8")
+    skill = render_skill()
+    assert len(_factory_commands(readme)) > 10
+    assert len(_factory_commands(skill)) > 50
+    assert _unknown_commands(readme) == []
+    assert _unknown_commands(skill) == []
+    assert _unknown_commands("`factory library where`, `factory adopt`") == [
+        "factory adopt",
+        "factory library where",
+    ]
+
+
+def test_skill_setup_and_item_procedures() -> None:
+    skill = render_skill()
+    setup = _section(skill, "Set up a machine")
+    for text in ("factory check --json", "factory library clone", "factory library init"):
+        assert text in setup, text
+    takeover = _section(skill, "Take over a repo with committed `.factory/`")
+    for text in ("factory check --json", "`installed`", "Never run", "factory obs"):
+        assert text in takeover, text
+    items = _section(skill, "Manage items")
+    for text in (
+        "factory library import",
+        "factory config set",
+        "factory config remove",
+        "factory config move",
+        "factory config commit",
+        "inherit",
+    ):
+        assert text in items, text
+    upgrade = _section(skill, "Upgrade")
+    for text in ("factory upgrade", "factory library seed", "next run"):
+        assert text in upgrade, text
