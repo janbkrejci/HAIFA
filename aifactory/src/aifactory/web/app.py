@@ -183,7 +183,7 @@ from starlette.routing import BaseRoute, Mount, Route, Router
 from starlette.staticfiles import StaticFiles
 from starlette.types import ASGIApp, Receive, Scope, Send
 
-from aifactory import __version__
+from aifactory import __version__, guide
 from aifactory.backlog import TaskEditError
 from aifactory.codeprint import CodeWatch
 from aifactory.config import ConfigError
@@ -315,6 +315,12 @@ async def updates_check(request: Request) -> JSONResponse:
     source: Updates = request.app.state.updates
     data = await run_in_threadpool(source.check, request.query_params.get("fresh") == "1")
     return JSONResponse(envelope_ok(data))
+
+
+async def guide_get(request: Request) -> JSONResponse:
+    """The user and administrator guide: every chapter with its markdown."""
+    items = await run_in_threadpool(guide.chapters)
+    return JSONResponse(envelope_ok({"chapters": [item.as_dict() for item in items]}))
 
 
 async def updates_install(request: Request) -> JSONResponse:
@@ -1576,6 +1582,7 @@ def create_app(
                     Route("/code", code_state, methods=["GET"]),
                     Route("/restart", restart_dashboard, methods=["POST"]),
                     Route("/updates", updates_check, methods=["GET"]),
+                    Route("/guide", guide_get, methods=["GET"]),
                     Route("/updates/install", updates_install, methods=["POST"]),
                     *_repo_routes(),
                 ]
@@ -1985,6 +1992,7 @@ def create_multi_app(
             Route("/code", code_state, methods=["GET"]),
             Route("/restart", restart_dashboard, methods=["POST"]),
             Route("/updates", updates_check, methods=["GET"]),
+            Route("/guide", guide_get, methods=["GET"]),
             Route("/updates/install", updates_install, methods=["POST"]),
             Route("/limits", global_limits, methods=["GET"]),
             Route("/repos", repos_list, methods=["GET"]),

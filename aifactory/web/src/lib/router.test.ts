@@ -10,6 +10,7 @@ import {
   SCREEN_LABELS,
   currentRepoId,
   graphHref,
+  guideHref,
   here,
   newContainerHref,
   newStepHref,
@@ -39,6 +40,19 @@ describe('parseRoute', () => {
     expect(parseRoute('#/library')).toMatchObject({ page: 'library', repo: null, redirect: null })
     expect(parseRoute('#/overview')).toEqual({ page: 'overview', repo: null, screen: 'backlog', params: [], redirect: null })
     expect(parseRoute('#/repos/add')).toMatchObject({ page: 'repos-add', repo: null, redirect: null })
+  })
+
+  it('parses the guide with an optional chapter and section', () => {
+    expect(parseRoute('#/guide')).toEqual({ page: 'guide', repo: null, screen: 'backlog', params: [], redirect: null })
+    expect(parseRoute('#/guide/instalace')).toMatchObject({ page: 'guide', params: ['instalace'], redirect: null })
+    expect(parseRoute('#/guide/backlog/z%C3%A1klady')).toMatchObject({ page: 'guide', params: ['backlog', 'základy'] })
+    expect(parseRoute('#/guide/a/b/c')).toMatchObject({ page: 'overview', redirect: OVERVIEW_HREF })
+  })
+
+  it('builds guide links', () => {
+    expect(guideHref()).toBe('#/guide')
+    expect(guideHref('backlog')).toBe('#/guide/backlog')
+    expect(guideHref('backlog', 'základy')).toBe('#/guide/backlog/z%C3%A1klady')
   })
 
   it('sends empty and unknown hashes to the overview', () => {

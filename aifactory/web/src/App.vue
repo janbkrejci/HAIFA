@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { errorText } from './lib/format'
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
-import { Trash2 } from 'lucide-vue-next'
+import { BookOpen, Trash2 } from 'lucide-vue-next'
 import { fetchHealth, fetchRepos, type Health, type RepoItem } from './lib/api'
 import { useCodeState } from './lib/code'
 import { useBacklogStatus } from './lib/backlogStatus'
 import { useLimits } from './lib/limits'
 import { useRemoveRepo } from './lib/repos'
 import {
+  GUIDE_HREF,
   OVERVIEW_HREF,
   SCREEN_LABELS,
   usePage,
@@ -19,6 +20,7 @@ import SetupView from './views/SetupView.vue'
 import LibraryView from './views/LibraryView.vue'
 import OverviewView from './views/OverviewView.vue'
 import ProblemsView from './views/ProblemsView.vue'
+import GuideView from './views/GuideView.vue'
 import OverviewReadiness from './components/OverviewReadiness.vue'
 import UpdateChip from './components/UpdateChip.vue'
 import LibraryChip from './components/LibraryChip.vue'
@@ -96,6 +98,8 @@ watchEffect(() => {
     document.title = 'Přidat repozitář · HAIFA'
   } else if (page.value === 'problems') {
     document.title = 'Problémy a řešení · HAIFA'
+  } else if (page.value === 'guide') {
+    document.title = 'Příručka · HAIFA'
   } else {
     document.title = 'Přehled · HAIFA'
   }
@@ -147,6 +151,11 @@ onBeforeUnmount(() => {
         <OverviewReadiness chip />
         <LibraryChip />
         <LimitsBar :providers="limits.providers.value" :loading="limits.loading.value" :usable="limits.usable.value" @open="harnessDialog = true" />
+        <Tooltip text="Uživatelská a administrační příručka">
+          <a class="guide-link" :class="{ active: viewPage === 'guide' }" :href="GUIDE_HREF" aria-label="Příručka" data-test="guide-link">
+            <BookOpen class="theme-icon" aria-hidden="true" />
+          </a>
+        </Tooltip>
         <Tooltip :text="themeLabel">
         <button class="theme-toggle" type="button" :aria-label="themeLabel" @click="toggle">
           <svg v-if="theme === 'dark'" class="theme-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -218,6 +227,9 @@ onBeforeUnmount(() => {
     </main>
     <main v-else-if="viewPage === 'library'">
       <LibraryView />
+    </main>
+    <main v-else-if="viewPage === 'guide'">
+      <GuideView />
     </main>
     <main v-else-if="viewPage === 'problems'">
       <ProblemsView @changed="reloadRepos" />
@@ -336,7 +348,8 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.theme-toggle {
+.theme-toggle,
+.guide-link {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -351,17 +364,25 @@ onBeforeUnmount(() => {
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-[data-theme="light"] .theme-toggle {
+[data-theme="light"] .theme-toggle,
+[data-theme="light"] .guide-link {
   background: rgba(255, 255, 255, 0.7);
 }
 
-.theme-toggle:hover {
+.theme-toggle:hover,
+.guide-link:hover {
   background: var(--panel-3);
   border-color: var(--border);
 }
 
-[data-theme="light"] .theme-toggle:hover {
+[data-theme="light"] .theme-toggle:hover,
+[data-theme="light"] .guide-link:hover {
   background: rgba(255, 255, 255, 0.9);
+}
+
+.guide-link.active {
+  color: var(--purple);
+  border-color: var(--purple);
 }
 
 .theme-icon {

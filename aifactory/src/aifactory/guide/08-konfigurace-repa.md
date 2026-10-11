@@ -1,0 +1,95 @@
+# Konfigurace repa
+
+Konfigurace HAIFA v repu je adresář `.factory/`:
+
+| Soubor | Obsah | V gitu |
+| --- | --- | --- |
+| `config.yaml` | Nastavení repa: base, hosting, cesty, souběh. | ano |
+| `agents.yaml` | Roster: agenti repa a jejich harness, model, thinking. | ano |
+| `roles.yaml` | Volitelně: přepis rolí kroků workflow. | ano |
+| `workflows/<jméno>.yaml` | Vlastní workflow repa. | ano |
+| `prompts/<agent>/` | Vlastní prompty agentů (`system.md`, `user.md`). | ano |
+| `extensions/<jméno>/` | Rozšíření pi. | ano |
+| `local.yaml` | Nastavení jen tohoto počítače (trace DB, sdílená databáze). | ne |
+| `trace.db`, `data/`, `worktrees/` | Trace běhů, data sessions, worktree běhů. | ne |
+
+Agenti, workflow, skilly a rozšíření, které repo nemá, se dědí z knihovny (kapitola [Knihovna](#/guide/knihovna)). Skilly repa jsou v `.claude/skills/` s kopií v `.agents/skills/` pro codex a pi (`factory skills sync`).
+
+## Konfigurace z base
+
+**Běhy čtou sdílenou konfiguraci (vše kromě `local.yaml`) z commitu ve větvi base, ne z pracovního stromu.** Změna `.factory/` se v běhu projeví až po commitu:
+
+```bash
+factory config status
+factory config commit
+```
+
+`factory config commit` commitne sdílenou konfiguraci do base a odešle ji (nejdřív push, pak posun base). Na chráněnou base použij `factory config commit --pr`. V dashboardu je na to pruh **Commitnout konfiguraci** a záložka Factory. `factory config show` ukáže konfiguraci, kterou by použil běh; `factory config pull` posune lokální base na remote.
+
+## config.yaml
+
+| Klíč | Výchozí | Význam |
+| --- | --- | --- |
+| `base` | `main` | Větev, do které míří PR a ze které běhy čtou konfiguraci a backlog. |
+| `remote` | `origin` | Git remote pro publikaci. |
+| `git_provider` | `local` | `local`, `github` nebo `azure`. |
+| `azure` | — | `organization`, `project`, `repository` pro Azure DevOps. |
+| `merge_strategy` | `squash` | `squash` nebo `merge`. |
+| `docs_root` | `factory` | Kořen `backlog/`, `specs/` a `docs/`. |
+| `levels` | `[project, step, task]` | Názvy úrovní backlogu (nejméně dvě). |
+| `workdir` | `.` | Pracovní adresář agentů v repu. |
+| `worktrees_dir` | `.factory/worktrees` | Kam se zakládají worktree běhů. |
+| `protected_files` | `[".factory/"]` | Cesty, které agenti nesmějí měnit. |
+| `max_parallel_runs` | `1` | Souběžné běhy jednoho řetězu auto-continue. |
+| `test_timeout` | 600 s | Časový limit kroku testů (task ho může přepsat). |
+| `test_slots` | `1` | Kolik kroků testů smí běžet zároveň na počítači. |
+| `generated` | — | Generované soubory `{path, command, timeout}`, které se při řešení konfliktu přegenerují. |
+
+Neznámé klíče konfigurace odmítne. Port dashboardu ani cesta k trace DB do `config.yaml` nepatří.
+
+Příklad pro GitHub:
+
+```yaml
+base: main
+git_provider: github
+docs_root: factory
+max_parallel_runs: 2
+protected_files:
+  - .factory/
+  - .github/
+```
+
+Pro Azure DevOps:
+
+```yaml
+base: main
+remote: origin
+git_provider: azure
+azure:
+  organization: https://dev.azure.com/firma
+  project: Projekt
+  repository: repo
+```
+
+## local.yaml
+
+Lokální, necommitované nastavení tohoto počítače:
+
+- `trace_db`: cesta k trace databázi běhů (výchozí `.factory/trace.db`),
+- `database_url`: adresa sdíleného databázového serveru (kapitola [Počítač a harnessy](#/guide/pocitac/sdilena-databaze)).
+
+## Záložka Nastavení
+
+Formulář **Sdílené nastavení repozitáře** upravuje `config.yaml`: pracovní adresář agentů, kořen dokumentů, adresář worktree, base větev, git provider, merge strategii, souběžné běhy auto-continue a chráněné soubory. **Lokální necommitované nastavení** upravuje cestu k trace DB v `local.yaml`. **Uložit** zapisuje do pracovního stromu; sdílené nastavení pak commitni. Ostatní klíče (`azure`, `levels`, `test_timeout`, `test_slots`, `generated`, `remote`) uprav v souboru.
+
+## Záložka Factory
+
+- **Stav repa:** verdikt kontroly, verze, base a její náskok nebo zpoždění proti remote.
+- **Akce:** **Nainstalovat factory** (formulář: base, git hosting, kořen dokumentů), **Commitnout konfiguraci**, **Stáhnout konfiguraci z base**. Každá akce ukáže náhled plánu a zapíše ho do base, nebo jako PR (**Otevřít jako PR**, když base nepřijme přímý push).
+- **Nálezy** ve skupinách **Repozitář: opravit a commitnout** a **Tento počítač: opravit lokálně**. Vybrané nálezy repa vyřeší agent: **Vyřešit vybrané nálezy** založí a spustí task „Opravit vybrané nálezy Factory“.
+- **Definice agentů:** roster s harnessem, modelem a přemýšlením každého agenta a přepisy na krocích workflow.
+- **Položky repa:** agenti, workflow, skilly a rozšíření pi, každý jako vlastní kopie, nebo z knihovny; vlastní kopii můžeš **Přesunout do knihovny**.
+
+## Instalace a odebrání
+
+`factory init` (nebo **Přidat repozitář** v dashboardu) zapíše `.factory/config.yaml`, adresář backlogu a do `.gitignore` řádky `.factory/data/`, `.factory/worktrees/`, `.factory/local.yaml` a `.factory/trace.db*`. Agenty ani workflow nekopíruje. Odebrání repa z dashboardu `.factory/` z repa smaže a commitne to (kapitola [Dashboard](#/guide/dashboard)).

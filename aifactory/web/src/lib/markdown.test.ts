@@ -36,6 +36,23 @@ describe('renderMarkdown', () => {
     expect(renderMarkdown('[x](https://a.b)')).toContain('<a href="https://a.b"')
     expect(renderMarkdown('[x](javascript:void(0))')).not.toContain('<a')
   })
+
+  it('links in-app hash routes in place', () => {
+    expect(renderMarkdown('[Backlog](#/guide/backlog)')).toBe('<p><a href="#/guide/backlog">Backlog</a></p>')
+    expect(renderMarkdown('[x](#top)')).not.toContain('<a')
+  })
+
+  it('renders pipe tables with escaped pipes and inline code', () => {
+    const html = renderMarkdown('| Kód | Oprava |\n| --- | --- |\n| `a` | x \\| y |\n\ntext')
+    expect(html).toBe(
+      '<table class="md-table"><thead><tr><th>Kód</th><th>Oprava</th></tr></thead>' +
+        '<tbody><tr><td><code>a</code></td><td>x | y</td></tr></tbody></table>\n<p>text</p>',
+    )
+  })
+
+  it('keeps a pipe line without a rule row as text', () => {
+    expect(renderMarkdown('| a |')).toBe('<p>| a |</p>')
+  })
 })
 
 describe('stripComments', () => {

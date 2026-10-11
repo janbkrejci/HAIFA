@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from aifactory import guide
 from aifactory.cli import build_parser, main
 from aifactory.skill import (
     ERROR_CODES,
@@ -446,40 +447,40 @@ def _check_codes(*files: str) -> set[str]:
     return codes
 
 
-def test_readme_lists_machine_and_library_check_codes() -> None:
-    readme = README.read_text(encoding="utf-8")
-    codes = _check_codes("machine_rules.py", "library_rules.py")
+def _guide() -> str:
+    return "\n".join(chapter.markdown for chapter in guide.chapters())
+
+
+def test_guide_lists_every_check_code() -> None:
+    text = _guide()
+    codes = _check_codes("machine_rules.py", "library_rules.py", "repo_rules.py")
     assert codes and codes <= set(ISSUE_CODES["check"])
-    assert sorted(c for c in codes if f"`{c}`" not in readme) == []
+    assert sorted(c for c in codes if f"`{c}`" not in text) == []
 
 
-def test_readme_sections() -> None:
-    readme = README.read_text(encoding="utf-8")
-    for text in (
-        "## Předpoklady",
-        "## Instalace z bundlu",
+def test_guide_covers_setup_library_repos_and_upgrades() -> None:
+    text = _guide()
+    for needle in (
         "./install.sh",
-        "## Kontrola",
         "factory check",
-        "## Knihovna",
         "factory library clone",
         "factory library init",
-        "## Přidání repa",
         "factory init",
         "factory obs",
-        "## Aktualizace HAIFA",
         "factory upgrade",
         "factory library seed",
-        "## Vydání (pro engineera)",
-        "__init__.py",
-        "just check",
-        "just bundle",
         "min_factory_version",
-        "## Řešení problémů",
+        "just bundle",
     ):
-        assert text in readme, text
+        assert needle in text, needle
     for removed in ("factory adopt", "factory update", "config export", "library where"):
-        assert removed not in readme, removed
+        assert removed not in text, removed
+
+
+def test_readme_points_to_the_guide() -> None:
+    readme = README.read_text(encoding="utf-8")
+    assert "factory obs" in readme
+    assert "src/aifactory/guide" in readme
 
 
 def test_pyproject_readme() -> None:
@@ -489,10 +490,12 @@ def test_pyproject_readme() -> None:
 
 def test_factory_commands_exist_in_parser() -> None:
     readme = README.read_text(encoding="utf-8")
+    text = _guide()
     skill = render_skill()
-    assert len(_factory_commands(readme)) > 10
+    assert len(_factory_commands(text)) > 30
     assert len(_factory_commands(skill)) > 50
     assert _unknown_commands(readme) == []
+    assert _unknown_commands(text) == []
     assert _unknown_commands(skill) == []
     assert _unknown_commands("`factory library where`, `factory adopt`") == [
         "factory adopt",
