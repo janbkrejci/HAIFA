@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S90-T07
 title: OB7 Náklad worktree na velkém projektu
-status: todo
+status: cancelled
 depends_on: []
 ---
 
