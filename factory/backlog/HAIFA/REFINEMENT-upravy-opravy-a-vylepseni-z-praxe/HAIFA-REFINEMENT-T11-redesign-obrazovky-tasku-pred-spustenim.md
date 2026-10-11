@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T11
 title: Redesign obrazovky Tasku před spuštěním
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 ---
@@ -11,3 +11,4 @@ Chcli lepší, přehlednější a ergonomičtější design stránky detailu Tas
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-11 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/9 · náklady $2.76
