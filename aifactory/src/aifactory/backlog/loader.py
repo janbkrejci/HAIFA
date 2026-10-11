@@ -26,7 +26,6 @@ from aifactory.backlog.roots import backlog_roots
 from aifactory.config import ConfigError, ConfigIssue, ProjectSettings, WorktreeSource
 from aifactory.config.settings import (
     CONFIG_FILE,
-    check_relative_dir,
     check_timeout,
     parse_project_settings,
 )
@@ -174,19 +173,6 @@ class _Loader:
                     if key == "test_timeout" and (problem := _timeout_issue(value)) is not None:
                         # Kept: a task inheriting it must fail, not fall back to 600 s.
                         self.issue("invalid_field", problem, index, container.id)
-                    if key == "workdir" and parent is not None:
-                        self.issue(
-                            "invalid_field",
-                            "workdir is only allowed on a project",
-                            index,
-                            container.id,
-                        )
-                    if (
-                        key in (*OUTPUT_DIR_KEYS, "workdir")
-                        and (problem := _dir_issue(key, value)) is not None
-                    ):
-                        # Kept: a task inheriting it must fail, not fall back to the config.
-                        self.issue("invalid_field", problem, index, container.id)
                     if key in INHERITED_KEYS:
                         container.defaults[key] = value
                     else:
@@ -240,8 +226,6 @@ class _Loader:
                     task_id,
                 )
         lists: dict[str, list[str]] = {}
-        if "workdir" in data:
-            self.issue("invalid_field", "workdir is only allowed on a project", path, task_id)
         own = {k: v for k, v in data.items() if k in INHERITED_KEYS}
         for key in FLAG_KEYS:
             if not _flag(own.get(key)):
@@ -250,10 +234,6 @@ class _Loader:
         if (problem := _timeout_issue(own.get("test_timeout"))) is not None:
             # Kept: running the task must fail, not fall back to an inherited limit.
             self.issue("invalid_field", problem, path, task_id)
-        for key in OUTPUT_DIR_KEYS:
-            if (problem := _dir_issue(key, own.get(key))) is not None:
-                # Kept: running the task must fail, not fall back to another directory.
-                self.issue("invalid_field", problem, path, task_id)
         for key in LIST_FIELDS:
             value = data.get(key)
             if value is None:
@@ -301,20 +281,6 @@ def _timeout_issue(value: object) -> str | None:
         return (
             f"field 'test_timeout' must be a whole number of seconds greater than 0, got {value!r}"
         )
-    return None
-
-
-OUTPUT_DIR_KEYS = ("specs_dir", "docs_dir")
-
-
-def _dir_issue(key: str, value: object) -> str | None:
-    """Why a ``specs_dir``/``docs_dir`` value is invalid; ``None`` when missing or valid."""
-    if value is None:
-        return None
-    try:
-        check_relative_dir(value)
-    except ValueError as exc:
-        return f"field '{key}' must be a directory relative to the repository: {exc}"
     return None
 
 

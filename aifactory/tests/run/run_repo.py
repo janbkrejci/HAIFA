@@ -59,8 +59,8 @@ PLAN_APPROVED: dict[str, Any] = {
 
 T01 = "M01-S01-T01"
 T02 = "M01-S01-T02"
-SPEC = "specs/M01-S01-T01-schema.md"
-DOC = "app_docs/M01-S01-T01-schema.md"
+SPEC = "specs/M01-core/S01-model/M01-S01-T01-schema.md"
+DOC = "docs/M01-core/S01-model/M01-S01-T01-schema.md"
 
 USER_PROMPT = (
     "{{prompt}}\nctx={{context_handoff_dir}}\nspec={{spec_path}}\ndoc={{doc_path}}\n"
@@ -78,7 +78,7 @@ def agents_yaml(harness: str) -> str:
 def files(harness: str) -> dict[str, str]:
     result = {
         ".gitignore": ".factory/local.yaml\n",
-        ".factory/config.yaml": "base: main\n",
+        ".factory/config.yaml": "base: main\ndocs_root: .\n",
         ".factory/agents.yaml": agents_yaml(harness),
         ".factory/workflows/plan-commit.yaml": (
             "name: plan-commit\ndescription: Plan the task and commit the plan\n"

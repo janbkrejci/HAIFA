@@ -474,12 +474,10 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--workflows", metavar="LIST", help="comma-separated workflows (default: simple-sdlc)"
     )
-    parser.add_argument("--backlog-dir", metavar="DIR", help="backlog directory (default: backlog)")
     parser.add_argument(
-        "--specs-dir", metavar="DIR", help="directory for specs, $specs_dir/ (default: specs)"
-    )
-    parser.add_argument(
-        "--docs-dir", metavar="DIR", help="directory for docs, $docs_dir/ (default: app_docs)"
+        "--docs-root",
+        metavar="DIR",
+        help="root of the factory documents with backlog/, specs/ and docs/ (default: factory)",
     )
     parser.add_argument(
         "--dry-run", action="store_true", help="only return the plan; write nothing"
@@ -541,9 +539,7 @@ def _init(args: argparse.Namespace) -> int:
         "base": args.base,
         "agents": _split_list(args.agents),
         "workflows": _split_list(args.workflows),
-        "backlog_dir": args.backlog_dir,
-        "specs_dir": args.specs_dir,
-        "docs_dir": args.docs_dir,
+        "docs_root": args.docs_root,
     }
     repo = Path(args.repo) if args.repo else Path.cwd()
     if args.dry_run or args.commit:
@@ -952,7 +948,8 @@ def _add_config_edit_commands(sub: Any) -> None:
         "its defaults; dependencies already in the repo are kept (kept, reason present). "
         "Skills go to .claude/skills/<name>/ with a copy in .agents/skills/<name>/. The "
         "roster entry of a new agent slot takes the item defaults ($specs_dir/ and "
-        "$docs_dir/ from config.yaml) overridden by --harness, --model and --thinking. "
+        "$docs_dir/ under docs_root of config.yaml) overridden by --harness, --model and "
+        "--thinking. "
         "--as SLOT (agents and workflows) installs under another name; a slot with other "
         "content is slot_taken (fix: --as NEW), with the same content a no-op. " + _CONFIG_MODES,
     )
@@ -1687,10 +1684,10 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     )
     commit = sub.add_parser(
         "commit",
-        help="commit the backlog working-tree changes to base (only files in the backlog roots)",
-        description="Commit every change under the backlog roots, backlog_dir or every "
-        "directory of backlog_dirs (new, edited and deleted task "
-        "files) to base, so runs see it. Other changes in the checkout are left alone. The "
+        help="commit the backlog working-tree changes to base (only files in the backlog root)",
+        description="Commit every change under the backlog root <docs_root>/backlog (new, "
+        "edited and deleted task files) to base, so runs see it. Other changes in the "
+        "checkout are left alone. The "
         "main checkout must be on base and the backlog must be valid. With a remote, the "
         "commit is pushed.",
     )
@@ -1717,12 +1714,6 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     )
     add.add_argument("--title", required=True, metavar="TEXT", help="short title")
     add.add_argument("--body", default="", metavar="TEXT", help="description in index.md")
-    add.add_argument(
-        "--backlog-dir",
-        metavar="DIR",
-        help="backlog root of a new project, one of backlog_dirs (it may match a pattern "
-        "like moduly/*/backlog and not exist yet); default: the first existing root",
-    )
     edit = sub.add_parser(
         "edit",
         help="change the title and settings of a project or step (its index.md)",
@@ -1736,8 +1727,6 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     edit.add_argument("--writes", nargs="*", metavar="PATH", help="set writes (none = [])")
     edit.add_argument("--source", metavar="TEXT", help="set source")
     edit.add_argument("--target", metavar="TEXT", help="set target")
-    edit.add_argument("--specs-dir", metavar="DIR", help="set specs_dir")
-    edit.add_argument("--docs-dir", metavar="DIR", help="set docs_dir")
     edit.add_argument("--auto-continue", choices=("on", "off"), help="set auto_continue")
     edit.add_argument(
         "--clear",
@@ -1970,11 +1959,10 @@ def _backlog_container_write(args: argparse.Namespace) -> int:
                 args.container_id,
                 args.title,
                 body=args.body,
-                backlog_dir=args.backlog_dir,
             )
         else:
             values: dict[str, object] = {}
-            for key in ("workflow", "writes", "source", "target", "specs_dir", "docs_dir"):
+            for key in ("workflow", "writes", "source", "target"):
                 value = getattr(args, key)
                 if value is not None:
                     values[key] = value

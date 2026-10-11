@@ -76,7 +76,7 @@ def test_custom_values(tmp_path: Path) -> None:
         "base: [unclosed\n",
         "- a\n- b\n",
         "levels: [task]\n",
-        "backlog_dir: /abs/backlog\n",
+        "docs_root: /abs/factory\n",
         "git_provider: svn\n",
         "bsae: main\n",
         "port: 4700\n",

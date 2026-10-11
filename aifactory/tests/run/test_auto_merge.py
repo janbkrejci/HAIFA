@@ -367,7 +367,7 @@ def _github_run(
     setup(repo)
     git(repo, "remote", "add", "origin", str(origin))
     git(repo, "push", "-q", "-u", "origin", "main")
-    write(repo, ".factory/config.yaml", "base: main\ngit_provider: github\n")
+    write(repo, ".factory/config.yaml", "base: main\ngit_provider: github\ndocs_root: .\n")
     commit_all(repo, "github")
     git(repo, "push", "-q", "origin", "main")
     log = install_fake_gh(

@@ -399,17 +399,13 @@ def project_settings(
     provider: str,
     azure: Mapping[str, str] | None = None,
     remote: str | None = None,
-    backlog_dir: str | None = None,
-    specs_dir: str | None = None,
-    docs_dir: str | None = None,
+    docs_root: str | None = None,
 ) -> ProjectSettings:
     """The settings ``init`` writes; ``invalid_value`` when an option is not allowed."""
     values: dict[str, Any] = {"base": base, "git_provider": provider}
     for key, value in (
         ("remote", remote),
-        ("backlog_dir", backlog_dir),
-        ("specs_dir", specs_dir),
-        ("docs_dir", docs_dir),
+        ("docs_root", docs_root),
         ("azure", dict(azure) if azure is not None else None),
     ):
         if value is not None:
@@ -459,13 +455,7 @@ def render_files(
     config: dict[str, Any] = {"base": settings.base, "git_provider": settings.git_provider}
     if write_remote:
         config["remote"] = settings.remote
-    config.update(
-        {
-            "backlog_dir": settings.backlog_dir,
-            "specs_dir": settings.specs_dir,
-            "docs_dir": settings.docs_dir,
-        }
-    )
+    config["docs_root"] = settings.docs_root
     if settings.azure is not None:
         config["azure"] = settings.azure.model_dump(mode="json")
     files: dict[str, bytes] = {}
@@ -496,9 +486,7 @@ def init_repo(
     agents: Sequence[str] | None = None,
     bindings: Sequence[Binding] = (),
     workflows: Sequence[str] | None = None,
-    backlog_dir: str | None = None,
-    specs_dir: str | None = None,
-    docs_dir: str | None = None,
+    docs_root: str | None = None,
     force: bool = False,
     environ: Mapping[str, str] | None = None,
 ) -> InitResult:
@@ -515,9 +503,7 @@ def init_repo(
         base=base,
         provider=provider,
         azure=azure,
-        backlog_dir=backlog_dir,
-        specs_dir=specs_dir,
-        docs_dir=docs_dir,
+        docs_root=docs_root,
     )
     sel = Selection(_Source(environ), agents, bindings, workflows)
     manifest = build_manifest(root, sel, _now())

@@ -42,7 +42,7 @@ def service(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[str]:
 def checkout(root: Path) -> Path:
     (root / ".git").mkdir(parents=True)
     files = {
-        ".factory/config.yaml": "{}\n",
+        ".factory/config.yaml": "docs_root: .\n",
         "backlog/P/index.md": "---\nid: P\ntitle: Project\n---\n",
         "backlog/P/S/index.md": "---\nid: P-S\ntitle: Step\n---\n",
         TASK: "---\nid: P-S-T\ntitle: Task\nstatus: todo\n---\nBody\n",

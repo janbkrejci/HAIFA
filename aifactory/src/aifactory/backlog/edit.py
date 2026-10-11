@@ -50,7 +50,7 @@ from pathlib import Path
 
 from aifactory.backlog.loader import iter_containers, load_backlog
 from aifactory.backlog.model import INDEX_FILE, Backlog, Container, Issue, Task, node_file
-from aifactory.backlog.roots import backlog_roots, matches_pattern, owning_root
+from aifactory.backlog.roots import backlog_roots, owning_root
 from aifactory.backlog.taskfile import (
     new_index_text,
     new_task_text,
@@ -59,7 +59,6 @@ from aifactory.backlog.taskfile import (
     set_field,
 )
 from aifactory.backlog.validate import check_backlog
-from aifactory.config.settings import check_repo_dir
 
 EDITABLE_STATUSES: tuple[str, ...] = ("todo", "cancelled")
 _SLUG_MAX = 40
@@ -543,18 +542,12 @@ CONTAINER_KEYS: tuple[str, ...] = (
     "writes",
     "source",
     "target",
-    "specs_dir",
-    "docs_dir",
-    "workdir",
     "auto_continue",
 )
 _STR_KEYS = (
     "workflow",
     "source",
     "target",
-    "specs_dir",
-    "docs_dir",
-    "workdir",
     "harness",
     "model",
     "thinking",
@@ -609,7 +602,6 @@ def add_container(
     title: str,
     *,
     body: str = "",
-    backlog_dir: str | None = None,
 ) -> ContainerWriteResult:
     """Create a project (``parent`` is ``None``) or a step of project ``parent``.
 
@@ -617,10 +609,6 @@ def add_container(
     (``M01-S03``, see ``compose_id``). Writes ``<backlog_dir>/<code>-<slug>/index.md`` (a
     step's directory is in its project's directory: ``S03-<slug>``). The id is unique; a
     write that breaks the backlog is rejected with ``backlog_invalid``.
-
-    ``backlog_dir`` picks the backlog root of a new project: a directory that matches one
-    of the configured roots (it may not exist yet, e.g. ``moduly/M08/backlog`` for
-    ``moduly/*/backlog``). Without it the project goes to the first existing root.
     """
     backlog = load_for_edit(root)
     levels = backlog.settings.levels
@@ -643,15 +631,11 @@ def add_container(
     code = _local_code(container_id, parent_node)
     name = f"{code}-{slug}" if slug else code
     if parent_node is not None:
-        if backlog_dir is not None:
-            raise TaskEditError(
-                "conflicting_options",
-                f"a {level} goes into its parent's directory, do not give a backlog root",
-                id=container_id,
-            )
         base = parent_node.path
     else:
-        base = _project_root(backlog, backlog_dir, container_id)
+        if not backlog.roots:  # pragma: no cover - load_for_edit needs a root
+            raise TaskEditError("missing_backlog_dir", "no backlog directory exists")
+        base = backlog.roots[0]
     rel_dir = f"{base}/{name}"
     rel = f"{rel_dir}/{INDEX_FILE}"
     if container_id in backlog.by_id:
@@ -677,32 +661,6 @@ def add_container(
     text = new_index_text(container_id, title, body)
     changed = _write_checked(backlog, baseline, {rel: text}, f"backlog add {level}")
     return _container_result(backlog, "add", changed, rel, container_id)
-
-
-def _project_root(backlog: Backlog, backlog_dir: str | None, container_id: str) -> str:
-    """The backlog root a new project goes to (see ``add_container``)."""
-    if backlog_dir is None:
-        if not backlog.roots:  # pragma: no cover - load_for_edit needs a root
-            raise TaskEditError("missing_backlog_dir", "no backlog directory exists")
-        return backlog.roots[0]
-    text = backlog_dir.strip().strip("/")
-    while text.startswith("./"):
-        text = text[2:]
-    parts = text.split("/")
-    if not text or ".." in parts or Path(text).is_absolute():
-        raise TaskEditError(
-            "invalid_value",
-            f"backlog root must be a path relative to the repository, got {backlog_dir!r}",
-            id=container_id,
-        )
-    if any(ch in text for ch in "*?[") or not matches_pattern(text, backlog.settings):
-        raise TaskEditError(
-            "invalid_value",
-            f"'{backlog_dir}' is not a backlog root, configured: {backlog.settings.backlog_label}",
-            id=container_id,
-            path=text,
-        )
-    return text
 
 
 def _check_container_value(key: str, value: object) -> str | list[str] | bool:
@@ -767,26 +725,11 @@ def edit_container(
     container = find_container(backlog, container_id, baseline)
     if container.parent is not None and any(k in values for k in ("harness", "model", "thinking")):
         raise TaskEditError("invalid_value", "harness settings are only allowed on a project")
-    if "workdir" in (*values, *clear) and container.parent is not None:
-        raise TaskEditError(
-            "invalid_value", "workdir is only allowed on a project", id=container_id
-        )
     rel = container.index_path
     if rel is None:
         raise TaskEditError(
             "no_index", f"'{container_id}' has no index.md", id=container_id, path=container.path
         )
-    for key in ("specs_dir", "docs_dir", "workdir"):
-        if key in checked:
-            try:
-                checked[key] = check_repo_dir(root, checked[key])
-            except ValueError as exc:
-                raise TaskEditError(
-                    "backlog_invalid",
-                    f"{key}: {exc}",
-                    exit_code=1,
-                    issues=[Issue("invalid_field", f"{key}: {exc}", rel, container_id)],
-                ) from exc
     text = (root / rel).read_text(encoding="utf-8")
     if title is not None:
         if not title.strip():

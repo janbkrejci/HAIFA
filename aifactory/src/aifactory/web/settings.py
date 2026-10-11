@@ -28,7 +28,6 @@ from typing import Any
 import yaml
 from pydantic import BaseModel, ValidationError
 
-from aifactory.backlog import container_detail_json, load_backlog
 from aifactory.config import (
     ConfigError,
     ConfigIssue,
@@ -42,6 +41,7 @@ from aifactory.config import (
 from aifactory.config.settings import (
     CONFIG_FILE,
     LOCAL_KEYS,
+    OBSOLETE_KEYS,
     _relative,
     check_repo_dir,
     local_port_warning,
@@ -56,9 +56,7 @@ JsonDict = dict[str, Any]
 
 SHARED_FIELDS = (
     "workdir",
-    "backlog_dir",
-    "specs_dir",
-    "docs_dir",
+    "docs_root",
     "worktrees_dir",
     "base",
     "git_provider",
@@ -180,16 +178,7 @@ def _view(root: Path) -> tuple[JsonDict, list[str]]:
     local, local_issues, local_warnings = _local_form(root)
     status, warnings = config_status(root)
     warnings = [*local_warnings, *warnings]
-    projects: list[JsonDict] = []
-    if settings is not None:
-        backlog = load_backlog(root, settings)
-        projects = [
-            container_detail_json(backlog, project)
-            for project in backlog.containers
-            if project.id is not None
-        ]
     data: JsonDict = {
-        "projects": projects,
         "repository": str(root),
         "shared": shared,
         "local": local,
@@ -351,7 +340,9 @@ def save_settings(repo: Path, body: JsonDict) -> tuple[JsonDict, list[str]]:
                         )
                     )
             issues.extend(_model_issues(ProjectSettings, data, CONFIG_FILE, "git_provider"))
-            for key in ("workdir", "specs_dir", "docs_dir"):
+            for key in OBSOLETE_KEYS:
+                data.pop(key, None)  # replaced by docs_root; saving drops them
+            for key in ("workdir", "docs_root"):
                 if key in data:
                     try:
                         check_repo_dir(root, data[key])

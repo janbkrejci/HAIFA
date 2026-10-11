@@ -9,7 +9,7 @@ export function installOptions(plan: FactoryInitPlan): FactoryOptions {
   Object.assign(bind, structuredClone(plan.bindings ?? {}))
   return { base: plan.base, provider: plan.provider,
     azure: { organization: '', project: '', repository: '', ...plan.azure },
-    backlog_dir: plan.backlog_dir, specs_dir: plan.specs_dir, docs_dir: plan.docs_dir,
+    docs_root: plan.docs_root,
     agents: [...(plan.agents ?? [])], workflows: [...(plan.workflows ?? [])], bind }
 }
 

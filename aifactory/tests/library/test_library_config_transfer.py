@@ -233,7 +233,7 @@ def test_export_local_item(repo: Path, capsys: Capsys) -> None:
         "purpose": "Help with the docs.",
         "harness": "claude",
         "model": "claude-opus-5-5",
-        "writes": ["specs/", "README.md"],
+        "writes": ["factory/specs/", "README.md"],
     }
     raw["agents"].append(helper)
     (repo / AGENTS).write_text(yaml.safe_dump(raw, sort_keys=False), encoding="utf-8")

@@ -69,7 +69,7 @@ def setup(
         f"name: plan-test\ndescription: Plan the task, then run the suite\n"
         f"steps: {steps}\naccept: test.passed\n",
     )
-    config = "base: main\n"
+    config = "base: main\ndocs_root: .\n"
     if config_timeout is not None:
         config += f"test_timeout: {json.dumps(config_timeout)}\n"
     write(repo, ".factory/config.yaml", config)

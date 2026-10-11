@@ -1,2 +1,2 @@
 levels: [module, step, task]
-backlog_dir: backlog
+docs_root: .

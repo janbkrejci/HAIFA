@@ -37,7 +37,7 @@ from aifactory.workflow import EngineCodeRunner
 MODEL = "src/app/model.py"
 STATIC = "src/app/static"
 INDEX = f"{STATIC}/index.html"
-SPEC2 = "specs/M01-S01-T02-loader.md"
+SPEC2 = "specs/M01-core/S01-model/M01-S01-T02-loader.md"
 BRANCH2 = f"factory/{T02}-1"
 BUILD_LOG = "build.log"
 
@@ -87,7 +87,7 @@ def repo_fixture(tmp_path: Path) -> Path:
     write(
         repo,
         ".factory/config.yaml",
-        f"base: main\ngenerated:\n  - path: {STATIC}/\n    command: {command!r}\n",
+        f"base: main\ndocs_root: .\ngenerated:\n  - path: {STATIC}/\n    command: {command!r}\n",
     )
     commit_all(repo, "model, bundle and build")
     return repo

@@ -142,22 +142,21 @@ What to do with the common ones:
 
 ## Backlog format
 
-The backlog is a tree of markdown files under `backlog_dir` (setting in
-`.factory/config.yaml`):
+The factory documents live under one directory, `docs_root` in `.factory/config.yaml`
+(default `factory`). It holds the backlog, the task specs and the task documentation, all
+structured by project and step:
 
 ```
-<backlog_dir>/<project>/<step>/<task>.md
+<docs_root>/backlog/<project>/<step>/<task>.md
+<docs_root>/specs/<project>/<step>/<task-id>-<slug>.md
+<docs_root>/docs/<project>/<step>/<task-id>-<slug>.md
 ```
 
-- One repo may hold several backlog roots: `backlog_dirs: [path, ...]` in
-  `.factory/config.yaml` instead of `backlog_dir` (setting both is a configuration error).
-  Each entry is a directory relative to the repository; a path part may use `*`, e.g.
-  `moduly/*/backlog` (`*` does not cross `/`). Every root holds projects like a single
-  `backlog_dir`. Ids of projects, steps and tasks must be unique across all roots
-  (`factory backlog check` reports `duplicate_id` with both files). All commands read and
-  write every root, and `factory backlog commit` commits the changes in all of them.
-  `factory backlog add --backlog-dir DIR` picks the root of a new project (a directory
-  matching an entry; without it the first existing root).
+- `<project>/<step>` are the directory names of the task's project and step in the backlog.
+  `docs_root: .` puts `backlog/`, `specs/` and `docs/` at the repository root.
+- Old keys `backlog_dir`, `backlog_dirs`, `specs_dir` and `docs_dir` in
+  `.factory/config.yaml` and `specs_dir`, `docs_dir` and `workdir` in `index.md` or a task
+  are ignored; saving the settings in the dashboard drops them from `config.yaml`.
 - The levels come from `levels` (default `{{default_levels}}`). Tasks live only in the
   directories of the second-to-last level (steps by default).
 - Every container directory (project, step) has `{{index_file}}` with a YAML header:
@@ -186,10 +185,6 @@ YAML front matter; HAIFA writes the keys in this order: `{{field_order}}`.
   whole seconds greater than 0 (own, or the nearest `index.md` above); without it `test_timeout` from
   `.factory/config.yaml`, else 600. An invalid value is reported by `factory backlog check`
   and stops `factory task run` with `invalid_test_timeout`.
-- `specs_dir` and `docs_dir` are the directories of the task's spec and documentation
-  (own or inherited, like `test_timeout`); without them those of `.factory/config.yaml`. A value
-  must be a relative path inside the repository; otherwise `factory backlog check` reports
-  it and `factory task run` stops with `invalid_output_dir`.
 
 The body has two sections:
 
@@ -537,8 +532,8 @@ one commit, after the user has seen the plan.
      `--azure-project` and `--azure-repo`, each falling back to the remote URL.
    - `--agents LIST`, `--workflows LIST` and `--bind AGENT=HARNESS[:MODEL[:THINKING]]` per
      agent (repeatable, for example `--bind builder=codex:gpt-5.5`).
-   - `--backlog-dir`, `--specs-dir` and `--docs-dir`. `$specs_dir/` and `$docs_dir/` in
-     `writes` become the chosen directories.
+   - `--docs-root DIR` (default `factory`). `$specs_dir/` and `$docs_dir/` in `writes`
+     become `<docs_root>/specs/` and `<docs_root>/docs/`.
    - `--pr` plans a pull request; the direct-only blockers then do not apply.
    Example (choose agents and bindings for the intended workflow):
    `factory init --dry-run --json --agents builder,reviewer --workflows simple-sdlc
@@ -610,7 +605,7 @@ There is no importer; converting a plan is this procedure (D12).
 1. Read the plan (for example `implementation-plan` output: an index plus linked, sharded
    markdown files; follow the links).
 2. Map every module of the plan to a project: a project directory
-   `<backlog_dir>/<project-id>-<slug>/` with
+   `<docs_root>/backlog/<project-id>-<slug>/` with
    `{{index_file}}`, and every step to a step directory inside it with its own
    `{{index_file}}`. Create them with
    `factory backlog add --id CODE --title TEXT [--body TEXT] --json` (a project) and

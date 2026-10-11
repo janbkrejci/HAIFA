@@ -36,7 +36,7 @@ from thread_launcher import ThreadLauncher  # noqa: E402,I001
 
 BASE = "http://127.0.0.1:4700"
 MODEL = "src/app/model.py"
-SPEC2 = "specs/M01-S01-T02-loader.md"
+SPEC2 = "specs/M01-core/S01-model/M01-S01-T02-loader.md"
 TASK1 = "backlog/M01-core/S01-model/M01-S01-T01-schema.md"
 BRANCH1 = f"factory/{T01}-1"
 BRANCH2 = f"factory/{T02}-1"

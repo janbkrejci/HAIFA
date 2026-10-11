@@ -54,7 +54,7 @@ def _snapshot(root: Path) -> dict[str, bytes]:
 def test_detail_has_own_and_effective_values_with_origin(tmp_path: Path) -> None:
     root = make_backlog_repo(tmp_path / "repo")
     (root / ".factory/config.yaml").write_text(
-        "base: main\nlevels: [module, step, task]\nbacklog_dir: backlog\ndocs_dir: docs\n",
+        "base: main\nlevels: [module, step, task]\ndocs_root: .\ntest_timeout: 120\n",
         encoding="utf-8",
         newline="\n",
     )
@@ -73,10 +73,11 @@ def test_detail_has_own_and_effective_values_with_origin(tmp_path: Path) -> None
         "origin": {"source": "inherited", "level": "module", "id": "M01", "path": M01_INDEX},
     }
     assert "test" not in effective
-    assert effective["docs_dir"] == {
-        "value": "docs",
-        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "docs_dir"},
+    assert effective["test_timeout"] == {
+        "value": 120,
+        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "test_timeout"},
     }
+    assert not {"specs_dir", "docs_dir", "workdir"} & effective.keys()
     assert effective["auto_continue"] == {"value": False, "origin": {"source": "default"}}
     assert effective["source"] == {"value": None, "origin": None}
 
@@ -135,8 +136,6 @@ def test_edit_sets_clears_and_keeps_unknown_keys(tmp_path: Path) -> None:
         "writes": ["src/"],
         "source": "src/",
         "target": "src/",
-        "specs_dir": "specs/core",
-        "docs_dir": "docs/core",
         "auto_continue": True,
     }
     data = _post(client, "/api/backlog/containers/M01/edit", payload)["data"]
@@ -150,15 +149,13 @@ def test_edit_sets_clears_and_keeps_unknown_keys(tmp_path: Path) -> None:
         "writes": ["src/"],
         "source": "src/",
         "target": "src/",
-        "specs_dir": "specs/core",
-        "docs_dir": "docs/core",
         "auto_continue": True,
     }
-    assert data["container"]["effective"]["specs_dir"]["origin"]["source"] == "own"
+    assert data["container"]["effective"]["target"]["origin"]["source"] == "own"
 
     step = _post(client, "/api/backlog/containers/M01-S01/edit", {"workflow": "plan"})["data"]
     assert step["container"]["effective"]["workflow"]["origin"]["id"] == "M01-S01"
-    assert step["container"]["effective"]["specs_dir"]["origin"] == {
+    assert step["container"]["effective"]["target"]["origin"] == {
         "source": "inherited",
         "level": "module",
         "id": "M01",
@@ -183,8 +180,8 @@ def test_edit_rejects_bad_input(tmp_path: Path) -> None:
     assert body["error"]["code"] == "no_changes"
     body = _post(client, "/api/backlog/containers/M01/edit", {"auto_continue": "on"}, 400)
     assert body["error"]["code"] == "invalid_value"
-    body = _post(client, "/api/backlog/containers/M01/edit", {"docs_dir": "/abs"}, 422)
-    assert body["error"]["code"] == "backlog_invalid"
+    body = _post(client, "/api/backlog/containers/M01/edit", {"docs_dir": "docs"}, 400)
+    assert body["error"]["code"] == "usage_error"
     body = _post(client, "/api/backlog/containers/M09/edit", {"title": "X"}, 404)
     assert body["error"]["code"] == "unknown_container"
     assert _snapshot(root) == before

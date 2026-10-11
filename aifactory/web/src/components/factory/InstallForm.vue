@@ -5,7 +5,6 @@ import type { FactoryOptions, FactoryInitPlan } from '@/lib/api'
 import { MODEL_SUGGESTIONS, THINKING_LEVELS } from '@/lib/roster'
 const props = defineProps<{ options: FactoryOptions; plan: FactoryInitPlan }>()
 const emit = defineEmits<{ change: [options: FactoryOptions] }>()
-const DIR_LABELS = { backlog_dir: 'Adresář backlogu', specs_dir: 'Adresář specifikací', docs_dir: 'Adresář dokumentace' } as const
 const AZURE_LABELS = { organization: 'Azure organizace', project: 'Azure projekt', repository: 'Azure repozitář' } as const
 const PROVIDERS = [{ value: 'local', label: 'Jen lokálně' }, { value: 'github', label: 'GitHub' }, { value: 'azure', label: 'Azure DevOps' }]
 const harnessOptions = computed(() => Object.keys(props.plan.detected?.harnesses ?? {}).map(name => ({ value: name, label: name })))
@@ -30,7 +29,7 @@ function binding(name: string, key: 'harness' | 'model' | 'thinking', value: str
     <template v-if="options.provider === 'azure'">
       <label v-for="key in (['organization','project','repository'] as const)" :key="key">{{ AZURE_LABELS[key] }} <input :value="options.azure?.[key]" @input="edit(v => { if(v.azure) v.azure[key] = text($event) })"></label>
     </template>
-    <label v-for="key in (['backlog_dir','specs_dir','docs_dir'] as const)" :key="key">{{ DIR_LABELS[key] }} <input :value="options[key]" :data-test="`install-${key}`" @input="edit(v => v[key] = text($event))"></label>
+    <label>Kořen dokumentů factory <input :value="options.docs_root" data-test="install-docs_root" @input="edit(v => v.docs_root = text($event))"></label>
     <h3>Agenti</h3>
     <datalist id="install-models"><option v-for="m in MODEL_SUGGESTIONS" :key="m" :value="m" /></datalist>
     <datalist id="install-thinking"><option v-for="t in THINKING_LEVELS" :key="t" :value="t" /></datalist>

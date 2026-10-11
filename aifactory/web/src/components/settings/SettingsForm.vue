@@ -24,13 +24,15 @@ const emit = defineEmits<{
   reset: []
 }>()
 
-type TextField = 'workdir' | 'backlog_dir' | 'specs_dir' | 'docs_dir' | 'worktrees_dir' | 'base'
+type TextField = 'workdir' | 'docs_root' | 'worktrees_dir' | 'base'
 
 const PATH_FIELDS: { name: TextField; label: string; hint: string }[] = [
   { name: 'workdir', label: 'Pracovní adresář agentů', hint: '. = kořen repa, nebo podadresář' },
-  { name: 'backlog_dir', label: 'Adresář backlogu', hint: 'relativně ke kořeni repa' },
-  { name: 'specs_dir', label: 'Adresář specs', hint: 'relativně ke kořeni repa' },
-  { name: 'docs_dir', label: 'Adresář dokumentace', hint: 'relativně ke kořeni repa' },
+  {
+    name: 'docs_root',
+    label: 'Kořen dokumentů factory',
+    hint: 'obsahuje backlog/, specs/ a docs/ (projekt/step/task); . = kořen repa',
+  },
   { name: 'worktrees_dir', label: 'Adresář worktree', hint: 'relativně ke kořeni repa' },
   { name: 'base', label: 'Base větev', hint: 'větev, ze které běhy čtou konfiguraci a backlog' },
 ]

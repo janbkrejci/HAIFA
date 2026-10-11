@@ -1,14 +1,12 @@
 // Settings screen: .factory/config.yaml (shared) and .factory/local.yaml (local), and the
 // uncommitted config status (D4, `factory config status`).
 import { getApi, postApi, type ApiIssue } from './api'
-import { splitLines, type ContainerDetail } from './backlog'
+import { splitLines } from './backlog'
 import { toCommitStatus, type CommitStatus } from './commitStatus'
 
 export interface SharedSettings {
   workdir: string
-  backlog_dir: string
-  specs_dir: string
-  docs_dir: string
+  docs_root: string
   worktrees_dir: string
   base: string
   git_provider: string
@@ -31,7 +29,6 @@ export interface FileIssue {
 export type ConfigStatus = CommitStatus
 
 export interface SettingsData {
-  projects?: ContainerDetail[]
   repository?: string
   shared: SharedSettings
   local: LocalSettings
@@ -51,9 +48,7 @@ export interface SettingsSaveInput {
 /** The editable form values: every field as text (protected_files one per line). */
 export interface SettingsFormValues {
   workdir: string
-  backlog_dir: string
-  specs_dir: string
-  docs_dir: string
+  docs_root: string
   worktrees_dir: string
   base: string
   git_provider: string
@@ -65,9 +60,7 @@ export interface SettingsFormValues {
 
 export const SHARED_TEXT_FIELDS = [
   'workdir',
-  'backlog_dir',
-  'specs_dir',
-  'docs_dir',
+  'docs_root',
   'worktrees_dir',
   'base',
 ] as const
@@ -98,9 +91,7 @@ export function formValues(data: SettingsData): SettingsFormValues {
   const s = data.shared
   return {
     workdir: s.workdir,
-    backlog_dir: s.backlog_dir,
-    specs_dir: s.specs_dir,
-    docs_dir: s.docs_dir,
+    docs_root: s.docs_root,
     worktrees_dir: s.worktrees_dir,
     base: s.base,
     git_provider: s.git_provider,

@@ -239,4 +239,4 @@ def test_missing_backlog_dir_is_created(tmp_path: Path) -> None:
     with pytest.raises(TaskEditError) as exc:
         add_task(root, "M01-S01", "X")
     _expect(exc, "unknown_step", 2)
-    assert (root / "backlog").is_dir()
+    assert (root / "factory/backlog").is_dir()

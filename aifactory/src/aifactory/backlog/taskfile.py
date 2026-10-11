@@ -109,8 +109,6 @@ FIELD_ORDER: tuple[str, ...] = (
     "source",
     "target",
     "test_timeout",
-    "specs_dir",
-    "docs_dir",
     "auto_continue",
     "auto_merge",
 )

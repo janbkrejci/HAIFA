@@ -502,7 +502,7 @@ export interface AgentBinding { harness: string; model: string | null; thinking:
 export interface FactoryOptions {
   base?: string; provider?: string
   azure?: { organization: string; project: string; repository: string }
-  backlog_dir?: string; specs_dir?: string; docs_dir?: string
+  docs_root?: string
   agents?: string[]; workflows?: string[]; bind?: Record<string, AgentBinding>
   take?: string[]; merge?: string[]; migrate?: string[]
 }
@@ -523,7 +523,7 @@ interface FactoryPlanCommon {
 }
 export interface FactoryInitPlan extends FactoryPlanCommon {
   action: 'init'
-  provider: string; azure?: FactoryOptions['azure'] | null; backlog_dir: string; specs_dir: string; docs_dir: string
+  provider: string; azure?: FactoryOptions['azure'] | null; docs_root: string
   agents: string[]; workflows: string[]; added_agents: string[]; bindings: Record<string, AgentBinding>
   detected: { harnesses: Record<string, { installed: boolean }> }
   available: { agents: (AgentBinding & { name: string; purpose: string; default: boolean })[]; workflows: { name: string; default: boolean }[] }
@@ -551,7 +551,7 @@ export function factoryChoices(action: FactoryRequest['action'], options: Factor
     azure: options.provider === 'azure' && options.azure ? {
       organization: options.azure.organization, project: options.azure.project, repository: options.azure.repository,
     } : undefined,
-    backlog_dir: options.backlog_dir, specs_dir: options.specs_dir, docs_dir: options.docs_dir,
+    docs_root: options.docs_root,
     agents: options.agents, workflows: options.workflows, bind }
 }
 function factoryUrl(path: string, id?: string): string {

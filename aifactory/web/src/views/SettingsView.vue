@@ -6,7 +6,6 @@ import { ApiError } from '@/lib/api'
 import { useConfigStatus } from '@/lib/configStatus'
 import { fetchSettings, fieldErrors, saveSettings, type SettingsData, type SettingsSaveInput } from '@/lib/settings'
 import SettingsForm from '@/components/settings/SettingsForm.vue'
-import ProjectSettings from '@/components/settings/ProjectSettings.vue'
 
 const configStatus = useConfigStatus()
 
@@ -33,12 +32,6 @@ async function load(): Promise<void> {
   } finally {
     loading.value = false
   }
-}
-
-async function projectSaved(): Promise<void> {
-  await load()
-  saved.value = true
-  await configStatus.refresh()
 }
 
 async function onSubmit(input: SettingsSaveInput): Promise<void> {
@@ -90,7 +83,6 @@ onMounted(load)
       @submit="onSubmit"
       @reset="onReset"
     />
-    <ProjectSettings v-if="settings" :settings="settings" @saved="projectSaved" />
     <p v-else-if="loading" class="faint">Načítám…</p>
   </section>
 </template>

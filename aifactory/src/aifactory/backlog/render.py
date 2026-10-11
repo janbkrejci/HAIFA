@@ -143,8 +143,7 @@ def backlog_to_json(
     return {
         "ok": not issues,
         "levels": list(backlog.settings.levels),
-        "backlog_dir": backlog.settings.backlog_patterns[0],
-        "backlog_dirs": list(backlog.roots),
+        "backlog_dir": backlog.settings.backlog_dir,
         "filters": {"status": status, "project": project},
         "items": items,
         "issues": [i.to_dict() for i in issues],

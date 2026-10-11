@@ -146,7 +146,7 @@ def test_preview_writes_nothing(repo: Path, home: Path, capsys: Capsys) -> None:
         ".factory/workflows/simple-sdlc.yaml",
         PLANNER_PROMPT,
         ".gitignore",
-        "backlog/.gitkeep",
+        "factory/backlog/.gitkeep",
     } <= set(files)
     manifest = yaml.safe_load(files[MANIFEST_FILE])
     assert manifest["onboarding"]["source"] == "init" and manifest["library"] is None
@@ -176,9 +176,7 @@ def test_preview_writes_nothing(repo: Path, home: Path, capsys: Capsys) -> None:
     assert config == {
         "base": "main",
         "git_provider": "local",
-        "backlog_dir": "backlog",
-        "specs_dir": "specs",
-        "docs_dir": "app_docs",
+        "docs_root": "factory",
     }
     # the time in the manifest does not change the digest
     assert preview(capsys, repo)["digest"] == data["digest"]
@@ -468,43 +466,32 @@ def test_builder_on_codex_others_on_claude(repo: Path, capsys: Capsys) -> None:
 
 
 def test_directories(repo: Path, capsys: Capsys) -> None:
-    data = preview(
-        capsys,
-        repo,
-        "--backlog-dir",
-        "work/backlog",
-        "--specs-dir",
-        "docs/specs",
-        "--docs-dir",
-        "docs/app",
-    )
+    data = preview(capsys, repo, "--docs-root", "work")
 
     files = files_of(data)
-    assert "work/backlog/.gitkeep" in files and "backlog/.gitkeep" not in files
+    assert "work/backlog/.gitkeep" in files and "factory/backlog/.gitkeep" not in files
     config = yaml.safe_load(files[".factory/config.yaml"])
-    assert (config["backlog_dir"], config["specs_dir"], config["docs_dir"]) == (
-        "work/backlog",
-        "docs/specs",
-        "docs/app",
-    )
+    assert config["docs_root"] == "work"
+    assert not {"backlog_dir", "specs_dir", "docs_dir"} & config.keys()
+    assert data["docs_root"] == "work"
     roster = {a["name"]: a for a in yaml.safe_load(files[".factory/agents.yaml"])["agents"]}
-    assert roster["planner"]["writes"] == ["docs/specs/"]
-    assert roster["documenter"]["writes"] == ["docs/app/"]
+    assert roster["planner"]["writes"] == ["work/specs/"]
+    assert roster["documenter"]["writes"] == ["work/docs/"]
     assert data["blockers"] == []
 
-    rc, env = init(capsys, repo, "--dry-run", "--specs-dir", "../out")
+    rc, env = init(capsys, repo, "--dry-run", "--docs-root", "../out")
     assert rc == 2 and env["error"]["code"] == "invalid_value"
 
 
 def test_existing_backlog_warns_and_gets_no_gitkeep(repo: Path, capsys: Capsys) -> None:
-    (repo / "backlog").mkdir()
-    (repo / "backlog" / "notes.md").write_text("mine\n", encoding="utf-8", newline="\n")
+    (repo / "factory/backlog").mkdir(parents=True)
+    (repo / "factory/backlog/notes.md").write_text("mine\n", encoding="utf-8", newline="\n")
 
     data = preview(capsys, repo)
 
-    assert "backlog/.gitkeep" not in files_of(data)
+    assert "factory/backlog/.gitkeep" not in files_of(data)
     warnings = [w for w in data["warnings"] if w["code"] == "foreign_content"]
-    assert len(warnings) == 1 and warnings[0]["message"].startswith("backlog/")
+    assert len(warnings) == 1 and warnings[0]["message"].startswith("factory/backlog/")
     assert data["blockers"] == []
 
 

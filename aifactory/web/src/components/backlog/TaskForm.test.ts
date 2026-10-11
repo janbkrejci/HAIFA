@@ -190,7 +190,7 @@ describe('TaskForm', () => {
     const params = wrapper.get('[data-test="task-parameters"]')
     expect(params.find('[data-parameter="test"]').exists()).toBe(false)
     expect(params.get('[data-parameter="test_timeout"]').text()).toContain('Limit testů (s)')
-    expect(params.get('[data-parameter="specs_dir"]').text()).toContain('Adresář specifikací')
+    expect(params.find('[data-parameter="specs_dir"]').exists()).toBe(false)
     expect(params.find('[data-parameter="auto_merge"]').exists()).toBe(true)
     await wrapper.get('[data-test="title"]').setValue('Nový')
     await wrapper.get('[data-test="parameter-test_timeout"]').setValue('300')
@@ -202,9 +202,9 @@ describe('TaskForm', () => {
   })
 
   it('shows the own parameters of an edited task and sends only a changed one', async () => {
-    const wrapper = editForm({ own_parameters: { test_timeout: 120, specs_dir: 'specs/x' } })
+    const wrapper = editForm({ own_parameters: { test_timeout: 120, target: 'src/x' } })
     expect((wrapper.get('[data-test="parameter-test_timeout"]').element as HTMLInputElement).value).toBe('120')
-    expect((wrapper.get('[data-test="parameter-specs_dir"]').element as HTMLInputElement).value).toBe('specs/x')
+    expect((wrapper.get('[data-test="parameter-target"]').element as HTMLInputElement).value).toBe('src/x')
     expect(wrapper.get('[data-test="save"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-test="parameter-test_timeout"]').setValue('600')
     await wrapper.get('form').trigger('submit')

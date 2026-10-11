@@ -126,9 +126,7 @@ class InitPlan:
             "provider": settings.git_provider,
             "remote": settings.remote,
             "azure": settings.azure.model_dump(mode="json") if settings.azure else None,
-            "backlog_dir": settings.backlog_dir,
-            "specs_dir": settings.specs_dir,
-            "docs_dir": settings.docs_dir,
+            "docs_root": settings.docs_root,
             "source": sel.source.kind,
             "library": library.model_dump(mode="json") if library else None,
             "agents": sel.agents,
@@ -392,7 +390,7 @@ FACTORY_DIR = ".factory"
 
 
 def _committed_config(root: Path, base_sha: str) -> dict[str, str]:
-    """The folder settings of the committed ``.factory/config.yaml`` (empty when unreadable)."""
+    """The folder setting of the committed ``.factory/config.yaml`` (empty when unreadable)."""
     found = git.blob_at(root, base_sha, CONFIG_FILE)
     if found is None:
         return {}
@@ -402,7 +400,7 @@ def _committed_config(root: Path, base_sha: str) -> dict[str, str]:
         return {}
     if not isinstance(data, dict):
         return {}
-    keys = ("backlog_dir", "specs_dir", "docs_dir")
+    keys = ("docs_root",)
     return {k: str(data[k]) for k in keys if isinstance(data.get(k), str) and data[k].strip()}
 
 
@@ -587,9 +585,7 @@ def plan_init(
     agents: Sequence[str] | None = None,
     bindings: Sequence[Binding] = (),
     workflows: Sequence[str] | None = None,
-    backlog_dir: str | None = None,
-    specs_dir: str | None = None,
-    docs_dir: str | None = None,
+    docs_root: str | None = None,
     pr: bool = False,
     environ: Mapping[str, str] | None = None,
     replace: bool = False,
@@ -598,8 +594,7 @@ def plan_init(
 
     ``replace`` installs over an existing ``.factory/`` (the dashboard's "add"): committed
     files under ``.factory/`` that the new install does not write are deleted in the same
-    commit, and the folders of the old ``config.yaml`` (backlog, specs, docs) are kept
-    unless given.
+    commit, and ``docs_root`` of the old ``config.yaml`` is kept unless given.
     """
     root = _repo_root(path)
     detected = detect(root)
@@ -616,17 +611,13 @@ def plan_init(
     chosen = provider or detected.provider
     if replace:
         old = _committed_config(root, base_sha)
-        backlog_dir = backlog_dir or old.get("backlog_dir")
-        specs_dir = specs_dir or old.get("specs_dir")
-        docs_dir = docs_dir or old.get("docs_dir")
+        docs_root = docs_root or old.get("docs_root")
     settings = project_settings(
         base=base,
         provider=chosen,
         azure=_azure(chosen, azure, detected),
         remote=detected.remote,
-        backlog_dir=backlog_dir,
-        specs_dir=specs_dir,
-        docs_dir=docs_dir,
+        docs_root=docs_root,
     )
     warnings: list[InitWarning] = []
     source = _Source(environ)

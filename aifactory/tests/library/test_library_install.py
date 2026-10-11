@@ -121,15 +121,16 @@ def test_init_from_seed_without_library(repo: Path, home: Path, capsys: Capsys) 
     assert config["base"] == "main" and config["git_provider"] == "local"
     agents = load(repo, ".factory/agents.yaml")["agents"]
     assert [a["name"] for a in agents] == DEFAULT_AGENTS
-    assert agents[0]["writes"] == ["specs/"]
-    assert agents[5]["writes"] == ["app_docs/"]
+    assert config["docs_root"] == "factory"
+    assert agents[0]["writes"] == ["factory/specs/"]
+    assert agents[5]["writes"] == ["factory/docs/"]
     prompts = list((repo / ".factory" / "prompts").rglob("*.md"))
     assert len(prompts) == 12
     assert not any(b"haifa-validate" in p.read_bytes() for p in prompts)
     assert (repo / ".factory/workflows/simple-sdlc.yaml").read_bytes() == (
         DEFAULT_WORKFLOWS_DIR / "simple-sdlc.yaml"
     ).read_bytes()
-    assert (repo / "backlog" / ".gitkeep").is_file()
+    assert (repo / "factory" / "backlog" / ".gitkeep").is_file()
     manifest = load(repo, MANIFEST_FILE)
     assert manifest["format"] == 1 and manifest["written_by"] == __version__
     assert manifest["library"] is None
@@ -321,23 +322,23 @@ def script_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[Script]:
 
 
 TASK = "M01-S01-T01"
-SPEC = f"specs/{TASK}-schema.md"
-DOC = f"app_docs/{TASK}-schema.md"
+SPEC = f"factory/specs/M01-core/S01-model/{TASK}-schema.md"
+DOC = f"factory/docs/M01-core/S01-model/{TASK}-schema.md"
 
 
 def test_task_runs_in_an_installed_repo(repo: Path, capsys: Capsys, script: Script) -> None:
     from aifactory.run import run_task
 
     assert init(capsys, repo)[0] == 0
-    write(repo, "backlog/M01-core/index.md", "---\nid: M01\ntitle: Core\n---\n\nJádro.\n")
+    write(repo, "factory/backlog/M01-core/index.md", "---\nid: M01\ntitle: Core\n---\n\nJádro.\n")
     write(
         repo,
-        "backlog/M01-core/S01-model/index.md",
+        "factory/backlog/M01-core/S01-model/index.md",
         "---\nid: M01-S01\ntitle: Model\nworkflow: simple-sdlc\nwrites: [src/app/]\n---\n",
     )
     write(
         repo,
-        f"backlog/M01-core/S01-model/{TASK}-schema.md",
+        f"factory/backlog/M01-core/S01-model/{TASK}-schema.md",
         f"---\nid: {TASK}\ntitle: Schema\nstatus: todo\n---\n\n## Zadání\nNavrhnout schéma.\n",
     )
     commit_all(repo, "install factory")

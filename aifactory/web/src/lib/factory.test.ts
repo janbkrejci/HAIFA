@@ -6,7 +6,7 @@ describe('factory installation state', () => {
   it('copies all four default bindings and keeps the server defaults independent', () => {
     const plan = installPlan()
     const options = installOptions(plan)
-    expect(options).toMatchObject({ base: 'main', provider: 'local', backlog_dir: 'backlog', specs_dir: 'specs', docs_dir: 'docs', agents: ['planner', 'builder', 'reviewer', 'documenter'], workflows: ['simple-sdlc'] })
+    expect(options).toMatchObject({ base: 'main', provider: 'local', docs_root: 'factory', agents: ['planner', 'builder', 'reviewer', 'documenter'], workflows: ['simple-sdlc'] })
     for (const name of options.agents!) expect(options.bind![name]).toEqual({ harness: 'claude', model: 'sonnet', thinking: 'medium' })
     options.bind!.builder!.thinking = null
     options.agents!.pop()

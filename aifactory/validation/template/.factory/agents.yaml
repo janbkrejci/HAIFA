@@ -44,4 +44,4 @@ agents:
     model: haiku
     purpose: Write up the change from the diff; document only.
     writes:
-      - app_docs/
+      - docs/

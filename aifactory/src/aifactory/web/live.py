@@ -27,7 +27,7 @@ from starlette.concurrency import run_in_threadpool
 
 from aifactory import database
 from aifactory.backlog.roots import backlog_roots
-from aifactory.config import ConfigError
+from aifactory.config import ConfigError, ProjectSettings
 from aifactory.config.settings import CONFIG_FILE, load_local, parse_project_settings
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
@@ -103,7 +103,7 @@ class LiveWatcher:
     def _configure(self) -> None:
         config = self.root / CONFIG_FILE
         self._config_stamp = self._stamp(config)
-        backlog_dirs = ["backlog"]
+        backlog_dirs = [ProjectSettings().backlog_dir]
         worktrees_dir = ".factory/worktrees"
         try:
             text = config.read_text(encoding="utf-8") if config.is_file() else None

@@ -85,7 +85,7 @@ def make_f3_repo(path: Path) -> Path:
         for rel, text in run_repo_files("claude").items()
         if not rel.startswith("backlog/M01-core/S01-model/M01-S01-T")
     }
-    content[".factory/config.yaml"] = "base: main\ngit_provider: local\n"
+    content[".factory/config.yaml"] = "base: main\ngit_provider: local\ndocs_root: .\n"
     content[".gitignore"] = GITIGNORE
     path.mkdir(parents=True, exist_ok=True)
     git(path, "init", "-q", "-b", "main")

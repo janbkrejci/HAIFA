@@ -131,10 +131,10 @@ def test_list_unknown_project(tmp_path: Path, capsys: Capsys) -> None:
 
 def test_list_missing_backlog_dir_is_created(tmp_path: Path, capsys: Capsys) -> None:
     root = sample_repo(tmp_path)
-    write(root, ".factory/config.yaml", "backlog_dir: nowhere\n")
+    write(root, ".factory/config.yaml", "docs_root: nowhere\n")
     assert main(["backlog", "list", "--repo", str(root)]) == 0
     assert "not found" not in capsys.readouterr().err
-    assert (root / "nowhere").is_dir()
+    assert (root / "nowhere/backlog").is_dir()
     assert main(["backlog", "list", "--json", "--repo", str(root)]) == 0
     assert _json(capsys)["ok"] is True
 

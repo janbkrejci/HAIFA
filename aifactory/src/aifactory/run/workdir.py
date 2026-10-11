@@ -9,8 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from aifactory import harness
-from aifactory.backlog import Task
-from aifactory.backlog.derived import ancestors
 from aifactory.config import ProjectSettings, check_relative_dir
 from aifactory.engine.data_types import AgentRequest
 from aifactory.run import gitops
@@ -19,14 +17,10 @@ from aifactory.run.errors import TaskRunError
 _agent_cwd: ContextVar[Path | None] = ContextVar("project_agent_cwd", default=None)
 
 
-def project_workdir(task: Task, settings: ProjectSettings) -> str:
-    chain = ancestors(task)
-    if "workdir" in task.own or any("workdir" in c.defaults for c in chain[:-1]):
-        raise TaskRunError("invalid_config", "workdir is only allowed on a project")
-    project = chain[-1]
-    value = project.defaults.get("workdir")
+def project_workdir(settings: ProjectSettings) -> str:
+    """The agents' working directory: ``workdir`` of ``.factory/config.yaml``."""
     try:
-        return Path(check_relative_dir(settings.workdir if value is None else value)).as_posix()
+        return Path(check_relative_dir(settings.workdir)).as_posix()
     except ValueError as exc:
         raise TaskRunError("invalid_config", str(exc)) from exc
 

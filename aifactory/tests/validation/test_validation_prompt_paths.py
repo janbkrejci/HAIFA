@@ -106,5 +106,9 @@ def test_prompt_output_naming_meets_the_write_guard(tmp_path: Path, naming: str)
         assert proc.returncode == 0, (proc.stdout[-2000:], proc.stderr[-2000:])
         assert data["ok"] is True
         outputs = {c["agent"]: c["output"] for c in calls if c.get("output")}
-        assert outputs == {"planner": f"specs/{STEM}.md", "documenter": f"app_docs/{STEM}.md"}
+        folder = "M01-core/S01-math"
+        assert outputs == {
+            "planner": f"specs/{folder}/{STEM}.md",
+            "documenter": f"docs/{folder}/{STEM}.md",
+        }
     assert not marker.exists(), marker.read_text(encoding="utf-8")

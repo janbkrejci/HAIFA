@@ -21,9 +21,10 @@ describe('SettingsForm', () => {
   it('shows the values from props', async () => {
     const wrapper = mountForm()
     expect((wrapper.get('[data-test="workdir"]').element as HTMLInputElement).value).toBe('.')
-    expect((wrapper.get('[data-test="backlog_dir"]').element as HTMLInputElement).value).toBe(
-      'backlog',
+    expect((wrapper.get('[data-test="docs_root"]').element as HTMLInputElement).value).toBe(
+      'factory',
     )
+    expect(wrapper.find('[data-test="backlog_dir"]').exists()).toBe(false)
     expect((wrapper.get('[data-test="base"]').element as HTMLInputElement).value).toBe('main')
     expect(wrapper.get('[data-test="git_provider"]').attributes('data-value')).toBe('local')
     expect(wrapper.get('[data-test="git_provider"]').text()).toBe('local')

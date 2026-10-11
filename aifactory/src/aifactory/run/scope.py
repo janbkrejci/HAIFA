@@ -7,16 +7,15 @@ by the task scope. The scope is an intersection, never a union. The session
 runtime (``permissions.always_writable``) stays writable, as in the engine.
 
 The task scope is ``effective_writes(task)`` plus exactly two files, the spec
-``<specs_dir>/<task-id>-<slug>.md`` and the documentation
-``<docs_dir>/<task-id>-<slug>.md``. They are files, not directories: the
+``<docs_root>/specs/<project>/<step>/<task-id>-<slug>.md`` and the documentation
+``<docs_root>/docs/<project>/<step>/<task-id>-<slug>.md``. They are files, not directories: the
 planner and the documenter of the stock workflows write into the repo, and
 naming the exact file makes the code enforce that outputs are named by the task
 (a plan written as ``specs/<run-id>_plan.md`` is reverted and fails the phase).
 
-``specs_dir`` and ``docs_dir`` are the nearest values set in the backlog (task,
-then ``index.md`` upwards: step, project), else those of ``.factory/config.yaml``.
-A backlog value that is not a directory inside the repository raises
-``OutputDirError``. An agent whose own `writes` is a non-empty list may write
+``<project>/<step>`` are the directories of the task's containers under the backlog
+root, so specs and docs mirror the backlog tree. An agent whose own `writes` is a
+non-empty list may write
 the two outputs even outside its `writes` (``guard.py``); ``writes: []`` may not.
 """
 
@@ -26,14 +25,9 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from aifactory.backlog import (
-    Task,
-    effective_docs_dir,
-    effective_specs_dir,
-    effective_writes,
-    slugify,
-)
-from aifactory.config import ProjectSettings, check_relative_dir
+from aifactory.backlog import Task, effective_writes, slugify
+from aifactory.backlog.derived import ancestors
+from aifactory.config import ProjectSettings
 from aifactory.engine import permissions
 
 
@@ -81,15 +75,6 @@ class TaskScope:
         return normalize(path) in self.outputs
 
 
-class OutputDirError(ValueError):
-    """A ``specs_dir``/``docs_dir`` of the backlog that is not a directory inside the repo."""
-
-    def __init__(self, key: str, value: object, reason: str) -> None:
-        self.key = key
-        self.value = value
-        super().__init__(f"{key} {value!r} is not a directory inside the repository: {reason}")
-
-
 def task_slug(task: Task) -> str:
     """The task file's name without ``.md`` and the ``<task-id>-`` prefix, else from the title."""
     stem = PurePosixPath(task.path).stem
@@ -107,21 +92,24 @@ def _in_dir(directory: str, name: str) -> str:
     return f"{folder}/{name}"
 
 
-def _output_dir(key: str, value: object, fallback: str) -> str:
-    if value is None:
-        return fallback
+def task_folder(task: Task, settings: ProjectSettings) -> str:
+    """The task's container directories under the backlog root: ``<project>/<step>``."""
+    parent = PurePosixPath(task.path).parent
     try:
-        return check_relative_dir(value)
-    except ValueError as exc:
-        raise OutputDirError(key, value, str(exc)) from exc
+        return parent.relative_to(settings.backlog_dir).as_posix()
+    except ValueError:
+        names = [PurePosixPath(c.path).name for c in reversed(ancestors(task))]
+        return "/".join(n for n in names if n)
 
 
 def output_paths(task: Task, settings: ProjectSettings) -> OutputPaths:
-    """Spec and documentation in the nearest ``specs_dir``/``docs_dir``, else the config's."""
+    """Spec and documentation under ``<docs_root>``, in the task's project/step folder."""
     name = f"{task.id}-{task_slug(task)}.md"
-    specs = _output_dir("specs_dir", effective_specs_dir(task), settings.specs_dir)
-    docs = _output_dir("docs_dir", effective_docs_dir(task), settings.docs_dir)
-    return OutputPaths(spec=_in_dir(specs, name), doc=_in_dir(docs, name))
+    folder = task_folder(task, settings)
+    return OutputPaths(
+        spec=_in_dir(PurePosixPath(settings.specs_dir, folder).as_posix(), name),
+        doc=_in_dir(PurePosixPath(settings.docs_dir, folder).as_posix(), name),
+    )
 
 
 def effective_task_writes(task: Task) -> tuple[str, ...]:

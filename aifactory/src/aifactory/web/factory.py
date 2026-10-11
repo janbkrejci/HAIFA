@@ -47,9 +47,7 @@ INIT_OPTIONS = (
     "base",
     "provider",
     "azure",
-    "backlog_dir",
-    "specs_dir",
-    "docs_dir",
+    "docs_root",
 )
 UPDATE_OPTIONS = ("item", "take", "merge", "migrate")
 OPTIONS: dict[str, tuple[str, ...]] = {
@@ -426,9 +424,7 @@ def _init_kwargs(options: Mapping[str, Any]) -> JsonDict:
         "bindings": [parse_binding(_bind_text(agent, spec)) for agent, spec in bind.items()],
         "agents": options.get("agents"),
         "workflows": options.get("workflows"),
-        "backlog_dir": options.get("backlog_dir"),
-        "specs_dir": options.get("specs_dir"),
-        "docs_dir": options.get("docs_dir"),
+        "docs_root": options.get("docs_root"),
     }
 
 

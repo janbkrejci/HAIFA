@@ -34,8 +34,8 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "missing_backlog_dir",
         "1|2",
-        "no backlog directory matches a wildcard backlog_dirs pattern (a missing plain "
-        "backlog_dir is created silently; 1 for backlog list/check, 2 for task commands)",
+        "the backlog directory <docs_root>/backlog is missing where it cannot be created "
+        "(otherwise it is created silently; 1 for backlog list/check, 2 for task commands)",
     ),
     ("unknown_workflow_advice", "2", "dashboard API: workflow advice expired or not found"),
     ("unknown_task", "2", "no task with this id"),
@@ -82,11 +82,6 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "invalid_test_timeout",
         "2",
         "the task's test_timeout (own or inherited) is not a whole number of seconds above 0",
-    ),
-    (
-        "invalid_output_dir",
-        "2",
-        "the task's specs_dir or docs_dir (own or inherited) is not a directory inside the repo",
     ),
     (
         "invalid_override",

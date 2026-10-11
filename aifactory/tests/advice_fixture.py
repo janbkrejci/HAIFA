@@ -19,7 +19,7 @@ def make_repo(root: Path) -> Path:
     root.mkdir()
     git(root, "init", "-q", "-b", "main")
     files = {
-        ".factory/config.yaml": "base: main\nlevels: [project, step, task]\nbacklog_dir: backlog\n",
+        ".factory/config.yaml": "base: main\nlevels: [project, step, task]\ndocs_root: .\n",
         ".factory/agents.yaml": (
             "defaults:\n"
             "  harness: claude\n"

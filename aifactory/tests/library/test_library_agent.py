@@ -14,17 +14,17 @@ SETTINGS = ProjectSettings()
 
 
 def test_expand_specs_dir() -> None:
-    assert expand_writes(["$specs_dir/"], SETTINGS) == ["specs/"]
+    assert expand_writes(["$specs_dir/"], SETTINGS) == ["factory/specs/"]
 
 
 def test_expand_docs_dir_with_subpath() -> None:
-    settings = ProjectSettings(docs_dir="docs")
-    assert expand_writes(["$docs_dir/sub/"], settings) == ["docs/sub/"]
+    settings = ProjectSettings(docs_root="work")
+    assert expand_writes(["$docs_dir/sub/"], settings) == ["work/docs/sub/"]
 
 
 def test_expand_strips_trailing_slash_of_setting() -> None:
-    settings = ProjectSettings(specs_dir="plans/")
-    assert expand_writes(["$specs_dir/a.md"], settings) == ["plans/a.md"]
+    settings = ProjectSettings(docs_root="plans/")
+    assert expand_writes(["$specs_dir/a.md"], settings) == ["plans/specs/a.md"]
 
 
 def test_expand_none_empty_and_plain() -> None:
@@ -52,12 +52,12 @@ def test_roster_entry_skips_unset_and_library_only_keys(tmp_path: Path) -> None:
         ),
     )
     item = load_library_item(tmp_path, "agent", "planner")
-    assert roster_entry(item, ProjectSettings(specs_dir="plans")) == {
+    assert roster_entry(item, ProjectSettings(docs_root="plans")) == {
         "name": "planner",
         "purpose": "Plan it.",
         "model": "opus",
         "tools": ["Read", "Grep"],
-        "writes": ["plans/"],
+        "writes": ["plans/specs/"],
     }
 
 

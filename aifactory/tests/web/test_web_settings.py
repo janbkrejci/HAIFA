@@ -56,7 +56,9 @@ def _bytes(root: Path, rel: str) -> bytes | None:
 def test_get_settings(client: TestClient) -> None:
     data = _get(client, "/api/settings")["data"]
     shared = data["shared"]
-    assert shared["backlog_dir"] == "backlog"
+    assert shared["docs_root"] == "."
+    assert not {"backlog_dir", "specs_dir", "docs_dir"} & shared.keys()
+    assert "projects" not in data
     assert shared["workdir"] == "."
     assert shared["base"] == "main"
     assert shared["git_provider"] == "local"
@@ -116,9 +118,9 @@ def test_save_local_is_never_committed(client: TestClient, root: Path) -> None:
 @pytest.mark.parametrize(
     ("section", "values", "field"),
     [
-        ("shared", {"backlog_dir": "."}, "backlog_dir"),
+        ("shared", {"docs_root": "../x"}, "docs_root"),
         ("shared", {"workdir": "../x"}, "workdir"),
-        ("shared", {"specs_dir": "/abs"}, "specs_dir"),
+        ("shared", {"docs_root": "/abs"}, "docs_root"),
         ("shared", {"base": "  "}, "base"),
         ("shared", {"git_provider": "gitlab"}, "git_provider"),
         ("shared", {"merge_strategy": "rebase"}, "merge_strategy"),
@@ -243,44 +245,15 @@ def test_save_max_parallel_runs(client: TestClient, root: Path) -> None:
     assert yaml.safe_load((root / CONFIG).read_text())["max_parallel_runs"] == 3
 
 
-def test_settings_lists_top_level_projects_and_path_origins(client: TestClient) -> None:
-    data = _get(client, "/api/settings")["data"]
-    projects = {p["id"]: p for p in data["projects"]}
-    assert "M01" in projects and "M02" in projects
-    assert "M01-S01" not in projects
-    assert data["repository"]
-    for project in projects.values():
-        assert project["parent"] is None
-        for key in ("specs_dir", "docs_dir", "workdir"):
-            assert project["effective"][key]["value"] == data["shared"][key]
-            assert project["effective"][key]["origin"]["path"] == CONFIG
-
-
-def test_project_settings_save_clear_isolate_and_remain_versionable(
-    client: TestClient, root: Path
-) -> None:
-    before = _get(client, "/api/settings")["data"]
-    other = next(p for p in before["projects"] if p["id"] == "M02")
-    payload = {
-        "specs_dir": "projects/core/specs",
-        "docs_dir": "projects/core/docs",
-        "workdir": "projects/core",
-    }
-    response = client.post("/api/backlog/containers/M01/edit", json=payload)
-    _check(response, 200)
-    data = _get(client, "/api/settings")["data"]
-    first = next(p for p in data["projects"] if p["id"] == "M01")
-    for key, value in payload.items():
-        assert first["own"][key] == value
-        assert first["effective"][key]["origin"]["source"] == "own"
-    assert next(p for p in data["projects"] if p["id"] == "M02") == other
-    assert first["index_path"] in git(root, "ls-files", first["index_path"])
-    _check(
-        client.post("/api/backlog/containers/M01/edit", json={key: None for key in payload}), 200
+def test_saving_docs_root_drops_old_folder_keys(client: TestClient, root: Path) -> None:
+    config = root / CONFIG
+    config.write_text(
+        config.read_text() + "backlog_dir: backlog\nspecs_dir: specs\ndocs_dir: app_docs\n"
     )
-    restored = next(
-        p for p in _get(client, "/api/settings")["data"]["projects"] if p["id"] == "M01"
-    )
-    for key in payload:
-        assert key not in restored["own"]
-        assert restored["effective"][key]["origin"]["source"] == "config"
+    assert _get(client, "/api/settings")["data"]["shared_issues"] == []
+    body = _post(client, {"shared": {"docs_root": "work"}})
+    assert body["data"]["shared"]["docs_root"] == "work"
+    saved = yaml.safe_load(config.read_text())
+    assert saved["docs_root"] == "work"
+    assert not {"backlog_dir", "specs_dir", "docs_dir"} & saved.keys()
+    _post(client, {"shared": {"backlog_dir": "x"}}, 400)

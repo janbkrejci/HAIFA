@@ -17,7 +17,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from validation import f2_backlog as fb
@@ -224,7 +224,8 @@ def _final_checks(
     allowed = set(fb.TASK_PATHS.values())
     for task in fb.TASKS:
         allowed.update(task.writes)
-        allowed.update({f"specs/{task.stem}.md", f"app_docs/{task.stem}.md"})
+        folder = PurePosixPath(fb.TASK_PATHS[task.id]).parent.relative_to("backlog")
+        allowed.update({f"specs/{folder}/{task.stem}.md", f"docs/{folder}/{task.stem}.md"})
     changed = git(
         ctx.repo, "diff", "--name-only", f"{base_sha}..origin/{ctx.base}", check=False
     ).splitlines()

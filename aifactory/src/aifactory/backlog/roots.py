@@ -1,4 +1,4 @@
-"""Backlog roots: the directories ``backlog_dir`` or ``backlog_dirs`` name.
+"""Backlog roots: the directory ``<docs_root>/backlog`` (``ProjectSettings.backlog_patterns``).
 
 A pattern is a relative path; a part may hold the wildcards ``*``, ``?`` and ``[...]``
 (``moduly/*/backlog``), which never cross a ``/``. Nothing here writes a file.
@@ -62,18 +62,6 @@ def backlog_roots(root: Path, settings: ProjectSettings) -> list[str]:
             if match not in result:
                 result.append(match)
     return result
-
-
-def matches_pattern(directory: str, settings: ProjectSettings) -> bool:
-    """True when the relative ``directory`` is one of the configured backlog roots."""
-    parts = _parts(directory)
-    for pattern in settings.backlog_patterns:
-        want = _parts(pattern)
-        if len(want) == len(parts) and all(
-            fnmatchcase(p, w) for p, w in zip(parts, want, strict=True)
-        ):
-            return True
-    return False
 
 
 def owning_root(rel: str, settings: ProjectSettings) -> str | None:

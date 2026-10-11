@@ -279,13 +279,11 @@ export function containerDetail(over: Partial<ContainerDetail> = {}): ContainerD
         writes: { value: ['src/'], origin: step },
         source: { value: null, origin: null },
         target: { value: null, origin: null },
-        specs_dir: { value: 'specs', origin: { source: 'config', path: '.factory/config.yaml', key: 'specs_dir' } },
-        docs_dir: { value: 'app_docs', origin: { source: 'config', path: '.factory/config.yaml', key: 'docs_dir' } },
         auto_continue: { value: false, origin: { source: 'default' } },
       },
       ...over,
     },
-    editable_keys: ['workflow', 'writes', 'source', 'target', 'specs_dir', 'docs_dir', 'auto_continue'],
+    editable_keys: ['workflow', 'writes', 'source', 'target', 'auto_continue'],
     issues: [],
   }
 }

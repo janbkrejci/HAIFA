@@ -36,8 +36,8 @@ describe('SettingsView', () => {
     const wrapper = mount(SettingsView)
     await flushPromises()
     expect(wrapper.get('h1').text()).toBe('Nastavení')
-    expect((wrapper.get('[data-test="backlog_dir"]').element as HTMLInputElement).value).toBe(
-      'backlog',
+    expect((wrapper.get('[data-test="docs_root"]').element as HTMLInputElement).value).toBe(
+      'factory',
     )
   })
 

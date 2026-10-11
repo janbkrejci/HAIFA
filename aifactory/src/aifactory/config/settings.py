@@ -39,8 +39,21 @@ def _relative(value: str, *, allow_dot: bool = True) -> str:
     return text
 
 
-OBSOLETE_KEYS = frozenset({"test_command"})
-"""``test_command``: a tester agent chooses the checks of every run (3.0)."""
+OBSOLETE_KEYS = frozenset({"test_command", "backlog_dir", "backlog_dirs", "specs_dir", "docs_dir"})
+"""``test_command``: a tester agent chooses the checks of every run (3.0).
+``backlog_dir``, ``backlog_dirs``, ``specs_dir``, ``docs_dir``: replaced by ``docs_root``."""
+
+DEFAULT_DOCS_ROOT = "factory"
+"""The root of the factory documents when ``docs_root`` is not set."""
+
+
+def normalize_dir(text: str) -> str:
+    """A relative directory without ``./`` prefixes and trailing slashes; ``.`` stays."""
+    value = text.strip()
+    while value.startswith("./"):
+        value = value[2:]
+    value = value.rstrip("/")
+    return value or "."
 
 
 def split_command(value: object) -> tuple[str, ...]:
@@ -172,26 +185,16 @@ class ProjectSettings(BaseModel):
         return value
 
     workdir: str = Field(default=".", description="Working directory relative to the repository.")
-    backlog_dir: str = Field(
-        default="backlog", description="Single backlog root; mutually exclusive with backlog_dirs."
-    )
-    backlog_dirs: tuple[str, ...] | None = Field(
-        default=None,
+    docs_root: str = Field(
+        default=DEFAULT_DOCS_ROOT,
         description=(
-            "Multiple relative backlog roots, allowing * within path parts; null uses backlog_dir."
+            "Root of the factory documents: backlog/, specs/ and docs/ under it, each "
+            "structured project/step/task."
         ),
     )
     levels: tuple[str, ...] = Field(
         default=("project", "step", "task"),
         description="Ordered backlog hierarchy; the last level contains tasks.",
-    )
-    specs_dir: str = Field(
-        default="specs",
-        description="Task specification directory; project, step and task may override it.",
-    )
-    docs_dir: str = Field(
-        default="app_docs",
-        description="Task documentation directory; project, step and task may override it.",
     )
     worktrees_dir: str = Field(
         default=".factory/worktrees",
@@ -260,59 +263,44 @@ class ProjectSettings(BaseModel):
             )
         return self
 
-    @model_validator(mode="after")
-    def _one_backlog_setting(self) -> ProjectSettings:
-        if self.backlog_dirs is not None and "backlog_dir" in self.model_fields_set:
-            raise ValueError("set either 'backlog_dir' or 'backlog_dirs', not both")
-        return self
+    def _under_root(self, name: str) -> str:
+        root = self.docs_root
+        return name if root == "." else f"{root}/{name}"
+
+    @property
+    def backlog_dir(self) -> str:
+        """The backlog: ``<docs_root>/backlog``."""
+        return self._under_root("backlog")
+
+    @property
+    def specs_dir(self) -> str:
+        """Task specs: ``<docs_root>/specs/<project>/<step>/<task-id>-<slug>.md``."""
+        return self._under_root("specs")
+
+    @property
+    def docs_dir(self) -> str:
+        """Task documentation: ``<docs_root>/docs/<project>/<step>/<task-id>-<slug>.md``."""
+        return self._under_root("docs")
 
     @property
     def backlog_patterns(self) -> tuple[str, ...]:
-        """The backlog roots as configured: ``backlog_dirs``, else ``(backlog_dir,)``."""
-        return self.backlog_dirs if self.backlog_dirs is not None else (self.backlog_dir,)
+        """The backlog root as a one-item tuple (the shape the backlog readers take)."""
+        return (self.backlog_dir,)
 
     @property
     def backlog_label(self) -> str:
-        """The backlog roots for messages: ``backlog``, ``a, moduly/*/backlog``."""
-        return ", ".join(self.backlog_patterns)
+        """The backlog root for messages."""
+        return self.backlog_dir
 
-    @field_validator("workdir", "specs_dir", "docs_dir", "worktrees_dir")
+    @field_validator("workdir", "worktrees_dir")
     @classmethod
     def _relative_path(cls, value: str) -> str:
         return _relative(value)
 
-    @field_validator("backlog_dir")
+    @field_validator("docs_root")
     @classmethod
-    def _backlog_path(cls, value: str) -> str:
-        return _relative(value, allow_dot=False)
-
-    @field_validator("backlog_dirs", mode="before")
-    @classmethod
-    def _backlog_list(cls, value: Any) -> Any:
-        if isinstance(value, str):
-            raise ValueError("must be a list of paths")
-        return value
-
-    @field_validator("backlog_dirs")
-    @classmethod
-    def _backlog_paths(cls, value: tuple[str, ...] | None) -> tuple[str, ...] | None:
-        if value is None:
-            return None
-        if not value:
-            raise ValueError("must name at least one directory")
-        items: list[str] = []
-        for item in value:
-            text = _relative(item, allow_dot=False).strip("/")
-            while text.startswith("./"):
-                text = text[2:]
-            if any(part in ("", ".") for part in text.split("/")):
-                raise ValueError(f"invalid path {item!r}")
-            if "**" in text:
-                raise ValueError(f"'**' is not supported, use '*' per directory: {item!r}")
-            items.append(text)
-        if len(set(items)) != len(items):
-            raise ValueError("paths must be unique")
-        return tuple(items)
+    def _docs_root(cls, value: str) -> str:
+        return normalize_dir(_relative(value))
 
     @field_validator("levels")
     @classmethod

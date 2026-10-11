@@ -22,7 +22,7 @@ def _json(capsys: Capsys) -> Any:
 def project_repo(tmp_path: Path) -> Path:
     """A repo whose config has no ``levels`` (defaults) with projects P1 and P2."""
     root = tmp_path / "repo"
-    write(root, ".factory/config.yaml", "backlog_dir: backlog\n")
+    write(root, ".factory/config.yaml", "docs_root: .\n")
     for project in ("P1", "P2"):
         base = f"backlog/{project}-core"
         write(root, f"{base}/index.md", index_md(project))

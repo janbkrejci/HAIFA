@@ -56,7 +56,7 @@ def _backlog(root: Path) -> None:
         )
 
 
-def make_installed_repo(path: Path, *, config: str = "base: main\n") -> Path:
+def make_installed_repo(path: Path, *, config: str = "base: main\ndocs_root: .\n") -> Path:
     """A git repo on ``main`` with committed ``.factory/`` config and the backlog; no trace DB."""
     root = init_repo(path)
     write(root, ".factory/config.yaml", config)

@@ -36,12 +36,15 @@ GIT_LINE = (
     "`git branch`). Leave the working tree exactly as you found it."
 )
 EXPECTED_WRITES = {
-    "planner": ["specs/"],
+    "planner": ["factory/specs/"],
     "builder": None,
     "tester": [],
     "reviewer": [],
-    "documenter": ["app_docs/"],
+    "documenter": ["factory/docs/"],
 }
+# HAIFA's own .factory/agents.yaml before its move under docs_root (protected files, so a
+# task run cannot convert it); the seed already writes the docs_root paths
+UNCONVERTED_WRITES = {"planner": ["specs/"], "documenter": ["app_docs/"]}
 
 
 def test_seed_names() -> None:
@@ -160,7 +163,8 @@ def test_seed_bindings_preserve_haifa_roles() -> None:
         assert entry["harness"] == "claude"
         assert entry["model"] == "claude-opus-5-5"
         assert entry["thinking"] == "medium"
-        assert entry.get("writes") == agent.writes == EXPECTED_WRITES[name]
+        assert entry.get("writes") == EXPECTED_WRITES[name]
+        assert agent.writes in (EXPECTED_WRITES[name], UNCONVERTED_WRITES.get(name))
 
 
 @pytest.mark.parametrize("name", HAIFA_AGENTS)

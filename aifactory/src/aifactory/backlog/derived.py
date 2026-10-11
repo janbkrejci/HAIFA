@@ -50,16 +50,6 @@ def effective_test_timeout(task: Task) -> object:
     return _nearest(task, "test_timeout")
 
 
-def effective_specs_dir(task: Task) -> object:
-    """The nearest ``specs_dir``, looked up like ``test``; ``None`` when unset."""
-    return _nearest(task, "specs_dir")
-
-
-def effective_docs_dir(task: Task) -> object:
-    """The nearest ``docs_dir``, looked up like ``test``; ``None`` when unset."""
-    return _nearest(task, "docs_dir")
-
-
 def _nearest(task: Task, key: str) -> object:
     for values in (task.own, *(c.defaults for c in ancestors(task))):
         value = values.get(key)
@@ -150,18 +140,12 @@ def progress(container: Container) -> tuple[int, int]:
 # inherited keys the nearest level that has the key wins, even with ``null``
 _SKIP_NULL_KEYS: tuple[str, ...] = (
     "test_timeout",
-    "specs_dir",
-    "docs_dir",
-    "workdir",
     "auto_continue",
     "auto_merge",
 )
 # inherited keys with a fallback in ``.factory/config.yaml`` (key -> setting)
 CONFIG_FALLBACK: dict[str, str] = {
     "test_timeout": "test_timeout",
-    "specs_dir": "specs_dir",
-    "docs_dir": "docs_dir",
-    "workdir": "workdir",
 }
 # inherited flags that are ``false`` when no level sets them
 _FLAG_DEFAULTS: tuple[str, ...] = ("auto_continue", "auto_merge")
@@ -185,8 +169,6 @@ def effective_sources(node: Node, settings: ProjectSettings) -> dict[str, dict[s
     for key in INHERITED_KEYS:
         entry: dict[str, object] | None = None
         for level_node in chain:
-            if key == "workdir" and level_node.parent is not None:
-                continue
             values = own_values(level_node)
             if key not in values:
                 continue

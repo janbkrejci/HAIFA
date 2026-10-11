@@ -74,7 +74,6 @@ from aifactory.run.resolve import (
     restore,
 )
 from aifactory.run.scope import (
-    OutputDirError,
     OutputPaths,
     TaskScope,
     output_paths,
@@ -541,11 +540,8 @@ def run_task(
                 blocked = _unmet_error(backlog, task, rc.base)
                 if blocked is not None:
                     raise blocked
-            try:
-                outputs = output_paths(task, settings)
-            except OutputDirError as exc:
-                raise TaskRunError("invalid_output_dir", f"task {task_id}: {exc}") from exc
-            workdir = project_workdir(task, settings)
+            outputs = output_paths(task, settings)
+            workdir = project_workdir(settings)
             validate_base_dirs(
                 main,
                 fork_sha,
@@ -599,7 +595,7 @@ def run_task(
             if workdir != ".":
                 prompt += (
                     f"\nAgent working directory: {worktree / workdir}. "
-                    f"Repository root: {worktree}. specs_dir, docs_dir, writes and artifact paths "
+                    f"Repository root: {worktree}. spec, docs, writes and artifact paths "
                     "are relative to the repository root, "
                     "including when running from this subdirectory.\n"
                 )

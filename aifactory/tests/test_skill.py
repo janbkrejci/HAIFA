@@ -252,7 +252,7 @@ def test_skill_backlog_creation_procedure() -> None:
 def test_skill_uses_project_level() -> None:
     skill = render_skill()
     for text in (
-        "<backlog_dir>/<project>/<step>/<task>.md",
+        "<docs_root>/backlog/<project>/<step>/<task>.md",
         "default `[project, step, task]`",
         "--project",
         "unknown_project",

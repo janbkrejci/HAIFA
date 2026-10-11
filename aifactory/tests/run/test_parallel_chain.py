@@ -530,7 +530,7 @@ def test_max_parallel_is_read_from_the_config(repo: Path) -> None:
     setup_tasks(
         repo,
         [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")],
-        config="base: main\nmax_parallel_runs: 2\n",
+        config="base: main\ndocs_root: .\nmax_parallel_runs: 2\n",
     )
     runner = FakeRunner(repo)
     chain = run_chain(repo, T01, runner=runner, pr_files=no_files)
@@ -557,7 +557,7 @@ def test_one_parallel_run_is_the_sequential_chain(repo: Path, script: Script) ->
     setup_tasks(
         repo,
         [(T01, "src/app/"), (T02, "src/app/"), (T03, "src/app/")],
-        config="base: main\nmax_parallel_runs: 1\n",
+        config="base: main\ndocs_root: .\nmax_parallel_runs: 1\n",
     )
     for name in ("one", "two", "three"):
         build(script, name)

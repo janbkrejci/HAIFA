@@ -35,6 +35,7 @@ def _key(value: str | None) -> str:
 def test_nearest_workflow_wins(
     tmp_path: Path, project: str, step: str, task: str, expected: str | None
 ) -> None:
+    write(tmp_path, ".factory/config.yaml", "docs_root: .\n")
     write(tmp_path, "backlog/M01-core/index.md", index_md("M01", _key(project)))
     write(tmp_path, "backlog/M01-core/S01-model/index.md", index_md("M01-S01", _key(step)))
     write(

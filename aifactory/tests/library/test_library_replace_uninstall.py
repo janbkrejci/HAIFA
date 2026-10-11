@@ -62,7 +62,7 @@ def test_replace_installs_over_an_installed_repo(installed: Path) -> None:
     repo = installed
     write(repo, STALE, "retired\n")
     text = (repo / ".factory/config.yaml").read_text(encoding="utf-8")
-    write(repo, ".factory/config.yaml", text + "specs_dir: work/specs\n")
+    write(repo, ".factory/config.yaml", text.replace("docs_root: factory\n", "docs_root: work\n"))
     commit_push(repo, "own folder and a retired prompt")
     assert [b.code for b in plan_init(repo).blockers] == ["already_installed"]
 
@@ -78,21 +78,22 @@ def test_replace_installs_over_an_installed_repo(installed: Path) -> None:
     assert git(repo, "rev-parse", "HEAD~1") == head
     assert git(repo, "rev-parse", "origin/main") == result.commit
     assert STALE not in tree(repo) and not (repo / STALE).exists()
-    assert config(repo)["specs_dir"] == "work/specs"  # the old folders are kept
+    assert config(repo)["docs_root"] == "work"  # the old folder is kept
     assert ".factory/manifest.yaml" in tree(repo)
 
 
 def test_replace_installs_over_a_pre_library_config(repo: Path) -> None:
-    write(repo, ".factory/config.yaml", "base: main\nbacklog_dir: tasks\n")
+    write(repo, ".factory/config.yaml", "base: main\nbacklog_dir: tasks\ndocs_root: work\n")
     write(repo, ".factory/agents.yaml", "agents:\n- name: old\n  purpose: Old.\n")
     commit_push(repo, "pre-library config")
     assert plan_init(repo).blockers  # without replace: refused
     result = commit_init(repo, replace=True)
     assert result.committed
-    assert config(repo)["backlog_dir"] == "tasks"
+    assert config(repo)["docs_root"] == "work"
+    assert "backlog_dir" not in config(repo)  # old keys are not written again
     agents = yaml.safe_load(git(repo, "show", "HEAD:.factory/agents.yaml"))
     assert "old" not in {a["name"] for a in agents["agents"]}
-    assert "tasks/.gitkeep" in tree(repo)
+    assert "work/backlog/.gitkeep" in tree(repo)
 
 
 def test_replace_with_the_same_install_commits_nothing(installed: Path) -> None:
@@ -130,7 +131,7 @@ def test_uninstall_commits_the_removal_and_pushes(installed: Path) -> None:
     assert result.commit == git(repo, "rev-parse", "HEAD") == git(repo, "rev-parse", "origin/main")
     assert git(repo, "rev-parse", "HEAD~1") == head
     assert git(repo, "log", "-1", "--format=%s") == "factory: remove factory from this repository"
-    assert tree(repo) == {"README.md", "justfile", "backlog/.gitkeep"}  # the backlog stays
+    assert tree(repo) == {"README.md", "justfile", "factory/backlog/.gitkeep"}  # the backlog stays
     assert not (repo / ".factory").exists() and not (repo / ".gitignore").exists()
     assert git(repo, "status", "--porcelain") == ""
 

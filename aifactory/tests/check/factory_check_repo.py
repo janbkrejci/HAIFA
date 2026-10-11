@@ -33,7 +33,7 @@ TASK = "M01-S01-T01"
 
 FILES = {
     ".gitignore": GITIGNORE,
-    ".factory/config.yaml": "base: main\n",
+    ".factory/config.yaml": "base: main\ndocs_root: .\n",
     ".factory/agents.yaml": AGENTS_YAML,
     ".factory/prompts/planner/system.md": "You are the planner.\n",
     ".factory/prompts/planner/user.md": "Plan this: {{prompt}}\n",

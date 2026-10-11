@@ -170,8 +170,6 @@ def _task_json(
             "source",
             "target",
             "test_timeout",
-            "specs_dir",
-            "docs_dir",
             "auto_continue",
             "auto_merge",
         )
@@ -305,8 +303,7 @@ def backlog_view(repo: Path, *, status: str | None = None) -> tuple[JsonDict, li
         )
     data: JsonDict = {
         "levels": list(backlog.settings.levels),
-        "backlog_dir": backlog.settings.backlog_patterns[0],
-        "backlog_dirs": list(backlog.roots),
+        "backlog_dir": backlog.settings.backlog_dir,
         "filters": {"status": status},
         "states": list(BOARD_STATES),
         "workflows": workflow_names(repo),
@@ -842,7 +839,7 @@ def _container_flag(
 
 # ── projects and steps: detail, add, edit (index.md) ─────────────────────────
 
-CONTAINER_ADD_KEYS = ("parent", "id", "title", "body", "backlog_dir")
+CONTAINER_ADD_KEYS = ("parent", "id", "title", "body")
 CONTAINER_EDIT_KEYS = ("title", *core.CONTAINER_KEYS, "clear")
 
 
@@ -857,7 +854,7 @@ def container_detail(repo: Path, container_id: str) -> tuple[JsonDict, list[str]
         "editable_keys": [
             key
             for key in core.CONTAINER_KEYS
-            if key not in ("workdir", "harness", "model", "thinking") or container.parent is None
+            if key not in ("harness", "model", "thinking") or container.parent is None
         ],
         "issues": own_issues,
     }
@@ -876,17 +873,13 @@ def _container_write_json(result: core.ContainerWriteResult) -> tuple[JsonDict, 
 
 
 def add_container(repo: Path, body: JsonDict) -> tuple[JsonDict, list[str]]:
-    """``factory backlog add [PARENT] --id --title [--body] [--backlog-dir]``: a new
-    project (in backlog root ``backlog_dir``) or step."""
+    """``factory backlog add [PARENT] --id --title [--body]``: a new project or step."""
     _check_keys(body, CONTAINER_ADD_KEYS)
     parent = _opt_str(body, "parent")
     container_id = _req_str(body, "id")
     title = _req_str(body, "title")
     text = _opt_str(body, "body") or ""
-    backlog_dir = _opt_str(body, "backlog_dir")
-    result = core.add_container(
-        repo, parent, container_id, title, body=text, backlog_dir=backlog_dir
-    )
+    result = core.add_container(repo, parent, container_id, title, body=text)
     return _container_write_json(result)
 
 

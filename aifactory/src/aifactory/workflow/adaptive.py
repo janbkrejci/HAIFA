@@ -100,8 +100,6 @@ def context(
                             "source",
                             "target",
                             "test_timeout",
-                            "specs_dir",
-                            "docs_dir",
                             "auto_continue",
                             "auto_merge",
                         )

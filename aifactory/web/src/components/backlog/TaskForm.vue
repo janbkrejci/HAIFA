@@ -75,7 +75,7 @@ const dependsText = ref((task?.depends_on ?? []).join(', '))
 const relatedText = ref((task?.related ?? []).join(', '))
 const parameterBusy = ref(false)
 const parameters = ref<Record<string, unknown> | undefined>()
-const parameterFields = ['harness', 'model', 'thinking', 'source', 'target', 'test_timeout', 'specs_dir', 'docs_dir', 'auto_continue', 'auto_merge']
+const parameterFields = ['harness', 'model', 'thinking', 'source', 'target', 'test_timeout', 'auto_continue', 'auto_merge']
 const { harnessOptions, modelOptions } = useHarnessChoices()
 const projectHarness = computed(() => props.steps.find(s => s.id === step.value)?.harness ?? '')
 /** A parameter's value: the typed or proposed one, else the task's own one (edit). */

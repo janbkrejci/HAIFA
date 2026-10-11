@@ -177,19 +177,19 @@ def test_id_prefix(tmp_path: Path) -> None:
 
 def test_missing_backlog_dir(tmp_path: Path) -> None:
     root = sample_repo(tmp_path)
-    write(root, ".factory/config.yaml", "backlog_dir: nowhere\n")
+    write(root, ".factory/config.yaml", "docs_root: nowhere\n")
     issues = check_backlog(load_backlog(root, create_missing=False))
     [issue] = [i for i in issues if i.code == "missing_backlog_dir"]
-    assert issue.path == "nowhere"
+    assert issue.path == "nowhere/backlog"
     assert not (root / "nowhere").exists()
 
 
 def test_missing_backlog_dir_is_created(tmp_path: Path) -> None:
     root = sample_repo(tmp_path)
-    write(root, ".factory/config.yaml", "backlog_dir: moduly/nowhere\n")
+    write(root, ".factory/config.yaml", "docs_root: moduly/nowhere\n")
     backlog = load_backlog(root)
-    assert (root / "moduly/nowhere").is_dir()
-    assert backlog.roots == ["moduly/nowhere"]
+    assert (root / "moduly/nowhere/backlog").is_dir()
+    assert backlog.roots == ["moduly/nowhere/backlog"]
     assert not [i for i in check_backlog(backlog) if i.code == "missing_backlog_dir"]
 
 

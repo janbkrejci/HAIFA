@@ -572,7 +572,7 @@ export interface BacklogCommitResult {
   pushed: boolean
 }
 
-/** `factory backlog commit`: commit the backlog changes (only `backlog_dir`) to base. */
+/** `factory backlog commit`: commit the backlog changes (only `<docs_root>/backlog`) to base. */
 export function commitBacklog(message?: string): Promise<BacklogCommitResult> {
   return postApi<BacklogCommitResult>('/backlog/commit', message ? { message } : {})
 }
@@ -886,9 +886,6 @@ export const CONTAINER_KEYS = [
   'writes',
   'source',
   'target',
-  'specs_dir',
-  'docs_dir',
-  'workdir',
   'auto_continue',
 ] as const
 
@@ -954,9 +951,6 @@ export interface EditContainerInput {
   writes?: string[]
   source?: string
   target?: string
-  specs_dir?: string | null
-  docs_dir?: string | null
-  workdir?: string | null
   auto_continue?: boolean
   /** Keys removed from `index.md` (the value is inherited again). */
   clear?: ContainerKey[]
@@ -1000,7 +994,7 @@ export function settingText(value: unknown): string {
   return String(value)
 }
 
-/** Where an inherited value comes from: `Projekt M01`, `.factory/config.yaml (docs_dir)`. */
+/** Where an inherited value comes from: `Projekt M01`, `.factory/config.yaml (test_timeout)`. */
 export function originText(origin: SettingOrigin | null | undefined): string {
   if (!origin) return 'nenastaveno'
   if (origin.source === 'config') return `${origin.path} (${origin.key})`
@@ -1031,9 +1025,6 @@ export const SETTING_LABELS: Record<string, string> = {
   test_timeout: 'Limit testů (s)',
   source: 'Zdroj',
   target: 'Cíl',
-  specs_dir: 'Adresář specifikací',
-  docs_dir: 'Adresář dokumentace',
-  workdir: 'Pracovní adresář agentů',
   auto_continue: 'Auto continue',
   auto_merge: 'Auto-merge',
 }

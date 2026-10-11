@@ -141,7 +141,7 @@ def test_blocks_is_reverse_of_depends_on() -> None:
 
 
 def test_two_levels(tmp_path: Path) -> None:
-    write(tmp_path, ".factory/config.yaml", "levels: [epic, story]\n")
+    write(tmp_path, ".factory/config.yaml", "levels: [epic, story]\ndocs_root: .\n")
     write(tmp_path, "backlog/E1/index.md", index_md("E1", "owner: carol\n"))
     write(tmp_path, "backlog/E1/E1-a.md", task_md("E1-a"))
     write(tmp_path, "backlog/E1/E1-b.md", task_md("E1-b", extra="depends_on: [E1-a]\n"))
@@ -158,6 +158,7 @@ def test_two_levels(tmp_path: Path) -> None:
 
 def test_owner_field_is_ignored(tmp_path: Path) -> None:
     """A legacy ``owner`` in an index or a task stays valid and is ignored."""
+    write(tmp_path, ".factory/config.yaml", "docs_root: .\n")
     write(tmp_path, "backlog/M01/index.md", index_md("M01", "owner: alice\n"))
     write(tmp_path, "backlog/M01/S01/index.md", index_md("M01-S01", "owner: carol\n"))
     write(tmp_path, "backlog/M01/S01/M01-S01-T01.md", task_md("M01-S01-T01", extra="owner: bob\n"))
@@ -174,7 +175,7 @@ def test_owner_field_is_ignored(tmp_path: Path) -> None:
 
 
 def test_four_levels(tmp_path: Path) -> None:
-    write(tmp_path, ".factory/config.yaml", "levels: [area, module, step, task]\n")
+    write(tmp_path, ".factory/config.yaml", "levels: [area, module, step, task]\ndocs_root: .\n")
     write(tmp_path, "backlog/A/index.md", index_md("A"))
     write(tmp_path, "backlog/A/M/index.md", index_md("A-M"))
     write(tmp_path, "backlog/A/M/S/index.md", index_md("A-M-S"))

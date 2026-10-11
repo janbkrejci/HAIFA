@@ -210,7 +210,7 @@ def test_add_agent_as_other_slot(repo: Path, capsys: Capsys) -> None:
 
     entry = roster(repo)["planner2"]
     assert entry["thinking"] == "high" and entry["model"] == "claude-opus-5-5"
-    assert entry["harness"] == "claude" and entry["writes"] == ["specs/"]
+    assert entry["harness"] == "claude" and entry["writes"] == ["factory/specs/"]
     assert data["bindings"]["planner2"]["thinking"] == "high"
     assert (repo / ".factory/prompts/planner2/system.md").read_bytes() == (
         repo / ".factory/prompts/planner/system.md"
@@ -328,14 +328,14 @@ def test_remove_keeps_local_and_backlog_in_base(repo: Path, capsys: Capsys) -> N
     data = ok(capsys, repo, "remove", "workflow", "solo", "--prune", "--dry-run")
     assert {"type": "agent", "name": "scout", "reason": "local"} in data["kept"]
 
-    put(repo, "backlog/M01-core/index.md", "---\nid: M01\ntitle: M01\n---\n")
-    put(repo, "backlog/M01-core/S01-a/index.md", "---\nid: M01-S01\ntitle: S\n---\n")
+    put(repo, "factory/backlog/M01-core/index.md", "---\nid: M01\ntitle: M01\n---\n")
+    put(repo, "factory/backlog/M01-core/S01-a/index.md", "---\nid: M01-S01\ntitle: S\n---\n")
     put(
         repo,
-        "backlog/M01-core/S01-a/M01-S01-T01-x.md",
+        "factory/backlog/M01-core/S01-a/M01-S01-T01-x.md",
         "---\nid: M01-S01-T01\ntitle: T\nstatus: todo\nworkflow: solo\n---\n\nbody\n",
     )
-    git(repo, "add", "backlog")
+    git(repo, "add", "factory")
     git(repo, "commit", "-q", "-m", "backlog")
     git(repo, "push", "-q", "origin", "main")
     error = fail(capsys, repo, "in_use", "remove", "workflow", "solo")

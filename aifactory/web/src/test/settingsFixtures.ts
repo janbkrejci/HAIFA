@@ -3,9 +3,7 @@ import type { ConfigStatus, SettingsData } from '@/lib/settings'
 export const SETTINGS: SettingsData = {
   shared: {
     workdir: '.',
-    backlog_dir: 'backlog',
-    specs_dir: 'specs',
-    docs_dir: 'app_docs',
+    docs_root: 'factory',
     worktrees_dir: '.factory/worktrees',
     base: 'main',
     git_provider: 'local',

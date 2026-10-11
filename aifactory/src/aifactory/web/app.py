@@ -56,7 +56,7 @@ Projects and steps: ``GET /api/backlog/containers/{id}`` (title, description, ow
 ``index.md`` and effective values with their origin: a level or ``.factory/config.yaml``),
 ``POST /api/backlog/containers`` (``{parent?, id, title, body?}``) and
 ``POST /api/backlog/containers/{id}/edit`` (``{title?, workflow?, writes?, test?, source?,
-target?, specs_dir?, docs_dir?, auto_continue?, clear?}``; ``null`` or ``clear`` removes a
+target?, auto_continue?, clear?}``; ``null`` or ``clear`` removes a
 key) call ``add_container`` and ``edit_container`` like ``factory backlog add|edit``.
 
 Review: ``GET /api/review`` (open task PRs with mergeability and costs; ``?done=1``
@@ -91,7 +91,7 @@ answers HTTP 200 with the CLI envelope: ``ok``, or ``checks_failed`` with the re
 options?, target?}``) only reads and returns the plan with its ``digest`` (``init`` also
 ``detected`` and ``available``); ``action`` is ``init`` (options ``agents``,
 ``bind`` ``{agent: {harness, model?, thinking?}}``, ``workflows``, ``base``, ``provider``,
-``azure``, ``backlog_dir``, ``specs_dir``, ``docs_dir``), ``update``
+``azure``, ``docs_root``), ``update``
 (``item``, ``take``, ``merge``, ``migrate``), ``config_commit``, ``add``, ``set``,
 ``remove``, ``export`` or ``revert`` (see factory.py for options);
 ``target`` is ``base`` (default) or ``pr``. ``POST /api/factory/apply``

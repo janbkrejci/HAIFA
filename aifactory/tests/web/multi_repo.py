@@ -24,7 +24,7 @@ from aifactory.config.manifest import (
 from aifactory.web import create_multi_app
 
 BASE = "http://127.0.0.1:4700"
-CONFIG = "base: main\n"
+CONFIG = "base: main\ndocs_root: .\n"
 AGENTS = "defaults:\n  harness: claude\nagents:\n  - name: builder\n    purpose: Build.\n"
 SSSF_ROSTER = "adws/adw_sssf_config/sssf.config.yaml"
 MANIFEST = Manifest(

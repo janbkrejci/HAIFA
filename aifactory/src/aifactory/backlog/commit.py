@@ -1,7 +1,7 @@
 """Commit the backlog's working-tree changes to ``base`` (``factory backlog commit``).
 
-Task writes (``add``/``edit``/``link``) only change files under the backlog roots
-(``backlog_dir`` or ``backlog_dirs``); a run reads the backlog from ``base``. This is the
+Task writes (``add``/``edit``/``link``) only change files under the backlog root
+(``<docs_root>/backlog``); a run reads the backlog from ``base``. This is the
 one step that turns those edits into a commit: only paths under the backlog roots are
 staged and committed (other staged or
 unstaged changes stay as they are), and only when the main checkout is on ``base``

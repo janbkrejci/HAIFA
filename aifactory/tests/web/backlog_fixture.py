@@ -126,9 +126,7 @@ def make_backlog_repo(
     git(root, "config", "user.email", "test@example.com")
     levels = levels or ["module", "step", "task"]
     files = _area_files() if len(levels) == 2 else _default_files()
-    files[".factory/config.yaml"] = (
-        f"base: main\nlevels: [{', '.join(levels)}]\nbacklog_dir: backlog\n"
-    )
+    files[".factory/config.yaml"] = f"base: main\nlevels: [{', '.join(levels)}]\ndocs_root: .\n"
     files[".factory/workflows/custom-flow.yaml"] = "name: custom-flow\nsteps: [plan]\n"
     files[".gitignore"] = ".factory/trace.db*\n"
     for rel, text in files.items():

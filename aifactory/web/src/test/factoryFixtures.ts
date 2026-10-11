@@ -11,7 +11,7 @@ export function installPlan(extra: Partial<FactoryInitPlan> = {}): FactoryInitPl
   return {
     action: 'init', base: 'main', base_sha: 'abcdef123', remote: 'origin', digest: 'install-digest', blockers: [],
     files: [{ path: '.factory/manifest.yaml', action: 'create', content: 'format: 1\n', diff: '', binary: false }],
-    provider: 'local', backlog_dir: 'backlog', specs_dir: 'specs', docs_dir: 'docs', agents, workflows: ['simple-sdlc'], added_agents: [],
+    provider: 'local', docs_root: 'factory', agents, workflows: ['simple-sdlc'], added_agents: [],
     bindings: Object.fromEntries(agents.map(name => [name, { ...binding }])),
     available: { agents: [...agents, 'scout'].map(name => ({ name, purpose: name, default: name !== 'scout', ...binding })), workflows: [{ name: 'simple-sdlc', default: true }, { name: 'scout', default: false }] },
     detected: { harnesses: { claude: { installed: true }, codex: { installed: false }, pi: { installed: true } } },

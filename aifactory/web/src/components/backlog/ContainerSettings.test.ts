@@ -31,7 +31,7 @@ describe('ContainerSettings', () => {
     expect(row('workflow').get('[data-test="origin"]').text()).toBe('vlastní')
     expect(row('writes').get('[data-test="origin"]').text()).toContain('Modul M01')
     expect(row('writes').get('[data-test="value-writes"]').text()).toContain('src/')
-    expect(row('specs_dir').get('[data-test="origin"]').text()).toContain('.factory/config.yaml (specs_dir)')
+    expect(wrapper.find('[data-setting="specs_dir"]').exists()).toBe(false)
     expect(wrapper.find('[data-setting="test"]').exists()).toBe(false)
     expect(row('auto_continue').get('[data-test="value-auto_continue"]').text()).toContain('vypnuto')
     expect(row('auto_continue').get('[data-test="origin"]').text()).toContain('výchozí')
@@ -94,8 +94,8 @@ describe('ContainerSettings', () => {
 
   it('shows Czech labels with the key', () => {
     const wrapper = panel()
-    expect(wrapper.get('[data-setting="specs_dir"] [data-test="setting-label"]').text()).toBe('Adresář specifikací')
-    expect(wrapper.get('[data-setting="specs_dir"] th').text()).toContain('specs_dir')
+    expect(wrapper.get('[data-setting="target"] [data-test="setting-label"]').text()).toBe('Cíl')
+    expect(wrapper.get('[data-setting="target"] th').text()).toContain('target')
   })
 
   it('keeps an unset auto continue inherited, never off', async () => {

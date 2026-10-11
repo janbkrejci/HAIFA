@@ -17,7 +17,7 @@ function preview(extra?: Partial<FactoryInitPlan>): FactoryInitPlan
 function preview(extra: Partial<FactoryPlan> = {}): FactoryPlan {
   return { action: 'init', base: 'main', base_sha: 'a6f3e1c01234', remote: 'origin', digest: 'same-digest', blockers: [],
     files: [{ path: '.factory/manifest.yaml', action: 'create', diff: '', content: 'format: 1', binary: false }],
-    provider: 'local', backlog_dir: 'backlog', specs_dir: 'specs', docs_dir: 'docs', agents: ['planner','builder'], workflows: ['simple-sdlc'],
+    provider: 'local', docs_root: 'factory', agents: ['planner','builder'], workflows: ['simple-sdlc'],
     bindings: { planner: { ...binding }, builder: { ...binding } }, detected: { harnesses: { claude: { installed: true }, codex: { installed: false } } },
     available: { agents: ['planner','builder','reviewer','documenter','scout'].map(name => ({ name, purpose: name, default: name !== 'scout', ...binding })), workflows: [{ name: 'simple-sdlc', default: true }, { name: 'scout', default: false }] }, ...extra } as FactoryPlan
 }
@@ -37,7 +37,7 @@ describe('Factory operations', () => {
       expect(w.get(`[data-test="model-${name}"]`).element).toHaveProperty('value', 'sonnet')
       expect(w.get(`[data-test="thinking-${name}"]`).element).toHaveProperty('value', 'medium')
     }
-    for (const key of ['backlog_dir', 'specs_dir', 'docs_dir'] as const) {
+    for (const key of ['docs_root'] as const) {
       const count = vi.mocked(fetchFactoryPlan).mock.calls.length
       await w.get(`[data-test="install-${key}"]`).setValue(`custom-${key}`); await flushPromises()
       expect(fetchFactoryPlan).toHaveBeenCalledTimes(count + 1)

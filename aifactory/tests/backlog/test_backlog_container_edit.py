@@ -161,8 +161,6 @@ def test_edit_sets_and_clears_keys_and_keeps_unknown_ones(tmp_path: Path) -> Non
         values={
             "workflow": "build-test",
             "writes": ["src/", "tests/"],
-            "specs_dir": "docs/specs",
-            "docs_dir": "docs/app",
             "auto_continue": True,
         },
         clear=["source", "target"],
@@ -172,8 +170,6 @@ def test_edit_sets_and_clears_keys_and_keeps_unknown_ones(tmp_path: Path) -> Non
     assert header["title"] == "Jádro"
     assert header["workflow"] == "build-test"
     assert header["writes"] == ["src/", "tests/"]
-    assert header["specs_dir"] == "docs/specs"
-    assert header["docs_dir"] == "docs/app"
     assert header["auto_continue"] is True
     assert "source" not in header and "target" not in header
     assert header["owner"] == "alice"  # unknown key stays
@@ -203,16 +199,14 @@ def test_edit_rejects_bad_input(tmp_path: Path) -> None:
         ({"values": {"writes": "src/"}}, "invalid_value"),
         ({"values": {"auto_continue": "yes"}}, "invalid_value"),
         ({"values": {"test": ["just", "check"]}}, "invalid_value"),  # removed key
+        ({"values": {"specs_dir": "docs"}}, "invalid_value"),  # removed key
+        ({"values": {"workdir": "src"}}, "invalid_value"),  # removed key
         ({"title": " "}, "invalid_value"),
     ]
     for kwargs, code in cases:
         with pytest.raises(TaskEditError) as exc:
             edit_container(root, "M01", **kwargs)
         assert exc.value.code == code, kwargs
-    with pytest.raises(TaskEditError) as exc:
-        edit_container(root, "M01", values={"specs_dir": "../outside"})
-    assert exc.value.code == "backlog_invalid"
-    assert {i.code for i in exc.value.issues} == {"invalid_field"}
     with pytest.raises(TaskEditError) as exc:
         edit_container(root, "M01-S01-T01", title="Task")
     assert exc.value.code == "unknown_container"
@@ -224,10 +218,10 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
     write(
         root,
         ".factory/config.yaml",
-        "levels: [module, step, task]\nbacklog_dir: backlog\ndocs_dir: docs\n",
+        "levels: [module, step, task]\ndocs_root: .\ntest_timeout: 300\n",
     )
     edit_container(root, "M01-S01", values={"workflow": "own-flow"})
-    edit_container(root, "M01", values={"docs_dir": "docs/app"})
+    edit_container(root, "M01", values={"target": "app"})
     backlog = load_backlog(root)
     step = backlog.by_id["M01-S01"]
     sources = effective_sources(step, backlog.settings)
@@ -235,23 +229,21 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
         "value": "own-flow",
         "origin": {"source": "own", "level": "step", "id": "M01-S01", "path": S01_INDEX},
     }
-    assert sources["docs_dir"] == {
-        "value": "docs/app",
+    assert sources["target"] == {
+        "value": "app",
         "origin": {"source": "inherited", "level": "module", "id": "M01", "path": M01_INDEX},
     }
-    assert sources["specs_dir"] == {
-        "value": "specs",
-        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "specs_dir"},
+    assert sources["test_timeout"] == {
+        "value": 300,
+        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "test_timeout"},
     }
     assert sources["auto_continue"] == {"value": False, "origin": {"source": "default"}}
-    edit_container(root, "M01", clear=["docs_dir"])
+    edit_container(root, "M01", clear=["target"])
     backlog = load_backlog(root)
     sources = effective_sources(backlog.by_id["M01-S01"], backlog.settings)
-    assert sources["docs_dir"] == {
-        "value": "docs",
-        "origin": {"source": "config", "path": ".factory/config.yaml", "key": "docs_dir"},
-    }
-    assert "test" not in sources
+    assert sources["target"] == {"value": None, "origin": None}
+    for key in ("test", "specs_dir", "docs_dir", "workdir"):
+        assert key not in sources
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -293,11 +285,11 @@ def test_cli_add_and_edit(tmp_path: Path, capsys: Capsys) -> None:
     assert header["owner"] == "alice"
     assert "target" not in header
 
-    step_edit = ["backlog", "edit", "M01-S01", "--specs-dir", "docs/specs", "--json"]
+    step_edit = ["backlog", "edit", "M01-S01", "--target", "app", "--json"]
     rc, env = run_json(capsys, step_edit + repo)
     assert rc == 0
     effective = env["data"]["container"]["effective"]
-    assert effective["specs_dir"]["value"] == "docs/specs"
+    assert effective["target"]["value"] == "app"
     assert "test" not in effective
     assert effective["workflow"] == {
         "value": "wf",
@@ -332,49 +324,3 @@ def test_cli_rejects_invalid_writes(tmp_path: Path, capsys: Capsys) -> None:
     assert main(["backlog", "add", "--id", "M01", "--title", "X", *repo]) == 1
     assert "duplicate_id" in capsys.readouterr().err
     assert _snapshot(root) == before
-
-
-def test_project_paths_inherit_clear_and_isolate(tmp_path: Path) -> None:
-    root = sample_repo(tmp_path)
-    keys = ("specs_dir", "docs_dir", "workdir")
-    edits: dict[str, object] = {key: f"projects/core/{key}" for key in keys}
-    edit_container(root, "M01", values=edits)
-    edit_container(root, "M02", values={key: f"projects/ui/{key}" for key in keys})
-    backlog = load_backlog(root)
-    for key in keys:
-        core = effective_sources(backlog.by_id["M01"], backlog.settings)[key]
-        assert core["value"] == edits[key]
-        assert core["origin"] == {
-            "source": "own",
-            "level": "module",
-            "id": "M01",
-            "path": M01_INDEX,
-        }
-        assert (
-            effective_sources(backlog.by_id["M02"], backlog.settings)[key]["value"]
-            == f"projects/ui/{key}"
-        )
-    edit_container(root, "M01", clear=list(keys))
-    backlog = load_backlog(root)
-    for key in keys:
-        entry = effective_sources(backlog.by_id["M01"], backlog.settings)[key]
-        assert entry["value"] == getattr(backlog.settings, key)
-        assert entry["origin"] == {"source": "config", "path": ".factory/config.yaml", "key": key}
-        assert (
-            effective_sources(backlog.by_id["M02"], backlog.settings)[key]["value"]
-            == f"projects/ui/{key}"
-        )
-
-
-def test_workdir_is_project_only_and_paths_cannot_escape(tmp_path: Path) -> None:
-    root = sample_repo(tmp_path)
-    before = _snapshot(root)
-    with pytest.raises(TaskEditError):
-        edit_container(root, "M01-S01", values={"workdir": "src"})
-    for value in ("../outside", "/abs", "C:/outside", "..\\outside"):
-        with pytest.raises(TaskEditError):
-            edit_container(root, "M01", values={"workdir": value})
-    assert _snapshot(root) == before
-    (root / "link").symlink_to(tmp_path, target_is_directory=True)
-    with pytest.raises(TaskEditError):
-        edit_container(root, "M01", values={"docs_dir": "link/docs"})

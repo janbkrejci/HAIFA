@@ -45,7 +45,8 @@ MATHX = "src/sandbox/mathx.py"
 TEXT = "src/sandbox/text.py"
 CLI = "src/sandbox/cli.py"
 BREACH_FILE = "B1-breach.md"
-# file stems of the task files: specs/<stem>.md and app_docs/<stem>.md are the paths
+# file stems of the task files: specs/<project>/<step>/<stem>.md and
+# docs/<project>/<step>/<stem>.md are the paths
 # a task run's write guard allows for the plan and the write-up. The fake planner and
 # documenter do not use them: they write to `@output`, the path the rendered prompt names.
 TASK_STEMS: dict[str, str] = {

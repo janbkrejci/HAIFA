@@ -19,7 +19,7 @@ T1 = "M01-S01-T01"
 T2 = "M01-S01-T02"
 
 _FILES = {
-    ".factory/config.yaml": "base: main\n",
+    ".factory/config.yaml": "base: main\ndocs_root: .\n",
     "backlog/M01-core/index.md": "---\nid: M01\ntitle: Core\nworkflow: plan-commit\n---\n",
     "backlog/M01-core/S01-model/index.md": (
         "---\nid: M01-S01\ntitle: Model\nwrites: [src/app/]\n---\n"
