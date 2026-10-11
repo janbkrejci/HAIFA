@@ -15,7 +15,7 @@ Platná rozhodnutí, jejichž důvod z kódu nevyčteš. Historie (product brief
 
 ## Konfigurace a knihovna
 
-- **Knihovna a kopie v repu:** knihovna v domově HAIFA drží agenty, workflow a skilly. Repo má commitnutou kopii toho, co používá, s původem (položka a verze). Roster je vlastní pro každé repo.
+- **Dědičnost z knihovny:** agenti, workflow, skilly a rozšíření se hledají nejdřív v `.factory/` repa, potom v knihovně (`$HAIFA_HOME/library`, bez ní seed). Kopie v repu má přednost. Nic se mezi knihovnou a repem nesynchronizuje, „Přesunout do knihovny“ přesune kopii z repa do knihovny. Běh zapíše do trace commit knihovny, ze kterého četl, a skilly z knihovny jen nakopíruje do worktree.
 - **Instrukce a skilly repa:** agenti používají CLAUDE.md, AGENTS.md a skilly repa tak, jak je jejich harness načte při spuštění v repu. Osobní a globální konfigurace operátora se do běhu nedostane, kde to harness umí, jinak to hlásí `factory check`. `*_SAFE_MODE=1` vrátí úplnou izolaci.
 - **Skilly v repu:** zdroj je `.claude/skills/<jméno>/`. `.agents/skills/<jméno>/` je jeho kopie pro codex a pi, bez symlinků (na Windows bez `core.symlinks` nefungují). Kopii udržuje `factory skills sync` a rozdíl hlásí `factory check`.
 - **Harness explicitně:** harness je u agenta vždy zapsaný, nikdy se neodvozuje z názvu modelu.
