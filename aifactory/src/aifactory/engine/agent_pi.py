@@ -114,6 +114,63 @@ def _pi_catalog() -> list[tuple[str, str, int]]:
     return rows
 
 
+# aifactory 3.0: a provider can come from a pi package (`pi install`, e.g. nousresearch).
+# `--no-extensions` keeps the operator's extensions out of a run and drops that provider
+# with them, so the package entry that registers the run's provider is passed with `-e`.
+def _listed_providers(*args: str) -> set[str]:
+    try:
+        result = subprocess.run(
+            [PI_PATH, *args, "--list-models"], capture_output=True, text=True,
+            timeout=30, env=operator_env(), check=False, encoding="utf-8",
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return set()
+    if result.returncode != 0:
+        return set()
+    return {line.split()[0] for line in result.stdout.splitlines()[1:] if line.split()}
+
+
+def _package_entries() -> list[str]:
+    """The extension files declared (`pi.extensions` in package.json) by installed pi packages."""
+    try:
+        result = subprocess.run(
+            [PI_PATH, "list"], capture_output=True, text=True,
+            timeout=30, env=operator_env(), check=False, encoding="utf-8",
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return []
+    entries = []
+    for line in result.stdout.splitlines() if result.returncode == 0 else []:
+        folder = Path(line.strip())
+        if not line.startswith((" ", "\t")) or not folder.is_absolute():
+            continue
+        try:
+            declared = json.loads((folder / "package.json").read_text("utf-8"))["pi"]["extensions"]
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+        for item in declared if isinstance(declared, list) else []:
+            path = (folder / str(item)).resolve()
+            if path.is_file():
+                entries.append(str(path))
+    return entries
+
+
+@lru_cache(maxsize=1)
+def _package_extensions() -> dict[str, list[str]]:
+    """Provider -> the package extension files that register it (built-in providers left out)."""
+    builtin = _listed_providers("--no-extensions")
+    found: dict[str, list[str]] = {}
+    for entry in _package_entries():
+        for provider in _listed_providers("--no-extensions", "-e", entry) - builtin:
+            found.setdefault(provider, []).append(entry)
+    return found
+
+
+def provider_extensions(provider: str) -> list[str]:
+    """`-e` arguments that load the pi package registering `provider`; none for a built-in one."""
+    return [arg for entry in _package_extensions().get(provider, []) for arg in ("-e", entry)]
+
+
 def resolve_model(pattern: str) -> tuple[str, str]:
     """Resolve a model pattern to an explicit ``(provider, model_id)`` pair.
 
@@ -320,6 +377,7 @@ def _attempt(request: PiRequest, on_event: Optional[Callable[[dict], None]] = No
         "--session-dir", request.session_dir,
         "--system-prompt", request.system_prompt,
         *isolation_args(request.cwd),     # aifactory: repo-native instructions and skills
+        *provider_extensions(provider),   # aifactory 3.0: a provider from a pi package
     ]
     if request.tools:
         cmd += ["--tools", ",".join(request.tools)]

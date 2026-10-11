@@ -192,6 +192,14 @@ def _fast_test_env(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
         yield
 
 
+@pytest.fixture(autouse=True)
+def _no_pi_packages(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test asks the operator's pi which packages register which providers."""
+    from aifactory.engine import agent_pi
+
+    monkeypatch.setattr(agent_pi, "_package_extensions", lambda: {})
+
+
 Snapshot = dict[str, tuple[int, int]]
 
 

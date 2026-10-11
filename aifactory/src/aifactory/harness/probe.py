@@ -11,6 +11,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from aifactory.engine import agent_pi
 from aifactory.engine.utils import operator_env
 from aifactory.harness import canonical, load
 from aifactory.harness.check import installed_path
@@ -86,6 +87,7 @@ def run_probe(name: str, model: str, thinking: str | None = None) -> dict[str, A
                 "--no-prompt-templates",
                 "--no-context-files",
                 "--no-mcp",
+                *agent_pi.provider_extensions(provider),
                 PROMPT,
             ]
         if thinking is not None:
@@ -127,7 +129,7 @@ def run_probe(name: str, model: str, thinking: str | None = None) -> dict[str, A
                 answer = str(payload.get("result", "")).strip()
             elif name == "codex":
                 answer = output.read_text(encoding="utf-8").strip()
-            if answer != "OK":
+            if answer.rstrip(".") != "OK":  # some models end every reply with a full stop
                 return {"ok": False, "error": "Harness nevrátil očekávanou odpověď OK."}
             return {"ok": True, "answer": "OK", "error": None}
         except subprocess.TimeoutExpired:
