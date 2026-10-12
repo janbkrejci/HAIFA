@@ -23,7 +23,7 @@ Příklad:
 
 ```yaml
 git_provider: github
-github_approver: JanKrejciASOL
+github_approver: janbkrejci
 ```
 
 ## Ověření
@@ -34,13 +34,13 @@ github_approver: JanKrejciASOL
 - Živě (2026-10-12): `gh auth token --user JanKrejciASOL` vrátil token,
   `gh api user` s ním odpověděl `JanKrejciASOL` a `repos/{owner}/{repo}` se
   rozložilo na `janbkrejci/HAIFA` (veřejné repo).
-- Neověřeno: skutečné APPROVE review na otevřeném PR s mergem. Builder nesmí
-  pushovat větve ani zakládat PR. Postup pro operátora: nastavit
-  `github_approver: JanKrejciASOL`, spustit `factory task approve <id>` na otevřeném
-  PR factory v `janbkrejci/HAIFA` a ověřit review `APPROVED` od JanKrejciASOL,
-  merge a `reviewed: true` v `--json` výstupu. JanKrejciASOL není collaborator, na
-  veřejném repu se review zapíše, ale nezapočítá se do povinných schválení.
-
+- Živě na PR https://github.com/janbkrejci/HAIFA/pull/21 (2026-10-12): PR založil
+  `JanKrejciASOL` (collaborator s právem zápisu). `GitHubProvider.approve` s
+  `github_approver: janbkrejci` vrátil `reviewed: True` a GitHub zapsal review
+  `5491422399` od `janbkrejci` ve stavu `APPROVED` na commitu `60550ae` (head PR).
+  Po commitu s tímto záznamem se schválení zopakovalo na nový head a PR se mergnul.
+- Schvalovat musí jiný účet než autor PR. `janbkrejci` je admin repa, jeho review
+  se do povinných schválení započítá.
 ## Mimo rozsah
 
 D11 v `docs/decisions.md` je mimo povolené cesty úkolu a zůstává neaktualizované.
