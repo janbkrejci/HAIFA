@@ -134,6 +134,7 @@ def _merge_oid(data: dict[str, Any]) -> str | None:
 
 class GitHubProvider(GitProvider):
     name = "github"
+    reports_checks = True
 
     def __init__(
         self,
