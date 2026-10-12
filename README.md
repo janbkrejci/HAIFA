@@ -4,11 +4,11 @@ HAIFA je lokální dashboard a CLI `factory` pro agentní úkoly ve více Git re
 
 ## Prerekvizity
 
-- macOS, Linux nebo Windows 10/11 (nativně, bez WSL).
+- macOS, Linux nebo Windows 10/11 (nativně, bez WSL). Na Windows stačí `winget`, ostatní doinstaluje instalátor.
 - Git s nastaveným jménem a e-mailem.
 - [GitHub CLI (`gh`)](https://github.com/cli/cli#installation) přihlášené k účtu s právem zápisu do tvých repozitářů.
 - [uv](https://docs.astral.sh/uv/getting-started/installation/) a Python 3.11 nebo novější.
-- Bash, `curl` a `unzip` pro instalaci.
+- Bash, `curl` a `unzip` pro instalaci na macOS a Linuxu.
 - Alespoň jeden nainstalovaný a přihlášený harness: [Claude Code](https://code.claude.com/docs/en/setup), [Codex CLI](https://github.com/openai/codex) nebo [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent).
 
 Co chybí, ukáže po instalaci `factory check`.
@@ -61,58 +61,21 @@ factory obs
 
 ## Instalace na Windows bez WSL
 
-Postup je pro Windows 10/11 x64 a PowerShell. Git Bash z Git for Windows spouští instalační skript, HAIFA i Python běží nativně.
+1. Z [posledního vydání](https://github.com/janbkrejci/HAIFA/releases/latest) stáhni `haifa-<verze>.zip` a rozbal ho (v Průzkumníku pravým tlačítkem **Extrahovat vše**).
+2. Ve složce `haifa-<verze>` spusť dvojklikem `install.bat`.
 
-1. Ověř `winget --version` (jinak nainstaluj **App Installer** z Microsoft Store) a nainstaluj nástroje:
+Instalátor ověří SHA-256 součty, doinstaluje chybějící `git`, `uv`, `gh` a Node.js přes `winget` a harnessy `claude` a `codex` přes `npm`, zeptá se na jméno a e-mail pro git, pokud chybí, nainstaluje `factory` s připnutými závislostmi a založí knihovnu ze semínka. Instalace přes `winget` si může vyžádat potvrzení správce. Opakované spuštění je bezpečné.
 
-   ```powershell
-   winget install --id Git.Git --exact --source winget
-   winget install --id GitHub.cli --exact --source winget
-   winget install --id astral-sh.uv --exact --source winget
-   ```
+Pak se přihlas tam, kde ještě nejsi, a v novém terminálu spusť dashboard:
 
-   Ponech výchozí cestu Gitu `C:\Program Files\Git`. Otevři nový PowerShell.
-
-2. Dej Git Bash na PATH před systémový `bash.exe`, nainstaluj Python a nastav identitu:
-
-   ```powershell
-   $env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
-   uv python install 3.12
-   git config --global user.name "Tvoje jméno"
-   git config --global user.email "tvuj@email.cz"
-   gh auth login
-   gh auth setup-git
-   ```
-
-   `bash --version` musí ukázat Git Bash, ne WSL.
-
-3. Nainstaluj a přihlas harness, například `winget install --id Anthropic.ClaudeCode --exact --source winget`, pak v novém PowerShellu `claude`.
-
-4. Stáhni a nainstaluj poslední vydání:
-
-   ```powershell
-   $haifaRelease = Invoke-RestMethod "https://api.github.com/repos/janbkrejci/HAIFA/releases/latest"
-   $haifaVersion = $haifaRelease.tag_name -replace '^v', ''
-   $haifaZipName = "haifa-$haifaVersion.zip"
-   $haifaAsset = $haifaRelease.assets | Where-Object { $_.name -eq $haifaZipName }
-   if (-not $haifaAsset) { throw "Vydání neobsahuje instalační ZIP." }
-   Invoke-WebRequest -UseBasicParsing $haifaAsset.browser_download_url -OutFile $haifaZipName
-   Expand-Archive -Path $haifaZipName -DestinationPath ".\haifa-install-$haifaVersion"
-   Set-Location ".\haifa-install-$haifaVersion\haifa-$haifaVersion"
-   & "$env:ProgramFiles\Git\bin\bash.exe" ./install.sh
-   if ($LASTEXITCODE -ne 0) { throw "Instalace HAIFA selhala." }
-   uv tool update-shell
-   ```
-
-5. V novém PowerShellu:
-
-   ```powershell
-   $env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
-   factory check
-   factory obs
-   ```
-
-   Řádek s PATH opakuj v každém novém PowerShellu před `factory obs`.
+```powershell
+gh auth login
+gh auth setup-git
+claude
+codex login
+factory check
+factory obs
+```
 
 ## První spuštění
 
@@ -130,6 +93,10 @@ Nastavení počítače a knihovna jsou v `~/.config/haifa` (jinde podle `HAIFA_H
 ## Aktualizace
 
 Chip v horní liště ukazuje, zda je k dispozici novější vydání. Kliknutím ho dashboard stáhne, ověří, nainstaluje a restartuje se. Aktualizace čeká na dokončení běžících tasků. Ručně: `factory upgrade /cesta/haifa-<verze>.zip`.
+
+## Odinstalace
+
+Ve složce rozbaleného vydání spusť `uninstall.bat` (Windows) nebo `bash uninstall.sh` (macOS a Linux). Skript odinstaluje `factory` a zeptá se, jestli smazat i `~/.config/haifa` s knihovnou a nastavením. Neodeslané změny knihovny nejdřív pošli přes `factory library push`. Bez rozbaleného vydání stačí `uv tool uninstall aifactory`.
 
 ## Vývoj
 
