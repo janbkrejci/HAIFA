@@ -10,6 +10,7 @@ import io
 import json
 import sqlite3
 import subprocess
+import time
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -45,6 +46,19 @@ def harness_binaries() -> set[str]:
     return {agent_cc.CLAUDE_PATH, codex.CODEX_PATH, agent_pi.PI_PATH}
 
 
+class FakeStdin(io.StringIO):
+    """A child's stdin that keeps what was written after it is closed."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.text = ""
+
+    def close(self) -> None:
+        if not self.closed:
+            self.text = self.getvalue()
+        super().close()
+
+
 class FakePopen:
     """Stands in for ``subprocess.Popen``; replays one scripted stdout."""
 
@@ -53,6 +67,7 @@ class FakePopen:
     ) -> None:
         self.cmd = list(cmd)
         self.kwargs = kw
+        self.stdin = FakeStdin()
         self.stdout = io.StringIO(stdout_text)
         self.stderr = io.StringIO(stderr_text)
         self.pid = PID
@@ -60,6 +75,15 @@ class FakePopen:
 
     def wait(self) -> int:
         return self.returncode
+
+    @property
+    def prompt(self) -> str:
+        """The user prompt the adapter sent through stdin."""
+        for _ in range(500):
+            if self.stdin.closed:
+                return self.stdin.text
+            time.sleep(0.01)
+        raise AssertionError("the adapter never closed the child's stdin")
 
 
 class FakeSpawner:

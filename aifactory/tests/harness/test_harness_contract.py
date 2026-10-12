@@ -195,7 +195,9 @@ def test_harness_recorded_turn_gives_expected_result(
     assert Path(request.raw_output_path).read_text() == fixture_text(expected["fixture"])
     (call,) = spawner.calls
     assert call.kwargs["cwd"] == request.cwd
-    assert call.kwargs["stdin"] is subprocess.DEVNULL
+    assert call.kwargs["stdin"] is subprocess.PIPE
+    assert call.prompt == request.prompt
+    assert request.prompt not in call.cmd
 
 
 def test_harness_codex_first_turn_command(
@@ -213,7 +215,8 @@ def test_harness_codex_first_turn_command(
     assert cmd[cmd.index("-C") + 1] == request.cwd
     assert f"developer_instructions={json.dumps(SYSTEM_PROMPT)}" in cmd
     assert 'model_reasoning_effort="high"' in cmd
-    assert cmd[-1] == request.prompt
+    assert cmd[-1] == "-"
+    assert spawner.calls[0].prompt == request.prompt
     state = json.loads(codex.state_path(request).read_text())
     assert state["thread_id"] == THREAD_ID
 
@@ -231,7 +234,8 @@ def test_harness_codex_correction_turn_resumes_same_thread(
     call = spawner.calls[1]
     assert call.cmd[:3] == [codex.CODEX_PATH, "exec", "resume"]
     assert "-C" not in call.cmd
-    assert call.cmd[-2:] == [THREAD_ID, correction.prompt]
+    assert call.cmd[-2:] == [THREAD_ID, "-"]
+    assert call.prompt == correction.prompt
     assert f"developer_instructions={json.dumps(SYSTEM_PROMPT)}" in call.cmd
     assert call.kwargs["cwd"] == correction.cwd
     assert result.text == '{"status":"success"}'
@@ -294,7 +298,7 @@ def test_codex_sol_effort_and_context(tmp_path: Path, thinking: str) -> None:
         cmd = codex.build_command(request, thread)
         assert cmd[cmd.index("-m") + 1] == "gpt-6.1-sol"
         assert f'model_reasoning_effort="{thinking}"' in cmd
-        assert cmd[-1] == request.prompt
+        assert cmd[-1] == "-"
     assert codex.context_window("openai", "gpt-6.1-sol") == 1_050_000
     assert codex.reasoning_effort("gpt-5.5", "max") == "xhigh"
 
@@ -359,7 +363,7 @@ def test_harness_correction_resumes_same_session(
 
     assert envelope.summary == "fixed"
     first, second = env.spawner.cmds
-    assert second[-1].startswith(CORRECTION_PREFIX)
+    assert env.spawner.calls[1].prompt.startswith(CORRECTION_PREFIX)
     session_id = run.agent_map["builder"]["session_id"]
     if name == "claude":
         conversation = agent_cc.session_uuid(session_id)

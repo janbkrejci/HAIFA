@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 from harness_fakes import THREAD_ID, fake_pi_catalog, fake_popen
@@ -65,22 +66,31 @@ def test_env_flag_reads_at_call_time(monkeypatch: pytest.MonkeyPatch) -> None:
 # ── claude ──────────────────────────────────────────────────────────────────
 
 
-def _claude_cmd(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
+def _claude_call(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Any:
     spawner = fake_popen(monkeypatch, ["claude_turn.jsonl"])
     agent_cc.run(_request(tmp_path, "claude-opus-5"))
     (call,) = spawner.calls
-    return call.cmd
+    return call
+
+
+def _claude_cmd(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[str]:
+    return list(_claude_call(monkeypatch, tmp_path).cmd)
 
 
 def test_claude_default_loads_repo_settings(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    cmd = _claude_cmd(monkeypatch, tmp_path)
+    call = _claude_call(monkeypatch, tmp_path)
+    cmd = call.cmd
     assert _value_after(cmd, "--setting-sources") == "project,local"
     assert "--strict-mcp-config" in cmd
     assert "--safe-mode" not in cmd
-    assert _value_after(cmd, "--system-prompt") == SYSTEM_PROMPT
-    assert cmd[-1] == "list the repo"
+    assert "--system-prompt" not in cmd
+    system_file = Path(_value_after(cmd, "--system-prompt-file"))
+    assert system_file.is_absolute()
+    assert system_file.read_text(encoding="utf-8") == SYSTEM_PROMPT
+    assert call.prompt == "list the repo"
+    assert "list the repo" not in cmd
 
 
 def test_claude_safe_mode_isolates(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -162,7 +172,9 @@ def test_pi_default_trusts_project_and_loads_repo_skills(
     assert Path(_value_after(cmd, "--skill")).is_absolute()
     assert "--no-context-files" not in cmd
     assert "--no-approve" not in cmd
-    assert _value_after(cmd, "--system-prompt") == SYSTEM_PROMPT
+    system_file = Path(_value_after(cmd, "--system-prompt"))
+    assert system_file.is_absolute()
+    assert system_file.read_text(encoding="utf-8") == SYSTEM_PROMPT
     assert _value_after(cmd, "-e") == "/x/ext.ts"
 
 
