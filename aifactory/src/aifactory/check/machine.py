@@ -75,9 +75,11 @@ class SystemMachine:
     def run(
         self, argv: Sequence[str], timeout: float = 15, cwd: Path | None = None
     ) -> Probe | None:
+        # Windows starts only an .exe by bare name; an npm shim (codex.cmd) needs its path.
+        program = shutil.which(argv[0]) or argv[0]
         try:
             proc = subprocess.run(
-                list(argv),
+                [program, *argv[1:]],
                 cwd=cwd,
                 capture_output=True,
                 text=True,
