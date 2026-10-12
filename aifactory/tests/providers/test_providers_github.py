@@ -469,3 +469,82 @@ def test_gh_missing(tmp_path: Path) -> None:
 def test_attempts_must_be_positive(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         _provider(tmp_path, [], attempts=0)
+
+
+def test_approve_without_approver_sends_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = install_fake_gh(tmp_path, monkeypatch)
+    assert _provider(tmp_path, []).approve(PR, HEAD) is False
+    assert log.calls() == []
+
+
+def test_approve_sends_review_as_approver(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = install_fake_gh(
+        tmp_path,
+        monkeypatch,
+        {"pr view": view(), "auth token": reply("gho_approver\n"), "api --method": reply("{}")},
+    )
+    assert _provider(tmp_path, [], github_approver=" bot ").approve(PR, HEAD) is True
+    (token,) = _pr_calls(log, "auth token")
+    assert token == ["auth", "token", "--user", "bot"]
+    (review,) = [c for c in log.calls() if c["argv"][0] == "api"]
+    assert review["argv"] == [
+        "api",
+        "--method",
+        "POST",
+        "repos/{owner}/{repo}/pulls/7/reviews",
+        "-f",
+        "event=APPROVE",
+        "-f",
+        f"commit_id={HEAD}",
+    ]
+    assert review["gh_token"] == "gho_approver"
+
+
+def test_approve_stops_when_head_moved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = install_fake_gh(tmp_path, monkeypatch, {"pr view": view()})
+    with pytest.raises(ProviderError) as info:
+        _provider(tmp_path, [], github_approver="bot").approve(PR, "c" * 40)
+    assert info.value.code == "approve_failed"
+    assert [argv for argv in log.argvs() if argv[0] != "pr"] == []
+
+
+def test_approve_merged_pr_is_not_reviewed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = install_fake_gh(tmp_path, monkeypatch, {"pr view": view("MERGED", merge=MERGE_SHA)})
+    assert _provider(tmp_path, [], github_approver="bot").approve(PR, HEAD) is False
+    assert [argv for argv in log.argvs() if argv[0] != "pr"] == []
+
+
+def test_approve_without_login_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = install_fake_gh(
+        tmp_path,
+        monkeypatch,
+        {"pr view": view(), "auth token": reply(exit=1, stderr="no account found for bot\n")},
+    )
+    with pytest.raises(ProviderError) as info:
+        _provider(tmp_path, [], github_approver="bot").approve(PR, HEAD)
+    assert info.value.code == "approve_failed"
+    assert "gh auth login" in info.value.message
+    assert [argv for argv in log.argvs() if argv[0] == "api"] == []
+
+
+def test_approve_review_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    install_fake_gh(
+        tmp_path,
+        monkeypatch,
+        {
+            "pr view": view(),
+            "auth token": reply("gho_approver\n"),
+            "api --method": reply(exit=1, stderr="Can not approve your own pull request\n"),
+        },
+    )
+    with pytest.raises(ProviderError) as info:
+        _provider(tmp_path, [], github_approver="bot").approve(PR, HEAD)
+    assert info.value.code == "approve_failed"
+    assert "Can not approve your own pull request" in info.value.message
+
+
+def test_approver_must_be_a_login() -> None:
+    with pytest.raises(ValueError):
+        ProjectSettings.model_validate({"git_provider": "github", "github_approver": "a b"})

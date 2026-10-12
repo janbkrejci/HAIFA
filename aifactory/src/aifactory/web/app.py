@@ -67,8 +67,8 @@ reviewer's verdict, runs), ``POST /api/review/{task_id}/approve`` (HTTP 200),
 ``approve_task``, ``return_task`` and ``resolve_task`` of ``aifactory.review``, like
 ``factory task approve|return|resolve``; return and resolve start ``factory task
 return|resolve`` as a separate process (``launcher.py``).
-Approve sends an Azure approval vote after the final push and before merge;
-providers without supported self-approval report reviewed: false.
+Approve sends an Azure approval vote, or a GitHub approve review as github_approver,
+after the final push and before merge; otherwise it reports reviewed: false.
 
 Settings: ``GET /api/settings`` (the form values of the shared ``.factory/config.yaml`` and
 the machine-local ``.factory/local.yaml``, allowed options, problems of the files on disk and

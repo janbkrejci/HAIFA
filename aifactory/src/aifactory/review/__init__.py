@@ -6,8 +6,9 @@
   ``task_prs``.
 * ``approve_task`` (``factory task approve``): one commit on the PR branch with
   ``status: done`` and a line in ``## Běhy``, then the merge; ``base`` is caught
-  up with the remote and the branch's worktrees are removed. Approve does NOT
-  send an approve review to the hosting yet: temporary, to be done (D11).
+  up with the remote and the branch's worktrees are removed. Before the merge the
+  provider sends a host approval where it can: an Azure vote, or a GitHub APPROVE
+  review as ``github_approver`` when that is set.
 * ``try_auto_merge`` (``automerge``): with ``auto_merge: true`` the PR of a
   succeeded run is approved and merged like ``task approve`` (``merged_by``
   ``auto-merge``) when the workflow has a review phase, the last review approved

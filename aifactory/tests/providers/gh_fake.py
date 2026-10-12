@@ -22,7 +22,9 @@ here = os.environ["AIFACTORY_FAKE_GH_STATE"]
 args = sys.argv[1:]
 stdin = sys.stdin.read()
 with open(os.path.join(here, "calls.jsonl"), "a", encoding="utf-8") as log:
-    log.write(json.dumps({"argv": args, "stdin": stdin, "cwd": os.getcwd()}) + "\\n")
+    token = os.environ.get("GH_TOKEN")
+    entry = {"argv": args, "stdin": stdin, "cwd": os.getcwd(), "gh_token": token}
+    log.write(json.dumps(entry) + "\\n")
 path = os.path.join(here, "responses.json")
 with open(path, encoding="utf-8") as f:
     responses = json.load(f)
