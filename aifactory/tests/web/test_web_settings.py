@@ -70,7 +70,10 @@ def test_get_settings(client: TestClient) -> None:
     assert data["options"] == {
         "git_provider": ["local", "github", "azure"],
         "merge_strategy": ["squash", "merge"],
+        "base_changes": ["direct", "pr"],
+        "base_pr_merge": ["manual", "auto"],
     }
+    assert shared["base_changes"] == "direct" and shared["base_pr_merge"] == "manual"
     assert data["files"] == {"shared": CONFIG, "local": LOCAL}
     assert data["shared_issues"] == [] and data["local_issues"] == []
     assert data["status"]["clean"] is True
