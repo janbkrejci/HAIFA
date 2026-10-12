@@ -24,6 +24,12 @@ then it gives up with ``merge_failed``.
 ``checks`` reads ``gh pr checks ID --json name,bucket``; a PR without checks
 (``no checks reported``) has ``none``. ``find_open_pr`` reads ``gh pr list --head BRANCH
 --state open`` so a publish adopts a PR the hosting has but ``task_prs`` does not.
+
+GitHub refuses an author's APPROVE review of their own PR. ``approve`` therefore sends
+the review as ``github_approver``, another account logged in to ``gh`` on this machine
+(``gh auth login``): its token comes from ``gh auth token --user LOGIN`` and goes to
+``gh api`` in ``GH_TOKEN``. The review is pinned to the expected head (``commit_id``).
+Without ``github_approver`` no review is sent and the PR is merged as before.
 """
 
 from __future__ import annotations
@@ -91,11 +97,12 @@ class GhCli:
         self.cwd = cwd
         self.executable = executable or os.environ.get("AIFACTORY_GH") or "gh"
 
-    def run(self, *args: str, stdin: str | None = None) -> str:
+    def run(self, *args: str, stdin: str | None = None, env: dict[str, str] | None = None) -> str:
         try:
             result = subprocess.run(
                 [self.executable, *args],
                 cwd=self.cwd,
+                env={**os.environ, **env} if env else None,
                 input=stdin if stdin is not None else "",
                 capture_output=True,
                 text=True,
@@ -232,6 +239,48 @@ class GitHubProvider(GitProvider):
             if attempt < attempts:
                 self.sleep(self.delay)
         return status
+
+    def approve(self, pr: PullRequest, head_sha: str) -> bool:
+        """An APPROVE review as ``github_approver``; False when none is configured."""
+        login = self.settings.github_approver
+        if login is None:
+            return False
+        current = self._status_once(pr)
+        if current.state == MERGED:
+            return False  # allow existing merge recovery without claiming a new review
+        if current.state != OPEN or current.head_sha != head_sha:
+            raise ProviderError(
+                "approve_failed",
+                f"PR {pr.id} approval head changed or PR not open: "
+                f"{current.state}, {current.head_sha} != {head_sha}; merge stopped",
+            )
+        try:
+            token = self.gh.run("auth", "token", "--user", login).strip()
+        except ProviderError as exc:
+            raise ProviderError(
+                "approve_failed",
+                f"no gh token for approver {login} (run `gh auth login` as {login}): {exc.message}",
+            ) from exc
+        if not token:
+            raise ProviderError("approve_failed", f"gh returned an empty token for {login}")
+        try:
+            self.gh.run(
+                "api",
+                "--method",
+                "POST",
+                f"repos/{{owner}}/{{repo}}/pulls/{pr.id}/reviews",
+                "-f",
+                "event=APPROVE",
+                "-f",
+                f"commit_id={head_sha}",
+                env={"GH_TOKEN": token},
+            )
+        except ProviderError as exc:
+            raise ProviderError(
+                "approve_failed",
+                f"GitHub approve review of PR {pr.id} as {login} failed: {exc.message}",
+            ) from exc
+        return True
 
     def checks(self, pr: PullRequest) -> ChecksStatus:
         """``failing`` when any check failed or was cancelled, else ``pending`` / ``passing``."""

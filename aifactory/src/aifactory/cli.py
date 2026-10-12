@@ -1690,8 +1690,8 @@ task publish: for the last succeeded run without a pull request (pr_failed) push
   progress (already_running): exit 2, nothing changed. Push or PR failed again: pr_failed,
   exit 1. A push failing on the network (RPC, HTTP2, hung up, timeout) is retried a few
   times; a rejected push is not.
-task approve: on conflict run 'factory task resolve <task-id>'. No approve review is
-  sent yet (temporary, D11).
+task approve: on conflict run 'factory task resolve <task-id>'. On GitHub an approve review
+  is sent as github_approver (config.yaml) when it is set; otherwise none is sent.
 task resolve: a run that fails leaves the branch as it was before the rebase.
 task stop: the run is marked stopped; its worktree and branch stay (task clean).
   A paused run can be stopped too.

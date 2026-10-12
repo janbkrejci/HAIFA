@@ -742,7 +742,9 @@ Run states in `data.run.state` and `task_runs`: `running`, `succeeded`, `failed`
    `{{runs_heading}}` line to the PR, merges it, updates base from the remote and removes
    the branch's worktrees.
 2. On `conflict`, resolve first (below), then approve again.
-3. Note (D11, temporary): no approve review is sent to the hosting yet.
+3. On GitHub an approve review is sent as `github_approver` (`config.yaml`, another
+   account logged in to `gh`) when it is set; otherwise none is sent. Azure DevOps gets
+   an approval vote. `data.reviewed` says whether a host approval was sent.
 
 ### Publish
 

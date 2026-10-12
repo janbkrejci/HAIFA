@@ -42,6 +42,7 @@ Když base přijímá změny jen přes pull request, nastav repu `base_changes: 
 | `git_provider` | `local` | `local`, `github` nebo `azure`. |
 | `azure` | — | `organization`, `project`, `repository` pro Azure DevOps. |
 | `merge_strategy` | `squash` | `squash` nebo `merge`. |
+| `github_approver` | — | GitHub login, kterým factory při schválení PR úkolu pošle approve review. Musí to být jiný účet než autor PR, přihlášený v `gh` na tomto počítači (`gh auth login`). Bez něj se review neposílá a PR se rovnou merguje. |
 | `base_changes` | `direct` | Jak factory mění base: `direct` commit a push, `pr` pull request pro každou změnu (instalace, konfigurace, knihovna, backlog, odebrání). |
 | `base_pr_merge` | `manual` | Pull requesty factory s `base_changes: pr`: `manual` je mergne člověk, `auto` je factory hned schválí (Azure DevOps), mergne (GitHub přes `--admin`) a posune base. |
 | `docs_root` | `factory` | Kořen `backlog/`, `specs/` a `docs/`. |

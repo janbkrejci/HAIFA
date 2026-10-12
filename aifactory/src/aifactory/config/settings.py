@@ -231,6 +231,14 @@ class ProjectSettings(BaseModel):
             "fast-forwards the local base."
         ),
     )
+    github_approver: str | None = Field(
+        default=None,
+        description=(
+            "GitHub login that sends the approve review when a task PR is approved "
+            "(git_provider github). It must be another account than the PR author, "
+            "logged in to gh on the machine (gh auth login). Unset: no review is sent."
+        ),
+    )
     test_timeout: int | None = Field(
         default=None,
         gt=0,
@@ -337,6 +345,16 @@ class ProjectSettings(BaseModel):
         text = value.strip()
         if not text:
             raise ValueError("must not be empty")
+        return text
+
+    @field_validator("github_approver")
+    @classmethod
+    def _approver(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        text = value.strip()
+        if not text or any(ch.isspace() for ch in text):
+            raise ValueError("must be a GitHub login")
         return text
 
 

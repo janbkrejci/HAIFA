@@ -118,7 +118,7 @@ class _Gh(GhCli):
         self.admin_ok = admin_ok
         self.calls: list[tuple[str, ...]] = []
 
-    def run(self, *args: str, stdin: str | None = None) -> str:
+    def run(self, *args: str, stdin: str | None = None, env: dict[str, str] | None = None) -> str:
         self.calls.append(args)
         if args[:2] == ("pr", "merge") and ("--admin" not in args or not self.admin_ok):
             raise GhError(args, 1, "base branch policy prohibits the merge\n")
