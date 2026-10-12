@@ -817,10 +817,12 @@ def plan_config(
     """The plan of ``config set|remove|move`` for its target; writes nothing."""
     from aifactory.library.inherit import library_snapshot
     from aifactory.library.install import _repo_root
+    from aifactory.providers.publish import uses_pr
 
     root = _repo_root(path)
-    target: Target = "pr" if commit and pr else "direct" if commit else "worktree"
     state = read_state(root, "base" if commit else "worktree")
+    pr = commit and uses_pr(state.settings, pr)
+    target: Target = "pr" if pr else "direct" if commit else "worktree"
     library = library_snapshot(environ)
     if command == "set":
         change = plan_set(state, library, type, name, **options)
@@ -967,6 +969,7 @@ class ConfigResult:
     pr: PullRequest | None = None
     extra_warnings: tuple[str, ...] = ()
     library_commit: str | None = None  # move: the library commit written first
+    merged: bool = False
 
     @property
     def warnings(self) -> list[str]:
@@ -986,6 +989,7 @@ class ConfigResult:
             "advanced": self.advanced,
             "branch": self.branch,
             "pr": pr,
+            "merged": self.merged,
             **({"library_commit": self.library_commit} if self.plan.command == "move" else {}),
         }
 
@@ -1144,15 +1148,33 @@ def _write_repo(plan: ConfigPlan, command: Command, message: str | None) -> Conf
     settings = plan.state.settings
     try:
         if plan.target == "pr":
+            provider = get_provider(settings, root)
             result = publish.publish_pr(
                 root,
-                provider=get_provider(settings, root),
+                provider=provider,
                 settings=settings,
                 plan=plan.publish,
                 message=subject,
                 body=_body(plan),
                 prefix=CONFIG_BRANCH_PREFIX,
             )
+            if settings.base_pr_merge == "auto":
+                store = _store(root)
+                try:
+                    result = publish.finish_pr(
+                        root,
+                        provider=provider,
+                        settings=settings,
+                        plan=plan.publish,
+                        result=result,
+                        message=subject,
+                        store=store,
+                        materialize=True,
+                        command=f"config {command}",
+                    )
+                finally:
+                    if store is not None:
+                        store.close()
         else:
             store = _store(root)
             try:
@@ -1182,6 +1204,7 @@ def _write_repo(plan: ConfigPlan, command: Command, message: str | None) -> Conf
         branch=result.branch,
         pr=result.pr,
         extra_warnings=tuple(result.warnings),
+        merged=result.merged,
     )
 
 

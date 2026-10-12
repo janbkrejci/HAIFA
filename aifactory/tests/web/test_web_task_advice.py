@@ -230,3 +230,41 @@ def test_advisor_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert advisors[0]["harness"] == "claude"
     assert advisors[1]["harness"] == "claude" and advisors[1]["model"] == "sonnet"
     assert advisors[2]["harness"] == "codex" and advisors[2]["model"] == "gpt-5.5"
+
+
+def test_available_tasks_share_the_context_budget(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+    from concurrent.futures import ThreadPoolExecutor
+
+    from aifactory.engine import agents
+    from aifactory.engine.data_types import AgentResult
+    from aifactory.harness.check import HarnessStatus
+    from aifactory.workflow.adaptive import recommend
+
+    repo = make_repo(tmp_path / "repo")
+    prompts: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "aifactory.workflow.adaptive.check_harness",
+        lambda name: HarnessStatus(name, "fake", "fake", "1"),
+    )
+
+    def run(request: Any, **kwargs: Any) -> AgentResult:
+        prompts.append(json.loads(request.prompt[request.prompt.index("{") :]))
+        return AgentResult(text=json.dumps(proposal()), returncode=0, tokens=1, cost=0.0)
+
+    monkeypatch.setattr(agents.INTERFACES["claude"], "run", run)
+    ctx = context(repo, "P01-S01-T01", {"body": "Live body"}, task_parameters=True)
+    tasks = [{"id": f"P01-S01-T{n:04}", "title": "t" * 200, "depends_on": []} for n in range(1000)]
+    ctx.update(
+        task_parameters=True, advisor={"harness": "claude", "model": "opus"}, available_tasks=tasks
+    )
+    with ThreadPoolExecutor(1) as pool:
+        result = pool.submit(recommend, repo, ctx, "task-budget", threading.Event()).result()
+    (payload,) = prompts
+    kept = payload["available_tasks"]
+    assert 0 < len(kept) < len(tasks)
+    assert kept == tasks[: len(kept)]
+    assert sum(len(json.dumps(item).encode()) for item in kept) <= 80_000
+    assert "available_tasks: remaining context omitted" in result["warnings"]

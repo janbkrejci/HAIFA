@@ -15,6 +15,10 @@ const emit = defineEmits<{ added: [result: AddRepoResult]; reinspect: [path: str
 
 const adding = ref(false)
 const addError = ref<string | null>(null)
+/** `base_changes: pr`: a base that takes changes only through pull requests (the install too). */
+const viaPr = ref(false)
+/** `base_pr_merge: auto`: factory approves where allowed and merges its own PRs at once. */
+const autoMerge = ref(false)
 
 const state = computed(() => props.inspect.factory?.state ?? null)
 const kind = computed<'problem' | 'registered' | 'add'>(() => {
@@ -31,11 +35,12 @@ async function add() {
   adding.value = true
   addError.value = null
   try {
-    emit('added', await addRepo(root.value))
+    emit('added', await addRepo(root.value, viaPr.value ? { base_changes: 'pr', base_pr_merge: autoMerge.value ? 'auto' : 'manual' } : {}))
   } catch (err) {
     if (err instanceof ApiError) {
       const data = (err.data && typeof err.data === 'object' ? err.data : {}) as Partial<RepoProblem>
       addError.value = problemText({ ...data, code: err.code, message: err.message }, props.inspect)
+      if (err.code === 'push_failed' && !viaPr.value) addError.value += ` Pokud ${base.value} přijímá změny jen přes pull request, zaškrtni „Změny base přes pull request“.`
     } else {
       addError.value = errorText(err)
     }
@@ -94,9 +99,20 @@ async function add() {
     <template v-else>
       <p v-if="kind === 'registered'" class="note" data-test="inspect-registered">Repo už je v dashboardu.</p>
       <p class="note" data-test="inspect-install-note">
-        {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory/config.yaml (existující ponechá), doplní .gitignore a commitne to do {{ base }}.
+        {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory/config.yaml (existující ponechá), doplní .gitignore a
+        <template v-if="viaPr && autoMerge">otevře s tím pull request do {{ base }} a hned ho mergne.</template>
+        <template v-else-if="viaPr">otevře s tím pull request do {{ base }}. Factory začne fungovat po jeho mergi a akci Stáhnout konfiguraci z base v záložce Factory.</template>
+        <template v-else>commitne to do {{ base }}.</template>
       </p>
-      <p v-if="adding" class="note" data-test="inspect-adding">Zapisuji factory a commituji do {{ base }}…</p>
+      <label class="via-pr" data-test="inspect-via-pr">
+        <input v-model="viaPr" type="checkbox" :disabled="adding" />
+        Změny base přes pull request ({{ base }} nepřijímá přímý push): instalace, konfigurace, knihovna, backlog i odebrání
+      </label>
+      <label v-if="viaPr" class="via-pr" data-test="inspect-auto-merge">
+        <input v-model="autoMerge" type="checkbox" :disabled="adding" />
+        Pull requesty factory hned schválit a mergnout (GitHub s --admin, Azure DevOps vlastním schválením)
+      </label>
+      <p v-if="adding" class="note" data-test="inspect-adding">{{ viaPr ? (autoMerge ? 'Zapisuji factory a merguji pull request…' : 'Zapisuji factory a otevírám pull request…') : `Zapisuji factory a commituji do ${base}…` }}</p>
       <p v-if="addError" class="problem" data-test="inspect-add-error">{{ addError }}</p>
       <div class="actions">
         <template v-if="kind === 'registered'">
@@ -146,6 +162,13 @@ dd {
 .note {
   margin: 0;
   color: var(--dim);
+}
+
+.via-pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
 }
 
 .warn {

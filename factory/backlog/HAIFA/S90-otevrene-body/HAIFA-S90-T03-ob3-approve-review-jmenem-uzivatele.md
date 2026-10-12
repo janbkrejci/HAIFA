@@ -2,6 +2,7 @@
 id: HAIFA-S90-T03
 title: OB3 Approve review jménem uživatele
 status: todo
+workflow: build-test-review
 depends_on: []
 ---
 

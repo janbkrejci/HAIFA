@@ -541,6 +541,13 @@ one commit, after the user has seen the plan.
    - `--docs-root DIR` (default `factory`). `$specs_dir/` and `$docs_dir/` in `writes`
      become `<docs_root>/specs/` and `<docs_root>/docs/`.
    - `--pr` plans a pull request; the direct-only blockers then do not apply.
+   - `--base-changes pr` writes `base_changes: pr`: from now on every change factory makes
+     to base (install, config commit, config set/remove/move, backlog commit, uninstall)
+     goes through a pull request, this install too. `--base-pr-merge auto` writes
+     `base_pr_merge: auto`: factory approves its own pull request where the hosting allows
+     it, merges it at once (GitHub with `gh pr merge --admin`) and fast-forwards the local
+     base (`data.merged`); a failed merge leaves the PR open with a warning. Ask the user
+     before choosing either.
 3. Show the user the files, the blockers, the warnings and the digest.
 4. When the user agrees: `factory init --commit --expect <digest> [-m TEXT] --json`. It is
    the same plan as one commit on base. Repeat all options (base, directories and

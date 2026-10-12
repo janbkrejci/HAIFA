@@ -38,7 +38,7 @@ aifactory: an agent runs as if claude had been started from the CLI in the repo.
 `--setting-sources project,local` loads the repo's `.claude/settings*.json`,
 CLAUDE.md and `.claude/skills/`, and nothing from the operator's `~/.claude`
 (no user hooks, plugins, skills, agents or CLAUDE.md). The agent's role still
-comes from `--system-prompt`; the repo's instructions ride along natively.
+comes from `--system-prompt-file`; the repo's instructions ride along natively.
 `CLAUDE_SAFE_MODE=1` restores full isolation (`--safe-mode`, no repo files).
 """
 
@@ -53,7 +53,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .data_types import AgentRequest, AgentResult
-from .utils import env_flag, now_iso, operator_env
+from .utils import env_flag, now_iso, operator_env, prompt_file, send_stdin
 
 CLAUDE_PATH = os.environ.get("CLAUDE_CODE_PATH", "claude")
 
@@ -382,7 +382,10 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
         "--effort", EFFORT_MAP.get(request.thinking, "medium"),
         "--permission-mode", PERMISSION_MODE,
         "--permission-prompts", "none",   # nobody is at the keyboard; never wait for one
-        "--system-prompt", request.system_prompt,
+        # aifactory 3.1: both prompts stay off the command line (WinError 206).
+        "--system-prompt-file", prompt_file(request.session_dir,
+                                            f"{conversation}.system.md",
+                                            request.system_prompt),
     ]
     # Create the conversation once, rejoin it every time after — the whole
     # reason a gate correction keeps the agent's context instead of restarting.
@@ -407,7 +410,7 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
     else:
         # aifactory: repo settings, CLAUDE.md and .claude/skills; never ~/.claude.
         cmd += ["--setting-sources", SETTING_SOURCES]
-    cmd.append(request.prompt)
+    # aifactory 3.1: the user prompt goes through stdin, not argv.
 
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -419,13 +422,14 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
     # failed spawn as started would make every later turn `--resume` an id
     # that does not exist.
     created = False
-    # stdin is DEVNULL for the same reason pi's is: the prompt travels in argv,
-    # and an inherited stdin lets the child wait forever for input that is
-    # never coming.
-    process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+    # aifactory 3.1: stdin is a pipe that carries the prompt and is then closed,
+    # so the child sees EOF; an inherited stdin would let it wait forever for
+    # input that is never coming.
+    process = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, bufsize=1, cwd=request.cwd,
                                env=operator_env(), encoding="utf-8")
+    send_stdin(process, request.prompt)
     if on_spawn:
         on_spawn(process.pid)
     with raw_path.open("a", encoding="utf-8", newline="\n") as raw:

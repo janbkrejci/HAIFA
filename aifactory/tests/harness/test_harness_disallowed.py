@@ -38,9 +38,9 @@ def test_claude_command_carries_disallowed_tools(
     at = cmd.index("--disallowedTools")
     rules = ["Bash(just check)", "Bash(just test *)", "Bash(pytest)"]
     assert cmd[at + 1 : at + 4] == rules
-    # the flag is variadic: an option must end it before the prompt
+    # the flag is variadic: an option must end it
     assert cmd[at + 4].startswith("--")
-    assert cmd[-1].strip() == "review it"
+    assert env.spawner.calls[0].prompt.strip() == "review it"
 
 
 def test_claude_command_without_disallowed_has_no_flag(

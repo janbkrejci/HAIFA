@@ -31,7 +31,7 @@ import hashlib
 import os
 import sys
 from collections.abc import Iterable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -285,6 +285,77 @@ class PublishResult:
     branch: str | None = None
     pr: PullRequest | None = None
     warnings: tuple[str, ...] = ()
+    merged: bool = False
+
+
+def uses_pr(settings: ProjectSettings, pr: bool = False) -> bool:
+    """Whether a change of base goes to a pull request: asked for, or ``base_changes: pr``."""
+    return pr or settings.base_changes == PR
+
+
+def _same_change(root: Path, merged: str, plan: PublishPlan, commit: str) -> bool:
+    """`merged` is one commit on the planned base with the tree of `commit` (our change only)."""
+    parents = git.git(root, "rev-list", "--parents", "-n", "1", merged).split()[1:]
+    return parents == [plan.base_sha] and git.rev_parse(root, f"{merged}^{{tree}}") == (
+        git.rev_parse(root, f"{commit}^{{tree}}")
+    )
+
+
+def finish_pr(
+    root: Path,
+    *,
+    provider: GitProvider,
+    settings: ProjectSettings,
+    plan: PublishPlan,
+    result: PublishResult,
+    message: str,
+    store: TaskRunStore | None,
+    materialize: bool = False,
+    command: str = "config commit",
+) -> PublishResult:
+    """``base_pr_merge: auto``: approve and merge the PR `result` opened, then move base.
+
+    The local provider's PR is its branch: base fast-forwards to the branch commit (pushed
+    when there is a remote). A hosted PR is merged by the provider (``merge_own``) and the
+    local base is fast-forwarded to the remote base when that is exactly this change.
+    A failed merge leaves the PR open with a warning; nothing raises.
+    """
+    if settings.base_pr_merge != "auto" or result.pr is None:
+        return result
+    base, remote = plan.base, settings.remote
+    warnings = list(result.warnings)
+    subject = message.strip().splitlines()[0] if message.strip() else result.pr.title
+    try:
+        if provider.name == "local":
+            merged: str | None = result.commit
+            if git.has_remote(root, remote):
+                git.push_ref(root, remote, result.commit, base)
+        else:
+            provider.merge_own(result.pr, result.commit, subject)
+            git.fetch(root, remote, base)
+            merged = git.remote_tip(root, remote, base)
+    except ProviderError as exc:
+        warnings.append(f"pull request {result.pr.url} stays open: {exc.message}")
+        return replace(result, warnings=tuple(warnings))
+    advanced = False
+    if merged is not None and _same_change(root, merged, plan, result.commit):
+        try:
+            warnings += _advance(
+                root,
+                base,
+                merged,
+                plan.base_sha,
+                plan.files,
+                store,
+                materialize=materialize,
+                command=command,
+            )
+        except Exception as exc:  # merged on the hosting: nothing is rolled back
+            warnings.append(f"{base} not advanced: {exc}")
+        advanced = git.rev_parse(root, f"refs/heads/{base}") == merged
+    if not advanced:
+        warnings.append(f"{base} stays at {plan.base_sha[:7]}; run factory config pull")
+    return replace(result, advanced=advanced, merged=True, warnings=tuple(warnings))
 
 
 def _changes(root: Path, files: Sequence[PlannedFile]) -> list[git.TreeChange]:
@@ -535,9 +606,80 @@ class PullResult:
         }
 
 
-def _dirty(checkout: Path) -> bool:
-    proc = git.run_bytes(checkout, ["status", "--porcelain", "--untracked-files=no"], env=_READ_ENV)
-    return proc.returncode != 0 or bool(proc.stdout.strip())
+def _pull_files(root: Path, ours: str, theirs: str) -> list[PlannedFile]:
+    """The files a pull from `ours` to `theirs` changes, with both contents."""
+    files: list[PlannedFile] = []
+    if theirs == ours:
+        return files
+    proc = git.run_bytes(root, ["diff", "--name-only", "-z", ours, theirs], env=_READ_ENV)
+    if proc.returncode:
+        raise ProviderError("pull_failed", "cannot read base diff")
+    for raw in proc.stdout.split(b"\0"):
+        if not raw:
+            continue
+        path = raw.decode("utf-8")
+        old, new = git.blob_at(root, ours, path), git.blob_at(root, theirs, path)
+        files.append(
+            PlannedFile(
+                path,
+                "create" if old is None else "delete" if new is None else "modify",
+                old[0] if old else None,
+                old[1] if old else None,
+                new[0] if new else None,
+                git.read_blob(root, new[1]) if new else None,
+                git.read_blob(root, old[1]) if old else None,
+            )
+        )
+    return files
+
+
+def _brought(checkout: Path, f: PlannedFile | None) -> bool:
+    """The working tree already has what the pull brings to this path."""
+    if f is None:
+        return False
+    disk = checkout / f.path
+    if f.content is None:
+        return not disk.exists() and not disk.is_symlink()
+    return disk.is_file() and not disk.is_symlink() and disk.read_bytes() == f.content
+
+
+def _dirty(checkout: Path, files: Sequence[PlannedFile] = ()) -> bool:
+    """Uncommitted changes of tracked files, except those the pull brings exactly.
+
+    A change factory proposed through a pull request (``base_changes: pr``) stays in the
+    working tree until the PR is merged; pulling that merge is no conflict.
+    """
+    proc = git.run_bytes(
+        checkout, ["status", "--porcelain", "-z", "--untracked-files=no"], env=_READ_ENV
+    )
+    if proc.returncode != 0:
+        return True
+    planned = {f.path: f for f in files}
+    entries = [e for e in proc.stdout.decode("utf-8", "surrogateescape").split("\0") if e]
+    skip = False
+    for entry in entries:
+        if skip:  # the source path of a rename
+            skip = False
+            if not _brought(checkout, planned.get(entry)):
+                return True
+            continue
+        code, path = entry[:2], entry[3:]
+        if "R" in code or "C" in code:
+            skip = True
+        if not _brought(checkout, planned.get(path)):
+            return True
+    return False
+
+
+def _stage_brought(checkout: Path, files: Sequence[PlannedFile]) -> None:
+    """Stage the paths whose working tree already has the pulled state, so the
+    fast-forward of the checkout takes them as they are."""
+    add = [f.path for f in files if f.content is not None and _brought(checkout, f)]
+    remove = [f.path for f in files if f.content is None and _brought(checkout, f)]
+    if add:
+        git.git(checkout, "add", "--", *add)
+    if remove:
+        git.git(checkout, "update-index", "--force-remove", "--", *remove)
 
 
 def plan_pull_base(root: Path, *, settings: ProjectSettings, store: TaskRunStore) -> dict[str, Any]:
@@ -557,34 +699,15 @@ def plan_pull_base(root: Path, *, settings: ProjectSettings, store: TaskRunStore
             theirs = ours
         elif theirs != ours and not git.is_ancestor(root, ours, theirs):
             blockers.append(Blocker("base_diverged", f"{base} and {remote}/{base} have diverged"))
-        where = git.checked_out_in(root, base)
-        if where is not None and _dirty(where):
-            blockers.append(Blocker("dirty_base", f"{base} has uncommitted changes"))
+    files = _pull_files(root, ours, theirs) if ours else []
+    fetched = bool(ours) and git.has_remote(root, remote)
+    where = git.checked_out_in(root, base) if fetched else None
+    if where is not None and _dirty(where, files):
+        blockers.append(Blocker("dirty_base", f"{base} has uncommitted changes"))
     with store.serialized():
         live = store.live_runs_locked()
         if live:
             blockers.append(Blocker("run_in_progress", f"{len(live)} live run(s); wait for them"))
-    files: list[PlannedFile] = []
-    if ours and theirs != ours:
-        proc = git.run_bytes(root, ["diff", "--name-only", "-z", ours, theirs], env=_READ_ENV)
-        if proc.returncode:
-            raise ProviderError("pull_failed", "cannot read base diff")
-        for raw in proc.stdout.split(b"\0"):
-            if not raw:
-                continue
-            path = raw.decode("utf-8")
-            old, new = git.blob_at(root, ours, path), git.blob_at(root, theirs, path)
-            files.append(
-                PlannedFile(
-                    path,
-                    "create" if old is None else "delete" if new is None else "modify",
-                    old[0] if old else None,
-                    old[1] if old else None,
-                    new[0] if new else None,
-                    git.read_blob(root, new[1]) if new else None,
-                    git.read_blob(root, old[1]) if old else None,
-                )
-            )
     digest = hashlib.sha256(
         f"aifactory-pull-v1\0{root.resolve()}\0{base}\0{remote}\0{ours}\0{theirs}".encode()
     ).hexdigest()
@@ -637,7 +760,8 @@ def pull_base(
             "base_diverged", f"{base} and {remote}/{base} have diverged; nothing changed"
         )
     where = git.checked_out_in(root, base)
-    if where is not None and _dirty(where):
+    files = _pull_files(root, ours, theirs)
+    if where is not None and _dirty(where, files):
         raise ProviderError(
             "dirty_base", f"{base} is checked out in {where} with uncommitted changes"
         )
@@ -647,5 +771,7 @@ def pull_base(
             raise ProviderError(
                 "run_in_progress", f"{_run_message(live[0])}; wait for it or stop it"
             )
+        if where is not None:
+            _stage_brought(where, files)
         git.advance_branch(root, base, theirs, ours, command="config pull")
     return PullResult(base, remote, ours, theirs, True)

@@ -167,6 +167,12 @@ PENDING_SEED_REPLACEMENTS: dict[tuple[str, str], tuple[bytes, bytes]] = {
 }
 
 
+def _skip_without_repo_copy(name: str) -> None:
+    """Skip an agent HAIFA moved to the library: the repo has no copy to compare."""
+    if not (HAIFA_ROOT / ".factory/prompts" / name).is_dir():
+        pytest.skip(f"{name}: HAIFA uses the library copy (no .factory/prompts/{name})")
+
+
 def _haifa_prompt(name: str, kind: str) -> bytes:
     return (HAIFA_ROOT / ".factory/prompts" / name / f"{kind}.md").read_bytes()
 
@@ -187,6 +193,7 @@ def _pending(name: str) -> bool:
 @pytest.mark.parametrize("name", HAIFA_AGENTS)
 @pytest.mark.parametrize("kind", ["system", "user"])
 def test_seed_prompts_equal_haifa(name: str, kind: str) -> None:
+    _skip_without_repo_copy(name)
     seed = (SEED_DIR / "agents" / name / f"{kind}.md").read_bytes()
     haifa = _haifa_prompt(name, kind)
     block = PENDING_SEED_BLOCKS.get((name, kind))
@@ -220,6 +227,7 @@ def test_seed_bindings_preserve_haifa_roles() -> None:
 
 @pytest.mark.parametrize("name", HAIFA_AGENTS)
 def test_seed_version_equals_haifa_repo_copy(name: str) -> None:
+    _skip_without_repo_copy(name)
     if _pending(name):
         pytest.skip(f"{name}: .factory/prompts lacks a seed addition (PENDING_SEED_BLOCKS)")
     seed = load_library_item(SEED_DIR, "agent", name)

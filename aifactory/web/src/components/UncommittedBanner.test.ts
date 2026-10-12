@@ -26,13 +26,21 @@ function config(props: Partial<{ status: CommitStatus | null; statusError: strin
   })
 }
 
-function backlog(props: Partial<{ status: CommitStatus | null; committing: boolean; commitError: string | null }> = {}) {
+function backlog(props: Partial<{ status: CommitStatus | null; committing: boolean; commitError: string | null; pr: { url: string; branch: string } | null }> = {}) {
   return mount(UncommittedBanner, {
     props: { kind: 'backlog', title: 'Backlog', commitLabel: 'Commitnout backlog', floating: true, status: BACKLOG, ...props },
   })
 }
 
 describe('UncommittedBanner', () => {
+  it('links the pull request the changes wait in', () => {
+    const wrapper = backlog({ pr: { url: 'https://github.com/o/r/pull/9', branch: 'factory-backlog/2' } })
+    const link = wrapper.get('[data-test="backlog-pr"] a')
+    expect(link.attributes('href')).toBe('https://github.com/o/r/pull/9')
+    expect(link.text()).toBe('factory-backlog/2')
+    expect(backlog().find('[data-test="backlog-pr"]').exists()).toBe(false)
+  })
+
   it('renders nothing for a clean or unknown status', () => {
     expect(config({ status: CLEAN_STATUS }).text()).toBe('')
     expect(config({ status: null }).text()).toBe('')

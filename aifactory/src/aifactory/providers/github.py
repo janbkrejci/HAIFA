@@ -316,6 +316,33 @@ class GitHubProvider(GitProvider):
                 raise MergeFailed("merge_failed", detail) from exc
             return self._status_once(pr).merge_sha
 
+    def merge_own(self, pr: PullRequest, head_sha: str, subject: str) -> str | None:
+        """GitHub refuses an author's own approval: merge, else merge with ``--admin``.
+
+        ``--admin`` merges past required reviews and checks when the operator administers
+        the repository; otherwise the PR stays open (``MergeFailed``).
+        """
+        args = (
+            "pr",
+            "merge",
+            pr.id,
+            f"--{self._strategy(None)}",
+            "--match-head-commit",
+            head_sha,
+            "--subject",
+            subject,
+        )
+        try:
+            self.gh.run(*args)
+        except GhError as first:
+            try:
+                self.gh.run(*args, "--admin")
+            except GhError as exc:
+                plain = first.stderr.strip() or first.message
+                detail = exc.stderr.strip() or exc.message
+                raise MergeFailed("merge_failed", f"{plain}; with --admin: {detail}") from exc
+        return self._status_once(pr).merge_sha
+
     def update_pr(self, pr: PullRequest, body: str) -> None:
         self.gh.run("pr", "edit", pr.id, "--body-file", "-", stdin=body)
 

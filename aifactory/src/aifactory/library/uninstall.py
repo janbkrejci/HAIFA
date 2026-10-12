@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from aifactory.config import ProjectSettings
 from aifactory.config.run import worktree_base
 from aifactory.library.install import GITIGNORE_LINES, _repo_root
 from aifactory.library.install_commit import FACTORY_DIR, _store, _tree_files
@@ -22,13 +23,27 @@ from aifactory.providers import git
 from aifactory.providers.base import ProviderError
 from aifactory.providers.publish import (
     DIRECT,
+    PR,
     Action,
     Blocker,
     PlannedFile,
     PublishPlan,
     direct_blockers,
     plan_digest,
+    uses_pr,
 )
+
+UNINSTALL_BRANCH_PREFIX = "factory-uninstall/"
+
+
+def _settings(root: Path) -> ProjectSettings:
+    """The repository's settings; the defaults when its configuration is invalid."""
+    from aifactory.config import load_run_config
+
+    try:
+        return load_run_config(root).config.settings
+    except Exception:  # an invalid config still uninstalls, with the default remote
+        return ProjectSettings()
 
 
 @dataclass
@@ -51,6 +66,8 @@ class UninstallResult:
     commit: str | None = None
     pushed: bool = False
     warnings: list[str] = field(default_factory=list)
+    pr: dict[str, str] | None = None
+    merged: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -58,6 +75,8 @@ class UninstallResult:
             "committed": self.committed,
             "commit": self.commit,
             "pushed": self.pushed,
+            "pr": self.pr,
+            "merged": self.merged,
         }
 
 
@@ -105,22 +124,25 @@ def plan_uninstall(path: Path, environ: Mapping[str, str] | None = None) -> Unin
         ).splitlines()
         if line.strip()
     ]
-    from aifactory.config import load_run_config
-
-    try:
-        remote = load_run_config(root).config.settings.remote
-    except Exception:  # an invalid config still uninstalls; the default remote then
-        remote = "origin"
-    store = _store(root)
-    try:
-        blockers, _notes = direct_blockers(
-            root, remote=remote, base=base, base_sha=base_sha, store=store, check_remote=bool(files)
-        )
-    except ProviderError as exc:
-        raise LibraryStoreError(exc.code, exc.message) from exc
-    finally:
-        if store is not None:
-            store.close()
+    settings = _settings(root)
+    pr = uses_pr(settings)
+    blockers: list[Blocker] = []
+    if not pr:
+        store = _store(root)
+        try:
+            blockers, _notes = direct_blockers(
+                root,
+                remote=settings.remote,
+                base=base,
+                base_sha=base_sha,
+                store=store,
+                check_remote=bool(files),
+            )
+        except ProviderError as exc:
+            raise LibraryStoreError(exc.code, exc.message) from exc
+        finally:
+            if store is not None:
+                store.close()
     if dirty:
         blockers.insert(
             0,
@@ -134,7 +156,7 @@ def plan_uninstall(path: Path, environ: Mapping[str, str] | None = None) -> Unin
     publish = PublishPlan(
         base=base,
         base_sha=base_sha,
-        target=DIRECT,
+        target=PR if pr else DIRECT,
         files=tuple(files),
         blockers=tuple(blockers),
         digest=plan_digest(base, base_sha, files),
@@ -143,8 +165,8 @@ def plan_uninstall(path: Path, environ: Mapping[str, str] | None = None) -> Unin
 
 
 def uninstall(path: Path, *, environ: Mapping[str, str] | None = None) -> UninstallResult:
-    """Commit the removal of ``.factory/``."""
-    from aifactory.providers import publish
+    """Commit the removal of ``.factory/`` (or open its pull request)."""
+    from aifactory.providers import get_provider, publish
 
     root = _repo_root(path)
     plan = plan_uninstall(root, environ)
@@ -153,23 +175,42 @@ def uninstall(path: Path, *, environ: Mapping[str, str] | None = None) -> Uninst
         raise LibraryStoreError(b.code, b.message, data=plan.to_json())
     if not plan.publish.files:
         return UninstallResult(plan, False)
-    from aifactory.config import ProjectSettings, load_run_config
-
-    try:
-        settings = load_run_config(root).config.settings
-    except Exception:  # an invalid config still uninstalls, with the default remote
-        settings = ProjectSettings()
+    settings = _settings(root)
+    message = "factory: remove factory from this repository"
     store = _store(root)
     try:
-        result = publish.publish_direct(
-            root,
-            settings=settings,
-            plan=plan.publish,
-            message="factory: remove factory from this repository",
-            store=store,
-            materialize=True,
-            command="uninstall",
-        )
+        if plan.publish.target == PR:
+            provider = get_provider(settings, root)
+            result = publish.publish_pr(
+                root,
+                provider=provider,
+                settings=settings,
+                plan=plan.publish,
+                message=message,
+                body="Remove factory: " + ", ".join(f.path for f in plan.publish.files) + "\n",
+                prefix=UNINSTALL_BRANCH_PREFIX,
+            )
+            result = publish.finish_pr(
+                root,
+                provider=provider,
+                settings=settings,
+                plan=plan.publish,
+                result=result,
+                message=message,
+                store=store,
+                materialize=True,
+                command="uninstall",
+            )
+        else:
+            result = publish.publish_direct(
+                root,
+                settings=settings,
+                plan=plan.publish,
+                message=message,
+                store=store,
+                materialize=True,
+                command="uninstall",
+            )
     except ProviderError as exc:
         raise LibraryStoreError(exc.code, exc.message, data=plan.to_json()) from exc
     except RuntimeError as exc:
@@ -178,13 +219,17 @@ def uninstall(path: Path, *, environ: Mapping[str, str] | None = None) -> Uninst
         if store is not None:
             store.close()
     warnings = list(result.warnings)
-    warnings += _remove_folder(root)
+    if result.advanced:  # an open pull request leaves factory in base and on disk
+        warnings += _remove_folder(root)
+    pr = result.pr
     return UninstallResult(
         plan,
         True,
         commit=result.commit,
         pushed=result.pushed,
         warnings=warnings,
+        pr={"id": pr.id, "url": pr.url, "branch": pr.branch} if pr is not None else None,
+        merged=result.merged,
     )
 
 

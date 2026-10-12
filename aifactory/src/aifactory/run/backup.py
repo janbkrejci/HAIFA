@@ -8,6 +8,10 @@ equal ``HEAD``. ``restore`` writes that state back. Whatever it overwrites or
 deletes is moved to ``<backup>/replaced/`` first, so nothing is ever lost.
 
 Gitignored files are invisible to git and therefore neither saved nor checked.
+
+The backup sits deep below the session directory, so a copy of a nested untracked
+file easily passes the 260 characters of a Windows path; every file operation goes
+through ``long_path``.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Iterable
@@ -29,6 +34,18 @@ from aifactory.run import gitops
 
 INDEX = "(index)"
 """Pseudo-path reported when the git index differs from the capture."""
+
+
+def long_path(path: Path) -> Path:
+    """`path` with the Windows extended-length prefix (``\\\\?\\``); unchanged elsewhere."""
+    if sys.platform != "win32":
+        return path
+    text = os.path.abspath(path)
+    if text.startswith("\\\\?\\"):
+        return Path(text)
+    if text.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + text[2:])
+    return Path("\\\\?\\" + text)
 
 
 def ignored(path: str, patterns: tuple[str, ...]) -> bool:
@@ -89,7 +106,7 @@ def dirty_paths(root: Path, patterns: tuple[str, ...] = ()) -> set[str]:
 
 def state_of(root: Path, path: str) -> FileState:
     """What `path` is on disk right now."""
-    target = root / path
+    target = long_path(root / path)
     try:
         info = target.lstat()
     except (FileNotFoundError, NotADirectoryError):
@@ -167,11 +184,11 @@ def capture(root: Path, dest: Path, patterns: tuple[str, ...] = ()) -> CheckoutB
     for path in sorted(dirty_paths(root, patterns)):
         now = state_of(root, path)
         if now.kind == "file":
-            copy = files_dir / path
+            copy = long_path(files_dir / path)
             copy.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(root / path, copy)
+            shutil.copy2(long_path(root / path), copy)
         elif now.kind == "symlink":
-            backup.links[path] = os.readlink(root / path)
+            backup.links[path] = os.readlink(long_path(root / path))
         backup.files[path] = now
     _write_manifest(backup)
     return backup
@@ -200,12 +217,12 @@ def supersede(backup: CheckoutBackup, path: str, data: bytes, mode: int) -> None
     so ``verify`` and ``restore`` then compare with and put back the factory's
     content.
     """
-    saved = backup.dir / "files" / path
+    saved = long_path(backup.dir / "files" / path)
     if os.path.lexists(saved):
-        target = backup.dir / "superseded" / path
+        target = long_path(backup.dir / "superseded" / path)
         n = 1
         while os.path.lexists(target):
-            target = backup.dir / "superseded" / f"{path}.{n}"
+            target = long_path(backup.dir / "superseded" / f"{path}.{n}")
             n += 1
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(saved), str(target))
@@ -258,13 +275,13 @@ def verify(backup: CheckoutBackup, patterns: tuple[str, ...] = (), index: bool =
 
 def _set_aside(backup: CheckoutBackup, path: str) -> None:
     """Move whatever sits at `path` into ``replaced/`` (never delete it)."""
-    source = backup.root / path
+    source = long_path(backup.root / path)
     if not os.path.lexists(source):
         return
-    target = backup.dir / "replaced" / path
+    target = long_path(backup.dir / "replaced" / path)
     n = 1
     while os.path.lexists(target):
-        target = backup.dir / "replaced" / f"{path}.{n}"
+        target = long_path(backup.dir / "replaced" / f"{path}.{n}")
         n += 1
     target.parent.mkdir(parents=True, exist_ok=True)
     shutil.move(str(source), str(target))
@@ -275,14 +292,14 @@ def _clear_parents(backup: CheckoutBackup, path: str) -> None:
     parts = Path(path).parts[:-1]
     for i in range(1, len(parts) + 1):
         rel = "/".join(parts[:i])
-        full = backup.root / rel
+        full = long_path(backup.root / rel)
         if os.path.lexists(full) and (full.is_symlink() or not full.is_dir()):
             _set_aside(backup, rel)
             return
 
 
 def _put(backup: CheckoutBackup, path: str, want: FileState, data: bytes | None) -> None:
-    target = backup.root / path
+    target = long_path(backup.root / path)
     _clear_parents(backup, path)
     _set_aside(backup, path)
     if want.kind == "absent":
@@ -295,7 +312,7 @@ def _put(backup: CheckoutBackup, path: str, want: FileState, data: bytes | None)
         os.symlink(link or "", target)
         return
     if data is None:
-        shutil.copy2(backup.dir / "files" / path, target)
+        shutil.copy2(long_path(backup.dir / "files" / path), target)
     else:
         target.write_bytes(data)
     if want.mode:

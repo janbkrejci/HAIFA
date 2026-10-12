@@ -28,6 +28,8 @@ from aifactory.backlog.validate import check_backlog
 from aifactory.config import ProjectSettings
 from aifactory.config.status import ConfigChange, working_tree_changes
 
+BACKLOG_BRANCH_PREFIX = "factory-backlog/"
+
 
 @dataclass(frozen=True)
 class BacklogCommit:
@@ -36,6 +38,9 @@ class BacklogCommit:
     base: str
     paths: list[str]
     pushed: bool
+    pr: dict[str, str] | None = None
+    merged: bool = False
+    warnings: tuple[str, ...] = ()
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -44,6 +49,8 @@ class BacklogCommit:
             "base": self.base,
             "paths": list(self.paths),
             "pushed": self.pushed,
+            "pr": self.pr,
+            "merged": self.merged,
         }
 
 
@@ -140,6 +147,10 @@ def commit_backlog(repo: Path, message: str | None = None) -> BacklogCommit:
         raise TaskEditError("commit_failed", f"no backlog root holds {', '.join(paths)}")
 
     subject = (message or "").strip() or f"backlog: {len(paths)} file(s) from factory"
+    from aifactory.providers.publish import uses_pr
+
+    if uses_pr(settings):
+        return _commit_pr(main, settings, base, paths, subject)
     old = gitops.head(main)
     try:
         provider_git.git(main, "add", "-A", "--", *roots)
@@ -162,3 +173,74 @@ def commit_backlog(repo: Path, message: str | None = None) -> BacklogCommit:
             raise TaskEditError("push_failed", exc.message) from exc
         pushed = True
     return BacklogCommit(True, sha, base, paths, pushed)
+
+
+def _commit_pr(
+    main: Path, settings: ProjectSettings, base: str, paths: list[str], subject: str
+) -> BacklogCommit:
+    """``base_changes: pr``: the backlog changes go to ``factory-backlog/<n>`` with a pull
+    request; with ``base_pr_merge: auto`` it is merged and base fast-forwarded at once.
+    Otherwise the changes stay in the working tree until the PR is merged and base pulled."""
+    from aifactory.library.install_commit import _store
+    from aifactory.providers import ProviderError, get_provider, publish
+    from aifactory.providers import git as provider_git
+
+    base_sha = provider_git.rev_parse(main, f"refs/heads/{base}")
+    if base_sha is None:
+        raise TaskEditError("commit_failed", f"base {base!r} does not exist")
+    changes = backlog_changes(main, base_sha, settings)
+    files = publish.plan_files(main, base_sha, [c.path for c in changes])
+    if not files:
+        return BacklogCommit(False, None, base, [], False)
+    plan = publish.PublishPlan(
+        base=base,
+        base_sha=base_sha,
+        target=publish.PR,
+        files=tuple(files),
+        blockers=(),
+        digest=publish.plan_digest(base, base_sha, files),
+    )
+    body = "Backlog changes from factory:\n\n" + "\n".join(
+        f"- {f.action} `{f.path}`" for f in files
+    )
+    try:
+        provider = get_provider(settings, main)
+        result = publish.publish_pr(
+            main,
+            provider=provider,
+            settings=settings,
+            plan=plan,
+            message=subject,
+            body=body + "\n",
+            prefix=BACKLOG_BRANCH_PREFIX,
+        )
+        store = _store(main) if settings.base_pr_merge == "auto" else None
+        try:
+            result = publish.finish_pr(
+                main,
+                provider=provider,
+                settings=settings,
+                plan=plan,
+                result=result,
+                message=subject,
+                store=store,
+                command="backlog commit",
+            )
+        finally:
+            if store is not None:
+                store.close()
+    except ProviderError as exc:
+        raise TaskEditError(exc.code, exc.message) from exc
+    except RuntimeError as exc:
+        raise TaskEditError("commit_failed", str(exc)) from exc
+    pr = result.pr
+    return BacklogCommit(
+        True,
+        result.commit,
+        base,
+        paths,
+        result.pushed,
+        pr={"id": pr.id, "url": pr.url, "branch": pr.branch} if pr is not None else None,
+        merged=result.merged,
+        warnings=result.warnings,
+    )

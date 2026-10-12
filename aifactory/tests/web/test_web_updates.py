@@ -9,6 +9,7 @@ from starlette.testclient import TestClient
 
 from aifactory.upgrade import UpgradeError
 from aifactory.web import create_multi_app, updates
+from aifactory.web.server import RESTART_ENV, restart_command
 
 
 def release(version: str = "0.2.0") -> dict[str, Any]:
@@ -59,7 +60,7 @@ def test_install_verifies_target_restarts_and_blocks_other_writes(
     def install(bundle: str, **kw: Any) -> SimpleNamespace:
         assert bundle == release()["assets"][0]["browser_download_url"]
         assert kw["expected_version"] == "0.2.0"
-        return SimpleNamespace(installed=True)
+        return SimpleNamespace(installed=True, handed_off=False)
 
     monkeypatch.setattr(updates, "run_upgrade", install)
     app = create_multi_app(home=tmp_path, restart=lambda: restarts.append("restart"))
@@ -90,6 +91,24 @@ def test_failed_install_preserves_dashboard_without_restart(
     source.install(lambda: restarts.append("restart"))
     assert not source.installing and restarts == []
     assert source.check()["status"] == "error"
+
+
+def test_windows_handoff_leaves_instead_of_restarting(monkeypatch: pytest.MonkeyPatch) -> None:
+    source = updates.Updates(repository="test/haifa", fetch=lambda _: release())
+    monkeypatch.setattr(updates, "editable_install", lambda: False)
+    seen: dict[str, Any] = {}
+
+    def hand_off(bundle: str, **kw: Any) -> SimpleNamespace:
+        seen.update(kw)
+        return SimpleNamespace(installed=False, handed_off=True)
+
+    monkeypatch.setattr(updates, "run_upgrade", hand_off)
+    source.begin()
+    events: list[str] = []
+    source.install(lambda: events.append("restart"), leave=lambda: events.append("leave"))
+    assert events == ["leave"] and source.installing
+    assert seen["restart"] == restart_command()
+    assert seen["environ"][RESTART_ENV] == "1"
 
 
 def test_active_runs_prevent_update(tmp_path: Path) -> None:

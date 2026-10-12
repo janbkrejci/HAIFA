@@ -366,7 +366,10 @@ def recommend(
             # Keep the task intact; deterministically bound surrounding context.
             notes = []
             remaining = 80_000
-            for label in ("parents", "relations"):
+            # available_tasks (task parameter advice) shares the same budget.
+            for label in ("parents", "relations", "available_tasks"):
+                if label not in payload:
+                    continue
                 retained = []
                 for item in payload[label]:
                     body = item.get("body", "")
