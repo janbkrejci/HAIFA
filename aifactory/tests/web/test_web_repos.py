@@ -353,6 +353,24 @@ def test_add_through_a_pull_request_keeps_base(
     assert bad["error"]["code"] == "usage_error"
 
 
+def test_add_with_base_changes_through_merged_pull_requests(
+    client: TestClient, tmp_path: Path
+) -> None:
+    root = init_repo(tmp_path / "proj")
+    git(root, "branch", "-m", "main", "develop")
+    payload = {"path": str(root), "base_changes": "pr", "base_pr_merge": "auto"}
+    install = _post(client, "/api/repos", payload, 201)["data"]["install"]
+    assert install["pr"]["branch"] == "factory-init/1" and install["merged"] is True
+    assert git(root, "rev-parse", "develop") == git(root, "rev-parse", "factory-init/1")
+    config = git(root, "show", "develop:.factory/config.yaml")
+    assert "base_changes: pr" in config and "base_pr_merge: auto" in config
+    assert (root / ".factory/config.yaml").is_file()
+    other = init_repo(tmp_path / "other")
+    for bad in ({"base_changes": "always"}, {"base_pr_merge": "yes"}):
+        body = _post(client, "/api/repos", {"path": str(other), **bad}, 400)
+        assert body["error"]["code"] == "usage_error"
+
+
 def test_list_statuses(client: TestClient, tmp_path: Path) -> None:
     done = init_repo(tmp_path / "done")
     install(done)

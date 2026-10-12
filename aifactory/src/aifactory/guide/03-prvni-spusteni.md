@@ -42,7 +42,7 @@ Na **Přehledu** klikni na **Přidat repozitář** (nebo v menu přepínače rep
 1. Zadej cestu ke složce repa, nebo ji najdi přes **Procházet…**, a klikni na **Zkontrolovat**.
 2. Karta repa ukáže kořen, větev, remote a stav factory (Bez factory, Nainstalováno, necommitnutá konfigurace, Nepodporováno).
 3. **Přidat** zapíše `.factory/config.yaml` (existující ponechá), doplní `.gitignore` a commitne to do base.
-4. Když base přijímá změny jen přes pull request (chráněná větev), zaškrtni před přidáním **Přes pull request**. Instalace pak přijde v pull requestu z větve `factory-init/<n>` a base zůstane beze změny. Po mergi použij v záložce Factory **Stáhnout konfiguraci z base**.
+4. Když base přijímá změny jen přes pull request (chráněná větev), zaškrtni před přidáním **Změny base přes pull request**. Repo si to zapamatuje (`base_changes: pr`) a pull requestem pak jde každá změna base, počínaje instalací z větve `factory-init/<n>`. Volba **Pull requesty factory hned schválit a mergnout** (`base_pr_merge: auto`) je factory mergne sama. Bez ní je mergne člověk a ty pak v záložce Factory použiješ **Stáhnout konfiguraci z base**. Podrobnosti jsou v kapitole [Konfigurace repa](#/guide/konfigurace-repa).
 
 Totéž z příkazové řádky: `factory obs --repo ~/cesta/k/repu` zaregistruje repo a otevře ho. Repo bez HAIFA nainstaluješ i přes `factory init` (kapitola [Práce v týmu](#/guide/tym)).
 

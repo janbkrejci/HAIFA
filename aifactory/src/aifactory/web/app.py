@@ -1646,23 +1646,36 @@ def _path_body(body: dict[str, Any]) -> object:
 
 async def repos_add(request: Request) -> JSONResponse:
     """Add a repository: register it and commit ``.factory/config.yaml`` and ``.gitignore``
-    (``web.repos.add_repo``), on base or with ``target: "pr"`` in a pull request. HTTP 201
-    when newly registered, 200 when it was there."""
+    (``web.repos.add_repo``). ``base_changes`` (``direct`` or ``pr``; ``target: "pr"`` is the
+    same) and ``base_pr_merge`` (``manual`` or ``auto``) go to ``config.yaml`` and apply to
+    this commit already. HTTP 201 when newly registered, 200 when it was there."""
     registry = _registry(request)
 
-    def work(raw: object, pr: bool) -> tuple[dict[str, Any], bool, dict[str, Any], list[str]]:
+    def work(
+        raw: object, changes: str | None, merge: str | None
+    ) -> tuple[dict[str, Any], bool, dict[str, Any], list[str]]:
         entry, created, install, warnings = add_repo(
-            registry, raw, library.environment(request.app.state.home), pr=pr
+            registry,
+            raw,
+            library.environment(request.app.state.home),
+            base_changes=changes,
+            base_pr_merge=merge,
         )
         return repo_status(entry), created, install, warnings
 
     try:
         body = await _json_body(request)
-        target = body.pop("target", "base")
-        if target not in ("base", "pr"):
+        target = body.pop("target", None)
+        changes = body.pop("base_changes", "pr" if target == "pr" else None)
+        merge = body.pop("base_pr_merge", None)
+        if target not in (None, "base", "pr"):
             raise backlog.UsageError("target must be base or pr")
+        if changes not in (None, "direct", "pr"):
+            raise backlog.UsageError("base_changes must be direct or pr")
+        if merge not in (None, "manual", "auto"):
+            raise backlog.UsageError("base_pr_merge must be manual or auto")
         raw = _path_body(body)
-        item, created, install, warnings = await run_in_threadpool(work, raw, target == "pr")
+        item, created, install, warnings = await run_in_threadpool(work, raw, changes, merge)
     except backlog.UsageError as exc:
         return _usage_error(exc.message)
     except RepoError as exc:

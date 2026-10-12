@@ -447,6 +447,20 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
         help="root of the factory documents with backlog/, specs/ and docs/ (default: factory)",
     )
     parser.add_argument(
+        "--base-changes",
+        choices=("direct", "pr"),
+        default=None,
+        help="how factory changes base from now on: direct commits (default) or a pull "
+        "request per change; pr also makes --commit open a pull request",
+    )
+    parser.add_argument(
+        "--base-pr-merge",
+        choices=("manual", "auto"),
+        default=None,
+        help="factory's own pull requests: left to a reviewer (default) or approved where "
+        "allowed and merged at once (GitHub with --admin)",
+    )
+    parser.add_argument(
         "--dry-run", action="store_true", help="only return the plan; write nothing"
     )
     parser.add_argument(
@@ -496,7 +510,12 @@ def _init(args: argparse.Namespace) -> int:
     provider = args.provider
     if provider is None and any(azure_given.values()):
         provider = "azure"
-    options: dict[str, Any] = {"base": args.base, "docs_root": args.docs_root}
+    options: dict[str, Any] = {
+        "base": args.base,
+        "docs_root": args.docs_root,
+        "base_changes": args.base_changes,
+        "base_pr_merge": args.base_pr_merge,
+    }
     repo = Path(args.repo) if args.repo else Path.cwd()
     if args.dry_run or args.commit:
         return _init_plan(args, repo, provider, azure_given, options)
@@ -569,6 +588,12 @@ def _init_plan(
         print(f"digest  {plan.digest}")
         if not plan.blockers:
             pr = " --pr" if args.pr else ""
+            for flag, value in (
+                ("--base-changes", args.base_changes),
+                ("--base-pr-merge", args.base_pr_merge),
+            ):
+                if value is not None:
+                    pr += f" {flag} {value}"
             print(f"next: factory init --commit{pr} --expect {plan.digest}")
     elif result.pr is not None:
         print(f"opened {result.pr.url} from {result.branch}")

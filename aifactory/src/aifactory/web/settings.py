@@ -61,6 +61,8 @@ SHARED_FIELDS = (
     "base",
     "git_provider",
     "merge_strategy",
+    "base_changes",
+    "base_pr_merge",
     "protected_files",
     "max_parallel_runs",
 )
@@ -186,6 +188,8 @@ def _view(root: Path) -> tuple[JsonDict, list[str]]:
         "options": {
             "git_provider": _options("git_provider"),
             "merge_strategy": _options("merge_strategy"),
+            "base_changes": _options("base_changes"),
+            "base_pr_merge": _options("base_pr_merge"),
         },
         "shared_issues": _issue_dicts(issues),
         "local_issues": local_issues,

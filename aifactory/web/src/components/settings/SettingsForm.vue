@@ -57,6 +57,12 @@ const gitProviderOptions = computed(() =>
 const mergeStrategyOptions = computed(() =>
   choiceOptions(props.settings.options.merge_strategy, values.value.merge_strategy),
 )
+const baseChangesOptions = computed(() =>
+  choiceOptions(props.settings.options.base_changes ?? ['direct', 'pr'], values.value.base_changes),
+)
+const basePrMergeOptions = computed(() =>
+  choiceOptions(props.settings.options.base_pr_merge ?? ['manual', 'auto'], values.value.base_pr_merge),
+)
 
 function fieldError(name: string): string[] {
   return props.errors[name] ?? []
@@ -126,6 +132,32 @@ function onReset(): void {
           :invalid="invalid('merge_strategy')"
         />
         <span v-for="msg in fieldError('merge_strategy')" :key="msg" class="field-error" data-test="error-merge_strategy">{{ msg }}</span>
+      </label>
+
+      <label>
+        Změny base
+        <SelectMenu
+          v-model="values.base_changes"
+          data-test="base_changes"
+          label="Změny base"
+          :options="baseChangesOptions"
+          :invalid="invalid('base_changes')"
+        />
+        <span class="hint">direct: factory commituje a pushuje do base. pr: každá změna (instalace, konfigurace, knihovna, backlog, odebrání) jde pull requestem.</span>
+        <span v-for="msg in fieldError('base_changes')" :key="msg" class="field-error" data-test="error-base_changes">{{ msg }}</span>
+      </label>
+
+      <label>
+        Merge pull requestů factory
+        <SelectMenu
+          v-model="values.base_pr_merge"
+          data-test="base_pr_merge"
+          label="Merge pull requestů factory"
+          :options="basePrMergeOptions"
+          :invalid="invalid('base_pr_merge')"
+        />
+        <span class="hint">manual: PR schválí a mergne člověk. auto: factory PR sám schválí (Azure DevOps), hned mergne (GitHub s --admin) a posune base.</span>
+        <span v-for="msg in fieldError('base_pr_merge')" :key="msg" class="field-error" data-test="error-base_pr_merge">{{ msg }}</span>
       </label>
 
       <label>

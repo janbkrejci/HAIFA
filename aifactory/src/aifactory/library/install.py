@@ -140,12 +140,16 @@ def project_settings(
     azure: Mapping[str, str] | None = None,
     remote: str | None = None,
     docs_root: str | None = None,
+    base_changes: str | None = None,
+    base_pr_merge: str | None = None,
 ) -> ProjectSettings:
     """The settings ``init`` writes; ``invalid_value`` when an option is not allowed."""
     values: dict[str, Any] = {"base": base, "git_provider": provider}
     for key, value in (
         ("remote", remote),
         ("docs_root", docs_root),
+        ("base_changes", base_changes),
+        ("base_pr_merge", base_pr_merge),
         ("azure", dict(azure) if azure is not None else None),
     ):
         if value is not None:
@@ -168,6 +172,10 @@ def render_config(settings: ProjectSettings, *, write_remote: bool = False) -> b
     config["docs_root"] = settings.docs_root
     if settings.azure is not None:
         config["azure"] = settings.azure.model_dump(mode="json")
+    if settings.base_changes != "direct":
+        config["base_changes"] = settings.base_changes
+    if settings.base_pr_merge != "manual":
+        config["base_pr_merge"] = settings.base_pr_merge
     body = yaml.safe_dump(config, sort_keys=False, allow_unicode=True, width=4096)
     return ("# factory project settings, written by factory init\n" + body).encode("utf-8")
 
@@ -180,6 +188,8 @@ def init_repo(
     azure: Mapping[str, str] | None = None,
     docs_root: str | None = None,
     force: bool = False,
+    base_changes: str | None = None,
+    base_pr_merge: str | None = None,
 ) -> InitResult:
     """Install factory into the git repo at `path`; see the module docstring."""
     root = _repo_root(path)
@@ -190,7 +200,14 @@ def init_repo(
     elif not base.strip():
         raise LibraryStoreError("invalid_value", "--base must not be empty")
     _refuse(root, base)
-    settings = project_settings(base=base, provider=provider, azure=azure, docs_root=docs_root)
+    settings = project_settings(
+        base=base,
+        provider=provider,
+        azure=azure,
+        docs_root=docs_root,
+        base_changes=base_changes,
+        base_pr_merge=base_pr_merge,
+    )
     files = {
         CONFIG_FILE: render_config(settings),
         f"{settings.backlog_dir.rstrip('/')}/.gitkeep": b"",

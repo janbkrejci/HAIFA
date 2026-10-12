@@ -119,6 +119,15 @@ class GitProvider(abc.ABC):
         """
         return False
 
+    def merge_own(self, pr: PullRequest, head_sha: str, subject: str) -> str | None:
+        """Merge a PR factory opened for its own change of base (``base_pr_merge: auto``).
+
+        The author approves it where the hosting allows that, then it is merged like any
+        other PR; ``MergeFailed`` when the hosting still refuses.
+        """
+        self.approve(pr, head_sha)
+        return self.merge(pr, head_sha, subject)
+
     @abc.abstractmethod
     def merge(
         self, pr: PullRequest, head_sha: str, subject: str, strategy: str | None = None
