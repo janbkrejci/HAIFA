@@ -73,6 +73,8 @@ def task_id_from_branch(branch: str) -> str | None:
 
 class GitProvider(abc.ABC):
     name: str = ""
+    reports_checks: bool = False
+    """``checks`` reads CI checks from the hosting; a fresh PR may show none for a while."""
 
     def __init__(self, root: Path, settings: ProjectSettings) -> None:
         self.root = root

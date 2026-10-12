@@ -58,7 +58,7 @@ def test_review_blocker_each_condition() -> None:
         (PrStatus(OPEN, CONFLICT), ChecksStatus(CHECKS_PASSING), "conflict"),
         (PrStatus(OPEN, UNKNOWN), ChecksStatus(CHECKS_PASSING), "mergeability_unknown"),
         (PrStatus(OPEN, MERGEABLE), ChecksStatus(CHECKS_FAILING, ("ci",)), "checks_failing"),
-        (PrStatus(OPEN, MERGEABLE), ChecksStatus(CHECKS_PENDING), None),
+        (PrStatus(OPEN, MERGEABLE), ChecksStatus(CHECKS_PENDING), "checks_pending"),
         (PrStatus(OPEN, MERGEABLE), ChecksStatus(CHECKS_NONE), None),
         (PrStatus(OPEN, MERGEABLE), ChecksStatus(CHECKS_PASSING), None),
     ],

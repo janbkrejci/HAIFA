@@ -692,7 +692,9 @@ exceptions on the task; the nearest value wins.
    the guard or permissions): after the run its PR is approved and merged like
    `factory task approve` (`merged_by: auto-merge` in `task_prs`) only when the run
    `succeeded`, the workflow has a review phase whose last review approved with no blocking
-   or unmet item, the PR merges cleanly and none of its checks is red. A workflow without
+   or unmet item, the PR merges cleanly and its checks finished with none red. Running
+   checks are waited for (up to 30 minutes, else `checks_pending`); on GitHub a fresh PR
+   gets a short wait for its checks to appear before "no checks" counts. A workflow without
    review is never merged automatically. Otherwise `data.auto_merge` (`merged`, `code`,
    `reason`) says why and the PR waits for `factory task approve`. With auto-continue the
    next task starts only after the merge; a PR that was not merged stops the chain

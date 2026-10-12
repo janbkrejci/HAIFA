@@ -43,7 +43,7 @@ Se zapnutým `auto_merge` (na tasku, stepu nebo projektu) se PR mergne sám, kdy
 1. běh skončil úspěšně a otevřel PR,
 2. workflow má krok review a poslední review schválilo bez blokujících nálezů,
 3. PR je otevřený a jde mergovat,
-4. kontroly v hostingu nejsou červené (čekající nebo žádné nevadí).
+4. kontroly v hostingu (CI) doběhly a žádná není červená. Na běžící kontroly auto-merge počká nejvýš 30 minut. Když do té doby nedoběhnou, PR zůstane otevřený s důvodem `checks_pending`. Na GitHubu chvíli počká i na to, až se kontroly čerstvého PR objeví. PR bez kontrol (lokální provider, repo bez CI) se merguje hned.
 
 Při konfliktu zkusí jednou automaticky `resolve-reviewed`. Když se merge nepovede, PR čeká na ruční schválení a detail ukáže „Auto-merge nesloučil: … – schval ručně.“ Workflow bez review se nikdy nemerguje automaticky.
 

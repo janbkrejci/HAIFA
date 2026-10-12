@@ -11,7 +11,11 @@ worktrees removed), with ``merged_by == "auto-merge"``, but only when all holds:
    a workflow without review is never merged automatically;
 3. the last review of the run approved, with no blocking and no unmet item;
 4. the PR is open and merges cleanly (``mergeable``) into base;
-5. its checks on the hosting are not red (pending or no checks do not block).
+5. its checks on the hosting have finished and none is red. Running checks are waited for
+   (`AUTO_MERGE_CHECKS_TIMEOUT`); still running after that is `checks_pending`. A hosting
+   that reports checks (`reports_checks`, GitHub) gets `AUTO_MERGE_CHECKS_APPEAR` for the
+   checks of a fresh PR to show up before "no checks" counts. The checks are those of the
+   run's head: the `status: done` commit of the merge only touches the task file.
 
 An open PR whose mergeability is still unknown is polled again until the hosting
 reports a definitive result. Each bounded provider polling batch is followed by
@@ -33,13 +37,15 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from time import sleep
+from time import monotonic, sleep
 
 from aifactory.backlog import Task
 from aifactory.config import ConfigError, RunConfig, load_run_config
 from aifactory.engine.data_types import ReviewOutput
 from aifactory.providers import (
     CHECKS_FAILING,
+    CHECKS_NONE,
+    CHECKS_PENDING,
     CONFLICT,
     MERGEABLE,
     OPEN,
@@ -48,6 +54,7 @@ from aifactory.providers import (
     GitProvider,
     ProviderError,
     PrStatus,
+    PullRequest,
     get_provider,
 )
 from aifactory.review import flow as review_flow
@@ -69,6 +76,14 @@ from aifactory.workflow import CodeRunner, RoleStep, Workflow, WorkflowRun, walk
 
 AUTO_MERGE = MERGED_BY_AUTO
 AUTO_MERGE_POLL_DELAY = 2.0
+AUTO_MERGE_CHECKS_DELAY = 15.0
+"""Seconds between two reads of the PR's checks while they run."""
+AUTO_MERGE_CHECKS_TIMEOUT = 30 * 60.0
+"""How long auto-merge waits for running checks before it gives up (`checks_pending`)."""
+AUTO_MERGE_CHECKS_APPEAR = 90.0
+"""How long a fresh PR on a hosting with checks may show none before "no checks" counts."""
+_clock = monotonic
+"""The clock of the checks wait (a module attribute, so tests can move it)."""
 __all__ = [
     "AUTO_MERGE",
     "AutoMergeResult",
@@ -77,6 +92,7 @@ __all__ = [
     "last_review",
     "resolve_and_merge",
     "review_blocker",
+    "settled_checks",
     "try_auto_merge",
     "workflow_has_review",
 ]
@@ -172,7 +188,28 @@ def hosting_blocker(status: PrStatus, checks: ChecksStatus) -> tuple[str, str] |
     if checks.state == CHECKS_FAILING:
         names = ", ".join(checks.failing) or "?"
         return "checks_failing", f"red checks: {names}"
+    if checks.state == CHECKS_PENDING:
+        minutes = round(AUTO_MERGE_CHECKS_TIMEOUT / 60)
+        return "checks_pending", f"checks still running after {minutes} min"
     return None
+
+
+def settled_checks(provider: GitProvider, request: PullRequest) -> ChecksStatus:
+    """The PR's checks once none runs, or as they are when the wait is over."""
+    start = _clock()
+    checks = provider.checks(request)
+    while True:
+        waited = _clock() - start
+        running = checks.state == CHECKS_PENDING and waited < AUTO_MERGE_CHECKS_TIMEOUT
+        appearing = (
+            checks.state == CHECKS_NONE
+            and provider.reports_checks
+            and waited < AUTO_MERGE_CHECKS_APPEAR
+        )
+        if not (running or appearing):
+            return checks
+        sleep(AUTO_MERGE_CHECKS_DELAY)
+        checks = provider.checks(request)
 
 
 def try_auto_merge(
@@ -304,7 +341,7 @@ def _hosting_and_merge(
     except ProviderError as exc:
         return blocked("status_unavailable", f"{exc.code}: {exc.message}")
     try:
-        checks = provider.checks(pr.request())
+        checks = settled_checks(provider, pr.request())
     except ProviderError as exc:
         return blocked("checks_unavailable", f"{exc.code}: {exc.message}")
     hosting = hosting_blocker(status, checks)

@@ -72,6 +72,38 @@ def _shared_gh(tmp_path_factory: pytest.TempPathFactory) -> None:
     prepare_shared_gh(tmp_path_factory.mktemp("ghwarm"))
 
 
+@pytest.fixture(autouse=True)
+def _no_checks_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Checks are taken as they are; the tests of the wait set their own limits and clock."""
+    monkeypatch.setattr(automerge, "AUTO_MERGE_CHECKS_TIMEOUT", 0.0)
+    monkeypatch.setattr(automerge, "AUTO_MERGE_CHECKS_APPEAR", 0.0)
+
+
+class _Clock:
+    """A clock that moves only when auto-merge sleeps."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def __call__(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+@pytest.fixture(name="clock")
+def clock_fixture(monkeypatch: pytest.MonkeyPatch) -> _Clock:
+    clock = _Clock()
+    monkeypatch.setattr(automerge, "_clock", clock)
+    monkeypatch.setattr(automerge, "sleep", clock.sleep)
+    monkeypatch.setattr(automerge, "AUTO_MERGE_CHECKS_TIMEOUT", 60.0)
+    monkeypatch.setattr(automerge, "AUTO_MERGE_CHECKS_APPEAR", 30.0)
+    return clock
+
+
 @pytest.fixture(name="script")
 def script_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[Script]:
     yield from fake_env(monkeypatch)
@@ -410,10 +442,10 @@ def test_github_red_checks_block(
 @pytest.mark.parametrize(
     "checks",
     [
-        reply([{"name": "ci", "bucket": "pass"}, {"name": "slow", "bucket": "pending"}]),
+        reply([{"name": "ci", "bucket": "pass"}, {"name": "lint", "bucket": "pass"}]),
         reply(exit=1, stderr="no checks reported on the 'factory/M01-S01-T01-1' branch\n"),
     ],
-    ids=["green-and-pending", "no-checks"],
+    ids=["green", "no-checks"],
 )
 def test_github_merges_without_red_checks(
     repo: Path,
@@ -437,6 +469,71 @@ def test_github_merges_without_red_checks(
     row = pr_row(repo, T01)
     assert row is not None
     assert (row.state, row.merged_by, row.merge_sha) == ("merged", MERGED_BY_AUTO, MERGE_SHA)
+
+
+NO_CHECKS = reply(exit=1, stderr="no checks reported on the 'factory/M01-S01-T01-1' branch\n")
+PENDING = reply([{"name": "ci", "bucket": "pass"}, {"name": "slow", "bucket": "pending"}])
+GREEN = reply([{"name": "ci", "bucket": "pass"}, {"name": "slow", "bucket": "pass"}])
+
+
+@pytest.mark.parametrize(
+    "checks",
+    [[PENDING, PENDING, GREEN], [NO_CHECKS, PENDING, GREEN]],
+    ids=["running", "fresh-pr"],
+)
+def test_github_waits_for_checks_to_finish(
+    repo: Path,
+    script: Script,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clock: _Clock,
+    checks: list[dict[str, Any]],
+) -> None:
+    result, provider, log = _github_run(repo, script, tmp_path, monkeypatch)
+    log.respond("pr view", [_view(), _view(), _view(), _view("MERGED", MERGE_SHA)])
+    log.respond("pr checks", checks)
+    log.respond("pr merge", reply(""))
+
+    merge = try_auto_merge(repo, result, base_task(repo, T01), provider=provider)
+
+    assert merge.merged, (merge.code, merge.reason)
+    assert clock.sleeps == [automerge.AUTO_MERGE_CHECKS_DELAY] * 2
+    assert len(_merges(log)) == 1
+
+
+def test_github_checks_running_past_the_limit_keep_the_pr_open(
+    repo: Path,
+    script: Script,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    clock: _Clock,
+) -> None:
+    result, provider, log = _github_run(repo, script, tmp_path, monkeypatch)
+    log.respond("pr view", _view())
+    log.respond("pr checks", PENDING)
+
+    merge = try_auto_merge(repo, result, base_task(repo, T01), provider=provider)
+
+    assert not merge.merged and merge.code == "checks_pending"
+    assert clock.sleeps == [automerge.AUTO_MERGE_CHECKS_DELAY] * 4  # 60 s limit
+    assert _merges(log) == []
+    row = pr_row(repo, T01)
+    assert row is not None and row.state == "open"
+    assert (row.auto_merge_error or "").startswith("checks_pending: ")
+
+
+def test_a_hosting_without_checks_is_not_waited_for(
+    repo: Path, script: Script, clock: _Clock
+) -> None:
+    setup(repo)
+    build(script, "one")
+    review(script)
+    result = run_task(repo, T01)
+
+    merge = try_auto_merge(repo, result, base_task(repo, T01))
+
+    assert merge.merged, (merge.code, merge.reason)
+    assert clock.sleeps == []
 
 
 def test_github_unknown_mergeability_retries_until_status_error(
