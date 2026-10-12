@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T12
 title: Prompt agenta mimo příkazovou řádku (WinError 206 u návrhu parametrů)
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -20,3 +20,4 @@ Hotovo, když:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-12 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/22 · náklady $3.68
