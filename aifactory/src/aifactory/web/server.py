@@ -10,6 +10,7 @@ import errno
 import json
 import os
 import socket
+import subprocess
 import sys
 import threading
 import time
@@ -101,12 +102,35 @@ def probe_dashboard(port: int, host: str = HOST, timeout: float = 1.0) -> bool:
     return isinstance(data, dict) and data.get("app") == APP_NAME
 
 
+def restart_command() -> list[str]:
+    """The command line of this dashboard, to start it again."""
+    return [sys.executable, *sys.orig_argv[1:]]
+
+
+def exit_process() -> None:
+    """End this process at once (a handed-off upgrade waits for it)."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
+
+
 def restart_process() -> None:
-    """Replace this process with a fresh ``factory obs``: same command line, the code on disk."""
+    """Replace this process with a fresh ``factory obs``: same command line, the code on disk.
+
+    Windows has no exec: ``os.execv`` starts a second process and leaves the console to both,
+    so the new dashboard gets its own console window and this process exits.
+    """
     os.environ[RESTART_ENV] = "1"
     sys.stdout.flush()
     sys.stderr.flush()
-    os.execv(sys.executable, [sys.executable, *sys.orig_argv[1:]])
+    if sys.platform == "win32":
+        subprocess.Popen(
+            restart_command(),
+            creationflags=getattr(subprocess, "CREATE_NEW_CONSOLE", 0),
+            close_fds=True,
+        )
+        os._exit(0)
+    os.execv(sys.executable, restart_command())
 
 
 def _open_when_started(server: uvicorn.Server, url: str) -> None:

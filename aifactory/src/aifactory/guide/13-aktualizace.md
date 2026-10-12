@@ -19,6 +19,10 @@ factory upgrade haifa-<verze>.zip
 
 Instalaci ze zdrojů (editable, vývoj HAIFA) `factory upgrade` odmítne; tu aktualizuješ přes `git pull`.
 
+## Aktualizace na Windows
+
+Windows nedovolí běžícímu programu přepsat vlastní soubory. Dashboard i `factory upgrade` proto balíček jen stáhnou a ověří a instalaci předají skriptu na pozadí. Skript počká, až se proces ukončí, nainstaluje novou verzi a dashboard spustí znovu v novém okně konzole. Prohlížeč se po restartu sám načte. `factory upgrade` odmítne pokračovat, dokud dashboard běží (`dashboard_running`): zavři ho, nebo aktualizuj chipem v dashboardu. Průběh instalace se zapisuje do `%TEMP%\haifa-upgrade.log`.
+
 ## Knihovna po aktualizaci
 
 Nová verze může přinést nové verze agentů a workflow v semínku. `factory check` to ohlásí jako `seed_update_available`.

@@ -247,6 +247,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "upgrade: the bundle's version is not newer than the installed one; nothing installed",
     ),
     ("uv_missing", "2", "upgrade: uv is not on PATH"),
+    ("dashboard_running", "2", "upgrade on Windows: the running dashboard locks factory"),
     (
         "upgrade_failed",
         "1",
