@@ -14,6 +14,7 @@ from typing import Any
 from aifactory import __version__
 from aifactory.library.remote import version_key
 from aifactory.upgrade import UpgradeError, editable_install, run_upgrade
+from aifactory.web.server import RESTART_ENV, exit_process, restart_command
 
 UPDATE_REPOSITORY = "janbkrejci/HAIFA"
 
@@ -117,13 +118,25 @@ class Updates:
             self._state = {**state, "status": "installing"}
             return dict(self._state)
 
-    def install(self, restart: Callable[[], None]) -> None:
+    def install(
+        self, restart: Callable[[], None], leave: Callable[[], None] = exit_process
+    ) -> None:
+        """Install the release and ``restart``; on Windows hand it off and ``leave``.
+
+        The handoff script installs once this process has exited and starts the dashboard
+        with the same command line again.
+        """
         try:
             result = run_upgrade(
                 self._state["bundle"],
                 current=self.current,
                 expected_version=self._state["target_version"],
+                environ={**os.environ, RESTART_ENV: "1"},
+                restart=restart_command(),
             )
+            if result.handed_off:
+                leave()
+                return
             if not result.installed:
                 raise UpgradeError("upgrade_failed", "Aktualizace nebyla nainstalovaná.")
             restart()

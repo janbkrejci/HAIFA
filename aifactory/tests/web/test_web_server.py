@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import socket
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -61,3 +64,34 @@ def test_serve_binds_loopback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert configs[0].host == "127.0.0.1"
     assert configs[0].port == 4799
     assert opened == []
+
+
+def test_restart_on_windows_starts_a_new_console_and_exits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aifactory.web import server
+
+    started: list[tuple[list[str], int]] = []
+
+    class Exited(Exception):
+        pass
+
+    def popen(argv: list[str], *, creationflags: int, close_fds: bool) -> None:
+        started.append((argv, creationflags))
+
+    def exit_now(code: int) -> None:
+        raise Exited(code)
+
+    def no_exec(*_args: object) -> None:
+        raise AssertionError("os.execv is not used on Windows")
+
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(os, "_exit", exit_now)
+    monkeypatch.setattr(os, "execv", no_exec)
+    monkeypatch.delenv(server.RESTART_ENV, raising=False)
+    with pytest.raises(Exited):
+        server.restart_process()
+    assert [argv for argv, _flags in started] == [server.restart_command()]
+    assert os.environ[server.RESTART_ENV] == "1"
+    monkeypatch.delenv(server.RESTART_ENV)

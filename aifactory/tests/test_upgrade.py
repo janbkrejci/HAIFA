@@ -6,13 +6,15 @@ import hashlib
 import io
 import json
 import os
+import shutil
 import zipfile
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from aifactory import __version__, upgrade
+from aifactory import __version__, cli, upgrade
 from aifactory.cli import main
 from aifactory.library.remote import library_min_factory_version, version_key
 from aifactory.skill import ERROR_CODES, envelope_problems, render_skill
@@ -68,6 +70,18 @@ def make_bundle(
 @pytest.fixture(autouse=True)
 def _not_editable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(upgrade, "editable_install", lambda: False)
+
+
+@pytest.fixture(autouse=True)
+def _no_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No test starts the real handoff script or sees a dashboard of the machine."""
+    monkeypatch.setattr(upgrade, "spawn_detached", _refuse_spawn)
+    monkeypatch.setattr(upgrade, "needs_handoff", lambda: False)
+    monkeypatch.setattr(cli, "_dashboard_running", lambda: False)
+
+
+def _refuse_spawn(argv: Sequence[str], env: Mapping[str, str]) -> None:
+    raise AssertionError(f"unexpected handoff: {argv}")
 
 
 @pytest.fixture
@@ -282,3 +296,62 @@ def test_skill_describes_upgrade() -> None:
     assert "factory upgrade" in skill and "### Upgrade" in skill
     for code in ("up_to_date", "bundle_invalid", "checksum_mismatch", "editable_install"):
         assert f"`{code}`" in skill
+
+
+def _record(calls: list[tuple[list[str], dict[str, str]]]) -> Any:
+    def spawn(argv: Sequence[str], env: Mapping[str, str]) -> None:
+        calls.append((list(argv), dict(env)))
+
+    return spawn
+
+
+def test_handoff_keeps_the_bundle_and_starts_the_script(tmp_path: Path, uv_log: Path) -> None:
+    bundle = make_bundle(tmp_path / "dist")
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    result = upgrade.run_upgrade(
+        str(bundle),
+        handoff=True,
+        restart=["python.exe", "factory.exe", "obs"],
+        environ={"PSModulePath": "C:/pwsh/Modules", "HAIFA_OBS_RESTART": "1"},
+        spawn=_record(calls),
+    )
+    assert result.handed_off and not result.installed
+    assert not uv_log.exists()  # nothing installed while this process runs
+    [(argv, env)] = calls
+    assert argv[:2] == ["powershell", "-NoProfile"] and "-File" in argv
+    assert "PSModulePath" not in env and env["HAIFA_OBS_RESTART"] == "1"
+    script, plan_file = Path(argv[-2]), Path(argv[-1])
+    assert script.read_bytes() == upgrade.HANDOFF_SCRIPT.read_bytes()
+    plan = json.loads(plan_file.read_text("utf-8"))
+    wheel = f"aifactory-{NEWER}-py3-none-any.whl"
+    assert plan["args"] == ["tool", "install", "--force", wheel, "--constraints", "constraints.txt"]
+    assert (Path(plan["cwd"]) / wheel).is_file()
+    assert plan["pid"] == os.getpid() and plan["launcher"] == os.getppid()
+    assert plan["restart"] == ["python.exe", "factory.exe", "obs"]
+    assert plan["log"] == result.log and plan["version"] == NEWER
+    assert Path(plan["work"]) == script.parent
+    shutil.rmtree(plan["work"])
+
+
+def test_cli_on_windows_hands_off(
+    tmp_path: Path, uv_log: Path, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    monkeypatch.setattr(upgrade, "spawn_detached", _record(calls))
+    monkeypatch.setattr(upgrade, "needs_handoff", lambda: True)
+    code, obj = _run(capsys, str(make_bundle(tmp_path / "dist")))
+    assert code == 0 and obj["data"]["handed_off"] is True
+    assert obj["data"]["installed"] is False and "after this process exits" in obj["data"]["next"]
+    [(argv, _env)] = calls
+    plan = json.loads(Path(argv[-1]).read_text("utf-8"))
+    assert plan["restart"] is None
+    shutil.rmtree(plan["work"])
+
+
+def test_cli_on_windows_refuses_while_the_dashboard_runs(
+    tmp_path: Path, uv_log: Path, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(upgrade, "needs_handoff", lambda: True)
+    monkeypatch.setattr(cli, "_dashboard_running", lambda: True)
+    code, obj = _run(capsys, str(make_bundle(tmp_path / "dist")))
+    assert code == 2 and obj["error"]["code"] == "dashboard_running"

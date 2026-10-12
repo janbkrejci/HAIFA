@@ -6,6 +6,12 @@ the wheel's metadata and compared with the running ``__version__``. Then, unless
 ``uv tool install --force <wheel> --constraints constraints.txt`` runs in the unpacked bundle,
 exactly like the bundle's ``install.sh``. An editable install (development from the repo) is
 refused: it is updated with ``git pull``.
+
+On Windows the running process cannot replace its own tool environment: Windows locks the
+files of a running Python, and uv deletes the environment before it fails, which leaves a
+broken install. There the unpacked bundle is kept and handed off (``hand_off``) to a
+detached PowerShell script (``upgrade_handoff.ps1``) that waits until this process exits,
+runs the same uv command and optionally starts the dashboard again. The caller exits.
 """
 
 from __future__ import annotations
@@ -13,14 +19,16 @@ from __future__ import annotations
 import email.parser
 import hashlib
 import json
+import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import urllib.error
 import urllib.parse
 import urllib.request
 import zipfile
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from importlib import metadata
 from pathlib import Path, PurePosixPath
@@ -35,6 +43,9 @@ DISTRIBUTION = "aifactory"
 URL_SCHEMES = ("https", "file")
 DOWNLOAD_TIMEOUT = 60.0
 RESTART_HINT = "restart a running dashboard (factory obs) to load the new version"
+HANDOFF_SCRIPT = Path(__file__).resolve().parent / "upgrade_handoff.ps1"
+HANDOFF_LOG = "haifa-upgrade.log"
+HANDOFF_HINT = "the installation finishes after this process exits"
 
 
 class UpgradeError(Exception):
@@ -65,6 +76,8 @@ class UpgradeResult:
     stdout: str = ""
     stderr: str = ""
     warnings: list[str] = field(default_factory=list)
+    handed_off: bool = False
+    log: str | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -79,6 +92,8 @@ class UpgradeResult:
             "stdout": self.stdout,
             "stderr": self.stderr,
             "restart_dashboard": self.installed,
+            "handed_off": self.handed_off,
+            "log": self.log,
         }
 
 
@@ -232,6 +247,73 @@ def install_command(wheel: str) -> list[str]:
     return ["uv", "tool", "install", "--force", wheel, "--constraints", CONSTRAINTS_FILE]
 
 
+def needs_handoff() -> bool:
+    """Whether this process cannot replace its own tool environment (Windows)."""
+    return sys.platform == "win32"
+
+
+def spawn_detached(argv: Sequence[str], env: Mapping[str, str]) -> None:
+    """Start ``argv`` with no console, outliving this process."""
+    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+        subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+    )
+    subprocess.Popen(
+        list(argv),
+        env=dict(env),
+        creationflags=flags,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        close_fds=True,
+    )
+
+
+def hand_off(
+    uv: str,
+    result: UpgradeResult,
+    root: Path,
+    work: Path,
+    restart: Sequence[str] | None,
+    environ: Mapping[str, str] | None = None,
+    spawn: Callable[[Sequence[str], Mapping[str, str]], None] | None = None,
+) -> Path:
+    """Start the handoff script for the bundle unpacked in ``root``; the path of its log."""
+    log = Path(tempfile.gettempdir()) / HANDOFF_LOG
+    script = work / HANDOFF_SCRIPT.name
+    shutil.copyfile(HANDOFF_SCRIPT, script)
+    plan = {
+        "version": result.target_version,
+        "pid": os.getpid(),
+        "launcher": os.getppid(),
+        "uv": uv,
+        "args": result.command[1:],
+        "cwd": str(root),
+        "restart": list(restart) if restart else None,
+        "work": str(work),
+        "log": str(log),
+    }
+    plan_file = work / "handoff.json"
+    plan_file.write_text(json.dumps(plan), encoding="utf-8")
+    env = dict(os.environ if environ is None else environ)
+    # PowerShell 7 puts its own modules first; Windows PowerShell then fails to load cmdlets.
+    env.pop("PSModulePath", None)
+    (spawn or spawn_detached)(
+        [
+            "powershell",
+            "-NoProfile",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-WindowStyle",
+            "Hidden",
+            "-File",
+            str(script),
+            str(plan_file),
+        ],
+        env,
+    )
+    return log
+
+
 def run_upgrade(
     source: str,
     *,
@@ -239,8 +321,15 @@ def run_upgrade(
     current: str = __version__,
     expected_version: str | None = None,
     environ: Mapping[str, str] | None = None,
+    handoff: bool | None = None,
+    restart: Sequence[str] | None = None,
+    spawn: Callable[[Sequence[str], Mapping[str, str]], None] | None = None,
 ) -> UpgradeResult:
-    """Install HAIFA from the bundle ``source`` (path or URL); see the module docstring."""
+    """Install HAIFA from the bundle ``source`` (path or URL); see the module docstring.
+
+    ``handoff`` (default: on Windows) hands the installation off to a detached script that
+    then starts ``restart``, if given; the result has ``handed_off`` and the caller must exit.
+    """
     if editable_install():
         raise UpgradeError(
             "editable_install",
@@ -248,8 +337,11 @@ def run_upgrade(
             "update it with git pull instead",
             data={"current_version": current},
         )
-    with tempfile.TemporaryDirectory(prefix="haifa-upgrade-") as tmp:
-        work = Path(tmp)
+    if handoff is None:
+        handoff = needs_handoff()
+    work = Path(tempfile.mkdtemp(prefix="haifa-upgrade-"))
+    handed_off = False
+    try:
         zip_path = fetch_bundle(source, work)
         root = unpack_bundle(zip_path, work / "bundle")
         sums = verify_checksums(root)
@@ -289,6 +381,10 @@ def run_upgrade(
                 "uv is not on PATH; install it (https://docs.astral.sh/uv/) and run again",
                 data={**versions, "command": result.command},
             )
+        if handoff:
+            result.log = str(hand_off(uv, result, root, work, restart, environ, spawn))
+            result.handed_off = handed_off = True
+            return result
         try:
             proc = subprocess.run(
                 [uv, *result.command[1:]],
@@ -315,3 +411,6 @@ def run_upgrade(
             )
         result.installed = True
         return result
+    finally:
+        if not handed_off:
+            shutil.rmtree(work, ignore_errors=True)
