@@ -2,14 +2,14 @@
 
 Instalační příručka HAIFA (Helios AI Factory): co musí být na počítači, jak nainstalovat nástroj `factory` z distribučního balíčku `haifa-<verze>.zip` a jak instalaci ověřit. Stejný text je v balíčku jako `INSTALL.md` a v dashboardu jako kapitola **Instalace** příručky (ikona knihy v horní liště).
 
-Přístup ke zdrojovému repu HAIFA nepotřebuješ. Balíček obsahuje wheel `aifactory`, přesné verze závislostí (`constraints.txt`), instalační skript `install.sh`, tento návod, licence převzatých částí a kontrolní součty `SHA256SUMS`.
+Přístup ke zdrojovému repu HAIFA nepotřebuješ. Balíček obsahuje wheel `aifactory`, přesné verze závislostí (`constraints.txt`), instalační skripty `install.sh` (macOS, Linux, WSL) a `install.bat` s `install.ps1` (Windows), odinstalační skripty `uninstall.sh` a `uninstall.bat` s `uninstall.ps1`, tento návod, licence převzatých částí a kontrolní součty `SHA256SUMS`.
 
 ## Co budeš potřebovat
 
-- **Systém:** macOS, Linux, Windows přes WSL, nebo Windows 10/11 x64 nativně (bez WSL, s Git Bash z Git for Windows).
+- **Systém:** macOS, Linux, Windows přes WSL, nebo Windows 10/11 x64 nativně (bez WSL).
 - **Git** s nastaveným jménem a e-mailem pro commity.
 - **[uv](https://docs.astral.sh/uv/getting-started/installation/)** a Python 3.11 nebo novější. uv instaluje a aktualizuje nástroj `factory`.
-- **Bash, `curl` a `unzip`** pro instalaci (na Windows Git Bash a PowerShell).
+- **Bash, `curl` a `unzip`** pro instalaci na macOS a Linuxu. Na Windows stačí `winget`, ostatní doinstaluje `install.bat`.
 - **CLI hostingu** podle toho, kde máš repa: [GitHub CLI](https://github.com/cli/cli#installation) (`gh`) pro GitHub, Azure CLI `az` s rozšířením `azure-devops` pro Azure DevOps. Pro čistě lokální repa (provider `local`) žádné CLI nepotřebuješ.
 - **Alespoň jeden harness**, tedy CLI agenta, nainstalovaný a přihlášený: [Claude Code](https://code.claude.com/docs/en/setup) (`claude`), [Codex CLI](https://github.com/openai/codex) (`codex`) nebo [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) (`pi`, potřebuje Node.js).
 - **just**, pokud tvoje repa spouštějí testy přes `justfile`.
@@ -82,38 +82,20 @@ Skript ověří součty v `SHA256SUMS` a nainstaluje nástroj `factory` přes `u
 
 ## Windows bez WSL
 
-Postup je pro Windows 10/11 x64 a PowerShell. Git Bash z Git for Windows spouští instalační skript, HAIFA i Python běží nativně.
+Na Windows 10/11 x64 zařídí vše `install.bat`. Potřebuje jen `winget` (ověř `winget --version`, jinak nainstaluj **App Installer** z Microsoft Store).
 
-1. Ověř `winget --version` (jinak nainstaluj **App Installer** z Microsoft Store) a nainstaluj nástroje příkazy z bloku pod tímto seznamem. Ponech výchozí cestu Gitu `C:\Program Files\Git` a pak otevři nový PowerShell.
-2. Dej Git Bash na PATH před systémový `bash.exe`, nainstaluj Python, nastav identitu a přihlas se (druhý blok). `bash --version` musí ukázat Git Bash, ne WSL.
-3. Nainstaluj a přihlas harness, například `winget install --id Anthropic.ClaudeCode --exact --source winget`, pak v novém PowerShellu `claude`.
-4. Rozbal balíček a spusť instalaci (třetí blok).
+1. Rozbal `haifa-<verze>.zip` (v Průzkumníku pravým tlačítkem **Extrahovat vše**).
+2. Ve složce `haifa-<verze>` spusť dvojklikem `install.bat` (nebo ho spusť z `cmd` či PowerShellu).
 
-```powershell
-winget install --id Git.Git --exact --source winget
-winget install --id GitHub.cli --exact --source winget
-winget install --id astral-sh.uv --exact --source winget
-```
+Instalátor:
 
-```powershell
-$env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
-uv python install 3.12
-git config --global user.name "Tvoje jméno"
-git config --global user.email "tvuj@email.cz"
-gh auth login
-gh auth setup-git
-```
+1. ověří součty v `SHA256SUMS`,
+2. doinstaluje chybějící `git`, `uv`, `gh` a Node.js přes `winget` a harnessy `claude` a `codex` přes `npm`,
+3. když git nemá jméno nebo e-mail pro commity, zeptá se na ně,
+4. nainstaluje nástroj `factory` přes `uv tool install` s verzemi závislostí z `constraints.txt` a přidá adresář nástrojů uv na PATH,
+5. založí knihovnu ze semínka (`factory library init`), nebo do existující knihovny převezme nové semínko (`factory library seed`).
 
-```powershell
-Expand-Archive -Path haifa-<verze>.zip -DestinationPath .\haifa-install
-Set-Location .\haifa-install\haifa-<verze>
-$env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
-& "$env:ProgramFiles\Git\bin\bash.exe" ./install.sh
-if ($LASTEXITCODE -ne 0) { throw "Instalace HAIFA selhala." }
-uv tool update-shell
-```
-
-Otevři nový PowerShell. Řádek `$env:Path = "$env:ProgramFiles\Git\bin;$env:Path"` opakuj v každém novém PowerShellu, než spustíš `factory`.
+Instalace přes `winget` si může vyžádat potvrzení správce. Opakované spuštění je bezpečné: přítomné nástroje znovu neinstaluje. Nakonec se přihlas tam, kde ještě nejsi (`gh auth login`, `gh auth setup-git`, `claude`, `codex login`), a otevři nový terminál, aby se načetl nový PATH.
 
 ## Ověření instalace
 
@@ -124,7 +106,7 @@ factory check
 
 `factory --version` vypíše nainstalovanou verzi. `factory check` jen čte a nic nemění: mimo repo zkontroluje počítač a knihovnu, v repu navíc repo. Každé zjištění má kód, závažnost (`error`, `warning`, `info`) a radu, co udělat. Dokud kontrola hlásí `error`, tasky nespouštěj. Kódy a jejich opravy jsou v kapitole [Řešení problémů](#/guide/reseni-problemu). Dotazy na hosting a přihlášení harnessů vynecháš přes `factory check --offline`.
 
-Když shell `factory` nenajde, spusť `uv tool update-shell` a otevři nový terminál. Na nativních Windows kontrola zatím hlásí také `unsupported_platform` (zná jen macOS, Linux a WSL); ostatní zjištění platí.
+Když shell `factory` nenajde, spusť `uv tool update-shell` a otevři nový terminál.
 
 ## Spuštění dashboardu
 
@@ -148,11 +130,9 @@ Podrobnosti v kapitole [Aktualizace a vydání](#/guide/aktualizace).
 
 ## Odinstalace
 
-```bash
-uv tool uninstall aifactory
-```
+Ve složce rozbaleného balíčku spusť `uninstall.bat` (Windows) nebo `./uninstall.sh` (macOS, Linux, WSL). Skript odinstaluje nástroj `factory` a zeptá se, jestli smazat i domovský adresář HAIFA (`~/.config/haifa`, jinde podle proměnné `HAIFA_HOME`) s nastavením počítače, knihovnou a registrem repozitářů. Bez ptaní ho smaže přepínač `-Purge` (`--purge`), ponechá `-KeepData` (`--keep-data`). Neodeslané změny knihovny se smazáním ztratí, proto nejdřív spusť `factory library push`.
 
-Nastavení počítače, knihovna a registr repozitářů zůstanou v domovském adresáři HAIFA (`~/.config/haifa`, jinde podle proměnné `HAIFA_HOME`); smaž ho, pokud je už nepotřebuješ. Konfigurace repozitářů (`.factory/`) a backlog zůstávají v repech.
+Bez balíčku stačí `uv tool uninstall aifactory`. Závislosti (git, uv, gh, Node.js, harnessy), konfigurace repozitářů (`.factory/`) a backlog zůstávají.
 
 ## Licence
 

@@ -72,15 +72,15 @@ def _roster(repo: Path, text: str) -> None:
 # -- platform and tools --
 
 
-@pytest.mark.parametrize("name", ["darwin", "linux", "wsl"])
+@pytest.mark.parametrize("name", ["darwin", "linux", "wsl", "win32"])
 def test_supported_platforms(outside: Path, name: str) -> None:
     assert "unsupported_platform" not in _codes(_outside(outside, FakeMachine(platform_name=name)))
 
 
 def test_unsupported_platform(outside: Path) -> None:
-    report = _outside(outside, FakeMachine(platform_name="win32"))
+    report = _outside(outside, FakeMachine(platform_name="freebsd"))
     finding = _one(report, "unsupported_platform", "machine", "error")
-    assert "WSL" in (finding.fix or "")
+    assert "Windows" in (finding.fix or "")
     assert not report.ok
 
 

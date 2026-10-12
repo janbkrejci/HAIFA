@@ -106,7 +106,7 @@ def test_outside_a_repository(
     assert {f["scope"] for f in data["findings"]} <= {"machine", "library"}
     assert "library_missing" in {f["code"] for f in data["findings"]}
 
-    machine.platform_name = "win32"
+    machine.platform_name = "freebsd"
     rc, obj = run_json(capsys, ["check", "--json"])
     assert rc == 1 and obj["error"]["code"] == "checks_failed"
     assert "unsupported_platform" in obj["error"]["message"]
