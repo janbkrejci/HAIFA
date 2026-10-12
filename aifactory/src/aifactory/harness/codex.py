@@ -11,7 +11,10 @@ How the Codex CLI (checked against codex-cli 0.160.0) is driven:
   ``json.dumps`` of a string is also a valid TOML basic string. It is not passed
   as ``model_instructions_file``, which would replace Codex's built-in
   instructions, including how to use its own tools. ``-c`` lasts for one
-  process only, so the instructions are sent on every turn.
+  process only, so the instructions are sent on every turn. Codex has no way to
+  read them from a file, so they are the one prompt left on the command line.
+- **User prompt.** It is sent through stdin (``-`` as the prompt argument), so a
+  long prompt never hits the Windows command-line limit (WinError 206).
 - **Create and continue are different commands.** The first turn is
   ``codex exec``. A correction turn (invalid JSON, failed gates) goes to the
   same thread through ``codex exec resume <thread_id>``. The thread id arrives
@@ -60,7 +63,7 @@ from pathlib import Path
 from typing import Any
 
 from aifactory.engine.data_types import AgentRequest, AgentResult
-from aifactory.engine.utils import env_flag, now_iso, operator_env
+from aifactory.engine.utils import env_flag, now_iso, operator_env, send_stdin
 
 Event = dict[str, Any]
 
@@ -383,8 +386,8 @@ def build_command(request: AgentRequest, thread_id: str = "") -> list[str]:
     if safe_mode():
         common += ["-c", "project_doc_max_bytes=0"]
     if thread_id:
-        return [CODEX_PATH, "exec", "resume", *common, "--", thread_id, request.prompt]
-    return [CODEX_PATH, "exec", *common, "-C", str(request.cwd), "--", request.prompt]
+        return [CODEX_PATH, "exec", "resume", *common, "--", thread_id, "-"]
+    return [CODEX_PATH, "exec", *common, "-C", str(request.cwd), "--", "-"]
 
 
 def _turn_usage(current: dict[str, int], previous: dict[str, int]) -> dict[str, int]:
@@ -419,11 +422,11 @@ def run(
     )
     usage: dict[str, int] = {}
     last_error = ""
-    # stdin is DEVNULL: the prompt travels in argv, and an inherited stdin lets
-    # the child wait for input that is never coming.
+    # The prompt goes through stdin, which is closed right after so the child
+    # sees EOF. An inherited stdin would let it wait for input that never comes.
     process = subprocess.Popen(
         launch_command(cmd),
-        stdin=subprocess.DEVNULL,
+        stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
@@ -433,6 +436,7 @@ def run(
         encoding="utf-8",
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
     )
+    send_stdin(process, request.prompt)
     if on_spawn:
         on_spawn(process.pid)
     with raw_path.open("a", encoding="utf-8", newline="\n") as raw:

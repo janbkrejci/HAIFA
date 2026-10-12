@@ -14,7 +14,7 @@ grants it with `--approve`. The operator's personal skills (`~/.pi/agent/skills`
 `--skill` still load). pi cannot drop the global context files in
 `~/.pi/agent` (AGENTS.md, CLAUDE.md, APPEND_SYSTEM.md) without dropping the
 repo's too; `factory check` reports them as `pi_not_isolated`. The agent's role
-stays in `--system-prompt`. `PI_SAFE_MODE=1` restores full isolation.
+stays in `--system-prompt` (a file). `PI_SAFE_MODE=1` restores full isolation.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .data_types import PiRequest, PiResult
-from .utils import env_flag, now_iso, operator_env
+from .utils import env_flag, now_iso, operator_env, prompt_file, send_stdin
 
 PI_PATH = os.environ.get("PI_PATH", "pi")
 
@@ -375,7 +375,11 @@ def _attempt(request: PiRequest, on_event: Optional[Callable[[dict], None]] = No
         "--thinking", request.thinking,
         "--session-id", request.session_id,
         "--session-dir", request.session_dir,
-        "--system-prompt", request.system_prompt,
+        # aifactory 3.1: pi reads `--system-prompt` from a file when given an
+        # existing path, so neither prompt rides on the command line (WinError 206).
+        "--system-prompt", prompt_file(request.session_dir,
+                                       f"{request.session_id}.system.md",
+                                       request.system_prompt),
         *isolation_args(request.cwd),     # aifactory: repo-native instructions and skills
         *provider_extensions(provider),   # aifactory 3.0: a provider from a pi package
     ]
@@ -383,7 +387,8 @@ def _attempt(request: PiRequest, on_event: Optional[Callable[[dict], None]] = No
         cmd += ["--tools", ",".join(request.tools)]
     for extension in request.extensions:
         cmd += ["-e", extension]
-    cmd.append(request.prompt)
+    # aifactory 3.1: the user prompt goes through stdin; pi reads piped stdin as
+    # the first message.
 
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -391,16 +396,17 @@ def _attempt(request: PiRequest, on_event: Optional[Callable[[dict], None]] = No
     result = PiResult(session_id=request.session_id,
                       context_window=context_window(provider, model_id))
     last_error = ""
-    # stdin is DEVNULL, deliberately. The prompt travels in argv, so the child
-    # never needs stdin — but inheriting the parent's means pi sees a non-TTY
-    # and can sit forever waiting for piped input that will never arrive or
-    # EOF. That failure is silent and total: no request goes out, no bytes come
-    # back, and the ADW blocks on a read loop with nothing to read. Observed as
-    # a run that sat idle at 0% CPU with an empty raw_output.jsonl.
-    process = subprocess.Popen(cmd, stdin=subprocess.DEVNULL,
+    # aifactory 3.1: stdin is a pipe that carries the prompt and is closed right
+    # after, so pi always sees EOF. Never inherit the parent's stdin: pi then
+    # sees a non-TTY and can sit forever waiting for piped input that will never
+    # arrive or EOF. That failure is silent and total: no request goes out, no
+    # bytes come back, and the ADW blocks on a read loop with nothing to read.
+    # Observed as a run that sat idle at 0% CPU with an empty raw_output.jsonl.
+    process = subprocess.Popen(cmd, stdin=subprocess.PIPE,
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, bufsize=1, cwd=request.cwd,
                                env=operator_env(), encoding="utf-8")
+    send_stdin(process, request.prompt)
     if on_spawn:
         on_spawn(process.pid)
     with raw_path.open("a", encoding="utf-8", newline="\n") as raw:

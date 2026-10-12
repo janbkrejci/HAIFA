@@ -3,15 +3,61 @@
 from __future__ import annotations
 
 import os
+import re
 import secrets
 import subprocess
 import sys
+import threading
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 
 # aifactory: no load_dotenv() at import; `factory` loads $HAIFA_HOME/env at start (home.py)
+
+
+# aifactory 3.1: prompts travel through stdin and files, never argv. Windows caps
+# a CreateProcess command line at 32 767 characters (WinError 206), and a
+# dashboard advice payload or a long task prompt passes that easily.
+def send_stdin(process, text):
+    """Write `text` to the child's stdin as UTF-8 and close it, off-thread.
+
+    A thread, because a child that writes a lot of output before it has read
+    all of its input would otherwise deadlock against this write. Bytes,
+    because a text-mode pipe on Windows turns every newline into CRLF.
+    """
+    def write():
+        stream = process.stdin
+        if stream is None:
+            return
+        try:
+            raw = getattr(stream, "buffer", None)
+            if raw is not None:
+                raw.write(text.encode("utf-8"))
+            else:
+                stream.write(text)
+        except (BrokenPipeError, OSError, ValueError):
+            pass                            # the child exited early; its exit code says why
+        finally:
+            try:
+                stream.close()
+            except (BrokenPipeError, OSError, ValueError):
+                pass
+
+    thread = threading.Thread(target=write, name="agent-stdin", daemon=True)
+    thread.start()
+    return thread
+
+
+def prompt_file(directory, name, text):
+    """Write a prompt to `<directory>/<name>` and return its absolute path.
+
+    Characters a file name cannot hold become `_`.
+    """
+    path = Path(directory).resolve() / re.sub(r"[^A-Za-z0-9._-]", "_", name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text, encoding="utf-8", newline="\n")
+    return str(path)
 
 
 # aifactory 2.15: per-call subprocess settings, isolated across dashboard worker threads.
