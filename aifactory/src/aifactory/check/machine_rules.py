@@ -25,7 +25,7 @@ from aifactory.harness.check import harnesses_in_config
 from aifactory.home import env_file
 from aifactory.providers.azure import PAT_ENV
 
-PLATFORMS = ("darwin", "linux", "wsl")
+PLATFORMS = ("darwin", "linux", "wsl", "win32")
 OVERRIDES = (
     "CLAUDE_SAFE_MODE",
     "CLAUDE_MCP_CONFIG",
@@ -58,7 +58,7 @@ def platform(ctx: CheckContext) -> Iterator[Finding]:
         "machine",
         "error",
         f"the platform '{name}' is not supported",
-        "HAIFA runs on macOS, Linux and WSL; on Windows use WSL",
+        "HAIFA runs on macOS, Linux, WSL and Windows",
     )
 
 

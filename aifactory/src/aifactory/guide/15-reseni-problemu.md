@@ -14,7 +14,7 @@ Každé zjištění má kód, závažnost a radu. `error` blokuje práci (tasky 
 
 | Kód | Co znamená a jak to opravit |
 | --- | --- |
-| `unsupported_platform` | Kontrola zná macOS, Linux a WSL. Na jiném systému HAIFA nepodporuje; nativní Windows instalace (kapitola Instalace) tento kód zatím také dostane. |
+| `unsupported_platform` | Kontrola zná macOS, Linux, WSL a Windows. Na jiném systému HAIFA nepodporuje. |
 | `git_missing` | Nainstaluj git. |
 | `git_identity_missing` | `git config --global user.name "…"` a `git config --global user.email …`. |
 | `uv_missing` | Nainstaluj uv (`curl -LsSf https://astral.sh/uv/install.sh \| sh` nebo `brew install uv`). Bez něj nejde aktualizovat. |

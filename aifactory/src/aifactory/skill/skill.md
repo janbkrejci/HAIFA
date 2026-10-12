@@ -483,7 +483,7 @@ repository, the trace DB, the library or the home directory, and never fetches.
 4. Findings and their fixes, by group:
    - Installation: `factory_outdated` (machine, error: the library needs a newer factory;
      `factory upgrade`).
-   - Platform and tools: `unsupported_platform` (only macOS, Linux and WSL),
+   - Platform and tools: `unsupported_platform` (only macOS, Linux, WSL and Windows),
      `git_missing`, `git_identity_missing` (`git config --global user.name/user.email`),
      `uv_missing` (install uv), `node_missing` (a roster with pi needs node).
    - Harnesses: `harness_missing` (error for a harness the roster uses; outside a

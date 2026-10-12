@@ -1,8 +1,10 @@
 """Build the HAIFA distribution bundle ``dist/haifa-<version>.zip`` (``just bundle``).
 
 The zip holds one directory ``haifa-<version>/`` with exactly: the ``aifactory`` wheel,
-``constraints.txt`` (runtime dependencies pinned from ``uv.lock``), ``install.sh``,
-``INSTALL.md``, ``THIRD_PARTY_NOTICES`` and ``SHA256SUMS`` over all the other files.
+``constraints.txt`` (runtime dependencies pinned from ``uv.lock``), ``install.sh`` and
+``uninstall.sh``, ``install.bat`` with ``install.ps1`` and ``uninstall.bat`` with
+``uninstall.ps1`` (Windows, the batch files with CRLF line ends), ``INSTALL.md``,
+``THIRD_PARTY_NOTICES`` and ``SHA256SUMS`` over all the other files.
 ``INSTALL.md`` is the installation chapter of the guide (``src/aifactory/guide``) with
 ``<verze>`` replaced by the version and the in-dashboard links (``#/guide/...``) reduced to
 their text, so the standalone guide and the dashboard agree.
@@ -26,6 +28,14 @@ from typing import Any
 PROJECT = Path(__file__).resolve().parents[1]
 HERE = Path(__file__).resolve().parent
 ZIP_TIME = (2026, 1, 1, 0, 0, 0)
+TEMPLATES = (
+    "install.sh",
+    "uninstall.sh",
+    "install.bat",
+    "install.ps1",
+    "uninstall.bat",
+    "uninstall.ps1",
+)
 
 
 class BundleError(Exception):
@@ -119,9 +129,12 @@ def build_bundle(out_dir: Path, project: Path = PROJECT) -> Path:
             wheel.name: wheel.read_bytes(),
             "constraints.txt": constraints(project / "uv.lock").encode("utf-8"),
         }
-    text = (HERE / "install.sh").read_text("utf-8")
-    text = text.replace("@VERSION@", ver).replace("@WHEEL@", wheel.name)
-    files["install.sh"] = text.encode("utf-8")
+    for template in TEMPLATES:
+        text = (HERE / template).read_text("utf-8")
+        text = text.replace("@VERSION@", ver).replace("@WHEEL@", wheel.name)
+        if template.endswith(".bat"):  # cmd misreads labels and lines of an LF batch file
+            text = text.replace("\n", "\r\n")
+        files[template] = text.encode("utf-8")
     files["INSTALL.md"] = install_guide(ver, project).encode("utf-8")
     files["THIRD_PARTY_NOTICES"] = (project / "THIRD_PARTY_NOTICES").read_bytes()
     files["SHA256SUMS"] = "".join(
@@ -135,7 +148,7 @@ def build_bundle(out_dir: Path, project: Path = PROJECT) -> Path:
         for name in sorted(files):
             info = zipfile.ZipInfo(f"{top}/{name}", date_time=ZIP_TIME)
             info.compress_type = zipfile.ZIP_DEFLATED
-            mode = 0o755 if name == "install.sh" else 0o644
+            mode = 0o755 if name.endswith(".sh") else 0o644
             info.external_attr = (0o100000 | mode) << 16
             zf.writestr(info, files[name])
     return target
