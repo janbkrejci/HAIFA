@@ -80,6 +80,20 @@ function Install-Dependency([string]$Name, [string]$Via, [string]$Package) {
     }
 }
 
+# .NET instead of Get-FileHash: Windows PowerShell started from PowerShell 7 inherits its
+# PSModulePath and does not find Get-FileHash.
+function Get-Sha256([string]$Path) {
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    $stream = [System.IO.File]::OpenRead($Path)
+    try {
+        $bytes = $sha.ComputeHash($stream)
+    } finally {
+        $stream.Dispose()
+        $sha.Dispose()
+    }
+    return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
+}
+
 function Test-GitValue([string]$Key) {
     $value = git config --get $Key
     return ($LASTEXITCODE -eq 0) -and [bool]("$value".Trim())
@@ -95,7 +109,7 @@ foreach ($line in Get-Content -LiteralPath 'SHA256SUMS') {
     if (-not (Test-Path -LiteralPath $name -PathType Leaf)) {
         Fail "SHA256SUMS: $name is missing"
     }
-    $actual = (Get-FileHash -LiteralPath $name -Algorithm SHA256).Hash.ToLowerInvariant()
+    $actual = Get-Sha256 (Join-Path $PSScriptRoot $name)
     if ($actual -ne $digest.ToLowerInvariant()) {
         Fail "SHA256SUMS: $name does not match; the bundle is damaged, download it again"
     }
