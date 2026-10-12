@@ -15,6 +15,8 @@ const emit = defineEmits<{ added: [result: AddRepoResult]; reinspect: [path: str
 
 const adding = ref(false)
 const addError = ref<string | null>(null)
+/** A base that takes changes only through pull requests: the install goes to a PR. */
+const viaPr = ref(false)
 
 const state = computed(() => props.inspect.factory?.state ?? null)
 const kind = computed<'problem' | 'registered' | 'add'>(() => {
@@ -31,11 +33,12 @@ async function add() {
   adding.value = true
   addError.value = null
   try {
-    emit('added', await addRepo(root.value))
+    emit('added', await addRepo(root.value, viaPr.value ? 'pr' : 'base'))
   } catch (err) {
     if (err instanceof ApiError) {
       const data = (err.data && typeof err.data === 'object' ? err.data : {}) as Partial<RepoProblem>
       addError.value = problemText({ ...data, code: err.code, message: err.message }, props.inspect)
+      if (err.code === 'push_failed' && !viaPr.value) addError.value += ` Pokud ${base.value} přijímá změny jen přes pull request, zaškrtni „Přes pull request“.`
     } else {
       addError.value = errorText(err)
     }
@@ -94,9 +97,15 @@ async function add() {
     <template v-else>
       <p v-if="kind === 'registered'" class="note" data-test="inspect-registered">Repo už je v dashboardu.</p>
       <p class="note" data-test="inspect-install-note">
-        {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory/config.yaml (existující ponechá), doplní .gitignore a commitne to do {{ base }}.
+        {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory/config.yaml (existující ponechá), doplní .gitignore a
+        <template v-if="viaPr">otevře s tím pull request do {{ base }}. Factory začne fungovat po jeho mergi a akci Stáhnout konfiguraci z base v záložce Factory.</template>
+        <template v-else>commitne to do {{ base }}.</template>
       </p>
-      <p v-if="adding" class="note" data-test="inspect-adding">Zapisuji factory a commituji do {{ base }}…</p>
+      <label class="via-pr" data-test="inspect-via-pr">
+        <input v-model="viaPr" type="checkbox" :disabled="adding" />
+        Přes pull request ({{ base }} nepřijímá přímý push)
+      </label>
+      <p v-if="adding" class="note" data-test="inspect-adding">{{ viaPr ? 'Zapisuji factory a otevírám pull request…' : `Zapisuji factory a commituji do ${base}…` }}</p>
       <p v-if="addError" class="problem" data-test="inspect-add-error">{{ addError }}</p>
       <div class="actions">
         <template v-if="kind === 'registered'">
@@ -146,6 +155,13 @@ dd {
 .note {
   margin: 0;
   color: var(--dim);
+}
+
+.via-pr {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
 }
 
 .warn {
