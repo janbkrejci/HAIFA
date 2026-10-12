@@ -66,6 +66,7 @@ class ConfigCommitResult:
     branch: str | None = None
     pr: PullRequest | None = None
     warnings: tuple[str, ...] = ()
+    merged: bool = False
 
     def to_json(self) -> dict[str, Any]:
         pr = None
@@ -81,6 +82,7 @@ class ConfigCommitResult:
             "advanced": self.advanced,
             "branch": self.branch,
             "pr": pr,
+            "merged": self.merged,
         }
 
 
@@ -157,6 +159,7 @@ def plan_config_commit(repo: Path, *, pr: bool = False) -> tuple[PublishPlan, _C
 
     ctx = _context(repo)
     main, settings = ctx.main, ctx.settings
+    pr = publish.uses_pr(settings, pr)
     base = settings.base
     base_sha = pgit.rev_parse(main, f"refs/heads/{base}")
     if base_sha is None:
@@ -241,16 +244,31 @@ def commit_config(
         raise ConfigCommitError(first.code, first.message, data=plan.to_json(), issues=issues)
     subject = (message or "").strip() or f"config: {len(plan.files)} file(s) from factory"
     try:
-        if pr:
+        if plan.target == publish.PR:
+            provider = get_provider(ctx.settings, ctx.main)
             result = publish.publish_pr(
                 ctx.main,
-                provider=get_provider(ctx.settings, ctx.main),
+                provider=provider,
                 settings=ctx.settings,
                 plan=plan,
                 message=subject,
                 body=_body(plan),
                 prefix=CONFIG_BRANCH_PREFIX,
             )
+            if ctx.settings.base_pr_merge == "auto":
+                store = _store(ctx.main)
+                try:
+                    result = publish.finish_pr(
+                        ctx.main,
+                        provider=provider,
+                        settings=ctx.settings,
+                        plan=plan,
+                        result=result,
+                        message=subject,
+                        store=store,
+                    )
+                finally:
+                    store.close()
         else:
             store = _store(ctx.main)
             try:
@@ -273,6 +291,7 @@ def commit_config(
         branch=result.branch,
         pr=result.pr,
         warnings=(*warnings, *result.warnings),
+        merged=result.merged,
     )
 
 

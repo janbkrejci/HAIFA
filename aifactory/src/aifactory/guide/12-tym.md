@@ -34,7 +34,7 @@ factory init --commit --expect <digest>
 
 `factory init --commit` udělá jeden commit do base a odešle ho. Když remote přímý push do base odmítne (chráněná větev), použij `factory init --commit --pr --expect <digest>`: konfigurace pak přijde pull requestem. Agenty a workflow `factory init` nekopíruje, repo je dědí z knihovny.
 
-Totéž udělá dashboard: na přehledu **Přidat repozitář**, vyber složku repa a potvrď instalaci. Pro chráněnou base zaškrtni **Přes pull request**.
+Totéž udělá dashboard: na přehledu **Přidat repozitář**, vyber složku repa a potvrď instalaci. Pro chráněnou base zaškrtni **Změny base přes pull request** (kapitola [Konfigurace repa](#/guide/konfigurace-repa)).
 
 ## Sdílené a lokální nastavení agentů
 

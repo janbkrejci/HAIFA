@@ -65,6 +65,7 @@ from aifactory.providers.publish import (
     direct_blockers,
     plan_contents,
     plan_digest,
+    uses_pr,
 )
 
 if TYPE_CHECKING:
@@ -130,6 +131,7 @@ class InitCommitResult:
     branch: str | None = None
     pr: PullRequest | None = None
     extra_warnings: tuple[str, ...] = ()
+    merged: bool = False
 
     @property
     def warnings(self) -> list[str]:
@@ -148,6 +150,7 @@ class InitCommitResult:
             "advanced": self.advanced,
             "branch": self.branch,
             "pr": pr,
+            "merged": self.merged,
         }
 
 
@@ -291,6 +294,31 @@ def _harness_warnings(harnesses: Mapping[str, str], detected: Detected) -> list[
 FACTORY_DIR = ".factory"
 
 
+def _committed_base_changes(
+    root: Path, base_sha: str, settings: ProjectSettings
+) -> ProjectSettings:
+    """`settings` with ``base_changes`` and ``base_pr_merge`` of the ``config.yaml`` in base.
+
+    The dashboard's "add" of an installed repository keeps that file, so its choice of how
+    factory changes base applies.
+    """
+    from aifactory.config.settings import parse_project_settings
+
+    blob = git.blob_at(root, base_sha, CONFIG_FILE)
+    if blob is None:
+        return settings
+    text = git.read_blob(root, blob[1]).decode("utf-8", "replace")
+    committed = parse_project_settings(text, CONFIG_FILE, [])
+    if committed is None:
+        return settings
+    return settings.model_copy(
+        update={
+            "base_changes": committed.base_changes,
+            "base_pr_merge": committed.base_pr_merge,
+        }
+    )
+
+
 def _state_blocker(root: Path, base_sha: str) -> Blocker | None:
     if _committed(root, base_sha, CONFIG_FILE) or _committed(root, "HEAD", CONFIG_FILE):
         return Blocker("already_installed", f"{CONFIG_FILE} is committed; factory is installed")
@@ -420,6 +448,8 @@ def plan_init(
     pr: bool = False,
     environ: Mapping[str, str] | None = None,
     replace: bool = False,
+    base_changes: str | None = None,
+    base_pr_merge: str | None = None,
 ) -> InitPlan:
     """The install plan; see the module docstring. Writes nothing.
 
@@ -445,10 +475,15 @@ def plan_init(
         azure=_azure(chosen, azure, detected),
         remote=detected.remote,
         docs_root=docs_root,
+        base_changes=base_changes,
+        base_pr_merge=base_pr_merge,
     )
     warnings: list[InitWarning] = []
     contents: dict[str, bytes] = {}
     keep = replace and _committed(root, base_sha, CONFIG_FILE)
+    if keep:
+        settings = _committed_base_changes(root, base_sha, settings)
+    pr = uses_pr(settings, pr)
     if not keep:
         write_remote = detected.remote not in (None, "origin")
         contents[CONFIG_FILE] = render_config(settings, write_remote=write_remote)
@@ -573,16 +608,33 @@ def commit_init(
     subject = (message or "").strip() or "factory: install"
     root, settings = plan.root, plan.settings
     try:
-        if pr:
+        if plan.publish.target == PR:
+            provider = get_provider(settings, root)
             result = publish.publish_pr(
                 root,
-                provider=get_provider(settings, root),
+                provider=provider,
                 settings=settings,
                 plan=plan.publish,
                 message=subject,
                 body=_body(plan),
                 prefix=INIT_BRANCH_PREFIX,
             )
+            store = _store(root)
+            try:
+                result = publish.finish_pr(
+                    root,
+                    provider=provider,
+                    settings=settings,
+                    plan=plan.publish,
+                    result=result,
+                    message=subject,
+                    store=store,
+                    materialize=True,
+                    command="init",
+                )
+            finally:
+                if store is not None:
+                    store.close()
         else:
             store = _store(root)
             try:
@@ -618,4 +670,5 @@ def commit_init(
         branch=result.branch,
         pr=result.pr,
         extra_warnings=tuple(extra),
+        merged=result.merged,
     )

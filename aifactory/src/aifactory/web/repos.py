@@ -182,24 +182,32 @@ def add_repo(
     raw: object,
     environ: Mapping[str, str] | None = None,
     *,
-    pr: bool = False,
+    base_changes: str | None = None,
+    base_pr_merge: str | None = None,
 ) -> tuple[RepoEntry, bool, JsonDict, list[str]]:
     """The dashboard's "add": register the repository and install factory in one go.
 
     The install writes only ``.factory/config.yaml`` (kept when it is committed) and the
     ``.gitignore`` lines, in one commit on base, pushed when there is a remote (see
-    ``plan_init(replace=True)``); agents and workflows come from the library. With ``pr``
-    (a base that takes changes only through pull requests) the commit goes to
-    ``factory-init/<n>`` with a pull request and base stays; factory is installed once it
-    is merged and base pulled. A refused install leaves no new registry entry. Returns
-    ``(entry, created, install, warnings)``.
+    ``plan_init(replace=True)``); agents and workflows come from the library.
+    ``base_changes`` and ``base_pr_merge`` go to ``config.yaml`` and already apply to this
+    commit: with ``pr`` it goes to ``factory-init/<n>`` with a pull request (merged at once
+    with ``auto``), and factory is installed once base has it. A refused install leaves no
+    new registry entry. Returns ``(entry, created, install, warnings)``.
     """
     from aifactory.library.install_commit import commit_init
     from aifactory.library.store import LibraryStoreError
 
     entry, created, warnings = register_repo(registry, raw)
     try:
-        result = commit_init(Path(entry.path), replace=True, environ=environ, pr=pr)
+        result = commit_init(
+            Path(entry.path),
+            replace=True,
+            environ=environ,
+            pr=base_changes == "pr",
+            base_changes=base_changes,
+            base_pr_merge=base_pr_merge,
+        )
     except LibraryStoreError as exc:
         if created:
             registry.remove(entry.id)
@@ -210,6 +218,7 @@ def add_repo(
         "pushed": result.pushed,
         "files": [f.to_json() for f in result.plan.publish.files],
         "pr": {"url": result.pr.url, "branch": result.pr.branch} if result.pr else None,
+        "merged": result.merged,
     }
     return entry, created, install, [*warnings, *result.warnings]
 

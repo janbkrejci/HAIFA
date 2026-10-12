@@ -19,6 +19,7 @@ Platná rozhodnutí, jejichž důvod z kódu nevyčteš. Historie (product brief
 - **Instrukce a skilly repa:** agenti používají CLAUDE.md, AGENTS.md a skilly repa tak, jak je jejich harness načte při spuštění v repu. Osobní a globální konfigurace operátora se do běhu nedostane, kde to harness umí, jinak to hlásí `factory check`. `*_SAFE_MODE=1` vrátí úplnou izolaci.
 - **Skilly v repu:** zdroj je `.claude/skills/<jméno>/`. `.agents/skills/<jméno>/` je jeho kopie pro codex a pi, bez symlinků (na Windows bez `core.symlinks` nefungují). Kopii udržuje `factory skills sync` a rozdíl hlásí `factory check`.
 - **Harness explicitně:** harness je u agenta vždy zapsaný, nikdy se neodvozuje z názvu modelu.
+- **Změny base:** jak factory mění base, je nastavení repa v `config.yaml`, ne volba jednotlivého příkazu. `base_changes: direct` commituje a pushuje do base. `base_changes: pr` posílá každou změnu (instalace, konfigurace, položky knihovny, backlog, odebrání) jako pull request a platí to i pro instalaci, která nastavení zapisuje. `base_pr_merge: auto` vlastní PR factory hned mergne a posune lokální base. Na GitHubu, kde autor nemůže schválit vlastní PR, merguje přes `--admin`, na Azure DevOps ho autor sám schválí. Když merge selže, PR zůstane otevřený s varováním. Stažení base snese necommitnuté změny, které stahovaný commit přináší beze změny (backlog čekající na PR).
 
 ## Dashboard a distribuce
 

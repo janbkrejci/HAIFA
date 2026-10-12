@@ -186,7 +186,7 @@ describe('ReposAddView', () => {
     await card.get('[data-test="inspect-add"]').trigger('click')
     await flushPromises()
     const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos' && init?.method === 'POST')
-    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ path: '/w/repo', target: 'pr' })
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ path: '/w/repo', base_changes: 'pr', base_pr_merge: 'manual' })
     const link = wrapper.get('[data-test="repo-added-pr"]')
     expect(link.attributes('href')).toBe('https://github.com/me/repo/pull/3')
     expect(wrapper.get('[data-test="repo-added-install"]').text()).toContain('Stáhnout konfiguraci z base')
@@ -203,7 +203,32 @@ describe('ReposAddView', () => {
     await inspectPath(wrapper)
     await wrapper.get('[data-test="inspect-add"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="inspect-add-error"]').text()).toContain('zaškrtni „Přes pull request“')
+    expect(wrapper.get('[data-test="inspect-add-error"]').text()).toContain('zaškrtni „Změny base přes pull request“')
+  })
+
+  it('asks factory to merge its own pull requests', async () => {
+    const fetchMock = stub({
+      inspect: inspected({ branch: 'develop', factory: factory('none', { base: 'develop' }) }),
+      handler: (url, init) => url === '/api/repos' && init?.method === 'POST'
+        ? envelope({
+          repo: { id: 'repo', name: 'repo', path: '/w/repo' },
+          created: true,
+          install: { ...INSTALL, pr: { url: 'https://github.com/me/repo/pull/4', branch: 'factory-init/1' }, merged: true },
+        }, 201)
+        : undefined,
+    })
+    const wrapper = await mountView()
+    await inspectPath(wrapper)
+    const card = wrapper.get('[data-test="inspect-card"]')
+    expect(card.find('[data-test="inspect-auto-merge"]').exists()).toBe(false)
+    await card.get('[data-test="inspect-via-pr"] input').setValue(true)
+    await card.get('[data-test="inspect-auto-merge"] input').setValue(true)
+    expect(card.get('[data-test="inspect-install-note"]').text()).toContain('a hned ho mergne')
+    await card.get('[data-test="inspect-add"]').trigger('click')
+    await flushPromises()
+    const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos' && init?.method === 'POST')
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ path: '/w/repo', base_changes: 'pr', base_pr_merge: 'auto' })
+    expect(wrapper.get('[data-test="repo-added-install"]').text()).toContain('hned mergnula')
   })
 
   it('shows the state of an installed repo, and Add', async () => {

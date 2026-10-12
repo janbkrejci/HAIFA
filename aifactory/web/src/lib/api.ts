@@ -332,8 +332,10 @@ export interface RepoInstall {
   commit: string | null
   pushed: boolean
   files: CommitFile[]
-  /** The pull request of an add with target pr (null: committed on base). */
+  /** The pull request of an add with base_changes pr (null: committed on base). */
   pr?: { url: string; branch: string } | null
+  /** base_pr_merge auto merged it at once. */
+  merged?: boolean
 }
 
 export interface AddRepoResult {
@@ -343,8 +345,11 @@ export interface AddRepoResult {
 }
 
 /** Registers the repo and installs factory from the library in one commit on base (or a PR). */
-export function addRepo(path: string, target: 'base' | 'pr' = 'base'): Promise<AddRepoResult> {
-  return postGlobal<AddRepoResult>('/repos', target === 'pr' ? { path, target } : { path })
+/** How factory changes base from now on (`.factory/config.yaml`); the install already follows it. */
+export interface BaseChanges { base_changes?: 'direct' | 'pr'; base_pr_merge?: 'manual' | 'auto' }
+
+export function addRepo(path: string, changes: BaseChanges = {}): Promise<AddRepoResult> {
+  return postGlobal<AddRepoResult>('/repos', { path, ...changes })
 }
 
 export interface RemovalBlocker {

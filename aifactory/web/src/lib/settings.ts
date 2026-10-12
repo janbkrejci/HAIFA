@@ -11,6 +11,8 @@ export interface SharedSettings {
   base: string
   git_provider: string
   merge_strategy: string
+  base_changes: string
+  base_pr_merge: string
   protected_files: string[]
   max_parallel_runs: number | string
 }
@@ -33,7 +35,7 @@ export interface SettingsData {
   shared: SharedSettings
   local: LocalSettings
   files: { shared: string; local: string }
-  options: { git_provider: string[]; merge_strategy: string[] }
+  options: { git_provider: string[]; merge_strategy: string[]; base_changes: string[]; base_pr_merge: string[] }
   shared_issues: FileIssue[]
   local_issues: FileIssue[]
   status: ConfigStatus | null
@@ -53,6 +55,8 @@ export interface SettingsFormValues {
   base: string
   git_provider: string
   merge_strategy: string
+  base_changes: string
+  base_pr_merge: string
   protected_files: string
   max_parallel_runs: string
   trace_db: string
@@ -96,6 +100,8 @@ export function formValues(data: SettingsData): SettingsFormValues {
     base: s.base,
     git_provider: s.git_provider,
     merge_strategy: s.merge_strategy,
+    base_changes: s.base_changes ?? 'direct',
+    base_pr_merge: s.base_pr_merge ?? 'manual',
     protected_files: s.protected_files.join('\n'),
     max_parallel_runs: String(s.max_parallel_runs ?? 1),
     trace_db: data.local.trace_db,
@@ -125,6 +131,8 @@ export function settingsDiff(
   if (current.merge_strategy !== initial.merge_strategy) {
     shared.merge_strategy = current.merge_strategy
   }
+  if (current.base_changes !== initial.base_changes) shared.base_changes = current.base_changes
+  if (current.base_pr_merge !== initial.base_pr_merge) shared.base_pr_merge = current.base_pr_merge
   const protectedFiles = splitLines(current.protected_files)
   if (!sameList(protectedFiles, splitLines(initial.protected_files))) {
     shared.protected_files = protectedFiles

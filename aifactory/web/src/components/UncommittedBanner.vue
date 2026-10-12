@@ -23,8 +23,10 @@ const props = withDefaults(
     commitError?: string | null
     /** The status itself could not be read. */
     statusError?: string | null
+    /** The changes wait in this pull request (`base_changes: pr`). */
+    pr?: { url: string; branch: string } | null
   }>(),
-  { floating: false, committing: false, commitError: null, statusError: null },
+  { floating: false, committing: false, commitError: null, statusError: null, pr: null },
 )
 const emit = defineEmits<{ commit: [] }>()
 
@@ -75,6 +77,9 @@ const files = computed(() => {
         <span class="change-status">{{ change.status }}</span> {{ change.path }}
       </li>
     </ul>
+    <p v-if="pr" class="pr" :data-test="`${kind}-pr`">
+      Změny čekají v pull requestu <a :href="pr.url" target="_blank" rel="noopener">{{ pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.
+    </p>
     <p v-if="commitError" class="commit-error" :data-test="`${kind}-commit-error`">
       Commit se nepodařil: {{ commitError }}
     </p>
@@ -170,6 +175,15 @@ ul.files {
 
 .change-status {
   color: var(--dim);
+}
+
+.pr {
+  margin: 6px 0 0;
+  color: var(--text);
+}
+
+.pr a {
+  color: var(--blue);
 }
 
 .commit-error {

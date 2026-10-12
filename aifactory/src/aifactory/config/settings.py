@@ -214,6 +214,23 @@ class ProjectSettings(BaseModel):
     merge_strategy: Literal["squash", "merge"] = Field(
         default="squash", description="Strategy for merging approved task pull requests."
     )
+    base_changes: Literal["direct", "pr"] = Field(
+        default="direct",
+        description=(
+            "How factory changes base (install, configuration, library items, backlog, "
+            "uninstall): direct commits pushed to base, or pr, one pull request per change "
+            "for a base that takes changes only through pull requests."
+        ),
+    )
+    base_pr_merge: Literal["manual", "auto"] = Field(
+        default="manual",
+        description=(
+            "Pull requests of factory's own base changes: manual leaves them to a reviewer; "
+            "auto approves them where the hosting lets the author (Azure DevOps), merges "
+            "them at once (GitHub with --admin when the branch protection requires it) and "
+            "fast-forwards the local base."
+        ),
+    )
     test_timeout: int | None = Field(
         default=None,
         gt=0,

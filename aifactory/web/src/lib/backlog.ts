@@ -570,6 +570,9 @@ export interface BacklogCommitResult {
   base: string
   paths: string[]
   pushed: boolean
+  /** `base_changes: pr`: the pull request of the change; `merged` when `base_pr_merge: auto` merged it. */
+  pr?: { url: string; branch: string } | null
+  merged?: boolean
 }
 
 /** `factory backlog commit`: commit the backlog changes (only `<docs_root>/backlog`) to base. */
