@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ import yaml
 from factory_check_repo import GIT_IDENTITY, FakeMachine, commit_all, make_check_repo, write
 
 from aifactory.check import CheckReport, Finding, Probe, run_check
+from aifactory.check.machine import SystemMachine
 from aifactory.home import env_file
 from aifactory.library.store import init_library, library_root
 
@@ -82,6 +84,17 @@ def test_unsupported_platform(outside: Path) -> None:
     finding = _one(report, "unsupported_platform", "machine", "error")
     assert "Windows" in (finding.fix or "")
     assert not report.ok
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="npm installs .cmd shims on Windows")
+def test_system_machine_runs_a_cmd_shim_by_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "codex.cmd").write_text("@echo off\r\necho logged in %*\r\n", encoding="utf-8")
+    monkeypatch.setenv("PATH", f"{tmp_path}{os.pathsep}{os.environ['PATH']}")
+    probe = SystemMachine().run(["codex", "login", "status"])
+    assert probe is not None and probe.returncode == 0
+    assert probe.stdout.strip() == "logged in login status"
 
 
 def test_git_missing(outside: Path) -> None:
