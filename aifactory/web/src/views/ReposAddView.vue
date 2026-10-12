@@ -99,7 +99,8 @@ onMounted(async () => {
       <article class="done-card" data-test="repo-added">
         <h1>Repozitář {{ done.name }} {{ done.synced ? 'synchronizován' : 'přidán' }}</h1>
         <p class="note" data-test="repo-added-install">
-          <template v-if="done.install.committed">Factory z knihovny commitnuta {{ shortSha(done.install.commit) }} ({{ done.install.files.length }} {{ done.install.files.length === 1 ? 'soubor' : (done.install.files.length < 5 ? 'soubory' : 'souborů') }}), {{ done.install.pushed ? 'pushnuto' : 'bez pushe' }}.</template>
+          <template v-if="done.install.pr">Factory z knihovny je v pull requestu <a :href="done.install.pr.url" target="_blank" rel="noopener" data-test="repo-added-pr">{{ done.install.pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.</template>
+          <template v-else-if="done.install.committed">Factory z knihovny commitnuta {{ shortSha(done.install.commit) }} ({{ done.install.files.length }} {{ done.install.files.length === 1 ? 'soubor' : (done.install.files.length < 5 ? 'soubory' : 'souborů') }}), {{ done.install.pushed ? 'pushnuto' : 'bez pushe' }}.</template>
           <template v-else>Factory odpovídá knihovně, beze změny.</template>
           V záložce Factory najdeš další kroky.
         </p>

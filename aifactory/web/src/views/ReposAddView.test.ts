@@ -167,6 +167,45 @@ describe('ReposAddView', () => {
     expect(wrapper.emitted('added')).toEqual([['repo']])
   })
 
+  it('adds through a pull request when the base takes no direct push', async () => {
+    const fetchMock = stub({
+      inspect: inspected({ branch: 'develop', factory: factory('none', { base: 'develop' }) }),
+      handler: (url, init) => url === '/api/repos' && init?.method === 'POST'
+        ? envelope({
+          repo: { id: 'repo', name: 'repo', path: '/w/repo' },
+          created: true,
+          install: { ...INSTALL, pushed: true, pr: { url: 'https://github.com/me/repo/pull/3', branch: 'factory-init/1' } },
+        }, 201)
+        : undefined,
+    })
+    const wrapper = await mountView()
+    await inspectPath(wrapper)
+    const card = wrapper.get('[data-test="inspect-card"]')
+    await card.get('[data-test="inspect-via-pr"] input').setValue(true)
+    expect(card.get('[data-test="inspect-install-note"]').text()).toContain('otevře s tím pull request do develop')
+    await card.get('[data-test="inspect-add"]').trigger('click')
+    await flushPromises()
+    const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos' && init?.method === 'POST')
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ path: '/w/repo', target: 'pr' })
+    const link = wrapper.get('[data-test="repo-added-pr"]')
+    expect(link.attributes('href')).toBe('https://github.com/me/repo/pull/3')
+    expect(wrapper.get('[data-test="repo-added-install"]').text()).toContain('Stáhnout konfiguraci z base')
+  })
+
+  it('suggests a pull request when the push to base is rejected', async () => {
+    stub({
+      inspect: inspected({ branch: 'develop', factory: factory('none', { base: 'develop' }) }),
+      handler: (url, init) => url === '/api/repos' && init?.method === 'POST'
+        ? failure('push_failed', 'protected branch hook declined', 502)
+        : undefined,
+    })
+    const wrapper = await mountView()
+    await inspectPath(wrapper)
+    await wrapper.get('[data-test="inspect-add"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="inspect-add-error"]').text()).toContain('zaškrtni „Přes pull request“')
+  })
+
   it('shows the state of an installed repo, and Add', async () => {
     stub({ inspect: inspected({ factory: factory('installed') }) })
     const wrapper = await mountView()

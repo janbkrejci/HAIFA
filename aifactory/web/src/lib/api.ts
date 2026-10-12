@@ -332,6 +332,8 @@ export interface RepoInstall {
   commit: string | null
   pushed: boolean
   files: CommitFile[]
+  /** The pull request of an add with target pr (null: committed on base). */
+  pr?: { url: string; branch: string } | null
 }
 
 export interface AddRepoResult {
@@ -340,9 +342,9 @@ export interface AddRepoResult {
   install: RepoInstall
 }
 
-/** Registers the repo and installs factory from the library in one commit on base. */
-export function addRepo(path: string): Promise<AddRepoResult> {
-  return postGlobal<AddRepoResult>('/repos', { path })
+/** Registers the repo and installs factory from the library in one commit on base (or a PR). */
+export function addRepo(path: string, target: 'base' | 'pr' = 'base'): Promise<AddRepoResult> {
+  return postGlobal<AddRepoResult>('/repos', target === 'pr' ? { path, target } : { path })
 }
 
 export interface RemovalBlocker {

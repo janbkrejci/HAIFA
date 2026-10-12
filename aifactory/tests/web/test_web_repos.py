@@ -334,6 +334,25 @@ def test_refused_install_leaves_no_registry_entry(
     assert [r["id"] for r in _get(client, "/api/repos")["data"]["repos"]] == ["proj"]
 
 
+def test_add_through_a_pull_request_keeps_base(
+    client: TestClient, tmp_path: Path, home: Path
+) -> None:
+    root = init_repo(tmp_path / "proj")
+    git(root, "branch", "-m", "main", "develop")
+    head = git(root, "rev-parse", "HEAD")
+    body = _post(client, "/api/repos", {"path": str(root), "target": "pr"}, 201)
+    install = body["data"]["install"]
+    assert install["committed"] and install["pr"]["branch"] == "factory-init/1"
+    assert git(root, "rev-parse", "develop") == head
+    assert git(root, "rev-parse", "factory-init/1^") == head
+    assert "base: develop" in git(root, "show", "factory-init/1:.factory/config.yaml")
+    assert body["data"]["repo"]["status"] == "not_installed"
+    assert [r["id"] for r in _registry(home)["repos"]] == ["proj"]
+    other = init_repo(tmp_path / "other")
+    bad = _post(client, "/api/repos", {"path": str(other), "target": "main"}, 400)
+    assert bad["error"]["code"] == "usage_error"
+
+
 def test_list_statuses(client: TestClient, tmp_path: Path) -> None:
     done = init_repo(tmp_path / "done")
     install(done)

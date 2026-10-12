@@ -1646,18 +1646,23 @@ def _path_body(body: dict[str, Any]) -> object:
 
 async def repos_add(request: Request) -> JSONResponse:
     """Add a repository: register it and commit ``.factory/config.yaml`` and ``.gitignore``
-    (``web.repos.add_repo``). HTTP 201 when newly registered, 200 when it was there."""
+    (``web.repos.add_repo``), on base or with ``target: "pr"`` in a pull request. HTTP 201
+    when newly registered, 200 when it was there."""
     registry = _registry(request)
 
-    def work(raw: object) -> tuple[dict[str, Any], bool, dict[str, Any], list[str]]:
+    def work(raw: object, pr: bool) -> tuple[dict[str, Any], bool, dict[str, Any], list[str]]:
         entry, created, install, warnings = add_repo(
-            registry, raw, library.environment(request.app.state.home)
+            registry, raw, library.environment(request.app.state.home), pr=pr
         )
         return repo_status(entry), created, install, warnings
 
     try:
-        raw = _path_body(await _json_body(request))
-        item, created, install, warnings = await run_in_threadpool(work, raw)
+        body = await _json_body(request)
+        target = body.pop("target", "base")
+        if target not in ("base", "pr"):
+            raise backlog.UsageError("target must be base or pr")
+        raw = _path_body(body)
+        item, created, install, warnings = await run_in_threadpool(work, raw, target == "pr")
     except backlog.UsageError as exc:
         return _usage_error(exc.message)
     except RepoError as exc:

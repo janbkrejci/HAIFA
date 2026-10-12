@@ -178,21 +178,28 @@ def register_repo(registry: Registry, raw: object) -> tuple[RepoEntry, bool, lis
 
 
 def add_repo(
-    registry: Registry, raw: object, environ: Mapping[str, str] | None = None
+    registry: Registry,
+    raw: object,
+    environ: Mapping[str, str] | None = None,
+    *,
+    pr: bool = False,
 ) -> tuple[RepoEntry, bool, JsonDict, list[str]]:
     """The dashboard's "add": register the repository and install factory in one go.
 
     The install writes only ``.factory/config.yaml`` (kept when it is committed) and the
     ``.gitignore`` lines, in one commit on base, pushed when there is a remote (see
-    ``plan_init(replace=True)``); agents and workflows come from the library. A refused
-    install leaves no new registry entry. Returns ``(entry, created, install, warnings)``.
+    ``plan_init(replace=True)``); agents and workflows come from the library. With ``pr``
+    (a base that takes changes only through pull requests) the commit goes to
+    ``factory-init/<n>`` with a pull request and base stays; factory is installed once it
+    is merged and base pulled. A refused install leaves no new registry entry. Returns
+    ``(entry, created, install, warnings)``.
     """
     from aifactory.library.install_commit import commit_init
     from aifactory.library.store import LibraryStoreError
 
     entry, created, warnings = register_repo(registry, raw)
     try:
-        result = commit_init(Path(entry.path), replace=True, environ=environ)
+        result = commit_init(Path(entry.path), replace=True, environ=environ, pr=pr)
     except LibraryStoreError as exc:
         if created:
             registry.remove(entry.id)
@@ -202,6 +209,7 @@ def add_repo(
         "commit": result.commit,
         "pushed": result.pushed,
         "files": [f.to_json() for f in result.plan.publish.files],
+        "pr": {"url": result.pr.url, "branch": result.pr.branch} if result.pr else None,
     }
     return entry, created, install, [*warnings, *result.warnings]
 
