@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -146,3 +147,22 @@ def test_agent_git_add_is_undone_in_index(repo: Path, dest: Path) -> None:
     assert outcomes == {backup.INDEX: "restored"}
     assert git(repo, "diff", "--cached") == ""
     assert (repo / "a.txt").read_text(encoding="utf-8") == "unstaged wip\n"
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="the 260-character path limit is Windows'")
+def test_untracked_file_deeper_than_the_windows_path_limit_is_saved_and_restored(
+    repo: Path, tmp_path: Path
+) -> None:
+    deep = repo / "adws" / "adw_data" / "sessions" / "3264e2e4" / "scout" / ("s" * 60)
+    deep.mkdir(parents=True)
+    (deep / "transcript.jsonl").write_text("wip\n", encoding="utf-8", newline="\n")
+    dest = tmp_path / ("session-" + "d" * 64) / "guard_backup" / "001" / "main"
+    rel = (deep / "transcript.jsonl").relative_to(repo).as_posix()
+    assert len(str(dest / "files" / rel)) > 260
+
+    saved = backup.capture(repo, dest)
+    (deep / "transcript.jsonl").write_text("agent\n", encoding="utf-8", newline="\n")
+
+    assert backup.verify(saved) == [rel]
+    assert backup.restore(saved, (), [rel]) == {rel: "restored from backup"}
+    assert (deep / "transcript.jsonl").read_text(encoding="utf-8") == "wip\n"

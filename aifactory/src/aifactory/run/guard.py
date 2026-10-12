@@ -280,7 +280,7 @@ class TaskWriteGuard:
             problems.append(f"{MAIN}: backup of the state before the phase at {saved}")
 
         if not problems:
-            shutil.rmtree(before["backup_dir"], ignore_errors=True)
+            shutil.rmtree(backup.long_path(before["backup_dir"]), ignore_errors=True)
             return touched
         detail = "\n".join(f"  - {p}" for p in problems)
         raise permissions.PermissionBreach(
