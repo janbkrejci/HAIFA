@@ -57,8 +57,9 @@ def _user() -> str:
 
 
 def _bin_dir() -> Path:
-    """A stable per-user directory keyed by the script (macOS checks a new file's first exec)."""
-    key = hashlib.sha256(_SCRIPT.encode()).hexdigest()[:16]
+    """A stable per-user directory keyed by the script (macOS checks a new file's first exec)
+    and the interpreter: the Windows launcher names it, and a deleted venv breaks it."""
+    key = hashlib.sha256(f"{_SCRIPT}\0{sys.executable}".encode()).hexdigest()[:16]
     return Path(tempfile.gettempdir()) / f"aifactory-fake-git-{_user()}-{key}"
 
 
