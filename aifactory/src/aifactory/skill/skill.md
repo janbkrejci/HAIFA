@@ -374,6 +374,10 @@ library (without a library the packaged workflows: {{workflows}}).
   checks themselves were wrong) replaces the plan and runs the test again without a
   repair round and without the builder, at most twice per run; `code` leaves the
   failure for `fix`.
+- A test review (`test_review`) that requires tests the repo does not have yet: the
+  revised plan (`plan_revision`) lists them in `missing_tests`, the builder writes them
+  (phase `test_fix`, role `fix`, with the review as `previous_envelope`), the tester
+  plans again and the new plan is reviewed; at most twice per run, then the run stops.
 - A `test` step (also under another `id`, e.g. `retest`) runs the checks of the latest
   `test_plan` in order, without a shell, and runs every check even after one fails (only
   a failed check with `stop_on_fail: true` or an exhausted time limit stops the rest,

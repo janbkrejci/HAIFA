@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T17
 title: Revize testů žádající chybějící testy vrací běh builderovi místo selhání
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -19,3 +19,4 @@ Mimo rozsah: změna ostatních fází workflow.
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-13 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/27 · náklady $1.96

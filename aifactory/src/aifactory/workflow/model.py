@@ -107,6 +107,9 @@ class Workflow:
     warnings: tuple[str, ...] = ()
     # the role that reviews every new test plan (registry `test_review`), if any
     plan_review: RoleDef | None = None
+    # the role that writes the tests a plan review requires and the repo lacks
+    # (registry `fix`), if any
+    test_fix: RoleDef | None = None
 
 
 def walk(steps: Sequence[Step]) -> Iterator[RoleStep | CodeStep]:

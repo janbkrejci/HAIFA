@@ -23,6 +23,12 @@ the test runs again, which is no repair round and never reaches the builder. At
 most ``MAX_PLAN_REPAIRS`` corrections per run, then the run stops. ``code`` leaves
 the red result for the builder.
 
+A plan review (``test_review``) that requires tests the repo does not have yet is
+answered by a revised plan with ``missing_tests``: the tester cannot write them, so
+the builder gets the review (phase ``test_fix``, registry role ``fix``), then the
+tester plans again (``plan_revision`` from the builder's result) and the new plan is
+reviewed. At most ``MAX_TEST_FIXES`` such rounds per run, then the run stops.
+
 Inputs of a role step: ``{{previous_envelope}}`` is the latest result of the
 steps in ``input:`` (any step without it). An ``input:`` mapping adds further
 ``{{name}}`` variables, each the latest result of its own steps. Every role step
@@ -98,6 +104,9 @@ PLAN_REVIEW_PHASE = "test_review"
 PLAN_REVISION_PHASE = "plan_revision"
 PLAN_REVISION_DESCRIPTION = "Rework the test plan from the test reviewer's findings"
 MAX_PLAN_REVIEWS = 3  # a review, and up to two more after revisions
+TEST_FIX_PHASE = "test_fix"
+TEST_FIX_DESCRIPTION = "Write the tests the test reviewer requires and the repo does not have"
+MAX_TEST_FIXES = 2  # builder rounds for tests a plan review finds missing
 NO_INPUT = "(none)"
 # the envelope a code step stores, by action (a commit stores a plain result)
 _CODE_OUTPUTS: dict[str, Any] = {
@@ -300,6 +309,7 @@ class _Interpreter:
         self.failed_test = ""  # the red test a triage call judges
         self.red_test: dict[str, Any] | None = None
         self.plan_repairs = 0
+        self.test_fixes = 0
         self.reviewing_plan = False
 
     # -- helpers --
@@ -585,7 +595,9 @@ class _Interpreter:
         )
         self.reviewing_plan = True
         try:
-            for attempt in range(1, MAX_PLAN_REVIEWS + 1):
+            attempt = 0
+            while True:
+                attempt += 1
                 review = self.role(review_step, suffix)
                 if review.approved:
                     return
@@ -595,9 +607,44 @@ class _Interpreter:
                         "running it, the final review judges it with the code"
                     )
                     return
-                self.role(revision, suffix)
+                revised = self.role(revision, suffix)
+                if revised.missing_tests:
+                    self.write_missing_tests(revision, revised, suffix)
+                    attempt = 0  # a new plan for changed code: its reviews count anew
         finally:
             self.reviewing_plan = False
+
+    def write_missing_tests(
+        self, revision: RoleStep, revised: Any, suffix: tuple[int, ...]
+    ) -> None:
+        """The builder writes the tests the review requires; the tester plans again.
+
+        The builder gets the review as ``previous_envelope`` (phase ``test_fix``); the
+        new plan reads the builder's result. At most ``MAX_TEST_FIXES`` rounds per run.
+        """
+        missing = "; ".join(revised.missing_tests)
+        fix_role = self.workflow.test_fix
+        if fix_role is None or fix_role.agent not in {a.name for a in self.run.cfg.agents}:
+            raise RuntimeError(
+                f"the test review requires tests the repo does not have and no builder "
+                f"can write them: {missing}"
+            )
+        if self.test_fixes >= MAX_TEST_FIXES:
+            raise RuntimeError(
+                f"the test review still requires missing tests after {MAX_TEST_FIXES} "
+                f"builder rounds: {missing}"
+            )
+        self.test_fixes += 1
+        fix_step = RoleStep(
+            name=TEST_FIX_PHASE,
+            role=fix_role,
+            phase_id=TEST_FIX_PHASE,
+            description=TEST_FIX_DESCRIPTION,
+            path=revision.path,
+            inputs=(PLAN_REVIEW_PHASE,),
+        )
+        self.role(fix_step, suffix)
+        self.role(dataclasses.replace(revision, inputs=(TEST_FIX_PHASE,)), suffix)
 
     def triage(self, step: CodeStep, suffix: tuple[int, ...], report: dict[str, Any]) -> bool:
         """Ask the tester whether a red ``test`` is the plan's fault; True after a plan repair.
