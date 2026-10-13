@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T14
 title: Rychlý stav konfigurace a seznamu rep v dashboardu na Windows
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -27,3 +27,4 @@ Tvrdá omezení: žádný zápis do indexu cílového repa, chování na POSIXu 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-13 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/25 · náklady $0.00
