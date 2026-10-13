@@ -55,6 +55,24 @@ def _file_mode(path: Path, base_mode: str | None = None) -> str:
     return "100755" if os.access(path, os.X_OK) else "100644"
 
 
+def holds(checkout: Path, path: str, content: bytes | None) -> bool:
+    """The working-tree file `path` holds `content` as git stores it.
+
+    Bytes that differ are hashed through the clean filters (``hash-object``, nothing
+    written), so a checkout whose line endings ``core.autocrlf`` converts still matches.
+    """
+    disk = checkout / path
+    if content is None or not disk.is_file():
+        return False
+    if disk.read_bytes() == content:
+        return True
+    if disk.is_symlink():
+        return False
+    return git.git(checkout, "hash-object", "--", path) == git.hash_blob(
+        checkout, content, write=False
+    )
+
+
 def _text(content: bytes | None) -> str | None:
     if content is None:
         return None
@@ -395,15 +413,12 @@ def _stage_matching(
         disk = checkout / f.path
         if materialize and f.content is not None:
             absent = not disk.exists() and not disk.is_symlink()
-            unchanged = (
-                f.old_content is not None and disk.is_file() and disk.read_bytes() == f.old_content
-            )
-            if absent or unchanged:
+            if absent or holds(checkout, f.path, f.old_content):
                 disk.parent.mkdir(parents=True, exist_ok=True)
                 disk.write_bytes(f.content)
                 disk.chmod(0o755 if f.mode == "100755" else 0o644)  # git add stages the mode
         if materialize and f.content is None and disk.is_file() and not disk.is_symlink():
-            if f.old_content is not None and disk.read_bytes() == f.old_content:
+            if holds(checkout, f.path, f.old_content):
                 disk.unlink()
                 _prune_dirs(checkout, disk.parent)
         if f.content is None:
@@ -411,7 +426,7 @@ def _stage_matching(
                 warnings.append(f"{f.path} changed after the plan; it stays uncommitted")
             else:
                 remove.append(f.path)
-        elif disk.is_file() and disk.read_bytes() == f.content:
+        elif holds(checkout, f.path, f.content):
             add.append(f.path)
         else:
             warnings.append(f"{f.path} changed after the plan; it stays uncommitted")

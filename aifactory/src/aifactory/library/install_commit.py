@@ -63,6 +63,7 @@ from aifactory.providers.publish import (
     PlannedFile,
     PublishPlan,
     direct_blockers,
+    holds,
     plan_contents,
     plan_digest,
     uses_pr,
@@ -343,8 +344,7 @@ def _dirty(root: Path, files: Sequence[PlannedFile]) -> list[str]:
         disk = root / f.path
         if not disk.exists() and not disk.is_symlink():
             continue
-        data = disk.read_bytes() if disk.is_file() else None
-        if data is not None and (data == f.content or data == f.old_content):
+        if holds(root, f.path, f.content) or holds(root, f.path, f.old_content):
             continue
         out.append(f.path)
     return out
