@@ -12,6 +12,7 @@ exit within ``timeout`` seconds gets SIGKILL. The worktree and the branch stay;
 from __future__ import annotations
 
 import os
+import re
 import subprocess
 import sys
 import time
@@ -77,7 +78,11 @@ def _running(pid: int) -> bool:
 
 
 def _same_command(pid: int, recorded: str) -> bool:
-    """The live pid still runs what the trace recorded (its first word, the harness)."""
+    """The live pid still runs what the trace recorded (its first word, the harness).
+
+    The word must name a whole path component or file (``claude``, ``claude.exe``,
+    ``codex.js``): a substring would match a directory such as ``.claude/``.
+    """
     words = recorded.split()
     if not words:
         return False
@@ -85,7 +90,8 @@ def _same_command(pid: int, recorded: str) -> bool:
         current = oscompat.image_path(pid)  # no ``ps``: the executable's path
     else:
         current = _ps(pid, "command")
-    return bool(current) and words[0] in (current or "")
+    parts = [p for p in re.split(r"[\s/\\]+", current or "") if p]
+    return any(words[0] in (part, os.path.splitext(part)[0]) for part in parts)
 
 
 def _signal(pid: int, *, force: bool) -> bool:
