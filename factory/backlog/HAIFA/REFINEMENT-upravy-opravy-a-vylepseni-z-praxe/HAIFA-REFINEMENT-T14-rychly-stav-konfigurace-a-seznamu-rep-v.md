@@ -19,7 +19,7 @@ Zadání:
 Hotovo znamená:
 - Testy pokrývají shodu nového a původního výsledku `working_tree_changes` (změněný, přidaný, smazaný, nesledovaný soubor, zastaralá stat data, soubor mimo pathspecs) a cache `/api/repos` včetně zneplatnění.
 - Na repu s desítkami tisíc souborů neroste počet volání gitu na jednu navigaci; v popisu PR je měření před a po.
-- `just check` a `just e2e` projdou (kromě testů, které na Windows padají už na base).
+- Dotčené testy projdou podle AGENTS.md (`just lint`, `just typecheck`, `just pytest` dotčených balíčků). Celou sadu a e2e ověří CI na PR, auto-merge na ně čeká; výsledky celé sady z běhu factory se nevyžadují.
 
 Mimo rozsah: výjimky Defenderu, změny intervalů pollingu ve frontendu, ostatní git volání v overview.
 
