@@ -82,6 +82,7 @@ BASELINE_VARIABLE = "baseline"
 PREVIOUS_PLAN_VARIABLE = "previous_test_plan"
 FAILED_TEST_VARIABLE = "failed_test"
 REQUIRED_COVERAGE_VARIABLE = "required_coverage"
+TEST_TIMEOUT_VARIABLE = "test_timeout"
 TRIAGE_PHASE = "triage"
 TRIAGE_DESCRIPTION = (
     "Decide whether the failed checks are wrong themselves or caught a fault in the code"
@@ -347,6 +348,9 @@ class _Interpreter:
             PREVIOUS_PLAN_VARIABLE: self.latest_plan_json(),
             FAILED_TEST_VARIABLE: self.failed_test or NO_INPUT,
             REQUIRED_COVERAGE_VARIABLE: step.coverage or "any",
+            TEST_TIMEOUT_VARIABLE: str(
+                getattr(self.run, "test_timeout", None) or engine_quality.DEFAULT_TEST_TIMEOUT
+            ),
         }
         for name, keys in step.variables:
             variables[name] = self.render_input(keys)

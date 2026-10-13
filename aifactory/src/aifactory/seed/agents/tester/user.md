@@ -22,6 +22,12 @@ The step before you: the build, a fix or a revision (with the files it changed),
 
 {{required_coverage}}
 
+### test_timeout
+
+Seconds the test step has for all its checks together:
+
+{{test_timeout}}
+
 ### previous_test_plan
 
 The plan the last test ran, `(none)` for the first plan of the run. Keep each of its checks or name it in `dropped`:

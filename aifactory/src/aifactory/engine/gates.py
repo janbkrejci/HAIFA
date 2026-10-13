@@ -193,6 +193,23 @@ def coverage_required(envelope: EnvelopeBase, run) -> GateReport:
     return report
 
 
+def checks_fit_budget(envelope: EnvelopeBase, run) -> GateReport:
+    """aifactory 3.0: the checks' own timeouts fit the test step's shared time limit.
+
+    The test step stops at ``run.test_timeout`` (else 600 s) whatever a check asks for,
+    so a plan whose timeouts add up to more can only end in a timeout.
+    """
+    from aifactory.engine.quality import DEFAULT_TEST_TIMEOUT
+
+    report = GateReport()
+    budget = getattr(run, "test_timeout", None) or DEFAULT_TEST_TIMEOUT
+    asked = sum(check.timeout or 0 for check in getattr(envelope, "checks", []))
+    report.check("time limit", asked <= budget,
+                 f"{asked}s of {budget}s" if asked <= budget
+                 else f"the checks ask for {asked}s but the test step has {budget}s; "
+                      "narrow or split them")
+    return report
+
 def tests_pass(command: str):
     """Gate factory: the given shell command must exit 0."""
     def gate(envelope: EnvelopeBase, run) -> GateReport:

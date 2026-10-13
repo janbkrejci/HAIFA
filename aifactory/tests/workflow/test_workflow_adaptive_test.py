@@ -577,3 +577,38 @@ def test_a_scoped_plan_on_a_full_step_is_sent_back(workflow_env: EngineEnv) -> N
     assert len(workflow_env.script.calls) == 2
     assert "requires `full`" in workflow_env.script.calls[1].prompt  # the gate's correction
     assert code.plans[0].coverage == "full"
+
+
+# ── gate checks_fit_budget ──────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize(
+    ("budget", "timeouts", "passed"),
+    [(None, [300, 300], True), (None, [300, 301], False), (900, [600, None, 300], True)],
+)
+def test_checks_fit_budget_gate(
+    budget: int | None, timeouts: list[int | None], passed: bool
+) -> None:
+    checks = [
+        {"name": f"c{i}", "argv": ["echo", str(i)], "timeout": timeout}
+        for i, timeout in enumerate(timeouts)
+    ]
+    tested = TestPlanOutput.model_validate(ok(coverage="scoped", reason="r", checks=checks))
+    report = gates.checks_fit_budget(tested, SimpleNamespace(test_timeout=budget))
+    assert report.passed is passed
+
+
+@pytest.mark.parametrize(("test_timeout", "rendered"), [(None, "600"), (900, "900")])
+def test_test_timeout_is_a_prompt_variable(
+    workflow_env: EngineEnv, tmp_path: Path, test_timeout: int | None, rendered: str
+) -> None:
+    user = tmp_path / "tester_user.md"
+    user.write_text("{{prompt}}\nLIMIT<<{{test_timeout}}>>LIMIT\n", encoding="utf-8")
+    for agent in workflow_env.cfg.agents:
+        if agent.name == "tester":
+            agent.prompt_engineering.user = str(user)
+    text = HEADER + "steps:\n  - test_plan\n"
+    workflow_env.script.add("tester", plan_envelope("echo", "first"))
+    run_workflow(workflow(text), "do it", workflow_env.cfg, test_timeout=test_timeout)
+    [call] = workflow_env.script.calls
+    assert call.prompt.split("LIMIT<<")[1].split(">>LIMIT")[0] == rendered
