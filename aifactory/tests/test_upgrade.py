@@ -7,6 +7,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import zipfile
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -70,6 +71,9 @@ def make_bundle(
 @pytest.fixture(autouse=True)
 def _not_editable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(upgrade, "editable_install", lambda: False)
+
+
+SPAWN_DETACHED = upgrade.spawn_detached
 
 
 @pytest.fixture(autouse=True)
@@ -331,6 +335,24 @@ def test_handoff_keeps_the_bundle_and_starts_the_script(tmp_path: Path, uv_log: 
     assert plan["log"] == result.log and plan["version"] == NEWER
     assert Path(plan["work"]) == script.parent
     shutil.rmtree(plan["work"])
+
+
+def test_spawn_detached_opens_no_window_without_detaching(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # DETACHED_PROCESS makes Windows PowerShell 5.1 exit without running the handoff script.
+    for name, value in [
+        ("CREATE_NO_WINDOW", 0x08000000),
+        ("CREATE_NEW_PROCESS_GROUP", 0x200),
+        ("DETACHED_PROCESS", 0x8),
+    ]:
+        monkeypatch.setattr(subprocess, name, value, raising=False)
+    calls: list[dict[str, Any]] = []
+    monkeypatch.setattr(subprocess, "Popen", lambda argv, **kw: calls.append(kw))
+    SPAWN_DETACHED(["powershell", "-File", "x.ps1"], {"A": "1"})
+    [kwargs] = calls
+    assert kwargs["creationflags"] == 0x08000000 | 0x200
+    assert kwargs["env"] == {"A": "1"}
 
 
 def test_cli_on_windows_hands_off(

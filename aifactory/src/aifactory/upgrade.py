@@ -253,8 +253,12 @@ def needs_handoff() -> bool:
 
 
 def spawn_detached(argv: Sequence[str], env: Mapping[str, str]) -> None:
-    """Start ``argv`` with no console, outliving this process."""
-    flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(
+    """Start ``argv`` with no console window, outliving this process.
+
+    Not DETACHED_PROCESS: Windows PowerShell 5.1 started without a console exits 0 at once
+    and never runs its -File script.
+    """
+    flags = getattr(subprocess, "CREATE_NO_WINDOW", 0) | getattr(
         subprocess, "CREATE_NEW_PROCESS_GROUP", 0
     )
     subprocess.Popen(
