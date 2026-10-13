@@ -100,7 +100,7 @@ Vlastní workflow ulož do `.factory/workflows/<jméno>.yaml` repa, nebo do knih
 | `ask` | builder | Přímá odpověď na požadavek, bez pevného tvaru výstupu. |
 | `resolve` | builder | Vyřešení konfliktu. |
 | `test_plan` | tester | Výběr kontrol. |
-| `test_review` | test-reviewer | Posouzení plánu testů. |
+| `test_review` | test-reviewer | Posouzení plánu testů. Chybí-li v repu testy, které revize žádá, tester je vrátí v `missing_tests`, builder je napíše (fáze `test_fix`) a tester plánuje znovu, nejvýš dvakrát za běh. |
 | `review` | reviewer | Review. |
 | `document` | documenter | Dokumentace. |
 

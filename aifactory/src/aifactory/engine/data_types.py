@@ -274,6 +274,10 @@ class TestPlanOutput(EnvelopeBase):
     # Set only when the tester triages failed checks: `plan` (the checks themselves
     # were wrong; this envelope is the corrected plan) or `code` (the plan stands).
     failure_cause: Literal["", "code", "plan"] = ""
+    # aifactory 3.1: tests the test reviewer requires that the repo does not have yet.
+    # The tester cannot write them; the workflow hands the review to the builder
+    # (phase `test_fix`) and asks the tester for a new plan. Empty for every other plan.
+    missing_tests: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def coherent(self) -> "TestPlanOutput":

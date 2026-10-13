@@ -57,4 +57,4 @@ Respond with ONLY valid JSON matching `ReviewOutput` — no prose before or afte
 }
 ```
 
-`status` is `success` when the review itself completed. `approved` is true only when `findings` has no unmet entry and `blocking` is empty.
+`status` is `success` when the review itself completed. `approved` is true only when `findings` has no unmet entry and `blocking` is empty. A blocking item that asks for a test the repo does not have names the behaviour and the test file, so the builder can write it.

@@ -12,7 +12,7 @@
 
 ### previous_envelope
 
-The step before you: the build, a fix or a revision (with the files it changed), or a review whose findings concern the test plan:
+The step before you: the build, a fix or a revision (with the files it changed, also tests the builder just wrote for a test review), or a review whose findings concern the test plan:
 
 {{previous_envelope}}
 
@@ -70,6 +70,7 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
   "coverage": "scoped",
   "reason": "<why these checks are enough, and why nothing wider is needed>",
   "failure_cause": "",
+  "missing_tests": [],
   "checks": [
     { "name": "api-tests", "argv": ["uv", "run", "pytest", "tests/api", "-q"] },
     { "name": "types", "argv": ["npm", "run", "typecheck"], "timeout": 300 }
@@ -84,4 +85,4 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
 
 Order the checks from the fastest to the slowest. `stop_on_fail` (optional, default `false`) is only for a prerequisite such as a build or an install whose failure makes the remaining checks pointless: `{ "name": "build", "argv": ["npm", "run", "build"], "stop_on_fail": true }`.
 
-`coverage` is `full`, `scoped` or `none`; `none` has an empty `checks` list, the others at least one. Check names are unique and contain no `/`. `timeout` (seconds) is optional. `dropped` is empty for a first plan. `failure_cause` is `""` when you plan, `"plan"` or `"code"` when you triage.
+`coverage` is `full`, `scoped` or `none`; `none` has an empty `checks` list, the others at least one. Check names are unique and contain no `/`. `timeout` (seconds) is optional. `dropped` is empty for a first plan. `failure_cause` is `""` when you plan, `"plan"` or `"code"` when you triage. `missing_tests` lists the tests a test review requires that the repo does not have yet (the builder writes them, then you plan again); otherwise it is `[]`.
