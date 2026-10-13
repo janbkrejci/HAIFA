@@ -8,11 +8,12 @@ import sqlite3
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
 import pytest
-from multi_repo import BASE, rmtree, write
+from multi_repo import BASE, commit_all, rmtree, write
 from overview_fixture import (
     PR_URL,
     T_CANC,
@@ -77,15 +78,15 @@ def _run_row(db: Path, run_id: str) -> tuple[Any, ...]:
 
 
 @pytest.fixture(name="repo_a")
-def repo_a_fixture(tmp_path: Path) -> Path:
-    return make_overview_repo(tmp_path / "alpha", live_pid=os.getpid(), dead_pid=dead_pid())
+def repo_a_fixture(tmp_path: Path) -> Iterator[Path]:
+    with dead_pid() as pid:
+        yield make_overview_repo(tmp_path / "alpha", live_pid=os.getpid(), dead_pid=pid)
 
 
 @pytest.fixture(name="repo_b")
-def repo_b_fixture(tmp_path: Path) -> Path:
-    return make_overview_repo(
-        tmp_path / "beta", live_pid=os.getpid(), dead_pid=dead_pid(), prefix="b-"
-    )
+def repo_b_fixture(tmp_path: Path) -> Iterator[Path]:
+    with dead_pid() as pid:
+        yield make_overview_repo(tmp_path / "beta", live_pid=os.getpid(), dead_pid=pid, prefix="b-")
 
 
 def test_overview_of_repos_with_and_without_trace_and_a_missing_folder(
@@ -371,3 +372,15 @@ def test_invalid_config_in_base_and_uncommitted_config(tmp_path: Path) -> None:
         {"path": ".factory/config.yaml", "status": "modified"}
     ]
     assert repos["dirty"]["config"]["clean"] is False
+
+
+def test_config_cache_invalidated_before_ttl(tmp_path: Path) -> None:
+    root = make_installed_repo(tmp_path / "cached")
+    home = tmp_path / "home"
+    register(home, root)
+    client = _client(home, tmp_path)
+    assert _get(client)["repos"][0]["config"]["clean"] is True
+    write(root, ".factory/config.yaml", "base: main\nmax_parallel_runs: 3\n")
+    assert _get(client)["repos"][0]["config"]["clean"] is False
+    commit_all(root)
+    assert _get(client)["repos"][0]["config"]["clean"] is True
