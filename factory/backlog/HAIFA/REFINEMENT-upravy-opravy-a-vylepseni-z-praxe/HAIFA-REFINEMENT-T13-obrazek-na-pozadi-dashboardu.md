@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T13
 title: Obrázek na pozadí dashboardu
-status: todo
+status: cancelled
 depends_on: []
 related: [HAIFA-S01-T39]
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/THIRD_PARTY_NOTICES, THIRD_PARTY_NOTICES]
