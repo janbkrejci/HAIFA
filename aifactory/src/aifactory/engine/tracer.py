@@ -153,7 +153,8 @@ class Tracer:
     def session_start(self, adw_id: str, engineer: str, adw_name: str | None = None) -> None:
         self.conn.execute(
             "INSERT INTO sessions (adw_id, status, engineer, started_at) VALUES (?,?,?,?) "
-            "ON CONFLICT(adw_id) DO UPDATE SET status='running'",
+            # aifactory 3.1: a retry reopens the same trace and keeps its usage totals.
+            "ON CONFLICT(adw_id) DO UPDATE SET status='running', ended_at=NULL",
             (adw_id, "running", engineer, now_iso()),
         )
         if not adw_name:

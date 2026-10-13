@@ -72,6 +72,23 @@ describe('TaskDetail', () => {
     expect(pr.attributes('rel')).toBe('noopener')
   })
 
+  it('offers to continue the newest run when it failed or stopped', async () => {
+    const base = taskDetail()
+    const run = base.runs[0]!
+    const older = { ...run, run_id: 'r-0', state: 'failed' }
+    const stopped = taskDetail({ runs: [{ ...run, state: 'stopped' }, older] })
+    api.postApi.mockResolvedValue({ task_id: run.task_id, action: 'retry', run: null, pending: true })
+    const wrapper = mount(TaskDetail, { props: { detail: stopped, workflows: [], busy: false, error: null } })
+    expect(wrapper.find('[data-run="r-0"] [data-test="retry-run"]').exists()).toBe(false)
+    await wrapper.get('[data-run="r-1"] [data-test="retry-run"]').trigger('click')
+    await wrapper.get('[data-test="retry-form"]').trigger('submit')
+    await flushPromises()
+    expect(api.postApi).toHaveBeenLastCalledWith('/runs/r-1/retry', {})
+    expect(wrapper.emitted('retried')).toHaveLength(1)
+    const succeeded = mount(TaskDetail, { props: { detail: base, workflows: [], busy: false, error: null } })
+    expect(succeeded.find('[data-test="retry-run"]').exists()).toBe(false)
+  })
+
   it('shows empty runs and PRs', () => {
     const wrapper = mount(TaskDetail, {
       props: { detail: taskDetail({ runs: [], prs: [] }), workflows: [], busy: false, error: null },

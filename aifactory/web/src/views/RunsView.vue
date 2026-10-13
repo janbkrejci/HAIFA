@@ -389,6 +389,7 @@ watch(
         @pause="onPause(false)"
         @resume="onPause(true)"
         @publish="onPublish"
+        @retried="reload"
       />
       <p v-else-if="loading" class="faint" data-test="detail-loading">
         Načítám běh <span class="run-id">{{ runId }}</span>…

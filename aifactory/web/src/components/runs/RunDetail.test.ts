@@ -231,4 +231,49 @@ describe('RunDetail', () => {
       vi.useRealTimers()
     }
   })
+
+  it('offers to continue a failed or stopped run, with a note, and shows its attempts', async () => {
+    expect(mount(RunDetail, { props: { detail: detail({ state: 'succeeded' }), events: [] } })
+      .find('[data-test="retry-run"]').exists()).toBe(false)
+    expect(mount(RunDetail, { props: { detail: detail({ state: 'running', ended_at: null }), events: [] } })
+      .find('[data-test="retry-run"]').exists()).toBe(false)
+    const retried = detail({
+      state: 'failed',
+      attempt: 2,
+      retries: [
+        {
+          started_at: '2026-01-01T11:00:00+00:00',
+          from_phase: 'review_1',
+          replayed: 4,
+          note: 'tests are out of scope',
+          rebased_onto: 'abcdef0123456789',
+          previous_state: 'failed',
+          previous_error: 'accept not met',
+        },
+      ],
+    })
+    const fetchMock = vi.fn(async () => okResponse({ task_id: 'M01-S01-T01', action: 'retry', run: null, pending: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    try {
+      const wrapper = mount(RunDetail, { props: { detail: retried, events: [] } })
+      expect(wrapper.get('[data-test="run-attempt"]').text()).toContain('2')
+      const line = wrapper.get('[data-test="run-retry"]').text()
+      expect(line).toContain('od fáze review_1')
+      expect(line).toContain('po rebase na abcdef0')
+      expect(line).toContain('tests are out of scope')
+      await wrapper.get('[data-test="retry-run"]').trigger('click')
+      await wrapper.get('[data-test="retry-note"]').setValue('  keep going ')
+      await wrapper.get('[data-test="retry-form"]').trigger('submit')
+      await flushPromises()
+      expect(fetchMock).toHaveBeenCalledTimes(1)
+      const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+      expect(url).toContain('/runs/')
+      expect(url).toMatch(/\/retry$/)
+      expect(JSON.parse(String(init.body))).toEqual({ note: 'keep going' })
+      expect(wrapper.emitted('retried')).toHaveLength(1)
+      expect(wrapper.find('[data-test="retry-form"]').exists()).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
 })

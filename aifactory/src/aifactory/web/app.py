@@ -423,6 +423,14 @@ _RUN_ERROR_STATUS = {
     "run_not_running": 409,
     "run_already_paused": 409,
     "run_not_paused": 409,
+    "run_not_retryable": 409,
+    "task_done": 409,
+    "unknown_branch": 404,
+    "base_diverged": 409,
+    "dirty_base": 409,
+    "run_in_progress": 409,
+    "fetch_failed": 502,
+    "pull_failed": 500,
     "run_running": 409,
     "run_not_archived": 409,
     "unknown_chain": 404,
@@ -658,6 +666,22 @@ async def publish_run(request: Request) -> JSONResponse:
     except (ReviewError, TaskRunError, ConfigError) as exc:
         return _review_error(exc)
     return JSONResponse(envelope_ok(data, warnings))
+
+
+async def retry_run(request: Request) -> JSONResponse:
+    """``factory task retry`` of a failed or stopped run as a separate process; HTTP 202."""
+    repo: Path = _repo(request)
+    launcher: Launcher = request.app.state.launcher
+    try:
+        body = await _json_body(request)
+        data, warnings = await run_in_threadpool(
+            runs.start_retry, repo, request.path_params["run_id"], body, launcher
+        )
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except (ReviewError, TaskRunError, ConfigError) as exc:
+        return _review_error(exc)
+    return JSONResponse(envelope_ok(data, warnings), status_code=202)
 
 
 def _run_action(request: Request, action: Any) -> JSONResponse:
@@ -1421,6 +1445,7 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/runs/{run_id}/stop", stop_run, methods=["POST"]),
         Route("/runs/{run_id}/pause", pause_run, methods=["POST"]),
         Route("/runs/{run_id}/resume", resume_run, methods=["POST"]),
+        Route("/runs/{run_id}/retry", retry_run, methods=["POST"]),
         Route("/runs/{run_id}/publish", publish_run, methods=["POST"]),
         Route("/runs/{run_id}/archive", archive_run, methods=["POST"]),
         Route("/runs/{run_id}/unarchive", unarchive_run, methods=["POST"]),

@@ -444,3 +444,47 @@ def test_pause_finished_run_is_409(repo: Path, tmp_path: Path) -> None:
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "run_not_running"
     assert client.post("/api/runs/nope/pause").status_code == 404
+
+
+class _RetryLauncher:
+    """Records ``start_retry`` and returns the row as it is (no process is started)."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str, str | None, str | None]] = []
+
+    def start_retry(
+        self,
+        repo: Path,
+        task_id: str,
+        run_id: str,
+        *,
+        note: str | None = None,
+        from_phase: str | None = None,
+        timeout: float = 30.0,
+    ) -> object:
+        self.calls.append((task_id, run_id, note, from_phase))
+        return object()
+
+
+def test_retry_starts_a_failed_run_and_refuses_others(repo: Path, tmp_path: Path) -> None:
+    launcher = _RetryLauncher()
+    app = create_app(repo, static_dir=tmp_path / "nostatic", launcher=launcher)  # type: ignore[arg-type]
+    client = TestClient(app, base_url=BASE)
+
+    response = client.post("/api/runs/r-fail/retry", json={"note": " go on ", "from": "test"})
+    body = response.json()
+    assert response.status_code == 202, body
+    assert envelope_problems(body) == []
+    assert body["data"]["action"] == "retry"
+    assert body["data"]["run"]["run_id"] == "r-fail"
+    assert body["data"]["run"]["attempt"] == 1
+    assert body["data"]["run"]["retries"] == []
+    assert launcher.calls == [(T1, "r-fail", "go on", "test")]
+
+    done = client.post("/api/runs/r-ok/retry", json={})
+    assert done.status_code == 409
+    assert done.json()["error"]["code"] == "run_not_retryable"
+    assert client.post("/api/runs/nope/retry", json={}).status_code == 404
+    bad = client.post("/api/runs/r-fail/retry", json={"notes": "x"})
+    assert bad.status_code == 400
+    assert len(launcher.calls) == 1

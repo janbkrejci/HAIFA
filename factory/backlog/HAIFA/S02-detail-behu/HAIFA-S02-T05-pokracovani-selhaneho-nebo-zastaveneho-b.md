@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S02-T05
 title: Pokračování selhaného nebo zastaveného běhu s kontextem agentů
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -31,3 +31,4 @@ Hotovo, když:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-13 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/24 · náklady $0.00

@@ -132,8 +132,10 @@ What to do with the common ones:
 - `pr_failed`: the run succeeded and its branch exists; `data.pr_error` says why. Check the
   remote and the provider CLI (`gh`, `az`), then `factory task publish ID --json` (see
   Publish). A push that failed on the network was already retried a few times.
-- `run_failed`: read `data.run.error`; the worktree and branch are kept. Re-run with
-  `factory task run ID --note TEXT --json`.
+- `run_failed`: read `data.run.error`; the worktree and branch are kept. Continue the run
+  where it ended with `factory task retry ID --note TEXT --json` (see Procedures, Retry), or
+  start over with `factory task run ID --note TEXT --json`.
+- `run_not_retryable`, `task_done`: see Procedures, Retry.
 - `invalid_config`: read `error.issues[].path` and `message`, fix `.factory/`, commit.
 - `usage_error`: the arguments are wrong; see the command reference above.
 - `checks_failed`: `factory check` found errors; read `data.findings` (see Procedures,
@@ -730,6 +732,35 @@ Run states in `data.run.state` and `task_runs`: `running`, `succeeded`, `failed`
 4. `factory task stop ID --json` stops a running or paused run (state `stopped`); its
    worktree and branch stay. A pause does not survive a restart of the machine: the run's
    process is gone and the run becomes `aborted`.
+
+### Retry
+
+`factory task retry ID [--run RUN_ID] [--note TEXT] [--from PHASE] --json` continues the
+task's newest `failed`, `stopped` or `aborted` run (or `--run`) as its next attempt.
+
+1. Same `run_id`, worktree, branch and trace session: tokens and costs add up,
+   `data.run.attempt` counts the attempts and `data.run.retries` says per retry where it
+   continued (`from_phase`), how many done phases it took over (`replayed`), the note and
+   `rebased_onto`.
+2. Done phases are not repeated: their results are replayed from the run's phase journal
+   (`<session>/workflow_journal.json`). The run continues from the phase that failed or
+   was stopped; after `accept not met` from the top-level step whose result failed
+   `accept` (a review loop gets a new round); with `--from` from that phase (a phase name
+   like `review_2` or a step like `review`, `unknown_phase` otherwise).
+3. Every agent rejoins its coding-agent session when its model is unchanged. The prompt
+   gets a `## Continuation` section (the done phases, `context_handoff/`) and `--note` as
+   `## Retry note`.
+4. Base is pulled from the remote first, like `factory config pull`; a base that cannot
+   move stops the retry with that error (`base_diverged`, `dirty_base`, `run_in_progress`)
+   and nothing changes. When base moved past the branch, the branch is rebased onto it
+   (uncommitted work is committed first); a conflict is resolved like `factory task
+   resolve`. When that fails the branch stays as it was and the run is `failed`. After a
+   rebase the tests run again before any review.
+5. Configuration, backlog and workflow come from the current base. A phase whose step the
+   workflow no longer has starts the workflow from its first phase, with a warning.
+6. Refused, exit 2, nothing changed: `task_done` (the task's PR is merged or the task is
+   `done`), `already_running`, `run_not_retryable` (a succeeded or running run, or a
+   resolve run), `unknown_branch` (the run's branch is gone).
 
 ### Review
 

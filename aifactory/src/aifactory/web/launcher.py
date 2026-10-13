@@ -1,18 +1,19 @@
 """Start a task run from the dashboard as a separate ``factory`` process.
 
-``RunLauncher.start`` (Spustit), ``start_return`` (Vrátit) and ``start_resolve`` (Vyřešit
-konflikt) start ``<prefix> task run|return|resolve ID --repo ROOT --json`` with
+``RunLauncher.start`` (Spustit), ``start_return`` (Vrátit), ``start_resolve`` (Vyřešit
+konflikt) and ``start_retry`` (Pokračovat) start
+``<prefix> task run|return|resolve|retry ID --repo ROOT --json`` with
 ``start_new_session``, stdin closed, the repository root as cwd and the server's
 environment. The process's stdout (its JSON envelope) and stderr (its narration) go to two
 new files with mode 0600 in ``logs/`` of the HAIFA home (``aifactory.home``), never into
 the repository; their names carry the server's pid.
 
 The caller (off the event loop, in a thread pool) waits until the run is claimed in
-``task_runs`` and gets the row, or ``None`` when it is not claimed within ``timeout``
-(``pending``; the process goes on). When the process exits before claiming, the error of
-its envelope is raised as a ``TaskRunError`` with the envelope's code (the app maps it to
-the same HTTP status as before); an unreadable envelope raises ``internal_error`` with the
-tail of the process's output.
+``task_runs`` (a retry: its row has a new attempt) and gets the row, or ``None`` when it
+is not claimed within ``timeout`` (``pending``; the process goes on). When the process
+exits before claiming, the error of its envelope is raised as a ``TaskRunError`` with the
+envelope's code (the app maps it to the same HTTP status as before); an unreadable
+envelope raises ``internal_error`` with the tail of the process's output.
 
 Runs are separate processes, so runs of several tasks of one repository, and of several
 repositories (several servers), run concurrently; ``busy()`` is always False. The row
@@ -36,7 +37,7 @@ import sqlite3
 import subprocess
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Protocol
@@ -91,6 +92,17 @@ class Launcher(Protocol):
         self, repo: Path, task_id: str, *, timeout: float = 30.0
     ) -> TaskRunRow | None: ...
 
+    def start_retry(
+        self,
+        repo: Path,
+        task_id: str,
+        run_id: str,
+        *,
+        note: str | None = None,
+        from_phase: str | None = None,
+        timeout: float = 30.0,
+    ) -> TaskRunRow | None: ...
+
     def busy(self) -> bool: ...
 
     def running(self) -> list[LaunchedRun]: ...
@@ -118,6 +130,33 @@ def _launch_error(launched: LaunchedRun) -> TaskRunError | None:
         launched.process.poll(),
         f"{launched.action} {launched.task_id}",
     )
+
+
+def _run_row(repo: Path, run_id: str) -> TaskRunRow | None:
+    try:
+        store = existing_store(repo)
+    except (TaskRunError, ConfigError):
+        return None
+    if store is None:
+        return None
+    try:
+        return store.get(run_id)
+    except sqlite3.Error:
+        return None
+    finally:
+        store.close()
+
+
+def retried_row(repo: Path, run_id: str) -> Callable[[], TaskRunRow | None]:
+    """A check that returns the row of `run_id` once a new attempt of it was claimed."""
+    before = _run_row(repo, run_id)
+    attempt = before.attempt if before is not None else 0
+
+    def check() -> TaskRunRow | None:
+        row = _run_row(repo, run_id)
+        return row if row is not None and row.attempt > attempt else None
+
+    return check
 
 
 class RunLauncher:
@@ -196,10 +235,40 @@ class RunLauncher:
         args = ["task", "resolve", task_id, "--repo", str(repo), "--json"]
         return self._launch(repo, task_id, "resolve", args, timeout)
 
+    def start_retry(
+        self,
+        repo: Path,
+        task_id: str,
+        run_id: str,
+        *,
+        note: str | None = None,
+        from_phase: str | None = None,
+        timeout: float = 30.0,
+    ) -> TaskRunRow | None:
+        """``factory task retry --run``; like ``start``, claimed when a new attempt starts."""
+        args = ["task", "retry", task_id, "--run", run_id, "--repo", str(repo), "--json"]
+        if note:
+            args.append(f"--note={note}")
+        if from_phase:
+            args.append(f"--from={from_phase}")
+        claimed = retried_row(repo, run_id)
+        return self._launch(repo, task_id, "retry", args, timeout, claimed)
+
     def _launch(
-        self, repo: Path, task_id: str, action: str, args: list[str], timeout: float
+        self,
+        repo: Path,
+        task_id: str,
+        action: str,
+        args: list[str],
+        timeout: float,
+        claimed: Callable[[], TaskRunRow | None] | None = None,
     ) -> TaskRunRow | None:
         known = _run_ids(repo, task_id)
+        if claimed is None:
+
+            def claimed() -> TaskRunRow | None:
+                return _new_row(repo, task_id, known)
+
         prefix = self._command if self._command is not None else command_prefix()
         argv = [*prefix, *args]
         logs = home.logs_dir()
@@ -246,11 +315,11 @@ class RunLauncher:
         waiter.start()
         deadline = time.monotonic() + timeout
         while True:
-            row = _new_row(repo, task_id, known)
+            row = claimed()
             if row is not None:
                 return row
             if process.poll() is not None:
-                row = _new_row(repo, task_id, known)
+                row = claimed()
                 if row is not None:
                     return row
                 error = _launch_error(launched)

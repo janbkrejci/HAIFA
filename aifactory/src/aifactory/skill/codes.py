@@ -94,6 +94,12 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("run_already_paused", "2", "the run is already pausing or paused (factory task pause)"),
     ("run_not_paused", "2", "the run is not paused, there is nothing to resume"),
     ("run_not_archived", "2", "only an archived run can be deleted"),
+    (
+        "run_not_retryable",
+        "2",
+        "task retry: the run is not failed, stopped or aborted, or it is a resolve run",
+    ),
+    ("task_done", "2", "task retry: the task's PR is merged or the task is done in base"),
     ("unknown_chain", "2", "no auto-continue chain with this id in the trace database"),
     ("chain_running", "2", "the chain is still running and cannot be dismissed"),
     # Review, PR and provider.

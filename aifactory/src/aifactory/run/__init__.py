@@ -39,6 +39,10 @@ process, and SIGKILL to what outlives the timeout.
 Pause (``pause.py``, ``factory task pause|resume`` and the dashboard): ``pause_run``
 asks a running run to wait before its next phase (``pausing``, then ``paused``);
 ``resume_run`` lets it go on. A paused run stays ``running`` in ``task_runs``.
+
+Retry (``retry.py``, ``factory task retry`` and the dashboard): ``retry_run`` continues a
+failed or stopped run as its next attempt, in the same worktree, branch and trace session,
+replaying the phases already done from the run's phase journal.
 """
 
 from aifactory.run.errors import TaskRunError
@@ -59,6 +63,7 @@ from aifactory.run.queue import (
     run_chain,
     select_next,
 )
+from aifactory.run.retry import retry_run
 from aifactory.run.scope import OutputPaths, TaskScope, output_paths, task_scope
 from aifactory.run.stop import StopResult, running_run, stop_run
 from aifactory.run.store import (
@@ -106,6 +111,7 @@ __all__ = [
     "output_paths",
     "pause_run",
     "resume_run",
+    "retry_run",
     "run_chain",
     "run_task",
     "running_run",

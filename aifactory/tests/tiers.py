@@ -13,6 +13,7 @@ SLOW_FILES = frozenset(
         "tests/run/test_auto_merge.py",
         "tests/run/test_task_resolve.py",
         "tests/run/test_task_resolve_generated.py",
+        "tests/run/test_task_retry.py",
         "tests/web/test_web_task_run.py",
         "tests/providers/test_providers_azure.py",
         "tests/review/test_approve_merge_retry.py",

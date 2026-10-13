@@ -8,6 +8,7 @@ test is not followed by `fix_3` and a last rejection not by `revise_2`.
 from __future__ import annotations
 
 import json
+import sys
 
 from workflow_fakes import (
     EngineEnv,
@@ -84,7 +85,9 @@ def test_fix_repairs_the_suite(workflow_env: EngineEnv) -> None:
     assert _phases(result) == ["build", "test_plan", "test_1", "triage_1", "fix_1", "test_2"]
     assert (result.exit_code, result.accepted) == (0, True)
     assert code.test_results == []
-    assert [check.argv for plan in code.plans for check in plan.checks] == [["true"]] * 2
+    assert [check.argv for plan in code.plans for check in plan.checks] == [
+        [sys.executable, "-c", "pass"]
+    ] * 2
     fix_call = workflow_env.script.calls[3]
     previous = json.loads(fix_call.previous())
     assert previous["passed"] is False  # the fixer reads the failing suite

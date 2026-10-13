@@ -19,12 +19,13 @@ workflow calls the run's ``PauseGate`` before every phase.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import signal
 import tempfile
 import threading
 from collections.abc import Iterator
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest import mock
@@ -93,9 +94,11 @@ from aifactory.run.store import (
 from aifactory.run.workdir import agent_workdir, project_workdir, validate_base_dirs
 from aifactory.workflow import (
     DEFAULT_WORKFLOWS_DIR,
+    JOURNAL_FILE,
     CodeRunner,
     CodeStep,
     Generated,
+    Journal,
     Workflow,
     WorkflowError,
     WorkflowRun,
@@ -624,6 +627,18 @@ def run_task(
         store.close()
 
 
+@dataclass
+class RetrySpec:
+    """What a retry (``retry.py``) adds to `_execute`: the replay and an optional rebase."""
+
+    journal: Journal
+    limit: int  # how many journal entries the workflow replays
+    onto: str | None = None  # rebase the branch onto this base commit first
+    baseline: str | None = None  # the first attempt's baseline (None: HEAD, or `onto`)
+    lease: str | None = None  # a previously pushed tip whose history the rebase rewrites
+    request_log: dict[str, Any] = field(default_factory=dict)
+
+
 @dataclass(frozen=True)
 class _Job:
     """What `_execute` runs: the workflow, its prompt, the scope and the branch kind."""
@@ -637,6 +652,7 @@ class _Job:
     resolve: ResolveSpec | None = None
     test_timeout: int = DEFAULT_TEST_TIMEOUT
     workdir: str = "."
+    retry: RetrySpec | None = None
 
 
 def _execute(
@@ -658,9 +674,13 @@ def _execute(
         with store.serialized():
             gitops.ensure_excluded(main, _exclude_lines(ignored))
             worktree.parent.mkdir(parents=True, exist_ok=True)
-            if job.new_branch:
+            if job.retry is not None and worktree.is_dir():
+                pass  # a retry continues in the run's own worktree
+            elif job.new_branch:
                 gitops.git(main, "worktree", "add", "-b", row.branch, str(worktree), rc.commit)
             else:
+                if job.retry is not None:
+                    gitops.git(main, "worktree", "prune")
                 gitops.git(main, "worktree", "add", str(worktree), row.branch)
         copy_library_items(worktree, rc.config.library)
     except (RuntimeError, OSError) as exc:
@@ -681,6 +701,22 @@ def _execute(
     }
     if resolve is not None:
         variables["rebase_onto"] = resolve.onto
+    retry = job.retry
+    journal: Journal | None = None
+    if retry is not None:
+        journal = retry.journal
+    elif resolve is None:
+        journal = Journal(session_dir / JOURNAL_FILE)
+    run_kwargs: dict[str, Any] = {
+        "cfg": cfg,
+        "code": code,
+        "adw_id": row.run_id,
+        "repo_root": worktree,
+        "label": row.task_id,
+        "test_timeout": job.test_timeout,
+        "test_slots": TestSlots(default_slots_dir(), settings.test_slots),
+        "phase_gate": PauseGate(store, row.run_id),
+    }
     wf: WorkflowRun | None = None
     error: str | None = None
     prev = Path.cwd()
@@ -691,21 +727,33 @@ def _execute(
             os.chdir(worktree)
             os.environ[basemoves.RUN_ENV] = row.run_id
             with _signals_restored(), agent_workdir(job.workdir):
-                wf = run_workflow(
-                    workflow,
-                    prompt,
-                    cfg,
-                    code=code,
-                    adw_id=row.run_id,
-                    repo_root=worktree,
-                    write_guard=guard,
-                    prompt_variables=variables,
-                    label=row.task_id,
-                    test_timeout=job.test_timeout,
-                    generated=resolve.generated if resolve is not None else (),
-                    test_slots=TestSlots(default_slots_dir(), settings.test_slots),
-                    phase_gate=PauseGate(store, row.run_id),
-                )
+                baseline = retry.baseline if retry is not None else None
+                if retry is not None and retry.onto is not None:
+                    error = _retry_rebase(main, rc, row, job, retry.onto, ignored, run_kwargs)
+                    if error is None:
+                        store.set_base_sha(row.run_id, retry.onto)
+                        baseline = retry.onto
+                if retry is not None and error is None:
+                    handoff = session_dir / "context_handoff"
+                    handoff.mkdir(parents=True, exist_ok=True)
+                    (handoff / f"retry_attempt_{row.attempt - 1}.json").write_text(
+                        json.dumps(retry.journal.to_json(), indent=2),
+                        encoding="utf-8",
+                        newline="\n",
+                    )
+                    retry.journal.start_replay(retry.limit)
+                if error is None:
+                    wf = run_workflow(
+                        workflow,
+                        prompt,
+                        write_guard=guard,
+                        prompt_variables=variables,
+                        generated=resolve.generated if resolve is not None else (),
+                        journal=journal,
+                        baseline=baseline,
+                        request_log=retry.request_log if retry is not None else None,
+                        **run_kwargs,
+                    )
         finally:
             os.chdir(prev)
             if saved_run_env is None:
@@ -745,7 +793,7 @@ def _execute(
                 job.task,
                 wf,
                 provider,
-                lease=resolve.before if resolve is not None else None,
+                lease=resolve.before if resolve is not None else retry.lease if retry else None,
                 body=body,
             )
         except ProviderError as exc:
@@ -757,6 +805,42 @@ def _execute(
             if kept is not None:
                 result.run = kept
     return result
+
+
+def _retry_rebase(
+    main: Path,
+    rc: RunConfig,
+    row: TaskRunRow,
+    job: _Job,
+    onto: str,
+    ignored: tuple[str, ...],
+    run_kwargs: dict[str, Any],
+) -> str | None:
+    """Rebase a retried run's branch onto `onto` (``retry.rebase_for_retry``)."""
+    from aifactory.run.retry import rebase_for_retry
+
+    settings = rc.config.settings
+    generated = tuple(
+        Generated(path=g.path, argv=g.command, timeout=g.timeout) for g in settings.generated
+    )
+    return rebase_for_retry(
+        main,
+        Path(row.worktree),
+        job.task,
+        onto,
+        rc.base,
+        generated=generated,
+        ignored=ignored,
+        workflow=named_workflow(RESOLVE_WORKFLOW, rc.config, row.task_id),
+        run_kwargs=run_kwargs,
+        variables={
+            "task_id": row.task_id,
+            "spec_path": job.outputs.spec,
+            "doc_path": job.outputs.doc,
+            "workdir": str(Path(row.worktree) / job.workdir),
+        },
+        prompt_suffix="\n## Continuation" + job.prompt.partition("\n## Continuation")[2],
+    )
 
 
 def _finish_resolve(

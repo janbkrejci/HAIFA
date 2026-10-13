@@ -21,7 +21,7 @@ from aifactory.review.errors import ReviewError
 from aifactory.run import queue as run_queue
 from aifactory.run.errors import TaskRunError
 from aifactory.run.store import TaskRunRow
-from aifactory.web.launcher import LaunchedRun, _new_row, _run_ids
+from aifactory.web.launcher import LaunchedRun, _new_row, _run_ids, retried_row
 
 _POLL = 0.05
 
@@ -97,13 +97,45 @@ class ThreadLauncher:
             timeout,
         )
 
+    def start_retry(
+        self,
+        repo: Path,
+        task_id: str,
+        run_id: str,
+        *,
+        note: str | None = None,
+        from_phase: str | None = None,
+        timeout: float = 30.0,
+    ) -> TaskRunRow | None:
+        from aifactory.run.retry import retry_run
+
+        return self._start(
+            repo,
+            task_id,
+            lambda: retry_run(repo, task_id, run_id=run_id, note=note, from_phase=from_phase),
+            f"retry {task_id}",
+            timeout,
+            retried_row(repo, run_id),
+        )
+
     def _start(
-        self, repo: Path, task_id: str, job: Callable[[], object], label: str, timeout: float
+        self,
+        repo: Path,
+        task_id: str,
+        job: Callable[[], object],
+        label: str,
+        timeout: float,
+        claimed: Callable[[], TaskRunRow | None] | None = None,
     ) -> TaskRunRow | None:
         with self._lock:
             if self.busy():
                 raise TaskRunError("already_running", f"{self._label} is still running")
             known = _run_ids(repo, task_id)
+            if claimed is None:
+
+                def claimed() -> TaskRunRow | None:
+                    return _new_row(repo, task_id, known)
+
             self.last_error = None
             self._label = label
             thread = threading.Thread(target=self._work, args=(job,), daemon=True)
@@ -111,11 +143,11 @@ class ThreadLauncher:
             thread.start()
         deadline = time.monotonic() + timeout
         while True:
-            row = _new_row(repo, task_id, known)
+            row = claimed()
             if row is not None:
                 return row
             if not thread.is_alive():
-                row = _new_row(repo, task_id, known)
+                row = claimed()
                 if row is not None:
                     return row
                 error = self.last_error

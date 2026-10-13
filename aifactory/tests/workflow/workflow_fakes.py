@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import signal
 import subprocess
+import sys
 from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,6 +36,7 @@ class Call:
     prompt: str
     cwd: str = ""
     system: str = ""
+    session: str = ""  # the engine's session id: the same one means a rejoined session
 
     def previous(self) -> str:
         """The rendered ``{{previous_envelope}}`` exactly as the agent received it."""
@@ -99,6 +101,7 @@ class FakeHarness:
                 str(request.prompt),
                 str(request.cwd or ""),
                 str(request.system_prompt or ""),
+                str(request.session_id or ""),
             )
         )
         queue = self.script.queue.get(agent) or []
@@ -162,8 +165,12 @@ def ok(**fields: Any) -> dict[str, Any]:
 
 
 def plan_envelope(*argv: str, coverage: str = "scoped") -> dict[str, Any]:
-    """A tester envelope with one check (``true`` by default, always on PATH)."""
-    checks = [] if coverage == "none" else [{"name": "check", "argv": list(argv or ("true",))}]
+    """A tester envelope with one check (Python by default, also on Windows)."""
+    checks = (
+        []
+        if coverage == "none"
+        else [{"name": "check", "argv": list(argv or (sys.executable, "-c", "pass"))}]
+    )
     return ok(coverage=coverage, reason="covers the change", checks=checks)
 
 
