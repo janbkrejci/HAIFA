@@ -80,18 +80,20 @@ def _running(pid: int) -> bool:
 def _same_command(pid: int, recorded: str) -> bool:
     """The live pid still runs what the trace recorded (its first word, the harness).
 
-    The word must name a whole path component or file (``claude``, ``claude.exe``,
-    ``codex.js``): a substring would match a directory such as ``.claude/``.
+    The word must name a file of the command, with or without its extension
+    (``claude``, ``claude.exe``, ``node .../codex.js``). Directories do not count: a
+    python under ``.claude/`` or ``Temp/claude/`` is no claude agent.
     """
     words = recorded.split()
     if not words:
         return False
     if sys.platform == "win32":
-        current = oscompat.image_path(pid)  # no ``ps``: the executable's path
+        # no ``ps``: the executable's path, which may contain spaces
+        paths = [oscompat.image_path(pid) or ""]
     else:
-        current = _ps(pid, "command")
-    parts = [p for p in re.split(r"[\s/\\]+", current or "") if p]
-    return any(words[0] in (part, os.path.splitext(part)[0]) for part in parts)
+        paths = (_ps(pid, "command") or "").split()
+    names = [re.split(r"[/\\]", path)[-1] for path in paths]
+    return any(words[0] in (name, os.path.splitext(name)[0]) for name in names if name)
 
 
 def _signal(pid: int, *, force: bool) -> bool:
