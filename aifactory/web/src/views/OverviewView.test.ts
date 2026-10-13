@@ -209,18 +209,9 @@ describe('OverviewView', () => {
     expect(wrapper.get('[data-test="overview-card"]').attributes('data-repo')).toBe('a')
   })
 
-  const PLAN = {
-    repo: '/w/gone', base: 'main', base_sha: 'abc', target: 'base', digest: 'd',
-    files: [{ path: '.factory/config.yaml', action: 'delete' }, { path: '.gitignore', action: 'modify' }],
-    blockers: [] as { code: string; message: string; fix?: string }[],
-  }
-
-  function stubRemoval(plan: unknown, deletion?: Response) {
+  function stubRemoval(deletion?: Response) {
     let removed = false
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-      if (url === '/api/repos/gone/removal') {
-        return plan instanceof Response ? plan : envelope(plan)
-      }
       if (url === '/api/repos/gone' && init?.method === 'DELETE') {
         if (deletion) return deletion
         removed = true
@@ -246,8 +237,8 @@ describe('OverviewView', () => {
     return call ? JSON.parse(String(call[1]?.body)) : undefined
   }
 
-  it('removes a repo after showing its removal plan', async () => {
-    const fetchMock = stubRemoval(PLAN)
+  it('removes a repo only from the dashboard, leaving its folder and .factory/ alone', async () => {
+    const fetchMock = stubRemoval()
     const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, attachTo: document.body, global })
     await flushPromises()
     expect(wrapper.findAll('[data-test="card-remove"]')).toHaveLength(5)
@@ -256,39 +247,27 @@ describe('OverviewView', () => {
     await flushPromises()
     const dialog = openDialog()!
     expect(dialog.textContent).toContain('Odebrat repozitář gone?')
-    expect(dialog.textContent).toContain('.factory/ a řádky factory v .gitignore, commitne to do main')
-    expect(dialog.textContent).toContain('Backlog, specifikace a dokumentace v repu zůstanou.')
-    expect(dialog.textContent).toContain('Commit změní 2 soubory.')
-    expect(dialog.querySelector('[data-test="removal-export"]')).toBeNull()
+    expect(dialog.textContent).toContain('Repo se odpojí jen z dashboardu')
+    expect(dialog.textContent).toContain('.factory/, backlog, specifikace i dokumentace v repu zůstanou')
+    expect(fetchMock.mock.calls.some(([url]) => String(url).endsWith('/removal'))).toBe(false)
     await answerDialog(true)
-    expect(deleteBody(fetchMock)).toEqual({})
+    expect(deleteBody(fetchMock)).toEqual({ uninstall: false })
     expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(wrapper.find('[data-test="overview-card"][data-repo="gone"]').exists()).toBe(false)
   })
 
-  it('lists blockers and keeps Odebrat disabled while any exists', async () => {
-    const fetchMock = stubRemoval({ ...PLAN, blockers: [{ code: 'dirty_paths', message: 'Necommitnuté změny v .factory/.', fix: 'Commitni je.' }] })
+  it('keeps the repo when the removal is cancelled', async () => {
+    const fetchMock = stubRemoval()
     await openRemoval()
-    const dialog = openDialog()!
-    expect(dialog.querySelector('[data-test="removal-blocker"]')?.textContent).toContain('Necommitnuté změny v .factory/. Commitni je.')
-    expect(dialog.querySelector<HTMLButtonElement>('[data-test="confirm-ok"]')?.disabled).toBe(true)
     await answerDialog(false)
     expect(deleteBody(fetchMock)).toBeUndefined()
   })
 
-  it('removes only the registry entry when the removal plan cannot be read', async () => {
-    const fetchMock = stubRemoval(new Response(JSON.stringify({ ok: false, data: null, error: { code: 'not_git', message: 'folder is gone', path: null, id: null, issues: [] }, warnings: [] }), { status: 400 }))
-    await openRemoval()
-    expect(openDialog()?.textContent).toContain('Plán odebrání se nepodařilo načíst: folder is gone')
-    await answerDialog(true)
-    expect(deleteBody(fetchMock)).toEqual({ uninstall: false })
-  })
-
   it('reports a failed removal', async () => {
-    stubRemoval(PLAN, new Response(JSON.stringify({ ok: false, data: null, error: { code: 'push_failed', message: 'push refused', path: null, id: null, issues: [] }, warnings: [] }), { status: 409 }))
+    stubRemoval(new Response(JSON.stringify({ ok: false, data: null, error: { code: 'registry_error', message: 'registry locked', path: null, id: null, issues: [] }, warnings: [] }), { status: 409 }))
     const wrapper = await openRemoval()
     await answerDialog(true)
-    expect(wrapper.get('[data-test="remove-error"]').text()).toContain('push refused')
+    expect(wrapper.get('[data-test="remove-error"]').text()).toContain('registry locked')
     expect(wrapper.emitted('changed')).toBeUndefined()
   })
 

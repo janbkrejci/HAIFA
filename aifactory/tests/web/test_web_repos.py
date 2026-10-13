@@ -319,6 +319,28 @@ def test_add_installs_and_is_idempotent(client: TestClient, tmp_path: Path, home
     assert git(root, "rev-parse", "HEAD") == install["commit"]
 
 
+def test_add_installed_repo_commits_nothing(client: TestClient, tmp_path: Path, home: Path) -> None:
+    """A repository with factory in base is only registered: no commit, no push."""
+    root = init_repo(tmp_path / "proj")
+    write(root, ".factory/config.yaml", "base: main\n")
+    head = commit_all(root)
+    body = _add(client, root)
+    assert body["data"]["created"] is True
+    assert body["data"]["install"] == {
+        "committed": False,
+        "commit": None,
+        "pushed": False,
+        "files": [],
+        "pr": None,
+        "merged": False,
+    }
+    assert git(root, "rev-parse", "HEAD") == head
+    assert git(root, "status", "--porcelain") == ""
+    exclude = Path(git(root, "rev-parse", "--absolute-git-dir")) / "info" / "exclude"
+    assert ".factory/trace.db*" in exclude.read_text(encoding="utf-8").splitlines()
+    assert [r["id"] for r in _get(client, "/api/repos")["data"]["repos"]] == ["proj"]
+
+
 def test_refused_install_leaves_no_registry_entry(
     client: TestClient, tmp_path: Path, home: Path
 ) -> None:
@@ -497,6 +519,18 @@ def test_delete_without_uninstall_removes_only_the_entry(
     assert git(root, "rev-parse", "HEAD") == head
     assert _check(client.delete("/api/repos/proj"), 404)["error"]["code"] == "unknown_repo"
     assert _get(client, "/api/repos/proj/backlog", 404)["error"]["code"] == "unknown_repo"
+
+
+def test_delete_keeps_factory_in_the_repo(client: TestClient, tmp_path: Path, home: Path) -> None:
+    root = init_repo(tmp_path / "proj")
+    _add(client, root)
+    before = _porcelain(root)
+    head = git(root, "rev-parse", "HEAD")
+    body = _check(client.delete("/api/repos/proj"), 200)
+    assert body["data"]["uninstall"] is None
+    assert _registry(home)["repos"] == []
+    assert (root / ".factory" / "config.yaml").is_file()
+    assert git(root, "rev-parse", "HEAD") == head and _porcelain(root) == before
 
 
 def test_delete_uninstalls(tmp_path: Path) -> None:

@@ -102,7 +102,7 @@ onMounted(async () => {
           <template v-if="done.install.pr && done.install.merged">Factory z knihovny prošla pull requestem <a :href="done.install.pr.url" target="_blank" rel="noopener" data-test="repo-added-pr">{{ done.install.pr.branch }}</a>, který factory hned mergnula.</template>
           <template v-else-if="done.install.pr">Factory z knihovny je v pull requestu <a :href="done.install.pr.url" target="_blank" rel="noopener" data-test="repo-added-pr">{{ done.install.pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.</template>
           <template v-else-if="done.install.committed">Factory z knihovny commitnuta {{ shortSha(done.install.commit) }} ({{ done.install.files.length }} {{ done.install.files.length === 1 ? 'soubor' : (done.install.files.length < 5 ? 'soubory' : 'souborů') }}), {{ done.install.pushed ? 'pushnuto' : 'bez pushe' }}.</template>
-          <template v-else>Factory odpovídá knihovně, beze změny.</template>
+          <template v-else>Factory už v repu byla, beze změny: nic se necommitovalo ani nepushlo.</template>
           V záložce Factory najdeš další kroky.
         </p>
         <div class="done-actions">

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T16
 title: "přidání a odebrání repo - vylepšení, zjednodušení"
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -10,3 +10,4 @@ přidání repo, která už obsahovala factory, by mělo proběhnout bez commitu
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-13 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/26 · náklady $3.31

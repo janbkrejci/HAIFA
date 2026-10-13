@@ -134,10 +134,12 @@ the HAIFA home (``registry.py``). ``GET /api/health`` (``app: haifa-dashboard``,
 not served per repository), ``GET /api/limits`` (the machine's subscriptions),
 ``GET /api/repos`` (the repositories with ``status`` and the ``factory`` state),
 ``POST /api/repos`` (``{path}``, idempotent; HTTP 201 when added; registers the repository
-and commits ``.factory/config.yaml`` and the ``.gitignore`` lines it lacks),
+and, when its base has no ``.factory/config.yaml`` yet, commits it and the ``.gitignore``
+lines it lacks; a repository with factory is only registered, without a commit),
 ``POST /api/repos/inspect`` (``{path}``, reads only), ``GET /api/repos/{id}/removal`` (what
-removing commits), ``DELETE /api/repos/{id}`` (``{uninstall?}``: commits the removal of
-``.factory/`` and drops the registry entry) and ``GET``/``POST /api/dashboard/settings``
+removing commits), ``DELETE /api/repos/{id}`` (drops the registry entry and leaves the
+repository as it is; ``{uninstall: true}`` also commits the removal of ``.factory/``) and
+``GET``/``POST /api/dashboard/settings``
 (``port``, ``home``, ``restart_required``). Choosing the folder to add (``fs.py``):
 ``GET /api/fs/dirs?path=`` lists the visible subdirectories of a directory under the user's
 home (default: home) as
@@ -1681,10 +1683,11 @@ def _path_body(body: dict[str, Any]) -> object:
 
 
 async def repos_add(request: Request) -> JSONResponse:
-    """Add a repository: register it and commit ``.factory/config.yaml`` and ``.gitignore``
-    (``web.repos.add_repo``). ``base_changes`` (``direct`` or ``pr``; ``target: "pr"`` is the
-    same) and ``base_pr_merge`` (``manual`` or ``auto``) go to ``config.yaml`` and apply to
-    this commit already. HTTP 201 when newly registered, 200 when it was there."""
+    """Add a repository: register it and, unless base already has factory, commit
+    ``.factory/config.yaml`` and ``.gitignore`` (``web.repos.add_repo``). ``base_changes``
+    (``direct`` or ``pr``; ``target: "pr"`` is the same) and ``base_pr_merge`` (``manual``
+    or ``auto``) go to ``config.yaml`` and apply to this commit already. HTTP 201 when newly
+    registered, 200 when it was there."""
     registry = _registry(request)
 
     def work(
@@ -1763,8 +1766,8 @@ async def repos_inspect(request: Request) -> JSONResponse:
 
 
 async def repos_remove(request: Request) -> JSONResponse:
-    """Remove a repository: commit the removal of ``.factory/`` (``uninstall: false`` skips
-    it), drop the registry entry and close its live hub."""
+    """Remove a repository from the dashboard: drop the registry entry and close its live
+    hub; ``.factory/`` stays in the repository (``uninstall: true`` commits its removal)."""
     registry = _registry(request)
     repo_id: str = request.path_params["repo_id"]
     contexts: RepoContexts = request.app.state.repos
@@ -1773,7 +1776,7 @@ async def repos_remove(request: Request) -> JSONResponse:
         unknown = sorted(set(payload) - {"uninstall"})
         if unknown:
             raise backlog.UsageError(f"unknown keys: {', '.join(unknown)}")
-        uninstall = payload.get("uninstall", True)
+        uninstall = payload.get("uninstall", False)
         if not isinstance(uninstall, bool):
             raise backlog.UsageError("uninstall must be a boolean")
         environ = library.environment(request.app.state.home)
