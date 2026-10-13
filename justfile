@@ -11,6 +11,10 @@ default:
 test *ARGS: web-test
     cd aifactory && uv run pytest "$@"
 
+# pytest alone, without the frontend checks (args go to pytest)
+pytest *ARGS:
+    cd aifactory && uv run pytest "$@"
+
 # browser tests of the dashboard (Playwright, system Chrome)
 e2e *ARGS:
     cd aifactory && uv run pytest tests/e2e -n0 "$@"
