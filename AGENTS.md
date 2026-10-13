@@ -10,6 +10,8 @@ The whole suite takes about 30 minutes on Windows. CI runs it on every pull requ
 - `just pytest <files or directories>` with the tests of the changed packages and of their direct callers. `aifactory/tests/<package>/` mirrors `aifactory/src/aifactory/<package>/`. Never the whole suite.
 - `just web-test` when `aifactory/web/` changed, and `just pytest tests/e2e/<file> -n0` only for the browser test of a changed screen.
 
+Measured on the Windows factory machine (set check timeouts with margin): `just lint` 1 s, `just typecheck` 10 s, `just web-test` 90 s (bun install, vue-tsc, vitest), one browser test file 60–200 s, `just pytest` of one test directory 1–5 min.
+
 Outside a factory run, `just check` and `just e2e` are the full gate.
 
 Never commit credentials, runtime databases, agent transcripts or local machine configuration.
