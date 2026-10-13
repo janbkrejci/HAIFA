@@ -75,6 +75,9 @@ API_VERSION = "7.1"
 PAT_ENV = "AZURE_DEVOPS_EXT_PAT"
 AZ_TIMEOUT = 120
 WINDOWS = sys.platform == "win32"
+# Azure DevOps refuses a PR description over 4000 characters; keep room for the note.
+MAX_DESCRIPTION = 4000
+TRUNCATED = "\n\n… (zkráceno na limit popisu PR v Azure DevOps, celé znění je v tasku a v běhu)"
 
 _MISSING = "az (Azure CLI) is not installed or not on PATH; install it: https://aka.ms/azure-cli"
 _NO_EXTENSION = (
@@ -169,12 +172,23 @@ def _commit(data: dict[str, Any], key: str) -> str | None:
     return None
 
 
+def _fit(body: str) -> str:
+    """``body`` cut at a line end so that it and the note fit Azure's limit (with margin)."""
+    margin = 100  # the leading spaces _description_lines may add
+    if len(body) <= MAX_DESCRIPTION - margin:
+        return body
+    limit = MAX_DESCRIPTION - margin - len(TRUNCATED)
+    cut = body.rfind("\n", 0, limit)
+    return body[: cut if cut > 0 else limit].rstrip() + TRUNCATED
+
+
 def _description_lines(body: str) -> list[str]:
-    """``body`` as ``--description`` values (one per line).
+    """``body`` as ``--description`` values (one per line), within Azure's length limit.
 
     A line that looks like an option (``---``: starts with ``-``, no space) gets a
     leading space so argparse does not take it for one.
     """
+    body = _fit(body)
     return [
         f" {line}" if line.startswith("-") and " " not in line else line
         for line in body.splitlines()

@@ -33,7 +33,7 @@ from aifactory.providers import (
     ProviderError,
     PullRequest,
 )
-from aifactory.providers.azure import API_VERSION, AzCli, AzureProvider
+from aifactory.providers.azure import API_VERSION, TRUNCATED, AzCli, AzureProvider
 
 PR = PullRequest(
     id="7", url=f"{WEB_URL}/pullrequest/7", branch="factory/T01-1", base="main", title="T01"
@@ -296,6 +296,21 @@ def test_create_pr_description_lines(tmp_path: Path, monkeypatch: pytest.MonkeyP
     provider.create_pr("factory/T01-1", "T01", "")
     (argv,) = _calls(log, "repos pr create")
     assert "--description" not in argv
+
+
+def test_long_description_is_cut_to_the_azure_limit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = install_fake_az(tmp_path, monkeypatch, {"repos pr create": show()})
+    provider = _provider(tmp_path, [])
+    body = "# Title\n\n" + "\n".join(f"- řádek {i} " + "x" * 60 for i in range(200))
+    provider.create_pr("factory/T01-1", "T01", body)
+    (argv,) = _calls(log, "repos pr create")
+    lines = argv[argv.index("--description") + 1 : argv.index("--detect")]
+    text = "\n".join(lines)
+    assert len(text) <= 4000
+    assert lines[0] == "# Title"
+    assert text.endswith(TRUNCATED.lstrip("\n").splitlines()[-1])
 
 
 def test_create_pr_url_without_web_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
