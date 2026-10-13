@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T39
 title: Celoplošný obrázek na pozadí dashboardu
-status: todo
+status: cancelled
 depends_on: []
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/THIRD_PARTY_NOTICES, THIRD_PARTY_NOTICES]
 ---
