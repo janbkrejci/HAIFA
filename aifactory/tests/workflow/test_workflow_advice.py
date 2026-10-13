@@ -194,7 +194,7 @@ def test_failed_recommendation_finishes_trace_and_cleans_up(
     cancelled = threading.Event()
     isolated: list[Path] = []
     task_path = repo / "backlog/P01/S01/P01-S01-T01-first.md"
-    original = task_path.read_bytes()
+    original = task_path.read_text()
     monkeypatch.setattr(
         "aifactory.workflow.adaptive.check_harness",
         lambda name: HarnessStatus(name, "fake", "fake", "1"),
@@ -229,7 +229,7 @@ def test_failed_recommendation_finishes_trace_and_cleans_up(
         assert status == "fail"
         assert ended
     assert all(not path.exists() for path in isolated)
-    assert task_path.read_bytes() == original
+    assert task_path.read_text() == original
 
 
 def test_missing_planner_is_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
