@@ -23,6 +23,7 @@ from starlette.testclient import TestClient
 
 from aifactory import home, oscompat
 from aifactory.run import TaskRunRow, TaskRunStore
+from aifactory.run.errors import TaskRunError
 from aifactory.skill import envelope_problems
 from aifactory.web import create_app
 from aifactory.web import launcher as launcher_module
@@ -265,6 +266,110 @@ def test_review_actions_claim(make_app: Apps, repo: Path, stub: Stub) -> None:
     data = _check(client.post(f"/api/review/{T02}/resolve", json={}), 202)["data"]
     assert data["action"] == "resolve"
     assert data["run"]["workflow"] == "resolve"
+
+
+def _failed_run(repo: Path) -> TaskRunRow:
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        row = TaskRunRow(
+            "retry001",
+            T01,
+            "factory/retry",
+            "wt",
+            "main",
+            "0",
+            None,
+            "running",
+            "now",
+            pid=os.getpid(),
+        )
+        store.claim(row)
+        store.finish(row.run_id, "failed", None, "review rejected")
+        failed = store.get(row.run_id)
+        assert failed is not None
+        return failed
+    finally:
+        store.close()
+
+
+def test_retry_claims_a_new_attempt_of_the_same_run(
+    make_app: Apps,
+    repo: Path,
+    stub: Stub,
+) -> None:
+    _app, _client, launcher = make_app(repo)
+    failed = _failed_run(repo)
+    stub.plan(T01, "claim-exit", delay=0.3)
+    row = launcher.start_retry(
+        repo,
+        T01,
+        failed.run_id,
+        note="-x doplň testy",
+        from_phase="review",
+    )
+    assert row is not None
+    assert (row.run_id, row.attempt) == (failed.run_id, 2)
+    assert (row.branch, row.worktree) == (failed.branch, failed.worktree)
+    assert row.retry_list() == [{"note": "-x doplň testy", "from_phase": "review"}]
+    [record] = stub.records(T01)
+    assert record["argv"] == [
+        "task",
+        "retry",
+        T01,
+        "--run",
+        failed.run_id,
+        "--repo",
+        str(repo),
+        "--json",
+        "--note=-x doplň testy",
+        "--from=review",
+    ]
+    launcher.wait(10)
+    assert [(r.run_id, r.attempt, r.state) for r in runs_of(repo, T01)] == [
+        (failed.run_id, 2, "succeeded")
+    ]
+
+
+def test_retry_does_not_return_the_previous_attempt_before_claim(
+    make_app: Apps,
+    repo: Path,
+    stub: Stub,
+) -> None:
+    _app, _client, launcher = make_app(repo)
+    failed = _failed_run(repo)
+    stub.plan(T01, "claim-exit", delay=1.5)
+    assert launcher.start_retry(repo, T01, failed.run_id, timeout=0.1) is None
+    assert _row(repo, failed.run_id) == failed
+    launcher.wait(30)
+    assert [(r.run_id, r.attempt) for r in runs_of(repo, T01)] == [(failed.run_id, 2)]
+
+
+@pytest.mark.parametrize("code", ["task_done", "base_diverged", "unknown_phase", "already_running"])
+def test_retry_errors_before_claim_preserve_the_previous_attempt(
+    make_app: Apps,
+    repo: Path,
+    stub: Stub,
+    code: str,
+) -> None:
+    _app, _client, launcher = make_app(repo)
+    failed = _failed_run(repo)
+    stub.plan(T01, "fail", code=code, message=f"retry refused: {code}")
+    with pytest.raises(TaskRunError) as exc:
+        launcher.start_retry(repo, T01, failed.run_id)
+    assert (exc.value.code, exc.value.message) == (code, f"retry refused: {code}")
+    launcher.wait(10)
+    assert runs_of(repo, T01) == [failed]
+    [record] = stub.records(T01)
+    assert record["argv"] == [
+        "task",
+        "retry",
+        T01,
+        "--run",
+        failed.run_id,
+        "--repo",
+        str(repo),
+        "--json",
+    ]
 
 
 def test_unreadable_envelope_is_internal_error(make_app: Apps, repo: Path, stub: Stub) -> None:

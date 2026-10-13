@@ -1698,6 +1698,15 @@ task stop: the run is marked stopped; its worktree and branch stay (task clean).
 task pause: the phase in progress runs to its end (the run shows pausing), then the run
   waits as paused; its process stays alive and keeps its place among the parallel runs.
 task resume: the paused run goes on with its next phase (a pending pause is dropped).
+task retry: continues the task's newest failed, stopped or aborted run (or --run) as its
+  next attempt: same run id, worktree, branch and trace (tokens and costs add up). Done
+  phases are not repeated; the run goes on from the phase that failed or was stopped, after
+  'accept not met' from the step whose result failed accept (a review gets a new round),
+  or from --from PHASE. Agents rejoin their sessions; --note goes to every agent of the
+  continuing phases. Base is pulled from the remote first (as 'config pull'); when it moved
+  past the branch, the branch is rebased onto it, a conflict resolved like 'task resolve',
+  and the tests run again before any review. Refused: a task merged or done (task_done), a
+  run that cannot be retried (run_not_retryable), a running task (already_running).
 """
 
 
@@ -1913,6 +1922,31 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         "--run", metavar="RUN_ID", help="resume exactly this run (it must belong to the task)"
     )
 
+    retry = sub.add_parser(
+        "retry",
+        help="continue a failed or stopped run of a task where it ended",
+        description="Continue the task's newest failed, stopped or aborted run in its own "
+        "worktree and branch, as the next attempt of the same run. Phases already done are "
+        "not repeated and every agent rejoins its session. Base is pulled from the remote "
+        "first; when it moved, the branch is rebased onto it (a conflict is resolved like "
+        "factory task resolve) and the tests run again before any review. Configuration, "
+        "backlog and workflow come from the current base.",
+    )
+    retry.add_argument("task_id", metavar="ID", help="task id")
+    retry.add_argument(
+        "--run", metavar="RUN_ID", help="retry exactly this run (it must belong to the task)"
+    )
+    retry.add_argument(
+        "--note", metavar="TEXT", help="a note for the agents of the continuing phases"
+    )
+    retry.add_argument(
+        "--from",
+        dest="from_phase",
+        metavar="PHASE",
+        help="continue from this phase (a phase name like review_2 or a step like review) "
+        "instead of the one that failed; the phases after it run again",
+    )
+
     for child in (
         add,
         edit,
@@ -1928,6 +1962,7 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         stop,
         pause,
         resume,
+        retry,
     ):
         child.add_argument("--json", action="store_true", help="print machine-readable JSON")
         child.add_argument(
@@ -2333,6 +2368,17 @@ def _task_resolve(args: argparse.Namespace, root: Path) -> int:
     return _run_output(args, lambda: resolve_task(root, args.task_id))
 
 
+def _task_retry(args: argparse.Namespace, root: Path) -> int:
+    from aifactory.run import retry_run
+
+    return _run_output(
+        args,
+        lambda: retry_run(
+            root, args.task_id, run_id=args.run, note=args.note, from_phase=args.from_phase
+        ),
+    )
+
+
 def _task_approve(args: argparse.Namespace, root: Path) -> int:
     from aifactory.review import approve_task
 
@@ -2445,6 +2491,8 @@ def _task(args: argparse.Namespace) -> int:
             return _task_return(args, root)
         if command == "resolve":
             return _task_resolve(args, root)
+        if command == "retry":
+            return _task_retry(args, root)
         if command == "publish":
             return _task_publish(args, root)
         if command == "clean":

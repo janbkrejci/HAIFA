@@ -280,7 +280,7 @@ def test_checks_runnable_finds_programs_on_path_and_in_the_worktree(tmp_path: Pa
             coverage="scoped",
             reason="covers the change",
             checks=[
-                {"name": "on_path", "argv": ["true"]},
+                {"name": "on_path", "argv": [sys.executable]},
                 {"name": "local", "argv": ["./scripts/check.sh"]},
                 {"name": "unknown", "argv": ["no-such-program-haifa"]},
                 {"name": "missing", "argv": ["scripts/missing.sh"]},
@@ -361,15 +361,18 @@ accept: test.passed
     replan = ok(
         coverage="scoped",
         reason="the build replaced the first check",
-        checks=[{"name": "second", "argv": ["echo", "2"]}],
+        checks=[{"name": "second", "argv": python("print('2')")}],
         dropped=[{"name": "check", "reason": "the build removed what it checked"}],
     )
-    workflow_env.script.add("tester", plan_envelope("echo", "first"), replan)
+    workflow_env.script.add("tester", plan_envelope(*python("print('first')")), replan)
     workflow_env.script.add("builder", ok(summary="built", changed_files=[]))
     code = FakeCodeRunner([True, True])
     result = run_workflow(workflow(text), "do it", workflow_env.cfg, code=code)
     assert result.accepted
-    assert [p.checks[0].argv for p in code.plans] == [["echo", "first"], ["echo", "2"]]
+    assert [p.checks[0].argv for p in code.plans] == [
+        python("print('first')"),
+        python("print('2')"),
+    ]
     assert [d.name for d in code.plans[1].dropped] == ["check"]
 
 
@@ -409,7 +412,7 @@ def test_previous_test_plan_is_a_prompt_variable(workflow_env: EngineEnv, tmp_pa
         if agent.name == "tester":
             agent.prompt_engineering.user = str(user)
     text = HEADER + "steps:\n  - test_plan\n  - test\n  - test_plan: {id: replan}\n"
-    first = plan_envelope("echo", "first")
+    first = plan_envelope(*python("print('first')"))
     workflow_env.script.add("tester", first, first)
     run_workflow(workflow(text), "do it", workflow_env.cfg, code=FakeCodeRunner([True]))
     rendered = [
@@ -420,22 +423,27 @@ def test_previous_test_plan_is_a_prompt_variable(workflow_env: EngineEnv, tmp_pa
         "coverage": "scoped",
         "reason": "covers the change",
         "checks": [
-            {"name": "check", "argv": ["echo", "first"], "timeout": None, "stop_on_fail": False}
+            {
+                "name": "check",
+                "argv": python("print('first')"),
+                "timeout": None,
+                "stop_on_fail": False,
+            }
         ],
     }
 
 
 def test_a_replan_that_drops_a_check_silently_is_sent_back(workflow_env: EngineEnv) -> None:
     text = HEADER + "steps:\n  - test_plan\n  - test_plan: {id: replan}\n  - test\n"
-    silent = plan_envelope("echo", "other")  # same name, other argv, no `dropped`
-    kept = plan_envelope("echo", "first")
+    silent = plan_envelope(*python("print('other')"))  # same name, other argv, no `dropped`
+    kept = plan_envelope(*python("print('first')"))
     workflow_env.script.add("tester", kept, silent, kept)
     code = FakeCodeRunner([True])
     result = run_workflow(workflow(text), "do it", workflow_env.cfg, code=code)
     assert result.accepted
     assert len(workflow_env.script.calls) == 3
     assert "dropped" in workflow_env.script.calls[2].prompt  # the gate's correction
-    assert code.plans[0].checks[0].argv == ["echo", "first"]
+    assert code.plans[0].checks[0].argv == python("print('first')")
 
 
 # ── triage of a red test ────────────────────────────────────────────────────
@@ -474,23 +482,28 @@ def test_triage_code_sends_the_red_test_to_the_fixer(workflow_env: EngineEnv) ->
 
 def test_triage_plan_reruns_the_test_with_the_corrected_plan(workflow_env: EngineEnv) -> None:
     # max 1: a plan repair does not use up the round, and no builder is called.
-    workflow_env.script.add("tester", plan_envelope("echo", "bad"), corrected("echo", "good"))
+    workflow_env.script.add(
+        "tester", plan_envelope(*python("print('bad')")), corrected(*python("print('good')"))
+    )
     code = FakeCodeRunner([False, True])
     result = run_workflow(workflow(LOOP.replace("MAX", "1")), "do it", workflow_env.cfg, code=code)
     assert result.accepted
     assert _phase_names(result) == ["test_plan", "test_1", "triage_1", "test_1_2"]
     assert [c.agent for c in workflow_env.script.calls] == ["tester", "tester"]
-    assert [p.checks[0].argv for p in code.plans] == [["echo", "bad"], ["echo", "good"]]
+    assert [p.checks[0].argv for p in code.plans] == [
+        python("print('bad')"),
+        python("print('good')"),
+    ]
     assert result.results["test_plan"]["failure_cause"] == "plan"
 
 
 def test_plan_repairs_are_capped(workflow_env: EngineEnv) -> None:
     workflow_env.script.add(
         "tester",
-        plan_envelope("echo", "bad"),
-        corrected("echo", "a"),
-        triage_envelope("plan", "echo", "a"),
-        {**triage_envelope("plan", "echo", "a"), "reason": "still the wrong path"},
+        plan_envelope(*python("print('bad')")),
+        corrected(*python("print('a')")),
+        triage_envelope("plan", *python("print('a')")),
+        {**triage_envelope("plan", *python("print('a')")), "reason": "still the wrong path"},
     )
     code = FakeCodeRunner([False, False, False])
     with pytest.raises(RuntimeError, match="still cannot run after 2 corrections"):
@@ -608,7 +621,7 @@ def test_test_timeout_is_a_prompt_variable(
         if agent.name == "tester":
             agent.prompt_engineering.user = str(user)
     text = HEADER + "steps:\n  - test_plan\n"
-    workflow_env.script.add("tester", plan_envelope("echo", "first"))
+    workflow_env.script.add("tester", plan_envelope(*python("print('first')")))
     run_workflow(workflow(text), "do it", workflow_env.cfg, test_timeout=test_timeout)
     [call] = workflow_env.script.calls
     assert call.prompt.split("LIMIT<<")[1].split(">>LIMIT")[0] == rendered

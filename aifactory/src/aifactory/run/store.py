@@ -24,6 +24,12 @@ the tasks auto-continue never starts (``excluded``). They are operating preferen
 not task content, so they live here and need no backlog commit (``queue_prefs``,
 ``set_queue_order``, ``set_excluded``).
 
+``task_runs.retries`` is a JSON list, one item per retry of the run (``factory task retry``,
+``run.retry``): when it started, the phase it continued from, the operator's note and the
+base it was rebased onto. A retry is another attempt of the same run: ``reclaim`` turns the
+failed, stopped or aborted row back into ``running`` under the same ``run_id`` (the same
+task lock as ``claim``), so its phases, tokens and costs add up in the same trace session.
+
 ``task_runs.archived`` (0 or 1) hides a finished run from the dashboard's list of
 active runs (``archive``, ``archive_finished``, ``unarchive``). ``delete_run`` and
 ``delete_archived`` erase archived runs: the ``task_runs`` row and the run's rows in
@@ -77,6 +83,8 @@ from aifactory.run.errors import TaskRunError
 
 RUNNING, SUCCEEDED, FAILED, ABORTED = "running", "succeeded", "failed", "aborted"
 STOPPED = "stopped"
+# the states a run can be retried from (``factory task retry``)
+RETRYABLE = (FAILED, STOPPED, ABORTED)
 # ``task_runs.pause`` of a running run; PAUSED is also the state a paused run is shown in
 PAUSING, PAUSED = "pausing", "paused"
 
@@ -101,7 +109,8 @@ CREATE TABLE IF NOT EXISTS task_runs (
   pause TEXT,
   pr_error TEXT,
   library_commit TEXT,
-  pr_body TEXT
+  pr_body TEXT,
+  retries TEXT
 );
 CREATE INDEX IF NOT EXISTS task_runs_task ON task_runs(task_id);
 CREATE TABLE IF NOT EXISTS task_prs (
@@ -235,6 +244,7 @@ _COLUMNS = (
     "pause",
     "pr_error",
     "library_commit",
+    "retries",
 )
 # columns added to task_runs after its first release; older DBs get them on open
 # (``pr_body``: the PR body a succeeded run could not send; not part of ``TaskRunRow``)
@@ -245,6 +255,7 @@ _RUN_ADDED_COLUMNS = {
     "pr_error": "TEXT",
     "pr_body": "TEXT",
     "library_commit": "TEXT",
+    "retries": "TEXT",
 }
 # who started a run (``task_runs.started_by``)
 STARTED_MANUAL, STARTED_AUTO_CONTINUE, STARTED_AUTO_RESOLVE = (
@@ -285,6 +296,16 @@ class TaskRunRow:
     pause: str | None = None  # of a running run: None, PAUSING or PAUSED
     pr_error: str | None = None  # why a succeeded run has no PR (push or hosting failed)
     library_commit: str | None = None  # the library commit the run read; None: the seed
+    retries: str | None = None  # JSON list of the run's retries (``retry_list``); None: none
+
+    def retry_list(self) -> list[dict[str, Any]]:
+        """One item per retry, oldest first (see the module docstring)."""
+        return [r for r in _json_list(self.retries) if isinstance(r, dict)]
+
+    @property
+    def attempt(self) -> int:
+        """1 for the first attempt, +1 for every retry."""
+        return 1 + len(self.retry_list())
 
     @property
     def shown_state(self) -> str:
@@ -292,7 +313,10 @@ class TaskRunRow:
         return PAUSED if self.state == RUNNING and self.pause == PAUSED else self.state
 
     def to_json(self) -> dict[str, object]:
-        return dict(asdict(self))
+        data: dict[str, object] = dict(asdict(self))
+        data["retries"] = self.retry_list()
+        data["attempt"] = self.attempt
+        return data
 
 
 @dataclass
@@ -626,6 +650,43 @@ class TaskRunStore:
                 f"VALUES ({', '.join('?' for _ in _COLUMNS)})",
                 tuple(getattr(row, c) for c in _COLUMNS),
             )
+
+    def reclaim(self, run_id: str, pid: int, retry: dict[str, Any]) -> TaskRunRow:
+        """Turn the ended run `run_id` back into ``running`` for a retry, atomically.
+
+        Like ``claim``: fails with ``already_running`` while a run of the task is running.
+        Only a ``failed``, ``stopped`` or ``aborted`` run can be retried
+        (``run_not_retryable``). `retry` is appended to ``retries``.
+        """
+        with self.serialized(), self._txn():
+            row = self.get(run_id)
+            if row is None:
+                raise TaskRunError("unknown_run", f"no run {run_id}")
+            self._reap(row.task_id)
+            busy = self._select("state = ? AND task_id = ?", (RUNNING, row.task_id))
+            if busy:
+                raise already_running(busy[0])
+            row = self.get(run_id) or row
+            if row.state not in RETRYABLE:
+                raise TaskRunError(
+                    "run_not_retryable",
+                    f"run {run_id} of task {row.task_id} is {row.state}; only a failed, "
+                    "stopped or aborted run can be retried",
+                )
+            retries = json.dumps([*row.retry_list(), retry], ensure_ascii=False)
+            self._own(run_id)
+            self.conn.execute(
+                "UPDATE task_runs SET state = ?, pid = ?, ended_at = NULL, error = NULL, "
+                "pause = NULL, pr_error = NULL, pr_body = NULL, retries = ? WHERE run_id = ?",
+                (RUNNING, pid, retries, run_id),
+            )
+        final = self.get(run_id)
+        assert final is not None
+        return final
+
+    def set_base_sha(self, run_id: str, base_sha: str) -> None:
+        """The commit of base the run's branch now starts from (after a retry's rebase)."""
+        self.conn.execute("UPDATE task_runs SET base_sha = ? WHERE run_id = ?", (base_sha, run_id))
 
     def live_runs_locked(self) -> list[TaskRunRow]:
         """`running` rows whose process is alive (dead ones become `aborted`).

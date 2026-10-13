@@ -129,6 +129,10 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
     prompts.save(phase_prompts, "user.md", user_text)
 
     session_id = _agent_session_id(run, agent)
+    # aifactory 3.1: persist before spawning, including a first turn that is stopped
+    # or fails before its envelope is accepted. Its conversation still exists.
+    run.save_agent_map(agent.name, {"session_id": session_id, "model": agent.model,
+                                    "coding_agent": agent.coding_agent})
     run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
                                  type="agent_start", name=agent.name,
                                  payload={"model": agent.model, "thinking": agent.thinking,
@@ -148,7 +152,7 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
     spent = UsageBreakdown()
 
     def send(prompt_text: str) -> AgentResult:
-        nonlocal latest
+        nonlocal latest, session_id
         request = AgentRequest(
             prompt=prompt_text,
             system_prompt=system_text,
@@ -177,14 +181,35 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
 
         # aifactory 2.15: a worker can tag its child commands without mutating os.environ.
         with agent_environment(getattr(run, "agent_environment", {})):
-            result = harness.run(
-                request,
-                on_event=_event_forwarder(run, phase, agent.name, harness),
-                on_wait=waiting,
-                on_spawn=lambda pid: run.tracer.process_start(
-                    run.adw_id, "agent", agent.name, pid,
-                    f"{agent.coding_agent} {agent.name} {agent.model}"),
-                on_exit=lambda pid: run.tracer.process_end(run.adw_id, pid))
+            def invoke():
+                response = harness.run(
+                    request,
+                    on_event=_event_forwarder(run, phase, agent.name, harness),
+                    on_wait=waiting,
+                    on_spawn=lambda pid: run.tracer.process_start(
+                        run.adw_id, "agent", agent.name, pid,
+                        f"{agent.coding_agent} {agent.name} {agent.model}"),
+                    on_exit=lambda pid: run.tracer.process_end(run.adw_id, pid))
+                if response.returncode != 0 and _missing_session(response.text):
+                    raise RuntimeError(response.text)
+                return response
+
+            # aifactory 3.1: only an explicitly missing conversation permits a fresh
+            # session. Authentication, model and provider failures must still stop.
+            try:
+                result = invoke()
+            except RuntimeError as exc:
+                if "## Continuation" not in call.prompt or not _missing_session(str(exc)):
+                    raise
+                session_id = f"sssf-{run.adw_id}-{agent.name}-{new_id(8)}"
+                request.session_id = session_id
+                run.save_agent_map(agent.name, {"session_id": session_id, "model": agent.model,
+                                                "coding_agent": agent.coding_agent})
+                run.tracer.event(EventRecord(
+                    adw_id=run.adw_id, phase_id=phase.phase_id, type="log",
+                    name="session_fallback", payload={"agent": agent.name,
+                    "reason": "previous session unavailable", "session_id": session_id}))
+                result = invoke()
         run.add_usage(result.tokens, result.cost)
         spent.merge(result.usage)
         latest = result
@@ -321,6 +346,16 @@ def _agent_session_id(run, agent: AgentConfig) -> str:
     if entry and entry.get("model") == agent.model:
         return entry["session_id"]           # rejoin the existing context window
     return f"sssf-{run.adw_id}-{agent.name}-{new_id(4)}"
+
+
+def _missing_session(error: str) -> bool:
+    """Recognize a missing saved conversation, without retrying unrelated failures."""
+    text = error.lower()
+    return any(marker in text for marker in (
+        "no conversation found", "session not found", "session does not exist",
+        "thread not found", "thread does not exist", "no rollout found",
+        "failed to load session", "could not find session",
+    ))
 
 
 def _event_forwarder(run, phase: Phase, agent_name: str, harness):

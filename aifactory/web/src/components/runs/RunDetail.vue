@@ -7,7 +7,9 @@ import { reviewHref, runHref, taskHref } from '@/lib/router'
 import {
   bySeq,
   canPublish,
+  canRetry,
   prStateLabel,
+  retryLabel,
   shownState,
   startedByTip,
   type RunDetail,
@@ -18,6 +20,7 @@ import { useConfirm } from '@/lib/confirm'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import PhaseDetail from './PhaseDetail.vue'
+import RetryRunButton from './RetryRunButton.vue'
 import RunWaterfall from './RunWaterfall.vue'
 import StatChip from './StatChip.vue'
 import StatusChip from './StatusChip.vue'
@@ -35,7 +38,7 @@ const props = defineProps<{
   publishing?: boolean
 }>()
 
-const emit = defineEmits<{ stop: []; pause: []; resume: []; publish: [] }>()
+const emit = defineEmits<{ stop: []; pause: []; resume: []; publish: []; retried: [] }>()
 
 const run = computed(() => props.detail.run)
 const phases = computed(() => [...(props.detail.phases ?? [])].sort(bySeq))
@@ -122,6 +125,7 @@ async function onStop() {
           <Spinner v-if="stopping" />
           <CircleStop v-else :size="16" /> Zastavit
         </button>
+        <RetryRunButton v-if="canRetry(run)" :run-id="run.run_id" @started="emit('retried')" />
       </div>
       <dl class="meta">
         <div><dt>Běh</dt><dd class="mono">{{ run.run_id }}</dd></div>
@@ -130,6 +134,21 @@ async function onStop() {
         <div><dt>Knihovna</dt><dd class="mono" data-test="run-library">{{ run.library_commit ? shortSha(run.library_commit) : 'seed' }}</dd></div>
         <div><dt>Začátek</dt><dd>{{ fmtTime(run.started_at) }}</dd></div>
         <div><dt>Konec</dt><dd>{{ fmtTime(run.ended_at) }}</dd></div>
+        <div v-if="run.retries?.length">
+          <dt>Pokus</dt>
+          <dd data-test="run-attempt">
+            {{ run.attempt ?? run.retries.length + 1 }}
+            <ul class="retries">
+              <li v-for="(retry, i) in run.retries" :key="retry.started_at" data-test="run-retry">
+                {{ i + 2 }}. {{ fmtTime(retry.started_at) }}: {{ retryLabel(retry) }}<span
+                  v-if="retry.note"
+                  class="dim"
+                  >; poznámka: {{ retry.note }}</span
+                >
+              </li>
+            </ul>
+          </dd>
+        </div>
         <div>
           <dt>Spustil</dt>
           <dd data-test="started-by">{{ startedByTip(run.started_by) }}</dd>
@@ -245,6 +264,12 @@ a.task-id:hover {
 
 .review-link {
   margin-left: 8px;
+}
+
+.retries {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
 }
 
 .pause {

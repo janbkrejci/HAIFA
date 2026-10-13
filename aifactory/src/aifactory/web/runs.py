@@ -218,6 +218,9 @@ def _summary(
         "archived": bool(row.archived),
         "started_by": row.started_by,
         "pause": row.pause if row.state == "running" else None,
+        # 1 + the retries (``factory task retry``); each says where it continued
+        "attempt": row.attempt,
+        "retries": row.retry_list(),
         # why a succeeded run has no PR; the dashboard offers `task publish` for it
         "pr_error": row.pr_error if pr is None else None,
         "pr": None
@@ -372,6 +375,50 @@ def publish_run(repo: Path, run_id: str) -> tuple[JsonDict, list[str]]:
         },
         list(result.warnings),
     )
+
+
+RETRY_KEYS = ("note", "from")
+
+
+def start_retry(
+    repo: Path, run_id: str, body: JsonDict, launcher: Any
+) -> tuple[JsonDict, list[str]]:
+    """``factory task retry --run`` as a separate process; ``{task_id, action, run, pending}``.
+
+    ``note`` goes to the agents of the continuing phases, ``from`` names the phase to
+    continue from (default: the one that failed or was stopped).
+    """
+    from aifactory.run.store import RETRYABLE
+
+    for key in body:
+        if key not in RETRY_KEYS:
+            raise TaskRunError(
+                "invalid_value", f"unknown field '{key}', allowed: {', '.join(RETRY_KEYS)}"
+            )
+    values: dict[str, str | None] = {}
+    for key in RETRY_KEYS:
+        value = body.get(key)
+        if value is not None and not isinstance(value, str):
+            raise TaskRunError("invalid_value", f"'{key}' must be a string")
+        values[key] = value.strip() if value and value.strip() else None
+    store, row = _open_run(repo, run_id)
+    store.close()
+    if row.state not in RETRYABLE:
+        raise TaskRunError(
+            "run_not_retryable",
+            f"run {run_id} of task {row.task_id} is {row.state}; only a failed, stopped or "
+            "aborted run can be retried",
+        )
+    started = launcher.start_retry(
+        repo, row.task_id, run_id, note=values["note"], from_phase=values["from"]
+    )
+    data: JsonDict = {
+        "task_id": row.task_id,
+        "action": "retry",
+        "run": None if started is None else run_summary(repo, run_id),
+        "pending": started is None,
+    }
+    return data, []
 
 
 def _agent_sessions(conn: sqlite3.Connection, run_id: str) -> list[JsonDict]:

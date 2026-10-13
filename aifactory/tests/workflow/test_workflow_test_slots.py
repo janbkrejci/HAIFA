@@ -217,22 +217,22 @@ def test_wait_for_a_slot_is_traced_and_not_part_of_the_timeout(
     monkeypatch.setattr(quality, "_slot_event", signal_waiting)
     # Start the hold duration only after the workflow reaches the slot queue.
     # Workflow preparation can take longer than the original fixed hold under load.
-    holder = _spawn(procs, slots, "holder", 1.5, log, ready)
+    # The command is quick but its start is slow under load: test_timeout leaves room for
+    # it, and the hold is longer than test_timeout.
+    holder = _spawn(procs, slots, "holder", 4.0, log, ready)
     _wait_for(lambda: _started(log, "holder"))
-    workflow_env.script.add(
-        "tester", plan_envelope(sys.executable, "-c", "import time; time.sleep(0.3)")
-    )
+    workflow_env.script.add("tester", plan_envelope(sys.executable, "-c", "pass"))
     clock = time.monotonic()
     result = run_workflow(
         workflow(TEXT),
         "do it",
         workflow_env.cfg,
-        test_timeout=1,
+        test_timeout=3,
         test_slots=TestSlots(slots, 1, poll=POLL),
     )
     waited = time.monotonic() - clock
     assert holder.wait(timeout=30) == 0
-    assert waited > 1.5  # longer than test_timeout, yet the step passed
+    assert waited > 4.0  # longer than test_timeout, yet the step passed
     assert result.results["test"]["passed"] is True
     assert result.accepted is True
     events = _slot_events(workflow_env)
@@ -241,7 +241,7 @@ def test_wait_for_a_slot_is_traced_and_not_part_of_the_timeout(
     assert events[0]["slots"] == 1
     assert events[-1]["state"] == "acquired"
     assert events[-1]["slots"] == 1
-    assert float(events[-1]["waited_seconds"]) > 1.0  # type: ignore[arg-type]
+    assert float(events[-1]["waited_seconds"]) > 3.0  # type: ignore[arg-type]
 
 
 def test_timeout_still_limits_the_command_inside_a_slot(

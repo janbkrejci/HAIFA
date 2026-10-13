@@ -100,6 +100,10 @@ export interface RunSummary {
   pr_error?: string | null
   /** The library commit the run read; null for the packaged seed or an older run. */
   library_commit?: string | null
+  /** 1 for the first attempt, +1 for every retry (absent from an older server). */
+  attempt?: number
+  /** One item per retry (`factory task retry`), oldest first. */
+  retries?: RunRetry[]
   pr: RunPr | null
   phases: PhaseDot[]
 }
@@ -509,6 +513,47 @@ export interface PublishResponse {
 /** `factory task publish` for a succeeded run without a PR: push its branch, open the PR. */
 export function publishRun(runId: string): Promise<PublishResponse> {
   return postApi<PublishResponse>(runPath(runId, 'publish'))
+}
+
+/** One retry of a run: when, from which phase and with what the operator added. */
+export interface RunRetry {
+  started_at: string
+  /** The phase the retry continued from; null: the workflow's first phase. */
+  from_phase: string | null
+  /** How many done phases were taken over from the earlier attempt. */
+  replayed: number
+  note: string | null
+  /** The base commit the branch was rebased onto first; null when base had not moved. */
+  rebased_onto: string | null
+  previous_state: string
+  previous_error: string | null
+}
+
+export interface RetryResponse {
+  task_id: string
+  action: 'retry'
+  run: RunSummary | null
+  /** The new attempt was not claimed in time; the process goes on. */
+  pending: boolean
+}
+
+/** A failed, stopped or aborted run can be continued (`factory task retry`). */
+export function canRetry(run: { state: string | null }): boolean {
+  return run.state === 'failed' || run.state === 'stopped' || run.state === 'aborted'
+}
+
+/** `factory task retry` of the run, with an optional note for the agents. */
+export function retryRun(runId: string, note?: string): Promise<RetryResponse> {
+  const text = note?.trim()
+  return postApi<RetryResponse>(runPath(runId, 'retry'), text ? { note: text } : {})
+}
+
+/** Where a retry continued, for the run detail: `od fáze review_1, po rebase na abc1234`. */
+export function retryLabel(retry: RunRetry): string {
+  const parts = [retry.from_phase ? `od fáze ${retry.from_phase}` : 'od první fáze']
+  if (retry.replayed) parts.push(`převzato ${retry.replayed} hotových fází`)
+  if (retry.rebased_onto) parts.push(`po rebase na ${retry.rebased_onto.slice(0, 7)}`)
+  return parts.join(', ')
 }
 
 /** A succeeded run without a PR: the dashboard offers to publish it. */

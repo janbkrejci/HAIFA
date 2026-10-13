@@ -8,6 +8,7 @@ rejection is not followed by ``revise_2`` and a last red suite not by ``fix_3``.
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -50,7 +51,10 @@ CODE_FAULT = triage_envelope("code")
 REPLAN = ok(
     coverage="scoped",
     reason="the revision touched more",
-    checks=[{"name": "check", "argv": ["true"]}, {"name": "more", "argv": ["echo", "more"]}],
+    checks=[
+        *TEST_PLAN["checks"],
+        {"name": "more", "argv": [sys.executable, "-c", "print('more')"]},
+    ],
 )
 
 

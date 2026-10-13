@@ -40,6 +40,11 @@ rejection is not followed by ``revise_2``. This deliberately differs from
 ``phase_gate`` (``run_workflow(phase_gate=...)``) is called before every role and code
 phase, outside of it: a task run passes ``run.pause.PauseGate``, which waits there while
 the run is paused (``factory task pause``). A phase that started always runs to its end.
+
+``journal`` (``run_workflow(journal=...)``, ``journal.Journal``) records every finished
+phase. A retry (``factory task retry``) passes the journal of the failed attempt with a
+replay limit: phases up to it take their stored result instead of running, so the run
+continues where it stopped with the same results, loops and inputs.
 """
 
 from __future__ import annotations
@@ -60,9 +65,10 @@ from aifactory.engine.role_registry import RAN_FIELD, Issue
 from aifactory.harness.override import effective_agent, step_override
 from aifactory.workflow.check import check_agents
 from aifactory.workflow.conditions import truthy
+from aifactory.workflow.journal import Journal, JournalEntry
 from aifactory.workflow.model import CodeStep, Repeat, RoleStep, Step, Workflow, WorkflowError, walk
-from aifactory.workflow.rebase import rebase_onto
-from aifactory.workflow.rebuild import Generated, rebuild_generated
+from aifactory.workflow.rebase import RebaseOutput, rebase_onto
+from aifactory.workflow.rebuild import Generated, RebuildOutput, rebuild_generated
 
 __all__ = [
     "REQUEST_DESCRIPTION",
@@ -93,6 +99,14 @@ PLAN_REVISION_PHASE = "plan_revision"
 PLAN_REVISION_DESCRIPTION = "Rework the test plan from the test reviewer's findings"
 MAX_PLAN_REVIEWS = 3  # a review, and up to two more after revisions
 NO_INPUT = "(none)"
+# the envelope a code step stores, by action (a commit stores a plain result)
+_CODE_OUTPUTS: dict[str, Any] = {
+    "test": dt.VerifyOutput,
+    "command": dt.VerifyOutput,
+    "changes": dt.ChangesOutput,
+    "rebase": RebaseOutput,
+    "rebuild": RebuildOutput,
+}
 
 
 class CodeRunner(Protocol):
@@ -257,9 +271,12 @@ class _Interpreter:
         code: CodeRunner,
         label: str | None = None,
         gate: Callable[[], None] | None = None,
+        journal: Journal | None = None,
     ) -> None:
         self.workflow = workflow
         self.gate = gate
+        self.journal = journal
+        self.top = ""  # path of the top-level step that runs now (journal entries)
         self.label = label
         self.prompt = prompt
         self.run = run
@@ -423,7 +440,21 @@ class _Interpreter:
 
     def execute(self, steps: Sequence[Step], suffix: tuple[int, ...] = ()) -> None:
         for step in steps:
+            if not suffix:
+                self.top = step.path
             self.dispatch(step, suffix)
+
+    def replayed(self, name: str, key: str) -> JournalEntry | None:
+        """The stored result of phase `name` when a retry replays it, else None."""
+        return self.journal.take(name, key) if self.journal is not None else None
+
+    def journal_begin(self, name: str, key: str) -> None:
+        if self.journal is not None:
+            self.journal.begin(name, key)
+
+    def journal_done(self, entry: JournalEntry) -> None:
+        if self.journal is not None:
+            self.journal.done(entry)
 
     def dispatch(self, step: Step, suffix: tuple[int, ...]) -> bool:
         """Run one step unless its ``when`` is false; return whether it ran."""
@@ -459,13 +490,29 @@ class _Interpreter:
 
     def role(self, step: RoleStep, suffix: tuple[int, ...], *, keep: bool = True) -> Any:
         """Run one agent phase; ``keep=False`` leaves its envelope out of the results."""
-        self.before_phase()
         if step.role.output_type is dt.TestPlanOutput and step.phase_id not in (
             TRIAGE_PHASE,
             PLAN_REVISION_PHASE,
         ):
             self.plan_step = step
         name = self.phase_name(step.phase_id, suffix)
+        role = step.role
+        entry = self.replayed(name, step.key)
+        if entry is not None:
+            envelope = role.output_type.model_validate(entry.envelope or {})
+            self.records.append(StepRecord(name, step.name, "agent", role.agent))
+        else:
+            envelope = self.call_agent(step, name, keep)
+        if keep:
+            self.store(step.key, envelope)
+            if isinstance(envelope, dt.TestPlanOutput):
+                self.review_plan(suffix)
+        return envelope
+
+    def call_agent(self, step: RoleStep, name: str, keep: bool) -> Any:
+        """The live agent phase `name` of `step`; its envelope goes into the journal."""
+        self.journal_begin(name, step.key)
+        self.before_phase()
         role = step.role
         previous = self.previous(step.inputs)
         self.run.previous_test_plan = self.latest_plan()  # for the plan_keeps_checks gate
@@ -494,10 +541,18 @@ class _Interpreter:
                         variables=self.variables(step),
                     )
                 )
-        if keep:
-            self.store(step.key, envelope)
-            if isinstance(envelope, dt.TestPlanOutput):
-                self.review_plan(suffix)
+        self.journal_done(
+            JournalEntry(
+                phase=name,
+                step=step.key,
+                kind="agent",
+                top=self.top,
+                output=type(envelope).__name__,
+                envelope=envelope.model_dump(mode="json"),
+                summary=str(envelope.summary),
+                kept=keep,
+            )
+        )
         return envelope
 
     def review_plan(self, suffix: tuple[int, ...]) -> None:
@@ -587,9 +642,43 @@ class _Interpreter:
             self.run_code_step(step, suffix)
 
     def run_code_step(self, step: CodeStep, suffix: tuple[int, ...]) -> None:
-        self.before_phase()
         name = self.phase_name(step.phase_id, suffix)
+        entry = self.replayed(name, step.key)
+        if entry is not None:
+            self.records.append(StepRecord(name, step.name, "code", step.owner))
+            self.restore_code(step, entry)
+            return
+        self.journal_begin(name, step.key)
+        self.before_phase()
         self.records.append(StepRecord(name, step.name, "code", step.owner))
+        self.live_code_step(step, name)
+        done = JournalEntry(phase=name, step=step.key, kind="code", top=self.top)
+        done.action = step.action
+        if step.action == "commit":
+            done.result = {k: v for k, v in self.results[step.key].items() if k != RAN_FIELD}
+        else:
+            envelope = self.envelopes[step.key]
+            done.output = type(envelope).__name__
+            done.envelope = envelope.model_dump(mode="json")
+            done.summary = str(envelope.summary)
+            if step.action in ("test", "command"):
+                done.report = self.reports.get(len(self.history) - 1)
+        self.journal_done(done)
+
+    def restore_code(self, step: CodeStep, entry: JournalEntry) -> None:
+        """Put a replayed code phase's result back where a live one leaves it."""
+        if step.action == "commit":
+            self.results[step.key] = {**(entry.result or {}), RAN_FIELD: True}
+            return
+        envelope_type: Any = _CODE_OUTPUTS.get(step.action, dt.VerifyOutput)
+        envelope = envelope_type.model_validate(entry.envelope or {})
+        if step.action in ("test", "command") and entry.report is not None:
+            self.reports[len(self.history)] = dict(entry.report)
+        self.store(step.key, envelope)
+        if step.action == "test" and not getattr(envelope, "passed", True):
+            self.red_test = dict(entry.report or {})
+
+    def live_code_step(self, step: CodeStep, name: str) -> None:
         with self.run.phase(self.params(name, "code", step.owner, step.description)) as ph:
             if step.action in ("test", "command"):
                 if step.action == "test":
@@ -670,6 +759,9 @@ def run_workflow(
     generated: Sequence[Generated] = (),
     test_slots: Any = None,
     phase_gate: Callable[[], None] | None = None,
+    journal: Journal | None = None,
+    baseline: str | None = None,
+    request_log: Mapping[str, Any] | None = None,
 ) -> WorkflowRun:
     """Run a loaded workflow through the engine. Phase errors propagate, as in a Python ADW.
 
@@ -681,7 +773,12 @@ def run_workflow(
     ``generated`` (the outputs a ``rebuild`` step may rebuild; default none) and
     ``test_slots`` (an ``engine.slots.TestSlots`` every ``test`` step waits for; the wait
     does not count into ``test_timeout``; None means no wait) and
-    ``phase_gate`` (called before every role and code phase; see the module docstring).
+    ``phase_gate`` (called before every role and code phase; see the module docstring) and
+    ``journal`` (records every finished phase; a retry's journal replays its first
+    ``limit`` phases) and ``baseline`` (the commit the run started from, instead of
+    ``HEAD``: a retry keeps its first attempt's or takes the base it was rebased onto) and
+    ``request_log`` (extra fields logged in the ``request`` phase, e.g. what a retry
+    continues).
     """
     preflight(workflow, cfg)
     warnings = [*workflow.warnings, *unenforced_restrictions(workflow, cfg)]
@@ -694,13 +791,19 @@ def run_workflow(
     run.test_timeout = test_timeout
     run.generated = tuple(generated)
     run.test_slots = test_slots
-    interp = _Interpreter(workflow, prompt, run, runner, label, phase_gate)
-    interp.baseline = runner.baseline()  # pinned before this run commits anything
+    interp = _Interpreter(workflow, prompt, run, runner, label, phase_gate, journal)
+    # pinned before this run commits anything
+    interp.baseline = baseline if baseline else runner.baseline()
+    if journal is not None:
+        journal.baseline = interp.baseline
+        journal.workflow = workflow.name
     run.console.note(f"workflow: {workflow.name}")
     request = interp.params("request", "engineer", run.engineer, REQUEST_DESCRIPTION)
     interp.used.add("request")
     with run.phase(request) as ph:
         ph.log(input=prompt, workflow=workflow.name, baseline=interp.baseline[:7])
+        if request_log:
+            ph.log(**request_log)
         for warning in warnings:
             # The harness cannot forbid these commands: say so before any agent runs.
             ph.log(warning=warning)

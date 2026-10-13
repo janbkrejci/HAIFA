@@ -783,6 +783,7 @@ watch(
         @run-start="onRunStart"
         @run-cancel="closeRun"
         @run-commit="onRunCommit"
+        @retried="loadDetail(taskId)"
       />
       <p v-else-if="loading" class="faint" data-test="detail-loading">
         <span class="mono" data-test="loading-id">{{ taskId }}</span> · Načítám…

@@ -34,7 +34,8 @@ import {
 } from '@/lib/backlog'
 import { fmtTime } from '@/lib/format'
 import { reviewHref, runHref, taskHref } from '@/lib/router'
-import { prStateLabel, shownState } from '@/lib/runs'
+import { canRetry, prStateLabel, shownState } from '@/lib/runs'
+import RetryRunButton from '@/components/runs/RetryRunButton.vue'
 import StatusChip from '@/components/runs/StatusChip.vue'
 import IssueList from './IssueList.vue'
 import RunDialog from './RunDialog.vue'
@@ -74,6 +75,8 @@ const emit = defineEmits<{
   'run-commit': []
   /** Exclude the task from auto continue or return it to the queue. */
   exclude: [id: string, excluded: boolean]
+  /** A failed or stopped run was continued (`factory task retry`). */
+  retried: []
 }>()
 
 const editing = ref(false)
@@ -324,14 +327,22 @@ function onEdit(input: EditTaskInput) {
                 <th>Stav</th>
                 <th>Větev</th>
                 <th class="right">Začátek</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="run in detail.runs" :key="run.run_id" :data-run="run.run_id">
+              <tr v-for="(run, index) in detail.runs" :key="run.run_id" :data-run="run.run_id">
                 <td><a :href="runHref(run.run_id)" class="mono">{{ run.run_id }}</a></td>
                 <td><StatusChip :status="shownState(run)" /></td>
                 <td class="mono branch">{{ run.branch }}</td>
                 <td class="right nowrap">{{ fmtTime(run.started_at) }}</td>
+                <td class="right">
+                  <RetryRunButton
+                    v-if="index === 0 && canRetry(run) && !finished"
+                    :run-id="run.run_id"
+                    @started="emit('retried')"
+                  />
+                </td>
               </tr>
             </tbody>
           </table>

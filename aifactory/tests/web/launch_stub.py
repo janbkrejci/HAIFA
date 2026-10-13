@@ -48,8 +48,17 @@ def _print(envelope: dict[str, Any]) -> None:
     sys.stdout.flush()
 
 
-def _claim(repo: Path, task_id: str, action: str, note: str | None) -> TaskRunStore:
+def _claim(
+    repo: Path, task_id: str, action: str, note: str | None, argv: list[str]
+) -> TaskRunStore:
     store = TaskRunStore(repo / ".factory" / "trace.db")
+    if action == "retry":
+        store.reclaim(
+            _option(argv, "--run") or "",
+            os.getpid(),
+            {"note": note, "from_phase": _option(argv, "--from")},
+        )
+        return store
     run_id = uuid.uuid4().hex[:8]
     store.claim(
         TaskRunRow(
@@ -100,7 +109,7 @@ def main(argv: list[str]) -> int:
         print(f"line one\nline two\n{TAIL_MARKER}", file=sys.stderr)
         return 3
     try:
-        store = _claim(repo, task_id, action, note)
+        store = _claim(repo, task_id, action, note, argv)
     except TaskRunError as exc:
         _print(envelope_fail(exc.code, exc.message))
         return 2

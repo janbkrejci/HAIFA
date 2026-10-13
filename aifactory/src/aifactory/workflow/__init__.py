@@ -27,6 +27,7 @@ from aifactory.workflow.interpreter import (
     preflight,
     run_workflow,
 )
+from aifactory.workflow.journal import JOURNAL_FILE, Journal, JournalEntry, read_journal
 from aifactory.workflow.model import (
     CodeStep,
     Repeat,
@@ -42,6 +43,7 @@ from aifactory.workflow.rebuild import Generated, RebuildOutput, covered
 
 __all__ = [
     "DEFAULT_WORKFLOWS_DIR",
+    "JOURNAL_FILE",
     "CheckResult",
     "CodeRunner",
     "CodeStep",
@@ -52,6 +54,8 @@ __all__ = [
     "RebaseOutput",
     "RebuildOutput",
     "Issue",
+    "Journal",
+    "JournalEntry",
     "Repeat",
     "RoleStep",
     "Step",
@@ -69,6 +73,7 @@ __all__ = [
     "parse_condition",
     "parse_workflow",
     "preflight",
+    "read_journal",
     "rebase_onto",
     "refs",
     "run_workflow",
