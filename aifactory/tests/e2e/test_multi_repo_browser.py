@@ -1,4 +1,5 @@
-"""Empty obs → add repos (factory committed) → switch screens → run/review → removal."""
+"""Empty obs → add repos (factory committed) → switch screens → run/review → removal
+(only from the dashboard)."""
 
 from __future__ import annotations
 
@@ -223,8 +224,7 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     row.locator('[data-test="card-remove"], [data-test="calm-remove"]').click()
                     modal = page.locator('[data-test="confirm-dialog"]')
                     expect(modal).to_contain_text(f"Odebrat repozitář {repo_b.name}?")
-                    expect(modal).to_contain_text("commitne to do main")
-                    expect(modal.locator('[data-test="removal-blockers"]')).to_have_count(0)
+                    expect(modal).to_contain_text("Repo se odpojí jen z dashboardu")
                     modal.locator('[data-test="confirm-ok"]').click()
                     expect(row).to_have_count(0)
                     expect(page.locator(f'[data-repo="{id_a}"]')).to_be_visible()
@@ -235,12 +235,10 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     page.locator('[data-test="switcher-button"]').click()
                     expect(page.locator(f'[data-test="switch-repo-{id_b}"]')).to_have_count(0)
                     expect(page.locator(f'[data-test="switch-repo-{id_a}"]')).to_be_visible()
-                    # the removal is one more commit on base, pushed; .factory/ is gone
-                    removed = git(repo_b, "rev-parse", "main")
-                    assert git(repo_b, "rev-parse", "main~1") == installed
-                    assert git(bare, "rev-parse", "main") == removed
-                    assert git(repo_b, "ls-tree", "-r", "--name-only", "main", ".factory") == ""
-                    assert not (repo_b / ".factory").exists()
+                    # the removal only unregisters: no commit, .factory/ stays
+                    assert git(repo_b, "rev-parse", "main") == installed
+                    assert git(bare, "rev-parse", "main") == installed
+                    assert (repo_b / ".factory/config.yaml").is_file()
                     assert git(repo_b, "status", "--porcelain") == ""
                 except Exception as exc:
                     report = server.report(T01) if server else log.read_text(encoding="utf-8")

@@ -187,9 +187,12 @@ def add_repo(
 ) -> tuple[RepoEntry, bool, JsonDict, list[str]]:
     """The dashboard's "add": register the repository and install factory in one go.
 
-    The install writes only ``.factory/config.yaml`` (kept when it is committed) and the
-    ``.gitignore`` lines, in one commit on base, pushed when there is a remote (see
-    ``plan_init(replace=True)``); agents and workflows come from the library.
+    A repository whose base already has ``.factory/config.yaml`` is only registered:
+    nothing is committed or pushed, and the runtime lines factory needs ignored that its
+    ``.gitignore`` lacks go to ``info/exclude`` of this clone. Otherwise the install writes
+    only ``.factory/config.yaml`` and the ``.gitignore`` lines, in one commit on base,
+    pushed when there is a remote (see ``plan_init(replace=True)``); agents and workflows
+    come from the library.
     ``base_changes`` and ``base_pr_merge`` go to ``config.yaml`` and already apply to this
     commit: with ``pr`` it goes to ``factory-init/<n>`` with a pull request (merged at once
     with ``auto``), and factory is installed once base has it. A refused install leaves no
@@ -199,9 +202,13 @@ def add_repo(
     from aifactory.library.store import LibraryStoreError
 
     entry, created, warnings = register_repo(registry, raw)
+    root = Path(entry.path)
+    found = _factory(root)
+    if found is not None and found.state == "installed":
+        return entry, created, _keep_installed(), [*warnings, *_exclude_runtime(root)]
     try:
         result = commit_init(
-            Path(entry.path),
+            root,
             replace=True,
             environ=environ,
             pr=base_changes == "pr",
@@ -223,14 +230,50 @@ def add_repo(
     return entry, created, install, [*warnings, *result.warnings]
 
 
+def _keep_installed() -> JsonDict:
+    """The ``install`` answer of ``add_repo`` for a repository that already has factory."""
+    return {
+        "committed": False,
+        "commit": None,
+        "pushed": False,
+        "files": [],
+        "pr": None,
+        "merged": False,
+    }
+
+
+def _exclude_runtime(root: Path) -> list[str]:
+    """Put the runtime lines missing from ``.gitignore`` into ``info/exclude``; warnings."""
+    from aifactory.library.install import GITIGNORE_LINES
+    from aifactory.run import gitops
+
+    gitignore = root / ".gitignore"
+    try:
+        text = gitignore.read_text(encoding="utf-8") if gitignore.is_file() else ""
+    except (OSError, UnicodeDecodeError):
+        text = ""
+    present = {line.strip() for line in text.splitlines()}
+    missing = [line for line in GITIGNORE_LINES if line not in present]
+    if not missing:
+        return []
+    try:
+        gitops.ensure_excluded(root, missing)
+    except (RuntimeError, OSError) as exc:
+        return [f"info/exclude not updated: {exc}"]
+    return []
+
+
 def remove_repo(
     registry: Registry,
     repo_id: str,
     *,
-    uninstall: bool = True,
+    uninstall: bool = False,
     environ: Mapping[str, str] | None = None,
 ) -> tuple[RepoEntry, JsonDict | None]:
-    """The dashboard's "remove": delete ``.factory/``, unregister."""
+    """The dashboard's "remove": unregister; the repository keeps ``.factory/``.
+
+    ``uninstall`` also commits the removal of ``.factory/`` on base first.
+    """
     from aifactory.library.store import LibraryStoreError
     from aifactory.library.uninstall import uninstall as remove_factory
 

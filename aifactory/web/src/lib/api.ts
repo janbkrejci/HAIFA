@@ -382,7 +382,7 @@ export interface RemoveRepoResult {
   uninstall: { committed: boolean; commit: string | null; pushed: boolean } | null
 }
 
-/** Removes the repo: commits the deletion of .factory/ on base (unless `uninstall: false`) and unregisters it. */
+/** Removes the repo from the dashboard; `uninstall: true` also commits the deletion of .factory/ on base. */
 export function removeRepo(id: string, options?: RemoveRepoOptions): Promise<RemoveRepoResult> {
   return deleteGlobal<RemoveRepoResult>(`/repos/${encodeURIComponent(id)}`, options)
 }

@@ -147,7 +147,7 @@ describe('ReposAddView', () => {
     expect(inspectCalls(fetchMock)).toEqual(['~/code/repo'])
   })
 
-  it.each(['none', 'unsupported', 'uncommitted', 'installed'] as const)('adds a %s repo by its root with one button and emits its id', async (state) => {
+  it.each(['none', 'unsupported', 'uncommitted'] as const)('adds a %s repo by its root with one button and emits its id', async (state) => {
     const fetchMock = stub({ inspect: inspected({ factory: factory(state) }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
@@ -231,22 +231,39 @@ describe('ReposAddView', () => {
     expect(wrapper.get('[data-test="repo-added-install"]').text()).toContain('hned mergnula')
   })
 
-  it('shows the state of an installed repo, and Add', async () => {
-    stub({ inspect: inspected({ factory: factory('installed') }) })
+  it('only connects an installed repo: no commit, no pull request choice', async () => {
+    const fetchMock = stub({ inspect: inspected({ factory: factory('installed') }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
     const card = wrapper.get('[data-test="inspect-card"]')
     expect(card.get('[data-test="inspect-state"]').text()).toBe('Nainstalováno')
-    expect(card.find('[data-test="inspect-add"]').exists()).toBe(true)
+    expect(card.get('[data-test="inspect-install-note"]').text()).toBe(
+      'Factory už je v main. Přidání repo jen připojí k dashboardu, nic necommitne ani nepushne.',
+    )
+    expect(card.find('[data-test="inspect-via-pr"]').exists()).toBe(false)
+    expect(card.findAll('button').map((b) => b.text())).toEqual(['Přidat'])
+    await card.get('[data-test="inspect-add"]').trigger('click')
+    await flushPromises()
+    const post = fetchMock.mock.calls.find(([url, init]) => url === '/api/repos' && init?.method === 'POST')
+    expect(JSON.parse(String(post?.[1]?.body))).toEqual({ path: '/w/repo' })
   })
 
-  it('offers Open and a library sync for a registered repo: Backlog when installed, else Factory', async () => {
-    const fetchMock = stub({ inspect: inspected({ registered: 'repo', factory: factory('installed') }) })
+  it('offers only Open for a registered installed repo, on its Backlog', async () => {
+    stub({ inspect: inspected({ registered: 'repo', factory: factory('installed') }) })
     const wrapper = await mountView()
     await inspectPath(wrapper)
     const card = wrapper.get('[data-test="inspect-card"]')
     expect(card.text()).toContain('Repo už je v dashboardu.')
     expect(card.get('[data-test="inspect-open"]').attributes('href')).toBe('#/r/repo/backlog')
+    expect(card.find('[data-test="inspect-add"]').exists()).toBe(false)
+    expect(card.find('[data-test="inspect-sync"]').exists()).toBe(false)
+  })
+
+  it('offers Open and a library sync for a registered repo without factory', async () => {
+    const fetchMock = stub({ inspect: inspected({ registered: 'repo', factory: factory('none') }) })
+    const wrapper = await mountView()
+    await inspectPath(wrapper)
+    const card = wrapper.get('[data-test="inspect-card"]')
     expect(card.find('[data-test="inspect-add"]').exists()).toBe(false)
     expect(card.get('[data-test="inspect-install-note"]').text()).toContain('Synchronizace zapíše do repa .factory/config.yaml')
     await card.get('[data-test="inspect-sync"]').trigger('click')

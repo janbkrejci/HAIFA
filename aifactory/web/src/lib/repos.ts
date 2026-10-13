@@ -3,10 +3,8 @@
 import { ref } from 'vue'
 import {
   ApiError,
-  fetchRepoRemoval,
   removeRepo,
   type FactoryState,
-  type RepoRemoval,
   type RepoStatus,
 } from './api'
 import { errorText } from './format'
@@ -42,39 +40,29 @@ export function factoryStateText(state: string | null | undefined): string {
 }
 
 /**
- * The question before a repo is removed: with a removal plan it says what the commit on base
- * deletes and what stays; without one (the plan could not be read) only the registry entry goes.
+ * The question before a repo is removed: it only leaves the dashboard; the folder, its .factory/
+ * and its history stay as they are.
  */
-export function removeConfirm(
-  repo: { name: string; path: string },
-  plan: RepoRemoval | null,
-  planError: string | null = null,
-): ConfirmOptions {
-  const message = plan
-    ? `Smaže z repa .factory/ a řádky factory v .gitignore, commitne to do ${plan.base} a pushne (má-li repo remote). ` +
-      'Smaže i lokální data běhů (trace DB, worktree). Backlog, specifikace a dokumentace v repu zůstanou.'
-    : `Plán odebrání se nepodařilo načíst: ${planError ?? 'neznámá chyba'}. ` +
-      `Repo se odebere jen z dashboardu, ve složce ${repo.path} se nic nezmění.`
+export function removeConfirm(repo: { name: string; path: string }): ConfirmOptions {
   return {
     title: `Odebrat repozitář ${repo.name}?`,
-    message,
+    message:
+      `Repo se odpojí jen z dashboardu, ve složce ${repo.path} se nic nezmění: .factory/, backlog, specifikace ` +
+      'i dokumentace v repu zůstanou. Kdykoli ho můžeš znovu přidat.',
     confirmLabel: 'Odebrat',
     tone: 'danger',
-    confirmDisabled: (plan?.blockers.length ?? 0) > 0,
   }
 }
 
 /**
- * Removing a repo: reads its removal plan (GET .../removal), asks in the shared ConfirmDialog
- * (render `RemoveRepoDialog` with this object), sends DELETE and
- * calls `onRemoved`. A repo removed by someone else (`unknown_repo`) counts as removed.
- * Removing the open repo goes to the overview.
+ * Removing a repo from the dashboard: asks in the shared ConfirmDialog (render `RemoveRepoDialog`
+ * with this object), sends DELETE and calls `onRemoved`. A repo removed by someone else
+ * (`unknown_repo`) counts as removed. Removing the open repo goes to the overview.
  */
 export function useRemoveRepo(onRemoved: (id: string) => void) {
   const { dialog, ask, confirm, cancel } = useConfirm()
   const removing = ref<string | null>(null)
   const error = ref<string | null>(null)
-  const plan = ref<RepoRemoval | null>(null)
 
   function gone(id: string): true {
     if (currentRepoId() === id) window.location.hash = OVERVIEW_HREF
@@ -84,25 +72,10 @@ export function useRemoveRepo(onRemoved: (id: string) => void) {
 
   async function remove(repo: { id: string; name: string; path: string }): Promise<boolean> {
     error.value = null
-    plan.value = null
-    let planError: string | null = null
+    if (!(await ask(removeConfirm(repo)))) return false
     removing.value = repo.id
     try {
-      plan.value = await fetchRepoRemoval(repo.id)
-    } catch (err) {
-      if (err instanceof ApiError && err.code === 'unknown_repo') {
-        removing.value = null
-        return gone(repo.id)
-      }
-      planError = errorText(err)
-    } finally {
-      removing.value = null
-    }
-    const current = plan.value
-    if (!(await ask(removeConfirm(repo, current, planError)))) return false
-    removing.value = repo.id
-    try {
-      await removeRepo(repo.id, current ? {} : { uninstall: false })
+      await removeRepo(repo.id, { uninstall: false })
     } catch (err) {
       if (!(err instanceof ApiError && err.code === 'unknown_repo')) {
         error.value = errorText(err)
@@ -114,7 +87,7 @@ export function useRemoveRepo(onRemoved: (id: string) => void) {
     return gone(repo.id)
   }
 
-  return { dialog, confirm, cancel, remove, removing, error, plan }
+  return { dialog, confirm, cancel, remove, removing, error }
 }
 
 export type RepoRemover = ReturnType<typeof useRemoveRepo>

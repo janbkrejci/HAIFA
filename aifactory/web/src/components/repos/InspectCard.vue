@@ -2,7 +2,8 @@
 import { errorText } from '../../lib/format'
 // The card of an inspected folder on the Add repository page (POST /api/repos/inspect):
 // its repo root, branch, remote, factory state and trace DB, then one action. Adding
-// (or syncing a registered repo) writes .factory/ from the library and commits it on base.
+// (or syncing a registered repo) writes .factory/ from the library and commits it on base;
+// a repo whose base already has factory is only connected, without a commit or push.
 import { computed, ref } from 'vue'
 import { ApiError, addRepo, type AddRepoResult, type InspectResult, type RepoProblem } from '@/lib/api'
 import { problemText } from '@/lib/addRepo'
@@ -21,6 +22,8 @@ const viaPr = ref(false)
 const autoMerge = ref(false)
 
 const state = computed(() => props.inspect.factory?.state ?? null)
+/** Factory is in base already: adding only connects the repo, nothing is committed. */
+const installed = computed(() => state.value === 'installed')
 const kind = computed<'problem' | 'registered' | 'add'>(() => {
   if (props.inspect.problem !== null) return 'problem'
   return props.inspect.registered !== null ? 'registered' : 'add'
@@ -35,7 +38,7 @@ async function add() {
   adding.value = true
   addError.value = null
   try {
-    emit('added', await addRepo(root.value, viaPr.value ? { base_changes: 'pr', base_pr_merge: autoMerge.value ? 'auto' : 'manual' } : {}))
+    emit('added', await addRepo(root.value, viaPr.value && !installed.value ? { base_changes: 'pr', base_pr_merge: autoMerge.value ? 'auto' : 'manual' } : {}))
   } catch (err) {
     if (err instanceof ApiError) {
       const data = (err.data && typeof err.data === 'object' ? err.data : {}) as Partial<RepoProblem>
@@ -98,26 +101,29 @@ async function add() {
 
     <template v-else>
       <p v-if="kind === 'registered'" class="note" data-test="inspect-registered">Repo už je v dashboardu.</p>
-      <p class="note" data-test="inspect-install-note">
+      <p v-if="installed" class="note" data-test="inspect-install-note">
+        Factory už je v {{ base }}. {{ kind === 'registered' ? 'Repo je připojené' : 'Přidání repo jen připojí k dashboardu' }}, nic necommitne ani nepushne.
+      </p>
+      <p v-else class="note" data-test="inspect-install-note">
         {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory/config.yaml (existující ponechá), doplní .gitignore a
         <template v-if="viaPr && autoMerge">otevře s tím pull request do {{ base }} a hned ho mergne.</template>
         <template v-else-if="viaPr">otevře s tím pull request do {{ base }}. Factory začne fungovat po jeho mergi a akci Stáhnout konfiguraci z base v záložce Factory.</template>
         <template v-else>commitne to do {{ base }}.</template>
       </p>
-      <label class="via-pr" data-test="inspect-via-pr">
+      <label v-if="!installed" class="via-pr" data-test="inspect-via-pr">
         <input v-model="viaPr" type="checkbox" :disabled="adding" />
         Změny base přes pull request ({{ base }} nepřijímá přímý push): instalace, konfigurace, knihovna, backlog i odebrání
       </label>
-      <label v-if="viaPr" class="via-pr" data-test="inspect-auto-merge">
+      <label v-if="viaPr && !installed" class="via-pr" data-test="inspect-auto-merge">
         <input v-model="autoMerge" type="checkbox" :disabled="adding" />
         Pull requesty factory hned schválit a mergnout (GitHub s --admin, Azure DevOps vlastním schválením)
       </label>
-      <p v-if="adding" class="note" data-test="inspect-adding">{{ viaPr ? (autoMerge ? 'Zapisuji factory a merguji pull request…' : 'Zapisuji factory a otevírám pull request…') : `Zapisuji factory a commituji do ${base}…` }}</p>
+      <p v-if="adding" class="note" data-test="inspect-adding">{{ installed ? 'Připojuji repo…' : viaPr ? (autoMerge ? 'Zapisuji factory a merguji pull request…' : 'Zapisuji factory a otevírám pull request…') : `Zapisuji factory a commituji do ${base}…` }}</p>
       <p v-if="addError" class="problem" data-test="inspect-add-error">{{ addError }}</p>
       <div class="actions">
         <template v-if="kind === 'registered'">
           <a :href="openHref" class="btn" data-test="inspect-open">Otevřít</a>
-          <button type="button" class="btn ok" :disabled="adding" data-test="inspect-sync" @click="add">
+          <button v-if="!installed" type="button" class="btn ok" :disabled="adding" data-test="inspect-sync" @click="add">
             <Spinner v-if="adding" /> Synchronizovat s knihovnou
           </button>
         </template>

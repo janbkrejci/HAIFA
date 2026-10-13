@@ -562,9 +562,6 @@ describe('App', () => {
     const fetchMock = stubApi({
       repos: [HAIFA, GONE],
       handler: (url, init) => {
-        if (url === '/api/repos/gone/removal') {
-          return new Response(JSON.stringify({ ok: false, data: null, error: { code: 'not_git', message: 'folder is gone', path: null, id: null, issues: [] }, warnings: [] }), { status: 400 })
-        }
         if (url === '/api/repos/gone' && init?.method === 'DELETE') {
           removed = true
           return envelope({ removed: { id: 'gone' } })
@@ -581,7 +578,7 @@ describe('App', () => {
     await wrapper.get('[data-test="missing-remove"]').trigger('click')
     await flushPromises()
     expect(openDialog()?.textContent).toContain('Odebrat repozitář gone?')
-    expect(openDialog()?.textContent).toContain('Repo se odebere jen z dashboardu')
+    expect(openDialog()?.textContent).toContain('Repo se odpojí jen z dashboardu')
     await answerDialog(true)
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/gone', {
       method: 'DELETE',
