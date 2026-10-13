@@ -5,6 +5,7 @@ workflow: build-test-review
 writes: [aifactory/, justfile]
 auto_continue: true
 auto_merge: true
+harness: codex
 ---
 
 Vývoj HAIFA řízený samotnou HAIFA. Rozhodnutí jsou v `docs/decisions.md`, návrh dashboardu pro více repozitářů v `docs/design/multi-repo-dashboard.md`.
