@@ -29,7 +29,9 @@ SHARED_DIRS = (
     ".claude/skills/",
     ".agents/skills/",
 )
-CONFIG_PATHSPECS = (FACTORY_DIR, ".claude/skills", ".agents/skills")
+# Git's default wildmatch lets * match slashes, including nested skill files.
+# Directory pathspecs take a very slow unpack_trees path in Git for Windows/VFS.
+CONFIG_PATHSPECS = (f"{FACTORY_DIR}/*", ".claude/skills/*", ".agents/skills/*")
 
 ChangeStatus = Literal["modified", "added", "deleted", "untracked"]
 _STATUS: dict[str, ChangeStatus] = {"M": "modified", "A": "added", "D": "deleted"}

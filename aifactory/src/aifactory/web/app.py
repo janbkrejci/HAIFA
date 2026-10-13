@@ -198,6 +198,7 @@ from aifactory.run.store import is_db_busy
 from aifactory.skill.envelope import envelope_fail, envelope_ok
 from aifactory.web import backlog, chains, factory, library, machine, review, runs, settings
 from aifactory.web import server as web_server
+from aifactory.web.config_cache import ConfigCache
 from aifactory.web.fs import FolderPicker, list_dirs
 from aifactory.web.guard import StaleCodeMiddleware, WriteGuardMiddleware, is_api_path
 from aifactory.web.launcher import Launcher, RunLauncher
@@ -1655,7 +1656,17 @@ async def repos_list(request: Request) -> JSONResponse:
 
     def build() -> tuple[list[dict[str, Any]], list[str]]:
         state, warnings = registry.snapshot()
-        return [repo_status(entry) for entry in state.repos], warnings
+        cache: ConfigCache = request.app.state.repo_status_cache
+        cache.prune({(entry.id, entry.path) for entry in state.repos})
+        return [
+            {
+                **cache.get(
+                    (entry.id, entry.path), Path(entry.path), functools.partial(repo_status, entry)
+                ),
+                **entry.to_json(),
+            }
+            for entry in state.repos
+        ], warnings
 
     items, warnings = await run_in_threadpool(build)
     data = {"repos": items, "home": str(request.app.state.home)}
@@ -2101,6 +2112,7 @@ def create_multi_app(
     app.state.served_port = port
     app.state.registry = registry
     app.state.overview = Overview(registry)
+    app.state.repo_status_cache = ConfigCache()
     app.state.repos = contexts
     app.state.user_home = Path.home() if user_home is None else user_home
     app.state.picker = FolderPicker() if picker is None else picker

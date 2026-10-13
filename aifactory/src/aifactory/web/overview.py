@@ -43,13 +43,14 @@ from aifactory.config.repo_state import repo_state
 from aifactory.config.source import CommitSource
 from aifactory.config.status import config_changes
 from aifactory.run.gitops import repo_layout
+from aifactory.web.config_cache import CONFIG_TTL as CONFIG_TTL
+from aifactory.web.config_cache import ConfigCache
 from aifactory.web.registry import Registry, RepoEntry
 from aifactory.web.repos import trace_db_of
 
 JsonDict = dict[str, Any]
 T = TypeVar("T")
 
-CONFIG_TTL = 15.0  # s, config state per repository
 TASKS_TTL = 60.0  # s, task titles and statuses per repository
 REPO_TIMEOUT = 2.0  # s, per repository
 if sys.platform == "win32":  # a cold repository runs ~8 git processes, each 0.15-0.3 s there
@@ -397,7 +398,7 @@ class Overview:
     ) -> None:
         self.registry = registry
         self.timeout = timeout
-        self._configs = _TtlCache(clock)
+        self._configs = ConfigCache(clock)
         self._tasks = _TtlCache(clock)
         # Own threads: a repository stuck past the limit never blocks the loop's executor, and
         # while its computation still runs a new request waits for it instead of adding a thread.
@@ -415,7 +416,7 @@ class Overview:
             return _stub(entry, "not_git", [f"{entry.path} is not a git working tree"])
         root = layout.toplevel
         key = (entry.id, entry.path)
-        config, config_warnings = self._configs.get(key, CONFIG_TTL, lambda: _config_view(root))
+        config, config_warnings = self._configs.get(key, root, lambda: _config_view(root))
         tasks, task_warnings = self._tasks.get(key, TASKS_TTL, lambda: _task_index(root))
         trace, trace_warnings = _trace_view(trace_db_of(root))
         item = _stub(entry, _state(config), [*config_warnings, *task_warnings, *trace_warnings])

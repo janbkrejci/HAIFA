@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from multi_repo import BASE, rmtree, write
+from multi_repo import BASE, commit_all, rmtree, write
 from overview_fixture import (
     PR_URL,
     T_CANC,
@@ -371,3 +371,15 @@ def test_invalid_config_in_base_and_uncommitted_config(tmp_path: Path) -> None:
         {"path": ".factory/config.yaml", "status": "modified"}
     ]
     assert repos["dirty"]["config"]["clean"] is False
+
+
+def test_config_cache_invalidated_before_ttl(tmp_path: Path) -> None:
+    root = make_installed_repo(tmp_path / "cached")
+    home = tmp_path / "home"
+    register(home, root)
+    client = _client(home, tmp_path)
+    assert _get(client)["repos"][0]["config"]["clean"] is True
+    write(root, ".factory/config.yaml", "base: main\nmax_parallel_runs: 3\n")
+    assert _get(client)["repos"][0]["config"]["clean"] is False
+    commit_all(root)
+    assert _get(client)["repos"][0]["config"]["clean"] is True
