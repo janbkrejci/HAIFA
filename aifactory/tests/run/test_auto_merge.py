@@ -43,6 +43,7 @@ from aifactory.run import (
     STOP_NOT_MERGED,
     TaskPrRow,
     TaskRunStore,
+    retry_chain,
     run_chain,
     run_task,
 )
@@ -358,6 +359,97 @@ def test_cli_text_reports_merge(repo: Path, script: Script, capsys: Capsys) -> N
     out = capsys.readouterr().out
     assert "auto-merge: merged " in out
     assert STOP_NOT_MERGED not in out
+
+
+# ── task retry: auto-merge and auto-continue after a successful retry ────────
+
+
+def stopped_at_review(repo: Path, script: Script) -> str:
+    """T01 built, then stopped by the operator during its review; its run id."""
+    build(script, "one")
+
+    def stop_here(wt: Path) -> None:
+        store = TaskRunStore(repo / ".factory" / "trace.db")
+        try:
+            running = store.running(T01)
+            assert running is not None
+            store.mark_stopped(running.run_id, "stopped by user")
+        finally:
+            store.close()
+        raise SystemExit(143)
+
+    script.on("reviewer", stop_here)
+    review(script)  # consumed by the stopped call
+    with pytest.raises(SystemExit):
+        run_task(repo, T01)
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        stopped = store.for_task(T01)[0]
+    finally:
+        store.close()
+    assert stopped.state == "stopped"
+    return stopped.run_id
+
+
+def test_retry_merges_and_continues(repo: Path, script: Script, capsys: Capsys) -> None:
+    setup(repo, step="auto_merge: true\nauto_continue: true\n")
+    run_id = stopped_at_review(repo, script)
+    review(script)
+    build(script, "two")
+    review(script)
+    capsys.readouterr()  # the stopped run's narration
+
+    code = main(["task", "retry", T01, "--repo", str(repo), "--json"])
+
+    env = read_envelope(capsys)
+    assert code == 0, env
+    data = env["data"]
+    assert data["run"]["run_id"] == run_id
+    assert data["auto_merge"]["merged"] is True
+    chain = data["chain"]
+    assert [r["run"]["task_id"] for r in chain["runs"]] == [T01, T02]
+    assert chain["stop"] == STOP_EXHAUSTED
+    assert all(r["auto_merge"]["merged"] for r in chain["runs"])
+    for task_id in (T01, T02):
+        row = pr_row(repo, task_id)
+        assert row is not None and row.merged_by == MERGED_BY_AUTO
+        assert status_on_main(repo, task_id) == "done"
+
+
+def test_retry_with_auto_continues_without_auto_continue(
+    repo: Path, script: Script, capsys: Capsys
+) -> None:
+    setup(repo, step="", t02_depends=False)
+    stopped_at_review(repo, script)
+    review(script)
+    build(script, "two")
+    review(script)
+
+    capsys.readouterr()
+    code = main(["task", "retry", T01, "--repo", str(repo), "--auto"])
+
+    out = capsys.readouterr().out
+    assert code == 0
+    assert "auto-continue: stopped (exhausted)" in out
+    for task_id in (T01, T02):
+        row = pr_row(repo, task_id)
+        assert row is not None and row.state == "open" and row.merged_by is None
+
+
+def test_retry_without_options_keeps_the_pr_open(repo: Path, script: Script) -> None:
+    setup(repo, step="")
+    stopped_at_review(repo, script)
+    review(script)
+
+    chain = retry_chain(repo, T01)
+
+    assert [r.run.task_id for r in chain.runs] == [T01]
+    assert chain.stop == STOP_DISABLED
+    assert chain.chain_id is None
+    assert chain.runs[0].ok and chain.runs[0].auto_merge is None
+    row = pr_row(repo, T01)
+    assert row is not None and row.state == "open" and row.auto_merge_error is None
+    assert pr_row(repo, T02) is None
 
 
 def test_operator_approve_records_operator(repo: Path, script: Script) -> None:

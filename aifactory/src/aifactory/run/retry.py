@@ -30,7 +30,8 @@ What the retry does, in order; any refusal before the claim changes nothing:
    replay ends at the last ``test`` before the first review, so the tests run again on
    the rebased code before anything is reviewed.
 7. Runs the workflow replaying the journal (``aifactory.workflow.journal``) and publishes
-   the PR like ``task run``.
+   the PR like ``task run``. ``queue.retry_chain`` (``factory task retry`` and the
+   dashboard) then auto-merges and auto-continues like ``task run``.
 """
 
 from __future__ import annotations

@@ -497,8 +497,12 @@ def run_chain(
     runner: ChainRunner | None = None,
     pr_files: Callable[[TaskPrRow], list[str] | None] | None = None,
     agents_override: dict[str, str] | None = None,
+    first_run: Callable[[], task_mod.TaskRunResult] | None = None,
 ) -> ChainResult:
     """Run `task_id`, then (auto-continue) the next ready tasks.
+
+    ``first_run`` replaces the first ``run_task`` of `task_id` (``retry_chain``: the
+    retry's attempt); it runs in this process, also in a parallel chain.
 
     ``agents_override`` (``task run --harness/--model/--thinking``) applies to the first
     run only; the rest of the chain runs on the roster.
@@ -524,6 +528,7 @@ def run_chain(
             code=code,
             provider=provider,
             agents_override=agents_override,
+            first_run=first_run,
         )
     return _run_parallel(
         repo,
@@ -535,7 +540,88 @@ def run_chain(
         runner=runner if runner is not None else ProcessRunner(repo),
         pr_files=pr_files,
         agents_override=agents_override,
+        first_run=first_run,
+        code=code,
     )
+
+
+def retry_chain(
+    repo: Path,
+    task_id: str,
+    *,
+    run_id: str | None = None,
+    note: str | None = None,
+    from_phase: str | None = None,
+    auto: bool = False,
+    code: CodeRunner | None = None,
+    provider: GitProvider | None = None,
+    max_parallel: int | None = None,
+    runner: ChainRunner | None = None,
+    pr_files: Callable[[TaskPrRow], list[str] | None] | None = None,
+) -> ChainResult:
+    """``factory task retry``: the retry of a run, then auto-merge and auto-continue.
+
+    After a successful attempt the chain goes on exactly as after ``run_chain``: the
+    PR is merged with ``auto_merge`` and the next ready task starts with ``--auto``
+    (`auto`) or ``auto_continue``, in the kanban's queue order. A `TaskRunError` of
+    the retry propagates.
+    """
+    # Local import and module attribute: a patched `retry_run` applies here too.
+    from aifactory.run import retry as retry_mod
+
+    def first() -> task_mod.TaskRunResult:
+        return retry_mod.retry_run(
+            repo,
+            task_id,
+            run_id=run_id,
+            note=note,
+            from_phase=from_phase,
+            code=code,
+            provider=provider,
+        )
+
+    return run_chain(
+        repo,
+        task_id,
+        auto=auto,
+        code=code,
+        provider=provider,
+        max_parallel=max_parallel,
+        runner=runner,
+        pr_files=pr_files,
+        first_run=first,
+    )
+
+
+def member_auto_merge(
+    repo: Path, result: task_mod.TaskRunResult, *, code: CodeRunner | None = None
+) -> task_mod.TaskRunResult:
+    """Auto-merge of a finished run of a parallel chain, under the merge lock.
+
+    A PR in conflict is resolved once (``resolve_and_merge``) outside the lock and merged
+    under it, as the sequential chain does; the resolve run is ``result.resolve_run``.
+    Nothing happens without ``auto_merge: true`` on the task in base.
+    """
+    if not result.ok or result.pr is None:
+        return result
+    with _fresh_backlog(repo) as backlog:
+        task = backlog.by_id.get(result.run.task_id)
+        if not isinstance(task, Task) or not auto_merge_enabled(task):
+            return result
+        # Local import: aifactory.review imports aifactory.run.
+        from aifactory.review.automerge import resolve_and_merge, try_auto_merge
+
+        store = TaskRunStore(result.trace_db)
+        try:
+            with store.merge_lock():
+                result.auto_merge = try_auto_merge(repo, result, task)
+            if not result.auto_merge.merged and result.auto_merge.code == "conflict":
+                result.resolve_run, result.auto_merge = resolve_and_merge(
+                    repo, result, task, code=code, merge_lock=store.merge_lock
+                )
+        finally:
+            store.close()
+    return result
 
 
 def _run_sequential(
@@ -548,6 +634,7 @@ def _run_sequential(
     code: CodeRunner | None,
     provider: GitProvider | None,
     agents_override: dict[str, str] | None = None,
+    first_run: Callable[[], task_mod.TaskRunResult] | None = None,
 ) -> ChainResult:
     """One run after another (``max_parallel_runs: 1``)."""
     db = _trace_db(repo)
@@ -567,6 +654,7 @@ def _run_sequential(
             provider=provider,
             record=record,
             agents_override=agents_override,
+            first_run=first_run,
         )
     except TaskRunError:
         record.abort()
@@ -590,17 +678,21 @@ def _sequential(
     provider: GitProvider | None,
     record: _ChainRecord,
     agents_override: dict[str, str] | None = None,
+    first_run: Callable[[], task_mod.TaskRunResult] | None = None,
 ) -> ChainResult:
-    # Through the module attribute, so a patched `run_task` applies to the whole chain.
-    first = task_mod.run_task(
-        repo,
-        task_id,
-        note=note,
-        force=force,
-        code=code,
-        provider=provider,
-        agents_override=agents_override,
-    )
+    if first_run is not None:
+        first = first_run()
+    else:
+        # Through the module attribute, so a patched `run_task` applies to the whole chain.
+        first = task_mod.run_task(
+            repo,
+            task_id,
+            note=note,
+            force=force,
+            code=code,
+            provider=provider,
+            agents_override=agents_override,
+        )
     runs = [first]
     record.start(first.trace_db)
     record.update(run_ids=[first.run.run_id])
@@ -688,8 +780,14 @@ def _run_parallel(
     runner: ChainRunner,
     pr_files: Callable[[TaskPrRow], list[str] | None] | None,
     agents_override: dict[str, str] | None = None,
+    first_run: Callable[[], task_mod.TaskRunResult] | None = None,
+    code: CodeRunner | None = None,
 ) -> ChainResult:
-    """Up to `max_parallel` runs at once, none overlapping another's writes or an open PR."""
+    """Up to `max_parallel` runs at once, none overlapping another's writes or an open PR.
+
+    With `first_run` (a retry) the first run runs in this process, merges like a member
+    (``member_auto_merge``, `code` reaches its resolve run) and only then the chain fills.
+    """
     main = gitops.main_root(repo)
     db = task_mod._load(main).local.trace_db_path(main)
     files_of = pr_files
@@ -761,50 +859,62 @@ def _run_parallel(
                 continue
             started(nxt, row)
 
-    try:
-        try:
-            first_row = runner.start(
-                task_id, note=note, force=force, agents_override=agents_override
-            )
-        except TaskRunError:
-            record.abort()
-            raise
-        started(first_task, first_row)
-        if goes_on:
-            fill(task_id)
-        while runner.active():
-            result = runner.wait_any()
-            if result.run.run_id not in order:
-                order.append(result.run.run_id)
-            results[result.run.run_id] = result
-            resolved = result.resolve_run
-            if resolved is not None:  # the member's auto-resolve run belongs to the chain
-                if resolved.run.run_id not in order:
-                    order.insert(order.index(result.run.run_id) + 1, resolved.run.run_id)
-                results[resolved.run.run_id] = resolved
+    def finished(result: task_mod.TaskRunResult) -> None:
+        nonlocal halt, last_cont
+        if result.run.run_id not in order:
+            order.append(result.run.run_id)
+        results[result.run.run_id] = result
+        resolved = result.resolve_run
+        if resolved is not None:  # the member's auto-resolve run belongs to the chain
+            if resolved.run.run_id not in order:
+                order.insert(order.index(result.run.run_id) + 1, resolved.run.run_id)
+            results[resolved.run.run_id] = resolved
+        save()
+        if halt is not None:
+            return
+        if not result.ok or result.pr is None:
+            halt = STOP_FAILED
+            return
+        with _fresh_backlog(repo) as backlog:
+            found = backlog.by_id.get(result.run.task_id)
+            after = found if isinstance(found, Task) else None
+        if after is None:
+            last_cont = False
+            return
+        cont = auto or auto_continue_enabled(after)
+        last_cont = cont
+        if cont and not record.started:
+            record.go_on()
             save()
-            if halt is not None:
-                continue
-            if not result.ok or result.pr is None:
-                halt = STOP_FAILED
-                continue
-            with _fresh_backlog(repo) as backlog:
-                found = backlog.by_id.get(result.run.task_id)
-                after = found if isinstance(found, Task) else None
-            if after is None:
-                last_cont = False
-                continue
-            cont = auto or auto_continue_enabled(after)
-            last_cont = cont
-            if cont and not record.started:
-                record.go_on()
-                save()
-            merge = result.auto_merge
-            if auto_merge_enabled(after) and (merge is None or not merge.merged):
-                halt = STOP_NOT_MERGED if cont else STOP_DISABLED
-                continue
-            if cont:
-                fill(after.id)
+        merge = result.auto_merge
+        if auto_merge_enabled(after) and (merge is None or not merge.merged):
+            halt = STOP_NOT_MERGED if cont else STOP_DISABLED
+            return
+        if cont:
+            fill(after.id)
+
+    try:
+        if first_run is not None:
+            try:
+                first = first_run()
+            except TaskRunError:
+                record.abort()
+                raise
+            started(first_task, first.run)
+            finished(member_auto_merge(repo, first, code=code))
+        else:
+            try:
+                first_row = runner.start(
+                    task_id, note=note, force=force, agents_override=agents_override
+                )
+            except TaskRunError:
+                record.abort()
+                raise
+            started(first_task, first_row)
+            if goes_on:
+                fill(task_id)
+        while runner.active():
+            finished(runner.wait_any())
     except BaseException:
         record.update(state=ABORTED)
         raise
