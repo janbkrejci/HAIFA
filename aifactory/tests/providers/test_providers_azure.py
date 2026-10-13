@@ -653,6 +653,17 @@ def test_approve_wrong_head_no_vote(
     assert _calls(log, "repos pr set-vote") == []
 
 
+def test_approve_waits_for_azure_to_report_the_pushed_head(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    stale = show(head="d" * 40)
+    log = install_fake_az(tmp_path, monkeypatch, {"repos pr show": [stale, stale, show(), show()]})
+    sleeps: list[float] = []
+    assert _provider(tmp_path, sleeps).approve(PR, HEAD) is True
+    assert len(_calls(log, "repos pr set-vote")) == 1
+    assert len(sleeps) == 2
+
+
 def test_approve_head_moves_during_vote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     log = install_fake_az(tmp_path, monkeypatch, {"repos pr show": [show(), show(head="d" * 40)]})
     with pytest.raises(ProviderError, match="merge stopped"):

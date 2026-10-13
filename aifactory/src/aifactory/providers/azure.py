@@ -369,7 +369,7 @@ class AzureProvider(GitProvider):
     def approve(self, pr: PullRequest, head_sha: str) -> bool:
         """Vote after the final push, guarded by head checks (CLI is not atomic)."""
         self._ready()
-        current = self._status_once(pr)
+        current = self._fresh_head(pr, head_sha)
         if current.state == MERGED:
             return False  # allow existing merge recovery without claiming a new review
         self._approval_head(pr, current, head_sha)
@@ -391,6 +391,20 @@ class AzureProvider(GitProvider):
             ) from exc
         self._approval_head(pr, self._status_once(pr), head_sha)
         return True
+
+    def _fresh_head(self, pr: PullRequest, head_sha: str) -> PrStatus:
+        """The PR status once Azure reports ``head_sha`` as its source commit.
+
+        Azure updates ``lastMergeSourceCommit`` a moment after a push (the done
+        commit pushed just before approval), so ask again a bounded number of times.
+        """
+        current = self._status_once(pr)
+        for _ in range(self.attempts - 1):
+            if current.state != OPEN or current.head_sha == head_sha:
+                break
+            self.sleep(self.delay)
+            current = self._status_once(pr)
+        return current
 
     @staticmethod
     def _approval_head(pr: PullRequest, current: PrStatus, head_sha: str) -> None:
