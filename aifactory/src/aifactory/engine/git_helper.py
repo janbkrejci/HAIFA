@@ -7,7 +7,9 @@ from pathlib import Path
 
 
 def _git(*args: str) -> str:
-    result = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8")
+    # aifactory 3.0: a diff of legacy files (cp1250) is no valid UTF-8; replace, never crash
+    result = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8",
+                            errors="replace")
     if result.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
     return result.stdout.strip()
@@ -24,7 +26,7 @@ def create_branch(name: str) -> str:
 
 def is_repo() -> bool:
     result = subprocess.run(["git", "rev-parse", "--git-dir"],
-                            capture_output=True, text=True, encoding="utf-8")
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     return result.returncode == 0
 
 
@@ -75,7 +77,7 @@ def changed_files() -> list[str]:
 def ref_exists(ref: str) -> bool:
     """True when `ref` resolves to a commit. Never raises — this is a question."""
     result = subprocess.run(["git", "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}"],
-                            capture_output=True, text=True, encoding="utf-8")
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     return result.returncode == 0
 
 
