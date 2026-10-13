@@ -142,6 +142,9 @@ def test_harness_repo_counts_follow_registry_with_cached_probes(
     assert cached["harness_repos"] == {"claude": 2, "codex": 0, "pi": 0}
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows cannot delete a process's working directory"
+)
 def test_machine_check_survives_a_deleted_working_directory(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

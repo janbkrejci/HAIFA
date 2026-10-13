@@ -48,7 +48,7 @@ def make_repo(root: Path) -> Path:
     for name, text in files.items():
         path = root / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text)
+        path.write_text(text, encoding="utf-8", newline="\n")
     git(root, "add", ".")
     git(root, "commit", "-qm", "fixture")
     return root

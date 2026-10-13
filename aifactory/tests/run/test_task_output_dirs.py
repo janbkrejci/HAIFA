@@ -201,9 +201,15 @@ def test_invalid_workdir_stops_before_start(repo: Path, script: Script, value: s
 
 
 def test_workdir_symlink_in_base_is_rejected(repo: Path, script: Script) -> None:
-    (repo / "linked").symlink_to("src/app", target_is_directory=True)
     add_config(repo, "workdir: linked\n")
-    commit_all(repo, "symlink cwd")
+    git(repo, "add", "-A")
+    # Staged as a symlink entry: the check reads base, and os.symlink needs a privilege on Windows.
+    target = repo.parent / "link-target"
+    target.write_bytes(b"src/app")
+    blob = git(repo, "hash-object", "-w", str(target))
+    git(repo, "update-index", "--add", "--cacheinfo", f"120000,{blob},linked")
+    git(repo, "commit", "-q", "-m", "symlink cwd")
+    git(repo, "checkout", "--", "linked")
     with pytest.raises(TaskRunError) as caught:
         run_task(repo, T01)
     assert caught.value.code == "invalid_config"

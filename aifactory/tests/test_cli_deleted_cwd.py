@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,9 @@ import pytest
 from aifactory.cli import main
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows cannot delete a process's working directory"
+)
 def test_deleted_working_directory_moves_to_home(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

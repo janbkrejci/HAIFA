@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import pytest
+from multi_repo import symlink
 from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
@@ -110,7 +111,7 @@ def test_reject_without_partial_write(tmp_path: Path, mutation: str) -> None:
         elif mutation == "collision":
             target.write_text("foreign")
         elif mutation == "symlink":
-            target.symlink_to(repo / ".factory/config.yaml")
+            symlink(target, repo / ".factory/config.yaml")
         else:
             payload["id"] = "invalid id"
         response = client.post("/api/backlog/tasks", json=payload)

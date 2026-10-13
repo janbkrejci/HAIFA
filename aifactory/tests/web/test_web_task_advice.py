@@ -152,15 +152,17 @@ def test_invalid_proposal(tmp_path: Path, changes: dict[str, Any]) -> None:
 def test_atomic_relations_and_history(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     path = repo / "backlog/P01/S01/P01-S01-T01-first.md"
-    path.write_text(path.read_text() + "\n## Běhy\n\n- previous run\n")
-    original = path.read_text()
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\n## Běhy\n\n- previous run\n", encoding="utf-8"
+    )
+    original = path.read_text(encoding="utf-8")
     with pytest.raises(core.TaskEditError):
         core.edit_task(repo, "P01-S01-T01", body="Updated", depends_on=["missing"])
-    assert path.read_text() == original
+    assert path.read_text(encoding="utf-8") == original
     core.edit_task(repo, "P01-S01-T01", body="Updated\n## Běhy\nFake history", related=[])
-    assert "Updated" in path.read_text()
-    assert "- previous run" in path.read_text()
-    assert "Fake history" not in path.read_text()
+    assert "Updated" in path.read_text(encoding="utf-8")
+    assert "- previous run" in path.read_text(encoding="utf-8")
+    assert "Fake history" not in path.read_text(encoding="utf-8")
 
 
 def test_selected_agent_uses_proposal_schema_and_reports_usage(

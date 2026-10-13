@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import re
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -355,7 +356,7 @@ def test_fake_wait_for_file(tmp_path: Path, release_mode: str) -> None:
         release.touch()
         assert harness_.run(_Request(tmp_path)).returncode == 0
     elif release_mode == "timeout":
-        with pytest.raises(TimeoutError, match=str(release)):
+        with pytest.raises(TimeoutError, match=re.escape(str(release))):
             harness_.run(_Request(tmp_path))
         assert calls.exists()
     else:
