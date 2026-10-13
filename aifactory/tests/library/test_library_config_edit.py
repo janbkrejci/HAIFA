@@ -5,6 +5,7 @@ from __future__ import annotations
 import difflib
 import os
 import shutil
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -340,7 +341,13 @@ def test_move_workflow_and_skill(repo: Path, capsys: Capsys) -> None:
 def test_move_refusals(repo: Path, capsys: Capsys) -> None:
     fail(capsys, repo, "unknown_item", "move", "workflow", "solo")
     fail(capsys, repo, "unknown_item", "move", "agent", "reviewer")
-    shutil.rmtree(store.library_root())
+
+    def writable(func: Any, path: str, _exc: object) -> None:
+        # Git object files are read-only, and Windows refuses to unlink read-only files.
+        os.chmod(path, stat.S_IWRITE)
+        func(path)
+
+    shutil.rmtree(store.library_root(), onerror=writable)
     error = fail(capsys, repo, "library_missing", "move", "agent", "builder", "--commit")
     assert "factory library init" in error["message"]
 

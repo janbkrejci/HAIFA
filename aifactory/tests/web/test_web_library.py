@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import threading
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -17,7 +18,6 @@ from starlette.testclient import TestClient
 from aifactory.library import store
 from aifactory.skill import envelope_problems
 from aifactory.web import create_multi_app
-from fake_exe import make_executable
 
 
 @pytest.fixture
@@ -175,6 +175,8 @@ def test_import_history_digest_and_noop(client: TestClient) -> None:
     response(client.get("/api/library/items/skill/missing"), 404, "unknown_item")
     noop = response(apply(client, "import", preview(client, "import", **options), **options))
     assert not noop["committed"]
+    if sys.platform == "win32":
+        return  # Windows has no executable bit: chmod(0o755) leaves the file mode unchanged.
     planned = preview(client, "import", **options)
     file = source / "SKILL.md"
     file.chmod(0o755)
@@ -311,7 +313,7 @@ def test_rejected_push_and_cache_invalidation(client: TestClient, tmp_path: Path
     git(tmp_path, "init", "--bare", "-b", "main", str(bare))
     root = initialize(client, remote=str(bare))
     hook = write(bare, "hooks/pre-receive", "#!/bin/sh\nexit 1\n")
-    make_executable(hook)
+    hook.chmod(0o755)  # git runs hooks itself (Git for Windows through its sh), no launcher
     source = state(client).user_home / "skill"
     write(source, "SKILL.md", "---\nname: demo\ndescription: Test\n---\nTest.\n")
     options = {"path": str(source), "type": "skill", "name": "demo"}
