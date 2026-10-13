@@ -146,8 +146,9 @@ def status(
         if not items:
             return {"exists": True, **data}, warnings(data)
         listed = store.list_items(environ=env)["items"]
+        every = store.show_items(((i["type"], i["name"]) for i in listed), environ=env)
         for item in listed:
-            shown = store.show_item(item["type"], item["name"], environ=env)
+            shown = every[(item["type"], item["name"])]
             item.update(_metadata(shown))
             item["n"] = next(
                 (r["n"] for r in reversed(shown["history"]) if r["version"] == item["version"]),

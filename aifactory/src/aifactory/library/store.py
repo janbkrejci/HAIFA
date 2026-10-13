@@ -24,7 +24,7 @@ import stat
 import subprocess
 import tempfile
 import uuid
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -640,25 +640,48 @@ def show_item(
     commit = head
     if version is not None:
         commit = _resolve_version(revisions, version).commit
-    item, issues, files = read_items(root, commit, [(kind, name)])[(kind, name)]
-    if not files:
-        raise LibraryStoreError("unknown_item", f"no {type} {name!r} in the library")
-    blobs = read_blobs(root, (f.blob for f in files))
-    rel = item_library_path(kind, name)
-    current = item.version if item is not None else None
-    return {
-        "library": str(root),
-        "type": kind,
-        "name": name,
-        "commit": commit,
-        "version": current,
-        "short_version": hist.short(current),
-        "purpose": item.purpose if item is not None and kind == "agent" else None,
-        "valid": item is not None and not issues,
-        "issues": [i.to_dict() for i in issues],
-        "files": [_file_json(rel, f, blobs[f.blob]) for f in files],
-        "history": [r.to_json() for r in revisions],
-    }
+    return _shown(root, commit, {(kind, name): revisions})[(kind, name)]
+
+
+def show_items(
+    keys: Iterable[tuple[ItemType, str]], environ: Mapping[str, str] | None = None
+) -> dict[tuple[ItemType, str], dict[str, Any]]:
+    """``show_item`` at HEAD for every item of `keys`, reading their files in one pass.
+
+    One git process per item instead of six keeps a listing fast where starting a
+    process is slow (Windows).
+    """
+    root = library_root(environ)
+    head = require_library(root)
+    return _shown(root, head, {(t, n): hist.history(root, t, n, environ) for t, n in keys})
+
+
+def _shown(
+    root: Path, commit: str, revisions: Mapping[tuple[ItemType, str], list[hist.Revision]]
+) -> dict[tuple[ItemType, str], dict[str, Any]]:
+    read = read_items(root, commit, revisions)
+    blobs = read_blobs(root, (f.blob for _, _, files in read.values() for f in files))
+    out: dict[tuple[ItemType, str], dict[str, Any]] = {}
+    for (kind, name), history in revisions.items():
+        item, issues, files = read[(kind, name)]
+        if not files:
+            raise LibraryStoreError("unknown_item", f"no {kind} {name!r} in the library")
+        rel = item_library_path(kind, name)
+        current = item.version if item is not None else None
+        out[(kind, name)] = {
+            "library": str(root),
+            "type": kind,
+            "name": name,
+            "commit": commit,
+            "version": current,
+            "short_version": hist.short(current),
+            "purpose": item.purpose if item is not None and kind == "agent" else None,
+            "valid": item is not None and not issues,
+            "issues": [i.to_dict() for i in issues],
+            "files": [_file_json(rel, f, blobs[f.blob]) for f in files],
+            "history": [r.to_json() for r in history],
+        }
+    return out
 
 
 # ── import ────────────────────────────────────────────────────────────────────
