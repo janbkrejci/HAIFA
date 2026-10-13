@@ -5,7 +5,6 @@ __pycache__/
 
 
 # prototype runtime: one worktree per run
-.factory/worktrees/
 
 # prototype tooling
 prototype/.venv/
@@ -16,8 +15,6 @@ aifactory/web/node_modules/
 .ruff_cache/
 
 # machine-local settings (port, trace DB path) and the trace DB; never committed
-.factory/local.yaml
-.factory/trace.db*
 
 # prototype validation: local runs are noise, github results are kept for 1.10
 prototype/validation/results/*/local-*/
@@ -32,8 +29,6 @@ aifactory/validation/results/**/*.db-wal
 # aifactory runtime of HAIFA developing itself (.factory/ config is committed)
 .factory/trace.db
 .factory/trace.db-*
-.factory/data/
-.factory/local.yaml
 
 # validation: commit only summary.json and scenario JSON; traces, logs and agent transcripts stay local
 aifactory/validation/results/*/*/trace/

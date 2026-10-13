@@ -1,5 +1,0 @@
-# factory project settings, written by factory init
-base: main
-git_provider: github
-docs_root: factory
-test_timeout: 1500
