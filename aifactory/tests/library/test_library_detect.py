@@ -57,6 +57,12 @@ LOCAL = RemoteInfo("local")
             "ssh://contoso@vs-ssh.visualstudio.com/v3/contoso/Proj/repo",
             _az("contoso", "Proj", "repo"),
         ),
+        ("https://dev.azure.com/contoso/_git/repo", _az("contoso", "repo", "repo")),
+        ("https://contoso.visualstudio.com/_git/NEO_HEF", _az("contoso", "NEO_HEF", "NEO_HEF")),
+        (
+            "https://contoso.visualstudio.com/DefaultCollection/_git/repo",
+            _az("contoso", "repo", "repo"),
+        ),
         ("https://gitlab.com/acme/widgets.git", LOCAL),
         ("git@gitlab.com:acme/widgets.git", LOCAL),
         ("https://github.com/acme", LOCAL),

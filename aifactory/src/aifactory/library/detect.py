@@ -5,8 +5,9 @@
   else the current branch (``branch``), else none (a detached HEAD);
 * provider from the remote URL (``parse_remote_url``): ``github`` for github.com in the
   https, ssh and scp forms; ``azure`` for dev.azure.com, ssh.dev.azure.com and
-  ``*.visualstudio.com`` with organization, project and repository; ``local`` otherwise
-  and without a remote;
+  ``*.visualstudio.com`` with organization, project and repository (the short form
+  ``.../_git/<repo>`` names a project of the same name); ``local`` otherwise and without
+  a remote;
 * which harness CLIs are on PATH (they are not run).
 """
 
@@ -81,6 +82,8 @@ def parse_remote_url(url: str | None) -> RemoteInfo:
     if host == "dev.azure.com":
         if len(segs) == 4 and segs[2] == "_git":
             return _azure(segs[0], segs[1], segs[3])
+        if len(segs) == 3 and segs[1] == "_git":
+            return _azure(segs[0], segs[2], segs[2])
         return _LOCAL
     if host == "ssh.dev.azure.com" or (host.startswith("vs-ssh.") and _visualstudio(host)):
         if len(segs) == 4 and segs[0] == "v3":
@@ -88,10 +91,12 @@ def parse_remote_url(url: str | None) -> RemoteInfo:
         return _LOCAL
     if _visualstudio(host):
         org = host.split(".", 1)[0]
-        if len(segs) == 4 and segs[0].lower() == "defaultcollection":
+        if len(segs) in (3, 4) and segs[0].lower() == "defaultcollection":
             segs = segs[1:]
         if len(segs) == 3 and segs[1] == "_git":
             return _azure(org, segs[0], segs[2])
+        if len(segs) == 2 and segs[0] == "_git":
+            return _azure(org, segs[1], segs[1])
         return _LOCAL
     return _LOCAL
 
