@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S02-T06
 title: task retry po úspěchu dělá auto-merge a auto-continue jako task run
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-S02-T05]
 ---
@@ -18,3 +18,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-13 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/28 · náklady $2.12

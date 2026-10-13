@@ -1946,6 +1946,13 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="continue from this phase (a phase name like review_2 or a step like review) "
         "instead of the one that failed; the phases after it run again",
     )
+    retry.add_argument(
+        "--auto",
+        action="store_true",
+        help="after a successful retry (PR opened) start the next ready task whatever its "
+        "auto_continue, like factory task run --auto. Without it the retry goes on like "
+        "task run: auto_merge merges the PR and auto_continue starts the next ready task",
+    )
 
     for child in (
         add,
@@ -2257,12 +2264,8 @@ def _member_run(
     under it, as the sequential chain does; the resolve run is ``result.resolve_run``.
     `code` reaches the resolve run only (tests).
     """
-    import tempfile
-
-    from aifactory.backlog import Task
-    from aifactory.run import auto_merge_enabled, run_task
-    from aifactory.run.queue import _base_backlog
-    from aifactory.run.store import TaskRunStore
+    from aifactory.run import run_task
+    from aifactory.run.queue import member_auto_merge
 
     result = run_task(
         root,
@@ -2272,25 +2275,7 @@ def _member_run(
         started_by=started_by,
         agents_override=agents_override,
     )
-    if not result.ok or result.pr is None:
-        return result
-    with tempfile.TemporaryDirectory(prefix="factory-member-") as tmp:
-        task = _base_backlog(root, Path(tmp)).by_id.get(task_id)
-        if not isinstance(task, Task) or not auto_merge_enabled(task):
-            return result
-        from aifactory.review.automerge import resolve_and_merge, try_auto_merge
-
-        store = TaskRunStore(result.trace_db)
-        try:
-            with store.merge_lock():
-                result.auto_merge = try_auto_merge(root, result, task)
-            if not result.auto_merge.merged and result.auto_merge.code == "conflict":
-                result.resolve_run, result.auto_merge = resolve_and_merge(
-                    root, result, task, code=code, merge_lock=store.merge_lock
-                )
-        finally:
-            store.close()
-    return result
+    return member_auto_merge(root, result, code=code)
 
 
 def _agents_override(args: argparse.Namespace) -> dict[str, str] | None:
@@ -2304,7 +2289,7 @@ def _agents_override(args: argparse.Namespace) -> dict[str, str] | None:
 
 
 def _task_run(args: argparse.Namespace, root: Path) -> int:
-    from aifactory.run import STOP_EXHAUSTED, STOP_NOT_MERGED, run_chain
+    from aifactory.run import run_chain
 
     if getattr(args, "member", False):
 
@@ -2329,6 +2314,13 @@ def _task_run(args: argparse.Namespace, root: Path) -> int:
             auto=args.auto,
             agents_override=_agents_override(args),
         )
+
+    return _chain_output(args, start)
+
+
+def _chain_output(args: argparse.Namespace, start: Callable[[], ChainResult]) -> int:
+    """Start a chain with `start` and print it (``task run``, ``task retry``)."""
+    from aifactory.run import STOP_EXHAUSTED, STOP_NOT_MERGED
 
     if args.json:
         with contextlib.redirect_stdout(sys.stderr):
@@ -2369,12 +2361,17 @@ def _task_resolve(args: argparse.Namespace, root: Path) -> int:
 
 
 def _task_retry(args: argparse.Namespace, root: Path) -> int:
-    from aifactory.run import retry_run
+    from aifactory.run import retry_chain
 
-    return _run_output(
+    return _chain_output(
         args,
-        lambda: retry_run(
-            root, args.task_id, run_id=args.run, note=args.note, from_phase=args.from_phase
+        lambda: retry_chain(
+            root,
+            args.task_id,
+            run_id=args.run,
+            note=args.note,
+            from_phase=args.from_phase,
+            auto=args.auto,
         ),
     )
 

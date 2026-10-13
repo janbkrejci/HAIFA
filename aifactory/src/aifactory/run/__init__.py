@@ -42,7 +42,9 @@ asks a running run to wait before its next phase (``pausing``, then ``paused``);
 
 Retry (``retry.py``, ``factory task retry`` and the dashboard): ``retry_run`` continues a
 failed or stopped run as its next attempt, in the same worktree, branch and trace session,
-replaying the phases already done from the run's phase journal.
+replaying the phases already done from the run's phase journal. ``retry_chain`` (the
+CLI and so the dashboard) wraps it in a chain: after a successful attempt it auto-merges
+and auto-continues exactly like ``run_chain``.
 """
 
 from aifactory.run.errors import TaskRunError
@@ -60,6 +62,7 @@ from aifactory.run.queue import (
     Skip,
     auto_continue_enabled,
     auto_merge_enabled,
+    retry_chain,
     run_chain,
     select_next,
 )
@@ -111,6 +114,7 @@ __all__ = [
     "output_paths",
     "pause_run",
     "resume_run",
+    "retry_chain",
     "retry_run",
     "run_chain",
     "run_task",

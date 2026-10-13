@@ -28,6 +28,7 @@ from aifactory.run import (
     TaskRunResult,
     TaskRunRow,
     TaskRunStore,
+    retry_chain,
     run_chain,
     select_next,
 )
@@ -634,3 +635,29 @@ def test_fill_follows_the_kanban_order_and_skips_excluded(repo: Path) -> None:
     chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
     assert started(runner) == [T01, T04, T02]
     assert [(s.task_id, s.reason) for s in chain.waiting] == [(T03, "excluded")]
+
+
+# ── task retry ───────────────────────────────────────────────────────────────
+
+
+def test_retry_runs_first_then_fills_the_parallel_chain(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.run import retry as retry_mod
+
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    runner = FakeRunner(repo)
+
+    def fake_retry(repo_: Path, task_id: str, **kwargs: object) -> TaskRunResult:
+        # the retry's attempt runs in this process; the fake runner only fakes its row
+        runner.start(task_id)
+        return runner.wait_any()
+
+    monkeypatch.setattr(retry_mod, "retry_run", fake_retry)
+
+    chain = retry_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+
+    assert runner.events[:2] == [("start", T01), ("end", T01)]
+    assert [r.run.task_id for r in chain.runs] == [T01, T02, T03]
+    assert (chain.stop, chain.ok) == (STOP_EXHAUSTED, True)
+    assert chain.chain_id is not None
