@@ -78,7 +78,7 @@ cd haifa-<verze>
 uv tool update-shell
 ```
 
-Skript ověří součty v `SHA256SUMS` a nainstaluje nástroj `factory` přes `uv tool install` s verzemi závislostí z `constraints.txt` do samostatného prostředí uv. `uv tool update-shell` přidá adresář nástrojů uv na PATH; pak otevři nový terminál.
+Skript ověří součty v `SHA256SUMS`, nainstaluje nástroj `factory` přes `uv tool install` s verzemi závislostí z `constraints.txt` do samostatného prostředí uv a připraví knihovnu (viz [Výchozí knihovna](#/guide/instalace/vychozi-knihovna)). `uv tool update-shell` přidá adresář nástrojů uv na PATH; pak otevři nový terminál.
 
 ## Windows bez WSL
 
@@ -93,9 +93,17 @@ Instalátor:
 2. doinstaluje chybějící `git`, `uv`, `gh` a Node.js přes `winget` a harnessy `claude` a `codex` přes `npm`,
 3. když git nemá jméno nebo e-mail pro commity, zeptá se na ně,
 4. nainstaluje nástroj `factory` přes `uv tool install` s verzemi závislostí z `constraints.txt` a přidá adresář nástrojů uv na PATH,
-5. založí knihovnu ze semínka (`factory library init`), nebo do existující knihovny převezme nové semínko (`factory library seed`).
+5. na počítači bez knihovny naklonuje výchozí týmovou knihovnu (`factory library clone --seed-fallback`, viz [Výchozí knihovna](#/guide/instalace/vychozi-knihovna)); existující knihovnu nechá beze změny.
 
 Instalace přes `winget` si může vyžádat potvrzení správce. Opakované spuštění je bezpečné: přítomné nástroje znovu neinstaluje. Nakonec se přihlas tam, kde ještě nejsi (`gh auth login`, `gh auth setup-git`, `claude`, `codex login`), a otevři nový terminál, aby se načetl nový PATH.
+
+## Výchozí knihovna
+
+Instalátor (`install.sh` i `install.bat`) na počítači, který ještě knihovnu nemá, naklonuje výchozí týmovou knihovnu [HAIFA-LIBRARY](https://github.com/janbkrejci/HAIFA-LIBRARY) (veřejné repo, větev `main`). Firemní instalace nastaví jinou knihovnu proměnnou `HAIFA_LIBRARY_URL` (celá git URL) v prostředí nebo v `$HAIFA_HOME/env`, podobně jako `HAIFA_UPDATE_REPO` pro vydání.
+
+Když se klon nepovede (bez sítě, bez přístupu), instalátor založí lokální knihovnu ze semínka a vypíše varování. Týmovou knihovnu pak naklonuješ později: lokální knihovnu smaž (nebo přesuň) a spusť `factory library clone`. Existující knihovnu instalátor nikdy nemění; nové verze semínka do ní převezmeš sám přes `factory library seed`.
+
+Změny knihovny se do HAIFA-LIBRARY dostávají jen pull requestem (kapitola [Knihovna](#/guide/knihovna)).
 
 ## Ověření instalace
 

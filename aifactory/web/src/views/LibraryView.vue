@@ -3,12 +3,14 @@
 // with the registered repos that override it with their own copy ("Diff" and "move the repo copy
 // to the library" through the repo's move plan). Re-seed takes the package defaults into the
 // library (an item the team changed only when ticked, after its diff). The sync panel shows the
-// state against the library remote, with pull and push, or connects an empty remote.
+// state against the library remote (local changes, waiting in a PR, in sync) with the open pull
+// requests the operator sent, pull and "send as a PR", or connects an empty remote. Changes never
+// go to the library branch directly; the library maintainer merges the PRs.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { ApiError, applyMove, previewMove, type FactoryFile, type FactoryItemType, type FactoryMovePlan } from '@/lib/api'
 import { ITEM_TABS, fetchLibrary, fetchItem, fetchOverrides, previewLibrary, applyLibrary, syncLibrary, connectRemote,
-  syncState, versionLabel, type LibraryStatus, type LibraryItem, type ItemDetail, type LibraryPlan, type LibraryRequest,
-  type LibraryOverride, type LibraryOverrides, type SeedPlanItem } from '@/lib/library'
+  syncState, pullRequestText, versionLabel, type LibraryStatus, type LibraryItem, type ItemDetail, type LibraryPlan, type LibraryRequest,
+  type LibraryOverride, type LibraryOverrides, type LibraryPullRequest, type SeedPlanItem } from '@/lib/library'
 import { planCodeText } from '@/lib/factory'
 import { errorText, shortSha } from '@/lib/format'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -86,7 +88,7 @@ async function performImport() {
   busy.value = true; error.value = ''
   try {
     const result = await applyLibrary(importRequest.value, plan.value.digest)
-    importResult.value = 'Import dokončen · commit ' + (result.commit ?? 'beze změny')
+    importResult.value = 'Import dokončen · commit ' + (result.commit ?? 'beze změny') + sentText(result.pull_request)
     tab.value = importRequest.value.options.type ?? tab.value
     close()
     plan.value = null; importRequest.value = null
@@ -109,7 +111,7 @@ async function performMove() {
   moveConfirm.value = false; busy.value = true; error.value = ''
   try {
     const done = await applyMove({ type: o.type, name: o.name }, movePlan.value.digest, o.repo)
-    importResult.value = `${o.type}/${o.name} z repa ${o.repo_name} je v knihovně${done.library_commit ? ` (${shortSha(done.library_commit)})` : ''}.`
+    importResult.value = `${o.type}/${o.name} z repa ${o.repo_name} je v knihovně${done.library_commit ? ` (${shortSha(done.library_commit)})` : ''}.${done.library_commit && library.value?.remote ? ' Na remote odešla jako pull request.' : ''}`
     closeDiff()
   } catch (e) { error.value = apiText(e) }
   finally { busy.value = false }
@@ -142,18 +144,25 @@ async function performSeed() {
   busy.value = true; error.value = ''
   try {
     const result = await applyLibrary(seedRequest(), seedPlan.value.digest)
-    importResult.value = 'Výchozí agenti a workflows obnoveny · ' + (result.commit ? 'commit ' + shortSha(result.commit) : 'beze změny')
+    importResult.value = 'Výchozí agenti a workflows obnoveny · ' + (result.commit ? 'commit ' + shortSha(result.commit) : 'beze změny') + sentText(result.pull_request)
     seedPlan.value = null; take.value = []
   } catch (e) { error.value = apiText(e); seedPlan.value = null }
   finally { busy.value = false }
   await load()
 }
 // ── sync with the remote ─────────────────────────────────────────────────────
-const SYNC_TEXT = { pull: 'Stažení z remote', push: 'Odeslání na remote' } as const
+const SYNC_TEXT = { pull: 'Stažení z remote', push: 'Odeslání pull requestu' } as const
+/** " · odesláno jako PR #7" after a write that went to the remote as a pull request. */
+function sentText(pr: LibraryPullRequest | null | undefined): string { return pr ? ` · odesláno ke schválení: ${pullRequestText(pr)}` : '' }
 async function syncWith(action: 'pull' | 'push') {
   if (busy.value) return
   busy.value = true; error.value = ''; importResult.value = ''
-  try { await syncLibrary(action); importResult.value = `${SYNC_TEXT[action]} dokončeno` }
+  try {
+    const data = await syncLibrary(action)
+    importResult.value = action === 'push' && !data.pull_request
+      ? 'Není co odeslat · všechny lokální změny čekají v pull requestu'
+      : `${SYNC_TEXT[action]} dokončeno${sentText(data.pull_request)}`
+  }
   catch (e) { error.value = apiText(e) }
   finally { busy.value = false }
   await load()
@@ -188,16 +197,30 @@ onBeforeUnmount(() => { generation++ })
           <dt>Větev</dt><dd>{{ library.branch ?? '—' }}</dd>
           <dt>Napřed / pozadu</dt><dd>{{ library.ahead ?? '—' }} / {{ library.behind ?? '—' }}</dd>
           <dt>Poslední fetch</dt><dd>{{ library.last_fetch ?? 'nikdy' }}</dd>
+          <dt>Neodeslané commity</dt><dd>{{ library.unsent ?? '—' }}</dd>
         </template>
         <dt>Commit</dt><dd class="mono">{{ library.head ? shortSha(library.head) : '—' }}</dd>
       </dl>
       <p v-if="library.seed_update_available" class="warning" data-test="library-seed-update">
         Balíček má nové výchozí verze: {{ library.seed_updates?.join(', ') }}. Použij „Obnovit výchozí agenty a workflows“.
       </p>
+      <template v-if="library.remote">
+        <h3>Otevřené pull requesty</h3>
+        <ul v-if="library.pull_requests?.length" data-test="library-prs">
+          <li v-for="pr in library.pull_requests" :key="pr.branch" data-test="library-pr">
+            <a v-if="pr.url" :href="pr.url" target="_blank" rel="noopener">{{ pullRequestText(pr) }}</a>
+            <span v-else class="mono">{{ pullRequestText(pr) }}</span>
+            · {{ pr.title }}
+          </li>
+        </ul>
+        <p v-else data-test="library-no-prs">Žádné otevřené pull requesty z této knihovny.</p>
+        <p v-if="library.pull_requests_error" class="warning">Stav pull requestů se nepodařilo ověřit: {{ library.pull_requests_error }}</p>
+        <p class="hint">Změny knihovny jdou na remote jen jako pull request; mergne je správce knihovny. Lokálně platí hned, po mergi stáhni změny.</p>
+      </template>
       <div v-if="library.remote" class="actions">
         <button :disabled="busy" data-test="library-fetch" @click="load(true)">Zkontrolovat remote</button>
         <button :disabled="busy || !!library.dirty" data-test="library-pull" @click="syncWith('pull')">Stáhnout</button>
-        <button :disabled="busy || !!library.dirty" data-test="library-push" @click="syncWith('push')">Odeslat</button>
+        <button :disabled="busy || !!library.dirty || !library.unsent" data-test="library-push" @click="syncWith('push')">Odeslat jako PR</button>
       </div>
       <form v-else class="actions" @submit.prevent="connect">
         <label>Prázdné git repo <input v-model="remoteUrl" data-test="library-remote-url" :disabled="busy" placeholder="git@github.com:tym/haifa-knihovna.git" /></label>

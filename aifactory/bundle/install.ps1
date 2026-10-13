@@ -1,5 +1,5 @@
 # Installs HAIFA (the `factory` tool) from this bundle on Windows: checks and installs the
-# dependencies, installs factory with uv and seeds the library. Windows PowerShell 5.1 and
+# dependencies, installs factory with uv and clones the library. Windows PowerShell 5.1 and
 # PowerShell 7. Started by install.bat; ASCII only, PowerShell 5.1 reads it as ANSI.
 $ErrorActionPreference = 'Stop'
 
@@ -146,12 +146,17 @@ if (-not (Test-Path -LiteralPath $factory -PathType Leaf)) {
     Fail "factory is not at $factory after uv tool install"
 }
 
-Step 'Seeding the library'
+# The default team library (HAIFA_LIBRARY_URL overrides it) is cloned; without network
+# factory creates a local library from the seed and warns. An existing library is left alone.
+Step 'Setting up the library'
 $status = (& $factory library status --json | Out-String) | ConvertFrom-Json
 if ($status.ok) {
-    Invoke-Native 'factory library seed' { & $factory library seed }
+    Write-Host 'The library exists; it is left unchanged.'
+    if ($status.data.seed_update_available) {
+        Write-Host 'The installed seed has new versions; take them with: factory library seed'
+    }
 } elseif ($status.error.code -eq 'library_missing') {
-    Invoke-Native 'factory library init' { & $factory library init }
+    Invoke-Native 'factory library clone' { & $factory library clone --seed-fallback }
 } else {
     Fail "factory library status: $($status.error.message)"
 }

@@ -448,8 +448,11 @@ accept: test.passed
 1. `factory check --json` anywhere (outside a repository only the machine and the library
    are checked). Resolve the `error` findings of `scope: machine` with their `fix`
    (Git identity, uv, the provider CLI, harness CLIs and their logins); see Check.
-2. A `library_missing` finding: when the team has a library, `factory library clone URL
-   --json`; when this is the team's first machine, `factory library init [--name N]
+2. A `library_missing` finding: `factory library clone --json` clones the default team
+   library (`$HAIFA_LIBRARY_URL`, else https://github.com/janbkrejci/HAIFA-LIBRARY.git);
+   `factory library clone URL --json` another team library; `--seed-fallback` creates a
+   local library from the seed when the clone fails (`data.fallback`, a warning). When this
+   is the team's first machine with its own library, `factory library init [--name N]
    [--remote URL] --json` from the seed (see Library and Sharing the library). Ask the
    user which one; never create a second library for a team that has one.
 3. `factory check --json` again until it reports no errors. Then add repositories (Add
@@ -890,20 +893,33 @@ credential helper).
 
 1. `factory library init --remote URL --json` pushes the new library to an empty remote
    before it exists locally (`remote_not_empty`, `push_failed`; nothing is created).
-   Others join with `factory library clone URL [--branch B] --json` (`library_exists`,
-   `clone_failed`, `invalid_library` when `library.yaml` lacks `format`, `id` or `name`).
+   Others join with `factory library clone [URL] [--branch B] [--seed-fallback] --json`
+   (`library_exists`, `clone_failed`, `invalid_library` when `library.yaml` lacks
+   `format`, `id` or `name`); without URL the default library is cloned.
 2. `factory library status [--fetch] --json` returns `library`, `id`, `name`, `remote`,
    `branch`, `ahead` and `behind` (from the last fetched refs unless `--fetch`),
    `last_fetch`, `dirty` with `uncommitted`, `min_factory_version`, `factory_version` and
-   `compatible` (a warning when the installed factory is older).
-3. `factory library pull --json` only fast-forwards (`library_dirty`, `library_diverged`).
-   `factory library push --json` pushes local commits, never forced (`library_behind`,
-   `library_diverged`, `push_failed`); `no_remote` without a remote.
-4. A write to a shared library fetches first. Behind the remote it is `library_behind`
+   `compatible` (a warning when the installed factory is older), `unsent` (local commits
+   in no open pull request), `sync_state` (`unshared`, `local`, `pending`, `behind`,
+   `synced`) and `pull_requests` (the open pull requests sent from this library; `--fetch`
+   asks GitHub which are still open).
+3. Changes never go to the library branch of the remote directly; they go as a pull
+   request and the library maintainer merges it. `factory library push --json` sends the
+   unsent local commits as one pull request (`data.pull_request`: `branch`, `url`,
+   `number`, `fork`; `pushed: 0` and `pull_request: null` when nothing is unsent;
+   `library_behind`, `library_diverged`, `push_failed`, `pr_failed`); `no_remote` without
+   a remote. On GitHub the branch `haifa-library/...` goes to the library repo when the
+   user may write to it, else to the user's fork (`gh repo fork`); `gh pr create` opens the
+   pull request. Other remotes get only the branch. Never merge, approve or force it.
+4. `factory library pull --json` fast-forwards; local commits the remote lacks are rebased
+   onto it and the merged ones drop out (`library_dirty`; a conflict is
+   `library_diverged` and changes nothing).
+5. A write to a shared library fetches first. Behind the remote it is `library_behind`
    (`data.fix` is `factory library pull`; run it, then repeat the write); diverged it is
    `library_diverged` (resolve it in the library with git, never by force). The commit is
-   built on HEAD without a checkout and pushed without force before the local branch moves,
-   so `push_failed` leaves local refs, index and files exactly as they were.
+   built on HEAD without a checkout and sent as a pull request (`data.pull_request`)
+   before the local branch moves, so `push_failed` or `pr_failed` leaves local refs, index
+   and files exactly as they were. The local library uses the change at once.
 
 #### After a HAIFA upgrade
 
@@ -921,7 +937,7 @@ A new HAIFA can ship new versions of the seed agents and workflows. `seed` in
 3. A `kept` item stays as the team made it. To take the seed version anyway, run
    `factory library seed --take TYP/JMENO --json` (repeatable; action `take`; `not_in_seed`
    when the seed lacks it). Items the seed no longer has are never deleted.
-4. The write goes like `import` (lock, `library_dirty`, fetch, push). A second run without a
+4. The write goes like `import` (lock, `library_dirty`, fetch, pull request). A second run without a
    new seed commits nothing (`committed: false`). Repos inherit the new versions at their
    next run; a repo's own copy stays as it is.
 

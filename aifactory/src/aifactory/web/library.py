@@ -13,7 +13,7 @@ from typing import Any
 
 import yaml
 
-from aifactory.library import remote, reseed, store
+from aifactory.library import remote, reseed, share, store
 from aifactory.library.model import ITEM_TYPES
 from aifactory.providers import git
 from aifactory.providers.base import ProviderError
@@ -102,7 +102,7 @@ def errors(*, write: bool = False) -> Iterator[None]:
             status = 404
         elif code in CONFLICTS:
             status = 409
-        elif code in ("push_failed", "fetch_failed", "clone_failed", "pull_failed"):
+        elif code in ("push_failed", "fetch_failed", "clone_failed", "pull_failed", "pr_failed"):
             status = 502
         raise Failure(
             code,
@@ -141,7 +141,7 @@ def status(
             data = remote.library_status(fetch=fetch, environ=env)
         except store.LibraryStoreError as exc:
             if exc.code == "library_missing":
-                return {"exists": False}, []
+                return {"exists": False, "default_url": share.default_library_url(env)}, []
             raise
         if not items:
             return {"exists": True, **data}, warnings(data)

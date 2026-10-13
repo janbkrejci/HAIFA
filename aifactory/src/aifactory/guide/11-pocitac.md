@@ -55,6 +55,7 @@ Nastav je v shellu, nebo v `$HAIFA_HOME/env`. Ty, které mění chování harnes
 | `HAIFA_DASH_HOST` | Adresa, na které naslouchá dashboard (výchozí `127.0.0.1`). |
 | `HAIFA_DATABASE_URL` | Sdílený databázový server. |
 | `HAIFA_UPDATE_REPO` | GitHub repo s vydáními HAIFA (výchozí `janbkrejci/HAIFA`). |
+| `HAIFA_LIBRARY_URL` | Git URL výchozí týmové knihovny pro instalaci a `factory library clone` (výchozí `https://github.com/janbkrejci/HAIFA-LIBRARY.git`). |
 | `CLAUDE_SAFE_MODE`, `CODEX_SAFE_MODE`, `PI_SAFE_MODE` | `1` = úplná izolace harnessu, bez instrukcí a skillů repa. |
 | `CLAUDE_PERMISSION_MODE` | Režim oprávnění Claude Code (výchozí `bypassPermissions`). |
 | `CLAUDE_MCP_CONFIG` | Konfigurace MCP serverů pro Claude Code (výchozí žádné MCP). |

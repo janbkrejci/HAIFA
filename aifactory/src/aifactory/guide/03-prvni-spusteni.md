@@ -17,7 +17,7 @@ Stránka **Tento počítač** (v menu přepínače rep vpravo nahoře) má kontr
 | Krok | Tlačítko | Co udělat |
 | --- | --- | --- |
 | Tento počítač | Zkontrolovat počítač | Vyřeš chyby kontroly: git, identita, uv, CLI hostingu. |
-| Knihovna | Připravit knihovnu | Naklonuj týmovou knihovnu z URL, nebo ji založ ze semínka. |
+| Knihovna | Připravit knihovnu | Naklonuj týmovou knihovnu (výchozí HAIFA-LIBRARY je předvyplněná), nebo ji založ ze semínka. Instalátor ji obvykle naklonoval už sám. |
 | Harnessy | Zkontrolovat harnessy | Povol harness, vyber model a thinking a spusť **Test**. |
 | Repozitář | Přidat repozitář | Přidej lokální Git repo. |
 | Factory v repu | Nainstalovat factory / Commitnout konfiguraci | Nainstaluj `.factory/` a commitni ji do base. |

@@ -5,7 +5,7 @@ HAIFA běží na počítači každého člena týmu. Sdílí se jen to, co je v 
 ## Nový člen týmu
 
 1. Nainstaluj HAIFA podle kapitoly [Instalace](#/guide/instalace) a přihlas se do harnessů a hostingu.
-2. Naklonuj týmovou knihovnu (adresu ti dá správce): `factory library clone <URL-týmové-knihovny>`.
+2. Instalátor už naklonoval výchozí knihovnu HAIFA-LIBRARY. Používá-li tým jinou, naklonuj ji: `factory library clone <URL-týmové-knihovny>` (stávající lokální knihovnu nejdřív smaž), nebo nastav `HAIFA_LIBRARY_URL` před instalací.
 3. Naklonuj repa, na kterých tým pracuje, a v každém spusť `factory check`. Stav repa je `installed`; vyřeš zjištění počítače (harnessy, přihlášení, CLI hostingu). `factory init` znovu nespouštěj.
 4. Spusť `factory obs` a repa přidej na přehledu dashboardu (nebo `factory obs --repo ~/cesta/k/repu`).
 
@@ -20,6 +20,12 @@ factory library init --name "Knihovna týmu" --remote <URL-prázdného-repa>
 ```
 
 Podrobnosti o položkách a jejich verzích jsou v kapitole [Knihovna](#/guide/knihovna).
+
+## Změny knihovny
+
+Do knihovny přispívá každý, ale jen pull requestem do `main` knihovny. Import, `factory library seed`, **Přesunout do knihovny** i `factory library push` změnu commitnou lokálně a pošlou PR: kdo do repa knihovny nemá zápis, ze svého forku, správce z větve v repu. Na svém počítači změnu používáš hned; ostatní ji dostanou, až ji správce mergne a oni si knihovnu stáhnou (`factory library pull`). HAIFA PR knihovny nikdy nemerguje ani neschvaluje sama.
+
+Správce knihovny nastaví na `main` ruleset s povinným pull requestem a svým schválením a zakáže přímý push i force push (kapitola [Knihovna](#/guide/knihovna)). Otevřené PR, které jsi poslal, ukáže stránka **Knihovna** v dashboardu.
 
 ## Přidání repa, které HAIFA ještě nepoužívá
 
