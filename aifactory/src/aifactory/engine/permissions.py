@@ -97,7 +97,9 @@ def require_enforceable(repo_root) -> None:
 
 
 def _git(args: list[str], cwd) -> str:
-    result = subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True, encoding="utf-8")
+    # aifactory 3.0: unquoted paths (Testovací sady/), not git's octal-escaped quoting
+    result = subprocess.run(["git", "-c", "core.quotePath=false", *args], cwd=cwd,
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
     return result.stdout if result.returncode == 0 else ""
 
 

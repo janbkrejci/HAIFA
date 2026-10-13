@@ -90,7 +90,9 @@ def _deleted_paths() -> set[str]:
     paths: set[str] = set()
     for args in (["diff", "--name-only", "--diff-filter=D"],
                  ["diff", "--cached", "--name-only", "--diff-filter=D"]):
-        result = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8")
+        # aifactory 3.0: unquoted non-ASCII paths
+        result = subprocess.run(["git", "-c", "core.quotePath=false", *args],
+                                capture_output=True, text=True, encoding="utf-8")
         if result.returncode == 0:
             paths.update(line for line in result.stdout.splitlines() if line)
     return paths

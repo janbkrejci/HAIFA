@@ -8,7 +8,9 @@ from pathlib import Path
 
 def _git(*args: str) -> str:
     # aifactory 3.0: a diff of legacy files (cp1250) is no valid UTF-8; replace, never crash
-    result = subprocess.run(["git", *args], capture_output=True, text=True, encoding="utf-8",
+    # aifactory 3.0: unquoted paths (Testovací sady/), not git's octal-escaped quoting
+    result = subprocess.run(["git", "-c", "core.quotePath=false", *args], capture_output=True,
+                            text=True, encoding="utf-8",
                             errors="replace")
     if result.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {result.stderr.strip()}")
