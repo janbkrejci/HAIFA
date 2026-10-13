@@ -6,7 +6,7 @@ writes: [aifactory/, justfile]
 auto_continue: false
 auto_merge: true
 test_timeout: 900
-harness: codex
+harness: claude
 ---
 
 Vývoj HAIFA řízený samotnou HAIFA. Rozhodnutí jsou v `docs/decisions.md`, návrh dashboardu pro více repozitářů v `docs/design/multi-repo-dashboard.md`.
