@@ -62,26 +62,22 @@ a vytvoření/odstranění vnořeného skillu. Overview má navíc test zneplatn
 před uplynutím TTL. Ostatní existující testy overview ověřují souběh repozitářů
 a časový limit.
 
-Builder provádí pouze cílené kontroly změněných souborů a jejich přímých
-volajících. Úplné `just check` a `just e2e` zůstávají pro navazující testovací
-fázi/CI; tento dokument netvrdí, že celý gate byl spuštěn.
+Factory ověřuje dotčené testy a statické kontroly podle AGENTS.md. Celou sadu
+a e2e ověří CI na PR a auto-merge na ně čeká; výsledky celé sady z factory běhu
+se podle upraveného zadání nevyžadují.
 
-## Dostupné výsledky CI po review
+## Stabilita testu ukončeného procesu na Windows
 
-Dne 2026-10-13 byl ověřen úspěšný [běh CI základní revize](https://github.com/janbkrejci/HAIFA/actions/runs/38428456775)
-`d1cf4d4a9b547cb97ee63eef905a96b6a1cdb653`. Job `test` úspěšně dokončil
-frontend checks/build, backend testy, browser acceptance (`just e2e`) a types/lint.
-Job `windows-install` také prošel; ověřuje instalaci a bundle, nikoli celý testový
-gate na Windows.
+`test_dead_process_is_shown_without_any_write` používal PID krátkého podprocesu,
+jehož objekt `Popen` fixture ihned uvolnila. Windows po uzavření posledního
+process handle může PID přidělit jinému procesu; při souběžných testech tak
+overview mohlo správně vrátit `alive` pro již recyklovaný PID.
 
-Tento běh **neobsahuje změny T14**. Při kontrole byly změny stále necommitnuté
-v pracovním stromu a repozitář neměl žádné otevřené PR. Novější běh pro
-`697b8cfe553708fc765d10e89f2fafb1bd3a2cd0` patří jiné změně (`git_helper`).
-Žádný z těchto běhů tedy nedokládá průchod celého gate této implementace.
+Fixture nyní drží objekt a handle skutečně ukončeného podprocesu v context
+manageru až do konce testu. PID zůstává rezervovaný; kontrola OS ani tvrzení
+o nezměněné trace DB se nemockují. Produkční detekce procesů zůstává stejná.
 
-Review nepožaduje opravu kódu. Jeho zbývající podmínka zůstává neověřená:
-navazující workflow musí změny commitnout a zveřejnit, vyčkat na CI pro výslednou
-revizi a připojit odkaz s jejím SHA. Pokud se přijmou selhání celého gate na
-Windows, musí být navíc doložen stejný neúspěšný test na base. Builder nesmí
-commitovat, pushovat ani spouštět celé testové sady v této fázi; úspěšné cílené
-kontroly proto nebyly opakovány.
+Cílený příkaz je `just pytest tests/web/test_web_overview.py::test_dead_process_is_shown_without_any_write -n0`.
+V prostředí builderu chyběl `bash`, takže recept skončil před spuštěním pytestu.
+Ekvivalentní výběr byl úspěšně spuštěn přes
+`just --command uv run --directory aifactory pytest tests/web/test_web_overview.py::test_dead_process_is_shown_without_any_write -n0`.

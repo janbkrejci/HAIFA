@@ -8,6 +8,7 @@ import sqlite3
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -77,15 +78,15 @@ def _run_row(db: Path, run_id: str) -> tuple[Any, ...]:
 
 
 @pytest.fixture(name="repo_a")
-def repo_a_fixture(tmp_path: Path) -> Path:
-    return make_overview_repo(tmp_path / "alpha", live_pid=os.getpid(), dead_pid=dead_pid())
+def repo_a_fixture(tmp_path: Path) -> Iterator[Path]:
+    with dead_pid() as pid:
+        yield make_overview_repo(tmp_path / "alpha", live_pid=os.getpid(), dead_pid=pid)
 
 
 @pytest.fixture(name="repo_b")
-def repo_b_fixture(tmp_path: Path) -> Path:
-    return make_overview_repo(
-        tmp_path / "beta", live_pid=os.getpid(), dead_pid=dead_pid(), prefix="b-"
-    )
+def repo_b_fixture(tmp_path: Path) -> Iterator[Path]:
+    with dead_pid() as pid:
+        yield make_overview_repo(tmp_path / "beta", live_pid=os.getpid(), dead_pid=pid, prefix="b-")
 
 
 def test_overview_of_repos_with_and_without_trace_and_a_missing_folder(

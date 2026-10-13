@@ -12,6 +12,8 @@ from __future__ import annotations
 import sqlite3
 import subprocess
 import sys
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from multi_repo import AGENTS, commit_all, init_repo, write
@@ -157,11 +159,16 @@ def make_overview_repo(path: Path, *, live_pid: int, dead_pid: int, prefix: str 
     return root
 
 
-def dead_pid() -> int:
-    """The pid of a process that has already ended."""
-    proc = subprocess.Popen([sys.executable, "-c", "pass"])
-    proc.wait()
-    return proc.pid
+@contextmanager
+def dead_pid() -> Iterator[int]:
+    """An ended process's PID, with its Windows handle held until the test finishes.
+
+    Windows can recycle the PID once the last process handle closes. Keeping Popen
+    alive prevents concurrent Git/test subprocesses from taking this fixture's PID.
+    """
+    with subprocess.Popen([sys.executable, "-c", "pass"]) as proc:
+        proc.wait()
+        yield proc.pid
 
 
 def register(home: Path, *roots: Path) -> Registry:
