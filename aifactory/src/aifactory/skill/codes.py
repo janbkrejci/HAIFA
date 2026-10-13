@@ -148,6 +148,11 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("merge_failed", "2", "the hosting did not merge the pull request"),
     ("approve_failed", "2", "host approval failed or the pull request head changed; merge stopped"),
     ("push_failed", "2", "git push failed"),
+    (
+        "pr_failed",
+        "2",
+        "library write/push: gh could not fork or open the pull request; the library is unchanged",
+    ),
     ("fetch_failed", "2", "git fetch failed"),
     ("base_moved", "2", "base moved on the remote during the operation"),
     ("dirty_base", "2", "the base checkout has uncommitted changes"),
@@ -415,6 +420,8 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
     "library_seed": ("create", "update", "unchanged", "kept", "take"),
     # warnings of `factory library status` and `factory library clone`
     "library_status": ("seed_update_available",),
+    # data.sync_state of `factory library status`
+    "library_sync": ("unshared", "local", "pending", "behind", "synced"),
     # warnings `factory` prints on stderr at start
     "startup": ("env_file_mode",),
     # error.issues of library import (invalid_item)

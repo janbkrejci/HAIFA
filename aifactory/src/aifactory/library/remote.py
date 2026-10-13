@@ -1,8 +1,12 @@
 """Sharing the library through a git remote (AR17): clone, status, pull and push.
 
 The remote is ``origin`` of the library repository, stored without user and password.
-Pull only fast-forwards, push never forces; a dirty or diverged library is refused. Writes
-with a remote (``store.import_item``) fetch first and push before the local branch moves.
+``clone`` without a URL clones the default library (``share.default_library_url``).
+Changes never go to the library branch of the remote directly: push and every write with a
+remote (``store.import_item``) send them as a pull request (``library.share``) and the
+library maintainer merges it. Pull fast-forwards; when the local library has commits the
+remote lacks (sent and merged, or still waiting), pull rebases them onto the remote, which
+drops the merged ones. A dirty library or a conflicting rebase is refused.
 """
 
 from __future__ import annotations
@@ -18,6 +22,7 @@ from typing import Any
 import yaml
 
 from aifactory import __version__
+from aifactory.library import share
 from aifactory.library.reseed import seed_updates
 from aifactory.library.store import (
     FORMAT,
@@ -30,9 +35,11 @@ from aifactory.library.store import (
     _git_detail,
     _home_dir,
     behind_error,
+    check_identity,
     current_branch,
     diverged_error,
     fetch_remote,
+    init_library,
     library_root,
     push_commit,
     read_meta,
@@ -139,6 +146,14 @@ def library_status(fetch: bool = False, environ: Mapping[str, str] | None = None
     minimum = meta.get("min_factory_version")
     uncommitted = _dirty(root)
     updates = seed_updates(meta)
+    pulls: list[share.Proposal] = []
+    pulls_error: str | None = None
+    unsent = 0
+    if remote is not None:
+        pulls = share.settle(root, head, tip)
+        if fetch:
+            pulls, pulls_error = share.refresh(root)
+        unsent = len(share.unsent_commits(root, head, tip))
     return {
         "library": str(root),
         "id": meta.get("id"),
@@ -158,6 +173,11 @@ def library_status(fetch: bool = False, environ: Mapping[str, str] | None = None
         "compatible": compatible(minimum),
         "seed_update_available": bool(updates),
         "seed_updates": updates,
+        "unsent": unsent,
+        "sync_state": share.sync_state(remote, bool(uncommitted), unsent, ahead, behind),
+        "pull_requests": [p.to_json() for p in pulls],
+        "pull_requests_error": pulls_error,
+        "default_url": share.default_library_url(environ),
     }
 
 
@@ -181,17 +201,19 @@ def pull_library(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
         fetch_remote(root)
         tip = remote_tip(root, branch)
         after = head
+        pulled = 0
         if tip is not None and tip != head and not git.is_ancestor(root, tip, head):
-            if not git.is_ancestor(root, head, tip):
-                ahead, behind = _counts(root, head, tip)
-                raise diverged_error(branch, ahead, behind)
-            proc = git.run_bytes(root, ["merge", "--ff-only", "--quiet", tip])
-            if proc.returncode != 0:
-                raise LibraryStoreError(
-                    "pull_failed", f"cannot fast-forward the library: {_git_detail(proc)}"
-                )
-            after = tip
-    pulled = git.count_commits(root, head, after) if after != head else 0
+            pulled = git.count_commits(root, head, tip)
+            if git.is_ancestor(root, head, tip):
+                proc = git.run_bytes(root, ["merge", "--ff-only", "--quiet", tip])
+                if proc.returncode != 0:
+                    raise LibraryStoreError(
+                        "pull_failed", f"cannot fast-forward the library: {_git_detail(proc)}"
+                    )
+                after = tip
+            else:
+                after = _rebase(root, head, tip, branch)
+        pulls = share.settle(root, after, tip)
     return {
         "library": str(root),
         "remote": remote,
@@ -199,14 +221,35 @@ def pull_library(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
         "before": head,
         "after": after,
         "pulled": pulled,
+        "local": len(share.ahead_commits(root, after, tip)),
+        "pull_requests": [p.to_json() for p in pulls],
     }
 
 
+def _rebase(root: Path, head: str, tip: str, branch: str) -> str:
+    """Replay the local commits onto the remote `tip`; commits whose change the remote has
+    (a merged pull request) drop out. A conflict aborts and is ``library_diverged``."""
+    check_identity(root)
+    proc = git.run_bytes(
+        root, ["rebase", "--quiet", "--empty=drop", tip], env={"GIT_EDITOR": "true"}
+    )
+    if proc.returncode != 0:
+        git.run_bytes(root, ["rebase", "--abort"])
+        ahead, behind = _counts(root, head, tip)
+        raise diverged_error(branch, ahead, behind)
+    after = git.rev_parse(root, "HEAD")
+    if after is None:
+        raise LibraryStoreError("pull_failed", "the library has no HEAD after the rebase")
+    return after
+
+
 def push_library(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
-    """Push local commits of the library to the remote branch, never forced."""
+    """Send the local commits that are in no open pull request as one pull request to
+    the remote branch; never a push to that branch (``library.share``)."""
     root = library_root(environ)
     require_library(root)
     remote = _require_remote(root)
+    proposal: dict[str, Any] | None = None
     with write_lock(environ):
         head = require_library(root)
         branch = current_branch(root)
@@ -217,15 +260,35 @@ def push_library(environ: Mapping[str, str] | None = None) -> dict[str, Any]:
             raise diverged_error(branch, ahead, behind)
         if behind:
             raise behind_error(branch, behind)
-        if ahead:
-            push_commit(root, REMOTE, head, branch)
+        unsent = share.unsent_commits(root, head, tip) if ahead else []
+        if unsent:
+            if tip is None:
+                raise LibraryStoreError(
+                    "push_failed", f"the remote has no branch {branch} to send a pull request to"
+                )
+            message = _push_message(root, unsent)
+            ids = share.patch_ids(root, unsent)
+            if unsent == share.ahead_commits(root, head, tip):
+                sha = head
+            else:
+                sha = share.transplant(root, tip, unsent, message)
+            proposal = share.propose(root, sha, branch, message, list(ids.values())).to_json()
     return {
         "library": str(root),
         "remote": remote,
         "branch": branch,
         "head": head,
-        "pushed": ahead,
+        "pushed": len(unsent),
+        "pull_request": proposal,
     }
+
+
+def _push_message(root: Path, commits: list[str]) -> str:
+    subjects = [git.git(root, "log", "-1", "--format=%s", c) for c in commits]
+    if len(subjects) == 1:
+        return git.git(root, "log", "-1", "--format=%B", commits[0]) + "\n"
+    lines = [f"library: {len(subjects)} changes", "", *(f"- {s}" for s in subjects)]
+    return "\n".join(lines) + "\n"
 
 
 def connect_library(url: str, environ: Mapping[str, str] | None = None) -> dict[str, Any]:
@@ -283,10 +346,33 @@ def _check_meta(repo: Path, head: str) -> None:
             raise LibraryStoreError("invalid_library", f"{LIBRARY_FILE} has no {key}")
 
 
-def clone_library(
-    url: str, branch: str | None = None, environ: Mapping[str, str] | None = None
+def clone_or_seed(
+    url: str | None = None, branch: str | None = None, environ: Mapping[str, str] | None = None
 ) -> dict[str, Any]:
-    """Clone a shared library into the library path and return its status."""
+    """Clone the library (the default one without `url`); when the clone fails (no
+    network, no access), create a local library from the seed instead. An existing
+    library is refused (``library_exists``) and stays unchanged. ``fallback`` and
+    ``warning`` say whether the seed was used."""
+    try:
+        return {**clone_library(url, branch, environ), "fallback": False, "warning": None}
+    except LibraryStoreError as exc:
+        if exc.code not in ("clone_failed", "invalid_library"):
+            raise
+        reason = exc.message
+    init_library(environ=environ)
+    warning = (
+        f"cannot clone the library ({reason}); created a local library from the seed. "
+        "Clone the team library later: remove it and run factory library clone"
+    )
+    return {**library_status(environ=environ), "fallback": True, "warning": warning}
+
+
+def clone_library(
+    url: str | None = None, branch: str | None = None, environ: Mapping[str, str] | None = None
+) -> dict[str, Any]:
+    """Clone a shared library (the default one without `url`) into the library path and
+    return its status."""
+    url = url or share.default_library_url(environ)
     root = library_root(environ)
     shown = git.redact_url(url)
 

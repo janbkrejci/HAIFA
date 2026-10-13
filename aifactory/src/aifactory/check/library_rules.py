@@ -56,12 +56,14 @@ def library(ctx: CheckContext) -> Iterator[Finding]:
             f"the library is {data['behind']} commit(s) behind {data['remote']}, {when}",
             "factory library pull",
         )
-    if data["ahead"]:
+    unsent = data.get("unsent", data["ahead"])
+    if unsent:
         yield Finding(
             "library_unpushed",
             "library",
             "warning",
-            f"the library has {data['ahead']} commit(s) not pushed to {data['remote']}, {when}",
+            f"the library has {unsent} commit(s) not sent to {data['remote']} in a pull "
+            f"request, {when}",
             "factory library push",
         )
 

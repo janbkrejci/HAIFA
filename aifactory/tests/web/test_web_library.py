@@ -15,7 +15,7 @@ from starlette.applications import Starlette
 from starlette.datastructures import State
 from starlette.testclient import TestClient
 
-from aifactory.library import store
+from aifactory.library import share, store
 from aifactory.skill import envelope_problems
 from aifactory.web import create_multi_app
 
@@ -27,6 +27,7 @@ def client(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[TestClie
     monkeypatch.setattr(Path, "home", classmethod(lambda cls: user))
     monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "process-home"))
     monkeypatch.delenv("HAIFA_LIBRARY", raising=False)
+    monkeypatch.delenv("HAIFA_LIBRARY_URL", raising=False)
     for role in ("AUTHOR", "COMMITTER"):
         monkeypatch.setenv(f"GIT_{role}_NAME", "Ada Tester")
         monkeypatch.setenv(f"GIT_{role}_EMAIL", "ada@example.com")
@@ -76,7 +77,10 @@ def initialize(client: TestClient, **options: Any) -> Path:
 
 def test_empty_home_and_read_only_init(client: TestClient) -> None:
     home = state(client).home
-    assert response(client.get("/api/library")) == {"exists": False}
+    assert response(client.get("/api/library")) == {
+        "exists": False,
+        "default_url": share.DEFAULT_LIBRARY_URL,
+    }
     first = preview(client, "init", name="team")
     assert first == preview(client, "init", name="team")
     assert not home.exists()
@@ -119,7 +123,7 @@ def test_init_remote_clone_and_sync(client: TestClient, tmp_path: Path) -> None:
         write(root, "note.txt", "changed\n")
         git(root, "add", "note.txt")
         git(root, "commit", "-m", "advance")
-        response(client.post("/api/library/push"))
+        git(root, "push", "origin", "main")  # the maintainer, outside HAIFA
         response(apply(other, "clone", planned, url=str(bare)), 409, "plan_changed")
         planned = preview(other, "clone", url=str(bare), branch="main")
         cloned = response(apply(other, "clone", planned, url=str(bare), branch="main"))
@@ -128,9 +132,19 @@ def test_init_remote_clone_and_sync(client: TestClient, tmp_path: Path) -> None:
         write(target, "note.txt", "next\n")
         git(target, "add", "note.txt")
         git(target, "commit", "-m", "another commit")
-        response(other.post("/api/library/push"))
+        main = git(bare, "rev-parse", "main")
+        sent = response(other.post("/api/library/push"))["pull_request"]
+        assert sent["branch"].startswith("haifa-library/") and sent["url"] is None
+        assert git(bare, "rev-parse", "main") == main
+        status = response(other.get("/api/library?items=0"))
+        assert status["sync_state"] == "pending" and len(status["pull_requests"]) == 1
+        # the maintainer merges the branch
+        git(bare, "update-ref", "refs/heads/main", git(bare, "rev-parse", sent["branch"]))
         pulled = response(client.post("/api/library/pull"))
         assert pulled["pulled"] == 1 and (root / "note.txt").read_text() == "next\n"
+        response(other.post("/api/library/pull"))
+        status = response(other.get("/api/library?items=0"))
+        assert status["sync_state"] == "synced" and status["pull_requests"] == []
 
 
 def test_clone_invalid_library_cleanup(client: TestClient, tmp_path: Path) -> None:
@@ -376,8 +390,8 @@ def test_pull_dirty_behind_diverged_and_push_failure(client: TestClient, tmp_pat
     write(root, "dirty", "untracked\n")
     response(client.post("/api/library/pull"), 409, "library_dirty")
     (root / "dirty").unlink()
-    write(root, "local", "local\n")
-    git(root, "add", "local")
+    write(root, "note", "local\n")
+    git(root, "add", "note")
     git(root, "commit", "-m", "local commit")
     response(client.post("/api/library/push"), 409, "library_diverged")
     response(client.post("/api/library/pull"), 409, "library_diverged")

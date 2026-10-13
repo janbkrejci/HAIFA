@@ -1109,7 +1109,7 @@ def execute_plan(
 
 
 def _write_library(plan: ConfigPlan, environ: Mapping[str, str] | None) -> str | None:
-    """Move: write the library first (lock, fetch, push without force, fast-forward)."""
+    """Move: write the library first (lock, fetch, a pull request when shared, fast-forward)."""
     if not plan.library_changed or plan.library_plan is None:
         return None
     from aifactory.library.store import import_items

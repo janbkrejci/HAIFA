@@ -9,8 +9,9 @@ are moved by a fast-forward merge. Nothing is forced and no history is rewritten
 
 A library with the remote ``origin`` is shared (``library.remote``): a write first fetches
 it and refuses a library that is behind (``library_behind``) or diverged
-(``library_diverged``), then pushes the new commit without force before it moves the local
-branch, so a rejected push (``push_failed``) changes no local ref, index or file.
+(``library_diverged``), then sends the new commit as a pull request (``library.share``,
+never a push to the library branch) before it moves the local branch, so a rejected push
+(``push_failed``) or pull request (``pr_failed``) changes no local ref, index or file.
 """
 
 from __future__ import annotations
@@ -234,6 +235,7 @@ class WriteResult:
     committed: bool
     commit: str | None
     warnings: list[str] = field(default_factory=list)
+    pull_request: dict[str, Any] | None = None
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -241,6 +243,7 @@ class WriteResult:
             "dry_run": self.dry_run,
             "committed": self.committed,
             "commit": self.commit,
+            "pull_request": self.pull_request,
         }
 
 
@@ -322,13 +325,28 @@ def _advance(root: Path, sha: str) -> None:
         )
 
 
-def _apply(root: Path, plan: LibraryPlan) -> str:
-    """Commit `plan`, push it when the library has a remote, then fast-forward the branch."""
+def _apply(root: Path, plan: LibraryPlan) -> tuple[str, dict[str, Any] | None]:
+    """Commit `plan`; when the library has a remote, send the commit as a pull request
+    (never a push to the library branch); then fast-forward the branch. The caller has
+    fetched the remote (``check_remote``). Returns the commit and the pull request."""
     sha = _commit(root, plan)
+    proposal: dict[str, Any] | None = None
     if git.has_remote(root, REMOTE):
-        push_commit(root, REMOTE, sha, current_branch(root))
+        from aifactory.library import share
+
+        branch = current_branch(root)
+        tip = remote_tip(root, branch)
+        if tip is None:
+            raise LibraryStoreError(
+                "push_failed",
+                f"the remote has no branch {branch} to send a pull request to; "
+                "the library is unchanged",
+            )
+        sent = sha if tip == plan.head else share.transplant(root, tip, [sha], plan.message)
+        ids = list(share.patch_ids(root, [sha]).values())
+        proposal = share.propose(root, sent, branch, plan.message, ids).to_json()
     _advance(root, sha)
-    return sha
+    return sha, proposal
 
 
 # ── remote ────────────────────────────────────────────────────────────────────
@@ -816,8 +834,8 @@ def import_item(
             return WriteResult(plan, False, False, None)
         if git.has_remote(root, REMOTE):
             check_remote(root, head, current_branch(root))
-        sha = _apply(root, plan)
-    return WriteResult(plan, False, True, sha)
+        sha, proposal = _apply(root, plan)
+    return WriteResult(plan, False, True, sha, pull_request=proposal)
 
 
 def _items_plan(
@@ -905,5 +923,5 @@ def import_items(
             return WriteResult(plan, False, False, None)
         if git.has_remote(root, REMOTE):
             check_remote(root, head, current_branch(root))
-        sha = _apply(root, plan)
-    return WriteResult(plan, False, True, sha)
+        sha, proposal = _apply(root, plan)
+    return WriteResult(plan, False, True, sha, pull_request=proposal)

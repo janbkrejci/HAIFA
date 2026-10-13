@@ -328,7 +328,8 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
             "(committed false); other content under an existing name is a new version. "
             "Without --dry-run the write holds $HAIFA_HOME/library.lock, refuses a library "
             "with uncommitted changes (library_dirty), commits on HEAD without a checkout "
-            "and fast-forwards the branch and working tree."
+            "and fast-forwards the branch and working tree. A library with a remote sends "
+            "the change as a pull request (data.pull_request), never a push to its branch."
         ),
     )
     import_.add_argument("path", metavar="CESTA", help="folder or file to import")
@@ -339,15 +340,29 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
     import_.add_argument("--dry-run", action="store_true", help="only print the plan")
     clone = sub.add_parser(
         "clone",
-        help="clone a shared library from a git remote",
+        help="clone a shared library from a git remote (default: the HAIFA library)",
         description=(
-            "Clone the library from URL into the library path and return its status. An "
+            "Clone the library from URL into the library path and return its status. Without "
+            "URL the default library is cloned: $HAIFA_LIBRARY_URL, else "
+            "https://github.com/janbkrejci/HAIFA-LIBRARY.git. An "
             "existing library is refused (library_exists), a failed clone is clone_failed and "
             "a remote without a valid library.yaml (format, id, name) is invalid_library; "
-            "nothing is left behind. The remote is stored as origin without user and password."
+            "nothing is left behind. The remote is stored as origin without user and password. "
+            "With --seed-fallback a failed clone (no network, no access) creates a local "
+            "library from the seed instead (data.fallback true, with a warning)."
         ),
     )
-    clone.add_argument("url", metavar="URL", help="git remote of the library")
+    clone.add_argument(
+        "url",
+        metavar="URL",
+        nargs="?",
+        help="git remote of the library (default: the HAIFA library)",
+    )
+    clone.add_argument(
+        "--seed-fallback",
+        action="store_true",
+        help="when the clone fails, create a local library from the seed",
+    )
     clone.add_argument("--branch", metavar="B", help="branch to clone (default: the remote HEAD)")
     status = sub.add_parser(
         "status",
@@ -356,26 +371,35 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
             "Show path, id, name, remote (without credentials), branch, ahead and behind "
             "against origin (from the last fetched refs; --fetch fetches first), last_fetch, "
             "uncommitted changes and min_factory_version against the installed factory "
-            "(compatible). Without a remote, ahead and behind are null."
+            "(compatible). Without a remote, ahead and behind are null. sync_state is "
+            "unshared (no remote), local (changes not sent), pending (every local change "
+            "waits in a pull request), behind or synced; pull_requests lists the open pull "
+            "requests sent from this library (--fetch asks GitHub which are still open)."
         ),
     )
     status.add_argument("--fetch", action="store_true", help="fetch the remote first")
     pull = sub.add_parser(
         "pull",
-        help="fast-forward the library to its remote",
+        help="bring the library up to its remote",
         description=(
-            "Fetch origin and fast-forward the library. A library with uncommitted changes "
-            "(library_dirty) or diverged from the remote (library_diverged) is refused and "
-            "nothing changes; without a remote it is no_remote."
+            "Fetch origin and fast-forward the library. Local commits the remote lacks (sent "
+            "in pull requests) are rebased onto it; the merged ones drop out. A library with "
+            "uncommitted changes (library_dirty) or whose rebase conflicts (library_diverged) "
+            "is refused and nothing changes; without a remote it is no_remote."
         ),
     )
     push = sub.add_parser(
         "push",
-        help="push local library commits to its remote, never forced",
+        help="send local library commits to its remote as a pull request",
         description=(
-            "Fetch origin and push the local commits without force. A library behind the "
+            "Fetch origin and send the local commits that are in no open pull request as one "
+            "pull request against the library branch; the branch itself is never pushed. On "
+            "GitHub the pull request comes from a branch in the library repo when you may "
+            "write to it, else from your fork (gh repo fork); other remotes get only the "
+            "branch haifa-library/... HAIFA never merges or approves it. A library behind the "
             "remote (library_behind: run factory library pull) or diverged from it "
-            "(library_diverged) is refused; a rejected push is push_failed."
+            "(library_diverged) is refused; a rejected push is push_failed, a failed gh call "
+            "pr_failed."
         ),
     )
     seed = sub.add_parser(
@@ -673,11 +697,18 @@ def _library(args: argparse.Namespace) -> int:
         print(f"digest  {result.plan.digest}")
     elif result.committed:
         print(f"imported {item.type}/{item.name} {item.version} ({(result.commit or '')[:12]})")
+        _print_pull_request(result.pull_request)
     else:
         print(f"{item.type}/{item.name} is unchanged")
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
     return 0
+
+
+def _print_pull_request(pr: dict[str, Any] | None) -> None:
+    if pr is not None:
+        where = pr["url"] or f"branch {pr['branch']} (open the pull request by hand)"
+        print(f"sent for review: {where}")
 
 
 def _library_seed(args: argparse.Namespace) -> int:
@@ -698,6 +729,7 @@ def _library_seed(args: argparse.Namespace) -> int:
         print(f"digest  {result.plan.digest}")
     elif result.committed:
         print(f"took the seed into the library ({(result.commit or '')[:12]})")
+        _print_pull_request(result.pull_request)
     else:
         print("the library already has the seed")
     for warning in result.warnings:
@@ -710,7 +742,9 @@ def _library_remote(args: argparse.Namespace) -> int:
     from aifactory.library import remote
 
     command = args.library_command
-    if command == "clone":
+    if command == "clone" and args.seed_fallback:
+        data = remote.clone_or_seed(args.url, args.branch)
+    elif command == "clone":
         data = remote.clone_library(args.url, args.branch)
     elif command == "status":
         data = remote.library_status(args.fetch)
@@ -718,7 +752,7 @@ def _library_remote(args: argparse.Namespace) -> int:
         data = remote.pull_library()
     else:
         data = remote.push_library()
-    warnings: list[str] = []
+    warnings: list[str] = [data["warning"]] if data.get("warning") else []
     if command in ("clone", "status") and data["compatible"] is False:
         warnings.append(
             f"the library needs factory {data['min_factory_version']}, "
@@ -739,11 +773,18 @@ def _library_remote(args: argparse.Namespace) -> int:
             print(f"ahead    {data['ahead']}, behind {data['behind']}")
             print(f"fetched  {data['last_fetch'] or 'never'}")
         print(f"changes  {len(data['uncommitted'])} uncommitted")
+        if data["remote"] is not None:
+            print(f"state    {data['sync_state']}")
+        for pr in data["pull_requests"]:
+            print(f"pr       {pr['url'] or pr['branch']}  {pr['title']}")
         print(f"factory  {data['factory_version']} (needs {data['min_factory_version'] or '-'})")
     elif command == "pull":
         print(f"pulled {data['pulled']} commit(s) from {data['remote']} {data['branch']}")
+    elif data["pull_request"] is None:
+        print("nothing to send: every local change is in an open pull request")
     else:
-        print(f"pushed {data['pushed']} commit(s) to {data['remote']} {data['branch']}")
+        pr = data["pull_request"]
+        print(f"sent {data['pushed']} commit(s) for review: {pr['url'] or pr['branch']}")
     for warning in warnings:
         print(f"warning: {warning}", file=sys.stderr)
     return 0

@@ -167,5 +167,5 @@ def seed_library(
         plan = _seed_plan(root, head, wanted, seed)
         if not plan.files:
             return WriteResult(plan, False, False, None)
-        sha = _apply(root, plan)
-    return WriteResult(plan, False, True, sha)
+        sha, proposal = _apply(root, plan)
+    return WriteResult(plan, False, True, sha, pull_request=proposal)

@@ -10,7 +10,7 @@ function api(exists = false, remote: string | null = null) {
   let ready = exists
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url.startsWith('/api/machine/check')) return envelope({ ok: false, findings: [finding('git_identity_missing'), finding('library_missing', 'library')], harness_repos: { claude: 2 }, checked_at: 'now' }, false)
-    if (url === '/api/library') return envelope({ exists: ready, library: '/home/.haifa/library', remote, ahead: 1, behind: 0 })
+    if (url === '/api/library') return envelope({ exists: ready, library: '/home/.haifa/library', remote, ahead: 1, behind: 0, default_url: 'https://github.com/janbkrejci/HAIFA-LIBRARY.git' })
     if (url === '/api/library/plan') return envelope({ digest: 'reviewed', library: '/home/.haifa/library', files: [{ path: 'agent.yaml', content: 'SECRET CONTENT', diff: '', binary: false }], items: [], blockers: [] })
     if (url === '/api/library/apply') { ready = true; return envelope({ commit: 'abc' }) }
     if (url === '/api/library/push' || url === '/api/library/pull') return envelope({ after: 'abc' })
@@ -51,7 +51,9 @@ describe('This computer', () => {
     api(true)
     const wrapper = mount(SetupView); await flushPromises()
     expect(wrapper.text()).toContain('Bez remote')
-    for (const button of wrapper.findAll('button').filter(b => ['Stáhnout', 'Odeslat'].includes(b.text()))) expect(button.attributes('disabled')).toBeDefined()
+    const buttons = wrapper.findAll('button').filter(b => ['Stáhnout', 'Odeslat jako PR'].includes(b.text()))
+    expect(buttons).toHaveLength(2)
+    for (const button of buttons) expect(button.attributes('disabled')).toBeDefined()
   })
   it.each(['init', 'clone'])('reviews and confirms %s using only choices and digest', async action => {
     const fetchMock = api(); const wrapper = mount(SetupView, { attachTo: document.body }); await flushPromises()
@@ -63,6 +65,13 @@ describe('This computer', () => {
     const call = fetchMock.mock.calls.find(([url]) => url === '/api/library/apply')!
     expect(JSON.parse(call[1]!.body as string)).toEqual({ action, options: action === 'clone' ? { url: 'https://example/library.git' } : {}, digest: 'reviewed' })
     expect(wrapper.text()).toContain('Knihovna připravena')
+  })
+  it('prefills the default team library for a clone', async () => {
+    const fetchMock = api(); const wrapper = mount(SetupView, { attachTo: document.body }); await flushPromises()
+    expect((wrapper.get('[data-test="library-url"]').element as HTMLInputElement).value).toBe('https://github.com/janbkrejci/HAIFA-LIBRARY.git')
+    await wrapper.get('[data-test="library-clone"]').trigger('click'); await flushPromises()
+    const call = fetchMock.mock.calls.find(([url]) => url === '/api/library/plan')!
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ action: 'clone', options: { url: 'https://github.com/janbkrejci/HAIFA-LIBRARY.git' } })
   })
   it('replaces errors on reload, copies only a real fix and leads to adding a repo', async () => {
     let failing = true

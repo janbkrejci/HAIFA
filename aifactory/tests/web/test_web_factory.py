@@ -384,7 +384,10 @@ def test_items_and_move_to_the_library(api: Api, tmp_path: Path) -> None:
     assert done["committed"] and done["pushed"]
     assert done["library_commit"] == git(store.library_root(), "rev-parse", "HEAD")
     assert git(store.library_root(), "show", f"HEAD:{LIB_SYSTEM}") == "our builder"
-    assert git(library_bare, "rev-parse", "main") == done["library_commit"]
+    # the move reaches the library remote as a pull request branch, never on main
+    assert git(library_bare, "rev-parse", "main") != done["library_commit"]
+    sent = git(library_bare, "for-each-ref", "--format=%(objectname)", "refs/heads/haifa-library/")
+    assert sent == done["library_commit"]
     assert SYSTEM not in git(a, "ls-tree", "-r", "--name-only", "HEAD")
     items = api.get("a", "factory/items")["data"]["items"]
     assert {(i["type"], i["name"]): i["origin"] for i in items}[("agent", "builder")] == "library"

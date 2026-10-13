@@ -132,69 +132,122 @@ def test_init_refuses_non_empty_remote(homes: Homes, capsys: Capsys) -> None:
     assert not lib_b.exists()
 
 
+def merge(homes: Homes, branch: str, *, squash: bool = False) -> str:
+    """The library maintainer merges `branch` into main of the remote; the new main."""
+    import tempfile
+
+    work = Path(tempfile.mkdtemp(prefix="merge-", dir=homes.tmp))
+    _git(homes.tmp, "clone", "--quiet", str(homes.bare), str(work))
+    if squash:
+        _git(work, "merge", "--squash", "--quiet", f"origin/{branch}")
+        _git(work, "commit", "--quiet", "-m", f"squash {branch}")
+    else:
+        _git(work, "merge", "--no-ff", "--quiet", "-m", f"merge {branch}", f"origin/{branch}")
+    _git(work, "push", "--quiet", "origin", "main")
+    return _git(work, "rev-parse", "HEAD")
+
+
 def test_write_in_b_behind_a_then_pull(homes: Homes, capsys: Capsys) -> None:
     lib_a, lib_b = _shared(homes, capsys)
+    main = _git(homes.bare, "rev-parse", "main")
     homes.use("a")
     first = _ok(capsys, _import(homes, "lint"))
-    assert _git(homes.bare, "rev-parse", "main") == first["commit"]
+    sent = first["pull_request"]
+    assert sent["branch"].startswith("haifa-library/") and sent["url"] is None
+    assert _git(homes.bare, "rev-parse", "main") == main
+    assert _git(homes.bare, "rev-parse", sent["branch"]) == first["commit"]
     assert _git(lib_a, "rev-parse", "HEAD") == first["commit"]
+    status = _ok(capsys, ["library", "status", "--json"])
+    assert status["sync_state"] == "pending" and status["ahead"] == 1
+    assert [p["branch"] for p in status["pull_requests"]] == [sent["branch"]]
+    merged = merge(homes, sent["branch"])
 
     homes.use("b")
     before = _snapshot(lib_b)
     error = _fail(capsys, _import(homes, "fmt"))
     assert error["code"] == "library_behind"
-    assert error["data"]["fix"] == "factory library pull" and error["data"]["behind"] == 1
+    assert error["data"]["fix"] == "factory library pull" and error["data"]["behind"] == 2
     assert {k: v for k, v in _snapshot(lib_b).items() if k != "refs"} == {
         k: v for k, v in before.items() if k != "refs"
     }
     status = _ok(capsys, ["library", "status", "--json"])
-    assert (status["ahead"], status["behind"]) == (0, 1) and status["last_fetch"]
+    assert (status["ahead"], status["behind"]) == (0, 2) and status["last_fetch"]
+    assert status["sync_state"] == "behind"
 
     pulled = _ok(capsys, ["library", "pull", "--json"])
-    assert pulled["pulled"] == 1 and pulled["after"] == first["commit"]
+    assert pulled["pulled"] == 2 and pulled["after"] == merged
     second = _ok(capsys, _import(homes, "fmt"))
-    assert second["committed"]
-    assert _git(homes.bare, "rev-parse", "main") == second["commit"]
+    assert second["committed"] and second["pull_request"]
+    assert _git(homes.bare, "rev-parse", "main") == merged
     assert _git(lib_b, "rev-parse", "HEAD") == second["commit"]
 
     homes.use("a")
     assert _fail(capsys, _import(homes, "docs"))["code"] == "library_behind"
     status = _ok(capsys, ["library", "status", "--fetch", "--json"])
-    assert status["behind"] == 1
+    assert status["behind"] == 1 and status["ahead"] == 0
+    _ok(capsys, ["library", "pull", "--json"])
+    status = _ok(capsys, ["library", "status", "--json"])
+    assert status["sync_state"] == "synced" and status["pull_requests"] == []
 
 
 def test_diverged_pull_and_push_refused(homes: Homes, capsys: Capsys) -> None:
     lib_a, lib_b = _shared(homes, capsys)
     homes.use("a")
-    _ok(capsys, _import(homes, "lint"))
+    merge(homes, _ok(capsys, _import(homes, "lint"))["pull_request"]["branch"])
     homes.use("b")
-    put(lib_b, "notes.md", "local\n")
-    _git(lib_b, "add", "notes.md")
-    _git(lib_b, "commit", "--quiet", "-m", "local note")
+    put(lib_b, "skills/lint/SKILL.md", "a conflicting local skill\n")
+    _git(lib_b, "add", "-A")
+    _git(lib_b, "commit", "--quiet", "-m", "local skill")
     local = _git(lib_b, "rev-parse", "HEAD")
     assert _fail(capsys, ["library", "pull", "--json"])["code"] == "library_diverged"
+    assert not (lib_b / ".git" / "rebase-merge").exists()
     assert _fail(capsys, ["library", "push", "--json"])["code"] == "library_diverged"
     assert _fail(capsys, _import(homes, "fmt"))["code"] == "library_diverged"
     assert _git(lib_b, "rev-parse", "HEAD") == local
-    assert _git(homes.bare, "rev-parse", "main") == _git(lib_a, "rev-parse", "HEAD")
+    assert _git(lib_b, "status", "--porcelain") == ""
+
+
+def test_pull_rebases_local_commits_onto_a_squash_merge(homes: Homes, capsys: Capsys) -> None:
+    _lib_a, lib_b = _shared(homes, capsys)
+    homes.use("b")
+    first = _ok(capsys, _import(homes, "lint"))
+    second = _ok(capsys, _import(homes, "fmt"))
+    assert first["pull_request"]["branch"] != second["pull_request"]["branch"]
+    # each pull request holds only its own change
+    tree = _git(homes.bare, "ls-tree", "-r", "--name-only", second["pull_request"]["branch"])
+    assert "skills/fmt/SKILL.md" in tree and "skills/lint/SKILL.md" not in tree
+    squashed = merge(homes, first["pull_request"]["branch"], squash=True)
+    pulled = _ok(capsys, ["library", "pull", "--json"])
+    assert pulled["local"] == 1
+    assert _git(lib_b, "rev-parse", "HEAD~1") == squashed
+    status = _ok(capsys, ["library", "status", "--json"])
+    assert status["sync_state"] == "pending"
+    assert [p["branch"] for p in status["pull_requests"]] == [second["pull_request"]["branch"]]
 
 
 def test_pull_refuses_dirty_and_push_sends_local_commits(homes: Homes, capsys: Capsys) -> None:
     _lib_a, lib_b = _shared(homes, capsys)
+    main = _git(homes.bare, "rev-parse", "main")
     homes.use("b")
     put(lib_b, "notes.md", "local\n")
     assert _fail(capsys, ["library", "pull", "--json"])["code"] == "library_dirty"
     status = _ok(capsys, ["library", "status", "--json"])
     assert status["dirty"] and status["uncommitted"] == ["?? notes.md"]
+    assert status["sync_state"] == "local"
     _git(lib_b, "add", "notes.md")
     _git(lib_b, "commit", "--quiet", "-m", "local note")
-    assert _ok(capsys, ["library", "status", "--json"])["ahead"] == 1
+    status = _ok(capsys, ["library", "status", "--json"])
+    assert status["ahead"] == 1 and status["unsent"] == 1 and status["sync_state"] == "local"
     pushed = _ok(capsys, ["library", "push", "--json"])
     assert pushed["pushed"] == 1
-    assert _git(homes.bare, "rev-parse", "main") == _git(lib_b, "rev-parse", "HEAD")
-    assert _ok(capsys, ["library", "push", "--json"])["pushed"] == 0
+    branch = pushed["pull_request"]["branch"]
+    assert _git(homes.bare, "rev-parse", branch) == _git(lib_b, "rev-parse", "HEAD")
+    assert _git(homes.bare, "rev-parse", "main") == main
+    again = _ok(capsys, ["library", "push", "--json"])
+    assert again["pushed"] == 0 and again["pull_request"] is None
+    assert _ok(capsys, ["library", "status", "--json"])["sync_state"] == "pending"
     homes.use("a")
-    assert _fail(capsys, ["library", "push", "--json"])["code"] == "library_behind"
+    assert _ok(capsys, ["library", "push", "--json"])["pushed"] == 0
 
 
 def test_rejected_push_changes_nothing(homes: Homes, capsys: Capsys) -> None:

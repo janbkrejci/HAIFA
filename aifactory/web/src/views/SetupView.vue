@@ -3,7 +3,7 @@
 // the dashboard's own settings and the first-visit guide.
 import { computed, onMounted, ref } from 'vue'
 import { fetchMachineCheck, type CheckSeverity, type MachineCheck } from '@/lib/api'
-import { fetchLibrary, previewLibrary, applyLibrary, syncLibrary, FINDING_GROUPS, findingGroup, type LibraryStatus, type LibraryPlan, type LibraryRequest } from '@/lib/library'
+import { fetchLibrary, previewLibrary, applyLibrary, syncLibrary, pullRequestText, syncState, FINDING_GROUPS, findingGroup, type LibraryStatus, type LibraryPlan, type LibraryRequest } from '@/lib/library'
 import { errorText, fmtTime, plural } from '@/lib/format'
 import { REPOS_ADD_HREF } from '@/lib/router'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -12,7 +12,7 @@ import PlanView from '@/components/factory/PlanView.vue'
 import DashboardSettings from '@/components/setup/DashboardSettings.vue'
 
 const SEVERITY_TEXT: Record<CheckSeverity, string> = { error: 'chyba', warning: 'varování', info: 'info' }
-const SYNC_TEXT = { pull: 'Stažení', push: 'Odeslání' } as const
+const SYNC_TEXT = { pull: 'Stažení', push: 'Odeslání pull requestu' } as const
 
 const report = ref<MachineCheck | null>(null)
 const library = ref<LibraryStatus | null>(null)
@@ -38,7 +38,10 @@ async function load(fresh = false) {
   const errors: string[] = []
   if (check.status === 'fulfilled') report.value = check.value
   else errors.push(`Kontrola počítače selhala: ${errorText(check.reason)}`)
-  if (lib.status === 'fulfilled') library.value = lib.value
+  if (lib.status === 'fulfilled') {
+    library.value = lib.value
+    if (!lib.value.exists && !url.value) url.value = lib.value.default_url ?? ''
+  }
   else errors.push(`Knihovnu se nepodařilo načíst: ${errorText(lib.reason)}`)
   error.value = errors.join(' · ')
   busy.value = null
@@ -70,7 +73,12 @@ async function sync(action: 'pull' | 'push') {
   if (busy.value) return
   busy.value = 'write'; error.value = ''; result.value = ''
   let failed = ''
-  try { await syncLibrary(action); result.value = `${SYNC_TEXT[action]} dokončeno` }
+  try {
+    const data = await syncLibrary(action)
+    const pr = data.pull_request
+    result.value = action === 'push' && !pr ? 'Není co odeslat · lokální změny už čekají v pull requestu'
+      : `${SYNC_TEXT[action]} dokončeno${pr ? ' · ' + pullRequestText(pr) : ''}`
+  }
   catch (e) { failed = errorText(e) }
   finally { busy.value = null }
   await load(true)
@@ -104,12 +112,19 @@ onMounted(() => { void load() })
           <p data-test="library-path">{{ library.library }}</p>
           <p>Remote: {{ library.remote ?? 'Bez remote · lokální knihovna' }}</p>
           <p>Napřed: {{ library.ahead ?? '—' }} · Pozadu: {{ library.behind ?? '—' }}</p>
+          <p data-test="library-sync-state">{{ syncState(library).text }}</p>
+          <ul v-if="library.pull_requests?.length" data-test="library-prs">
+            <li v-for="pr in library.pull_requests" :key="pr.branch">
+              <a v-if="pr.url" :href="pr.url" target="_blank" rel="noopener">{{ pullRequestText(pr) }}</a>
+              <span v-else>{{ pullRequestText(pr) }}</span> · {{ pr.title }}
+            </li>
+          </ul>
           <button :disabled="!!busy || !library.remote" data-test="library-pull" @click="sync('pull')">Stáhnout</button>
-          <button :disabled="!!busy || !library.remote" data-test="library-push" @click="sync('push')">Odeslat</button>
+          <button :disabled="!!busy || !library.remote" data-test="library-push" @click="sync('push')">Odeslat jako PR</button>
           <a href="#/library">Otevřít knihovnu</a>
         </template>
         <template v-else>
-          <label>URL týmové knihovny <input v-model="url" data-test="library-url" placeholder="https://…/library.git" :disabled="!!busy" /></label>
+          <label>URL týmové knihovny <input v-model="url" data-test="library-url" :placeholder="library.default_url ?? 'https://…/library.git'" :disabled="!!busy" /></label>
           <button :disabled="!!busy || !url.trim()" data-test="library-clone" @click="preview('clone')">Naklonovat týmovou knihovnu…</button>
           <button :disabled="!!busy" data-test="library-init" @click="preview('init')">Založit ze semínka</button>
         </template>

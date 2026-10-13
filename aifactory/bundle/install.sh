@@ -24,5 +24,33 @@ fi
 
 uv tool install --force "$WHEEL" --constraints constraints.txt
 
+# The library: clone the default team library (HAIFA_LIBRARY_URL overrides it); without
+# network a local library from the seed (factory warns). An existing library is left alone.
+echo
+echo "== Setting up the library"
+bin="$(uv tool dir --bin 2>/dev/null || true)"
+if [ -n "$bin" ] && command -v cygpath >/dev/null 2>&1; then
+    bin="$(cygpath -u "$bin")"
+fi
+factory=""
+for candidate in "$bin/factory" "$bin/factory.exe"; do
+    if [ -n "$bin" ] && [ -x "$candidate" ]; then
+        factory="$candidate"
+        break
+    fi
+done
+if [ -z "$factory" ]; then
+    echo "warning: factory is not in the uv tool directory; set up the library later with:" >&2
+    echo "  factory library clone --seed-fallback" >&2
+elif status="$("$factory" library status --json 2>/dev/null)"; then
+    echo "The library exists; it is left unchanged."
+elif printf '%s' "$status" | grep -q '"library_missing"'; then
+    if ! "$factory" library clone --seed-fallback; then
+        echo "warning: the library is not set up; run: factory library clone --seed-fallback" >&2
+    fi
+else
+    echo "warning: factory library status failed; check the library with: factory check" >&2
+fi
+
 echo
 echo "HAIFA @VERSION@ installed. Check prerequisites and logins with: factory check"

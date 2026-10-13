@@ -137,4 +137,24 @@ describe('Library', () => {
     expect(mock.mock.calls.some(([url]) => url === '/api/library/pull')).toBe(true)
     expect(wrapper.text()).toContain('Stažení z remote dokončeno')
   })
+  it('tells local changes, a pending pull request and a library in sync apart', async () => {
+    const pr = { branch: 'haifa-library/20261013-abc', base: 'main', title: 'library: import skill/lint', created: 'now', repo: 'janbkrejci/HAIFA-LIBRARY', head_repo: 'ada/HAIFA-LIBRARY', url: 'https://github.com/janbkrejci/HAIFA-LIBRARY/pull/7', number: 7, state: 'OPEN', fork: true }
+    let status: Record<string, unknown> = { ahead: 1, unsent: 1, pull_requests: [] }
+    const mock = api((url) => {
+      if (url === '/api/library' || url === '/api/library?fetch=1') return envelope({ exists: true, items, library: '/h/library', remote: 'https://github.com/janbkrejci/HAIFA-LIBRARY.git', branch: 'main', behind: 0, dirty: false, ...status })
+      if (url === '/api/library/push') { status = { ahead: 1, unsent: 0, pull_requests: [pr] }; return envelope({ pushed: 1, pull_request: pr }) }
+    })
+    const wrapper = mount(LibraryView); await flushPromises()
+    expect(wrapper.get('[data-test="library-sync-state"]').text()).toContain('Lokální změny')
+    expect(wrapper.find('[data-test="library-no-prs"]').exists()).toBe(true)
+    await wrapper.get('[data-test="library-push"]').trigger('click'); await flushPromises()
+    expect(mock.mock.calls.some(([url]) => url === '/api/library/push')).toBe(true)
+    expect(wrapper.text()).toContain('PR #7 z forku ada/HAIFA-LIBRARY')
+    expect(wrapper.get('[data-test="library-sync-state"]').text()).toContain('Čeká v PR')
+    expect(wrapper.get('[data-test="library-pr"] a').attributes('href')).toBe(pr.url)
+    expect(wrapper.get('[data-test="library-push"]').attributes('disabled')).toBeDefined()
+    status = { ahead: 0, unsent: 0, pull_requests: [] }
+    await wrapper.get('[data-test="library-fetch"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[data-test="library-sync-state"]').text()).toContain('Srovnáno s remote')
+  })
 })

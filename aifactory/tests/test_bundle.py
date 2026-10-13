@@ -34,6 +34,17 @@ EXPECTED = {
 FAKE_UV = (
     '#!/bin/sh\nprintf "%s\\n" "$*" >> "$UV_LOG"\n'
     'if [ "$1 $2" = "tool list" ]; then echo "aifactory v0.1.0"; fi\n'
+    'if [ "$1 $2 $3" = "tool dir --bin" ] && [ -n "${FACTORY_BIN:-}" ]; then '
+    'echo "$FACTORY_BIN"; fi\n'
+)
+# A fake factory for install.sh: logs its arguments; the library is missing unless
+# $FAKE_LIBRARY is "ok".
+FAKE_FACTORY = (
+    '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FACTORY_LOG"\n'
+    'if [ "$1 $2" = "library status" ]; then\n'
+    '  if [ "${FAKE_LIBRARY:-}" = "ok" ]; then echo \'{"ok": true, "data": {}}\'; exit 0; fi\n'
+    '  echo \'{"ok": false, "error": {"code": "library_missing", "message": "no"}}\'; exit 2\n'
+    "fi\n"
 )
 
 
@@ -141,6 +152,45 @@ def _fake_uv_bin(tmp_path: Path) -> Path:
     return bin_dir
 
 
+def _fake_factory_bin(tmp_path: Path) -> Path:
+    bin_dir = tmp_path / "tools"
+    bin_dir.mkdir()
+    factory = bin_dir / "factory"
+    factory.write_text(FAKE_FACTORY, encoding="utf-8", newline="\n")
+    make_executable(factory)
+    return bin_dir
+
+
+@pytest.mark.parametrize("library", ["missing", "ok"])
+def test_install_sh_clones_a_missing_library_and_keeps_an_existing_one(
+    unpacked: Path, tmp_path: Path, library: str
+) -> None:
+    log = tmp_path / "factory.log"
+    env = {
+        **os.environ,
+        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{os.environ['PATH']}",
+        "UV_LOG": str(tmp_path / "uv.log"),
+        "FACTORY_BIN": str(_fake_factory_bin(tmp_path)),
+        "FACTORY_LOG": str(log),
+        "FAKE_LIBRARY": library,
+    }
+    proc = subprocess.run(
+        _install_sh("./install.sh"),
+        cwd=unpacked,
+        env=env,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+    )
+    assert proc.returncode == 0, proc.stdout + proc.stderr
+    calls = log.read_text("utf-8").splitlines()
+    if library == "missing":
+        assert calls == ["library status --json", "library clone --seed-fallback"]
+    else:
+        assert calls == ["library status --json"]
+        assert "left unchanged" in proc.stdout
+
+
 def test_install_sh_runs_uv_tool_install(unpacked: Path, tmp_path: Path) -> None:
     log = tmp_path / "uv.log"
     env = {
@@ -148,6 +198,7 @@ def test_install_sh_runs_uv_tool_install(unpacked: Path, tmp_path: Path) -> None
         "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{os.environ['PATH']}",
         "UV_LOG": str(log),
     }
+    env.pop("FACTORY_BIN", None)
     proc = subprocess.run(
         _install_sh("./install.sh"),
         cwd=unpacked,
@@ -159,9 +210,10 @@ def test_install_sh_runs_uv_tool_install(unpacked: Path, tmp_path: Path) -> None
     )
     wheel = f"aifactory-{__version__}-py3-none-any.whl"
     assert log.read_text("utf-8") == (
-        f"tool install --force {wheel} --constraints constraints.txt\n"
+        f"tool install --force {wheel} --constraints constraints.txt\ntool dir --bin\n"
     )
     assert "factory check" in proc.stdout
+    assert "factory library clone --seed-fallback" in proc.stderr
 
 
 def test_install_sh_runs_from_another_directory(unpacked: Path, tmp_path: Path) -> None:
@@ -307,7 +359,7 @@ def test_windows_installers_are_versioned(unpacked: Path) -> None:
 
 
 @windows_only
-def test_install_ps1_on_a_ready_machine_installs_factory_and_seeds(
+def test_install_ps1_on_a_ready_machine_installs_factory_and_keeps_the_library(
     unpacked: Path, tmp_path: Path
 ) -> None:
     env = _windows_env(tmp_path)
@@ -318,7 +370,6 @@ def test_install_ps1_on_a_ready_machine_installs_factory_and_seeds(
         f"uv tool install --force {wheel} --constraints constraints.txt",
         "uv tool update-shell",
         "factory library status --json",
-        "factory library seed",
     ]
     assert "factory check" in proc.stdout
 
@@ -335,7 +386,7 @@ def test_install_ps1_installs_missing_tools_and_creates_the_library(
         "winget install --id GitHub.cli -e --accept-source-agreements --accept-package-agreements",
         "npm install -g @openai/codex",
     ]
-    assert log[-2:] == ["factory library status --json", "factory library init"]
+    assert log[-2:] == ["factory library status --json", "factory library clone --seed-fallback"]
 
 
 @windows_only
@@ -371,7 +422,7 @@ def test_install_bat_runs_install_ps1_and_passes_its_exit_code(
         capture_output=True,
     )
     assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert "factory library seed" in _log(env)
+    assert "factory library status --json" in _log(env)
     (unpacked / "constraints.txt").write_text("evil==1\n", encoding="utf-8", newline="\n")
     bad = subprocess.run(
         [cmd, "/c", str(unpacked / "install.bat")],
