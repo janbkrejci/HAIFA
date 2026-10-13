@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S05-T17
 title: Výchozí knihovna HAIFA-LIBRARY při instalaci a změny knihovny jen přes PR
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -27,3 +27,4 @@ Hotovo, když:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-13 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/29 · náklady $6.80
