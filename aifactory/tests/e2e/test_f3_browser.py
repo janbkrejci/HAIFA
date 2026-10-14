@@ -181,6 +181,23 @@ def _no_native_tooltips(page: Page) -> None:
     expect(page.locator("[title]")).to_have_count(0)
 
 
+def _pick_link(page: Page, selector: str, value: str) -> None:
+    """Add `value` with a link picker (its dropdown keeps no value; the pick is a chip)."""
+    trigger = page.locator(selector)
+    chip = page.locator(f'[data-picked="{value}"]')
+    # a live refresh can re-render the form and close the list just opened: try again
+    for _ in range(4):
+        trigger.click()
+        option = page.locator(f'[data-test="select-list"] [role="option"][data-value="{value}"]')
+        try:
+            option.click(timeout=4000)
+            expect(chip).to_be_visible(timeout=3000)
+            return
+        except (AssertionError, PlaywrightError):
+            page.keyboard.press("Escape")
+    expect(chip).to_be_visible()
+
+
 def _choose(page: Page, selector: str, value: str) -> None:
     """Pick `value` from the dashboard's own dropdown (no native <select> is left)."""
     trigger = page.locator(selector)
@@ -407,7 +424,7 @@ def test_f3_task_lifecycle_in_browser(page: Page, server: Server, net: Net) -> N
     # links are edited in the form, under the collapsed "Další nastavení"
     page.locator('[data-test="edit"]').click()
     page.locator('details[data-test="advanced"] > summary').click()
-    page.locator('input[data-test="depends"]').fill(first)
+    _pick_link(page, '[data-test="advanced"] [data-test="depends"]', first)
     page.locator('[data-test="save"]').click()
     expect(page.locator(f'li[data-dep="{first}"]')).to_be_visible()
     _open_task(page, first)

@@ -26,9 +26,9 @@ function config(props: Partial<{ status: CommitStatus | null; statusError: strin
   })
 }
 
-function backlog(props: Partial<{ status: CommitStatus | null; committing: boolean; commitError: string | null; pr: { url: string; branch: string } | null }> = {}) {
+function backlog(props: Partial<{ status: CommitStatus | null; statusError: string | null; committing: boolean; commitError: string | null; pr: { url: string; branch: string } | null }> = {}) {
   return mount(UncommittedBanner, {
-    props: { kind: 'backlog', title: 'Backlog', commitLabel: 'Commitnout backlog', floating: true, status: BACKLOG, ...props },
+    props: { kind: 'backlog', title: 'Backlog', commitLabel: 'Commitnout backlog', chip: true, status: BACKLOG, ...props },
   })
 }
 
@@ -84,13 +84,17 @@ describe('UncommittedBanner', () => {
     )
   })
 
-  it('folds the backlog files in a floating bar', async () => {
+  it('shows the backlog as a chip whose panel lists the files', async () => {
     const wrapper = backlog()
     const banner = wrapper.get('[data-test="backlog-banner"]')
     expect(banner.attributes('role')).toBe('status')
-    expect(banner.classes()).toContain('floating')
+    const chip = wrapper.get('[data-test="backlog-chip"]')
+    expect(chip.text()).toBe('Necommitnutý backlog · 2 soubory')
+    expect(wrapper.get('[data-test="backlog-panel"]').attributes('style')).toContain('display: none')
+    await chip.trigger('click')
+    expect(chip.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('[data-test="backlog-panel"]').attributes('style') ?? '').not.toContain('display: none')
     expect(banner.text()).toContain('Backlog má necommitnuté změny. Běhy používají main (0123456)')
-    expect(wrapper.get('[data-test="backlog-files"]').text()).toBe('2 soubory')
     expect(wrapper.findAll('[data-test="backlog-change"]').map((c) => c.text())).toEqual([
       'modified backlog/HAIFA/index.md',
       'untracked backlog/HAIFA/S03/HAIFA-S03-T17-x.md',
@@ -107,5 +111,12 @@ describe('UncommittedBanner', () => {
     expect(wrapper.get('[data-test="backlog-commit-error"]').text()).toBe(
       'Commit se nepodařil: the backlog has 1 problem(s)',
     )
+    // a failed commit opens the panel with its reason
+    expect(wrapper.get('[data-test="backlog-panel"]').attributes('style') ?? '').not.toContain('display: none')
+  })
+
+  it('shows no status error as a chip', () => {
+    const wrapper = backlog({ status: null, statusError: 'boom' })
+    expect(wrapper.find('[data-test="backlog-banner-error"]').exists()).toBe(false)
   })
 })

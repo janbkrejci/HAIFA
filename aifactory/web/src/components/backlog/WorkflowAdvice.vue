@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { Wand2 } from 'lucide-vue-next'
 import { getApi, postApi } from '@/lib/api'
 import { currentRepoId } from '@/lib/router'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -130,6 +131,7 @@ async function start() {
   <div class="workflow-advice" data-test="workflow-advice">
     <button type="button" :disabled="disabled || busy" @click="start">
       <Spinner v-if="busy" />
+      <Wand2 v-else :size="16" aria-hidden="true" />
       {{ busy ? 'Agent vybírá workflow…' : 'Navrhnout workflow' }}
     </button>
     <p v-if="error" role="alert">{{ error }}</p>

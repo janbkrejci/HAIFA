@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // One form for a new task (factory task add) and for editing a task (factory task edit).
 import { computed, ref } from 'vue'
+import { CircleHelp } from 'lucide-vue-next'
 import {
   CODE_RE,
   INHERIT_LABEL,
@@ -9,7 +10,6 @@ import {
   autoMode,
   levelLabel,
   levelNoun,
-  splitIds,
   splitLines,
   shortCode,
   suggestTaskCode,
@@ -20,9 +20,11 @@ import {
   type WriteError,
 } from '@/lib/backlog'
 import type { SelectOption } from '@/lib/select'
-import { useLevels } from '@/lib/names'
+import { useLevels, useNames } from '@/lib/names'
 import { newStepHref } from '@/lib/router'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
+import Tooltip from '@/components/ui/Tooltip.vue'
+import IdPicker from './IdPicker.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import IssueList from './IssueList.vue'
 import { useHarnessChoices } from '@/lib/machineHarnesses'
@@ -74,8 +76,8 @@ const taskIdPreview = computed(() => (step.value ? `${step.value}-${taskCode.val
 const workflow = ref(initialWorkflow)
 const writesText = ref(initialWrites.join('\n'))
 const inheritWrites = ref(initialInherit)
-const dependsText = ref((task?.depends_on ?? []).join(', '))
-const relatedText = ref((task?.related ?? []).join(', '))
+const depends = ref<string[]>([...(task?.depends_on ?? [])])
+const related = ref<string[]>([...(task?.related ?? [])])
 const parameterBusy = ref(false)
 const parameters = ref<Record<string, unknown> | undefined>()
 const parameterFields = ['harness', 'model', 'thinking', 'source', 'target', 'test_timeout', 'auto_continue', 'auto_merge']
@@ -119,7 +121,7 @@ const advice = ref<{ result: Recommendation; id: string } | null>(null)
 const adviceDraft = computed(() => ({
   ...(props.mode === 'add' ? { step: step.value } : {}),
   ...(parameters.value ? { parameters: parameters.value } : {}),
-  body: body.value, depends_on: splitIds(dependsText.value), related: splitIds(relatedText.value),
+  body: body.value, depends_on: depends.value, related: related.value,
   title: title.value.trim(),
   writes: props.mode === 'edit' ? (inheritWrites.value ? null : splitLines(writesText.value)) : (splitLines(writesText.value).length || !inheritWrites.value ? splitLines(writesText.value) : null),
   workflow: workflow.value || null,
@@ -144,18 +146,18 @@ const advancedOpen = ref(
   ),
 )
 function applyParameters(result: TaskProposal) {
-  const before = JSON.stringify([writesText.value, inheritWrites.value, dependsText.value, relatedText.value, autoMerge.value])
+  const before = JSON.stringify([writesText.value, inheritWrites.value, depends.value, related.value, autoMerge.value])
   parameters.value = result.parameters
   if (result.parameters && 'auto_merge' in result.parameters) autoMerge.value = autoMode(result.parameters.auto_merge as boolean | null)
   title.value = result.title
   body.value = result.body
   writesText.value = (result.writes ?? []).join('\n')
   inheritWrites.value = result.writes === null
-  dependsText.value = result.depends_on.join(', ')
-  relatedText.value = result.related.join(', ')
+  depends.value = [...result.depends_on]
+  related.value = [...result.related]
   workflow.value = result.workflow ?? ''
   advice.value = null
-  const after = JSON.stringify([writesText.value, inheritWrites.value, dependsText.value, relatedText.value, autoMerge.value])
+  const after = JSON.stringify([writesText.value, inheritWrites.value, depends.value, related.value, autoMerge.value])
   if (before !== after || hasOwnParameters(result.parameters)) advancedOpen.value = true
 }
 function applyAdvice(result: Recommendation, id: string) {
@@ -210,6 +212,22 @@ const adviceBlocker = computed(() => {
 const visibleParameters = computed(() =>
   parameterFields.filter((key) => props.mode === 'add' || key !== 'auto_merge'),
 )
+const { names } = useNames()
+/** Codes of the backlog to link to, `<id> · <title>`; the task itself is left out. */
+/** Both links may point to a task, a step or a project. */
+const codeOptions = computed<SelectOption[]>(() =>
+  Object.entries(names.value)
+    .filter(([id]) => id !== task?.id)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([id, n]) => ({ value: id, label: n.title ? `${id} · ${n.title}` : id })),
+)
+/** What the free-text parameters mean (the agent gets them in the header of the task). */
+const PARAMETER_HINTS: Record<string, string> = {
+  source:
+    'Odkud práce vychází, např. původní systém, dokument nebo adresář. Agent ho dostane v hlavičce zadání (source); HAIFA ho nijak nekontroluje.',
+  target:
+    'Kam má výsledek směřovat, např. nový modul, cílový adresář nebo systém. Agent ho dostane v hlavičce zadání (target); HAIFA ho nijak nekontroluje.',
+}
 const workflowOptions = computed<SelectOption[]>(() => [
   { value: '', label: 'Zděděno' },
   ...Array.from(new Set([...props.workflows, ...(advice.value ? [advice.value.result.workflow_name] : [])])).map((w) => ({ value: w, label: w })),
@@ -221,10 +239,8 @@ function addInput(): AddTaskInput {
   if (workflow.value) input.workflow = workflow.value
   const writes = splitLines(writesText.value)
   if (writes.length || !inheritWrites.value) input.writes = writes
-  const depends = splitIds(dependsText.value)
-  if (depends.length) input.depends_on = depends
-  const related = splitIds(relatedText.value)
-  if (related.length) input.related = related
+  if (depends.value.length) input.depends_on = [...depends.value]
+  if (related.value.length) input.related = [...related.value]
   if (body.value.trim()) input.body = body.value
   if (parameters.value) input.parameters = parameters.value
   return attachAdvice(input)
@@ -239,8 +255,8 @@ const editInput = computed<EditTaskInput>(() => {
   if (!task) return input
   if (parameters.value) input.parameters = { ...parameters.value, auto_merge: autoMerge.value === 'inherit' ? null : autoMerge.value === 'on' }
   if (body.value !== (props.taskBody ?? '')) input.body = body.value
-  if (!sameList(splitIds(dependsText.value), task.depends_on ?? [])) input.depends_on = splitIds(dependsText.value)
-  if (!sameList(splitIds(relatedText.value), task.related ?? [])) input.related = splitIds(relatedText.value)
+  if (!sameList(depends.value, task.depends_on ?? [])) input.depends_on = [...depends.value]
+  if (!sameList(related.value, task.related ?? [])) input.related = [...related.value]
   if (title.value.trim() !== task.title) input.title = title.value.trim()
   if (!isDone.value && status.value !== initialStatus) {
     input.status = status.value as 'todo' | 'cancelled'
@@ -320,19 +336,22 @@ function onSubmit() {
         <textarea v-model="body" data-test="body" rows="14" />
       </label>
 
-      <label>
-        Workflow
-        <SelectMenu v-model="workflow" data-test="workflow" label="Workflow" :options="workflowOptions" />
-      </label>
+      <div class="workflow-row">
+        <label class="workflow-field">
+          Workflow
+          <SelectMenu v-model="workflow" data-test="workflow" label="Workflow" :options="workflowOptions" />
+        </label>
 
-      <WorkflowAdvice
+        <WorkflowAdvice
+        class="workflow-advice"
         :draft="adviceDraft"
         :task-id="task?.id"
         :disabled="busy || parameterBusy || !!adviceBlocker"
         @busy="adviceBusy = $event"
         @result="applyAdvice"
         @invalidate="advice = null"
-      />
+        />
+      </div>
 
       <details data-test="advanced" :open="advancedOpen" @toggle="advancedOpen = ($event.target as HTMLDetailsElement).open">
         <summary>Další nastavení</summary>
@@ -378,20 +397,25 @@ function onSubmit() {
           </label>
 
           <div class="pair">
-            <label>
-              Závisí na
-              <input v-model="dependsText" data-test="depends" type="text" placeholder="M01-S01-T01, …" />
-            </label>
-            <label>
-              Související
-              <input v-model="relatedText" data-test="related" type="text" placeholder="M01-S01-T01, …" />
-            </label>
+            <div class="field">
+              <span>Závisí na</span>
+              <IdPicker v-model="depends" data-test="depends" label="Závisí na" :options="codeOptions" />
+            </div>
+            <div class="field">
+              <span>Související</span>
+              <IdPicker v-model="related" data-test="related" label="Související" :options="codeOptions" />
+            </div>
           </div>
 
           <div class="parameters" data-test="task-parameters">
             <h4>Parametry (prázdné = zděděno)</h4>
             <label v-for="key in visibleParameters" :key="key" :data-parameter="key">
-              <span>{{ SETTING_LABELS[key] ?? key }} <code class="key">{{ key }}</code></span>
+              <span class="parameter-name">
+                {{ SETTING_LABELS[key] ?? key }} <code class="key">{{ key }}</code>
+                <Tooltip v-if="PARAMETER_HINTS[key]" :text="PARAMETER_HINTS[key]">
+                  <CircleHelp :size="14" class="help" :data-test="`parameter-hint-${key}`" aria-hidden="true" />
+                </Tooltip>
+              </span>
               <SelectMenu
                 v-if="key === 'harness'" :model-value="parameterText(key)" :options="harnessOptions" label="Harness tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
               <SelectMenu v-else-if="key === 'model'" :model-value="parameterText(key)" :options="modelOptions(parameterText('harness') || projectHarness)" label="Model tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
@@ -492,11 +516,41 @@ h4 {
   color: var(--faint);
 }
 
-label {
+label,
+.field {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
   color: var(--dim);
+}
+
+.workflow-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 8px 12px;
+}
+
+.workflow-field {
+  flex: 0 1 320px;
+}
+
+/* the button sits beside the select, under the label's line */
+.workflow-row .workflow-advice {
+  flex: 1 1 240px;
+  margin-top: 26px;
+}
+
+.parameter-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.help {
+  color: var(--faint);
+  cursor: help;
 }
 
 label.check {
@@ -506,6 +560,7 @@ label.check {
 }
 
 input[type='text'],
+input[type='number'],
 textarea {
   padding: 6px 8px;
   border: 1px solid var(--border);
