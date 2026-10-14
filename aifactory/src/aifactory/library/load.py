@@ -27,6 +27,7 @@ from typing import Any
 import yaml
 from pydantic import ValidationError
 
+from aifactory import yamlload
 from aifactory.backlog.frontmatter import FrontmatterError, parse_frontmatter
 from aifactory.config.loader import (
     AGENTS_FILE,
@@ -180,7 +181,7 @@ def _decode(data: bytes, rel: str, issues: list[Issue]) -> str | None:
 
 def _yaml(text: str, rel: str, issues: list[Issue]) -> tuple[bool, Any]:
     try:
-        return True, yaml.safe_load(text)
+        return True, yamlload.safe_load(text)
     except yaml.YAMLError as error:
         issues.append(Issue("invalid_yaml", str(error), rel))
         return False, None
@@ -264,7 +265,7 @@ def _roster_purpose(repo: Path, name: str, issues: list[Issue]) -> str:
     if text is None:
         return ""
     try:
-        raw = yaml.safe_load(text)
+        raw = yamlload.safe_load(text)
     except yaml.YAMLError as error:
         issues.append(Issue("unknown_agent", f"invalid YAML: {error}", AGENTS_FILE))
         return ""

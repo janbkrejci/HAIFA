@@ -21,7 +21,7 @@ from typing import Any
 
 import yaml
 
-from aifactory import __version__
+from aifactory import __version__, yamlload
 from aifactory.library import share
 from aifactory.library.reseed import seed_updates
 from aifactory.library.store import (
@@ -329,7 +329,7 @@ def _check_meta(repo: Path, head: str) -> None:
     if found is None:
         raise LibraryStoreError("invalid_library", f"the remote has no {LIBRARY_FILE}")
     try:
-        meta = yaml.safe_load(git.read_blob(repo, found[1]))
+        meta = yamlload.safe_load(git.read_blob(repo, found[1]))
     except yaml.YAMLError as exc:
         raise LibraryStoreError("invalid_library", f"{LIBRARY_FILE} is not YAML: {exc}") from exc
     if not isinstance(meta, dict):

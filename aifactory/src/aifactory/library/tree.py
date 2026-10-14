@@ -15,6 +15,7 @@ from pathlib import Path
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.engine.role_registry import Issue
 from aifactory.library.load import check_library_item, library_path
 from aifactory.library.model import ITEM_TYPES, Item, ItemFile, ItemType, check_name
@@ -144,7 +145,7 @@ def _version(kind: ItemType, name: str, own: list[TreeFile], blobs: dict[str, by
     if not all(n in by_name for n in ("agent.yaml", "system.md", "user.md")):
         return None
     try:
-        meta = yaml.safe_load(by_name["agent.yaml"].decode("utf-8"))
+        meta = yamlload.safe_load(by_name["agent.yaml"].decode("utf-8"))
     except (UnicodeDecodeError, yaml.YAMLError):
         return None
     purpose = meta.get("purpose") if isinstance(meta, dict) else None

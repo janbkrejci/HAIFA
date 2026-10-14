@@ -33,6 +33,7 @@ from typing import Any
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.harness import canonical
 from aifactory.harness.codex import CODEX_PATH
 
@@ -72,7 +73,7 @@ def used_harnesses(repo: Path) -> list[str]:
         files += sorted(workflows.glob("*.y*ml"))
     for path in files:
         try:
-            visit(yaml.safe_load(path.read_text(encoding="utf-8")))
+            visit(yamlload.safe_load(path.read_text(encoding="utf-8")))
         except (OSError, UnicodeDecodeError, yaml.YAMLError):
             continue
     return [name for name in LIMITED_HARNESSES if name in found]

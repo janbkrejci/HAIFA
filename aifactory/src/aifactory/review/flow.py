@@ -222,7 +222,7 @@ def _branch_worktree(ctx: _Ctx, branch: str, prefix: str) -> tuple[Path, Path | 
     pgit.remove_worktree(main, temp)
     gitops.ensure_excluded(main, ["/" + worktrees_dir + "/"])
     temp.parent.mkdir(parents=True, exist_ok=True)
-    gitops.git(main, "worktree", "add", "--quiet", str(temp), branch)
+    gitops.git(main, *pgit.PARALLEL_CHECKOUT, "worktree", "add", "--quiet", str(temp), branch)
     return temp, temp
 
 

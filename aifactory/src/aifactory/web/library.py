@@ -13,6 +13,7 @@ from typing import Any
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.library import remote, reseed, share, store
 from aifactory.library.model import ITEM_TYPES
 from aifactory.providers import git
@@ -170,7 +171,7 @@ def _metadata(shown: Mapping[str, Any]) -> dict[str, Any]:
             parts = text.split("---", 2)
             text = parts[1] if len(parts) == 3 and not parts[0].strip() else ""
         try:
-            raw = yaml.safe_load(text)
+            raw = yamlload.safe_load(text)
         except yaml.YAMLError:
             continue
         if isinstance(raw, dict) and isinstance(raw.get("description"), str):

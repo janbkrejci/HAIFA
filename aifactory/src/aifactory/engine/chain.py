@@ -27,6 +27,8 @@ from typing import Optional
 
 import yaml
 
+from aifactory import yamlload  # aifactory 3.1: libyaml parser when available
+
 from . import models, roles
 from .data_types import ChainStep, Recipe
 
@@ -129,7 +131,7 @@ def load_recipe(name: str) -> Recipe:
         available = sorted(p.stem for p in RECIPE_DIR.glob("*.yaml")) if RECIPE_DIR.is_dir() else []
         raise SystemExit(f"no recipe {name!r} at {path} — "
                          f"available: {available or 'none saved yet'}")
-    raw = yaml.safe_load(path.read_text()) or {}
+    raw = yamlload.safe_load(path.read_text()) or {}  # aifactory 3.1: libyaml
     steps = [_parse_step(_token(entry)) for entry in raw.get("steps", [])]
     if not steps:
         raise SystemExit(f"recipe {name!r} has no steps")

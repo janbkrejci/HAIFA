@@ -16,6 +16,7 @@ from pydantic import (
     model_validator,
 )
 
+from aifactory import yamlload
 from aifactory.config.errors import ConfigError, ConfigIssue
 from aifactory.config.source import LOCAL_FILE
 
@@ -391,7 +392,7 @@ def parse_mapping(text: str | None, label: str, issues: list[ConfigIssue]) -> di
     if text is None:
         return {}
     try:
-        data = yaml.safe_load(text)
+        data = yamlload.safe_load(text)
     except yaml.YAMLError as exc:
         issues.append(ConfigIssue(label, f"invalid YAML: {exc}"))
         return None

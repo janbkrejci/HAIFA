@@ -19,7 +19,7 @@ from typing import Any
 
 import yaml
 
-from aifactory import packagedata
+from aifactory import packagedata, yamlload
 from aifactory.engine.role_registry import (
     CodeStepDef,
     Issue,
@@ -586,7 +586,7 @@ def load_workflow(path: Path, roles: RoleRegistry | None = None) -> Workflow:
     except OSError as error:
         raise WorkflowError([Issue("missing_file", str(error), "")]) from error
     try:
-        data = yaml.safe_load(text)
+        data = yamlload.safe_load(text)
     except yaml.YAMLError as error:
         raise WorkflowError([Issue("invalid_yaml", str(error), "")]) from error
     return parse_workflow(data, roles if roles is not None else load_roles(), path)

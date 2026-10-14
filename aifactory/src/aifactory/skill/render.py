@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from aifactory import __version__
+from aifactory import __version__, yamlload
 from aifactory.skill.codes import ERROR_CODES, ISSUE_CODES
 from aifactory.skill.commands import format_commands, iter_commands
 
@@ -75,7 +75,7 @@ def _workflows() -> str:
     for entry in sorted(entries, key=lambda e: e.name.removesuffix(".yaml")):
         stem = entry.name.removesuffix(".yaml")
         try:
-            data = yaml.safe_load(entry.read_text(encoding="utf-8"))
+            data = yamlload.safe_load(entry.read_text(encoding="utf-8"))
         except yaml.YAMLError:
             data = None
         description = data.get("description") if isinstance(data, dict) else None

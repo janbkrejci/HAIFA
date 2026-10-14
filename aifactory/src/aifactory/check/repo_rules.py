@@ -13,6 +13,7 @@ from pathlib import Path, PurePosixPath
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.backlog import Task, effective_workflow, iter_tasks
 from aifactory.check.context import CheckContext
 from aifactory.check.model import Finding, Rule, RuleGroup
@@ -449,7 +450,7 @@ def roles(ctx: CheckContext) -> Iterator[Finding]:
     if text is None:
         return
     try:
-        raw = yaml.safe_load(text)
+        raw = yamlload.safe_load(text)
     except yaml.YAMLError:
         return
     if isinstance(raw, dict) and "code_steps" in raw:

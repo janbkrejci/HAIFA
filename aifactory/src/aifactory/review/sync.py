@@ -252,7 +252,16 @@ def _sync(ctx: _Ctx) -> SyncResult:
         pgit.remove_worktree(ctx.main, check)
         gitops.ensure_excluded(ctx.main, ["/" + worktrees_dir + "/"])
         check.parent.mkdir(parents=True, exist_ok=True)
-        gitops.git(ctx.main, "worktree", "add", "--quiet", "--detach", str(check), start_sha)
+        gitops.git(
+            ctx.main,
+            *pgit.PARALLEL_CHECKOUT,
+            "worktree",
+            "add",
+            "--quiet",
+            "--detach",
+            str(check),
+            start_sha,
+        )
 
         candidates = _candidates(ctx, check, result)
         if not candidates:

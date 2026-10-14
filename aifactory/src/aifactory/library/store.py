@@ -32,7 +32,7 @@ from typing import Any
 
 import yaml
 
-from aifactory import __version__, oscompat
+from aifactory import __version__, oscompat, yamlload
 from aifactory.engine.role_registry import Issue
 from aifactory.home import haifa_home
 from aifactory.library import history as hist
@@ -582,7 +582,7 @@ def read_meta(root: Path, commit: str) -> dict[str, Any]:
     if found is None:
         return {}
     try:
-        raw = yaml.safe_load(git.read_blob(root, found[1]))
+        raw = yamlload.safe_load(git.read_blob(root, found[1]))
     except yaml.YAMLError:
         return {}
     return raw if isinstance(raw, dict) else {}
