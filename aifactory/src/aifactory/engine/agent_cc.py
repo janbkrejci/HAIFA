@@ -361,7 +361,8 @@ def _model_totals(result_event: dict) -> tuple[dict, int]:
 def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None,
         on_spawn: Optional[Callable[[int], None]] = None,
         on_exit: Optional[Callable[[int], None]] = None,
-        on_wait: Optional[Callable[[int, int, str], None]] = None) -> AgentResult:
+        on_wait: Optional[Callable[[int, int, str], None]] = None,
+        _rejoined: bool = False) -> AgentResult:
     """Run one non-interactive Claude Code turn.
 
     `on_spawn(pid)` and `on_exit(pid)` bracket the child process so the caller
@@ -447,6 +448,10 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
             etype = event.get("type")
             if etype == "system" and event.get("subtype") == "init":
                 created = True
+                if not state.started:
+                    # aifactory 3.1: record the conversation as soon as claude opens it;
+                    # a turn killed mid-way (stop, crash, full disk) must still resume it.
+                    state.save(state.totals())
             elif etype == "assistant":
                 message = event.get("message", {}) or {}
                 text = _text_of(message)
@@ -495,6 +500,13 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
     if window:
         result.context_window = window       # what the model actually reported
 
+    if (result.returncode != 0 and not state.started
+            and "is already in use" in stderr and not _rejoined):
+        # aifactory 3.1: the conversation exists but was never recorded (the turn that
+        # opened it died before the state file was written): rejoin it once.
+        state.save(state.totals())
+        return run(request, on_event=on_event, on_spawn=on_spawn, on_exit=on_exit,
+                   on_wait=on_wait, _rejoined=True)
     if result.returncode != 0 and not result.text:
         raise RuntimeError(f"claude exited {result.returncode}: {stderr.strip()[-800:]}")
     return result
