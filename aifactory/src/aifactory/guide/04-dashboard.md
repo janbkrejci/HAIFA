@@ -21,7 +21,7 @@ Limity ukazují poslední hodnoty, které harness sám vrátil při běhu (Claud
 
 - **Kód HAIFA se od spuštění dashboardu změnil:** po aktualizaci nebo změně balíčku jsou zápisy vypnuté, dokud neklikneš na **Restartovat dashboard**.
 - **Konfigurace v `.factory/` má necommitnuté změny:** běhy používají konfiguraci z base, dokud změny necommitneš tlačítkem **Commitnout konfiguraci**.
-- **Backlog má necommitnuté změny:** plovoucí pruh dole na stránce repa se seznamem souborů a tlačítkem **Commitnout backlog**.
+- **Backlog má necommitnuté změny:** červený čip **Necommitnutý backlog** v horní liště stránky repa. Kliknutím otevřeš seznam souborů a tlačítko **Commitnout backlog**.
 
 ## Přehled
 

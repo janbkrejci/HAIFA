@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Everything of one repo page: the config and backlog banners, the live updates and the screen.
+// Everything of one repo page: the config banner, the backlog status (its chip is in the topbar), the live updates and the screen.
 // App.vue keys it by the repo id, so a switch of the repo drops all of it (view data, run
 // cursors, subscriptions, banners) and the new repo starts clean.
 import { computed, onBeforeUnmount, onMounted, watch, type Component } from 'vue'
@@ -49,7 +49,6 @@ const refreshConfig = () => void configStatus.refresh()
 watch(route, refreshConfig)
 const backlogStatus = useBacklogStatus()
 const refreshBacklog = () => void backlogStatus.refresh()
-const commitBacklog = () => void backlogStatus.commit()
 const refreshStatuses = () => {
   refreshConfig()
   refreshBacklog()
@@ -94,17 +93,6 @@ onBeforeUnmount(() => {
   >
     <template #title>Konfigurace v <code>.factory/</code></template>
   </UncommittedBanner>
-  <UncommittedBanner
-    kind="backlog"
-    title="Backlog"
-    commit-label="Commitnout backlog"
-    floating
-    :status="backlogStatus.status.value"
-    :committing="backlogStatus.committing.value"
-    :commit-error="backlogStatus.commitError.value"
-    :pr="backlogStatus.pendingPr.value"
-    @commit="commitBacklog"
-  />
   <main>
     <nav class="screen-tabs" aria-label="Obrazovky repozitáře">
       <a

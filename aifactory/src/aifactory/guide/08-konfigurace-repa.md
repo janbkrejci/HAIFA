@@ -30,7 +30,7 @@ factory config commit
 
 Když base přijímá změny jen přes pull request, nastav repu `base_changes: pr`. Nejlépe hned při přidání repa v dashboardu (**Změny base přes pull request**), později v záložce Nastavení nebo `factory init --base-changes pr`. Factory pak každou svou změnu base pošle pull requestem: instalaci, commit konfigurace, nastavení a přesun položek knihovny, commit backlogu i odebrání repa.
 
-- **`base_pr_merge: manual`:** PR schválí a mergne člověk. Změny backlogu do té doby zůstanou v pracovním stromu a pruh backlogu odkáže na PR. Po mergi použij **Stáhnout konfiguraci z base** (`factory config pull`). Stažení vezme i necommitnuté soubory, které merge přináší beze změny.
+- **`base_pr_merge: manual`:** PR schválí a mergne člověk. Změny backlogu do té doby zůstanou v pracovním stromu a panel čipu **Necommitnutý backlog** v horní liště odkáže na PR. Po mergi použij **Stáhnout konfiguraci z base** (`factory config pull`). Stažení vezme i necommitnuté soubory, které merge přináší beze změny.
 - **`base_pr_merge: auto`:** factory PR hned mergne a posune lokální base. Na Azure DevOps ho nejdřív sama schválí, což repo musí povolit (autor smí schvalovat vlastní změny). Na GitHubu autor vlastní PR schválit nemůže, proto factory merguje s `gh pr merge --admin`, což vyžaduje administrátorská práva k repu. Když merge selže, PR zůstane otevřený a výsledek nese varování.
 
 ## config.yaml

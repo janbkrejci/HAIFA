@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T22
 title: limnit testů - lepší input a další
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -16,3 +16,4 @@ v detailu tasku:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/34 · náklady $3.88

@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TaskForm from './TaskForm.vue'
 import { backlogData, taskNode } from '@/test/backlogFixtures'
-import { chooseOption } from '@/test/select'
+import { chooseOption, selectLabels } from '@/test/select'
+import { resetNamesForTests, setNames } from '@/lib/names'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
 vi.mock('@/lib/api', () => api)
@@ -18,6 +19,7 @@ beforeEach(() => {
 
 afterEach(() => {
   document.body.innerHTML = ''
+  resetNamesForTests()
 })
 
 const data = backlogData()
@@ -67,11 +69,16 @@ describe('TaskForm', () => {
   })
 
   it('emits a new task without empty fields', async () => {
+    setNames({ names: {
+      'M01-S01-T01': { title: 'Schema', level: 'task' },
+      'M01-S01-T02': { title: 'API', level: 'task' },
+    } })
     const wrapper = addForm()
     await chooseOption(wrapper, '[data-test="step"]', 'M02-S01')
     await wrapper.find('[data-test="title"]').setValue(' Filtr ')
     await wrapper.find('[data-test="writes"]').setValue('web/src/\n\nweb/test/\n')
-    await wrapper.find('[data-test="depends"]').setValue('M01-S01-T01, M01-S01-T02')
+    await chooseOption(wrapper, '[data-test="depends"]', 'M01-S01-T01')
+    await chooseOption(wrapper, '[data-test="depends"]', 'M01-S01-T02')
     await wrapper.find('form').trigger('submit')
     expect(wrapper.emitted('submit')?.[0]).toEqual([
       {
@@ -81,6 +88,31 @@ describe('TaskForm', () => {
         depends_on: ['M01-S01-T01', 'M01-S01-T02'],
       },
     ])
+  })
+
+  it('picks the links from the backlog codes, never the task itself', async () => {
+    setNames({ names: {
+      M01: { title: 'Projekt', level: 'project' },
+      'M01-S01': { title: 'Step', level: 'step' },
+      'M01-S01-T01': { title: 'Schema', level: 'task' },
+      'M01-S01-T02': { title: 'API', level: 'task' },
+    } })
+    const wrapper = editForm({ id: 'M01-S01-T02', depends_on: ['M01-S01-T01'], related: [] })
+    expect(await selectLabels(wrapper, '[data-test="depends"]')).toEqual(['M01 · Projekt', 'M01-S01 · Step'])
+    expect(await selectLabels(wrapper, '[data-test="related"]')).toEqual(['M01 · Projekt', 'M01-S01 · Step', 'M01-S01-T01 · Schema'])
+    await chooseOption(wrapper, '[data-test="related"]', 'M01-S01-T01')
+    await wrapper.get('[data-test="unpick-M01-S01-T01"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('submit')?.[0]).toEqual([{ depends_on: [], related: ['M01-S01-T01'] }])
+    wrapper.unmount()
+  })
+
+  it('explains the source and target parameters in a tooltip', () => {
+    const wrapper = addForm()
+    for (const key of ['source', 'target']) {
+      expect(wrapper.find(`[data-test="parameter-hint-${key}"]`).exists()).toBe(true)
+    }
+    expect(wrapper.find('[data-test="parameter-hint-harness"]').exists()).toBe(false)
   })
 
   it('suggests the next free code and previews the full id of a new task', async () => {

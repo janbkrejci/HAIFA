@@ -45,11 +45,11 @@ Panel nahoře ukáže „Připraveno ke spuštění“, nebo co je před spušt�
 
 - **Titulek** a **Kód** (volitelný; jinak další volné číslo `T01`, `T02`…).
 - **Zadání:** co má agent udělat. Piš ho jako zadání pro kolegu: cíl, kontext, kritéria hotového. Zadání je markdown.
-- **Workflow:** posloupnost kroků běhu. Prázdné znamená zděděné z projektu či stepu.
+- **Workflow:** posloupnost kroků běhu. Prázdné znamená zděděné z projektu či stepu. Kouzelná hůlka **Navrhnout workflow** vedle výběru nechá agenta workflow doporučit.
 - **Auto-merge:** po úspěšném review se pull request mergne sám.
 - **Writes:** cesty (jedna na řádek, glob), které smí agenti měnit; nebo **dědit writes**. Bez nastavení na žádné úrovni platí celé repo.
-- **Závisí na** a **Související:** vazby na jiné tasky nebo celé projekty a stepy.
-- **Další parametry** (prázdné = zděděno): harness, model a thinking pro všechny agenty tasku a další.
+- **Závisí na** a **Související:** vazby na jiné tasky nebo celé projekty a stepy. Vybírají se ze seznamu backlogu, vybrané se ukážou jako čipy s křížkem k odebrání.
+- **Další parametry** (prázdné = zděděno): harness, model a thinking pro všechny agenty tasku a další. **Zdroj** (`source`) a **Cíl** (`target`) jsou volné texty, odkud práce vychází a kam má výsledek směřovat. Agent je dostane v hlavičce zadání, HAIFA je nijak nekontroluje.
 
 Tlačítko **Navrhnout parametry tasku** nechá agenta navrhnout parametry podle zadání; návrh převezmeš tlačítkem **Použít návrh do formuláře**. **Navrhnout workflow** doporučí existující workflow, nebo navrhne nové včetně YAML. Oba pomocníci ukážou cenu dotazu.
 
@@ -65,7 +65,7 @@ Nastavení projektu či stepu upravíš v jeho **Nastavení** (tabulka s platnou
 
 ## Commit backlogu
 
-Úpravy z dashboardu i z `factory task add`/`edit` se zapisují do souborů v pracovním stromu. **Běhy čtou backlog z base**, proto změny commitni: tlačítkem **Commitnout backlog** v pruhu dole, nebo `factory backlog commit`. Commit obsahuje jen soubory backlogu, vyžaduje hlavní checkout na větvi base a má-li repo remote, odešle ho.
+Úpravy z dashboardu i z `factory task add`/`edit` se zapisují do souborů v pracovním stromu. **Běhy čtou backlog z base**, proto změny commitni: tlačítkem **Commitnout backlog** pod červeným čipem **Necommitnutý backlog** v horní liště, nebo `factory backlog commit`. Commit obsahuje jen soubory backlogu, vyžaduje hlavní checkout na větvi base a má-li repo remote, odešle ho.
 
 ## Soubor tasku
 

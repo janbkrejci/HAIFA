@@ -23,6 +23,7 @@ import ProblemsView from './views/ProblemsView.vue'
 import GuideView from './views/GuideView.vue'
 import OverviewReadiness from './components/OverviewReadiness.vue'
 import UpdateChip from './components/UpdateChip.vue'
+import UncommittedBanner from './components/UncommittedBanner.vue'
 import LibraryChip from './components/LibraryChip.vue'
 import { provideReadiness } from './lib/readiness'
 import ReposAddView from './views/ReposAddView.vue'
@@ -112,8 +113,9 @@ const limits = useLimits(limitsRepo)
 const harnessDialog = ref(false)
 function openHarnesses() { harnessDialog.value = true }
 const backlogStatus = useBacklogStatus()
-/** The uncommitted-backlog bar is shown: the page gets room under its content for it. */
-const backlogDirty = computed(() => page.value === 'repo' && backlogStatus.status.value?.clean === false)
+/** The red chip of the uncommitted backlog sits in the topbar of a repo page (RepoScreen refreshes it). */
+const showBacklogChip = computed(() => page.value === 'repo' && repoState.value === 'ok')
+const commitBacklog = () => void backlogStatus.commit()
 
 onMounted(async () => {
   window.addEventListener('harness-settings-open', openHarnesses)
@@ -135,7 +137,7 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="app" :class="{ 'backlog-dirty': backlogDirty }">
+  <div class="app">
     <header class="topbar">
       <div class="topbar-left">
         <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
@@ -147,6 +149,18 @@ onBeforeUnmount(() => {
       </div>
 
       <div class="topbar-right">
+        <UncommittedBanner
+          v-if="showBacklogChip"
+          kind="backlog"
+          title="Backlog"
+          commit-label="Commitnout backlog"
+          chip
+          :status="backlogStatus.status.value"
+          :committing="backlogStatus.committing.value"
+          :commit-error="backlogStatus.commitError.value"
+          :pr="backlogStatus.pendingPr.value"
+          @commit="commitBacklog"
+        />
         <UpdateChip />
         <OverviewReadiness chip />
         <LibraryChip />
@@ -242,10 +256,6 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.backlog-dirty :deep(main) {
-  padding-bottom: 120px;
-}
-
 .page-loading {
   display: flex;
   align-items: center;

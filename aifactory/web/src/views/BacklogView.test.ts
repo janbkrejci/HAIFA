@@ -320,7 +320,7 @@ describe('BacklogView', () => {
     const wrapper = mount(BacklogView)
     await flushPromises()
     await wrapper.find('[data-test="title"]').setValue('Broken')
-    await wrapper.find('[data-test="depends"]').setValue('NOPE')
+    await chooseOption(wrapper, '[data-test="depends"]', 'M01-S01-T01')
     await wrapper.find('form').trigger('submit')
     await flushPromises()
     expect(wrapper.find('[data-test="write-error"] [data-issue="unknown_ref"]').exists()).toBe(true)

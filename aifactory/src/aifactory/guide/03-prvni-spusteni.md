@@ -57,7 +57,7 @@ Na záložce **Backlog**:
 1. **Nový projekt:** kód (například `WEB`), název a popis, **Založit**.
 2. **Nový step** v projektu: kód (například `S01`), název, **Založit**.
 3. **Nový task** ve stepu: titulek, zadání (co má agent udělat), **Workflow** (například `plan-build-test`) a případně **Writes**, tedy cesty, které smí agent měnit.
-4. **Commitnout backlog:** pruh dole na stránce ukáže necommitnuté soubory backlogu. Běhy čtou backlog z base, takže ho commitni.
+4. **Commitnout backlog:** červený čip **Necommitnutý backlog** v horní liště ukáže necommitnuté soubory backlogu. Běhy čtou backlog z base, takže ho commitni.
 
 Workflow nemusíš nastavovat u každého tasku: nastav ho jednou v projektu nebo stepu a tasky ho zdědí. Pomoc s výběrem nabídne tlačítko **Navrhnout workflow** ve formuláři tasku.
 
