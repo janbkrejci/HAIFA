@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T19
 title: Test harnessu pi na Windows spouští codex.exe a pi bez PI_PATH nevidí modely
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -23,3 +23,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/32 · náklady $1.81
