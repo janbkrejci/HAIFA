@@ -1,8 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TaskDetail from './TaskDetail.vue'
+import TaskForm from './TaskForm.vue'
 import { runCheck, taskDetail } from '@/test/backlogFixtures'
-import { chooseOption } from '@/test/select'
 import { answerDialog, openDialog } from '@/test/modal'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
@@ -26,8 +26,7 @@ describe('TaskDetail', () => {
       reason: 'Analysis first', outline: [{ name: 'plan' }],
     } })
     const wrapper = detailWrapper()
-    const opener = wrapper.findAll('button').find((button) => button.text() === 'Upravit a navrhnout workflow')!
-    await opener.trigger('click')
+    await wrapper.get('[data-test="edit"]').trigger('click')
     await wrapper.get('[data-test="workflow-advice"] button').trigger('click')
     await flushPromises()
     const detail = taskDetail()
@@ -41,12 +40,42 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['done', 'cancelled', 'running', 'in review'] as const)('disables advice for %s tasks', (state) => {
+  it.each(['done', 'cancelled', 'running', 'in review'] as const)('disables Vylepšit agentem for %s tasks', (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
-    const opener = wrapper.findAll('button').find((button) => button.text() === 'Upravit a navrhnout workflow')!
-    expect(opener.attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="improve"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it('Vylepšit agentem opens the edit form and starts the agent there', async () => {
+    api.postApi.mockReset().mockResolvedValue({ job_id: 'improve-job' })
+    api.getApi.mockReset().mockResolvedValue({ state: 'running', recommendation: null })
+    const wrapper = detailWrapper()
+    const button = wrapper.get('[data-test="improve"]')
+    expect(button.text()).toContain('Vylepšit agentem')
+    expect(button.attributes('disabled')).toBeUndefined()
+    await button.trigger('click')
+    await flushPromises()
+    const form = wrapper.findComponent(TaskForm)
+    expect(form.exists()).toBe(true)
+    expect(form.props('autoImprove')).toBe(true)
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/task-advice', expect.objectContaining({ task_id: 'M01-S01-T02' }), expect.any(AbortSignal))
+    expect(api.postApi.mock.calls[0][1]).not.toHaveProperty('harness')
+    // one improve button on the page: the form's
+    expect(wrapper.findAll('[data-test="improve"]')).toHaveLength(1)
+    expect(form.find('[data-test="improve"]').exists()).toBe(true)
+    await wrapper.get('[data-test="cancel"]').trigger('click')
+    await wrapper.get('[data-test="edit"]').trigger('click')
+    expect(wrapper.findComponent(TaskForm).props('autoImprove')).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('has no workflow or link inputs in the read-only view', () => {
+    const wrapper = detailWrapper()
+    expect(wrapper.find('input').exists()).toBe(false)
+    expect(wrapper.find('[data-test="workflow-select"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="assign"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -214,23 +243,11 @@ describe('TaskDetail', () => {
   it('emits link changes', async () => {
     const wrapper = detailWrapper()
     await wrapper.find('[data-test="unlink-M01-S01-T01"]').trigger('click')
-    await wrapper.find('[data-test="link-input"]').setValue('M02-S01-T01')
-    await wrapper.find('[data-test="link-add"]').trigger('click')
     await wrapper.find('[data-test="unrelate-M02-S01-T01"]').trigger('click')
     expect(wrapper.emitted('link')).toEqual([
       [{ depends_on: ['M01-S01-T01'], remove: true }],
-      [{ depends_on: ['M02-S01-T01'] }],
       [{ related: ['M02-S01-T01'], remove: true }],
     ])
-  })
-
-  it('assigns or clears the workflow', async () => {
-    const wrapper = detailWrapper()
-    await chooseOption(wrapper, '[data-test="workflow-select"]', 'plan')
-    await wrapper.find('[data-test="assign"]').trigger('click')
-    await chooseOption(wrapper, '[data-test="workflow-select"]', '')
-    await wrapper.find('[data-test="assign"]').trigger('click')
-    expect(wrapper.emitted('assign-workflow')).toEqual([['plan'], [null]])
   })
 
   it('opens the edit form and emits edit', async () => {
@@ -363,13 +380,5 @@ describe('TaskDetail', () => {
     await wrapper.get('[data-test="edit"]').trigger('click')
     expect(wrapper.find('.mdview').exists()).toBe(false)
     expect(wrapper.find('form').exists()).toBe(true)
-  })
-
-  it('adds a dependency on Enter', async () => {
-    const wrapper = detailWrapper()
-    const input = wrapper.get('[data-test="link-input"]')
-    await input.setValue('M02-S01-T01')
-    await input.trigger('keydown', { key: 'Enter' })
-    expect(wrapper.emitted('link')).toEqual([[{ depends_on: ['M02-S01-T01'] }]])
   })
 })

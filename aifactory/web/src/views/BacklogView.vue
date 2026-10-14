@@ -533,13 +533,6 @@ async function onLink(input: LinkInput) {
   await afterDetailWrite(await write(linkActionKey(input), () => linkTask(id, input)))
 }
 
-async function onAssign(workflow: string | null) {
-  const id = taskId.value
-  if (!id) return
-  const input: EditTaskInput = workflow ? { workflow } : { clear_workflow: true }
-  await afterDetailWrite(await write('assign', () => editTask(id, input)))
-}
-
 /** A switch in the tree was written: load the tree again. */
 function reloadTree() {
   void loadList()
@@ -778,7 +771,6 @@ watch(
         @cancel-task="onCancelTask"
         @exclude="onExclude"
         @link="onLink"
-        @assign-workflow="onAssign"
         @open-run="openRun"
         @run-start="onRunStart"
         @run-cancel="closeRun"

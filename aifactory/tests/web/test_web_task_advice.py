@@ -234,6 +234,40 @@ def test_advisor_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
     assert advisors[2]["harness"] == "codex" and advisors[2]["model"] == "gpt-5.5"
 
 
+def test_advisor_inherits_task_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Without an explicit choice the advisor is the agent the task itself would run with."""
+    from advice_fixture import git
+
+    repo = make_repo(tmp_path / "repo")
+    (repo / "backlog/P01/S01/index.md").write_text(
+        "---\nid: P01-S01\ntitle: Step\nharness: codex\nmodel: gpt-5.5\nthinking: high\n"
+        "---\nStep context\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    git(repo, "commit", "-qam", "step defaults")
+    machine_settings(monkeypatch)
+    seen: list[dict[str, Any]] = []
+
+    def runner(
+        root: Path, ctx: dict[str, Any], identifier: str, event: threading.Event
+    ) -> dict[str, Any]:
+        seen.append(ctx)
+        return proposal()
+
+    manager = AdviceManager(runner, task_parameters=True)
+    try:
+        job = manager.start(repo, {"task_id": "P01-S01-T01", "draft": {"body": "Live body"}})
+        assert job["advisor"] == {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+        for _ in range(200):
+            if seen:
+                break
+            time.sleep(0.01)
+    finally:
+        manager.close()
+    assert seen[0]["advisor"] == {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+
+
 def test_available_tasks_share_the_context_budget(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

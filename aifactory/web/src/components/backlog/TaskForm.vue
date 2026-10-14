@@ -5,6 +5,7 @@ import {
   CODE_RE,
   INHERIT_LABEL,
   SETTING_LABELS,
+  THINKING_LEVELS,
   autoMode,
   levelLabel,
   levelNoun,
@@ -25,7 +26,7 @@ import SelectMenu from '@/components/ui/SelectMenu.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import IssueList from './IssueList.vue'
 import { useHarnessChoices } from '@/lib/machineHarnesses'
-import TaskAdvice, { type TaskProposal } from './TaskAdvice.vue'
+import ImproveButton, { type TaskProposal } from './ImproveButton.vue'
 import WorkflowAdvice, { type Recommendation } from './WorkflowAdvice.vue'
 
 const props = defineProps<{
@@ -44,6 +45,8 @@ const props = defineProps<{
   initialStep?: string | null
   /** Ids of the existing tasks: the suggested code of a new task follows them. */
   taskIds?: string[]
+  /** Start "Vylepšit agentem" right away (the detail's improve button opened the form). */
+  autoImprove?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -89,6 +92,10 @@ function parameterText(key: string): string {
   if (value == null) return ''
   return String(value)
 }
+const thinkingOptions: SelectOption[] = [
+  { value: '', label: INHERIT_LABEL },
+  ...THINKING_LEVELS.map((level) => ({ value: level, label: level })),
+]
 const parameterFlagOptions: SelectOption[] = [
   { value: '', label: INHERIT_LABEL },
   { value: 'true', label: 'Zapnuto' },
@@ -125,7 +132,19 @@ const parameterDraft = computed(() => ({
     ...(props.mode === 'edit' ? { auto_merge: autoMerge.value === 'inherit' ? null : autoMerge.value === 'on' } : {}),
   },
 }))
+/** "Další nastavení" opens when the task uses any of them (edit) or the agent changed one. */
+function hasOwnParameters(values: Record<string, unknown> | null | undefined): boolean {
+  return Object.values(values ?? {}).some((v) => v != null && v !== '')
+}
+const advancedOpen = ref(
+  props.mode === 'edit' && !!task && (
+    initialStatus !== 'todo' || task.own_auto_merge != null || initialWrites.length > 0
+    || (task.depends_on ?? []).length > 0 || (task.related ?? []).length > 0
+    || hasOwnParameters(task.own_parameters)
+  ),
+)
 function applyParameters(result: TaskProposal) {
+  const before = JSON.stringify([writesText.value, inheritWrites.value, dependsText.value, relatedText.value, autoMerge.value])
   parameters.value = result.parameters
   if (result.parameters && 'auto_merge' in result.parameters) autoMerge.value = autoMode(result.parameters.auto_merge as boolean | null)
   title.value = result.title
@@ -136,6 +155,8 @@ function applyParameters(result: TaskProposal) {
   relatedText.value = result.related.join(', ')
   workflow.value = result.workflow ?? ''
   advice.value = null
+  const after = JSON.stringify([writesText.value, inheritWrites.value, dependsText.value, relatedText.value, autoMerge.value])
+  if (before !== after || hasOwnParameters(result.parameters)) advancedOpen.value = true
 }
 function applyAdvice(result: Recommendation, id: string) {
   advice.value = { result, id }
@@ -255,138 +276,146 @@ function onSubmit() {
 
 <template>
   <form class="task-form" :data-mode="mode" @submit.prevent="onSubmit">
-    <h2 v-if="mode === 'add'">Nový {{ taskNoun }}</h2>
-    <h2 v-else>
-      Upravit {{ task?.id ?? '' }}
-    </h2>
+    <div class="form-head">
+      <h2 v-if="mode === 'add'">Nový {{ taskNoun }}</h2>
+      <h2 v-else>Upravit {{ task?.id ?? '' }}</h2>
+      <ImproveButton
+        v-if="!noSteps"
+        :draft="parameterDraft"
+        :task-id="task?.id"
+        :disabled="busy || adviceBusy"
+        :blocker="adviceBlocker"
+        :autostart="autoImprove"
+        @busy="parameterBusy = $event"
+        @result="applyParameters"
+      />
+    </div>
 
     <p v-if="noSteps" class="no-steps" data-test="no-steps">
       {{ levelLabel(level.task.value) }} patří do {{ levelNoun(level.step.value, 'gen') }}, zatím žádný není.
       <a :href="newStepHref()" data-test="no-steps-link">Založit {{ stepNoun }}</a>
     </p>
-    <label v-else-if="mode === 'add'">
-      {{ stepLabel }}
-      <SelectMenu v-model="step" data-test="step" :label="stepLabel" :options="stepOptions" />
-    </label>
 
-    <label>
-      Titulek
-      <input v-model="title" data-test="title" type="text" required />
-    </label>
+    <fieldset class="fields" :disabled="parameterBusy" data-test="fields">
+      <div v-if="mode === 'add' && !noSteps" class="pair">
+        <label>
+          {{ stepLabel }}
+          <SelectMenu v-model="step" data-test="step" :label="stepLabel" :options="stepOptions" />
+        </label>
+        <label>
+          Kód (volitelné)
+          <input v-model="taskId" data-test="id" type="text" :placeholder="nextTaskCode" autocomplete="off" />
+          <span v-if="!taskCodeValid" class="hint error" data-test="id-invalid">Kód smí obsahovat jen písmena, číslice, „.“ a „_“.</span>
+          <span v-else-if="taskIdPreview" class="hint faint" data-test="id-preview">Id: <span class="mono">{{ taskIdPreview }}</span></span>
+        </label>
+      </div>
 
-    <label v-if="mode === 'add'">
-      Kód (volitelné)
-      <input v-model="taskId" data-test="id" type="text" :placeholder="nextTaskCode" autocomplete="off" />
-      <span v-if="!taskCodeValid" class="hint error" data-test="id-invalid">Kód smí obsahovat jen písmena, číslice, „.“ a „_“.</span>
-      <span v-else-if="taskIdPreview" class="hint faint" data-test="id-preview">Id: <span class="mono">{{ taskIdPreview }}</span></span>
-    </label>
-
-    <label v-if="mode === 'edit'">
-      Status
-      <SelectMenu
-        v-model="status"
-        data-test="status"
-        label="Status"
-        :options="statusOptions"
-        :disabled="isDone"
-      />
-      <span v-if="isDone" class="hint faint" data-test="done-note">
-        Hotový {{ taskNoun }} mění jen schválení PR.
-      </span>
-    </label>
-
-    <label>
-      Workflow
-      <SelectMenu v-model="workflow" data-test="workflow" label="Workflow" :options="workflowOptions" />
-    </label>
-
-    <label>
-      Zadání
-      <textarea v-model="body" data-test="body" rows="6" />
-    </label>
-
-    <p v-if="adviceBlocker" class="hint faint" data-test="advice-blocker">
-      Návrhy agenta: {{ adviceBlocker }}
-    </p>
-
-    <TaskAdvice
-      :draft="parameterDraft"
-      :task-id="task?.id"
-      :disabled="busy || adviceBusy || !!adviceBlocker"
-      @busy="parameterBusy = $event"
-      @result="applyParameters"
-    />
-
-    <WorkflowAdvice
-      :draft="adviceDraft"
-      :task-id="task?.id"
-      :disabled="busy || parameterBusy || !!adviceBlocker"
-      @busy="adviceBusy = $event"
-      @result="applyAdvice"
-      @invalidate="advice = null"
-    />
-
-    <label v-if="mode === 'edit'">
-      Auto-merge
-      <SelectMenu
-        v-model="autoMerge"
-        data-test="auto-merge"
-        label="Auto-merge"
-        :options="autoMergeOptions"
-      />
-      <span class="hint faint">Vypni u {{ taskGen }}, který mění hlídač nebo oprávnění.</span>
-    </label>
-
-    <label>
-      Writes
-      <textarea
-        v-model="writesText"
-        data-test="writes"
-        rows="3"
-        placeholder="jedna cesta na řádek"
-        :disabled="mode === 'edit' && inheritWrites"
-      />
-    </label>
-    <label v-if="mode === 'edit'" class="check">
-      <input v-model="inheritWrites" data-test="inherit-writes" type="checkbox" />
-      dědit writes
-    </label>
-
-    <div class="relationships">
       <label>
-        Závisí na
-        <input v-model="dependsText" data-test="depends" type="text" placeholder="M01-S01-T01, …" />
+        Titulek
+        <input v-model="title" data-test="title" type="text" required />
       </label>
-      <label>
-        Související
-        <input v-model="relatedText" data-test="related" type="text" placeholder="M01-S01-T01, …" />
-      </label>
-    </div>
 
-    <details data-test="task-parameters" :open="!!parameters">
-      <summary>Další parametry (prázdné = zděděno)</summary>
-      <label v-for="key in visibleParameters" :key="key" :data-parameter="key">
-        <span>{{ SETTING_LABELS[key] ?? key }} <code class="key">{{ key }}</code></span>
-        <SelectMenu
-          v-if="key === 'harness'" :model-value="parameterText(key)" :options="harnessOptions" label="Harness tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
-        <SelectMenu v-else-if="key === 'model'" :model-value="parameterText(key)" :options="modelOptions(parameterText('harness') || projectHarness)" label="Model tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
-        <SelectMenu
-          v-else-if="['auto_continue', 'auto_merge'].includes(key)"
-          :model-value="parameterText(key)"
-          :data-test="`parameter-${key}`"
-          :label="SETTING_LABELS[key] ?? key"
-          :options="parameterFlagOptions"
-          @update:model-value="setParameterText(key, $event)"
-        />
-        <input
-          v-else
-          :data-test="`parameter-${key}`"
-          :type="key === 'test_timeout' ? 'number' : 'text'"
-          :value="parameterText(key)"
-          @input="setParameter(key, $event)"
-        />
+      <label>
+        Zadání
+        <textarea v-model="body" data-test="body" rows="14" />
       </label>
-    </details>
+
+      <label>
+        Workflow
+        <SelectMenu v-model="workflow" data-test="workflow" label="Workflow" :options="workflowOptions" />
+      </label>
+
+      <WorkflowAdvice
+        :draft="adviceDraft"
+        :task-id="task?.id"
+        :disabled="busy || parameterBusy || !!adviceBlocker"
+        @busy="adviceBusy = $event"
+        @result="applyAdvice"
+        @invalidate="advice = null"
+      />
+
+      <details data-test="advanced" :open="advancedOpen" @toggle="advancedOpen = ($event.target as HTMLDetailsElement).open">
+        <summary>Další nastavení</summary>
+        <div class="advanced">
+          <label v-if="mode === 'edit'">
+            Status
+            <SelectMenu
+              v-model="status"
+              data-test="status"
+              label="Status"
+              :options="statusOptions"
+              :disabled="isDone"
+            />
+            <span v-if="isDone" class="hint faint" data-test="done-note">
+              Hotový {{ taskNoun }} mění jen schválení PR.
+            </span>
+          </label>
+
+          <label v-if="mode === 'edit'">
+            Auto-merge
+            <SelectMenu
+              v-model="autoMerge"
+              data-test="auto-merge"
+              label="Auto-merge"
+              :options="autoMergeOptions"
+            />
+            <span class="hint faint">Vypni u {{ taskGen }}, který mění hlídač nebo oprávnění.</span>
+          </label>
+
+          <label>
+            Writes
+            <textarea
+              v-model="writesText"
+              data-test="writes"
+              rows="3"
+              placeholder="jedna cesta na řádek"
+              :disabled="mode === 'edit' && inheritWrites"
+            />
+          </label>
+          <label v-if="mode === 'edit'" class="check">
+            <input v-model="inheritWrites" data-test="inherit-writes" type="checkbox" />
+            dědit writes
+          </label>
+
+          <div class="pair">
+            <label>
+              Závisí na
+              <input v-model="dependsText" data-test="depends" type="text" placeholder="M01-S01-T01, …" />
+            </label>
+            <label>
+              Související
+              <input v-model="relatedText" data-test="related" type="text" placeholder="M01-S01-T01, …" />
+            </label>
+          </div>
+
+          <div class="parameters" data-test="task-parameters">
+            <h4>Parametry (prázdné = zděděno)</h4>
+            <label v-for="key in visibleParameters" :key="key" :data-parameter="key">
+              <span>{{ SETTING_LABELS[key] ?? key }} <code class="key">{{ key }}</code></span>
+              <SelectMenu
+                v-if="key === 'harness'" :model-value="parameterText(key)" :options="harnessOptions" label="Harness tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
+              <SelectMenu v-else-if="key === 'model'" :model-value="parameterText(key)" :options="modelOptions(parameterText('harness') || projectHarness)" label="Model tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
+              <SelectMenu v-else-if="key === 'thinking'" :model-value="parameterText(key)" :options="thinkingOptions" :label="SETTING_LABELS[key] ?? key" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
+              <SelectMenu
+                v-else-if="['auto_continue', 'auto_merge'].includes(key)"
+                :model-value="parameterText(key)"
+                :data-test="`parameter-${key}`"
+                :label="SETTING_LABELS[key] ?? key"
+                :options="parameterFlagOptions"
+                @update:model-value="setParameterText(key, $event)"
+              />
+              <input
+                v-else
+                :data-test="`parameter-${key}`"
+                :type="key === 'test_timeout' ? 'number' : 'text'"
+                :value="parameterText(key)"
+                @input="setParameter(key, $event)"
+              />
+            </label>
+          </div>
+        </div>
+      </details>
+    </fieldset>
 
     <div class="actions">
       <button
@@ -411,7 +440,7 @@ function onSubmit() {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-width: 720px;
+  max-width: 900px;
   padding: 18px;
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -419,8 +448,48 @@ function onSubmit() {
 }
 
 h2 {
-  margin: 0 0 4px;
+  margin: 0;
   font-size: 18px;
+}
+
+.form-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.fields {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.advanced,
+.parameters {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.advanced {
+  margin-top: 12px;
+}
+
+h4 {
+  margin: 4px 0 0;
+  font-size: 14px;
+  color: var(--faint);
 }
 
 label {
@@ -477,16 +546,6 @@ code.key {
 summary {
   cursor: pointer;
   color: var(--dim);
-}
-
-details[data-test='task-parameters'] {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-details[data-test='task-parameters'] > label {
-  margin-top: 8px;
 }
 
 .actions {

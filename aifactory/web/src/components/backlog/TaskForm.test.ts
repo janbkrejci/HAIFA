@@ -174,15 +174,83 @@ describe('TaskForm', () => {
     expect(wrapper.get('[data-test="no-steps-link"]').text()).toBe('Založit step')
   })
 
-  it('puts the task text before the AI buttons and says why they wait', async () => {
+  it('puts Vylepšit agentem at the top and says why it waits', async () => {
     const wrapper = addForm()
-    const body = wrapper.get('[data-test="body"]').element
-    const advice = wrapper.get('[data-test="task-advice"]').element
-    expect(body.compareDocumentPosition(advice) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(wrapper.get('[data-test="advice-blocker"]').text()).toContain('Vyplň titulek.')
+    const improve = wrapper.get('[data-test="improve"]')
+    const title = wrapper.get('[data-test="title"]').element
+    expect(improve.element.compareDocumentPosition(title) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(improve.attributes('disabled')).toBeDefined()
+    expect(wrapper.find('[data-test="advice-blocker"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="workflow-advice"] button').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-test="title"]').setValue('Nový')
-    expect(wrapper.find('[data-test="advice-blocker"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="improve"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('keeps the rarely used fields in a collapsed Další nastavení', () => {
+    const fresh = addForm()
+    const details = fresh.get('details[data-test="advanced"]')
+    expect(details.attributes('open')).toBeUndefined()
+    for (const field of ['writes', 'depends', 'related', 'task-parameters']) {
+      expect(details.find(`[data-test="${field}"]`).exists()).toBe(true)
+    }
+    const plain = editForm({ own_writes: [], depends_on: [], related: [], own_auto_merge: null })
+    expect(plain.get('details[data-test="advanced"]').attributes('open')).toBeUndefined()
+    const custom = editForm({ own_writes: ['src/'] })
+    expect(custom.get('details[data-test="advanced"]').attributes('open')).toBeDefined()
+  })
+
+  it('applies the agent proposal at once, locks the fields while it runs and opens Další nastavení', async () => {
+    const proposal = {
+      title: 'Improved task', body: 'Acceptance criteria', writes: ['src/'],
+      depends_on: ['M01-S01-T01'], related: [], workflow: 'plan', reason: 'Clear scope',
+      parameters: { test_timeout: 120 }, usage: { tokens: 5, cost_usd: 0.01 },
+    }
+    api.postApi.mockResolvedValue({ job_id: 'improve-job' })
+    api.getApi.mockResolvedValue({ state: 'running', recommendation: null })
+    vi.useFakeTimers()
+    const wrapper = addForm({ initialTitle: 'Original' })
+    await wrapper.get('[data-test="improve"]').trigger('click')
+    await flushPromises()
+    expect(api.postApi.mock.calls[0]?.[1]).not.toHaveProperty('harness')
+    expect(wrapper.get('fieldset[data-test="fields"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="save"]').attributes('disabled')).toBeDefined()
+    api.getApi.mockResolvedValue({ state: 'succeeded', recommendation: proposal })
+    await vi.advanceTimersByTimeAsync(1000)
+    await flushPromises()
+    vi.useRealTimers()
+    expect(wrapper.get('fieldset[data-test="fields"]').attributes('disabled')).toBeUndefined()
+    expect((wrapper.get('[data-test="title"]').element as HTMLInputElement).value).toBe('Improved task')
+    expect((wrapper.get('[data-test="body"]').element as HTMLTextAreaElement).value).toBe('Acceptance criteria')
+    expect(wrapper.get('details[data-test="advanced"]').attributes('open')).toBeDefined()
+    expect(wrapper.get('[data-test="improve-note"]').text()).toContain('Clear scope')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
+      step: 'M01-S01', title: 'Improved task', body: 'Acceptance criteria', writes: ['src/'],
+      depends_on: ['M01-S01-T01'], workflow: 'plan', parameters: { test_timeout: 120 },
+    })
+    wrapper.unmount()
+  })
+
+  it('starts the agent on mount with autoImprove', async () => {
+    api.getApi.mockResolvedValue({ state: 'running', recommendation: null })
+    vi.useFakeTimers()
+    const wrapper = mount(TaskForm, { props: {
+      mode: 'edit', steps: [], workflows: data.workflows, task: taskNode(), taskBody: 'Body',
+      busy: false, error: null, autoImprove: true,
+    } })
+    await flushPromises()
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/task-advice', expect.objectContaining({ task_id: taskNode().id }), expect.any(AbortSignal))
+    expect(wrapper.get('[data-test="improve"]').attributes('aria-busy')).toBe('true')
+    wrapper.unmount()
+    vi.useRealTimers()
+  })
+
+  it('sends a chosen thinking level', async () => {
+    const wrapper = addForm()
+    await wrapper.get('[data-test="title"]').setValue('Nový')
+    await chooseOption(wrapper, '[data-test="parameter-thinking"]', 'high')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({ parameters: { thinking: 'high' } })
   })
 
   it('offers the parameters without an AI proposal, with Czech labels', async () => {
