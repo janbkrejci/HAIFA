@@ -94,11 +94,6 @@ function Get-Sha256([string]$Path) {
     return (($bytes | ForEach-Object { $_.ToString('x2') }) -join '')
 }
 
-function Test-GitValue([string]$Key) {
-    $value = git config --get $Key
-    return ($LASTEXITCODE -eq 0) -and [bool]("$value".Trim())
-}
-
 Set-Location $PSScriptRoot
 Write-Host "Installing HAIFA $Version"
 
@@ -119,19 +114,6 @@ foreach ($line in Get-Content -LiteralPath 'SHA256SUMS') {
 Step 'Checking dependencies'
 foreach ($dep in $Dependencies) {
     Install-Dependency $dep[0] $dep[1] $dep[2]
-}
-
-Step 'Checking git identity'
-foreach ($pair in @(@('user.name', 'Your name for git commits'), @('user.email', 'Your e-mail for git commits'))) {
-    if (Test-GitValue $pair[0]) {
-        Write-Host "  $($pair[0]) ok"
-        continue
-    }
-    $value = Read-Host "  $($pair[1])"
-    if (-not "$value".Trim()) {
-        Fail "git $($pair[0]) is not set; run: git config --global $($pair[0]) <value>"
-    }
-    Invoke-Native "git config --global $($pair[0])" { git config --global $pair[0] "$value".Trim() }
 }
 
 Step 'Installing factory'
