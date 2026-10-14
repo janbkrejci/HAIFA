@@ -98,8 +98,14 @@ def run_probe(name: str, model: str, thinking: str | None = None) -> dict[str, A
             else:
                 command[-1:-1] = ["--thinking", thinking]
         try:
+            if name == "codex":
+                # Only Codex has a native executable behind its npm shim; launch_command
+                # would turn pi.cmd into codex.exe.
+                command = launch_command(command)
+            elif name == "pi":
+                command[0] = agent_pi.pi_executable()  # the same binary as a run
             result = subprocess.run(
-                launch_command(command),
+                command,
                 cwd=folder,
                 env=operator_env(),
                 stdin=subprocess.DEVNULL,

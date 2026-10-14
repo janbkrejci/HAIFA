@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import time
 from functools import lru_cache
@@ -31,6 +32,16 @@ from .data_types import PiRequest, PiResult
 from .utils import env_flag, now_iso, operator_env, prompt_file, send_stdin
 
 PI_PATH = os.environ.get("PI_PATH", "pi")
+
+
+# aifactory 3.2: CreateProcess does not resolve npm's Windows shim (`pi.cmd`) from a
+# bare name, so on Windows the binary is looked up on PATH; the listing and the run
+# then work without PI_PATH set.
+def pi_executable() -> str:
+    """The pi binary to spawn: PI_PATH, resolved on PATH under Windows."""
+    if os.name == "nt":
+        return shutil.which(PI_PATH) or PI_PATH
+    return PI_PATH
 
 # pi has no way to forbid a shell command: `disallowed_commands` is not passed
 # on, and HAIFA reports that at `factory check` and when a run starts.
@@ -95,7 +106,7 @@ def _pi_catalog() -> list[tuple[str, str, int]]:
     """Read pi's merged catalog, including built-in providers and custom models."""
     try:
         result = subprocess.run(
-            [PI_PATH, "--list-models"], capture_output=True, text=True,
+            [pi_executable(), "--list-models"], capture_output=True, text=True,
             timeout=30, env=operator_env(), check=False, encoding="utf-8",
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -120,7 +131,7 @@ def _pi_catalog() -> list[tuple[str, str, int]]:
 def _listed_providers(*args: str) -> set[str]:
     try:
         result = subprocess.run(
-            [PI_PATH, *args, "--list-models"], capture_output=True, text=True,
+            [pi_executable(), *args, "--list-models"], capture_output=True, text=True,
             timeout=30, env=operator_env(), check=False, encoding="utf-8",
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -134,7 +145,7 @@ def _package_entries() -> list[str]:
     """The extension files declared (`pi.extensions` in package.json) by installed pi packages."""
     try:
         result = subprocess.run(
-            [PI_PATH, "list"], capture_output=True, text=True,
+            [pi_executable(), "list"], capture_output=True, text=True,
             timeout=30, env=operator_env(), check=False, encoding="utf-8",
         )
     except (OSError, subprocess.TimeoutExpired):
@@ -370,7 +381,7 @@ def _attempt(request: PiRequest, on_event: Optional[Callable[[dict], None]] = No
     """
     provider, model_id = resolve_model(request.model)
     cmd = [
-        PI_PATH, "-p", "--mode", "json",
+        pi_executable(), "-p", "--mode", "json",   # aifactory 3.2: pi.cmd on Windows
         "--provider", provider, "--model", model_id,
         "--thinking", request.thinking,
         "--session-id", request.session_id,
