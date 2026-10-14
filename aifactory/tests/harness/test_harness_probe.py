@@ -122,3 +122,46 @@ def test_failed_models_never_fall_back_to_repository_defaults(
     settings.write(value, tmp_path)
     with pytest.raises(ValueError, match="no default harness"):
         settings.effective_override({}, None)
+
+
+class _WindowsOs:
+    """``os`` as seen on Windows, for one module only (pathlib keeps the real ``os.name``)."""
+
+    name = "nt"
+
+    def __getattr__(self, attribute: str) -> Any:
+        import os
+
+        return getattr(os, attribute)
+
+
+def test_pi_probe_on_windows_runs_pi_shim_not_codex(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.engine import agent_pi
+
+    shim = tmp_path / "pi.cmd"
+    shim.write_text("@echo off\n")
+    codex = tmp_path / "node_modules/@openai/codex/vendor/x86_64-pc-windows-msvc/bin/codex.exe"
+    codex.parent.mkdir(parents=True)
+    codex.write_text("")
+    monkeypatch.setattr(agent_pi, "os", _WindowsOs())
+    monkeypatch.setattr(agent_pi, "PI_PATH", "pi")
+    monkeypatch.setattr(
+        "aifactory.engine.agent_pi.shutil.which", lambda name: str(shim) if name == "pi" else None
+    )
+    monkeypatch.setattr(probe, "installed_path", lambda _: str(shim))
+    monkeypatch.setattr(probe, "validate", lambda *_: None)  # no real pi to list levels
+    # npm's shim lookup on Windows lands on codex.exe next to pi.cmd; pi must not go there.
+    monkeypatch.setattr(probe, "launch_command", lambda cmd: [str(codex), *cmd[1:]])
+    monkeypatch.setattr(load("pi"), "resolve_model", lambda _: ("openai", "gpt-5.5"))
+    seen: list[list[str]] = []
+
+    def run(command: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0, "OK", "")
+
+    monkeypatch.setattr(subprocess, "run", run)
+    assert probe.run_probe("pi", "openai/gpt-5.5", "high")["ok"] is True
+    assert seen[0][0] == str(shim)
+    assert "--provider" in seen[0]
