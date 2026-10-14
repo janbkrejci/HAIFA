@@ -8,6 +8,7 @@ from typing import Any
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.config.errors import ConfigError, ConfigIssue
 from aifactory.config.loader import FactoryConfig, load_config
 from aifactory.config.settings import CONFIG_FILE, LocalSettings, load_local_checked
@@ -57,7 +58,7 @@ def worktree_base(root: Path) -> str:
     if text is None:
         return DEFAULT_BASE
     try:
-        data = yaml.safe_load(text)
+        data = yamlload.safe_load(text)
     except yaml.YAMLError:
         return DEFAULT_BASE
     if isinstance(data, dict) and isinstance(data.get("base"), str) and data["base"].strip():

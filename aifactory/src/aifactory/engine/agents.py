@@ -15,6 +15,8 @@ from typing import Optional
 
 import yaml
 
+from aifactory import yamlload  # aifactory 3.1: libyaml parser when available
+
 from . import agent_cc, agent_pi, permissions, prompts
 from .data_types import (AgentCall, AgentConfig, AgentRequest, AgentResult,
                          EnvelopeBase, EventRecord, GateCheck, GateReport,
@@ -47,7 +49,7 @@ class GateFailure(RuntimeError):
 # ── config ───────────────────────────────────────────────────────────────────
 
 def load_config(path: str = "adws/adw_sssf_config/sssf.config.yaml") -> SSSFConfig:
-    raw = yaml.safe_load(Path(path).read_text()) or {}
+    raw = yamlload.safe_load(Path(path).read_text()) or {}  # aifactory 3.1: libyaml
     defaults = raw.get("defaults", {}) or {}
     for agent in raw.get("agents", []) or []:
         for key in ("coding_agent", "model", "thinking", "color", "tools", "writes",

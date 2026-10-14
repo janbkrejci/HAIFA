@@ -39,7 +39,7 @@ from typing import Any
 
 import yaml
 
-from aifactory import oscompat
+from aifactory import oscompat, yamlload
 from aifactory.config.settings import DEFAULT_PORT
 
 REGISTRY_FILE = "dashboard.yaml"
@@ -147,7 +147,7 @@ def parse_registry(text: str | None, label: str) -> tuple[RegistryState, JsonDic
     if text is None or not text.strip():
         return EMPTY, {}
     try:
-        raw = yaml.safe_load(text)
+        raw = yamlload.safe_load(text)
     except yaml.YAMLError as exc:
         raise _invalid(label, f"invalid YAML: {exc}") from None
     if raw is None:

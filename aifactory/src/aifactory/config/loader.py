@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING, Any
 import yaml
 from pydantic import ValidationError
 
+from aifactory import yamlload
 from aifactory.config.errors import ConfigError, ConfigIssue
 from aifactory.config.settings import (
     CONFIG_FILE,
@@ -230,7 +231,7 @@ def _load_roles(reader: _Reader) -> RoleRegistry | None:
         if text is None:
             return load_roles()
         try:
-            data = yaml.safe_load(text)
+            data = yamlload.safe_load(text)
         except yaml.YAMLError as exc:
             reader.issues.append(ConfigIssue(label, f"invalid YAML: {exc}"))
             return None

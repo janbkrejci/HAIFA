@@ -11,11 +11,10 @@ import threading
 from pathlib import Path
 from typing import Any, Literal
 
-import yaml
 from pydantic import ConfigDict, Field
 
 from aifactory import backlog as core
-from aifactory import oscompat
+from aifactory import oscompat, yamlload
 from aifactory.config import load_run_config
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentCall, EnvelopeBase, PhaseParams
@@ -24,6 +23,7 @@ from aifactory.engine.tracer import Tracer
 from aifactory.errors import UsageError
 from aifactory.harness import canonical, install
 from aifactory.harness.check import check_harness
+from aifactory.providers.git import PARALLEL_CHECKOUT
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.scope import TaskScope
 from aifactory.run.task import _main_ignored, named_workflow, prepare_cfg
@@ -148,7 +148,9 @@ def context(
         )
     rc = load_run_config(repo)
     cfg = rc.config
-    catalog = {p.stem: yaml.safe_load(p.read_text()) for p in DEFAULT_WORKFLOWS_DIR.glob("*.yaml")}
+    catalog = {
+        p.stem: yamlload.safe_load(p.read_text()) for p in DEFAULT_WORKFLOWS_DIR.glob("*.yaml")
+    }
     catalog.update(cfg.workflows)
     availability = {}
     for name in sorted(catalog):
@@ -239,7 +241,7 @@ def validate(
             raise UsageError("new workflow needs YAML and a unique name")
         if len(value.workflow_yaml.encode()) > 100_000:
             raise UsageError("workflow YAML exceeds 100 KB")
-        data = yaml.safe_load(value.workflow_yaml)
+        data = yamlload.safe_load(value.workflow_yaml)
     cfg = load_run_config(repo).config
     workflow = (
         named_workflow(value.workflow_name, cfg, "draft")
@@ -284,21 +286,24 @@ def recommend(
         raise UsageError("configured plan role is missing")
     with tempfile.TemporaryDirectory(prefix="factory-advice-") as tmp:
         isolated = Path(tmp) / "repo"
+        # --shared borrows the objects instead of copying them all; the agent cannot write
+        # through the alternates link, and the clone lives only for this job.
         subprocess.run(
-            [
-                "git",
-                "clone",
-                "--quiet",
-                "--no-checkout",
-                "--no-hardlinks",
-                str(repo),
-                str(isolated),
-            ],
+            ["git", "clone", "--quiet", "--no-checkout", "--shared", str(repo), str(isolated)],
             check=True,
             capture_output=True,
         )
         subprocess.run(
-            ["git", "-C", str(isolated), "checkout", "--quiet", "--detach", rc.commit],
+            [
+                "git",
+                "-C",
+                str(isolated),
+                *PARALLEL_CHECKOUT,
+                "checkout",
+                "--quiet",
+                "--detach",
+                rc.commit,
+            ],
             check=True,
             capture_output=True,
         )

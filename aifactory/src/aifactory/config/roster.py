@@ -18,6 +18,7 @@ from typing import Any
 import yaml
 from yaml.nodes import MappingNode, ScalarNode, SequenceNode
 
+from aifactory import yamlload
 from aifactory.config.errors import ConfigError, ConfigIssue
 from aifactory.config.loader import AGENTS_FILE, load_config
 from aifactory.config.source import OverlaySource, WorktreeSource, repo_root
@@ -37,7 +38,7 @@ def _effective(root: Path, text: str) -> list[dict[str, Any]]:
     A ``prompt_engineering`` key a roster may still carry is left out here; only the
     bindings matter.
     """
-    raw = yaml.safe_load(text) if text.strip() else None
+    raw = yamlload.safe_load(text) if text.strip() else None
     agents = raw.get("agents") if isinstance(raw, dict) else None
     if (
         isinstance(raw, dict)
@@ -145,7 +146,7 @@ def _render(text: str, raw: dict[str, Any], updated: dict[str, Any]) -> tuple[st
         rendered = text
         for start, end, replacement in sorted(edits, reverse=True):
             rendered = rendered[:start] + replacement + rendered[end:]
-        if yaml.safe_load(rendered) == updated:
+        if yamlload.safe_load(rendered) == updated:
             return rendered, True
     except (ValueError, IndexError, KeyError, yaml.YAMLError):
         pass
@@ -191,7 +192,7 @@ def roster(
         if "thinking" in settings and settings["thinking"] not in THINKING_LEVELS:
             raise ValueError(f"invalid thinking {settings['thinking']!r}")
         text = original
-        raw = yaml.safe_load(text) if text.strip() else {}
+        raw = yamlload.safe_load(text) if text.strip() else {}
         if not isinstance(raw, dict):
             raise ValueError("roster must be a mapping")
         listed = raw.get("agents") or []
@@ -201,7 +202,7 @@ def roster(
             if agent not in {a["name"] for a in before}:
                 raise ValueError(f"unknown agent {agent!r}")
             text = _with_entry(text, agent)
-            raw = yaml.safe_load(text)
+            raw = yamlload.safe_load(text)
         raw.setdefault("agents", [])
         updated = copy.deepcopy(raw)
         # YAML aliases may share mappings. Editing a role must not edit its siblings.

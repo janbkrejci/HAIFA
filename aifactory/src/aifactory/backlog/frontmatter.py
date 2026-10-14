@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import yaml
 
+from aifactory import yamlload
+
 
 class FrontmatterError(Exception):
     """The YAML header of a markdown file is missing or invalid."""
@@ -22,7 +24,7 @@ def parse_frontmatter(text: str) -> tuple[dict[str, object], str]:
     else:
         raise FrontmatterError("YAML header is not closed with '---'")
     try:
-        data = yaml.safe_load(header)
+        data = yamlload.safe_load(header)
     except yaml.YAMLError as exc:
         raise FrontmatterError(f"invalid YAML in header: {exc}") from exc
     if data is None:

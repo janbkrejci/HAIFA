@@ -40,6 +40,7 @@ from typing import TYPE_CHECKING, Any
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.config.errors import ConfigError
 from aifactory.config.settings import CONFIG_FILE, ProjectSettings, load_local
 from aifactory.engine.role_registry import Issue
@@ -390,7 +391,7 @@ def validate_source(
         roster = write_prompts(cfg, Path(tmp))
         for name, data in workflows.items():
             try:
-                workflow = parse_workflow(yaml.safe_load(data.decode("utf-8")), cfg.roles)
+                workflow = parse_workflow(yamlload.safe_load(data.decode("utf-8")), cfg.roles)
             except WorkflowError as exc:
                 issues += [dataclasses.replace(i, path=f"{name}: {i.path}") for i in exc.issues]
                 continue

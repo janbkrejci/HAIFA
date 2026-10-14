@@ -19,6 +19,7 @@ from urllib.request import Request, urlopen
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.config.errors import ConfigError, ConfigIssue
 from aifactory.home import haifa_home
 
@@ -52,7 +53,7 @@ def database_path(root: Path, local: Path, url: str | None = None) -> Path:
         if url is None:
             url = os.environ.get("HAIFA_DATABASE_URL")
         if url is None and Path(label).is_file():
-            data = yaml.safe_load(Path(label).read_text(encoding="utf-8"))
+            data = yamlload.safe_load(Path(label).read_text(encoding="utf-8"))
             if not isinstance(data, dict) or set(data) != {"url"}:
                 raise ValueError("expected a mapping containing only 'url'")
             url = data["url"]
@@ -69,7 +70,9 @@ def database_path(root: Path, local: Path, url: str | None = None) -> Path:
         from aifactory.run.gitops import read_git
 
         config = root / ".factory/config.yaml"
-        settings = yaml.safe_load(config.read_text(encoding="utf-8")) if config.is_file() else {}
+        settings = (
+            yamlload.safe_load(config.read_text(encoding="utf-8")) if config.is_file() else {}
+        )
         if settings is not None and not isinstance(settings, dict):
             raise ValueError("factory configuration must be a mapping")
         name = (settings or {}).get("remote", "origin")

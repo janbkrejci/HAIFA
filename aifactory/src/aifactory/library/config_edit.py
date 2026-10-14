@@ -49,6 +49,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.config.errors import ConfigError, ConfigIssue
 from aifactory.config.loader import (
     AGENTS_FILE,
@@ -210,7 +211,7 @@ def _yaml(data: bytes | None) -> Any:
     if data is None:
         return None
     try:
-        return yaml.safe_load(data.decode("utf-8"))
+        return yamlload.safe_load(data.decode("utf-8"))
     except (UnicodeDecodeError, yaml.YAMLError):
         return None
 
@@ -651,7 +652,7 @@ def plan_move(state: RepoState, library: LibrarySnapshot, type: str, name: str) 
     if agent_yaml is not None:
         from aifactory.library.model import AgentDefaults
 
-        defaults = yaml.safe_load(agent_yaml).get("defaults") or {}
+        defaults = yamlload.safe_load(agent_yaml).get("defaults") or {}
         change.moved = replace(item, defaults=AgentDefaults.model_validate(defaults))
     change.library_items.append(_library_item(item, agent_yaml))
     files: dict[str, bytes | None] = dict.fromkeys(state.item_paths(kind, name))

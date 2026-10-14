@@ -16,9 +16,9 @@ import copy
 from pathlib import Path
 from typing import Any
 
-import yaml
 from pydantic import Field
 
+from aifactory import yamlload
 from aifactory.engine import data_types as dt
 from aifactory.harness import HARNESSES, HarnessName, canonical, install
 
@@ -124,7 +124,7 @@ def normalize_raw(raw: dict[str, Any]) -> dict[str, Any]:
 
 def load_config(path: str | Path) -> SSSFConfig:
     """Load a roster YAML with explicit harnesses into the widened config types."""
-    raw = yaml.safe_load(Path(path).read_text()) or {}
+    raw = yamlload.safe_load(Path(path).read_text()) or {}
     if not isinstance(raw, dict):
         raise HarnessConfigError([f"{path}: config must be a mapping"])
     return SSSFConfig.model_validate(normalize_raw(raw))

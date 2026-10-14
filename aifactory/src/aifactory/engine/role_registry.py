@@ -25,6 +25,7 @@ from pydantic import ValidationError
 
 from aifactory import packagedata  # aifactory: packaged data as of process start
 from aifactory.engine import loader as engine
+from aifactory.yamlload import safe_load  # aifactory 3.1: libyaml parser when available
 
 # Deterministic step actions. The step name is the action.
 # aifactory 3.0: `quality` is gone; a tester agent's plan covers lint, types and build.
@@ -318,7 +319,8 @@ class _Loader:
 
 
 def _default_data() -> dict[str, Any]:  # aifactory: raw packaged registry, base of an overlay
-    data = yaml.safe_load(packagedata.read_text(DEFAULT_ROLES_PATH))  # aifactory: start-time data
+    # aifactory 3.1: libyaml
+    data = safe_load(packagedata.read_text(DEFAULT_ROLES_PATH))  # aifactory: start-time data
     assert isinstance(data, dict)
     return data
 
@@ -409,7 +411,7 @@ def load_roles(path: Path | None = None) -> RoleRegistry:
     except OSError as error:
         raise RolesError([Issue("missing_file", str(error), str(source))]) from error
     try:
-        data = yaml.safe_load(text)
+        data = safe_load(text)  # aifactory 3.1: libyaml
     except yaml.YAMLError as error:
         raise RolesError([Issue("invalid_yaml", str(error), str(source))]) from error
     return parse_roles(data)

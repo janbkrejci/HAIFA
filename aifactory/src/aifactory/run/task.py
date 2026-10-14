@@ -677,11 +677,27 @@ def _execute(
             if job.retry is not None and worktree.is_dir():
                 pass  # a retry continues in the run's own worktree
             elif job.new_branch:
-                gitops.git(main, "worktree", "add", "-b", row.branch, str(worktree), rc.commit)
+                gitops.git(
+                    main,
+                    *provider_git.PARALLEL_CHECKOUT,
+                    "worktree",
+                    "add",
+                    "-b",
+                    row.branch,
+                    str(worktree),
+                    rc.commit,
+                )
             else:
                 if job.retry is not None:
                     gitops.git(main, "worktree", "prune")
-                gitops.git(main, "worktree", "add", str(worktree), row.branch)
+                gitops.git(
+                    main,
+                    *provider_git.PARALLEL_CHECKOUT,
+                    "worktree",
+                    "add",
+                    str(worktree),
+                    row.branch,
+                )
         copy_library_items(worktree, rc.config.library)
     except (RuntimeError, OSError) as exc:
         store.finish(row.run_id, FAILED, None, str(exc)[:2000])

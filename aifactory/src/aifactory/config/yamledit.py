@@ -21,6 +21,8 @@ import yaml
 from ruamel.yaml import YAML
 from ruamel.yaml.comments import CommentedMap, CommentedSeq
 
+from aifactory import yamlload
+
 _SEQ_LINE = re.compile(r"^( *)- ", re.MULTILINE)
 _FIRST = ("name", "purpose", "harness", "model", "thinking")
 
@@ -60,7 +62,7 @@ def edit_yaml(text: str, change: Callable[[Any], None]) -> str:
     change(data)
     result = dump_rt(rt, data)
     try:
-        yaml.safe_load(result)
+        yamlload.safe_load(result)
     except yaml.YAMLError as exc:  # pragma: no cover - ruamel writes valid YAML
         raise ValueError(f"the edited YAML does not parse: {exc}") from exc
     return result

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T15
 title: zrychlení nejen na windows
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -10,3 +10,4 @@ obecná optimalizace - na windows bez wsl je všechno hrozně pomalé, i návrh 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/30 · náklady $7.48

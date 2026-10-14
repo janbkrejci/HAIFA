@@ -18,6 +18,10 @@ from pathlib import Path
 
 from aifactory.providers.base import ProviderError
 
+# Global options for commands that check files out: write them with parallel workers.
+# Checkout is dominated by per-file cost, which is high on Windows.
+PARALLEL_CHECKOUT = ("-c", "checkout.workers=0")
+
 
 def _run(cwd: Path, args: tuple[str, ...], input: str | None) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
@@ -218,7 +222,7 @@ def detached_worktree(root: Path, start: str) -> Iterator[Path]:
     parent = Path(tempfile.mkdtemp(prefix="aifactory-merge-"))
     path = parent / "wt"
     try:
-        git(root, "worktree", "add", "--detach", "--quiet", str(path), start)
+        git(root, *PARALLEL_CHECKOUT, "worktree", "add", "--detach", "--quiet", str(path), start)
         yield path
     finally:
         remove_worktree(root, path)

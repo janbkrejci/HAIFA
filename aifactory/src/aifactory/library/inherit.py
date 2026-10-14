@@ -18,8 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-import yaml
-
+from aifactory import yamlload
 from aifactory.library.model import Item, ItemType
 
 _CACHE: dict[tuple[str, str], LibrarySnapshot] = {}
@@ -44,7 +43,7 @@ class LibrarySnapshot:
     def workflow_data(self, name: str) -> dict[str, Any]:
         """The parsed YAML of workflow `name` (a copy; parsed once per snapshot)."""
         if name not in self._parsed:
-            self._parsed[name] = yaml.safe_load(self.workflows[name].files[0].data)
+            self._parsed[name] = yamlload.safe_load(self.workflows[name].files[0].data)
         return copy.deepcopy(self._parsed[name])
 
     def of(self, kind: ItemType) -> Mapping[str, Item]:

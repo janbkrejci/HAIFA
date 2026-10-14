@@ -11,6 +11,7 @@ import re
 
 import yaml
 
+from aifactory import yamlload
 from aifactory.backlog.frontmatter import FrontmatterError, parse_frontmatter
 
 RUNS_HEADING = "## Běhy"
@@ -126,7 +127,7 @@ def format_scalar(value: str) -> str:
     )
     if plain:
         try:
-            plain = yaml.safe_load(value) == value
+            plain = yamlload.safe_load(value) == value
         except yaml.YAMLError:
             plain = False
     return value if plain else json.dumps(value, ensure_ascii=False)
