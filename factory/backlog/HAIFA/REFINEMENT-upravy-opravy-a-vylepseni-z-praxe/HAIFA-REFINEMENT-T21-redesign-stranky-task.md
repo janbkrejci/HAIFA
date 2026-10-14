@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T21
 title: redesign stránky Task
 status: todo
+workflow: simple-sdlc
 depends_on: []
 ---
 
