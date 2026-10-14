@@ -197,7 +197,6 @@ describe('App', () => {
       'HAIFA',
       'sandbox',
       'gone',
-      'Přidat repozitář…',
     ])
     expect(menu.get('[data-test="switch-overview"]').attributes('href')).toBe('#/overview')
     const sandbox = menu.get('[data-test="switch-repo-sandbox"]')
@@ -208,8 +207,7 @@ describe('App', () => {
     expect(gone.get('[data-test="repo-label"]').text()).toBe('chybí')
     expect(gone.get('[data-test="repo-parent"]').text()).toBe('C:\\old')
     expect(menu.get('[data-test="switch-repo-haifa"]').find('[data-test="repo-label"]').exists()).toBe(false)
-    expect(menu.get('[data-test="switch-add"]').text()).toBe('Přidat repozitář…')
-    expect(menu.get('[data-test="switch-add"]').attributes('href')).toBe('#/repos/add')
+    expect(menu.find('[data-test="switch-add"]').exists()).toBe(false)
     expect(menu.find('[data-test="switch-manage"]').exists()).toBe(false)
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))

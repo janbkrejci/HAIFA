@@ -37,7 +37,7 @@ Harness, jehož test selhal, nejde použít jako výchozí. Podrobnosti v kapito
 
 ## Přidej repozitář
 
-Na **Přehledu** klikni na **Přidat repozitář** (nebo v menu přepínače rep **Přidat repozitář…**):
+Na **Přehledu** klikni na **Přidat repozitář** (pod seznamem rep):
 
 1. Zadej cestu ke složce repa, nebo ji najdi přes **Procházet…**, a klikni na **Zkontrolovat**.
 2. Karta repa ukáže kořen, větev, remote a stav factory (Bez factory, Nainstalováno, necommitnutá konfigurace, Nepodporováno).

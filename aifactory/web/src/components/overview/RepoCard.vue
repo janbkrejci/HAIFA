@@ -2,11 +2,11 @@
 // A repo card of the overview: what runs, waits for review and failed, its configuration
 // problems and the newest activity. Every row is a link to the run, the review or the settings.
 import { computed } from 'vue'
-import { Trash2 } from 'lucide-vue-next'
 import type { OverviewRepo } from '@/lib/api'
 import { fmtAge, fmtCost, fmtElapsed, fmtTime, ts } from '@/lib/format'
 import { activeRuns, failedRows, problems, reviewLink, runLink } from '@/lib/overview'
 import { repoHref } from '@/lib/router'
+import RepoMenu from './RepoMenu.vue'
 
 const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removing?: boolean }>(), {
   removing: false,
@@ -34,14 +34,10 @@ function reviewAge(opened: string | null, ageS: number | null): string {
     <header class="card-head">
       <a :href="repoHref(repo.id, 'backlog')" class="repo-name" data-test="card-name">{{ repo.name }}</a>
       <span class="repo-path mono">{{ repo.path }}</span>
+      <RepoMenu class="card-menu" :name="repo.name" :removing="removing" @remove="emit('remove', repo)" />
     </header>
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
-    <div class="card-actions">
-      <button type="button" class="remove" :disabled="removing" data-test="card-remove" @click="emit('remove', repo)">
-        <Trash2 :size="14" aria-hidden="true" /> Odebrat repozitář
-      </button>
-    </div>
 
     <section v-if="running.length" class="group">
       <h3>Běží</h3>
@@ -147,6 +143,11 @@ function reviewAge(opened: string | null, ageS: number | null): string {
   font-size: 17px;
 }
 
+.card-menu {
+  align-self: flex-start;
+  margin-left: auto;
+}
+
 .repo-path {
   overflow: hidden;
   text-overflow: ellipsis;
@@ -219,29 +220,6 @@ h3 {
 
 .config {
   color: var(--amber);
-}
-
-.card-actions {
-  display: flex;
-}
-
-.remove {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 12px;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  background: var(--panel);
-  color: var(--red);
-  font: inherit;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.remove:disabled {
-  cursor: default;
-  opacity: 0.7;
 }
 
 .state-problem {

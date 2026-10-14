@@ -7,7 +7,7 @@ import { ChevronDown } from 'lucide-vue-next'
 import { fetchOverview, type Health, type RepoItem } from '@/lib/api'
 import { countsById, type RepoCounts } from '@/lib/overview'
 import { REPO_STATUS_TEXT } from '@/lib/repos'
-import { OVERVIEW_HREF, REPOS_ADD_HREF, repoHref, usePage, useRepoId, useRoute } from '@/lib/router'
+import { OVERVIEW_HREF, repoHref, usePage, useRepoId, useRoute } from '@/lib/router'
 
 const props = defineProps<{
   repos: RepoItem[] | null
@@ -157,8 +157,6 @@ onBeforeUnmount(() => listen(false))
           </template>
         </span>
       </a>
-      <div class="separator" />
-      <a :href="REPOS_ADD_HREF" role="menuitem" class="item" data-test="switch-add" @click="close">Přidat repozitář…</a>
     </div>
   </div>
 </template>

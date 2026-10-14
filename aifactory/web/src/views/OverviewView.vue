@@ -4,7 +4,7 @@
 // Reloads every 2 s while the tab is visible, on a return to the window and by Obnovit; reads only.
 // Readiness reports its progress and actionable findings above the overview.
 import { computed, ref } from 'vue'
-import { Plus, RefreshCw, Trash2 } from 'lucide-vue-next'
+import { Plus, RefreshCw } from 'lucide-vue-next'
 import type { RepoItem } from '@/lib/api'
 import { useNow } from '@/lib/clock'
 import { fmtAge, fmtTime, ts } from '@/lib/format'
@@ -22,6 +22,7 @@ import { REPOS_ADD_HREF, repoHref } from '@/lib/router'
 import { ADD_REPO_HINT, useRemoveRepo } from '@/lib/repos'
 import EmptyScreen from '@/components/EmptyScreen.vue'
 import RepoCard from '@/components/overview/RepoCard.vue'
+import RepoMenu from '@/components/overview/RepoMenu.vue'
 import RemoveRepoDialog from '@/components/repos/RemoveRepoDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 
@@ -119,9 +120,13 @@ function activity(iso: string | null): string {
           <a :href="repoHref(repo.id, 'backlog')" class="calm-name">{{ repo.name }}</a>
           <span class="calm-state">v klidu</span>
           <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>
-          <button type="button" class="calm-remove" :disabled="removing === repo.id" :aria-label="`Odebrat repozitář ${repo.name}`" data-test="calm-remove" @click="remove(repo)"><Trash2 :size="14" aria-hidden="true" /></button>
+          <RepoMenu :name="repo.name" :removing="removing === repo.id" item-test="calm-remove" @remove="remove(repo)" />
         </li>
       </ul>
+
+      <p class="add-repo">
+        <a :href="REPOS_ADD_HREF" class="add-link" data-test="overview-add-repo"><Plus :size="14" aria-hidden="true" /> Přidat repozitář</a>
+      </p>
     </template>
   </section>
   <RemoveRepoDialog :removal="removal" />
@@ -255,7 +260,7 @@ h1 {
 
 .calm {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   padding: 8px 16px;
   border: 1px solid var(--border);
@@ -282,18 +287,8 @@ h1 {
   font-size: 13px;
 }
 
-.calm-remove {
-  display: inline-flex;
-  padding: 4px 6px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel-2);
-  color: var(--dim);
-  cursor: pointer;
-}
-
-.calm-remove:hover {
-  color: var(--red);
+.add-repo {
+  margin: 16px 0 0;
 }
 
 .loading {

@@ -227,6 +227,7 @@ describe('OverviewView', () => {
   async function openRemoval() {
     const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, attachTo: document.body, global })
     await flushPromises()
+    await wrapper.get('[data-test="overview-card"][data-repo="gone"] [data-test="repo-menu"]').trigger('click')
     await wrapper.get('[data-test="overview-card"][data-repo="gone"] [data-test="card-remove"]').trigger('click')
     await flushPromises()
     return wrapper
@@ -241,8 +242,14 @@ describe('OverviewView', () => {
     const fetchMock = stubRemoval()
     const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, attachTo: document.body, global })
     await flushPromises()
-    expect(wrapper.findAll('[data-test="card-remove"]')).toHaveLength(5)
-    expect(wrapper.findAll('[data-test="calm-remove"]')).toHaveLength(2)
+    expect(wrapper.findAll('[data-test="card-remove"]')).toHaveLength(0)
+    expect(wrapper.findAll('[data-test="overview-card"] [data-test="repo-menu"]')).toHaveLength(5)
+    expect(wrapper.findAll('[data-test="calm-repo"] [data-test="repo-menu"]')).toHaveLength(2)
+    await wrapper.get('[data-test="calm-repo"] [data-test="repo-menu"]').trigger('click')
+    expect(wrapper.findAll('[data-test="calm-remove"]')).toHaveLength(1)
+    await wrapper.get('[data-test="calm-repo"] [data-test="repo-menu"]').trigger('click')
+    expect(wrapper.findAll('[data-test="calm-remove"]')).toHaveLength(0)
+    await wrapper.get('[data-test="overview-card"][data-repo="gone"] [data-test="repo-menu"]').trigger('click')
     await wrapper.get('[data-test="overview-card"][data-repo="gone"] [data-test="card-remove"]').trigger('click')
     await flushPromises()
     const dialog = openDialog()!
@@ -254,6 +261,15 @@ describe('OverviewView', () => {
     expect(deleteBody(fetchMock)).toEqual({ uninstall: false })
     expect(wrapper.emitted('changed')).toHaveLength(1)
     expect(wrapper.find('[data-test="overview-card"][data-repo="gone"]').exists()).toBe(false)
+  })
+
+  it('offers adding a repo under the repo list', async () => {
+    stubRemoval()
+    const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, attachTo: document.body, global })
+    await flushPromises()
+    const link = wrapper.get('[data-test="overview-add-repo"]')
+    expect(link.text()).toBe('Přidat repozitář')
+    expect(link.attributes('href')).toBe('#/repos/add')
   })
 
   it('keeps the repo when the removal is cancelled', async () => {
