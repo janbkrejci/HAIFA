@@ -12,6 +12,7 @@ v detailu tasku:
 - související a závisí na by se měly vybírat pickerem, ne psát
 - zúžit input workflow a dát navrhnout workflow s magic wandem vedle něj doprava
 - tooltipem vysvětlit pole zdroj a cíl
+- hlášku o necommitnutém backlogu přesunout jako červený chip do topbaru
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
