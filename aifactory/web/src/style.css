@@ -428,3 +428,31 @@ pre {
     animation-duration: 2s;
   }
 }
+
+/* "Vylepšit agentem": the large green agent button of the task page (detail and form).
+   `body` outweighs the scoped `button` rules of the components. */
+body button.btn-improve {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 18px;
+  border: 1px solid var(--green);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--green) 22%, var(--panel));
+  color: var(--green);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+body button.btn-improve:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--green) 32%, var(--panel));
+}
+
+/* A disabled button gets no mouse events; let the tooltip anchor get the hover. */
+body button.btn-improve:disabled {
+  opacity: 0.5;
+  cursor: default;
+  pointer-events: none;
+}

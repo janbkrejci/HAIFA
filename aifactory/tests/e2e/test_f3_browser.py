@@ -404,8 +404,11 @@ def test_f3_task_lifecycle_in_browser(page: Page, server: Server, net: Net) -> N
     first = _create_task(page, "First feature", "Zadání prvního tasku.")
     second = _create_task(page, "Second feature", "Zadání druhého tasku.")
     assert (first, second) == (T01, T02)
-    page.locator('[data-test="link-input"]').fill(first)
-    page.locator('[data-test="link-add"]').click()
+    # links are edited in the form, under the collapsed "Další nastavení"
+    page.locator('[data-test="edit"]').click()
+    page.locator('details[data-test="advanced"] > summary').click()
+    page.locator('input[data-test="depends"]').fill(first)
+    page.locator('[data-test="save"]').click()
     expect(page.locator(f'li[data-dep="{first}"]')).to_be_visible()
     _open_task(page, first)
     expect(page.locator(f'li[data-block="{second}"]')).to_be_visible()

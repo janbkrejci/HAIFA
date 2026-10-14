@@ -211,12 +211,9 @@ describe('BacklogView spinners', () => {
   })
 
   it.each([
-    ['link-add', 'link-input'],
-    ['related-add', 'related-input'],
-    ['unlink-M01-S01-T01', null],
-    ['unrelate-M02-S01-T01', null],
-    ['assign', null],
-  ])('spins only %s while the write runs', async (button, input) => {
+    ['unlink-M01-S01-T01'],
+    ['unrelate-M02-S01-T01'],
+  ])('spins only %s while the write runs', async (button) => {
     go(`#/r/haifa/backlog/${TASK}`)
     const gate = deferred<Response>()
     vi.stubGlobal(
@@ -231,18 +228,17 @@ describe('BacklogView spinners', () => {
     )
     const wrapper = mount(BacklogView)
     await flushPromises()
-    if (input) await wrapper.find(`[data-test="${input}"]`).setValue('M01-S01-T09')
     await wrapper.find(`[data-test="${button}"]`).trigger('click')
     await flushPromises()
     expect(spins(wrapper, `[data-test="${button}"]`)).toBe(true)
     expect(spinners(wrapper)).toHaveLength(1)
-    for (const other of ['link-add', 'related-add', 'unlink-M01-S01-T01', 'unrelate-M02-S01-T01', 'assign', 'edit']) {
+    for (const other of ['unlink-M01-S01-T01', 'unrelate-M02-S01-T01', 'edit', 'improve']) {
       expect(disabled(wrapper, `[data-test="${other}"]`)).toBe(true)
     }
     gate.resolve(written())
     await flushPromises()
     expect(spinners(wrapper)).toHaveLength(0)
-    expect(disabled(wrapper, '[data-test="assign"]')).toBe(false)
+    expect(disabled(wrapper, '[data-test="edit"]')).toBe(false)
     wrapper.unmount()
   })
 
@@ -266,7 +262,7 @@ describe('BacklogView spinners', () => {
     expect(spins(wrapper, '[data-test="save"]')).toBe(true)
     expect(spinners(wrapper)).toHaveLength(1)
     expect(disabled(wrapper, '[data-test="save"]')).toBe(true)
-    expect(disabled(wrapper, '[data-test="link-add"]')).toBe(true)
+    expect(disabled(wrapper, '[data-test="unlink-M01-S01-T01"]')).toBe(true)
     gate.resolve(written())
     await flushPromises()
     expect(spinners(wrapper)).toHaveLength(0)

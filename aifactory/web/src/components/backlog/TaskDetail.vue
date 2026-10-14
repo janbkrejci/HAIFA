@@ -21,7 +21,6 @@ import {
   levelLabel,
   levelNoun,
   linkActionKey,
-  splitIds,
   unmetLine,
   DEFERRABLE_STATES,
   STATE_LABELS,
@@ -45,11 +44,9 @@ import MarkdownView from '@/components/ui/MarkdownView.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import CodeTip from '@/components/ui/CodeTip.vue'
 import { useLevels, useNames } from '@/lib/names'
-import SelectMenu from '@/components/ui/SelectMenu.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import { useConfirm } from '@/lib/confirm'
 import Spinner from '@/components/ui/Spinner.vue'
-import type { SelectOption } from '@/lib/select'
 
 const props = defineProps<{
   detail: TaskDetail
@@ -68,7 +65,6 @@ const emit = defineEmits<{
   /** Cancel the task (status `cancelled`), confirmed by the user. */
   'cancel-task': []
   link: [input: LinkInput]
-  'assign-workflow': [workflow: string | null]
   'open-run': []
   'run-start': [input: RunInput & { force: boolean }]
   'run-cancel': []
@@ -80,13 +76,8 @@ const emit = defineEmits<{
 }>()
 
 const editing = ref(false)
-const dependsInput = ref('')
-const relatedInput = ref('')
-const workflowChoice = ref(props.detail.task.own_workflow ?? '')
-const workflowOptions = computed<SelectOption[]>(() => [
-  { value: '', label: 'Zděděno' },
-  ...props.workflows.map((w) => ({ value: w, label: w })),
-])
+/** The form was opened by "Vylepšit agentem": it starts the agent at once. */
+const autoImprove = ref(false)
 
 const task = computed(() => props.detail.task)
 const level = useLevels()
@@ -97,9 +88,6 @@ const NO_WORKFLOW_HINT = computed(() => {
   const list = where.length ? `${where.join(', ')} nebo ${last}` : last
   return `${levelLabel(level.task.value)} nemá workflow – nastav ho na ${list}.`
 })
-const linkPlaceholder = computed(
-  () => `id ${levelNoun(level.task.value, 'gen')} nebo ${levelNoun(level.step.value, 'gen')}`,
-)
 const noWorkflow = computed(() => !task.value.workflow)
 /** A done or cancelled task never runs again. */
 const finished = computed(() => ['done', 'cancelled'].includes(task.value.board_state))
@@ -115,6 +103,17 @@ const runBlocked = computed(() => noWorkflow.value || finished.value)
 const queueable = computed(() => DEFERRABLE_STATES.includes(task.value.board_state))
 /** Advice is offered only for a task that has not started. */
 const adviceBlocked = computed(() => ['done', 'cancelled', 'running', 'in review'].includes(task.value.board_state))
+const improveTooltip = computed(() => (adviceBlocked.value ? `${levelLabel(level.task.value)} už nejde měnit.` : ''))
+
+function openEdit(improve: boolean) {
+  autoImprove.value = improve
+  editing.value = true
+}
+
+function closeEdit() {
+  editing.value = false
+  autoImprove.value = false
+}
 
 const { names } = useNames()
 
@@ -164,11 +163,8 @@ watch(
     const sameTask = next.task.id === previous?.task.id
     // a live refresh of the same task must not close a form being edited
     if (!sameTask || saving || !editing.value) {
-      editing.value = false
+      closeEdit()
       saving = false
-    }
-    if (!sameTask || next.task.own_workflow !== previous?.task.own_workflow) {
-      workflowChoice.value = next.task.own_workflow ?? ''
     }
   },
 )
@@ -180,24 +176,12 @@ watch(
   },
 )
 
-function addLink(key: 'depends_on' | 'related') {
-  const source = key === 'depends_on' ? dependsInput : relatedInput
-  const ids = splitIds(source.value)
-  if (!ids.length) return
-  emit('link', { [key]: ids })
-  source.value = ''
-}
-
 function unlinkKey(key: 'depends_on' | 'related', id: string): string {
   return linkActionKey({ [key]: [id], remove: true })
 }
 
 function removeLink(key: 'depends_on' | 'related', id: string) {
   emit('link', { [key]: [id], remove: true })
-}
-
-function assign() {
-  emit('assign-workflow', workflowChoice.value || null)
 }
 
 function onEdit(input: EditTaskInput) {
@@ -233,7 +217,7 @@ function onEdit(input: EditTaskInput) {
             type="button"
             data-test="edit"
             :disabled="busy"
-            @click="editing = true"
+            @click="openEdit(false)"
           >
             <Pencil :size="14" /> Upravit
           </button>
@@ -249,6 +233,17 @@ function onEdit(input: EditTaskInput) {
             <Spinner v-if="action === 'cancel'" />
             <Ban v-else :size="14" /> Zrušit
           </button>
+          <Tooltip v-if="!editing" :text="improveTooltip">
+            <button
+              type="button"
+              class="btn-improve"
+              data-test="improve"
+              :disabled="busy || adviceBlocked"
+              @click="openEdit(true)"
+            >
+              <Wand2 :size="18" /> Vylepšit agentem
+            </button>
+          </Tooltip>
         </div>
       </div>
       <div class="path mono" data-test="path">{{ task.path }}</div>
@@ -307,8 +302,9 @@ function onEdit(input: EditTaskInput) {
           :busy="busy"
           :pending="action === 'edit'"
           :error="error"
+          :auto-improve="autoImprove"
           @submit="onEdit($event as EditTaskInput)"
-          @cancel="editing = false"
+          @cancel="closeEdit"
         />
         <template v-else>
           <IssueList v-if="error" :message="error.message" :issues="error.issues" />
@@ -367,37 +363,13 @@ function onEdit(input: EditTaskInput) {
 
       <aside class="side">
         <section class="card">
-          <h3><Settings2 :size="16" /> Spuštění</h3>
+          <h3><Settings2 :size="16" /> Nastavení</h3>
           <dl class="props">
             <dt>Workflow</dt>
             <dd data-test="workflow">
               <span v-if="task.workflow" class="mono">{{ task.workflow }}</span>
               <span v-else class="amber">bez workflow</span>
               <span v-if="task.workflow && !task.own_workflow" class="faint"> (zděděno)</span>
-            </dd>
-            <dd class="full controls">
-              <div class="row">
-                <SelectMenu
-                  v-model="workflowChoice"
-                  class="grow"
-                  data-test="workflow-select"
-                  label="Workflow"
-                  :options="workflowOptions"
-                />
-                <button
-                  type="button"
-                  data-test="assign"
-                  :disabled="busy"
-                  :aria-busy="action === 'assign' || undefined"
-                  @click="assign"
-                >
-                  <Spinner v-if="action === 'assign'" />
-                  Přiřadit
-                </button>
-              </div>
-              <button type="button" class="wide" :disabled="busy || adviceBlocked" @click="editing = true">
-                <Wand2 :size="14" />Upravit a navrhnout workflow
-              </button>
             </dd>
             <dt>Auto-merge</dt>
             <dd data-test="auto-merge">
@@ -458,25 +430,6 @@ function onEdit(input: EditTaskInput) {
               </li>
             </ul>
             <p v-else class="faint">Žádné závislosti</p>
-            <div class="add">
-              <input
-                v-model="dependsInput"
-                data-test="link-input"
-                type="text"
-                :placeholder="linkPlaceholder"
-                @keydown.enter.prevent="addLink('depends_on')"
-              />
-              <button
-                type="button"
-                data-test="link-add"
-                :disabled="busy"
-                :aria-busy="action === 'link:depends_on' || undefined"
-                @click="addLink('depends_on')"
-              >
-                <Spinner v-if="action === 'link:depends_on'" />
-                Přidat
-              </button>
-            </div>
           </div>
 
           <div class="link-group" data-test="blocks">
@@ -513,25 +466,6 @@ function onEdit(input: EditTaskInput) {
               </li>
             </ul>
             <p v-else class="faint">Nic</p>
-            <div class="add">
-              <input
-                v-model="relatedInput"
-                data-test="related-input"
-                type="text"
-                placeholder="id"
-                @keydown.enter.prevent="addLink('related')"
-              />
-              <button
-                type="button"
-                data-test="related-add"
-                :disabled="busy"
-                :aria-busy="action === 'link:related' || undefined"
-                @click="addLink('related')"
-              >
-                <Spinner v-if="action === 'link:related'" />
-                Přidat
-              </button>
-            </div>
           </div>
         </section>
       </aside>
@@ -581,6 +515,7 @@ h2 {
 .head-buttons {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
   margin-left: auto;
 }
@@ -737,29 +672,6 @@ dd {
   min-width: 0;
 }
 
-dd.full {
-  grid-column: 1 / -1;
-}
-
-.controls {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding-bottom: 6px;
-  border-bottom: 1px solid var(--border-soft);
-}
-
-.row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.grow {
-  flex: 1;
-  min-width: 0;
-}
-
 .amber {
   color: var(--amber);
 }
@@ -813,23 +725,6 @@ li {
 
 .push {
   margin-left: auto;
-}
-
-.add {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-input {
-  flex: 1;
-  min-width: 0;
-  padding: 4px 8px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel);
-  color: var(--text);
-  font: inherit;
 }
 
 /* buttons */
