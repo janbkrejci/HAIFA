@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T21
 title: redesign stránky Task
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 ---
@@ -15,3 +15,4 @@ při stisku tlačítka v readonly view mode přepnout do edit formuláře
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-14 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/33 · náklady $4.75
