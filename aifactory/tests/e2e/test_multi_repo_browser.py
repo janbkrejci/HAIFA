@@ -139,7 +139,8 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                         id_a,
                     )
 
-                    _menu(page, "switch-add")
+                    _menu(page, "switch-overview")
+                    page.locator('[data-test="overview-add-repo"]').click()
                     _inspect(page, repo_b)
                     assert git(repo_b, "rev-parse", "HEAD") == before_install
                     assert not (repo_b / ".factory").exists()
@@ -221,6 +222,7 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     _menu(page, "switch-overview")
                     row = page.locator(f'[data-repo="{id_b}"]')
                     expect(row).to_be_visible()
+                    row.locator('[data-test="repo-menu"]').click()
                     row.locator('[data-test="card-remove"], [data-test="calm-remove"]').click()
                     modal = page.locator('[data-test="confirm-dialog"]')
                     expect(modal).to_contain_text(f"Odebrat repozitář {repo_b.name}?")

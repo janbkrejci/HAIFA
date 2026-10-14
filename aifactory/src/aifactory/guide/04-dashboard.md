@@ -13,7 +13,7 @@ Zleva doprava:
 - **Harnessy:** lišta limitů předplatného (pětihodinové a týdenní okno, kolik procent zbývá). Kliknutím otevřeš nastavení harnessů tohoto počítače.
 - **Příručka:** ikona knihy otevře tuto příručku.
 - **Motiv:** přepínač světlého a tmavého motivu.
-- **Přepínač rep:** název otevřeného repa a verze HAIFA. Menu nabízí **Přehled**, **Tento počítač**, **Knihovna**, seznam rep (se stavem a počty běžících, čekajících na review a selhaných tasků) a **Přidat repozitář…**.
+- **Přepínač rep:** název otevřeného repa a verze HAIFA. Menu nabízí **Přehled**, **Tento počítač**, **Knihovna**, a seznam rep (se stavem a počty běžících, čekajících na review a selhaných tasků).
 
 Limity ukazují poslední hodnoty, které harness sám vrátil při běhu (Claude ve výstupu běhu, Codex ve svém logu). Dashboard se na ně nikam neptá; pi limity nehlásí.
 
@@ -25,9 +25,9 @@ Limity ukazují poslední hodnoty, které harness sám vrátil při běhu (Claud
 
 ## Přehled
 
-Úvodní stránka se všemi repy. Souhrnná tlačítka **Běží**, **Čeká na review**, **Selhalo** a **Problémy** filtrují karty rep. Karta repa ukazuje běžící tasky (workflow, fáze, pokus, čas, náklady), pull requesty čekající na review, selhané běhy, stav konfigurace a poslední aktivitu. Repa bez aktivity jsou souhrnně „v klidu“.
+Úvodní stránka se všemi repy. Souhrnná tlačítka **Běží**, **Čeká na review**, **Selhalo** a **Problémy** filtrují karty rep. Karta repa ukazuje běžící tasky (workflow, fáze, pokus, čas, náklady), pull requesty čekající na review, selhané běhy, stav konfigurace a poslední aktivitu. Repa bez aktivity jsou souhrnně „v klidu“. Pod seznamem rep je odkaz **Přidat repozitář**.
 
-**Odebrat repozitář** není jen odregistrování: z repa smaže `.factory/` a řádky HAIFA v `.gitignore`, commitne to do base a odešle, a smaže lokální data běhů (trace DB, worktree). Backlog, specifikace a dokumentace v repu zůstanou. Repo, jehož složka zmizela, jen odebereš z dashboardu tlačítkem **Odebrat z dashboardu**.
+**Odebrat repozitář** je v menu ⋮ vpravo nahoře na kartě repa (nebo na konci řádku repa v klidu). Repo jen odpojí od dashboardu; `.factory/`, backlog, specifikace i dokumentace v repu zůstanou. Repo, jehož složka zmizela, jen odebereš z dashboardu tlačítkem **Odebrat z dashboardu**.
 
 ## Tento počítač
 

@@ -643,6 +643,7 @@ def test_add_and_remove_repo_in_browser(
     page.goto("/#/overview")
     row = page.locator(f'[data-repo="{second_id}"]')
     expect(row).to_be_visible(timeout=SERVER_TIMEOUT_MS)
+    row.locator('[data-test="repo-menu"]').click()
     row.locator('[data-test="card-remove"], [data-test="calm-remove"]').click()
     dialog = page.locator('[data-test="confirm-dialog"]')
     expect(dialog).to_contain_text(f"Odebrat repozitář {second.name}?")
