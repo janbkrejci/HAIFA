@@ -1,7 +1,7 @@
 <script setup lang="ts">
-// #/setup "Tento počítač": everything about this computer. The machine check (only findings
-// that need an action, in groups), the library in $HAIFA_HOME (#/setup/library scrolls to it)
-// and the dashboard's own settings. Library findings show in the library section.
+// #/setup "Knihovna" (opened from the library chip of the topbar): the library in $HAIFA_HOME
+// first (#/setup/library scrolls to it), then the check of this computer (only findings that need
+// an action, in groups) and the dashboard's own settings. Library findings show in the library section.
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { fetchMachineCheck, type MachineCheck } from '@/lib/api'
 import { MACHINE_GROUPS, findingGroup } from '@/lib/library'
@@ -49,27 +49,31 @@ onMounted(() => { void load() })
 </script>
 <template>
   <section class="global-page" data-test="setup">
-    <header><h1>Tento počítač</h1><button :disabled="loading" data-test="machine-refresh" @click="load(true)">Znovu zkontrolovat</button></header>
-    <p v-if="error" role="alert" data-test="setup-error">{{ error }}</p>
-    <p v-if="loading" data-test="setup-busy">Načítám…</p>
-    <div v-if="report" class="summary" data-test="machine-summary">
-      <p class="verdict" :class="counts.error ? 'is-bad' : 'is-ok'" data-test="machine-verdict">
-        <template v-if="!counts.error && !counts.warning">Počítač je v pořádku</template>
-        <template v-else>{{ counts.error }} chyb, {{ counts.warning }} varování</template>
-      </p>
-      <p class="hint">Zkontrolováno: {{ fmtTime(report.checked_at) }}{{ report.cached ? ' (z mezipaměti)' : '' }}</p>
-    </div>
-    <section v-for="group in groups" :key="group.name" :data-group="group.name">
-      <h2>{{ group.name }}</h2>
-      <MachineFinding v-for="(f, index) in group.findings" :key="f.code + index" :finding="f" />
-    </section>
+    <header><h1>Knihovna</h1></header>
     <LibrarySection :findings="libraryFindings" @changed="onLibraryChanged" />
+    <section data-test="machine-check">
+      <header><h2>Kontrola počítače</h2><button :disabled="loading" data-test="machine-refresh" @click="load(true)">Znovu zkontrolovat</button></header>
+      <p v-if="error" role="alert" data-test="setup-error">{{ error }}</p>
+      <p v-if="loading" data-test="setup-busy">Načítám…</p>
+      <div v-if="report" class="summary" data-test="machine-summary">
+        <p class="verdict" :class="counts.error ? 'is-bad' : 'is-ok'" data-test="machine-verdict">
+          <template v-if="!counts.error && !counts.warning">Počítač je v pořádku</template>
+          <template v-else>{{ counts.error }} chyb, {{ counts.warning }} varování</template>
+        </p>
+        <p class="hint">Zkontrolováno: {{ fmtTime(report.checked_at) }}{{ report.cached ? ' (z mezipaměti)' : '' }}</p>
+      </div>
+      <section v-for="group in groups" :key="group.name" :data-group="group.name">
+        <h3>{{ group.name }}</h3>
+        <MachineFinding v-for="(f, index) in group.findings" :key="f.code + index" :finding="f" />
+      </section>
+    </section>
     <DashboardSettings />
   </section>
 </template>
 <style src="./library.css" />
 <style scoped>
 .summary { margin: 16px 0; }
+[data-test=machine-check] h2 { margin: 0; }
 .verdict { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
 .is-ok { color: var(--green); }
 .is-bad { color: var(--red); }

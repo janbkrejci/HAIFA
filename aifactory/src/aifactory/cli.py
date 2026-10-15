@@ -285,8 +285,8 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
         description=(
             "Create the library ($HAIFA_HOME/library, overridden by HAIFA_LIBRARY) as a git "
             "repository from the packaged seed in one commit: library.yaml (format, id, name, "
-            "min_factory_version, seed) and the seed agents and workflows. An existing library "
-            "is refused (library_exists); git needs user.name and user.email "
+            "min_factory_version, seed) and the seed agents, workflows and the factory skill. "
+            "An existing library is refused (library_exists); git needs user.name and user.email "
             "(git_identity_missing). With --remote URL the commit is pushed to the empty remote "
             "before the library exists locally; a remote with any ref is refused "
             "(remote_not_empty) and a failed push (push_failed) leaves no library. The remote "
@@ -414,10 +414,20 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
             "to the installed seed. Items the seed no longer has are not touched. The write "
             "goes like import: library.lock, library_dirty, fetch (library_behind, "
             "library_diverged), commit, push, fast-forward. A second run without a new seed "
-            "commits nothing (committed false). A --take item the seed lacks is not_in_seed."
+            "commits nothing (committed false). A --take item the seed lacks is not_in_seed. "
+            "--all replaces every seed item with the installed seed version, also items the "
+            "team changed (take); items the seed lacks and the repos' .factory/ stay. Install "
+            "and upgrade run seed --all. --all with --take is usage_error."
         ),
     )
-    seed.add_argument(
+    seed_pick = seed.add_mutually_exclusive_group()
+    seed_pick.add_argument(
+        "--all",
+        action="store_true",
+        help="replace every seed item with the installed seed version, also items the team "
+        "changed; install and upgrade run this",
+    )
+    seed_pick.add_argument(
         "--take",
         action="append",
         default=[],
@@ -715,7 +725,7 @@ def _library_seed(args: argparse.Namespace) -> int:
     """`library seed`; errors propagate to `_library`."""
     from aifactory.library.reseed import seed_library
 
-    result = seed_library(args.take, dry_run=args.dry_run)
+    result = seed_library(args.take, take_all=args.all, dry_run=args.dry_run)
     if args.json:
         return _emit_ok(result.to_json(), result.warnings)
     for item in result.plan.items:
@@ -2872,7 +2882,9 @@ def _add_upgrade_command(parser: argparse.ArgumentParser) -> None:
         "editable install is refused (editable_install): update it with git pull. Restart a "
         "running dashboard afterwards. On Windows the running factory cannot replace its own "
         "files: the install runs from a detached script after this command exits (handed_off, "
-        "with its log), and a running dashboard is refused (dashboard_running)."
+        "with its log), and a running dashboard is refused (dashboard_running). After the "
+        "install the new factory refreshes the library: library clone --seed-fallback when it "
+        "is missing, then library seed --all (library_refreshed); a failure is a warning."
     )
     parser.add_argument("bundle", metavar="BUNDLE", help="path or https/file URL of the zip")
     parser.add_argument(

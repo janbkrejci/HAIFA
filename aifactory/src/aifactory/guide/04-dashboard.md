@@ -1,6 +1,6 @@
 # Dashboard
 
-Dashboard spustíš příkazem `factory obs` a běží na `http://127.0.0.1:4700`. Jeden dashboard obsluhuje všechna repa zaregistrovaná na tomto počítači (registr `dashboard.yaml` v domovském adresáři HAIFA). Port změníš na stránce Tento počítač nebo přepínačem `--port`.
+Dashboard spustíš příkazem `factory obs` a běží na `http://127.0.0.1:4700`. Jeden dashboard obsluhuje všechna repa zaregistrovaná na tomto počítači (registr `dashboard.yaml` v domovském adresáři HAIFA). Port změníš na stránce Knihovna nebo přepínačem `--port`.
 
 ## Horní lišta
 
@@ -9,11 +9,11 @@ Zleva doprava:
 - **Logo HAIFA:** návrat na úvodní stránku.
 - **Chip aktualizací:** „Systém je aktuální“, nebo „Je k dispozici aktualizace“ (kliknutím ji nainstaluješ). Viz [Aktualizace a vydání](#/guide/aktualizace).
 - **Chip kontroly:** „Systém v pořádku“ (kliknutím zopakuješ kontrolu), nebo **Nalezeny problémy**, který otevře stránku **Problémy a řešení**.
-- **Chip knihovny:** „Knihovna OK“, nebo „Založit knihovnu“. Oba vedou do sekce **Knihovna** na stránce **Tento počítač** (`#/setup/library`).
+- **Chip knihovny:** „Knihovna OK“, nebo „Založit knihovnu“. Oba vedou na stránku **Knihovna** (`#/setup/library`); jinudy se na ni z horní lišty nedostaneš.
 - **Harnessy:** lišta limitů předplatného (pětihodinové a týdenní okno, kolik procent zbývá). Kliknutím otevřeš nastavení harnessů tohoto počítače.
 - **Příručka:** ikona knihy otevře tuto příručku.
 - **Motiv:** přepínač světlého a tmavého motivu.
-- **Přepínač rep:** název otevřeného repa a verze HAIFA. Menu nabízí **Přehled**, **Tento počítač** a seznam rep (se stavem a počty běžících, čekajících na review a selhaných tasků).
+- **Přepínač rep:** název otevřeného repa a verze HAIFA. Menu nabízí **Přehled** a seznam rep (se stavem a počty běžících, čekajících na review a selhaných tasků).
 
 Limity ukazují poslední hodnoty, které harness sám vrátil při běhu (Claude ve výstupu běhu, Codex ve svém logu). Dashboard se na ně nikam neptá; pi limity nehlásí.
 
@@ -29,15 +29,15 @@ Limity ukazují poslední hodnoty, které harness sám vrátil při běhu (Claud
 
 **Odebrat repozitář** je v menu ⋮ vpravo nahoře na kartě repa (nebo na konci řádku repa v klidu). Repo jen odpojí od dashboardu; `.factory/`, backlog, specifikace i dokumentace v repu zůstanou. Repo, jehož složka zmizela, jen odebereš z dashboardu tlačítkem **Odebrat z dashboardu**.
 
-## Tento počítač
+## Knihovna
 
-Vše o tomto počítači na jedné stránce:
+Stránku **Knihovna** (`#/setup`, `#/setup/library`) otevřeš chipem knihovny v horní liště. Shora dolů:
 
+- **Obsah knihovny:** nálezy knihovny, založení nebo naklonování knihovny, synchronizace s remote (**Stáhnout**, **Odeslat jako PR**, otevřené pull requesty), **Obnovit výchozí agenty a workflows**, **Import…** a prohlížeč položek. Viz kapitola [Knihovna](#/guide/knihovna).
 - **Kontrola počítače:** verdikt a nálezy ve skupinách HAIFA, Nástroje, Harnessy, Hosting a Prostředí. Ukazuje jen nálezy, které vyžadují akci; každý má radu s tlačítkem **Kopírovat**. Skupina bez nálezů se nezobrazuje. **Znovu zkontrolovat** kontrolu zopakuje.
-- **Knihovna** (`#/setup/library`): nálezy knihovny, založení nebo naklonování knihovny, synchronizace s remote (**Stáhnout**, **Odeslat jako PR**, otevřené pull requesty), **Obnovit výchozí agenty a workflows**, **Import…** a prohlížeč položek. Viz kapitola [Knihovna](#/guide/knihovna).
 - **Dashboard:** **Port** (platí po restartu) a cesty k registru a domovskému adresáři.
 
-Dřívější adresa stránky Knihovna (`#/library`) vede do sekce Knihovna.
+Dřívější adresa stránky Knihovna (`#/library`) vede sem také.
 
 ## Problémy a řešení
 

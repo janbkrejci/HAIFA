@@ -16,7 +16,7 @@ Dokud něco chybí, ukazuje horní lišta chip **Nalezeny problémy**. Otevře s
 
 | Krok | Tlačítko | Co udělat |
 | --- | --- | --- |
-| Tento počítač | Zkontrolovat počítač | Vyřeš chyby kontroly: git, identita, uv, CLI hostingu. |
+| Počítač | Zkontrolovat počítač | Vyřeš chyby kontroly: git, identita, uv, CLI hostingu. |
 | Knihovna | Připravit knihovnu | Naklonuj týmovou knihovnu (výchozí HAIFA-LIBRARY je předvyplněná), nebo ji založ ze semínka. Instalátor ji obvykle naklonoval už sám. |
 | Harnessy | Zkontrolovat harnessy | Povol harness, vyber model a thinking a spusť **Test**. |
 | Repozitář | Přidat repozitář | Přidej lokální Git repo. |
@@ -48,7 +48,7 @@ Totéž z příkazové řádky: `factory obs --repo ~/cesta/k/repu` zaregistruje
 
 ## Zkontroluj repo
 
-V repu otevři záložku **Factory**. Verdikt „Factory je v pořádku“ znamená, že můžeš pracovat. Jinak záložka ukáže nálezy rozdělené na **Repozitář: opravit a commitnout** a **Tento počítač: potřebné pro toto repo** a tlačítka **Nainstalovat factory** nebo **Stáhnout konfiguraci z base**. Necommitnutou konfiguraci commitneš červeným čipem **Necommitnutá konfigurace** v horní liště. Ostatní nálezy počítače a knihovny jsou jen na stránce **Tento počítač**; Factory na ně odkáže jedním řádkem.
+V repu otevři záložku **Factory**. Verdikt „Factory je v pořádku“ znamená, že můžeš pracovat. Jinak záložka ukáže nálezy rozdělené na **Repozitář: opravit a commitnout** a **Počítač: potřebné pro toto repo** a tlačítka **Nainstalovat factory** nebo **Stáhnout konfiguraci z base**. Necommitnutou konfiguraci commitneš červeným čipem **Necommitnutá konfigurace** v horní liště. Ostatní nálezy počítače a knihovny jsou jen na stránce **Knihovna**; Factory na ně odkáže jedním řádkem.
 
 ## Založ projekt, step a task
 

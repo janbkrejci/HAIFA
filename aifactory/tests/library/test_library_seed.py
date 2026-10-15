@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -20,7 +21,10 @@ from aifactory.library import (
     seed_extension_names,
     seed_items,
     seed_workflow_names,
+    store,
 )
+from aifactory.library.seed import SKILL_NAME, skill_seed_item
+from aifactory.skill import render_skill
 from aifactory.workflow import (
     DEFAULT_WORKFLOWS_DIR,
     CodeStep,
@@ -279,3 +283,40 @@ def test_seed_roster_passes_config_and_preflight(tmp_path: Path) -> None:
     assert {p.stem for p in workflows} >= {"scout", "resolve"}
     for path in workflows:
         preflight(load_workflow(path, config.roles), cfg)
+
+
+def test_packaged_seed_has_the_generated_factory_skill() -> None:
+    seed = {i.key: i for i in store.packaged_seed()}
+    skill = seed[f"skill/{SKILL_NAME}"]
+    data = render_skill().encode("utf-8")
+    assert [(f.path, f.executable, f.data) for f in skill.files] == [
+        ("skills/factory/SKILL.md", False, data)
+    ]
+    assert skill.version == skill_seed_item().version
+    # generated and only in the library: not part of the no-library fallback
+    assert f"skill/{SKILL_NAME}" not in {f"{i.type}/{i.name}" for i in seed_items()}
+
+
+def test_init_library_writes_the_factory_skill(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.setenv("HAIFA_HOME", str(home / ".config" / "haifa"))
+    monkeypatch.delenv("HAIFA_LIBRARY", raising=False)
+    for kind in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{kind}_NAME", "Ada Tester")
+        monkeypatch.setenv(f"GIT_{kind}_EMAIL", "ada@example.com")
+    result = store.init_library("team")
+    lib = Path(result.plan.library)
+    shown = subprocess.run(
+        ["git", "show", "HEAD:skills/factory/SKILL.md"],
+        cwd=lib,
+        capture_output=True,
+        check=True,
+    ).stdout
+    assert shown == render_skill().encode("utf-8")
+    meta = yaml.safe_load((lib / "library.yaml").read_text("utf-8"))
+    assert meta["seed"][f"skill/{SKILL_NAME}"] == skill_seed_item().version

@@ -49,7 +49,7 @@ export function gettingStartedSteps(input: GettingStartedInput): Step[] {
   return [
     {
       id: 'machine',
-      title: 'Tento počítač',
+      title: 'Počítač',
       done: !!check?.ok,
       hint: check ? (check.ok ? 'Kontrola počítače bez chyb.' : 'Kontrola počítače hlásí chyby.') : 'Kontrola počítače ještě neproběhla.',
       href: SETUP_HREF,

@@ -22,7 +22,20 @@ from aifactory.skill import ERROR_CODES, envelope_problems, render_skill
 from fake_exe import make_executable
 
 Capsys = pytest.CaptureFixture[str]
-FAKE_UV = '#!/bin/sh\nprintf "%s|%s\\n" "$PWD" "$*" >> "$UV_LOG"\nexit "${UV_EXIT:-0}"\n'
+# A fake uv: `tool dir --bin` prints $FACTORY_BIN, anything else is logged as "cwd|args".
+FAKE_UV = (
+    '#!/bin/sh\nif [ "$1 $2 $3" = "tool dir --bin" ]; then echo "$FACTORY_BIN"; exit 0; fi\n'
+    'printf "%s|%s\\n" "$PWD" "$*" >> "$UV_LOG"\nexit "${UV_EXIT:-0}"\n'
+)
+# A fake new factory: logs its arguments; the library is missing when $FAKE_LIBRARY is
+# "missing"; `library seed` exits with $FAKE_SEED_EXIT (default 0).
+FAKE_FACTORY = (
+    '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FACTORY_LOG"\n'
+    'if [ "$1 $2" = "library status" ] && [ "${FAKE_LIBRARY:-}" = "missing" ]; then\n'
+    '  echo \'{"ok": false, "error": {"code": "library_missing", "message": "no"}}\'; exit 2\n'
+    "fi\n"
+    'if [ "$1 $2" = "library seed" ]; then exit "${FAKE_SEED_EXIT:-0}"; fi\n'
+)
 NEWER = ".".join(str(n) for n in (*version_key(__version__)[:-1], version_key(__version__)[-1] + 1))
 
 
@@ -96,10 +109,23 @@ def uv_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     uv.write_text(FAKE_UV, encoding="utf-8", newline="\n")
     make_executable(uv)
     log = tmp_path / "uv.log"
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    factory = tools / "factory"
+    factory.write_text(FAKE_FACTORY, encoding="utf-8", newline="\n")
+    make_executable(factory)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
     monkeypatch.setenv("UV_LOG", str(log))
-    monkeypatch.delenv("UV_EXIT", raising=False)
+    monkeypatch.setenv("FACTORY_BIN", str(tools))
+    monkeypatch.setenv("FACTORY_LOG", str(tmp_path / "factory.log"))
+    for name in ("UV_EXIT", "FAKE_SEED_EXIT", "FAKE_LIBRARY"):
+        monkeypatch.delenv(name, raising=False)
     return log
+
+
+def _factory_calls(uv_log: Path) -> list[str]:
+    log = uv_log.with_name("factory.log")
+    return log.read_text("utf-8").splitlines() if log.exists() else []
 
 
 def _run(capsys: Capsys, *args: str) -> tuple[int, dict[str, Any]]:
@@ -135,6 +161,44 @@ def test_newer_version_installs_with_uv(tmp_path: Path, uv_log: Path, capsys: Ca
     assert argv == f"tool install --force {wheel} --constraints constraints.txt"
     assert Path(cwd).name == f"haifa-{NEWER}"
     assert not Path(cwd).exists()  # the temporary directory is gone
+    # the new factory refreshes the library to its seed
+    assert _factory_calls(uv_log) == ["library status --json", "library seed --all"]
+    assert data["library_refreshed"] is True
+    assert obj["warnings"] == []
+
+
+def test_missing_library_is_cloned_before_the_refresh(
+    tmp_path: Path, uv_log: Path, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_LIBRARY", "missing")
+    code, obj = _run(capsys, str(make_bundle(tmp_path / "dist")))
+    assert code == 0 and obj["data"]["library_refreshed"] is True
+    assert _factory_calls(uv_log) == [
+        "library status --json",
+        "library clone --seed-fallback",
+        "library seed --all",
+    ]
+
+
+def test_failed_refresh_warns_and_the_upgrade_succeeds(
+    tmp_path: Path, uv_log: Path, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_SEED_EXIT", "2")
+    code, obj = _run(capsys, str(make_bundle(tmp_path / "dist")))
+    assert code == 0 and obj["ok"] and obj["data"]["installed"] is True
+    assert obj["data"]["library_refreshed"] is False
+    assert _factory_calls(uv_log) == ["library status --json", "library seed --all"]
+    assert any("factory library seed --all" in w for w in obj["warnings"])
+
+
+def test_missing_new_factory_warns(
+    tmp_path: Path, uv_log: Path, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FACTORY_BIN", str(tmp_path / "nowhere"))
+    code, obj = _run(capsys, str(make_bundle(tmp_path / "dist")))
+    assert code == 0 and obj["data"]["installed"] is True
+    assert obj["data"]["library_refreshed"] is False
+    assert any("not refreshed" in w for w in obj["warnings"])
 
 
 def test_text_output_reminds_restart(tmp_path: Path, uv_log: Path, capsys: Capsys) -> None:
@@ -228,6 +292,7 @@ def test_dry_run_runs_nothing(tmp_path: Path, uv_log: Path, capsys: Capsys) -> N
     assert obj["data"]["target_version"] == NEWER
     assert obj["data"]["command"][:4] == ["uv", "tool", "install", "--force"]
     assert not uv_log.exists()
+    assert _factory_calls(uv_log) == [] and obj["data"]["library_refreshed"] is False
 
 
 def test_uv_failure(
@@ -239,6 +304,7 @@ def test_uv_failure(
     assert code == 1 and obj["error"]["code"] == "upgrade_failed"
     assert obj["data"]["returncode"] == 3 and obj["data"]["installed"] is False
     assert uv_log.exists()
+    assert _factory_calls(uv_log) == []
 
 
 def test_uv_missing(
@@ -326,6 +392,11 @@ def test_handoff_keeps_the_bundle_and_starts_the_script(tmp_path: Path, uv_log: 
     assert "PSModulePath" not in env and env["HAIFA_OBS_RESTART"] == "1"
     script, plan_file = Path(argv[-2]), Path(argv[-1])
     assert script.read_bytes() == upgrade.HANDOFF_SCRIPT.read_bytes()
+    text = script.read_text("utf-8")
+    for call in ("tool dir --bin", "library status --json", "library clone --seed-fallback"):
+        assert call in text
+    assert "library seed --all" in text
+    assert _factory_calls(uv_log) == []  # the script refreshes the library, not this process
     plan = json.loads(plan_file.read_text("utf-8"))
     wheel = f"aifactory-{NEWER}-py3-none-any.whl"
     assert plan["args"] == ["tool", "install", "--force", wheel, "--constraints", "constraints.txt"]

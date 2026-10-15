@@ -162,6 +162,11 @@ describe('App', () => {
     go('#/repos/add')
     await flushPromises()
     expect(document.title).toBe('Přidat repozitář · HAIFA')
+    go('#/setup/library')
+    await flushPromises()
+    expect(document.title).toBe('Knihovna · HAIFA')
+    expect(wrapper.get('[data-test="switcher-current"]').text()).toBe('Knihovna')
+    expect(wrapper.get('main h1').text()).toBe('Knihovna')
     wrapper.unmount()
   })
 
@@ -194,7 +199,6 @@ describe('App', () => {
       a.find('.repo-name').exists() ? a.get('.repo-name').text() : a.text()
     expect(menu.findAll('a').map(label)).toEqual([
       'Přehled',
-      'Tento počítač',
       'HAIFA',
       'sandbox',
       'gone',
@@ -209,6 +213,8 @@ describe('App', () => {
     expect(gone.get('[data-test="repo-parent"]').text()).toBe('C:\\old')
     expect(menu.get('[data-test="switch-repo-haifa"]').find('[data-test="repo-label"]').exists()).toBe(false)
     expect(menu.find('[data-test="switch-add"]').exists()).toBe(false)
+    expect(menu.find('[data-test="switch-setup"]').exists()).toBe(false)
+    expect(menu.findAll('a').some(a => a.attributes('href')?.startsWith('#/setup'))).toBe(false)
     expect(menu.find('[data-test="switch-manage"]').exists()).toBe(false)
 
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))

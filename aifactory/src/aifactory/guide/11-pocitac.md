@@ -90,4 +90,4 @@ Agentní procesy a worktree zůstávají na počítači, který běh spustil. Pa
 
 ## Dashboard v síti
 
-`factory obs --host 0.0.0.0` nebo `HAIFA_DASH_HOST=0.0.0.0` zpřístupní dashboard celé síti **bez přihlášení**. Port nastavíš na stránce **Tento počítač** (platí po restartu), nebo `factory obs --port N`.
+`factory obs --host 0.0.0.0` nebo `HAIFA_DASH_HOST=0.0.0.0` zpřístupní dashboard celé síti **bez přihlášení**. Port nastavíš na stránce **Knihovna** (platí po restartu), nebo `factory obs --port N`.

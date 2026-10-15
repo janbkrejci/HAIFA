@@ -197,7 +197,7 @@ describe('FactoryView', () => {
     expect(repo.findAll('[data-test="finding"]').map((f) => f.attributes('data-severity'))).toEqual(['error', 'info'])
     expect(repo.text()).toContain('Oprava: fix config_invalid')
     const local = wrapper.get('[data-test="findings-local"]')
-    expect(local.text()).toContain('Tento počítač: potřebné pro toto repo')
+    expect(local.text()).toContain('Počítač: potřebné pro toto repo')
     // library findings and the machine findings #/setup shows are only there
     const items = local.findAll('[data-test="finding"]')
     expect(items.map((f) => f.text())).toEqual([expect.stringContaining('gh_missing')])

@@ -841,19 +841,21 @@ download `download_failed`.
    nothing is installed.
 4. `data` has `current_version`, `target_version`, `wheel`, `min_factory_version` of the
    library (`null` without a library or minimum), `command` (argv), `dry_run`,
-   `installed`, `stdout`, `stderr` and `restart_dashboard`. A target below the library's
-   `min_factory_version` adds a warning.
+   `installed`, `stdout`, `stderr`, `restart_dashboard` and `library_refreshed`. A target
+   below the library's `min_factory_version` adds a warning.
 5. `--dry-run` stops here and runs nothing. Without it the command
    `uv tool install --force <wheel> --constraints constraints.txt` runs in the unpacked
    bundle: `uv_missing` when uv is not on PATH, `upgrade_failed` (exit 1, uv's output in
    `data`) when uv fails; the old version stays. On success `installed` is `true` and
    `data.next` reminds to restart a running dashboard (`factory obs`).
-6. Then see "After a HAIFA upgrade" below for the library seed.
+6. After the install the new `factory` refreshes the library: `library status --json`,
+   `library clone --seed-fallback` when the library is missing, then
+   `library seed --all` (`library_refreshed: true`). A failed refresh is a warning (then
+   run `factory library seed --all --json`); the upgrade still succeeds. The
+   Windows handoff script and the bundle installers do the same.
 
 In short: `factory upgrade BUNDLE --dry-run --json`, `factory upgrade BUNDLE --json`,
-restart a running dashboard, `factory library seed --dry-run --json`,
-`factory library seed --json` (with a remote the seed write pushes it), then
-`factory check --json`. Repos need no step: they inherit the new item versions at
+restart a running dashboard, then `factory check --json`. Repos need no step: they inherit the new item versions at
 their next run, and `factory --skill` must be regenerated for the new version.
 
 ### Library
@@ -921,8 +923,13 @@ credential helper).
 
 #### After a HAIFA upgrade
 
-A new HAIFA can ship new versions of the seed agents and workflows. `seed` in
-`library.yaml` records the seed version each item last took.
+A new HAIFA can ship new versions of the seed agents, workflows and the `factory` skill
+(`skill/factory`, generated from `factory --skill`). `seed` in `library.yaml` records the
+seed version each item last took. Installing or upgrading HAIFA runs
+`factory library seed --all`: every seed item is replaced with the installed seed version,
+also items the team changed in the library (action `take`); items the seed lacks stay.
+Customizations belong in the repos' `.factory/`, which the refresh never touches.
+`--all` with `--take` is `usage_error`. Without `--all`:
 
 1. `factory library status --json` has `seed_update_available` (with `seed_updates`, the
    `type/name` list) and a `seed_update_available` warning when the installed seed has

@@ -14,6 +14,8 @@ import yaml
 from library_tree import WORKFLOW, library_agent, put
 
 from aifactory.library import store
+from aifactory.library.reseed import seed_library
+from aifactory.skill import render_skill
 from cli_json import run_json
 
 Capsys = pytest.CaptureFixture[str]
@@ -156,3 +158,86 @@ def test_take_unknown_item(env: Env, capsys: Capsys) -> None:
     for take, code in (("agent/nope", "not_in_seed"), ("builder", "invalid_value")):
         rc, obj = run_json(capsys, [*SEED, "--take", take])
         assert rc == 2 and obj["error"]["code"] == code
+
+
+TEAM_WORKFLOW = WORKFLOW.replace(b"name: plan", b"name: team")
+
+
+def _team_item(env: Env) -> None:
+    """A library item the seed does not have (a team import)."""
+    put(env.lib, "workflows/team.yaml", TEAM_WORKFLOW)
+    _git(env.lib, "add", "workflows/team.yaml")
+    _git(env.lib, "commit", "--quiet", "-m", "team: workflow")
+
+
+def test_take_all_replaces_every_team_change(env: Env, capsys: Capsys) -> None:
+    _setup(env, capsys)
+    _team_item(env)
+
+    plan = seed_library(take_all=True, dry_run=True).to_json()
+    assert _actions(plan) == {
+        "agent/builder": "take",
+        "agent/planner": "update",
+        "workflow/build": "create",
+        "workflow/plan": "unchanged",
+    }
+    done = seed_library(take_all=True)
+    assert done.committed
+    assert env.file("agents/builder/system.md") == b"build v2\n"
+    assert env.file("workflows/team.yaml") == TEAM_WORKFLOW
+    assert env.meta_seed() == store.seed_versions(store.packaged_seed())
+
+
+def test_cli_seed_all(env: Env, capsys: Capsys) -> None:
+    _setup(env, capsys)
+    _team_item(env)
+    done = _ok(capsys, [*SEED, "--all"])
+    assert done["committed"] is True
+    assert _actions(done)["agent/builder"] == "take"
+    assert "kept" not in _actions(done).values()
+    assert env.file("agents/builder/system.md") == b"build v2\n"
+    assert env.file("workflows/team.yaml") == TEAM_WORKFLOW
+    again = _ok(capsys, [*SEED, "--all"])
+    assert again["committed"] is False
+    assert set(_actions(again).values()) == {"unchanged"}
+
+
+def test_all_with_take_is_usage_error(env: Env, capsys: Capsys) -> None:
+    _setup(env, capsys)
+    head = _git(env.lib, "rev-parse", "HEAD")
+    rc, obj = run_json(capsys, [*SEED, "--all", "--take", "agent/builder"])
+    assert rc == 2 and obj["error"]["code"] == "usage_error"
+    assert _git(env.lib, "rev-parse", "HEAD") == head
+
+
+def test_seed_all_leaves_repo_copies_alone(env: Env, capsys: Capsys) -> None:
+    _setup(env, capsys)
+    repo = env.tmp / "repo"
+    repo.mkdir()
+    _git(repo, "init", "--quiet", "-b", "main")
+    put(repo, ".factory/prompts/builder/system.md", b"build by the repo\n")
+    put(repo, ".factory/workflows/plan.yaml", WORKFLOW)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "--quiet", "-m", "repo copy")
+    head = _git(repo, "rev-parse", "HEAD")
+    before = {p: p.read_bytes() for p in sorted((repo / ".factory").rglob("*")) if p.is_file()}
+
+    assert _ok(capsys, [*SEED, "--all"])["committed"] is True
+    assert _git(repo, "rev-parse", "HEAD") == head
+    assert _git(repo, "status", "--porcelain") == ""
+    after = {p: p.read_bytes() for p in sorted((repo / ".factory").rglob("*")) if p.is_file()}
+    assert after == before
+
+
+def test_seed_all_restores_the_factory_skill(env: Env, capsys: Capsys) -> None:
+    _ok(capsys, ["library", "init", "--json"])  # the real packaged seed
+    skill = "skills/factory/SKILL.md"
+    assert env.file(skill) == render_skill().encode("utf-8")
+    put(env.lib, skill, env.file(skill) + b"\nteam note\n")
+    _git(env.lib, "commit", "--quiet", "-am", "team: factory skill")
+    kept = _ok(capsys, [*SEED, "--dry-run"])
+    assert _actions(kept)["skill/factory"] == "kept"
+    done = _ok(capsys, [*SEED, "--all"])
+    assert _actions(done)["skill/factory"] == "take"
+    assert env.file(skill) == render_skill().encode("utf-8")
+    assert _git(env.lib, "show", f"HEAD:{skill}") == render_skill().strip()

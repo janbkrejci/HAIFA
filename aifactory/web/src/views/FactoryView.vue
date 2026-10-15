@@ -122,7 +122,7 @@ const groups = computed(() => [
   },
   {
     id: 'local',
-    title: 'Tento počítač: potřebné pro toto repo',
+    title: 'Počítač: potřebné pro toto repo',
     items: sorted(findings.value.filter((f) => f.scope !== 'repo')),
   },
 ].filter((group) => group.items.length > 0))
@@ -224,7 +224,7 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
       </section>
       <p v-if="hidden.length" class="elsewhere" data-test="factory-machine-link">
         Další nálezy tohoto počítače a knihovny: {{ hidden.length }}<template v-if="hidden.some(f => f.severity === 'error')"> (s chybami)</template>
-        · <a :href="SETUP_HREF">Otevřít Tento počítač</a>
+        · <a :href="SETUP_HREF">Otevřít stránku Knihovna</a>
       </p>
     </template>
     <section v-if="report && report.state !== 'none'" ref="settingsSection" data-test="factory-settings">

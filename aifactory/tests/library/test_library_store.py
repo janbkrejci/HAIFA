@@ -17,6 +17,7 @@ from library_tree import SKILL_MD, WORKFLOW, put, skill_files, symlink
 
 from aifactory.library import seed_agent_names, seed_extension_names, seed_workflow_names, store
 from aifactory.library.history import cache_dir
+from aifactory.library.seed import SKILL_NAME
 from cli_json import run_json
 
 Capsys = pytest.CaptureFixture[str]
@@ -75,6 +76,7 @@ def test_init_creates_library_from_seed(home: Path, capsys: Capsys) -> None:
     expected = {f"agent/{n}" for n in seed_agent_names()}
     expected |= {f"workflow/{n}" for n in seed_workflow_names()}
     expected |= {f"extension/{n}" for n in seed_extension_names()}
+    expected.add(f"skill/{SKILL_NAME}")  # generated from factory --skill
     assert set(meta["seed"]) == expected
     assert all(v.startswith("sha256:") for v in meta["seed"].values())
     message = _git(lib, "log", "-1", "--format=%B")
@@ -145,7 +147,7 @@ def test_import_skill_keeps_executable_and_shows_history(home: Path, capsys: Cap
     paths = {f["path"]: f for f in plan["files"]}
     assert paths["skills/lint/bin/run.sh"]["mode"] == "100755"
     assert "+ruff ." in paths["skills/lint/bin/run.sh"]["diff"]
-    assert not (lib / "skills").exists()
+    assert not (lib / "skills/lint").exists()
 
     rc, obj = run_json(capsys, ["library", "import", str(folder), "--type", "skill", "--json"])
     assert rc == 0, obj

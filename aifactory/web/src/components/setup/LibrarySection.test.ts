@@ -118,6 +118,95 @@ describe('LibrarySection', () => {
     expect(body).toEqual({ action: 'seed', options: { take: ['agent/builder'] }, digest: 'take-digest' })
     expect(wrapper.text()).toContain('Výchozí agenti a workflows obnoveny')
   })
+  it('styles the seed confirm like every confirm dialog, danger only when it overwrites a ticked item', async () => {
+    const kept = { type: 'agent', name: 'builder', action: 'kept', version: 'sha256:new', diff: [] }
+    api((url, init) => {
+      if (url === '/api/library/plan') {
+        const taken = JSON.parse(String(init!.body)).options.take?.includes('agent/builder')
+        return envelope({ digest: 'd', blockers: [], files: [{ path: 'workflows/quality.yaml', action: 'create', diff: '', content: 'x', binary: false }],
+          items: [taken ? { ...kept, action: 'take' } : kept] })
+      }
+    })
+    const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
+    await wrapper.get('[data-test="library-reseed"]').trigger('click'); await flushPromises()
+    const ok = () => openDialog()!.querySelector<HTMLButtonElement>('[data-test="confirm-ok"]')!
+    expect(ok().classList.contains('ok')).toBe(true)
+    expect(ok().classList.contains('danger')).toBe(false)
+    expect(ok().disabled).toBe(false)
+    const box = openDialog()!.querySelector<HTMLInputElement>('[data-test="seed-take-agent/builder"]')!
+    box.checked = true; box.dispatchEvent(new Event('change', { bubbles: true })); await flushPromises()
+    expect(ok().classList.contains('danger')).toBe(true)
+    expect(ok().textContent).toContain('Přepsat a obnovit')
+  })
+  it('shows a seed dialog with nothing to do without a faded confirm button', async () => {
+    api((url) => { if (url === '/api/library/plan') return envelope({ digest: 'd', blockers: [], files: [], items: [{ type: 'agent', name: 'builder', action: 'unchanged' }] }) })
+    const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
+    await wrapper.get('[data-test="library-reseed"]').trigger('click'); await flushPromises()
+    expect(openDialog()!.querySelector('[data-test="seed-nothing"]')).not.toBeNull()
+    expect(openDialog()!.querySelector('[data-test="confirm-ok"]')).toBeNull()
+    expect(openDialog()!.querySelector('[data-test="confirm-cancel"]')!.textContent).toContain('Zavřít')
+    await answerDialog(false)
+    expect(openDialog()).toBeNull()
+  })
+  it('picks the import folder with the path field or the folder browser of the Add repository page', async () => {
+    api((url) => {
+      if (url === '/api/fs/dirs') return envelope({ path: '/home/ada', parent: '/home', entries: [{ name: 'skills', path: '/home/ada/skills', is_git: false, has_factory: false }], truncated: false })
+      if (url.startsWith('/api/fs/dirs?path=')) return envelope({ path: '/home/ada/skills', parent: '/home/ada', entries: [], truncated: false })
+    })
+    const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
+    await wrapper.get('[data-test="library-import"]').trigger('click'); await flushPromises()
+    const field = openDialog()!.querySelector<HTMLInputElement>('[data-test=import-path]')!
+    expect(field.getAttribute('role')).toBe('combobox')
+    expect(field.getAttribute('aria-label')).toBe('Složka pro import')
+    expect(field.value).toBe('~/')
+    openDialog()!.querySelector<HTMLButtonElement>('[data-test="import-browse"]')!.click(); await flushPromises()
+    expect(openDialog()).toBeNull()
+    const browser = document.body.querySelector<HTMLElement>('[data-test="folder-browser"]')!
+    expect(browser.textContent).toContain('/home/ada')
+    browser.querySelector<HTMLButtonElement>('[data-test="browser-entry"]')!.click(); await flushPromises()
+    browser.querySelector<HTMLButtonElement>('[data-test="browser-choose"]')!.click(); await flushPromises()
+    expect(document.body.querySelector('[data-test="folder-browser"]')).toBeNull()
+    expect(openDialog()!.querySelector<HTMLInputElement>('[data-test=import-path]')!.value).toBe('/home/ada/skills')
+  })
+  it('deletes the repo copy of an item only after confirmation; the item is inherited again', async () => {
+    let copies = [{ repo: 'web', repo_name: 'Web', type: 'agent', name: 'agent-demo', same: false }]
+    let blockers: { code: string; message: string }[] = []
+    const plan = () => ({ action: 'remove', base: 'main', base_sha: 'b', digest: 'remove-digest', files: [{ path: '.factory/prompts/agent-demo/system.md', action: 'delete', diff: '', content: null, binary: false }], blockers })
+    const mock = api((url) => {
+      if (url === '/api/library/overrides') return envelope({ library: 'abc', overrides: copies, errors: [] })
+      if (url === '/api/repos/web/factory/plan') return envelope(plan())
+      if (url === '/api/repos/web/factory/apply') { copies = []; return envelope({ action: 'remove', commit: 'c0ffee1234' }) }
+    })
+    const applied = () => mock.mock.calls.filter(([url]) => url === '/api/repos/web/factory/apply')
+    const wrapper = await openAgent()
+    expect(wrapper.get('[data-test="override-count-agent-demo"]').text()).toBe('1')
+    // blockers disable the confirmation
+    blockers = [{ code: 'in_use', message: 'used by a workflow' }]
+    await wrapper.get('[data-test="override-remove"]').trigger('click'); await flushPromises()
+    expect(openDialog()!.querySelector<HTMLButtonElement>('[data-test="confirm-ok"]')!.disabled).toBe(true)
+    await answerDialog(false)
+    // cancel writes nothing
+    blockers = []
+    await wrapper.get('[data-test="override-remove"]').trigger('click'); await flushPromises()
+    const ok = openDialog()!.querySelector<HTMLButtonElement>('[data-test="confirm-ok"]')!
+    expect(ok.classList.contains('danger')).toBe(true)
+    expect(openDialog()!.textContent).toContain('Smazat agent/agent-demo z repa Web?')
+    expect(openDialog()!.textContent).toContain('.factory/prompts/agent-demo/system.md')
+    expect(JSON.parse(String(mock.mock.calls.find(([url]) => url === '/api/repos/web/factory/plan')![1]!.body))).toEqual({ action: 'remove', options: { type: 'agent', name: 'agent-demo' }, target: 'base' })
+    await answerDialog(false)
+    expect(applied()).toHaveLength(0)
+    expect(wrapper.find('[data-test="override-web"]').exists()).toBe(true)
+    // confirm deletes the copy
+    await wrapper.get('[data-test="override-remove"]').trigger('click'); await flushPromises()
+    await answerDialog(true)
+    expect(applied()).toHaveLength(1)
+    expect(JSON.parse(String(applied()[0]![1]!.body))).toEqual({ action: 'remove', options: { type: 'agent', name: 'agent-demo' }, target: 'base', digest: 'remove-digest' })
+    expect(wrapper.text()).toContain('agent/agent-demo: kopie v repu Web smazána (c0ffee1), repo dědí z knihovny.')
+    expect(wrapper.find('[data-test="override-web"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="item-no-overrides"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="override-count-agent-demo"]').text()).toBe('—')
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
   it('shows the sync state and pulls, pushes or connects a remote', async () => {
     let remote: string | null = null
     const mock = api((url) => {

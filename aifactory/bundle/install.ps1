@@ -129,18 +129,27 @@ if (-not (Test-Path -LiteralPath $factory -PathType Leaf)) {
 }
 
 # The default team library (HAIFA_LIBRARY_URL overrides it) is cloned; without network
-# factory creates a local library from the seed and warns. An existing library is left alone.
+# factory creates a local library from the seed and warns. Then every seed item of the
+# library is refreshed to this version's seed (factory library seed --all); items the seed
+# lacks and the repos' .factory/ copies (the customizations) stay. A failed refresh warns.
 Step 'Setting up the library'
 $status = (& $factory library status --json | Out-String) | ConvertFrom-Json
 if ($status.ok) {
-    Write-Host 'The library exists; it is left unchanged.'
-    if ($status.data.seed_update_available) {
-        Write-Host 'The installed seed has new versions; take them with: factory library seed'
-    }
+    Write-Host 'The library exists.'
 } elseif ($status.error.code -eq 'library_missing') {
     Invoke-Native 'factory library clone' { & $factory library clone --seed-fallback }
 } else {
     Fail "factory library status: $($status.error.message)"
+}
+Write-Host "Refreshing the library to HAIFA $Version"
+try {
+    & $factory library seed --all
+    $refreshed = ($LASTEXITCODE -eq 0)
+} catch {
+    $refreshed = $false
+}
+if (-not $refreshed) {
+    Write-Warning 'the library was not refreshed; run: factory library seed --all'
 }
 
 Write-Host ''

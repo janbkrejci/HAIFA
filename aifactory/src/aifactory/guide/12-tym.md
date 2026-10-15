@@ -9,7 +9,7 @@ HAIFA běží na počítači každého člena týmu. Sdílí se jen to, co je v 
 3. Naklonuj repa, na kterých tým pracuje, a v každém spusť `factory check`. Stav repa je `installed`; vyřeš zjištění počítače (harnessy, přihlášení, CLI hostingu). `factory init` znovu nespouštěj.
 4. Spusť `factory obs` a repa přidej na přehledu dashboardu (nebo `factory obs --repo ~/cesta/k/repu`).
 
-V dashboardu lze knihovnu naklonovat i v sekci **Knihovna** na stránce **Tento počítač**.
+V dashboardu lze knihovnu naklonovat i na stránce **Knihovna**.
 
 ## První v týmu: založení knihovny
 
@@ -25,7 +25,7 @@ Podrobnosti o položkách a jejich verzích jsou v kapitole [Knihovna](#/guide/k
 
 Do knihovny přispívá každý, ale jen pull requestem do `main` knihovny. Import, `factory library seed`, **Přesunout do knihovny** i `factory library push` změnu commitnou lokálně a pošlou PR: kdo do repa knihovny nemá zápis, ze svého forku, správce z větve v repu. Na svém počítači změnu používáš hned; ostatní ji dostanou, až ji správce mergne a oni si knihovnu stáhnou (`factory library pull`). HAIFA PR knihovny nikdy nemerguje ani neschvaluje sama.
 
-Správce knihovny nastaví na `main` ruleset s povinným pull requestem a svým schválením a zakáže přímý push i force push (kapitola [Knihovna](#/guide/knihovna)). Otevřené PR, které jsi poslal, ukáže sekce **Knihovna** na stránce **Tento počítač** v dashboardu.
+Správce knihovny nastaví na `main` ruleset s povinným pull requestem a svým schválením a zakáže přímý push i force push (kapitola [Knihovna](#/guide/knihovna)). Otevřené PR, které jsi poslal, ukáže stránka **Knihovna** v dashboardu.
 
 ## Přidání repa, které HAIFA ještě nepoužívá
 

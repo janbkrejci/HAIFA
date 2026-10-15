@@ -76,4 +76,4 @@ Příkazy, které pracují s repem, berou repo z aktuálního adresáře; jiné 
 | `factory library list` | Položky knihovny s verzemi. |
 | `factory library show` | Soubory a historie verzí položky. |
 | `factory library import CESTA --type TYP` | Importuje složku (agent, skill, rozšíření) nebo soubor (workflow) z domovského adresáře. |
-| `factory library seed` | Po aktualizaci HAIFA převezme nové verze ze semínka (`--dry-run`, `--take TYP/JMÉNO`). |
+| `factory library seed` | Po aktualizaci HAIFA převezme nové verze ze semínka (`--dry-run`, `--take TYP/JMÉNO`); `--all` nahradí každou položku semínka, i upravenou týmem (spouští ho instalace a `factory upgrade`). |

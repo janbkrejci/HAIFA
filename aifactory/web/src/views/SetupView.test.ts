@@ -24,7 +24,7 @@ function api(exists = false, remote: string | null = null) {
 }
 enableAutoUnmount(afterEach)
 afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
-describe('This computer', () => {
+describe('Knihovna page', () => {
   it('shows only groups with findings and the library findings in the library section', async () => {
     expect(['git_missing', 'uv_missing', 'just_missing'].map(c => findingGroup(finding(c)))).toEqual(['Nástroje', 'Nástroje', 'Nástroje'])
     expect(findingGroup(finding('harness_login'))).toBe('Harnessy')
@@ -33,7 +33,10 @@ describe('This computer', () => {
     expect(findingGroup(finding('env_override'))).toBe('Prostředí')
     api()
     const wrapper = mount(SetupView); await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('Tento počítač')
+    expect(wrapper.get('h1').text()).toBe('Knihovna')
+    const order = wrapper.findAll('[data-test="library"], [data-test="machine-check"], [data-test="dashboard-settings"]').map(s => s.attributes('data-test'))
+    expect(order).toEqual(['library', 'machine-check', 'dashboard-settings'])
+    expect(wrapper.get('[data-test="machine-check"] h2').text()).toBe('Kontrola počítače')
     expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('2 chyb, 0 varování')
     expect(wrapper.findAll('[data-group]').map(g => g.attributes('data-group'))).toEqual(['Nástroje'])
     expect(wrapper.get('[data-group="Nástroje"]').text()).toContain('chyba · git_identity_missing')
