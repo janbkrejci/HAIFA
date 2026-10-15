@@ -96,7 +96,9 @@ export function failedRows(repo: OverviewRepo): FailedRow[] {
 export function problems(repo: OverviewRepo): Problem[] {
   const stateKind = STATE_PROBLEMS[repo.state]
   if (stateKind) return [{ kind: stateKind, text: PROBLEM_TEXT[stateKind], href: null }]
-  const settings = repoHref(repo.id, 'settings')
+  // the configuration is installed, fixed and committed on the Factory screen
+  const factory = repoHref(repo.id, 'factory')
+  const commit = repoHref(repo.id, 'factory', 'config_commit')
   const kinds: Problem['kind'][] = []
   const config = repo.config
   if (config) {
@@ -106,7 +108,7 @@ export function problems(repo: OverviewRepo): Problem[] {
   } else if (repo.state === 'not_installed') kinds.push('not_installed')
   else if (repo.state === 'invalid_config') kinds.push('invalid')
   else if (repo.state === 'uncommitted') kinds.push('uncommitted')
-  return kinds.map((kind) => ({ kind, text: PROBLEM_TEXT[kind], href: settings }))
+  return kinds.map((kind) => ({ kind, text: PROBLEM_TEXT[kind], href: kind === 'uncommitted' ? commit : factory }))
 }
 
 /** Whether the repo has a problem: a state or config problem, or warnings. */

@@ -2,22 +2,22 @@ import { ref, type Ref } from 'vue'
 
 // Hash routes of the multi-repo dashboard:
 //   #/overview                       the registered repositories and getting started (default)
-//   #/setup · #/library              this machine · the shared library
+//   #/setup[/library]                this machine, its library section (#/library redirects)
 //   #/repos/add                      add a repository
 //   #/guide[/<chapter>[/<section>]]  the user and administrator guide
-//   #/r/<id>/<screen>[/<params>]     a screen of repo <id>: backlog · runs · review · factory · settings
+//   #/r/<id>/<screen>[/<params>]     a screen of repo <id>: backlog · runs · review · factory
 // A screen may carry parameters: #/r/<id>/runs/<run_id>/<phase_id>, #/r/<id>/backlog/<task id>.
+// The repo settings are a section of Factory: #/r/<id>/factory/settings (#/r/<id>/settings redirects).
 // An unknown hash falls back to the overview.
 // The repo lives only in the URL: currentRepoId() reads the hash at call time.
-export type Screen = 'backlog' | 'runs' | 'review' | 'factory' | 'settings'
-export type Page = 'overview' | 'repos-add' | 'setup' | 'library' | 'problems' | 'guide' | 'repo'
+export type Screen = 'backlog' | 'runs' | 'review' | 'factory'
+export type Page = 'overview' | 'repos-add' | 'setup' | 'problems' | 'guide' | 'repo'
 
 export const SCREENS: readonly { id: Screen; label: string }[] = [
   { id: 'backlog', label: 'Backlog' },
   { id: 'runs', label: 'Běhy' },
   { id: 'review', label: 'Review' },
   { id: 'factory', label: 'Factory' },
-  { id: 'settings', label: 'Nastavení' },
 ]
 
 export const SCREEN_LABELS: Readonly<Record<Screen, string>> = Object.fromEntries(
@@ -29,6 +29,10 @@ const IDS: readonly string[] = SCREENS.map((s) => s.id)
 export const OVERVIEW_HREF = '#/overview'
 export const REPOS_ADD_HREF = '#/repos/add'
 export const GUIDE_HREF = '#/guide'
+/** This machine: its check, the library and the dashboard settings. */
+export const SETUP_HREF = '#/setup'
+/** The library section of this machine. */
+export const LIBRARY_HREF = '#/setup/library'
 
 /** Link to the guide, optionally to a chapter and a section of it. */
 export function guideHref(chapter?: string | null, section?: string | null): string {
@@ -62,12 +66,17 @@ function page(name: Exclude<Page, 'repo'>, redirect: string | null, params: stri
 export function parseRoute(hash: string): Route {
   const parts = hash.replace(/^#\/?/, '').split('/').filter(Boolean)
   const [first, second, third] = parts
-  if ((first === 'setup' || first === 'library' || first === 'problems') && parts.length === 1) return page(first, null)
+  if ((first === 'setup' || first === 'problems') && parts.length === 1) return page(first, null)
+  if (first === 'setup' && second === 'library' && parts.length === 2) return page('setup', null, ['library'])
+  if (first === 'library' && parts.length === 1) return page('setup', LIBRARY_HREF, ['library'])
   if (first === 'overview' && parts.length === 1) return page('overview', null)
   if (first === 'guide' && parts.length <= 3) return page('guide', null, parts.slice(1).map(decode))
   if (first === 'repos' && second === 'add' && parts.length === 2) return page('repos-add', null)
   if (first === 'r' && second !== undefined) {
     const repo = decode(second)
+    if (third === 'settings') {
+      return { page: 'repo', repo, screen: 'factory', params: ['settings'], redirect: repoSettingsHref(repo) }
+    }
     if (third !== undefined && IDS.includes(third)) {
       return { page: 'repo', repo, screen: third as Screen, params: parts.slice(3).map(decode), redirect: null }
     }
@@ -84,6 +93,11 @@ export function currentRepoId(): string | null {
 /** Link to a screen of repo `id`, with optional parameters. */
 export function repoHref(id: string, screen: Screen = 'backlog', ...params: string[]): string {
   return [`#/r/${encodeURIComponent(id)}/${screen}`, ...params.map(encodeURIComponent)].join('/')
+}
+
+/** Link to the settings section of repo `id` on its Factory screen. */
+export function repoSettingsHref(id: string): string {
+  return repoHref(id, 'factory', 'settings')
 }
 
 /** Link to a screen of the current repo; the overview without one. */

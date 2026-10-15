@@ -110,7 +110,7 @@ describe('OverviewView', () => {
     expect(wrapper.findAll('[data-test="calm-repo"]')).toHaveLength(2)
   })
 
-  it('links every row: run, review, failed run and settings', async () => {
+  it('links every row: run, review, failed run and config commit', async () => {
     stubOverview()
     const wrapper = await mountView()
     const busy = wrapper.get('[data-repo="busy"]')
@@ -136,7 +136,7 @@ describe('OverviewView', () => {
     expect(fails[1].get('[data-test="row-error"]').text()).toBe('tests failed')
 
     const cfg = wrapper.get('[data-repo="dirty"] [data-test="row-config"]')
-    expect(cfg.attributes('href')).toBe('#/r/dirty/settings')
+    expect(cfg.attributes('href')).toBe('#/r/dirty/factory/config_commit')
     expect(cfg.text()).toBe('Necommitnutá konfigurace')
 
     expect(wrapper.get('[data-repo="busy"] [data-test="last-activity"]').text()).toContain('před 5 min')

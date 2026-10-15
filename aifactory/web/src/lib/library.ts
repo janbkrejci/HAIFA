@@ -89,6 +89,8 @@ export function findingGroup(f: CheckFinding): string {
   return 'Prostředí'
 }
 export const FINDING_GROUPS = ['HAIFA', 'Nástroje', 'Harnessy', 'Hosting', 'Knihovna', 'Prostředí']
+/** The groups of the machine findings on #/setup; library findings are in the library section. */
+export const MACHINE_GROUPS = FINDING_GROUPS.filter(name => name !== 'Knihovna')
 export function versionLabel(item: { n?: number; short_version?: string | null; version?: string | null }): string {
   const hash = item.short_version ?? item.version?.replace(/^sha256:/, '').slice(0, 8) ?? '—'
   return `${item.n ? 'v' + item.n + ' · ' : ''}${hash}`

@@ -84,7 +84,8 @@ against ``base`` (D4), shown on every screen.
 Factory tab (``factory.py``): ``GET /api/factory/check?offline=&fresh=`` is ``factory
 check`` plus the registry finding ``trace_db_shared`` (another registered repository uses
 the same trace DB); the result is kept 60 s per ``offline`` flag and ``fresh=1`` renews it
-(``checked_at``, ``cached``); every answer also carries the package ``version``. It
+(``checked_at``, ``cached``); every answer also carries the package ``version`` and
+only actionable findings (with a ``fix`` or an ``action``; no ``repo_installed``). It
 answers HTTP 200 with the CLI envelope: ``ok``, or ``checks_failed`` with the report in
 ``data``. ``POST /api/factory/plan`` (``{action,
 options?, target?}``) only reads and returns the plan with its ``digest`` (``init`` also
@@ -115,7 +116,9 @@ app also serves the global ``GET /api/limits`` (no repository: only the subscrip
 available on this machine).
 
 Global library: ``GET /api/machine/check?offline=&fresh=`` caches the outside-repo
-CLI check; the server runs it once at start and again only for ``fresh=1``.
+CLI check; the server runs it once at start and again only for ``fresh=1``. It returns
+only actionable findings (no info ``harness_missing`` of a harness no registered repo
+uses; ``missing_harnesses`` names them all).
 ``GET /api/library`` returns status without fetch and item metadata (``?items=0``: status
 only); ``GET /api/library/items/{type}/{name}?version=`` returns files and history.
 ``GET /api/library/overrides`` lists the registered repositories' own copies of library

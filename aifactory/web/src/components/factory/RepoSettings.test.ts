@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import SettingsView from './SettingsView.vue'
+import RepoSettings from './RepoSettings.vue'
 import { DIRTY_STATUS, SETTINGS } from '@/test/settingsFixtures'
 import { resetConfigStatusForTests, useConfigStatus } from '@/lib/configStatus'
 
@@ -30,12 +30,12 @@ afterEach(() => {
   resetConfigStatusForTests()
 })
 
-describe('SettingsView', () => {
+describe('RepoSettings', () => {
   it('loads and shows the settings', async () => {
     stub(() => ok(SETTINGS))
-    const wrapper = mount(SettingsView)
+    const wrapper = mount(RepoSettings)
     await flushPromises()
-    expect(wrapper.get('h1').text()).toBe('Nastavení')
+    expect(wrapper.get('h2').text()).toBe('Nastavení repozitáře')
     expect((wrapper.get('[data-test="docs_root"]').element as HTMLInputElement).value).toBe(
       'factory',
     )
@@ -43,7 +43,7 @@ describe('SettingsView', () => {
 
   it('shows an API error', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => fail('invalid_config', [], 500)))
-    const wrapper = mount(SettingsView)
+    const wrapper = mount(RepoSettings)
     await flushPromises()
     expect(wrapper.get('[data-test="error"]').text()).toContain('invalid settings')
   })
@@ -51,7 +51,7 @@ describe('SettingsView', () => {
   it('saves the changed values and refreshes the config status', async () => {
     const saved = { ...SETTINGS, shared: { ...SETTINGS.shared, base: 'develop' }, saved: ['shared'] }
     const fetch = stub(() => ok(saved))
-    const wrapper = mount(SettingsView)
+    const wrapper = mount(RepoSettings)
     await flushPromises()
     await wrapper.get('[data-test="base"]').setValue('develop')
     await wrapper.get('form').trigger('submit')
@@ -60,6 +60,7 @@ describe('SettingsView', () => {
     expect(post?.[0]).toBe('/api/repos/haifa/settings')
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({ shared: { base: 'develop' } })
     expect(wrapper.find('[data-test="saved"]').exists()).toBe(true)
+    expect(wrapper.emitted('saved')).toHaveLength(1)
     expect(fetch.mock.calls.some(([url]) => url === '/api/repos/haifa/config/status')).toBe(true)
     expect(useConfigStatus().status.value?.clean).toBe(false)
     expect((wrapper.get('[data-test="base"]').element as HTMLInputElement).value).toBe('develop')
@@ -77,7 +78,7 @@ describe('SettingsView', () => {
         },
       ]),
     )
-    const wrapper = mount(SettingsView)
+    const wrapper = mount(RepoSettings)
     await flushPromises()
     await wrapper.get('[data-test="base"]').setValue('  ')
     await wrapper.get('form').trigger('submit')
@@ -86,5 +87,6 @@ describe('SettingsView', () => {
     expect(wrapper.get('[data-test="base"]').attributes('aria-invalid')).toBe('true')
     expect((wrapper.get('[data-test="base"]').element as HTMLInputElement).value).toBe('  ')
     expect(wrapper.find('[data-test="saved"]').exists()).toBe(false)
+    expect(wrapper.emitted('saved')).toBeUndefined()
   })
 })

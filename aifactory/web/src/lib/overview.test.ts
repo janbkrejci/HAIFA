@@ -61,14 +61,14 @@ describe('overview totals and filter', () => {
 })
 
 describe('overview links', () => {
-  it('leads to the run, the review and the settings of the repo', () => {
+  it('leads to the run, the review and the Factory screen of the repo', () => {
     expect(runLink(RUNS, 'run-1')).toBe('#/r/runs/runs/run-1')
     expect(reviewLink(REVIEW, 'M01-S01-T02')).toBe('#/r/review/review/M01-S01-T02')
     const bad = repo('bad', { config: config({ installed: false, invalid: true, uncommitted: [{}] }) })
     expect(problems(bad).map((p) => [p.kind, p.text, p.href])).toEqual([
-      ['not_installed', 'Nenainstalováno', '#/r/bad/settings'],
-      ['invalid', 'Neplatná konfigurace', '#/r/bad/settings'],
-      ['uncommitted', 'Necommitnutá konfigurace', '#/r/bad/settings'],
+      ['not_installed', 'Nenainstalováno', '#/r/bad/factory'],
+      ['invalid', 'Neplatná konfigurace', '#/r/bad/factory'],
+      ['uncommitted', 'Necommitnutá konfigurace', '#/r/bad/factory/config_commit'],
     ])
   })
 })

@@ -5,6 +5,11 @@ import type { CheckFinding, FactoryCheck } from '@/lib/api'
 import { lastFactoryResult } from '@/lib/factory'
 import { useRouteParams } from '@/lib/router'
 import { backlogData, runCheck, runStart, taskDetail, taskNode } from '@/test/backlogFixtures'
+import { DIRTY_STATUS, SETTINGS } from '@/test/settingsFixtures'
+import { resetConfigStatusForTests } from '@/lib/configStatus'
+
+/** The findings of the machine check (#/setup) the stub answers. */
+let machineFindings: CheckFinding[] = []
 
 function finding(code: string, scope: CheckFinding['scope'], severity: CheckFinding['severity'] = 'warning'): CheckFinding {
   return { code, scope, severity, message: `${code} message`, fix: `fix ${code}`, action: null }
@@ -36,7 +41,10 @@ function stub(...answers: Response[]) {
   const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
     if (url.endsWith('/factory/plan') && JSON.parse(String(_init?.body)).action === 'config_commit') return ok({ action: 'config_commit', base: 'main', base_sha: 'abc', digest: 'cfg', files: [], blockers: [] })
     if (url.endsWith('/factory/items')) return ok({ library: null, items: [] })
-    if (url.startsWith('/api/machine/check')) return ok({ ok: true, findings: [], checked_at: 'now', cached: false, harness_repos: { claude: 0, codex: 0 } })
+    if (url.endsWith('/settings') && _init?.method === 'POST') return ok(SETTINGS)
+    if (url.endsWith('/settings')) return ok(SETTINGS)
+    if (url.endsWith('/config/status')) return ok(DIRTY_STATUS)
+    if (url.startsWith('/api/machine/check')) return ok({ ok: true, findings: machineFindings, checked_at: 'now', cached: false, harness_repos: { claude: 0, codex: 0 } })
     if (url === '/api/machine/harnesses') return ok({ settings: { harnesses: {} }, available: {}, models: {} })
     if (url.endsWith('/factory/roster')) return ok({ agents: [], workflow_tasks: {} })
     if (url.endsWith('/library')) return ok({ exists: true, items: [] })
@@ -65,6 +73,8 @@ enableAutoUnmount(afterEach)
 
 afterEach(() => {
   vi.unstubAllGlobals()
+  machineFindings = []
+  resetConfigStatusForTests()
 })
 
 describe('FactoryView', () => {
@@ -91,8 +101,10 @@ describe('FactoryView', () => {
     expect(summary.get('[data-test="factory-version"]').text()).toBe('0.1.0')
     expect(summary.get('[data-test="factory-state"]').text()).toBe('Nainstalováno')
     expect(summary.get('[data-test="factory-base"]').text()).toContain('main@01234567')
-    expect(wrapper.get('[data-test="findings-repo"]').text()).toContain('Bez nálezů')
-    expect(wrapper.get('[data-test="findings-local"]').text()).toContain('Bez nálezů')
+    // groups without findings are not shown
+    expect(wrapper.find('[data-test="findings-repo"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="findings-local"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="factory-machine-link"]').exists()).toBe(false)
   })
 
   it('offers install without update or roster on a repo without factory', async () => {
@@ -153,22 +165,74 @@ describe('FactoryView', () => {
       finding('config_invalid', 'repo', 'error'),
       finding('gh_missing', 'machine', 'warning'),
       finding('library_stale', 'library', 'error'),
+      finding('git_identity_missing', 'machine', 'error'),
     ]
-    stub(failed('checks_failed', report({ ok: false, counts: { error: 2, warning: 1, info: 1 }, findings })))
+    machineFindings = [finding('git_identity_missing', 'machine', 'error'), finding('library_stale', 'library', 'error')]
+    stub(failed('checks_failed', report({ ok: false, counts: { error: 3, warning: 1, info: 1 }, findings })))
     const wrapper = mount(FactoryView)
     await flushPromises()
     expect(wrapper.find('[data-test="factory-error"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="factory-summary"]').text()).toContain('2 chyb, 1 varování')
+    // the counts follow the findings shown here
+    expect(wrapper.get('[data-test="factory-summary"]').text()).toContain('1 chyb, 1 varování')
     const repo = wrapper.get('[data-test="findings-repo"]')
     expect(repo.text()).toContain('Repozitář: opravit a commitnout')
     expect(repo.findAll('[data-test="finding"]').map((f) => f.attributes('data-severity'))).toEqual(['error', 'info'])
     expect(repo.text()).toContain('Oprava: fix config_invalid')
     const local = wrapper.get('[data-test="findings-local"]')
-    expect(local.text()).toContain('Tento počítač: opravit lokálně')
+    expect(local.text()).toContain('Tento počítač: potřebné pro toto repo')
+    // library findings and the machine findings #/setup shows are only there
     const items = local.findAll('[data-test="finding"]')
-    expect(items.map((f) => f.text())).toEqual([expect.stringContaining('library_stale'), expect.stringContaining('gh_missing')])
-    expect(items[0].find('[data-test="finding-library"]').text()).toBe('knihovna')
-    expect(items[1].find('[data-test="finding-library"]').exists()).toBe(false)
+    expect(items.map((f) => f.text())).toEqual([expect.stringContaining('gh_missing')])
+    const link = wrapper.get('[data-test="factory-machine-link"]')
+    expect(link.text()).toContain('Další nálezy tohoto počítače a knihovny: 2')
+    expect(link.get('a').attributes('href')).toBe('#/setup')
+  })
+
+  it('shows the verdict ok when the only errors are on this machine page', async () => {
+    const findings = [finding('library_stale', 'library', 'error')]
+    stub(failed('checks_failed', report({ ok: false, counts: { error: 1, warning: 0, info: 0 }, findings })))
+    const wrapper = mount(FactoryView)
+    await flushPromises()
+    expect(wrapper.get('[data-test="factory-verdict"]').text()).toBe('Factory je v pořádku')
+    expect(wrapper.findAll('[data-test="finding"]')).toHaveLength(0)
+    expect(wrapper.get('[data-test="factory-machine-link"]').text()).toContain('(s chybami)')
+  })
+
+  it('shows the repo settings and checks again after a save', async () => {
+    const fetchMock = stub(ok(report()), ok(report({ version: '0.3.0' })))
+    const wrapper = mount(FactoryView)
+    await flushPromises()
+    const section = wrapper.get('[data-test="factory-settings"]')
+    expect(section.get('h2').text()).toBe('Nastavení repozitáře')
+    await section.get('[data-test="base"]').setValue('develop')
+    await section.get('form').trigger('submit')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/factory/check?fresh=1')
+    expect(wrapper.get('[data-test="factory-version"]').text()).toBe('0.3.0')
+  })
+
+  it('has no repo settings without factory', async () => {
+    stub(ok(report({ state: 'none' })))
+    const wrapper = mount(FactoryView)
+    await flushPromises()
+    expect(wrapper.find('[data-test="factory-settings"]').exists()).toBe(false)
+  })
+
+  it('scrolls to the repo settings on #/r/<id>/factory/settings', async () => {
+    const scroll = vi.fn()
+    const original = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = scroll
+    try {
+      stub(ok(report()))
+      useRouteParams().value = ['settings']
+      const wrapper = mount(FactoryView)
+      await flushPromises()
+      expect(scroll).toHaveBeenCalled()
+      expect(scroll.mock.contexts[0]).toBe(wrapper.get('[data-test="factory-settings"]').element)
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original
+      useRouteParams().value = []
+    }
   })
 
   it('shows another error as text', async () => {
@@ -212,7 +276,7 @@ describe('FactoryView', () => {
     expect((body.element as HTMLTextAreaElement).value).toContain('Doporučená oprava: fix gh_missing')
     expect((body.element as HTMLTextAreaElement).value).not.toContain('same_code message')
     await wrapper.get('[data-test="writes"]').setValue('src/')
-    await wrapper.get('form').trigger('submit')
+    await wrapper.get('[data-test="factory-repair"] form').trigger('submit')
     await flushPromises()
     const create = fetchMock.mock.calls.find(([url]) => url.endsWith('/backlog/tasks'))
     expect(JSON.parse(create![1]!.body as string)).toMatchObject({ title: 'Opravit vybrané nálezy Factory', writes: ['src/'] })
@@ -266,7 +330,7 @@ describe('FactoryView', () => {
     await wrapper.get('[data-test="finding-select"]').setValue(true)
     await wrapper.get('[data-test="factory-repair-open"]').trigger('click')
     await flushPromises()
-    await wrapper.get('form').trigger('submit')
+    await wrapper.get('[data-test="factory-repair"] form').trigger('submit')
     await flushPromises()
     await wrapper.get('[data-test="run-start"]').trigger('click')
     await flushPromises()

@@ -28,7 +28,7 @@ factory config commit
 
 ## Chráněná base
 
-Když base přijímá změny jen přes pull request, nastav repu `base_changes: pr`. Nejlépe hned při přidání repa v dashboardu (**Změny base přes pull request**), později v záložce Nastavení nebo `factory init --base-changes pr`. Factory pak každou svou změnu base pošle pull requestem: instalaci, commit konfigurace, nastavení a přesun položek knihovny, commit backlogu i odebrání repa.
+Když base přijímá změny jen přes pull request, nastav repu `base_changes: pr`. Nejlépe hned při přidání repa v dashboardu (**Změny base přes pull request**), později v sekci **Nastavení repozitáře** záložky Factory nebo `factory init --base-changes pr`. Factory pak každou svou změnu base pošle pull requestem: instalaci, commit konfigurace, nastavení a přesun položek knihovny, commit backlogu i odebrání repa.
 
 - **`base_pr_merge: manual`:** PR schválí a mergne člověk. Změny backlogu do té doby zůstanou v pracovním stromu a panel čipu **Necommitnutý backlog** v horní liště odkáže na PR. Po mergi použij **Stáhnout konfiguraci z base** (`factory config pull`). Stažení vezme i necommitnuté soubory, které merge přináší beze změny.
 - **`base_pr_merge: auto`:** factory PR hned mergne a posune lokální base. Na Azure DevOps ho nejdřív sama schválí, což repo musí povolit (autor smí schvalovat vlastní změny). Na GitHubu autor vlastní PR schválit nemůže, proto factory merguje s `gh pr merge --admin`, což vyžaduje administrátorská práva k repu. Když merge selže, PR zůstane otevřený a výsledek nese varování.
@@ -88,16 +88,17 @@ Lokální, necommitované nastavení tohoto počítače:
 - `trace_db`: cesta k trace databázi běhů (výchozí `.factory/trace.db`),
 - `database_url`: adresa sdíleného databázového serveru (kapitola [Počítač a harnessy](#/guide/pocitac/sdilena-databaze)).
 
-## Záložka Nastavení
+## Nastavení repozitáře
 
-Formulář **Sdílené nastavení repozitáře** upravuje `config.yaml`: pracovní adresář agentů, kořen dokumentů, adresář worktree, base větev, git provider, merge strategii, souběžné běhy auto-continue a chráněné soubory. **Lokální necommitované nastavení** upravuje cestu k trace DB v `local.yaml`. **Uložit** zapisuje do pracovního stromu; sdílené nastavení pak commitni. Ostatní klíče (`azure`, `levels`, `test_timeout`, `test_slots`, `generated`, `remote`) uprav v souboru.
+Sekce **Nastavení repozitáře** je na záložce **Factory** (adresa `#/r/<repo>/factory/settings`), když je factory v repu nainstalovaná. Formulář **Sdílené nastavení repozitáře** upravuje `config.yaml`: pracovní adresář agentů, kořen dokumentů, adresář worktree, base větev, git provider, merge strategii, souběžné běhy auto-continue a chráněné soubory. **Lokální necommitované nastavení** upravuje cestu k trace DB v `local.yaml`. **Uložit** zapisuje do pracovního stromu a kontrolu factory zopakuje; sdílené nastavení pak commitni tlačítkem **Commitnout konfiguraci** na téže záložce. Ostatní klíče (`azure`, `levels`, `test_timeout`, `test_slots`, `generated`, `remote`) uprav v souboru.
 
 ## Záložka Factory
 
 - **Stav repa:** verdikt kontroly, verze, base a její náskok nebo zpoždění proti remote.
 - **Akce:** **Nainstalovat factory** (formulář: base, git hosting, kořen dokumentů), **Commitnout konfiguraci**, **Stáhnout konfiguraci z base**. Každá akce ukáže náhled plánu a zapíše ho do base, nebo jako PR (**Otevřít jako PR**, když base nepřijme přímý push).
-- **Nálezy** ve skupinách **Repozitář: opravit a commitnout** a **Tento počítač: opravit lokálně**. Vybrané nálezy repa vyřeší agent: **Vyřešit vybrané nálezy** založí a spustí task „Opravit vybrané nálezy Factory“.
+- **Nálezy** ve skupinách **Repozitář: opravit a commitnout** a **Tento počítač: potřebné pro toto repo** (jen skupiny s nálezy). Nálezy knihovny a nálezy počítače, které ukazuje i stránka **Tento počítač**, jsou jen tam; Factory na ně odkáže řádkem **Další nálezy tohoto počítače a knihovny**. Dashboard ukazuje jen nálezy, se kterými jde něco udělat. Vybrané nálezy repa vyřeší agent: **Vyřešit vybrané nálezy** založí a spustí task „Opravit vybrané nálezy Factory“.
 - **Definice agentů:** roster s harnessem, modelem a přemýšlením každého agenta a přepisy na krocích workflow.
+- **Nastavení repozitáře:** viz předchozí oddíl.
 - **Položky repa:** agenti, workflow, skilly a rozšíření pi, každý jako vlastní kopie, nebo z knihovny; vlastní kopii můžeš **Přesunout do knihovny**.
 
 ## Instalace a odebrání

@@ -17,7 +17,6 @@ import {
 } from './lib/router'
 import { useTheme } from './lib/theme'
 import SetupView from './views/SetupView.vue'
-import LibraryView from './views/LibraryView.vue'
 import OverviewView from './views/OverviewView.vue'
 import ProblemsView from './views/ProblemsView.vue'
 import GuideView from './views/GuideView.vue'
@@ -93,8 +92,8 @@ watchEffect(() => {
   if (page.value === 'repo') {
     const name = currentRepo.value?.name ?? repoId.value ?? ''
     document.title = `${name} · ${SCREEN_LABELS[route.value]} · HAIFA`
-  } else if (page.value === 'setup' || page.value === 'library') {
-    document.title = `${page.value === 'setup' ? 'Tento počítač' : 'Knihovna'} · HAIFA`
+  } else if (page.value === 'setup') {
+    document.title = 'Tento počítač · HAIFA'
   } else if (page.value === 'repos-add') {
     document.title = 'Přidat repozitář · HAIFA'
   } else if (page.value === 'problems') {
@@ -238,9 +237,6 @@ onBeforeUnmount(() => {
     </main>
     <main v-else-if="viewPage === 'setup'">
       <SetupView />
-    </main>
-    <main v-else-if="viewPage === 'library'">
-      <LibraryView />
     </main>
     <main v-else-if="viewPage === 'guide'">
       <GuideView />

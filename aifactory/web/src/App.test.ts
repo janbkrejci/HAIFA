@@ -126,13 +126,12 @@ describe('App', () => {
     const wrapper = mount(App)
     await flushPromises()
     const links = wrapper.findAll('nav a')
-    expect(links.map((a) => a.text())).toEqual(['Backlog', 'Běhy', 'Review', 'Factory', 'Nastavení'])
+    expect(links.map((a) => a.text())).toEqual(['Backlog', 'Běhy', 'Review', 'Factory'])
     expect(links.map((a) => a.attributes('href'))).toEqual([
       '#/r/haifa/backlog',
       '#/r/haifa/runs',
       '#/r/haifa/review',
       '#/r/haifa/factory',
-      '#/r/haifa/settings',
     ])
     wrapper.unmount()
   })
@@ -193,7 +192,6 @@ describe('App', () => {
     expect(menu.findAll('a').map(label)).toEqual([
       'Přehled',
       'Tento počítač',
-      'Knihovna',
       'HAIFA',
       'sandbox',
       'gone',
@@ -404,7 +402,7 @@ describe('App', () => {
     expect(warning.attributes('href')).toBe('#/problems')
     go('#/problems')
     await flushPromises()
-    expect(wrapper.get('[data-test="system-problems"]').findAll('a').some(a => a.attributes('href') === (ok && exists ? '#/repos/add' : '#/setup'))).toBe(true)
+    expect(wrapper.get('[data-test="system-problems"]').findAll('a').some(a => a.attributes('href') === (ok && exists ? '#/repos/add' : ok ? '#/setup/library' : '#/setup'))).toBe(true)
     wrapper.unmount()
   })
 

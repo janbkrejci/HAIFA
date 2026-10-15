@@ -3,7 +3,7 @@ import { fetchFactoryRoster, fetchMachineCheck, fetchRepos, getGlobal, type Repo
 import { fetchLibrarySummary } from './library'
 import { focusRepo, gettingStartedSteps, type Step } from './gettingStarted'
 import { errorText } from './format'
-import { repoHref } from './router'
+import { LIBRARY_HREF, SETUP_HREF, repoHref } from './router'
 import { repoStatusText } from './repos'
 
 type Issue = Pick<Step, 'id' | 'title' | 'hint' | 'href' | 'action'> & { repo?: RepoItem }
@@ -41,7 +41,7 @@ function createReadiness() {
         return !step.done
       })
       for (const finding of machineErrors) {
-      issues.value.push({ id: 'machine', title: finding.message, hint: finding.fix ?? 'Otevři nastavení počítače a oprav uvedený problém.', href: finding.code === 'harness_test_failed' ? '#harness-settings' : '#/setup', action: finding.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači' })
+      issues.value.push({ id: 'machine', title: finding.message, hint: finding.fix ?? 'Otevři Tento počítač a oprav uvedený problém.', href: finding.code === 'harness_test_failed' ? '#harness-settings' : finding.scope === 'library' ? LIBRARY_HREF : SETUP_HREF, action: finding.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači' })
       }
       for (const item of registry.repos.filter(r => r.status !== 'ok')) {
         const uncommitted = item.status === 'uncommitted'
@@ -52,7 +52,7 @@ function createReadiness() {
       else phase.value = 'success'
     } catch (error) {
       if (!disposed) {
-        issues.value = [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: '#/setup', action: 'Otevřít nastavení' }]
+        issues.value = [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít Tento počítač' }]
         phase.value = 'warning'
       }
     } finally { checking = false }

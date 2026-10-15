@@ -1,20 +1,24 @@
 <script setup lang="ts">
-// #/r/<id>/factory: `factory check` of the repo (GET /api/repos/<id>/factory/check) with the
-// package version, and the findings in two groups: fix in the repo and commit, or fix on this
-// machine. Writes use a reviewed and confirmed server plan.
-import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+// #/r/<id>/factory: everything about the factory of one repo. `factory check` of the repo
+// (GET /api/repos/<id>/factory/check) with the package version, and the findings in two
+// groups: fix in the repo and commit, or fix on this machine for this repo. Machine findings
+// the machine check (#/setup) shows too and the library findings live only there; one line
+// links to them. Below: the roster, the repo settings (#/r/<id>/factory/settings) and the
+// repo's items. Writes use a reviewed and confirmed server plan.
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
-import { fetchFactoryCheck, type CheckFinding, type CheckSeverity, type FactoryCheck } from '@/lib/api'
+import { fetchFactoryCheck, fetchMachineCheck, type CheckFinding, type CheckSeverity, type FactoryCheck } from '@/lib/api'
 import { errorText, fmtTime, shortSha } from '@/lib/format'
 import { factoryStateText } from '@/lib/repos'
 import FactoryOperation from '@/components/factory/FactoryOperation.vue'
 import FactoryFindingRepair from '@/components/factory/FactoryFindingRepair.vue'
 import { lastFactoryResult } from '@/lib/factory'
-import { NEW_CONTAINER, currentRepoId, repoHref, useRouteParams } from '@/lib/router'
+import { NEW_CONTAINER, SETUP_HREF, currentRepoId, repoHref, useRouteParams } from '@/lib/router'
 import type { FactoryAction } from '@/lib/api'
 import Spinner from '@/components/ui/Spinner.vue'
 import RepoItems from '@/components/factory/RepoItems.vue'
 import RosterEditor from '@/components/factory/RosterEditor.vue'
+import RepoSettings from '@/components/factory/RepoSettings.vue'
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = { error: 0, warning: 1, info: 2 }
 const SEVERITY_TEXT: Record<CheckSeverity, string> = { error: 'chyba', warning: 'varování', info: 'info' }
@@ -39,7 +43,19 @@ const itemsBusy = ref(false)
 const itemManager = ref<InstanceType<typeof RepoItems> | null>(null)
 const repoId = currentRepoId() ?? ''
 const params = useRouteParams()
-watch(params, value => { if(value[0] === 'config_commit') openConfig() }, { immediate: true })
+const settingsSection = ref<HTMLElement | null>(null)
+/** `#/r/<id>/factory/settings` scrolls to the repo settings once they are shown. */
+let scrollToSettings = false
+async function showSettings() {
+  await nextTick()
+  if (!settingsSection.value) return
+  scrollToSettings = false
+  settingsSection.value.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
+watch(params, value => {
+  if (value[0] === 'config_commit') openConfig()
+  if (value[0] === 'settings') { scrollToSettings = true; void showSettings() }
+}, { immediate: true })
 const report = ref<FactoryCheck | null>(null)
 const selected = ref<number[]>([])
 function openRepair() {
@@ -56,8 +72,17 @@ async function load(fresh = false): Promise<void> {
   loading.value = true
   error.value = null
   try {
-    const data = await fetchFactoryCheck({ fresh })
-    if (mine === generation) { report.value = data; selected.value = [] }
+    // The machine check only hides what #/setup shows; without it nothing is hidden.
+    const [data, machine] = await Promise.all([
+      fetchFactoryCheck({ fresh }),
+      fetchMachineCheck().catch(() => null),
+    ])
+    if (mine === generation) {
+      report.value = data
+      machineFindings.value = machine?.findings ?? null
+      selected.value = []
+      if (scrollToSettings) void showSettings()
+    }
   } catch (err) {
     if (mine === generation) error.value = errorText(err)
   } finally {
@@ -69,7 +94,22 @@ function sorted(findings: CheckFinding[]): CheckFinding[] {
   return [...findings].sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 3) - (SEVERITY_ORDER[b.severity] ?? 3))
 }
 
-const findings = computed(() => report.value?.findings ?? [])
+const machineFindings = ref<CheckFinding[] | null>(null)
+/** A finding #/setup shows: any library finding, a machine finding the machine check has too. */
+function elsewhere(f: CheckFinding): boolean {
+  if (f.scope === 'library') return true
+  if (f.scope !== 'machine' || machineFindings.value === null) return false
+  return machineFindings.value.some((m) => m.code === f.code && m.message === f.message)
+}
+/** The findings shown here; their indices are what the checkboxes select. */
+const findings = computed(() => (report.value?.findings ?? []).filter((f) => !elsewhere(f)))
+const hidden = computed(() => (report.value?.findings ?? []).filter(elsewhere))
+const counts = computed(() => {
+  const result: Record<CheckSeverity, number> = { error: 0, warning: 0, info: 0 }
+  for (const f of findings.value) result[f.severity] = (result[f.severity] ?? 0) + 1
+  return result
+})
+const verdictOk = computed(() => counts.value.error === 0)
 const groups = computed(() => [
   {
     id: 'repo',
@@ -78,10 +118,10 @@ const groups = computed(() => [
   },
   {
     id: 'local',
-    title: 'Tento počítač: opravit lokálně',
+    title: 'Tento počítač: potřebné pro toto repo',
     items: sorted(findings.value.filter((f) => f.scope !== 'repo')),
   },
-])
+].filter((group) => group.items.length > 0))
 
 function short(sha: string | null): string {
   return shortSha(sha, 8) || '—'
@@ -126,9 +166,9 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
         <button v-if="completed?.pr || (report.behind ?? 0) > 0 || report.findings.some(f => f.code === 'base_behind')" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-pull" @click="openOperation('pull')">Stáhnout konfiguraci z base</button>
       </div>
       <div class="summary" data-test="factory-summary">
-        <p class="verdict" :class="report.ok ? 'is-ok' : 'is-bad'" data-test="factory-verdict">
-          <template v-if="report.ok">Factory je v pořádku</template>
-          <template v-else>{{ report.counts.error }} chyb, {{ report.counts.warning }} varování</template>
+        <p class="verdict" :class="verdictOk ? 'is-ok' : 'is-bad'" data-test="factory-verdict">
+          <template v-if="verdictOk">Factory je v pořádku</template>
+          <template v-else>{{ counts.error }} chyb, {{ counts.warning }} varování</template>
         </p>
         <dl class="rows">
           <dt>Stav repa</dt>
@@ -158,8 +198,7 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
       </div>
       <section v-for="group in groups" :key="group.id" class="group" :data-test="`findings-${group.id}`">
         <h2>{{ group.title }}</h2>
-        <p v-if="!group.items.length" class="none">Bez nálezů</p>
-        <ul v-else class="findings">
+        <ul class="findings">
           <li
             v-for="(f, i) in group.items"
             :key="`${f.code}-${i}`"
@@ -171,17 +210,23 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
               :aria-label="`Vybrat nález ${f.code}: ${f.message}`" data-test="finding-select"
               :disabled="loading || !!error || operationBusy || !!repair || itemsBusy" />
             <span class="severity" :class="`sev-${f.severity}`">{{ SEVERITY_TEXT[f.severity] ?? f.severity }}</span>
-            <span v-if="f.scope === 'library'" class="tag" data-test="finding-library">knihovna</span>
             <span class="code mono">{{ f.code }}</span>
             <span class="message">{{ f.message }}</span>
             <span v-if="f.fix" class="fix">Oprava: {{ f.fix }}</span>
           </li>
         </ul>
       </section>
+      <p v-if="hidden.length" class="elsewhere" data-test="factory-machine-link">
+        Další nálezy tohoto počítače a knihovny: {{ hidden.length }}<template v-if="hidden.some(f => f.severity === 'error')"> (s chybami)</template>
+        · <a :href="SETUP_HREF">Otevřít Tento počítač</a>
+      </p>
     </template>
     <div v-if="report && report.state !== 'none'" ref="rosterSection">
       <RosterEditor readonly :repo-id="repoId" :disabled="operationBusy || itemsBusy || !!repair" />
     </div>
+    <section v-if="report && report.state !== 'none'" ref="settingsSection" data-test="factory-settings">
+      <RepoSettings @saved="load(true)" />
+    </section>
     <RepoItems ref="itemManager" :repo-id="repoId" :disabled="operationBusy || rosterBusy || !!repair" @busy="itemsBusy = $event; if ($event) operation = null" @success="load(true)" />
     <FactoryFindingRepair v-if="repair" :findings="repair" @close="repair = null" />
   </section>
@@ -338,12 +383,9 @@ dd {
   color: var(--blue);
 }
 
-.tag {
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  color: var(--purple);
-  font-size: 12px;
+.elsewhere {
+  margin: 14px 0 0;
+  color: var(--dim);
 }
 
 .code {
@@ -361,7 +403,6 @@ dd {
   font-size: 14px;
 }
 
-.none,
 .loading {
   margin: 0;
   color: var(--dim);

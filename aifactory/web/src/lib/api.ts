@@ -548,6 +548,8 @@ export function applyBasePull(digest: string, id?: string): Promise<FactoryResul
 export interface MachineCheck {
   ok: boolean; findings: CheckFinding[]; checked_at: string; cached: boolean
   harness_repos?: Record<string, number>
+  /** Every missing harness, also those whose info finding is not shown (no repo uses them). */
+  missing_harnesses?: string[]
 }
 export async function fetchMachineCheck(fresh = false): Promise<MachineCheck> {
   return readEnvelope<MachineCheck>(await fetch('/api/machine/check' + (fresh ? '?fresh=1' : '')), CHECK_REPORT_CODES)

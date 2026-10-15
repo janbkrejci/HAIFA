@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   GRAPH,
+  LIBRARY_HREF,
   NEW_CONTAINER,
   NEW_STEP,
   NEW_TASK,
@@ -8,10 +9,12 @@ import {
   REPOS_ADD_HREF,
   SCREENS,
   SCREEN_LABELS,
+  SETUP_HREF,
   currentRepoId,
   graphHref,
   guideHref,
   here,
+  repoSettingsHref,
   newContainerHref,
   newStepHref,
   parseRoute,
@@ -37,7 +40,11 @@ afterEach(() => {
 describe('parseRoute', () => {
   it('parses the overview and the repo pages', () => {
     expect(parseRoute('#/setup')).toMatchObject({ page: 'setup', repo: null, redirect: null })
-    expect(parseRoute('#/library')).toMatchObject({ page: 'library', repo: null, redirect: null })
+    expect(parseRoute('#/setup/library')).toMatchObject({ page: 'setup', repo: null, params: ['library'], redirect: null })
+    // the library page is the library section of this machine now
+    expect(parseRoute('#/library')).toMatchObject({ page: 'setup', repo: null, params: ['library'], redirect: LIBRARY_HREF })
+    expect(LIBRARY_HREF).toBe('#/setup/library')
+    expect(SETUP_HREF).toBe('#/setup')
     expect(parseRoute('#/overview')).toEqual({ page: 'overview', repo: null, screen: 'backlog', params: [], redirect: null })
     expect(parseRoute('#/repos/add')).toMatchObject({ page: 'repos-add', repo: null, redirect: null })
   })
@@ -68,10 +75,17 @@ describe('parseRoute', () => {
   })
 
   it('parses every screen of a repo', () => {
-    for (const screen of ['backlog', 'runs', 'review', 'settings'] as const) {
+    expect(SCREENS.map((s) => s.id)).toEqual(['backlog', 'runs', 'review', 'factory'])
+    for (const screen of ['backlog', 'runs', 'review', 'factory'] as const) {
       expect(parseRoute(`#/r/haifa/${screen}`)).toEqual({ page: 'repo', repo: 'haifa', screen, params: [], redirect: null })
     }
     expect(parseRoute('#/r/x/runs/extra').screen).toBe('runs')
+  })
+
+  it('redirects the former settings screen to the settings section of Factory', () => {
+    expect(parseRoute('#/r/x/settings')).toEqual({ page: 'repo', repo: 'x', screen: 'factory', params: ['settings'], redirect: '#/r/x/factory/settings' })
+    expect(parseRoute('#/r/x/factory/settings')).toEqual({ page: 'repo', repo: 'x', screen: 'factory', params: ['settings'], redirect: null })
+    expect(repoSettingsHref('a b')).toBe('#/r/a%20b/factory/settings')
   })
 
   it('redirects a bare repo and an unknown screen to its backlog', () => {
@@ -89,8 +103,8 @@ describe('parseRoute', () => {
     })
   })
 
-  it('lists the five screens in order with their labels', () => {
-    expect(SCREENS.map((s) => s.label)).toEqual(['Backlog', 'Běhy', 'Review', 'Factory', 'Nastavení'])
+  it('lists the four screens in order with their labels', () => {
+    expect(SCREENS.map((s) => s.label)).toEqual(['Backlog', 'Běhy', 'Review', 'Factory'])
     expect(SCREEN_LABELS.runs).toBe('Běhy')
     expect(SCREEN_LABELS.factory).toBe('Factory')
   })
@@ -143,7 +157,7 @@ describe('hrefs', () => {
   })
 
   it('follow a repo switch', () => {
-    go('#/r/other/settings')
+    go('#/r/other/factory')
     expect(here('runs')).toBe('#/r/other/runs')
     expect(taskHref('T1')).toBe('#/r/other/backlog/T1')
     expect(newStepHref()).toBe('#/r/other/backlog/new-step')
