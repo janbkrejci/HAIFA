@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T29
 title: "Vylepšit tlačítko Vylepšit task: navrhne i workflow"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T07, HAIFA-REFINEMENT-T18, HAIFA-S01-T38, HAIFA-S03-T21]
@@ -30,3 +30,4 @@ Tlačítko „Vylepšit agentem“ na detailu tasku (a ve formuláři tasku) má
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/41 · náklady $1.49
