@@ -92,7 +92,7 @@ export interface RunSummary {
   note: string | null
   /** Archived: listed only in the archived view (absent from an older server). */
   archived?: boolean
-  /** Who started the run: manual, auto-continue, auto-resolve; null before it was recorded. */
+  /** Who started the run: manual, auto-continue, auto-resolve, auto-ci-fix; null before it was recorded. */
   started_by?: string | null
   /** A running run's pause: 'pausing' or 'paused'; null without one (absent from an older server). */
   pause?: RunPause | null
@@ -473,9 +473,10 @@ const STARTED_BY: Record<string, string> = {
   manual: 'ručně',
   'auto-continue': 'auto-continue',
   'auto-resolve': 'auto-resolve',
+  'auto-ci-fix': 'auto-ci-fix',
 }
 
-/** Who started a run, for the list and the detail: `ručně`, `auto-continue`, `auto-resolve`. */
+/** Who started a run, for the list and the detail: `ručně`, `auto-continue`, `auto-resolve`, `auto-ci-fix`. */
 export function startedByLabel(value: string | null | undefined): string {
   return value ? (STARTED_BY[value] ?? value) : '—'
 }
@@ -489,6 +490,8 @@ export function startedByTip(value: string | null | undefined): string {
       return 'Spuštěno automaticky řetězem auto-continue'
     case 'auto-resolve':
       return 'Spuštěno automaticky: auto-merge řeší konflikt PR'
+    case 'auto-ci-fix':
+      return 'Spuštěno automaticky: schválení opravuje červenou CI PR'
     default:
       return 'Neznámé: běh je starší než záznam o spuštění'
   }

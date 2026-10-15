@@ -269,6 +269,27 @@ def test_approve_calls_core_and_merges(
     assert _check(client.get("/api/review"), 200)["data"]["prs"] == []
 
 
+def test_approve_with_ci_checks_runs_in_the_background(
+    app: Starlette,
+    client: TestClient,
+    repo: Path,
+    script: Script,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hosting with CI checks: the approve waits for them in its own process (HTTP 202)."""
+    from aifactory.review import ci
+
+    first_run(repo, script)
+    monkeypatch.setattr(ci, "provider_reports_checks", lambda _repo: True)
+    calls = spy(monkeypatch, "approve_task")
+    data = _check(client.post(f"/api/review/{T01}/approve"), 202)["data"]
+    assert data["started"] is True and data["action"] == "approve"
+    assert data["approve_review_sent"] is False and "OB3" in data["approve_note"]
+    wait(app)
+    assert calls == [(repo, T01)]
+    assert "status: done" in git(repo, "show", f"main:{TASK1}")
+
+
 def test_return_starts_run_on_same_branch(
     app: Starlette,
     client: TestClient,

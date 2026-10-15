@@ -6,11 +6,11 @@ one row per branch with a pull request (``open``, ``merged`` or ``closed``);
 ``task_prs.merged_by`` says who merged the PR (``auto-merge`` or ``operator``);
 ``task_prs.auto_merge_error`` why auto-merge left the PR open. ``task_runs.started_by``
 says who started a run: ``manual`` (``factory task run|return|resolve``, the dashboard),
-``auto-continue`` (a chain) or ``auto-resolve`` (auto-merge resolving a conflict); NULL for
-runs recorded before. ``task_runs.library_commit`` is the library commit the run read its
-inherited agents, workflows and skills from (NULL: the seed, or recorded before). Older
-trace DBs get these columns added when the store opens them, and ``task_runs.archived``
-too.
+``auto-continue`` (a chain), ``auto-resolve`` (auto-merge resolving a conflict) or
+``auto-ci-fix`` (approve repairing the PR's red CI checks); NULL for runs recorded before.
+``task_runs.library_commit`` is the library commit the run read its inherited agents,
+workflows and skills from (NULL: the seed, or recorded before). Older trace DBs get these
+columns added when the store opens them, and ``task_runs.archived`` too.
 
 ``task_chains`` has one row per auto-continue chain (``queue.run_chain``): its runs
 in start order, the tasks the last selection skipped and why, the tasks that ran
@@ -263,6 +263,7 @@ STARTED_MANUAL, STARTED_AUTO_CONTINUE, STARTED_AUTO_RESOLVE = (
     "auto-continue",
     "auto-resolve",
 )
+STARTED_AUTO_CI_FIX = "auto-ci-fix"
 # the engine's trace tables with rows of a run (``adw_id``), children first
 _TRACE_TABLES = (
     "events",
@@ -292,7 +293,7 @@ class TaskRunRow:
     note: str | None = None
     error: str | None = None
     archived: int = 0  # 1 = hidden from the list of active runs
-    started_by: str | None = None  # manual, auto-continue, auto-resolve; None: not recorded
+    started_by: str | None = None  # manual, auto-continue, auto-resolve, auto-ci-fix; None: none
     pause: str | None = None  # of a running run: None, PAUSING or PAUSED
     pr_error: str | None = None  # why a succeeded run has no PR (push or hosting failed)
     library_commit: str | None = None  # the library commit the run read; None: the seed

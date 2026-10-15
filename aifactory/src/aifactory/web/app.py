@@ -1144,15 +1144,21 @@ async def review_detail(request: Request) -> JSONResponse:
 
 
 async def review_approve(request: Request) -> JSONResponse:
-    """``approve_task`` (``factory task approve``), including Azure's approval vote."""
+    """``approve_task`` (``factory task approve``), including Azure's approval vote.
+
+    On a hosting with CI checks the approve waits for them, so it runs as a separate
+    process (HTTP 202, ``started``); otherwise the merge result (HTTP 200).
+    """
     repo: Path = _repo(request)
+    launcher: Launcher = request.app.state.launcher
     try:
         data, warnings = await run_in_threadpool(
-            review.approve, repo, request.path_params["task_id"]
+            review.approve, repo, request.path_params["task_id"], launcher
         )
     except (ReviewError, TaskRunError, ConfigError) as exc:
         return _review_error(exc)
-    return JSONResponse(envelope_ok(data, warnings))
+    status = 202 if data.get("started") else 200
+    return JSONResponse(envelope_ok(data, warnings), status_code=status)
 
 
 async def review_return(request: Request) -> JSONResponse:

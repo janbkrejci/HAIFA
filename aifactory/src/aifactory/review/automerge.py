@@ -11,11 +11,15 @@ worktrees removed), with ``merged_by == "auto-merge"``, but only when all holds:
    a workflow without review is never merged automatically;
 3. the last review of the run approved, with no blocking and no unmet item;
 4. the PR is open and merges cleanly (``mergeable``) into base;
-5. its checks on the hosting have finished and none is red. Running checks are waited for
-   (`AUTO_MERGE_CHECKS_TIMEOUT`); still running after that is `checks_pending`. A hosting
-   that reports checks (`reports_checks`, GitHub) gets `AUTO_MERGE_CHECKS_APPEAR` for the
-   checks of a fresh PR to show up before "no checks" counts. The checks are those of the
-   run's head: the `status: done` commit of the merge only touches the task file.
+5. its CI checks are green or it has none. ``approve_task`` waits for the checks of the
+   merge head, after the ``status: done`` push (``review.ci``): running checks up to
+   ``ci.AUTO_MERGE_CHECKS_TIMEOUT`` (then ``checks_pending``); a hosting that reports
+   checks (``reports_checks``, GitHub) gets ``ci.AUTO_MERGE_CHECKS_APPEAR`` for the head's
+   checks to show up before "no checks" counts. Red checks start up to
+   ``ci.CI_FIX_ROUNDS`` ``ci-fix`` runs on the PR branch (``started_by`` ``auto-ci-fix``),
+   each pushing its repair to the same PR; still red after them is ``checks_failing``, a
+   repair run that fails is ``ci_fix_failed``. A chain member's auto-merge holds the merge
+   lock across this wait and the repair runs.
 
 An open PR whose mergeability is still unknown is polled again until the hosting
 reports a definitive result. Each bounded provider polling batch is followed by
@@ -37,15 +41,12 @@ from collections.abc import Callable
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from time import monotonic, sleep
+from time import sleep
 
 from aifactory.backlog import Task
 from aifactory.config import ConfigError, RunConfig, load_run_config
 from aifactory.engine.data_types import ReviewOutput
 from aifactory.providers import (
-    CHECKS_FAILING,
-    CHECKS_NONE,
-    CHECKS_PENDING,
     CONFLICT,
     MERGEABLE,
     OPEN,
@@ -54,10 +55,10 @@ from aifactory.providers import (
     GitProvider,
     ProviderError,
     PrStatus,
-    PullRequest,
     get_provider,
 )
 from aifactory.review import flow as review_flow
+from aifactory.review.ci import checks_reason, settled_checks
 from aifactory.review.errors import ReviewError
 from aifactory.review.flow import ApproveResult, approve_task
 from aifactory.run import gitops
@@ -76,14 +77,6 @@ from aifactory.workflow import CodeRunner, RoleStep, Workflow, WorkflowRun, walk
 
 AUTO_MERGE = MERGED_BY_AUTO
 AUTO_MERGE_POLL_DELAY = 2.0
-AUTO_MERGE_CHECKS_DELAY = 15.0
-"""Seconds between two reads of the PR's checks while they run."""
-AUTO_MERGE_CHECKS_TIMEOUT = 30 * 60.0
-"""How long auto-merge waits for running checks before it gives up (`checks_pending`)."""
-AUTO_MERGE_CHECKS_APPEAR = 90.0
-"""How long a fresh PR on a hosting with checks may show none before "no checks" counts."""
-_clock = monotonic
-"""The clock of the checks wait (a module attribute, so tests can move it)."""
 __all__ = [
     "AUTO_MERGE",
     "AutoMergeResult",
@@ -177,7 +170,7 @@ def review_blocker(review: ReviewOutput | None) -> tuple[str, str] | None:
     return None
 
 
-def hosting_blocker(status: PrStatus, checks: ChecksStatus) -> tuple[str, str] | None:
+def hosting_blocker(status: PrStatus, checks: ChecksStatus | None = None) -> tuple[str, str] | None:
     """``(code, reason)`` when the hosting state does not allow a merge; ``None`` when it does."""
     if status.state != OPEN:
         return "pr_not_open", f"the PR is {status.state}"
@@ -185,35 +178,16 @@ def hosting_blocker(status: PrStatus, checks: ChecksStatus) -> tuple[str, str] |
         return "conflict", "the PR does not merge into base; run `factory task resolve`"
     if status.mergeability != MERGEABLE:
         return "mergeability_unknown", f"the hosting reports mergeability {status.mergeability}"
-    if checks.state == CHECKS_FAILING:
-        names = ", ".join(checks.failing) or "?"
-        return "checks_failing", f"red checks: {names}"
-    if checks.state == CHECKS_PENDING:
-        minutes = round(AUTO_MERGE_CHECKS_TIMEOUT / 60)
-        return "checks_pending", f"checks still running after {minutes} min"
-    return None
-
-
-def settled_checks(provider: GitProvider, request: PullRequest) -> ChecksStatus:
-    """The PR's checks once none runs, or as they are when the wait is over."""
-    start = _clock()
-    checks = provider.checks(request)
-    while True:
-        waited = _clock() - start
-        running = checks.state == CHECKS_PENDING and waited < AUTO_MERGE_CHECKS_TIMEOUT
-        appearing = (
-            checks.state == CHECKS_NONE
-            and provider.reports_checks
-            and waited < AUTO_MERGE_CHECKS_APPEAR
-        )
-        if not (running or appearing):
-            return checks
-        sleep(AUTO_MERGE_CHECKS_DELAY)
-        checks = provider.checks(request)
+    return checks_reason(checks) if checks is not None else None
 
 
 def try_auto_merge(
-    repo: Path, result: TaskRunResult, task: Task, *, provider: GitProvider | None = None
+    repo: Path,
+    result: TaskRunResult,
+    task: Task,
+    *,
+    provider: GitProvider | None = None,
+    code: CodeRunner | None = None,
 ) -> AutoMergeResult:
     """Approve and merge the PR of `result` when every condition holds; never raises for that."""
     pr = result.pr
@@ -226,7 +200,7 @@ def try_auto_merge(
         )
     if pr is None:
         return AutoMergeResult(False, "no_pr", result.pr_error or "the run opened no PR", None)
-    outcome = _check_and_merge(repo, result, task, provider)
+    outcome = _check_and_merge(repo, result, task, provider, code)
     if not outcome.merged:
         _record_error(result.trace_db, pr.branch, f"{outcome.code}: {outcome.reason}")
     return outcome
@@ -279,7 +253,7 @@ def resolve_and_merge(
     except (TaskRunError, ConfigError) as exc:
         return failed("workflow_unavailable", str(exc), resolved)
     with merge_lock() if merge_lock is not None else contextlib.nullcontext():
-        outcome = _hosting_and_merge(repo, resolved.pr or pr, task, provider, rc, main)
+        outcome = _hosting_and_merge(repo, resolved.pr or pr, task, provider, rc, main, code)
     if outcome.merged:
         _record_error(result.trace_db, pr.branch, None)
     else:
@@ -290,7 +264,11 @@ def resolve_and_merge(
 
 
 def _check_and_merge(
-    repo: Path, result: TaskRunResult, task: Task, provider: GitProvider | None
+    repo: Path,
+    result: TaskRunResult,
+    task: Task,
+    provider: GitProvider | None,
+    code: CodeRunner | None = None,
 ) -> AutoMergeResult:
     pr = result.pr
     assert pr is not None
@@ -314,7 +292,7 @@ def _check_and_merge(
     review = review_blocker(last_review(result.workflow_run))
     if review is not None:
         return blocked(*review)
-    return _hosting_and_merge(repo, pr, task, provider, rc, main)
+    return _hosting_and_merge(repo, pr, task, provider, rc, main, code)
 
 
 def _hosting_and_merge(
@@ -324,8 +302,9 @@ def _hosting_and_merge(
     provider: GitProvider | None,
     rc: RunConfig,
     main: Path,
+    code: CodeRunner | None = None,
 ) -> AutoMergeResult:
-    """Conditions 4 and 5 on the hosting, then the merge (``approve_task``)."""
+    """Condition 4 on the hosting, then ``approve_task`` (condition 5 and the merge)."""
     url = pr.url
 
     def blocked(code: str, reason: str) -> AutoMergeResult:
@@ -340,15 +319,11 @@ def _hosting_and_merge(
             status = provider.status(pr.request())
     except ProviderError as exc:
         return blocked("status_unavailable", f"{exc.code}: {exc.message}")
-    try:
-        checks = settled_checks(provider, pr.request())
-    except ProviderError as exc:
-        return blocked("checks_unavailable", f"{exc.code}: {exc.message}")
-    hosting = hosting_blocker(status, checks)
+    hosting = hosting_blocker(status)
     if hosting is not None:
         return blocked(*hosting)
     try:
-        approved = approve_task(repo, task.id, provider=provider, merged_by=AUTO_MERGE)
+        approved = approve_task(repo, task.id, provider=provider, merged_by=AUTO_MERGE, code=code)
     except ReviewError as exc:
         return blocked(exc.code, exc.message)
     except (OSError, RuntimeError) as exc:

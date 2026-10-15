@@ -11,6 +11,7 @@
 - The app and engine modules are imported once, not inside the first test.
 - `-n auto` respects PYTEST_XDIST_AUTO_NUM_WORKERS; otherwise starts 1.5x as many
   workers as logical CPUs, capped at eight on Windows to limit subprocess pressure.
+- Approve and auto-merge read CI checks without waiting for them (`review.ci` limits 0).
 - Every test gets `HAIFA_HOME` pointing at a temporary directory (the dashboard writes
   the logs of its run processes there) and fails when the real HAIFA home changed. Logs
   of other processes (a dashboard the operator runs meanwhile) are ignored: the launcher
@@ -190,6 +191,15 @@ def _fast_test_env(tmp_path_factory: pytest.TempPathFactory) -> Iterator[None]:
         repo_templates.enable(tmp_path_factory.mktemp("repo-templates"))
         _warm_imports()
         yield
+
+
+@pytest.fixture(autouse=True)
+def _no_ci_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Approve reads a hosting's CI checks as they are (``review.ci``); no test waits 90 s."""
+    from aifactory.review import ci
+
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_TIMEOUT", 0.0)
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_APPEAR", 0.0)
 
 
 @pytest.fixture(autouse=True)

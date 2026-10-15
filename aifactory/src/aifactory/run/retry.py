@@ -51,6 +51,7 @@ from aifactory.providers import git as provider_git
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
 from aifactory.run.resolve import (
+    CI_FIX_WORKFLOW,
     INTERNAL_WORKFLOWS,
     ConflictWriteGuard,
     ResolveSpec,
@@ -320,9 +321,13 @@ def retry_run(
                 "or aborted run can be retried",
             )
         if row.workflow in INTERNAL_WORKFLOWS:
+            again = (
+                f"approve the PR again (factory task approve {task_id})"
+                if row.workflow == CI_FIX_WORKFLOW
+                else "run factory task resolve again"
+            )
             raise TaskRunError(
-                "run_not_retryable",
-                f"run {row.run_id} is a {row.workflow} run; run factory task resolve again",
+                "run_not_retryable", f"run {row.run_id} is a {row.workflow} run; {again}"
             )
         _refuse_done(store, None, task_id)
         warnings = _pull_base(main, rc.config.settings, store)

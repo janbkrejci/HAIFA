@@ -548,3 +548,54 @@ def test_approve_review_refused(tmp_path: Path, monkeypatch: pytest.MonkeyPatch)
 def test_approver_must_be_a_login() -> None:
     with pytest.raises(ValueError):
         ProjectSettings.model_validate({"git_provider": "github", "github_approver": "a b"})
+
+
+# ── check_logs ───────────────────────────────────────────────────────────────
+
+
+def test_check_logs_reads_the_failed_job_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.providers.github import CHECK_LOG_LINES
+
+    job = "https://github.com/o/r/actions/runs/11/job/22"
+    log = install_fake_gh(
+        tmp_path,
+        monkeypatch,
+        {
+            "pr checks": reply(
+                [
+                    {"name": "ci", "bucket": "fail", "link": job},
+                    {"name": "lint", "bucket": "fail", "link": "https://example.com/x"},
+                    {"name": "docs", "bucket": "fail", "link": job.replace("22", "33")},
+                    {"name": "ok", "bucket": "pass", "link": job},
+                ]
+            ),
+            "run view": [
+                reply("".join(f"line {i}\n" for i in range(CHECK_LOG_LINES + 50))),
+                reply(exit=1, stderr="HTTP 410: log expired\nmore\n"),
+            ],
+        },
+    )
+
+    logs = _provider(tmp_path, []).check_logs(PR, ("ci", "lint", "docs"))
+
+    ci_lines = logs["ci"].splitlines()
+    assert len(ci_lines) == CHECK_LOG_LINES
+    assert ci_lines[0] == "line 50" and ci_lines[-1] == f"line {CHECK_LOG_LINES + 49}"
+    assert logs["lint"].startswith("log unavailable: no job link")
+    assert logs["docs"].startswith("log unavailable: HTTP 410: log expired")
+    views = _pr_calls(log, "run view")
+    assert views == [
+        ["run", "view", "--job", "22", "--log-failed"],
+        ["run", "view", "--job", "33", "--log-failed"],
+    ]
+    assert _pr_calls(log, "pr checks") == [["pr", "checks", "7", "--json", "name,bucket,link"]]
+
+
+def test_check_logs_without_red_checks_asks_nothing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = install_fake_gh(tmp_path, monkeypatch, {})
+    assert _provider(tmp_path, []).check_logs(PR, ()) == {}
+    assert log.argvs() == []

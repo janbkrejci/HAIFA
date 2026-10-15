@@ -24,13 +24,27 @@ Sloučený nebo zavřený PR je jen pro čtení. Dokud na PR běží běh (např
 **Schválit** se zeptá „Schválit a mergovat PR … do base?“ a pak:
 
 1. přidá do větve commit se `status: done` a řádkem v `## Běhy` tasku a odešle ho,
-2. v Azure DevOps odešle hlas „approve“ za přihlášeného uživatele (GitHub vlastní schválení autora nepovoluje, lokální provider review nemá),
-3. mergne PR podle `merge_strategy` repa (výchozí squash),
-4. srovná lokální base s remote a smaže worktree větve.
+2. počká na CI kontroly v hostingu, a to na kontroly právě odeslaného commitu (viz oddíl CI před merge),
+3. v Azure DevOps odešle hlas „approve“ za přihlášeného uživatele (GitHub vlastní schválení autora nepovoluje, lokální provider review nemá),
+4. mergne PR podle `merge_strategy` repa (výchozí squash),
+5. srovná lokální base s remote a smaže worktree větve.
 
 Task s nesplněnými závislostmi (`depends_on`) schválit nejde (chyba `task_blocked`); nejdřív dokonči tasky, které ho blokují.
 
 Po merge nabídne **Další PR ke schválení**. Z CLI: `factory task approve ID`.
+
+Na GitHubu může čekání na CI trvat dlouho, proto dashboard schvaluje na pozadí: ukáže „Schvalování běží na pozadí…“ a výsledek (merge, nebo důvod, proč PR zůstal otevřený) uvidíš v detailu PR a v **Bězích**. U lokálního provideru a Azure DevOps (HAIFA z nich CI kontroly nečte) proběhne merge hned jako dřív.
+
+### CI před merge
+
+Ruční schválení i auto-merge mergují jen PR, jehož CI je zelená:
+
+- PR bez kontrol (lokální provider, Azure DevOps, repo bez CI) se merguje hned. Na GitHubu HAIFA nejdřív chvíli (90 s) počká, než se kontroly nového commitu objeví.
+- Běžící kontroly HAIFA čeká nejvýš 30 minut. Když do té doby nedoběhnou, PR zůstane otevřený s důvodem `checks_pending`.
+- Když je některá kontrola červená, HAIFA spustí opravný běh workflow `ci-fix` na větvi téhož PR (žádný nový PR). Agent dostane názvy červených kontrol a jejich log (na GitHubu výstup selhaných kroků). Opravu otestuje, nechá zkontrolovat review, commitne a odešle do téhož PR; pak HAIFA znovu čeká na CI. Opravný běh je vidět v **Bězích** se spouštěčem `auto-ci-fix`.
+- Opravné běhy jsou nejvýš 2. Když je CI i potom červená, PR zůstane otevřený s důvodem `checks_failing`; když opravný běh selže, s důvodem `ci_fix_failed`.
+
+Důvod, proč PR zůstal otevřený, se zapíše stejně jako chyby auto-merge: detail PR ho ukáže a CLI ho vypíše. Opravený PR schválíš znovu.
 
 ## Vrácení s poznámkou
 
@@ -47,7 +61,7 @@ Se zapnutým `auto_merge` (na tasku, stepu nebo projektu) se PR mergne sám, kdy
 1. běh skončil úspěšně a otevřel PR,
 2. workflow má krok review a poslední review schválilo bez blokujících nálezů,
 3. PR je otevřený a jde mergovat,
-4. kontroly v hostingu (CI) doběhly a žádná není červená. Na běžící kontroly auto-merge počká nejvýš 30 minut. Když do té doby nedoběhnou, PR zůstane otevřený s důvodem `checks_pending`. Na GitHubu chvíli počká i na to, až se kontroly čerstvého PR objeví. PR bez kontrol (lokální provider, repo bez CI) se merguje hned.
+4. CI je zelená nebo PR žádné kontroly nemá. Auto-merge schvaluje stejně jako ruční schválení, takže čeká na kontroly commitu se `status: done` a červenou CI opravuje nejvýš dvěma běhy `ci-fix` do téhož PR (viz oddíl CI před merge). Když CI zůstane červená nebo nedoběhne do 30 minut, PR zůstane otevřený s důvodem `checks_failing`, `checks_pending` nebo `ci_fix_failed`.
 
 Při konfliktu zkusí jednou automaticky `resolve-reviewed`. Když se merge nepovede, PR čeká na ruční schválení a detail ukáže „Auto-merge nesloučil: … – schval ručně.“ Workflow bez review se nikdy nemerguje automaticky.
 

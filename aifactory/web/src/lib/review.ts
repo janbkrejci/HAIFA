@@ -174,6 +174,22 @@ export interface ApproveResult {
   reviewed: boolean
   approve_review_sent: boolean
   approve_note: string
+  /** Ids of the ci-fix runs that repaired red CI checks before the merge. */
+  ci_fix_runs?: string[]
+}
+
+/** An approve that goes on in the background: it waits for the PR's CI (GitHub). */
+export interface ApproveStarted {
+  task_id: string
+  action: 'approve'
+  started: true
+  approve_review_sent: boolean
+  approve_note: string
+}
+
+/** True when the approve runs in the background instead of returning the merge. */
+export function approveStarted(result: ApproveResult | ApproveStarted): result is ApproveStarted {
+  return 'started' in result && result.started === true
 }
 
 /** A review action whose button shows the spinner. */
@@ -229,8 +245,8 @@ export function fetchReview(taskId: string): Promise<ReviewDetail> {
   return getApi<ReviewDetail>(`/review/${encodeURIComponent(taskId)}`)
 }
 
-export function approvePr(taskId: string): Promise<ApproveResult> {
-  return postApi<ApproveResult>(`/review/${encodeURIComponent(taskId)}/approve`)
+export function approvePr(taskId: string): Promise<ApproveResult | ApproveStarted> {
+  return postApi<ApproveResult | ApproveStarted>(`/review/${encodeURIComponent(taskId)}/approve`)
 }
 
 export function returnPr(taskId: string, note: string): Promise<ActionStarted> {

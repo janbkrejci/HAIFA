@@ -22,8 +22,10 @@ rejection of an open PR that is not ``CONFLICTING`` within the same bound; only
 then it gives up with ``merge_failed``.
 
 ``checks`` reads ``gh pr checks ID --json name,bucket``; a PR without checks
-(``no checks reported``) has ``none``. ``find_open_pr`` reads ``gh pr list --head BRANCH
---state open`` so a publish adopts a PR the hosting has but ``task_prs`` does not.
+(``no checks reported``) has ``none``. ``check_logs`` reads the failed-step log of each
+red check's job (``gh run view --job ID --log-failed``). ``find_open_pr`` reads
+``gh pr list --head BRANCH --state open`` so a publish adopts a PR the hosting has but
+``task_prs`` does not.
 
 GitHub refuses an author's APPROVE review of their own PR. ``approve`` therefore sends
 the review as ``github_approver``, another account logged in to ``gh`` on this machine
@@ -36,6 +38,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from collections.abc import Callable
@@ -123,6 +126,9 @@ class GhCli:
 
 
 _STATUS_FIELDS = "state,mergeable,headRefOid,mergeCommit"
+CHECK_LOG_LINES = 150
+"""How many trailing lines of a red check's log ``check_logs`` keeps."""
+_JOB_LINK = re.compile(r"/actions/runs/\d+/job/(\d+)")
 
 
 def _merge_oid(data: dict[str, Any]) -> str | None:
@@ -306,6 +312,40 @@ class GitHubProvider(GitProvider):
         if "pending" in buckets:
             return ChecksStatus(CHECKS_PENDING)
         return ChecksStatus(CHECKS_PASSING)
+
+    def check_logs(self, pr: PullRequest, failing: tuple[str, ...]) -> dict[str, str]:
+        """The failed-step log of each red check (``gh run view --job --log-failed``).
+
+        Only the last ``CHECK_LOG_LINES`` lines are kept. A check without a job link, or
+        whose log cannot be read, gets its link or ``log unavailable: ...`` instead; only
+        a failure of ``gh pr checks`` itself raises.
+        """
+        if not failing:
+            return {}
+        data = self.gh.json("pr", "checks", pr.id, "--json", "name,bucket,link")
+        if not isinstance(data, list):
+            raise ProviderError("gh_failed", "gh pr checks: expected a JSON list")
+        links = {
+            str(item.get("name", "")): str(item.get("link") or "")
+            for item in data
+            if isinstance(item, dict)
+        }
+        logs: dict[str, str] = {}
+        for name in failing:
+            link = links.get(name, "")
+            match = _JOB_LINK.search(link)
+            if match is None:
+                logs[name] = f"log unavailable: no job link ({link or 'none'})"
+                continue
+            try:
+                out = self.gh.run("run", "view", "--job", match.group(1), "--log-failed")
+            except ProviderError as exc:
+                detail = (getattr(exc, "stderr", "") or exc.message).strip().splitlines()
+                logs[name] = f"log unavailable: {detail[0] if detail else exc.code} ({link})"
+                continue
+            lines = out.splitlines()[-CHECK_LOG_LINES:]
+            logs[name] = "\n".join(lines) if lines else f"log empty ({link})"
+        return logs
 
     def merge(
         self, pr: PullRequest, head_sha: str, subject: str, strategy: str | None = None

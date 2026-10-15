@@ -43,8 +43,10 @@ from aifactory.workflow.rebuild import to_rebuild
 RESOLVE_WORKFLOW = "resolve"
 RESOLVE_REVIEWED_WORKFLOW = "resolve-reviewed"
 """``resolve`` plus a review of a resolution the agent wrote; auto-merge resolves with it."""
+CI_FIX_WORKFLOW = "ci-fix"
+"""Repairs a PR whose CI checks went red, on the PR's branch (``review.ci``)."""
 # internal workflows: packaged, available also when neither the repo nor the library has them
-INTERNAL_WORKFLOWS = frozenset({RESOLVE_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW})
+INTERNAL_WORKFLOWS = frozenset({RESOLVE_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW, CI_FIX_WORKFLOW})
 
 
 @dataclass(frozen=True)
