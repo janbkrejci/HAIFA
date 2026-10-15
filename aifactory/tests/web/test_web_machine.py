@@ -67,7 +67,13 @@ def test_machine_failure_matches_cli(client: TestClient) -> None:
     errors = report.errors()
     message = f"{len(errors)} error(s): {', '.join(dict.fromkeys(f.code for f in errors))}"
     assert res.json()["error"]["message"] == message
-    assert data["findings"] == report.to_json()["findings"]
+    # The dashboard leaves out the info about harnesses no registered repository uses.
+    assert data["findings"] == [
+        f
+        for f in report.to_json()["findings"]
+        if not (f["code"] == "harness_missing" and f["severity"] == "info")
+    ]
+    assert data["missing_harnesses"] == ["claude", "codex", "pi"]
     assert response(client.get("/api/machine/check"), 200, "checks_failed")["cached"]
 
 
@@ -140,6 +146,35 @@ def test_harness_repo_counts_follow_registry_with_cached_probes(
     cached = response(client.get("/api/machine/check?offline=1"))
     assert cached["cached"]
     assert cached["harness_repos"] == {"claude": 2, "codex": 0, "pi": 0}
+
+
+def test_missing_harness_info_only_for_harnesses_repos_use(
+    client: TestClient, tmp_path: Path
+) -> None:
+    from aifactory.library.install import init_repo
+
+    initialize(client)
+    state(client).check_machine = FakeMachine(present={"git", "uv", "just", "node"})
+
+    def missing(data: dict[str, object]) -> list[str]:
+        findings = data["findings"]
+        assert isinstance(findings, list)
+        return [f["message"].split()[1] for f in findings if f["code"] == "harness_missing"]
+
+    first = response(client.get("/api/machine/check?offline=1"))
+    assert missing(first) == []
+    assert first["missing_harnesses"] == ["claude", "codex", "pi"]
+    assert first["counts"]["info"] == sum(f["severity"] == "info" for f in first["findings"])
+    assert all(f["fix"] or f["action"] for f in first["findings"])
+    repo = tmp_path / "one"
+    repo.mkdir()
+    git(repo, "init", "-b", "main")
+    write(repo, "README.md", "repo\n")
+    git(repo, "add", "README.md")
+    git(repo, "commit", "-m", "initial")
+    init_repo(repo)
+    register(client, repo)
+    assert missing(response(client.get("/api/machine/check?offline=1"))) == ["claude"]
 
 
 @pytest.mark.skipif(

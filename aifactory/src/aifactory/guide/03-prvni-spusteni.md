@@ -12,7 +12,7 @@ Prohlížeč otevře `http://127.0.0.1:4700`. Terminál nech otevřený, `Ctrl+C
 
 ## Projdi „Začínáme“
 
-Stránka **Tento počítač** (v menu přepínače rep vpravo nahoře) má kontrolní seznam **Začínáme**. Každý krok má tlačítko, které tě dovede k nápravě:
+Dokud něco chybí, ukazuje horní lišta chip **Nalezeny problémy**. Otevře stránku **Problémy a řešení** se zbývajícími kroky prvního spuštění. Každý krok má tlačítko, které tě dovede k nápravě:
 
 | Krok | Tlačítko | Co udělat |
 | --- | --- | --- |
@@ -48,7 +48,7 @@ Totéž z příkazové řádky: `factory obs --repo ~/cesta/k/repu` zaregistruje
 
 ## Zkontroluj repo
 
-V repu otevři záložku **Factory**. Verdikt „Factory je v pořádku“ znamená, že můžeš pracovat. Jinak záložka ukáže nálezy rozdělené na **Repozitář: opravit a commitnout** a **Tento počítač: opravit lokálně** a tlačítka **Nainstalovat factory**, **Commitnout konfiguraci** nebo **Stáhnout konfiguraci z base**.
+V repu otevři záložku **Factory**. Verdikt „Factory je v pořádku“ znamená, že můžeš pracovat. Jinak záložka ukáže nálezy rozdělené na **Repozitář: opravit a commitnout** a **Tento počítač: potřebné pro toto repo** a tlačítka **Nainstalovat factory**, **Commitnout konfiguraci** nebo **Stáhnout konfiguraci z base**. Ostatní nálezy počítače a knihovny jsou jen na stránce **Tento počítač**; Factory na ně odkáže jedním řádkem.
 
 ## Založ projekt, step a task
 

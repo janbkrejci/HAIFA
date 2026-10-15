@@ -9,11 +9,11 @@ Zleva doprava:
 - **Logo HAIFA:** návrat na úvodní stránku.
 - **Chip aktualizací:** „Systém je aktuální“, nebo „Je k dispozici aktualizace“ (kliknutím ji nainstaluješ). Viz [Aktualizace a vydání](#/guide/aktualizace).
 - **Chip kontroly:** „Systém v pořádku“ (kliknutím zopakuješ kontrolu), nebo **Nalezeny problémy**, který otevře stránku **Problémy a řešení**.
-- **Chip knihovny:** „Knihovna OK“, nebo „Založit knihovnu“.
+- **Chip knihovny:** „Knihovna OK“, nebo „Založit knihovnu“. Oba vedou do sekce **Knihovna** na stránce **Tento počítač** (`#/setup/library`).
 - **Harnessy:** lišta limitů předplatného (pětihodinové a týdenní okno, kolik procent zbývá). Kliknutím otevřeš nastavení harnessů tohoto počítače.
 - **Příručka:** ikona knihy otevře tuto příručku.
 - **Motiv:** přepínač světlého a tmavého motivu.
-- **Přepínač rep:** název otevřeného repa a verze HAIFA. Menu nabízí **Přehled**, **Tento počítač**, **Knihovna**, a seznam rep (se stavem a počty běžících, čekajících na review a selhaných tasků).
+- **Přepínač rep:** název otevřeného repa a verze HAIFA. Menu nabízí **Přehled**, **Tento počítač** a seznam rep (se stavem a počty běžících, čekajících na review a selhaných tasků).
 
 Limity ukazují poslední hodnoty, které harness sám vrátil při běhu (Claude ve výstupu běhu, Codex ve svém logu). Dashboard se na ně nikam neptá; pi limity nehlásí.
 
@@ -31,15 +31,17 @@ Limity ukazují poslední hodnoty, které harness sám vrátil při běhu (Claud
 
 ## Tento počítač
 
-Kontrola počítače rozdělená do skupin HAIFA, Nástroje, Harnessy, Hosting, Knihovna a Prostředí; každé zjištění má radu s tlačítkem **Kopírovat**. Dále kontrolní seznam **Začínáme** (kapitola [První spuštění](#/guide/prvni-spusteni)), sekce knihovny (stav, remote, **Stáhnout**, **Odeslat**, nebo založení a naklonování) a nastavení dashboardu: **Port** (platí po restartu) a cesty k registru a domovskému adresáři.
+Vše o tomto počítači na jedné stránce:
+
+- **Kontrola počítače:** verdikt a nálezy ve skupinách HAIFA, Nástroje, Harnessy, Hosting a Prostředí. Ukazuje jen nálezy, které vyžadují akci; každý má radu s tlačítkem **Kopírovat**. Skupina bez nálezů se nezobrazuje. **Znovu zkontrolovat** kontrolu zopakuje.
+- **Knihovna** (`#/setup/library`): nálezy knihovny, založení nebo naklonování knihovny, synchronizace s remote (**Stáhnout**, **Odeslat jako PR**, otevřené pull requesty), **Obnovit výchozí agenty a workflows**, **Import…** a prohlížeč položek. Viz kapitola [Knihovna](#/guide/knihovna).
+- **Dashboard:** **Port** (platí po restartu) a cesty k registru a domovskému adresáři.
+
+Dřívější adresa stránky Knihovna (`#/library`) vede do sekce Knihovna.
 
 ## Problémy a řešení
 
 Souhrn všeho, co brání práci, na jednom místě: problémy počítače, harnessů, knihovny a jednotlivých rep. Každý problém má akci, například **Opravit na tomto počítači**, **Nastavit a testovat harnessy**, **Commitnout konfiguraci** nebo **Nainstalovat factory**. **Zkontrolovat znovu** kontrolu zopakuje.
-
-## Knihovna
-
-Položky sdílené knihovny (agenti, workflow, skilly, rozšíření pi), jejich verze a repa s vlastní kopií. Viz kapitola [Knihovna](#/guide/knihovna).
 
 ## Obrazovky repa
 
@@ -48,8 +50,7 @@ Po otevření repa jsou nahoře záložky:
 - **Backlog:** projekty, stepy a tasky ve stromu nebo kanbanu, detail tasku, spouštění běhů. Kapitola [Backlog a tasky](#/guide/backlog).
 - **Běhy:** běžící a dokončené běhy, řetězy auto-continue, náklady a detail běhu s fázemi. Kapitola [Běhy](#/guide/behy).
 - **Review:** pull requesty ke schválení. Kapitola [Review a merge](#/guide/review).
-- **Factory:** stav instalace HAIFA v repu, nálezy kontroly, roster agentů a položky repa. Kapitola [Konfigurace repa](#/guide/konfigurace-repa).
-- **Nastavení:** sdílené nastavení repa (`config.yaml`) a lokální nastavení (`local.yaml`). Kapitola [Konfigurace repa](#/guide/konfigurace-repa).
+- **Factory:** vše o factory repa: stav instalace, nálezy kontroly, roster agentů, **Nastavení repozitáře** (sdílené `config.yaml` a lokální `local.yaml`) a položky repa. Kapitola [Konfigurace repa](#/guide/konfigurace-repa). Dřívější záložka Nastavení (`#/r/<repo>/settings`) vede na sekci Nastavení repozitáře (`#/r/<repo>/factory/settings`).
 
 Adresa v prohlížeči vždy odpovídá obrazovce (například `#/r/<repo>/runs/<běh>`), takže odkazy na task, běh nebo pull request můžeš sdílet nebo si je uložit.
 

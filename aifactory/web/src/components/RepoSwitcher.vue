@@ -7,7 +7,7 @@ import { ChevronDown } from 'lucide-vue-next'
 import { fetchOverview, type Health, type RepoItem } from '@/lib/api'
 import { countsById, type RepoCounts } from '@/lib/overview'
 import { REPO_STATUS_TEXT } from '@/lib/repos'
-import { OVERVIEW_HREF, repoHref, usePage, useRepoId, useRoute } from '@/lib/router'
+import { OVERVIEW_HREF, SETUP_HREF, repoHref, usePage, useRepoId, useRoute } from '@/lib/router'
 
 const props = defineProps<{
   repos: RepoItem[] | null
@@ -55,7 +55,6 @@ const current = computed(() => {
     return props.repos?.find((r) => r.id === id)?.name ?? id
   }
   if (page.value === 'setup') return 'Tento počítač'
-  if (page.value === 'library') return 'Knihovna'
   if (page.value === 'problems') return 'Problémy a řešení'
   return page.value === 'repos-add' ? 'Přidat repozitář' : 'Přehled'
 })
@@ -129,8 +128,7 @@ onBeforeUnmount(() => listen(false))
         data-test="switch-overview"
         @click="close"
       >Přehled</a>
-      <a href="#/setup" role="menuitem" class="item" :class="{ active: page === 'setup' }" data-test="switch-setup" @click="close">Tento počítač</a>
-      <a href="#/library" role="menuitem" class="item" :class="{ active: page === 'library' }" data-test="switch-library" @click="close">Knihovna</a>
+      <a :href="SETUP_HREF" role="menuitem" class="item" :class="{ active: page === 'setup' }" data-test="switch-setup" @click="close">Tento počítač</a>
       <div v-if="repos && repos.length" class="separator" />
       <a
         v-for="repo in repos ?? []"

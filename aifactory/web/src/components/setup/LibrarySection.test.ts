@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
-import LibraryView from './LibraryView.vue'
+import LibrarySection from './LibrarySection.vue'
 import { answerDialog, openDialog } from '@/test/modal'
 const items = ['agent', 'workflow', 'skill', 'extension'].map(type => ({ type, name: type + '-demo', n: 2, version: 'sha256:123456789', short_version: '12345678', purpose: type === 'agent' ? 'Build code' : null, description: 'Description ' + type, date: '2026-10-08', author: 'Team' }))
 function envelope(data: unknown) { return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] })) }
@@ -20,14 +20,14 @@ function api(handler?: (url: string, init?: RequestInit) => Response | Promise<R
   vi.stubGlobal('fetch', mock); return mock
 }
 async function openAgent() {
-  const wrapper = mount(LibraryView, { attachTo: document.body }); await flushPromises()
+  const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
   await wrapper.get('[data-test="library-item"] button').trigger('click'); await flushPromises(); return wrapper
 }
 enableAutoUnmount(afterEach)
 afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
-describe('Library', () => {
+describe('LibrarySection', () => {
   it('shows tabs and row metadata without repo usage', async () => {
-    api(); const wrapper = mount(LibraryView); await flushPromises()
+    api(); const wrapper = mount(LibrarySection, { props: { findings: [] } }); await flushPromises()
     expect(wrapper.get('[data-test="library-item"]').text()).toContain('v2 · 12345678')
     expect(wrapper.get('[data-test="library-item"]').text()).toContain('Build code')
     expect(wrapper.text()).not.toContain('Použití')
@@ -105,7 +105,7 @@ describe('Library', () => {
       }
       if (url === '/api/library/apply') return envelope({ commit: 'seedcommit1' })
     })
-    const wrapper = mount(LibraryView, { attachTo: document.body }); await flushPromises()
+    const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
     await wrapper.get('[data-test="library-reseed"]').trigger('click'); await flushPromises()
     expect(openDialog()?.textContent).toContain('workflow/quality')
     expect(openDialog()?.textContent).toContain('agents/builder/system.md')
@@ -125,7 +125,7 @@ describe('Library', () => {
       if (url === '/api/library/remote') { remote = 'https://example.test/lib.git'; return envelope({ pushed: true }) }
       if (url === '/api/library/pull') return envelope({ pulled: 2 })
     })
-    const wrapper = mount(LibraryView); await flushPromises()
+    const wrapper = mount(LibrarySection, { props: { findings: [] } }); await flushPromises()
     expect(wrapper.get('[data-test="library-sync-state"]').text()).toContain('Bez remote')
     await wrapper.get('[data-test="library-remote-url"]').setValue('https://example.test/lib.git')
     await wrapper.get('[data-test="library-connect"]').trigger('submit'); await flushPromises()
@@ -136,6 +136,32 @@ describe('Library', () => {
     await wrapper.get('[data-test="library-pull"]').trigger('click'); await flushPromises()
     expect(mock.mock.calls.some(([url]) => url === '/api/library/pull')).toBe(true)
     expect(wrapper.text()).toContain('Stažení z remote dokončeno')
+    // connect and pull are writes: the page checks the machine again
+    expect(wrapper.emitted('changed')).toHaveLength(2)
+  })
+  it('shows the library findings of the machine check in the section', async () => {
+    api()
+    const finding = { code: 'library_dirty', scope: 'library' as const, severity: 'warning' as const, message: 'dirty', fix: 'commit it', action: null }
+    const wrapper = mount(LibrarySection, { props: { findings: [finding] } }); await flushPromises()
+    expect(wrapper.get('[data-test="library"] [data-test="machine-finding"]').text()).toContain('varování · library_dirty')
+  })
+  it('sets up a missing library in the section and hides the item browser', async () => {
+    let ready = false
+    const mock = api((url) => {
+      if (url === '/api/library') return envelope(ready ? { exists: true, items } : { exists: false, default_url: 'https://example.test/team.git' })
+      if (url === '/api/library/apply') { ready = true; return envelope({ commit: 'abc' }) }
+    })
+    const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
+    expect(wrapper.find('[data-test="library-items"]').exists()).toBe(false)
+    expect((wrapper.get('[data-test="library-url"]').element as HTMLInputElement).value).toBe('https://example.test/team.git')
+    await wrapper.get('[data-test="library-init"]').trigger('click'); await flushPromises()
+    expect(openDialog()?.textContent).toContain('IMPORT FILE CONTENT')
+    await answerDialog(true)
+    const call = mock.mock.calls.find(([url]) => url === '/api/library/apply')!
+    expect(JSON.parse(call[1]!.body as string)).toEqual({ action: 'init', options: {}, digest: 'import-digest' })
+    expect(wrapper.text()).toContain('Knihovna připravena')
+    expect(wrapper.find('[data-test="library-items"]').exists()).toBe(true)
+    expect(wrapper.emitted('changed')).toHaveLength(1)
   })
   it('tells local changes, a pending pull request and a library in sync apart', async () => {
     const pr = { branch: 'haifa-library/20261013-abc', base: 'main', title: 'library: import skill/lint', created: 'now', repo: 'janbkrejci/HAIFA-LIBRARY', head_repo: 'ada/HAIFA-LIBRARY', url: 'https://github.com/janbkrejci/HAIFA-LIBRARY/pull/7', number: 7, state: 'OPEN', fork: true }
@@ -144,7 +170,7 @@ describe('Library', () => {
       if (url === '/api/library' || url === '/api/library?fetch=1') return envelope({ exists: true, items, library: '/h/library', remote: 'https://github.com/janbkrejci/HAIFA-LIBRARY.git', branch: 'main', behind: 0, dirty: false, ...status })
       if (url === '/api/library/push') { status = { ahead: 1, unsent: 0, pull_requests: [pr] }; return envelope({ pushed: 1, pull_request: pr }) }
     })
-    const wrapper = mount(LibraryView); await flushPromises()
+    const wrapper = mount(LibrarySection, { props: { findings: [] } }); await flushPromises()
     expect(wrapper.get('[data-test="library-sync-state"]').text()).toContain('Lokální změny')
     expect(wrapper.find('[data-test="library-no-prs"]').exists()).toBe(true)
     await wrapper.get('[data-test="library-push"]').trigger('click'); await flushPromises()

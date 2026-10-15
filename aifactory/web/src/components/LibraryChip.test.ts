@@ -17,7 +17,7 @@ describe('LibraryChip', () => {
     await flushPromises()
     const chip = wrapper.get('[data-test="library-chip-ok"]')
     expect(chip.text()).toContain('Knihovna OK')
-    expect(chip.attributes('href')).toBe('#/library')
+    expect(chip.attributes('href')).toBe('#/setup/library')
     wrapper.unmount()
   })
 
@@ -27,7 +27,7 @@ describe('LibraryChip', () => {
     await flushPromises()
     const chip = wrapper.get('[data-test="library-chip-missing"]')
     expect(chip.text()).toContain('Založit knihovnu')
-    expect(chip.attributes('href')).toBe('#/setup')
+    expect(chip.attributes('href')).toBe('#/setup/library')
     wrapper.unmount()
   })
 

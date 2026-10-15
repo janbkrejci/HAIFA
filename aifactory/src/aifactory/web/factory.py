@@ -1,7 +1,10 @@
 """The Factory tab of one repository: check, plan, apply and the base pull.
 
 ``check_view`` is ``factory check`` (``run_check``) plus the registry finding
-``trace_db_shared`` and a 60 s cache per ``offline`` flag (``fresh`` renews it).
+``trace_db_shared`` and a 60 s cache per ``offline`` flag (``fresh`` renews it). The
+dashboard shows only actionable findings (``actionable_findings``): a finding without a
+``fix`` and an ``action`` (``repo_installed``) or one of ``DASHBOARD_HIDDEN`` is dropped and
+the counts follow; ``factory check`` on the CLI keeps them.
 ``plan`` and ``apply`` call the CLI core for init, config commit and item
 set/remove/move (``move``: "Move to library"). ``items`` lists the agents, workflows,
 skills and extensions of the repo with their origin (the repo's own copy or the library).
@@ -17,7 +20,7 @@ from __future__ import annotations
 
 import threading
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
@@ -52,6 +55,9 @@ OPTIONS: dict[str, tuple[str, ...]] = {
 PLAN_KEYS = ("action", "options", "target")
 APPLY_KEYS = ("action", "digest", "options", "target", "message")
 TRACE_DB_FIX = "set trace_db in .factory/local.yaml to a file no other registered repository uses"
+
+DASHBOARD_HIDDEN = frozenset({"hosting_skipped"})
+"""Findings the dashboard cannot act on: it never runs the check with ``--offline`` off."""
 
 _clock = time.monotonic
 """The clock of the check cache (a module attribute, so tests can move it)."""
@@ -185,6 +191,30 @@ def _trace_db_finding(root: Path, registry_state: RegistryState) -> Any:
     return None
 
 
+def is_actionable(finding: Mapping[str, Any]) -> bool:
+    """A finding the user can act on: it has a ``fix`` or an ``action`` and is not hidden."""
+    if finding.get("code") in DASHBOARD_HIDDEN:
+        return False
+    return bool(finding.get("fix") or finding.get("action"))
+
+
+def actionable_findings(
+    data: JsonDict, keep: Callable[[Mapping[str, Any]], bool] = is_actionable
+) -> JsonDict:
+    """``data`` (a check report as JSON) with only the findings ``keep`` accepts.
+
+    An error always stays, so ``ok`` keeps its meaning; ``counts`` is recomputed from
+    the remaining findings.
+    """
+    from aifactory.check.model import SEVERITIES
+
+    kept = [f for f in data.get("findings", []) if f["severity"] == "error" or keep(f)]
+    counts = dict.fromkeys(SEVERITIES, 0)
+    for finding in kept:
+        counts[finding["severity"]] += 1
+    return {**data, "findings": kept, "counts": counts}
+
+
 def check_view(
     root: Path,
     state: FactoryState,
@@ -213,12 +243,14 @@ def check_view(
         finding = _trace_db_finding(root, registry_state)
         if finding is not None:
             report = replace(report, findings=(*report.findings, finding))
-    data = {
-        **report.to_json(),
-        "checked_at": checked_at,
-        "cached": cached,
-        "version": _version(),
-    }
+    data = actionable_findings(
+        {
+            **report.to_json(),
+            "checked_at": checked_at,
+            "cached": cached,
+            "version": _version(),
+        }
+    )
     errors = report.errors()
     codes = ", ".join(dict.fromkeys(f.code for f in errors))
     return data, report.ok, f"{len(errors)} error(s): {codes}"

@@ -31,6 +31,11 @@ describe('gettingStartedSteps', () => {
     expect(steps.find((s) => s.id === 'harnesses')?.hint).toBe('Přihlášené: claude.')
   })
 
+  it('knows a missing harness whose info finding the dashboard does not show', () => {
+    expect(detectedHarnesses({ ...check(true), missing_harnesses: ['codex', 'pi'] })).toEqual(['claude'])
+    expect(detectedHarnesses({ ...check(true), missing_harnesses: ['claude', 'codex', 'pi'] })).toEqual([])
+  })
+
   it('starts on this machine when nothing is known yet', () => {
     const steps = gettingStartedSteps({ check: null, library: null, repos: null, rosterAgents: null, projects: null })
     expect(steps.every((s) => !s.done)).toBe(true)
@@ -39,7 +44,7 @@ describe('gettingStartedSteps', () => {
 
   it('wants a library, then a harness, then a repo', () => {
     expect(nextStep(gettingStartedSteps(input({ library: { exists: false } }))))
-      .toMatchObject({ id: 'library', href: '#/setup' })
+      .toMatchObject({ id: 'library', href: '#/setup/library' })
     const noHarness = check(true, [...MISSING, { code: 'harness_login', message: 'claude is not logged in' }])
     expect(nextStep(gettingStartedSteps(input({ check: noHarness })))).toMatchObject({ id: 'harnesses' })
     expect(nextStep(gettingStartedSteps(input({ repos: [], rosterAgents: null, projects: null }))))

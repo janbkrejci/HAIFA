@@ -69,9 +69,10 @@ def test_library_seed_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
                     str(home / "library")
                 )
                 assert git(home / "library", "rev-list", "--count", "HEAD") == "1"
-                page.locator('[data-test="switcher-button"]').click()
-                page.locator('[data-test="switch-library"]').click()
-                expect(page).to_have_url(f"{server.url}/#/library")
+                # the library is a section of this machine; the topbar chip leads to it
+                page.locator('[data-test="library-chip-ok"]').click()
+                expect(page).to_have_url(f"{server.url}/#/setup/library")
+                expect(page.locator("h1")).to_have_text("Tento počítač")
                 expect(page.locator('[data-test="library-items"]')).to_contain_text("builder")
                 expect(page.locator('[data-test="library-items"]')).to_contain_text("v1 ·")
                 page.locator('[data-test="library-item"] button').filter(has_text="builder").click()

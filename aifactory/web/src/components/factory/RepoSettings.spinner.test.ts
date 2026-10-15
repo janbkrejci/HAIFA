@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import SettingsView from './SettingsView.vue'
+import RepoSettings from './RepoSettings.vue'
 import { DIRTY_STATUS, SETTINGS } from '@/test/settingsFixtures'
 import { deferred } from '@/test/deferred'
 import { resetConfigStatusForTests } from '@/lib/configStatus'
@@ -14,7 +14,7 @@ afterEach(() => {
   resetConfigStatusForTests()
 })
 
-describe('SettingsView spinner', () => {
+describe('RepoSettings spinner', () => {
   it('spins Uložit until the save answers', async () => {
     const save = deferred<Response>()
     vi.stubGlobal(
@@ -25,7 +25,7 @@ describe('SettingsView spinner', () => {
         return ok(SETTINGS)
       }),
     )
-    const wrapper = mount(SettingsView)
+    const wrapper = mount(RepoSettings)
     await flushPromises()
     await wrapper.get('[data-test="base"]').setValue('develop')
     await wrapper.get('form').trigger('submit')

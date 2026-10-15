@@ -1,9 +1,10 @@
-// The steps of the first visit (GettingStarted on the overview and on #/setup): from this machine
-// to the first project of a backlog. Pure: the component loads the inputs, this decides the states.
+// The steps of the first visit: from this machine to the first project of a backlog. The
+// unfinished ones are readiness issues (topbar chip, #/problems on the overview). Pure: the
+// readiness loads the inputs, this decides the states.
 import type { MachineCheck, RepoItem } from './api'
 import type { LibraryStatus } from './library'
 import { detectedHarnesses } from './roster'
-import { NEW_CONTAINER, REPOS_ADD_HREF, repoHref } from './router'
+import { LIBRARY_HREF, NEW_CONTAINER, REPOS_ADD_HREF, SETUP_HREF, repoHref } from './router'
 
 export type StepId = 'machine' | 'library' | 'harnesses' | 'repo' | 'factory' | 'roster' | 'project'
 
@@ -51,7 +52,7 @@ export function gettingStartedSteps(input: GettingStartedInput): Step[] {
       title: 'Tento počítač',
       done: !!check?.ok,
       hint: check ? (check.ok ? 'Kontrola počítače bez chyb.' : 'Kontrola počítače hlásí chyby.') : 'Kontrola počítače ještě neproběhla.',
-      href: '#/setup',
+      href: SETUP_HREF,
       action: 'Zkontrolovat počítač',
     },
     {
@@ -59,7 +60,7 @@ export function gettingStartedSteps(input: GettingStartedInput): Step[] {
       title: 'Knihovna',
       done: library?.exists === true,
       hint: library?.exists ? 'Knihovna agentů a workflow je připravená.' : 'Založ knihovnu ze semínka nebo naklonuj týmovou.',
-      href: library?.exists ? '#/library' : '#/setup',
+      href: LIBRARY_HREF,
       action: 'Připravit knihovnu',
     },
     {
@@ -67,7 +68,7 @@ export function gettingStartedSteps(input: GettingStartedInput): Step[] {
       title: 'Harnessy',
       done: harnesses.length > 0,
       hint: harnesses.length ? `Přihlášené: ${harnesses.join(', ')}.` : 'Nainstaluj a přihlas aspoň jeden harness (claude, codex nebo pi).',
-      href: '#/setup',
+      href: SETUP_HREF,
       action: 'Zkontrolovat harnessy',
     },
     {

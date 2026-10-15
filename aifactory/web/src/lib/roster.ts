@@ -31,12 +31,13 @@ export function knownHarnesses(check: MachineCheck | null): string[] {
 }
 
 /**
- * Harnesses installed and logged in on this machine: the known ones without a
- * `harness_missing` or `harness_login` finding of the machine check.
+ * Harnesses installed and logged in on this machine: the known ones neither in
+ * `missing_harnesses` nor with a `harness_missing` or `harness_login` finding of the machine check.
  */
 export function detectedHarnesses(check: MachineCheck | null): string[] {
   if (!check) return []
   const broken = (name: string) =>
+    !!check.missing_harnesses?.includes(name) ||
     check.findings.some(
       (f) =>
         (f.code === 'harness_missing' && f.message.startsWith(`harness ${name} `)) ||

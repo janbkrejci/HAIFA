@@ -20,7 +20,7 @@ Obojí umí i záložka **Factory** repa v dashboardu, včetně náhledu změn p
 
 ## Založení a sdílení
 
-Výchozí týmová knihovna je [HAIFA-LIBRARY](https://github.com/janbkrejci/HAIFA-LIBRARY) (větev `main`); instalátor ji naklonuje sám (kapitola [Instalace](#/guide/instalace)). Firemní instalace ji přepíše proměnnou `HAIFA_LIBRARY_URL`. Na stránce **Tento počítač** dashboardu má pole **URL týmové knihovny** výchozí adresu předvyplněnou; knihovnu tam také založíš ze semínka. Z příkazové řádky:
+Výchozí týmová knihovna je [HAIFA-LIBRARY](https://github.com/janbkrejci/HAIFA-LIBRARY) (větev `main`); instalátor ji naklonuje sám (kapitola [Instalace](#/guide/instalace)). Firemní instalace ji přepíše proměnnou `HAIFA_LIBRARY_URL`. V sekci **Knihovna** na stránce **Tento počítač** dashboardu má pole **URL týmové knihovny** výchozí adresu předvyplněnou; knihovnu tam také založíš ze semínka. Z příkazové řádky:
 
 ```bash
 factory library clone
@@ -59,7 +59,7 @@ factory library push
 
 Když správce PR zavře bez mergnutí, změna se po kontrole remote vrátí do stavu **Lokální změny**. Zápis do knihovny, která je za remote pozadu, HAIFA odmítne (`library_behind`); stáhni změny a zkus to znovu.
 
-Chip v horní liště ukazuje **Knihovna OK** (odkaz na stránku Knihovna), nebo **Založit knihovnu**, když knihovna chybí. Na stránce **Knihovna** je panel **Synchronizace** se stavem, odkazy na otevřené pull requesty a tlačítky **Zkontrolovat remote**, **Stáhnout** a **Odeslat jako PR**; knihovnu bez remote propojíš s prázdným repem tlačítkem **Propojit a odeslat**.
+Chip v horní liště ukazuje **Knihovna OK**, nebo **Založit knihovnu**, když knihovna chybí; oba vedou do sekce **Knihovna** na stránce **Tento počítač** (`#/setup/library`). V sekci je panel **Synchronizace** se stavem, odkazy na otevřené pull requesty a tlačítky **Zkontrolovat remote**, **Stáhnout** a **Odeslat jako PR**; knihovnu bez remote propojíš s prázdným repem tlačítkem **Propojit a odeslat**.
 
 ## Nastavení repa knihovny pro správce
 
@@ -81,13 +81,13 @@ factory library import ~/moje/agenti/reviewer --type agent
 factory library import ~/moje/workflow/rychly.yaml --type workflow --dry-run
 ```
 
-Stránka **Knihovna** v dashboardu má záložky **Agenti**, **Workflow**, **Skilly** a **Rozšíření pi**. Detail položky ukáže **Soubory · jen čtení**, **Historii verzí** a **Repa s vlastní kopií** s tlačítky **Diff** a **Přesunout kopii repa do knihovny**. Tlačítko **Import…** importuje složku z domovského adresáře.
+Sekce **Knihovna** na stránce **Tento počítač** má záložky **Agenti**, **Workflow**, **Skilly** a **Rozšíření pi**. Detail položky ukáže **Soubory · jen čtení**, **Historii verzí** a **Repa s vlastní kopií** s tlačítky **Diff** a **Přesunout kopii repa do knihovny**. Tlačítko **Import…** importuje složku z domovského adresáře.
 
 Import přijme jen cesty pod tvým domovským adresářem. Položka se před zápisem ověří; stejný obsah nic nezmění, jiný obsah pod existujícím jménem je nová verze.
 
 ## Semínko a aktualizace
 
-Semínko je výchozí sada agentů (planner, scout, builder, tester, test-reviewer, reviewer, documenter) a rozšíření pi `subagents` dodaná s HAIFA; vestavěná workflow jsou přímo v balíčku. Po aktualizaci HAIFA převezmeš nové verze přes `factory library seed` (kapitola [Aktualizace a vydání](#/guide/aktualizace)), v dashboardu tlačítkem **Obnovit výchozí agenty a workflows** na stránce Knihovna. Položky upravené týmem seed nepřepíše, jen ukáže rozdíl; přepsat je můžeš zaškrtnutím **Přepsat … výchozí verzí** (v CLI `--take`).
+Semínko je výchozí sada agentů (planner, scout, builder, tester, test-reviewer, reviewer, documenter) a rozšíření pi `subagents` dodaná s HAIFA; vestavěná workflow jsou přímo v balíčku. Po aktualizaci HAIFA převezmeš nové verze přes `factory library seed` (kapitola [Aktualizace a vydání](#/guide/aktualizace)), v dashboardu tlačítkem **Obnovit výchozí agenty a workflows** v sekci Knihovna na stránce Tento počítač. Položky upravené týmem seed nepřepíše, jen ukáže rozdíl; přepsat je můžeš zaškrtnutím **Přepsat … výchozí verzí** (v CLI `--take`).
 
 ## Minimální verze HAIFA
 

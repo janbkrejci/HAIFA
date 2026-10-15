@@ -1,4 +1,9 @@
-"""Global machine checks: cached reads, explicit and server scheduled refreshes."""
+"""Global machine checks: cached reads, explicit and server scheduled refreshes.
+
+The view keeps only actionable findings (see ``web.factory.actionable_findings``) and
+drops the info ``harness_missing`` of a harness no registered repository uses;
+``missing_harnesses`` still names every missing harness.
+"""
 
 from __future__ import annotations
 
@@ -20,6 +25,7 @@ from aifactory.harness.check import HarnessStatus, harnesses_in_config
 from aifactory.harness.settings import read as read_harness_settings
 from aifactory.harness.settings import test_failed
 from aifactory.providers import git
+from aifactory.web.factory import actionable_findings, is_actionable
 
 _clock = time.monotonic
 
@@ -152,6 +158,17 @@ def check_view(
         except (ConfigError, OSError):
             continue
     view["harness_repos"] = counts
+    # Which harnesses are missing stays known (the roster editor and getting started use
+    # it), even when the info finding of a harness no repository uses is not shown.
+    missing = [
+        name
+        for name in HARNESSES
+        if any(
+            f["code"] == "harness_missing" and f["message"].startswith(f"harness {name} ")
+            for f in view["findings"]
+        )
+    ]
+    view["missing_harnesses"] = missing
     choices = read_harness_settings(home)
     if choices:
         for name, choice in choices.harnesses.items():
@@ -174,4 +191,15 @@ def check_view(
             message = f"{len(rendered_errors)} error(s): " + ", ".join(
                 dict.fromkeys(f["code"] for f in rendered_errors)
             )
-    return view, ok, message
+    return actionable_findings(view, lambda f: _needed(f, counts)), ok, message
+
+
+def _needed(finding: Mapping[str, Any], counts: Mapping[str, int]) -> bool:
+    """Actionable, and not the info about a missing harness no registered repo uses."""
+    if finding["code"] == "harness_missing" and finding["severity"] == "info":
+        if any(
+            finding["message"].startswith(f"harness {name} ") and not counts.get(name)
+            for name in HARNESSES
+        ):
+            return False
+    return is_actionable(finding)

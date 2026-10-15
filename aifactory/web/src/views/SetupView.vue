@@ -1,145 +1,76 @@
 <script setup lang="ts">
-// #/setup "Tento počítač": the machine check in groups, the shared library (set up, pull, push),
-// the dashboard's own settings and the first-visit guide.
-import { computed, onMounted, ref } from 'vue'
-import { fetchMachineCheck, type CheckSeverity, type MachineCheck } from '@/lib/api'
-import { fetchLibrary, previewLibrary, applyLibrary, syncLibrary, pullRequestText, syncState, FINDING_GROUPS, findingGroup, type LibraryStatus, type LibraryPlan, type LibraryRequest } from '@/lib/library'
-import { errorText, fmtTime, plural } from '@/lib/format'
-import { REPOS_ADD_HREF } from '@/lib/router'
-import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
-import GettingStarted from '@/components/GettingStarted.vue'
-import PlanView from '@/components/factory/PlanView.vue'
+// #/setup "Tento počítač": everything about this computer. The machine check (only findings
+// that need an action, in groups), the library in $HAIFA_HOME (#/setup/library scrolls to it)
+// and the dashboard's own settings. Library findings show in the library section.
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { fetchMachineCheck, type MachineCheck } from '@/lib/api'
+import { MACHINE_GROUPS, findingGroup } from '@/lib/library'
+import { errorText, fmtTime } from '@/lib/format'
+import { useRouteParams } from '@/lib/router'
 import DashboardSettings from '@/components/setup/DashboardSettings.vue'
-
-const SEVERITY_TEXT: Record<CheckSeverity, string> = { error: 'chyba', warning: 'varování', info: 'info' }
-const SYNC_TEXT = { pull: 'Stažení', push: 'Odeslání pull requestu' } as const
+import LibrarySection from '@/components/setup/LibrarySection.vue'
+import MachineFinding from '@/components/setup/MachineFinding.vue'
 
 const report = ref<MachineCheck | null>(null)
-const library = ref<LibraryStatus | null>(null)
-/** What the page waits for: reading the check, or writing the library. */
-const busy = ref<'load' | 'write' | null>(null)
+const loading = ref(false)
 const error = ref('')
-const copied = ref('')
-const result = ref('')
-const url = ref('')
-const plan = ref<LibraryPlan | null>(null)
-const request = ref<LibraryRequest | null>(null)
-const groups = computed(() => FINDING_GROUPS.map(name => ({ name, findings: report.value?.findings.filter(f => findingGroup(f) === name) ?? [] })))
-
-function harnessCount(name: string): string {
-  const n = report.value?.harness_repos?.[name] ?? 0
-  return `${name} · ${n === 0 ? 'nepoužívá žádné repo' : `${n} ${plural(n, 'repo', 'repa', 'rep')}`}`
-}
+const findings = computed(() => report.value?.findings ?? [])
+const libraryFindings = computed(() => findings.value.filter(f => f.scope === 'library'))
+const groups = computed(() => MACHINE_GROUPS
+  .map(name => ({ name, findings: findings.value.filter(f => f.scope !== 'library' && findingGroup(f) === name) }))
+  .filter(group => group.findings.length > 0))
+const counts = computed(() => ({
+  error: findings.value.filter(f => f.severity === 'error').length,
+  warning: findings.value.filter(f => f.severity === 'warning').length,
+}))
 
 async function load(fresh = false) {
-  busy.value = 'load'
+  loading.value = true
   error.value = ''
-  const [check, lib] = await Promise.allSettled([fetchMachineCheck(fresh), fetchLibrary()])
-  const errors: string[] = []
-  if (check.status === 'fulfilled') report.value = check.value
-  else errors.push(`Kontrola počítače selhala: ${errorText(check.reason)}`)
-  if (lib.status === 'fulfilled') {
-    library.value = lib.value
-    if (!lib.value.exists && !url.value) url.value = lib.value.default_url ?? ''
-  }
-  else errors.push(`Knihovnu se nepodařilo načíst: ${errorText(lib.reason)}`)
-  error.value = errors.join(' · ')
-  busy.value = null
+  try { report.value = await fetchMachineCheck(fresh) }
+  catch (e) { error.value = `Kontrola počítače selhala: ${errorText(e)}` }
+  finally { loading.value = false }
 }
-async function copy(text: string, key: string) {
-  try { await navigator.clipboard.writeText(text); copied.value = key }
-  catch (e) { error.value = errorText(e) }
-}
-async function preview(action: 'init' | 'clone') {
-  busy.value = 'write'; error.value = ''; result.value = ''
-  const body: LibraryRequest = { action, options: action === 'clone' ? { url: url.value } : {} }
-  try { plan.value = await previewLibrary(body); request.value = body }
-  catch (e) { error.value = errorText(e) }
-  finally { busy.value = null }
-}
-async function apply() {
-  if (busy.value || !plan.value || !request.value || plan.value.blockers.length) return
-  busy.value = 'write'; error.value = ''
-  let failed = ''
-  try {
-    const data = await applyLibrary(request.value, plan.value.digest)
-    result.value = `Knihovna připravena${data.commit ? ' · commit ' + data.commit : ''}`
-  } catch (e) { failed = errorText(e) }
-  finally { plan.value = null; request.value = null; busy.value = null }
+
+/** After a write to the library: check again, and let the topbar chips follow. */
+async function onLibraryChanged() {
   await load(true)
-  if (failed) error.value = failed
+  window.dispatchEvent(new Event('factory-applied'))
 }
-async function sync(action: 'pull' | 'push') {
-  if (busy.value) return
-  busy.value = 'write'; error.value = ''; result.value = ''
-  let failed = ''
-  try {
-    const data = await syncLibrary(action)
-    const pr = data.pull_request
-    result.value = action === 'push' && !pr ? 'Není co odeslat · lokální změny už čekají v pull requestu'
-      : `${SYNC_TEXT[action]} dokončeno${pr ? ' · ' + pullRequestText(pr) : ''}`
-  }
-  catch (e) { failed = errorText(e) }
-  finally { busy.value = null }
-  await load(true)
-  if (failed) error.value = failed
+
+const params = useRouteParams()
+async function showLibrary() {
+  await nextTick()
+  document.getElementById('library')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
+watch(params, value => { if (value[0] === 'library') void showLibrary() }, { immediate: true })
+
 onMounted(() => { void load() })
 </script>
 <template>
   <section class="global-page" data-test="setup">
-    <header><h1>Tento počítač</h1><button :disabled="!!busy" data-test="machine-refresh" @click="load(true)">Znovu zkontrolovat</button></header>
-    <GettingStarted :check="report" :library="library" />
+    <header><h1>Tento počítač</h1><button :disabled="loading" data-test="machine-refresh" @click="load(true)">Znovu zkontrolovat</button></header>
     <p v-if="error" role="alert" data-test="setup-error">{{ error }}</p>
-    <p v-if="result" role="status">{{ result }}</p>
-    <p v-if="busy" data-test="setup-busy">{{ busy === 'write' ? 'Ukládám…' : 'Načítám…' }}</p>
-    <p v-if="report">Kontrola: {{ fmtTime(report.checked_at) }}{{ report.cached ? ' · z mezipaměti' : '' }}</p>
+    <p v-if="loading" data-test="setup-busy">Načítám…</p>
+    <div v-if="report" class="summary" data-test="machine-summary">
+      <p class="verdict" :class="counts.error ? 'is-bad' : 'is-ok'" data-test="machine-verdict">
+        <template v-if="!counts.error && !counts.warning">Počítač je v pořádku</template>
+        <template v-else>{{ counts.error }} chyb, {{ counts.warning }} varování</template>
+      </p>
+      <p class="hint">Zkontrolováno: {{ fmtTime(report.checked_at) }}{{ report.cached ? ' (z mezipaměti)' : '' }}</p>
+    </div>
     <section v-for="group in groups" :key="group.name" :data-group="group.name">
       <h2>{{ group.name }}</h2>
-      <p v-if="report && !group.findings.length">Bez nálezů</p>
-      <p v-if="group.name === 'HAIFA'">HAIFA je spuštěná na tomto počítači.</p>
-      <ul v-if="group.name === 'Harnessy'" data-test="harness-counts"><li v-for="name in Object.keys(report?.harness_repos ?? { claude: 0, codex: 0, pi: 0 })" :key="name">{{ harnessCount(name) }}</li></ul>
-      <article v-for="(f, index) in group.findings" :key="f.code + index" :class="f.severity" data-test="machine-finding">
-        <strong>{{ SEVERITY_TEXT[f.severity] ?? f.severity }} · {{ f.code }}</strong><p>{{ f.message }}</p>
-        <template v-if="f.fix">
-          <p>{{ f.fix }}</p>
-          <button data-test="copy-fix" @click="copy(f.fix, f.code + index)">{{ copied === f.code + index ? 'Zkopírováno' : 'Kopírovat' }}</button>
-        </template>
-        <p v-else>Zkontroluj nastavení prostředí podle nálezu.</p>
-      </article>
-      <template v-if="group.name === 'Knihovna' && library">
-        <template v-if="library.exists">
-          <p data-test="library-path">{{ library.library }}</p>
-          <p>Remote: {{ library.remote ?? 'Bez remote · lokální knihovna' }}</p>
-          <p>Napřed: {{ library.ahead ?? '—' }} · Pozadu: {{ library.behind ?? '—' }}</p>
-          <p data-test="library-sync-state">{{ syncState(library).text }}</p>
-          <ul v-if="library.pull_requests?.length" data-test="library-prs">
-            <li v-for="pr in library.pull_requests" :key="pr.branch">
-              <a v-if="pr.url" :href="pr.url" target="_blank" rel="noopener">{{ pullRequestText(pr) }}</a>
-              <span v-else>{{ pullRequestText(pr) }}</span> · {{ pr.title }}
-            </li>
-          </ul>
-          <button :disabled="!!busy || !library.remote" data-test="library-pull" @click="sync('pull')">Stáhnout</button>
-          <button :disabled="!!busy || !library.remote" data-test="library-push" @click="sync('push')">Odeslat jako PR</button>
-          <a href="#/library">Otevřít knihovnu</a>
-        </template>
-        <template v-else>
-          <label>URL týmové knihovny <input v-model="url" data-test="library-url" :placeholder="library.default_url ?? 'https://…/library.git'" :disabled="!!busy" /></label>
-          <button :disabled="!!busy || !url.trim()" data-test="library-clone" @click="preview('clone')">Naklonovat týmovou knihovnu…</button>
-          <button :disabled="!!busy" data-test="library-init" @click="preview('init')">Založit ze semínka</button>
-        </template>
-      </template>
+      <MachineFinding v-for="(f, index) in group.findings" :key="f.code + index" :finding="f" />
     </section>
+    <LibrarySection :findings="libraryFindings" @changed="onLibraryChanged" />
     <DashboardSettings />
-    <p class="next"><a :href="REPOS_ADD_HREF" class="next-step" data-test="add-repo-link">Další krok: Přidat repozitář</a> · <a href="#/overview">Přehled</a></p>
-    <ConfirmDialog :open="!!plan" :title="request?.action === 'clone' ? 'Naklonovat týmovou knihovnu' : 'Založit knihovnu ze semínka'" confirm-label="Potvrdit plán" :confirm-disabled="!!busy || !!plan?.blockers.length" @confirm="apply" @cancel="!busy && (plan = null)">
-      <PlanView v-if="plan" :plan="plan" collapsed data-test="library-plan">
-        <p v-if="plan.library">{{ typeof plan.library === 'string' ? plan.library : plan.library.name }}</p>
-      </PlanView>
-    </ConfirmDialog>
   </section>
 </template>
 <style src="./library.css" />
 <style scoped>
-.next-step { font-weight: 700; }
+.summary { margin: 16px 0; }
+.verdict { margin: 0 0 4px; font-size: 17px; font-weight: 700; }
+.is-ok { color: var(--green); }
+.is-bad { color: var(--red); }
 </style>

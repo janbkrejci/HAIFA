@@ -1,6 +1,6 @@
 # Řešení problémů
 
-Problémy počítače, knihovny a repa hledá `factory check`. V dashboardu je výsledek na stránce **Tento počítač** (počítač a knihovna), v záložce **Factory** repa (repo) a souhrnně pod chipem **Nalezeny problémy** v horní liště, který otevře stránku **Problémy a řešení** s návody a tlačítky k opravě.
+Problémy počítače, knihovny a repa hledá `factory check`. V dashboardu je výsledek na stránce **Tento počítač** (počítač a knihovna), v záložce **Factory** repa (repo a nálezy počítače, které plynou z repa) a souhrnně pod chipem **Nalezeny problémy** v horní liště, který otevře stránku **Problémy a řešení** s návody a tlačítky k opravě.
 
 ```bash
 factory check            # počítač a knihovna, v repu i repo
@@ -19,7 +19,7 @@ Každé zjištění má kód, závažnost a radu. `error` blokuje práci (tasky 
 | `git_identity_missing` | `git config --global user.name "…"` a `git config --global user.email …`. |
 | `uv_missing` | Nainstaluj uv (`curl -LsSf https://astral.sh/uv/install.sh \| sh` nebo `brew install uv`). Bez něj nejde aktualizovat. |
 | `node_missing` | Některý agent používá harness pi, který potřebuje Node.js; nainstaluj ho. |
-| `harness_missing` | CLI harnessu (`claude`, `codex`, `pi`) není na PATH. Nainstaluj ho, nastav cestu v proměnné, kterou uvádí rada, nebo přepni agenty na jiný harness (`factory config roster set …`). |
+| `harness_missing` | CLI harnessu (`claude`, `codex`, `pi`) není na PATH. Nainstaluj ho, nastav cestu v proměnné, kterou uvádí rada, nebo přepni agenty na jiný harness (`factory config roster set …`). Mimo repo je to jen informace; dashboard ji ukáže, jen když harness používá některé registrované repo. |
 | `harness_login` | Přihlas se: `claude auth login`, `codex login` nebo `pi auth login`. |
 | `pi_model_unknown` | Model není v `pi --list-models` nebo je nejednoznačný; zaregistruj ho v pi, nebo oprav `model` v `.factory/agents.yaml`. |
 | `codex_not_isolated` | Codex by načetl tvoje globální soubory (`~/.codex/AGENTS.md`, `~/.codex/skills`, `~/.agents/skills`). Přesuň je jinam, nebo nastav `CODEX_SAFE_MODE=1`. |
@@ -29,7 +29,7 @@ Každé zjištění má kód, závažnost a radu. `error` blokuje práci (tasky 
 | `az_missing` | Repo používá Azure DevOps; nainstaluj Azure CLI `az`. |
 | `az_devops_missing` | `az extension add --name azure-devops`. |
 | `az_login` | `az login`, nebo nastav `AZURE_DEVOPS_EXT_PAT`. |
-| `hosting_skipped` | Kontrola běžela s `--offline`; hosting zkontroluje běh bez něj. |
+| `hosting_skipped` | Kontrola běžela s `--offline`; hosting zkontroluje běh bez něj. Dashboard ji nezobrazuje. |
 | `local_config_invalid` | Oprav `.factory/local.yaml` (`trace_db`) podle zprávy kontroly. |
 | `local_port_ignored` | Smaž řádek `port` z `.factory/local.yaml`; port dashboardu nastavíš na stránce Tento počítač nebo přes `factory obs --port N`. |
 | `env_file_mode` | Soubor s tajemstvími `$HAIFA_HOME/env` je čitelný i pro ostatní: `chmod 600 $HAIFA_HOME/env`. |
@@ -52,7 +52,7 @@ Každé zjištění má kód, závažnost a radu. `error` blokuje práci (tasky 
 | --- | --- |
 | `factory_missing` | Repo nemá `.factory/`. Přidej ho v dashboardu (Přidat repozitář) nebo `factory init`. |
 | `repo_unsupported` | Repo nejde použít (například bez gitu); postupuj podle rady kontroly. |
-| `repo_installed` | Informace: repo má HAIFA nainstalovanou. |
+| `repo_installed` | Informace: repo má HAIFA nainstalovanou. Jen v `factory check`; dashboard ji nezobrazuje, protože nevyžaduje akci. |
 | `config_not_committed` | `.factory/` není v base. Běhy čtou konfiguraci z commitu v base: `factory config commit`. |
 | `config_uncommitted` | V pracovním stromu je změna `.factory/`, kterou běhy nevidí: `factory config commit`, nebo ji zahoď. |
 | `worktree_config_invalid` | Necommitnutá konfigurace je chybná; oprav ji, než ji commitneš. |

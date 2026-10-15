@@ -3,7 +3,7 @@
 // App.vue keys it by the repo id, so a switch of the repo drops all of it (view data, run
 // cursors, subscriptions, banners) and the new repo starts clean.
 import { computed, onBeforeUnmount, onMounted, watch, type Component } from 'vue'
-import { Activity, Factory, GitPullRequest, ListTodo, Settings } from 'lucide-vue-next'
+import { Activity, Factory, GitPullRequest, ListTodo } from 'lucide-vue-next'
 import { useConfigStatus } from '@/lib/configStatus'
 import { resetBacklogStatus, useBacklogStatus } from '@/lib/backlogStatus'
 import { useLive } from '@/lib/live'
@@ -12,7 +12,6 @@ import { SCREENS, currentRepoId, here, repoHref, useRoute, type Screen } from '@
 import BacklogView from '@/views/BacklogView.vue'
 import RunsView from '@/views/RunsView.vue'
 import ReviewView from '@/views/ReviewView.vue'
-import SettingsView from '@/views/SettingsView.vue'
 import FactoryView from '@/views/FactoryView.vue'
 import UncommittedBanner from './UncommittedBanner.vue'
 
@@ -21,7 +20,6 @@ const VIEWS: Record<Screen, Component> = {
   runs: RunsView,
   review: ReviewView,
   factory: FactoryView,
-  settings: SettingsView,
 }
 
 const ICONS: Record<Screen, Component> = {
@@ -29,7 +27,6 @@ const ICONS: Record<Screen, Component> = {
   runs: Activity,
   review: GitPullRequest,
   factory: Factory,
-  settings: Settings,
 }
 
 // the previous repo's backlog status and names never show here

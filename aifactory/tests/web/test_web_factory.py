@@ -486,6 +486,22 @@ def test_check_carries_the_version(api: Api, tmp_path: Path) -> None:
     assert api.get("b", "factory/check?offline=1&fresh=1")["data"]["state"] == "installed"
 
 
+def test_check_shows_only_actionable_findings(api: Api, tmp_path: Path) -> None:
+    from aifactory.check import run_check
+
+    store.init_library("team")
+    install(api, "a")
+    cli = run_check(tmp_path / "a", offline=True).to_json()
+    assert "repo_installed" in [f["code"] for f in cli["findings"]]
+    data = api.get("a", "factory/check?offline=1&fresh=1")["data"]
+    codes = [f["code"] for f in data["findings"]]
+    assert "repo_installed" not in codes and "hosting_skipped" not in codes
+    assert all(f["fix"] or f["action"] for f in data["findings"])
+    for severity in ("error", "warning", "info"):
+        assert data["counts"][severity] == sum(f["severity"] == severity for f in data["findings"])
+    assert data["ok"] is (data["counts"]["error"] == 0)
+
+
 # ── validation ────────────────────────────────────────────────────────────────
 
 

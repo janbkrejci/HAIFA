@@ -1,13 +1,16 @@
 <script setup lang="ts">
-// The library screen: items of the library by type on the left, the selected item on the right
+// The Knihovna section of #/setup (#/setup/library): the library lives in $HAIFA_HOME of this
+// computer. Without a library it sets one up (from the seed or a clone of the team library).
+// On top, the library findings of the machine check. Items of the library by type on the left, the selected item on the right
 // with the registered repos that override it with their own copy ("Diff" and "move the repo copy
 // to the library" through the repo's move plan). Re-seed takes the package defaults into the
 // library (an item the team changed only when ticked, after its diff). The sync panel shows the
 // state against the library remote (local changes, waiting in a PR, in sync) with the open pull
 // requests the operator sent, pull and "send as a PR", or connects an empty remote. Changes never
-// go to the library branch directly; the library maintainer merges the PRs.
+// go to the library branch directly; the library maintainer merges the PRs. Every write emits
+// `changed`, so the page checks the machine again.
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { ApiError, applyMove, previewMove, type FactoryFile, type FactoryItemType, type FactoryMovePlan } from '@/lib/api'
+import { ApiError, applyMove, previewMove, type CheckFinding, type FactoryFile, type FactoryItemType, type FactoryMovePlan } from '@/lib/api'
 import { ITEM_TABS, fetchLibrary, fetchItem, fetchOverrides, previewLibrary, applyLibrary, syncLibrary, connectRemote,
   syncState, pullRequestText, versionLabel, type LibraryStatus, type LibraryItem, type ItemDetail, type LibraryPlan, type LibraryRequest,
   type LibraryOverride, type LibraryOverrides, type LibraryPullRequest, type SeedPlanItem } from '@/lib/library'
@@ -16,6 +19,10 @@ import { errorText, shortSha } from '@/lib/format'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
 import PlanView from '@/components/factory/PlanView.vue'
+import MachineFinding from './MachineFinding.vue'
+
+defineProps<{ findings: CheckFinding[] }>()
+const emit = defineEmits<{ changed: [] }>()
 const tab = ref<FactoryItemType>('agent')
 const library = ref<LibraryStatus | null>(null)
 const detail = ref<ItemDetail | null>(null)
@@ -60,7 +67,10 @@ async function loadOverrides() {
 }
 async function load(fresh = false) {
   busy.value = true
-  try { library.value = await fetchLibrary(fresh) }
+  try {
+    library.value = await fetchLibrary(fresh)
+    if (!library.value.exists && !url.value) url.value = library.value.default_url ?? ''
+  }
   catch (e) { error.value = apiText(e) }
   finally { busy.value = false }
   void loadOverrides()
@@ -95,6 +105,7 @@ async function performImport() {
   } catch (e) { error.value = errorText(e); plan.value = null; importRequest.value = null }
   finally { busy.value = false }
   await load()
+  emit('changed')
 }
 // ── repo copies: diff and move to the library ────────────────────────────────
 function closeDiff() { diffFor.value = null; movePlan.value = null; moveConfirm.value = false }
@@ -116,6 +127,7 @@ async function performMove() {
   } catch (e) { error.value = apiText(e) }
   finally { busy.value = false }
   await load()
+  emit('changed')
   if (currentItem.value) {
     const fresh = library.value?.items?.find(i => i.type === currentItem.value?.type && i.name === currentItem.value?.name)
     if (fresh) await open(fresh)
@@ -149,6 +161,7 @@ async function performSeed() {
   } catch (e) { error.value = apiText(e); seedPlan.value = null }
   finally { busy.value = false }
   await load()
+  emit('changed')
 }
 // ── sync with the remote ─────────────────────────────────────────────────────
 const SYNC_TEXT = { pull: 'Stažení z remote', push: 'Odeslání pull requestu' } as const
@@ -166,6 +179,7 @@ async function syncWith(action: 'pull' | 'push') {
   catch (e) { error.value = apiText(e) }
   finally { busy.value = false }
   await load()
+  emit('changed')
 }
 async function connect() {
   if (busy.value || !remoteUrl.value.trim()) return
@@ -174,24 +188,54 @@ async function connect() {
   catch (e) { error.value = apiText(e) }
   finally { busy.value = false }
   await load()
+  emit('changed')
+}
+// ── set up: from the seed or a clone of the team library ─────────────────────
+const url = ref('')
+const setupPlan = ref<LibraryPlan | null>(null)
+const setupRequest = ref<LibraryRequest | null>(null)
+async function previewSetup(action: 'init' | 'clone') {
+  if (busy.value) return
+  busy.value = true; error.value = ''; importResult.value = ''
+  const body: LibraryRequest = { action, options: action === 'clone' ? { url: url.value } : {} }
+  try { setupPlan.value = await previewLibrary(body); setupRequest.value = body }
+  catch (e) { error.value = apiText(e) }
+  finally { busy.value = false }
+}
+async function performSetup() {
+  if (busy.value || !setupPlan.value || !setupRequest.value || setupPlan.value.blockers.length) return
+  busy.value = true; error.value = ''
+  try {
+    const data = await applyLibrary(setupRequest.value, setupPlan.value.digest)
+    importResult.value = `Knihovna připravena${data.commit ? ' · commit ' + data.commit : ''}`
+  } catch (e) { error.value = apiText(e) }
+  finally { setupPlan.value = null; setupRequest.value = null; busy.value = false }
+  await load()
+  emit('changed')
 }
 onMounted(() => { void load() })
 onBeforeUnmount(() => { generation++ })
 </script>
 <template>
-  <section class="global-page" data-test="library">
-    <header><h1>Knihovna</h1><div class="header-actions">
+  <section id="library" class="library-section" data-test="library">
+    <header><h2>Knihovna</h2><div class="header-actions">
       <button :disabled="busy || !library?.exists" data-test="library-reseed" @click="startSeed">Obnovit výchozí agenty a workflows</button>
       <button :disabled="busy || !library?.exists" data-test="library-import" @click="importing = true">Import…</button>
     </div></header>
     <p v-if="error" role="alert">{{ error }}</p><p v-if="importResult" role="status">{{ importResult }}</p>
     <p v-if="busy || loadingDetail">Načítám…</p>
-    <p v-if="library && !library.exists">Knihovna není nastavená. Repa dědí výchozí agenty a workflows z balíčku. <a href="#/setup">Nastavit na tomto počítači</a></p>
+    <MachineFinding v-for="(f, index) in findings" :key="f.code + index" :finding="f" />
+    <form v-if="library && !library.exists" class="actions" data-test="library-setup" @submit.prevent="previewSetup('clone')">
+      <p>Knihovna není nastavená. Repa dědí výchozí agenty a workflows z balíčku.</p>
+      <label>URL týmové knihovny <input v-model="url" data-test="library-url" :placeholder="library.default_url ?? 'https://…/library.git'" :disabled="busy" /></label>
+      <button type="submit" :disabled="busy || !url.trim()" data-test="library-clone">Naklonovat týmovou knihovnu…</button>
+      <button type="button" :disabled="busy" data-test="library-init" @click="previewSetup('init')">Založit ze semínka</button>
+    </form>
     <section v-if="library?.exists && sync" class="sync" data-test="library-sync">
       <h2>Synchronizace</h2>
       <p class="sync-state" :data-tone="sync.tone" data-test="library-sync-state">{{ sync.text }}</p>
       <dl>
-        <dt>Složka</dt><dd class="mono">{{ library.library }}</dd>
+        <dt>Složka</dt><dd class="mono" data-test="library-path">{{ library.library }}</dd>
         <dt>Remote</dt><dd class="mono" data-test="library-remote">{{ library.remote ?? '—' }}</dd>
         <template v-if="library.remote">
           <dt>Větev</dt><dd>{{ library.branch ?? '—' }}</dd>
@@ -227,6 +271,7 @@ onBeforeUnmount(() => { generation++ })
         <button type="submit" :disabled="busy || !remoteUrl.trim()" data-test="library-connect">Propojit a odeslat</button>
       </form>
     </section>
+    <template v-if="library?.exists">
     <div role="tablist" aria-label="Typ položek">
       <button v-for="t in ITEM_TABS" :key="t.type" role="tab" :aria-selected="tab === t.type" :disabled="busy" :data-test="'tab-' + t.type" @click="changeTab(t.type)">{{ t.label }}</button>
     </div>
@@ -275,6 +320,12 @@ onBeforeUnmount(() => { generation++ })
         </section>
       </div>
     </div>
+    </template>
+    <ConfirmDialog :open="!!setupPlan" :title="setupRequest?.action === 'clone' ? 'Naklonovat týmovou knihovnu' : 'Založit knihovnu ze semínka'" confirm-label="Potvrdit plán" :confirm-disabled="busy || !!setupPlan?.blockers.length" @confirm="performSetup" @cancel="!busy && (setupPlan = null)">
+      <PlanView v-if="setupPlan" :plan="setupPlan" collapsed data-test="library-plan">
+        <p v-if="setupPlan.library">{{ typeof setupPlan.library === 'string' ? setupPlan.library : setupPlan.library.name }}</p>
+      </PlanView>
+    </ConfirmDialog>
     <ConfirmDialog :open="importing" title="Import do knihovny" confirm-label="Náhled plánu" :confirm-disabled="busy || !path.trim()" @confirm="planImport" @cancel="!busy && (importing = false)">
       <p v-if="error" role="alert">{{ error }}</p>
       <p>Složka musí být pod domovskou složkou uživatele.</p>
@@ -303,4 +354,6 @@ onBeforeUnmount(() => { generation++ })
       :confirm-disabled="busy || !movePlan || !!movePlan.blockers.length" @cancel="moveConfirm = false" @confirm="performMove" />
   </section>
 </template>
-<style src="./library.css" />
+<style scoped>
+.library-section > header h2 { margin: 0; }
+</style>
