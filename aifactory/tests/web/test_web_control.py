@@ -9,6 +9,7 @@ from __future__ import annotations
 import os
 import shutil
 import threading
+import time
 from pathlib import Path
 from typing import Any
 
@@ -20,7 +21,7 @@ from thread_launcher import ThreadLauncher
 
 from aifactory.engine.utils import now_iso
 from aifactory.run.errors import TaskRunError
-from aifactory.run.store import TaskRunRow, TaskRunStore
+from aifactory.run.store import TaskChainRow, TaskRunRow, TaskRunStore
 from aifactory.skill import envelope_problems
 from aifactory.web import create_app, create_multi_app
 from aifactory.web.control import KEEP_SECONDS, FactoryControl
@@ -204,6 +205,74 @@ def test_pause_and_resume_every_running_run(repo: Path, tmp_path: Path) -> None:
     assert sorted(resumed["run_ids"]) == [f"r-{T1}", f"r-{T2}", f"r-{T3}"]
     assert _pauses(repo) == {T1: None, T2: None, T3: None}
     assert _factory(client)["control"] is None
+
+
+def _finish(root: Path, task_id: str) -> None:
+    store = TaskRunStore(_db(root))
+    try:
+        store.finish(f"r-{task_id}", "succeeded", None, None)
+    finally:
+        store.close()
+
+
+def _chain(root: Path, state: str = "running") -> None:
+    now = str(now_iso())
+    store = TaskRunStore(_db(root))
+    try:
+        store.start_chain(TaskChainRow("c1", T1, os.getpid(), 2, state, now, now))
+    finally:
+        store.close()
+
+
+def test_pause_holds_a_run_a_chain_starts_after_it(repo: Path, tmp_path: Path) -> None:
+    """A run paused in its last phase ends; the run its chain starts next is paused too."""
+    claim(repo, T1)
+    _chain(repo)
+    control = FactoryControl(hold_poll=None)
+    client = _app(tmp_path, repo, FakeLauncher(), control)
+    assert _post(client, "pause")["data"]["run_ids"] == [f"r-{T1}"]
+
+    _finish(repo, T1)  # the last phase ended: the pause had nothing to hold
+    assert _factory(client)["control"] is None  # no run of the pause runs
+    claim(repo, T2)  # the chain goes on
+    assert control.hold(repo) == [f"r-{T2}"]
+    assert _pauses(repo) == {T2: "pausing"}
+    factory = _factory(client)
+    assert factory["pausing"] == 1
+    assert factory["control"]["run_ids"] == [f"r-{T1}", f"r-{T2}"]
+    assert control.hold(repo) == []  # already pausing: asked once
+
+    _post(client, "resume")
+    assert _pauses(repo) == {T2: None}
+    claim(repo, T3)
+    assert control.hold(repo) == []  # no pause any more
+    assert _pauses(repo) == {T2: None, T3: None}
+
+
+def test_pause_ends_when_its_runs_and_the_chains_ended(repo: Path, tmp_path: Path) -> None:
+    claim(repo, T1)
+    control = FactoryControl(hold_poll=None)
+    client = _app(tmp_path, repo, FakeLauncher(), control)
+    _post(client, "pause")
+    _finish(repo, T1)
+    assert control.hold(repo) == []  # no chain runs: the pause is over
+    claim(repo, T2)
+    assert control.hold(repo) == []
+    assert _pauses(repo) == {T2: None}
+
+
+def test_pause_watcher_pauses_late_runs(repo: Path, tmp_path: Path) -> None:
+    claim(repo, T1)
+    control = FactoryControl(hold_poll=0.02)
+    client = _app(tmp_path, repo, FakeLauncher(), control)
+    _post(client, "pause")
+    claim(repo, T2)
+    deadline = time.monotonic() + 10
+    while _pauses(repo)[T2] is None and time.monotonic() < deadline:
+        time.sleep(0.02)
+    assert _pauses(repo) == {T1: "pausing", T2: "pausing"}
+    _post(client, "stop", 202)
+    control.wait(10)
 
 
 def test_stop_progress_is_shown_until_every_run_ended(repo: Path, tmp_path: Path) -> None:
