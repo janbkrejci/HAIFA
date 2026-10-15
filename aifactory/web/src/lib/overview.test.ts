@@ -13,6 +13,7 @@ import {
   runLink,
   runsFinishing,
   sortRepos,
+  stateClass,
   taskSummary,
   totals,
   urgency,
@@ -115,6 +116,11 @@ describe('overview factory controls', () => {
       { state: 'in review', label: 'V review', count: 2 },
       { state: 'done', label: 'Hotovo', count: 4 },
     ])
+  })
+
+  it('names the state chip colour class', () => {
+    expect(stateClass('in review')).toBe('state-in-review')
+    expect(stateClass('ready')).toBe('state-ready')
   })
 
   it('tells which controls apply', () => {

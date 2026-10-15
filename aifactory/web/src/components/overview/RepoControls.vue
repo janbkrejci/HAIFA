@@ -22,6 +22,7 @@ import {
   canStop,
   controlErrors,
   controlStatus,
+  stateClass,
   taskSummary,
 } from '@/lib/overview'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -188,7 +189,8 @@ async function onStop() {
         <span
           v-for="item in summary"
           :key="item.state"
-          class="chip"
+          class="chip state-chip"
+          :class="stateClass(item.state)"
           data-test="task-summary-item"
           :data-state="item.state"
         >{{ item.label }} <b>{{ item.count }}</b></span>
@@ -301,12 +303,10 @@ button:disabled {
 
 .chip {
   padding: 1px 8px;
-  border: 1px solid var(--border);
   border-radius: 999px;
 }
 
 .chip b {
-  color: var(--text);
   font-weight: 600;
 }
 

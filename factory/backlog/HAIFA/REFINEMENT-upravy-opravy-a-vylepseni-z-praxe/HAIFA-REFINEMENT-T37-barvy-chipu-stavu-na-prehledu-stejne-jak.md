@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T37
 title: Barvy chipů stavů na Přehledu stejné jako v backlogu/stromu
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T30, HAIFA-REFINEMENT-T20]
@@ -27,3 +27,4 @@ Chipy na Přehledu u jednotlivých rep, které ukazují stavy tasků (počet tas
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/50 · náklady $1.01

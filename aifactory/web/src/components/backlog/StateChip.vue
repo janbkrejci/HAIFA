@@ -3,11 +3,13 @@ import { computed } from 'vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import { STATE_LABELS, STATE_TOOLTIPS, blockedTooltip, type BoardState, type Unmet } from '@/lib/backlog'
 import { useNames } from '@/lib/names'
+import { stateClass } from '@/lib/overview'
 
 // `count`: the chip shows a number of tasks in the state (`Hotovo 5`).
 const props = defineProps<{ state: BoardState; blockedBy?: Unmet[]; count?: number }>()
 
-const cls = computed(() => `state-${props.state.replace(/\s+/g, '-')}`)
+// The state colours are shared with the overview task summary (style.css, `.state-chip`).
+const cls = computed(() => ['state-chip', stateClass(props.state)])
 const label = computed(() => {
   const name = STATE_LABELS[props.state] ?? props.state
   return props.count === undefined ? name : `${name} ${props.count}`
@@ -34,52 +36,11 @@ const tip = computed(() =>
   align-items: center;
   padding: 1px 10px;
   border-radius: 999px;
-  border: 1px solid var(--border);
   font-size: 14px;
-  color: var(--dim);
   white-space: nowrap;
-}
-
-.state-todo {
-  border-style: dashed;
-}
-
-.state-ready {
-  color: var(--cyan);
-  border-color: rgba(90, 210, 221, 0.45);
-  background: rgba(90, 210, 221, 0.08);
-}
-
-.state-blocked {
-  color: var(--amber);
-  border-color: rgba(232, 182, 74, 0.45);
-  background: rgba(232, 182, 74, 0.08);
 }
 
 .chip[tabindex] {
   cursor: help;
-}
-
-.state-running {
-  color: var(--blue);
-  border-color: rgba(108, 182, 255, 0.45);
-  background: rgba(108, 182, 255, 0.09);
-}
-
-.state-in-review {
-  color: var(--purple);
-  border-color: rgba(200, 155, 255, 0.45);
-  background: rgba(200, 155, 255, 0.08);
-}
-
-.state-done {
-  color: var(--green);
-  border-color: rgba(74, 222, 128, 0.45);
-  background: rgba(74, 222, 128, 0.09);
-}
-
-.state-cancelled {
-  color: var(--faint);
-  text-decoration: line-through;
 }
 </style>

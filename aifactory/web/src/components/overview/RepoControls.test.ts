@@ -177,6 +177,12 @@ describe('RepoControls', () => {
     const items = wrapper.findAll('[data-test="task-summary-item"]')
     expect(items.map((i) => i.attributes('data-state'))).toEqual(['ready', 'running', 'done'])
     expect(items.map((i) => i.text())).toEqual(['Připraveno 3', 'Běží 1', 'Hotovo 12'])
+    // The same state classes colour the chips as in the backlog StateChip (style.css).
+    expect(items.map((i) => i.classes())).toEqual([
+      expect.arrayContaining(['state-chip', 'state-ready']),
+      expect.arrayContaining(['state-chip', 'state-running']),
+      expect.arrayContaining(['state-chip', 'state-done']),
+    ])
     expect(wrapper.find('[data-test="factory-slots"]').text()).toBe('Sloty: 1/2')
   })
 })
