@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T03
 title: Pauza továrny má zastavit i navazující běhy řetězu
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T30]
 ---
@@ -18,3 +18,4 @@ Důvod: Found while reviewing T30 (web/control.py pause, run/pause.py). A pause 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/46 · náklady $1.37
