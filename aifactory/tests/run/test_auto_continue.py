@@ -28,7 +28,7 @@ from aifactory.run import (
     select_next,
 )
 from aifactory.run import task as task_mod
-from aifactory.run.queue import SKIP_REASONS
+from aifactory.run.queue import SKIP_REASONS, blockers_of
 from aifactory.run.store import QueuePrefs
 from cli_json import read_envelope
 
@@ -510,3 +510,182 @@ def test_an_excluded_task_still_runs_by_hand(repo: Path, script: Script) -> None
     build(script, "one")
     result = run_task(repo, T01)
     assert result.ok
+
+
+# ── a run blocked during its course (HAIFA-REFINEMENT-T34) ───────────────────
+
+BLOCKER = "M01-TODO-T01"
+OTHER = "M02-S01-T01"
+
+
+def _todo_step(repo: Path, extra: str) -> None:
+    """The project's TODO step (followups.TODO_CODE) the blocker is filed into."""
+    write(repo, f"{CORE}/TODO/index.md", f"---\nid: M01-TODO\ntitle: TODO\n{extra}---\n")
+
+
+def blocked_build(script: Script, name: str) -> None:
+    """One planner call that writes a file and reports a follow-up that blocks the task."""
+    rel = f"src/app/{name}.py"
+    script.on("planner", lambda wt: write(wt, rel, f"NAME = {name!r}\n"))
+    blocker = {
+        "title": "Blokující práce",
+        "reason": "chybí předpoklad",
+        "details": "Doplnit předpoklad.",
+        "blocks_task": True,
+    }
+    script.add(
+        "planner",
+        ok(artifacts=[], changed_files=[rel], commit_message=f"Add {name}", follow_ups=[blocker]),
+    )
+
+
+def test_blocked_task_continues_with_its_blocker(repo: Path, script: Script) -> None:
+    setup_chain(repo, module_auto=True)
+    _todo_step(repo, "writes: [src/todo/]\n")
+    commit_all(repo, "todo step")
+    blocked_build(script, "one")
+    build(script, "blocker", path="src/todo/blocker.py")
+    build(script, "two")
+    build(script, "three")
+    chain = run_chain(repo, T01)
+    first = chain.runs[0]
+    assert first.run.state == "failed" and first.pr is None
+    assert task_mod.run_blockers(first.run) == [BLOCKER]
+    # the blocker goes before the rest of the step, then the usual order
+    assert ids(chain) == [T01, BLOCKER, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+    assert [r.ok for r in chain.runs] == [False, True, True, True]
+    assert (T01, "blocked") in [(s.task_id, s.reason) for s in chain.waiting]
+    assert open_pr(repo, T01) is None
+
+
+def test_blocked_task_without_startable_blocker_takes_the_next(repo: Path, script: Script) -> None:
+    setup_chain(repo, module_auto=True)
+    _todo_step(repo, "writes: [src/todo/]\nworkflow: null\n")  # the blocker cannot run
+    commit_all(repo, "todo step")
+    blocked_build(script, "one")
+    build(script, "two")
+    build(script, "three")
+    chain = run_chain(repo, T01)
+    assert ids(chain) == [T01, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+    reasons = [(s.task_id, s.reason) for s in chain.waiting]
+    assert (T01, "blocked") in reasons and (BLOCKER, "no_workflow") in reasons
+    assert runs_of(repo, BLOCKER) == []
+
+
+def test_blocked_task_with_nothing_else_is_exhausted(repo: Path, script: Script) -> None:
+    setup_chain(repo, module_auto=True)
+    _todo_step(repo, "writes: [src/todo/]\nworkflow: null\n")
+    commit_all(repo, "todo step")
+    store = _store(repo)
+    try:
+        store.set_excluded(T02, True)
+        store.set_excluded(T03, True)
+    finally:
+        store.close()
+    blocked_build(script, "one")
+    chain = run_chain(repo, T01)
+    assert ids(chain) == [T01]
+    assert chain.stop == STOP_EXHAUSTED
+    assert (T01, "blocked") in [(s.task_id, s.reason) for s in chain.waiting]
+
+
+def test_blocked_task_without_auto_continue_stops(repo: Path, script: Script) -> None:
+    setup_chain(repo)
+    _todo_step(repo, "writes: [src/todo/]\n")
+    commit_all(repo, "todo step")
+    blocked_build(script, "one")
+    chain = run_chain(repo, T01)
+    assert ids(chain) == [T01]
+    assert chain.stop == STOP_FAILED
+    assert runs_of(repo, BLOCKER) == [] and runs_of(repo, T02) == []
+
+
+def test_blocked_task_with_auto_flag_continues(repo: Path, script: Script) -> None:
+    setup_chain(repo)
+    _todo_step(repo, "writes: [src/todo/]\n")
+    commit_all(repo, "todo step")
+    blocked_build(script, "one")
+    build(script, "blocker", path="src/todo/blocker.py")
+    build(script, "two")
+    build(script, "three")
+    chain = run_chain(repo, T01, auto=True)
+    assert ids(chain) == [T01, BLOCKER, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+
+
+def test_other_failure_still_stops_the_chain(repo: Path, script: Script) -> None:
+    setup_chain(repo, module_auto=True)
+    build(script, "one", path="README.md")  # outside writes: the run fails, not blocked
+    chain = run_chain(repo, T01)
+    assert ids(chain) == [T01]
+    assert task_mod.run_blockers(chain.runs[0].run) is None
+    assert chain.stop == STOP_FAILED
+
+
+def test_run_blockers_reads_the_error() -> None:
+    row = TaskRunRow("r", T01, "b", "wt", "main", "0", None, "failed", "now")
+    assert task_mod.run_blockers(row) is None
+    reason = task_mod.blocked_reason(T01, ["A-T01", "B-T02"])
+    blocked = TaskRunRow(
+        "r", T01, "b", "wt", "main", "0", None, "failed", "now", error=f"{reason}; boom"
+    )
+    assert task_mod.run_blockers(blocked) == ["A-T01", "B-T02"]
+    succeeded = TaskRunRow("r", T01, "b", "wt", "main", "0", None, "succeeded", "now", error=reason)
+    assert task_mod.run_blockers(succeeded) is None
+
+
+def _other_project(repo: Path) -> None:
+    write(
+        repo,
+        "backlog/M02-other/index.md",
+        "---\nid: M02\ntitle: Other\nworkflow: plan-commit\nauto_continue: true\n---\n",
+    )
+    write(
+        repo,
+        "backlog/M02-other/S01-x/index.md",
+        "---\nid: M02-S01\ntitle: X\nwrites: [src/other/]\n---\n",
+    )
+    write(
+        repo,
+        f"backlog/M02-other/S01-x/{OTHER}.md",
+        f"---\nid: {OTHER}\ntitle: Other\nstatus: todo\n---\n\nDo it.\n",
+    )
+
+
+def test_chain_never_starts_a_queued_task_of_another_project(repo: Path, script: Script) -> None:
+    setup_chain(repo, module_auto=True)
+    _other_project(repo)
+    commit_all(repo, "other project")
+    store = _store(repo)
+    try:
+        store.set_queue_order([OTHER, T03])
+    finally:
+        store.close()
+    for name in ("one", "three", "two"):
+        build(script, name)
+    chain = run_chain(repo, T01, auto=True)
+    assert ids(chain) == [T01, T03, T02]
+    assert runs_of(repo, OTHER) == []
+
+
+def test_blockers_of_keeps_only_follow_ups_of_the_project(repo: Path) -> None:
+    _other_project(repo)
+    _todo_step(repo, "")
+    marker = "<!-- factory: follow-up-of=" + T01 + " -->"
+    write(
+        repo,
+        f"{CORE}/TODO/{BLOCKER}.md",
+        f"---\nid: {BLOCKER}\ntitle: B\nstatus: todo\n---\n\nB.\n\n{marker}\n",
+    )
+    body = (repo / f"backlog/M02-other/S01-x/{OTHER}.md").read_text(encoding="utf-8")
+    write(repo, f"backlog/M02-other/S01-x/{OTHER}.md", body + f"\n{marker}\n")
+    backlog = load_backlog(repo)
+    after = backlog.by_id[T01]
+    assert isinstance(after, Task)
+    found = blockers_of(backlog, after, [OTHER, T02, BLOCKER, "(neuložený task: X)", BLOCKER])
+    assert found == [BLOCKER]
+    # even preferred, a task of another project is never selected
+    sel = select_next(backlog, after, open_pr=_none, running=_none, prefer=[OTHER])
+    assert sel.next is not None and sel.next.id != OTHER

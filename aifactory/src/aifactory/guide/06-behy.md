@@ -81,7 +81,9 @@ Staré worktree mergnutých či zavřených PR a překonaných běhů uklidí `f
 - Bez něj pokračuje jen po tasku se zapnutým `auto_continue` (vlastním nebo zděděným) a spouští jen tasky, které ho mají také.
 - Pořadí: nejdřív pořadí sloupce Připraveno v kanbanu, pak tasky stejného stepu, pak stejného projektu.
 - Přeskakuje tasky odložené v kanbanu, bez workflow a tasky, jejichž writes se překrývají s běžícími běhy nebo otevřenými PR.
-- Selhání řetěz zastaví. Se zapnutým auto-merge pokračuje až po merge předchozího PR.
+- Řetěz nikdy nespustí task z jiného projektu, ani když je zařazený v kanbanu.
+- Běh, který skončí jako blokovaný (`blocked: …`, viz Nedodělky a blokace), řetěz nezastaví: jako další se přednostně spustí blokující TODO tasky, které při tom běhu vznikly, pokud jsou spustitelné; jinak řetěz pokračuje běžným pořadím. Blokovaný task zůstane nehotový a bez PR.
+- Jiné selhání řetěz zastaví. Se zapnutým auto-merge pokračuje až po merge předchozího PR.
 
 Panel **Řetěz** na záložce Běhy ukazuje stav řetězu, obsazené sloty, přeskočené tasky s důvodem (překryv writes, čeká na PR, blokováno, bez workflow, odloženo v kanbanu…) a důvod konce (není co spustit, běh selhal, auto-continue vypnuto, PR nesloučen).
 

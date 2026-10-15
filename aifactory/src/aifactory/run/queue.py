@@ -4,6 +4,15 @@
 opened its pull request, picks the next task with ``select_next`` and runs it,
 until nothing more can start or a run fails.
 
+A run that failed because its task turned out blocked (an agent reported
+``blocked_by`` or a follow-up with ``blocks_task``; ``task.run_blockers``) does not
+stop the chain when it would go on after that task (the same rule as after a
+success). The blocked task stays unfinished without a PR and is reported as a
+``blocked`` skip; the next task is chosen by ``select_next`` with the blockers filed
+during that run (``blockers_of``) first, under the same checks as any candidate; when
+none of them can start, the usual order follows. Any other failure stops the chain
+(``stop == "failed"``), and so does a blocked run that would not go on.
+
 ``--auto`` (``auto=True``) holds for the whole chain: it continues after every
 successful run and may start any task. Otherwise ``auto_continue: true`` inherited
 by a task (task, step or project ``index.md``) decides both ways: the chain continues
@@ -12,7 +21,9 @@ that have it. So with ``auto_continue: true`` on step S01 only, the chain runs t
 tasks of S01 and stops; a task of a step with auto-continue off is never started by
 a chain.
 
-The next task is taken from the kanban's manual queue first (``task_queue`` in the
+The next task is always one of the same project (the root container of the backlog),
+also when the kanban's queue holds tasks of other projects. It is taken from the
+kanban's manual queue first (``task_queue`` in the
 trace DB, ``store.QueuePrefs``), then from the same step, then from the rest of the
 same project, both in backlog order, only ``status: todo``. A task excluded from
 auto-continue in the kanban is never started by a chain (``excluded``), with
@@ -49,7 +60,8 @@ the next one. A task whose ``writes`` cover the whole repo or a whole package
 (``scope.is_wide``, e.g. ``aifactory/``) runs alone: it does not start while anything
 runs, and nothing starts while it runs (``exclusive``); ``ChainResult.exclusive``
 lists such tasks. A failed run stops the filling (``stop == "failed"``); runs already
-going are left to finish. With ``auto_merge`` the member process merges its own PR
+going are left to finish. A blocked run refills its slot as described above. With
+``auto_merge`` the member process merges its own PR
 (under the store's merge lock); a PR it did not merge stops the filling as above.
 
 Every chain that goes on has a row in ``task_chains`` (``store.TaskChainRow``): its
@@ -89,6 +101,7 @@ from aifactory.providers import GitProvider
 from aifactory.run import gitops
 from aifactory.run import task as task_mod
 from aifactory.run.errors import TaskRunError
+from aifactory.run.followups import follow_up_marker
 from aifactory.run.members import ChainRunner, ProcessRunner
 from aifactory.run.scope import effective_task_writes, is_wide, overlaps
 from aifactory.run.store import (
@@ -188,6 +201,7 @@ def select_next(
     conflict: Callable[[Task], Skip | None] | None = None,
     require_auto_continue: bool = False,
     prefs: QueuePrefs | None = None,
+    prefer: Sequence[str] = (),
 ) -> Selection:
     """The first startable candidate after `after`, and every candidate that was skipped.
 
@@ -197,10 +211,12 @@ def select_next(
     a candidate without ``auto_continue: true`` is left out, not reported as skipped.
     ``prefs`` (the kanban's queue, ``TaskRunStore.queue_prefs``) orders the candidates
     and excludes tasks: an excluded task is skipped as ``excluded``, with ``--auto`` too.
+    ``prefer`` (the blockers of a blocked `after`, ``blockers_of``) goes before the
+    kanban's queue; like the queue, ids outside `after`'s project are ignored.
     """
     prefs = prefs or QueuePrefs()
     return _select(
-        candidates(after, prefs.order),
+        candidates(after, [*prefer, *prefs.order]),
         backlog,
         open_pr=open_pr,
         running=running,
@@ -209,6 +225,32 @@ def select_next(
         require_auto_continue=require_auto_continue,
         prefs=prefs,
     )
+
+
+def blockers_of(backlog: Backlog, blocked: Task, ids: Sequence[str]) -> list[str]:
+    """Of `ids` (``task.run_blockers``), the follow-ups the factory filed for `blocked`.
+
+    Only tasks of `blocked`'s project that carry its follow-up marker count: the blockers
+    that came up during its run. Other ids (an existing task in ``blocked_by``, a
+    placeholder of a follow-up that was not filed) are left to the usual selection.
+    """
+    project = ancestors(blocked)[-1]
+    marker = follow_up_marker(blocked.id)
+    found: list[str] = []
+    for task_id in ids:
+        node = backlog.by_id.get(task_id)
+        if (
+            isinstance(node, Task)
+            and marker in node.body
+            and ancestors(node)[-1] is project
+            and task_id not in found
+        ):
+            found.append(task_id)
+    return found
+
+
+def _blocked_skip(task: Task, ids: Sequence[str]) -> Skip:
+    return Skip(task.id, "blocked", f"během běhu zablokován: {', '.join(ids)}", list(ids))
 
 
 def repo_candidates(backlog: Backlog, order: Sequence[str] = ()) -> list[Task]:
@@ -919,19 +961,29 @@ def _sequential(
     start_skips: list[Skip] = []
     last = first
     while True:
+        blocked: list[str] | None = None
         if not last.ok or last.pr is None:
-            return ChainResult(runs, STOP_FAILED)
+            blocked = task_mod.run_blockers(last.run)
+            if blocked is None:
+                return ChainResult(runs, STOP_FAILED)
+        prefer: list[str] = []
         with tempfile.TemporaryDirectory(prefix="factory-chain-") as tmp:
             backlog = _base_backlog(repo, Path(tmp))
             after = backlog.by_id.get(last.run.task_id)
             if not isinstance(after, Task):
-                return ChainResult(runs, STOP_DISABLED)
+                return ChainResult(runs, STOP_FAILED if blocked is not None else STOP_DISABLED)
             cont = auto or auto_continue_enabled(after)
+            if blocked is not None:
+                # blocked during its run: no PR, no merge; on with its blockers first
+                if not cont:
+                    return ChainResult(runs, STOP_FAILED)
+                prefer = blockers_of(backlog, after, blocked)
+                start_skips.append(_blocked_skip(after, blocked))
             if cont and not record.started:
                 record.go_on(last.trace_db)
                 record.update(run_ids=[r.run.run_id for r in runs])
             merged = False
-            if last.auto_merge is None and auto_merge_enabled(after):
+            if blocked is None and last.auto_merge is None and auto_merge_enabled(after):
                 # Local import: aifactory.review imports aifactory.run.
                 from aifactory.review.automerge import try_auto_merge
 
@@ -968,6 +1020,7 @@ def _sequential(
                     exclude=exclude,
                     require_auto_continue=not auto,
                     prefs=store.queue_prefs(),
+                    prefer=prefer,
                 )
             finally:
                 store.close()
@@ -1037,7 +1090,7 @@ def _run_parallel(
             exclusive.append(task.id)
         save()
 
-    def fill(after_id: str) -> None:
+    def fill(after_id: str, prefer: Sequence[str] = ()) -> None:
         nonlocal last_skips
         while halt is None:
             if len(runner.active()) >= max_parallel:
@@ -1062,6 +1115,7 @@ def _run_parallel(
                         conflict=occupancy,
                         require_auto_continue=not auto,
                         prefs=store.queue_prefs(),
+                        prefer=prefer,
                     )
                 finally:
                     store.close()
@@ -1092,16 +1146,37 @@ def _run_parallel(
         save()
         if halt is not None:
             return
+        blocked: list[str] | None = None
         if not result.ok or result.pr is None:
-            halt = STOP_FAILED
-            return
+            blocked = task_mod.run_blockers(result.run)
+            if blocked is None:
+                halt = STOP_FAILED
+                return
+        prefer: list[str] = []
         with _fresh_backlog(repo) as backlog:
             found = backlog.by_id.get(result.run.task_id)
             after = found if isinstance(found, Task) else None
+            if after is not None and blocked is not None:
+                prefer = blockers_of(backlog, after, blocked)
         if after is None:
-            last_cont = False
+            if blocked is not None:
+                halt = STOP_FAILED
+            else:
+                last_cont = False
             return
         cont = auto or auto_continue_enabled(after)
+        if blocked is not None:
+            # blocked during its run: no PR, no merge; on with its blockers first
+            if not cont:
+                halt = STOP_FAILED
+                return
+            start_skips.append(_blocked_skip(after, blocked))
+            last_cont = True
+            if not record.started:
+                record.go_on()
+            save()
+            fill(after.id, prefer)
+            return
         last_cont = cont
         if cont and not record.started:
             record.go_on()

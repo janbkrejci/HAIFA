@@ -32,7 +32,9 @@ from aifactory.run import (
     run_chain,
     select_next,
 )
+from aifactory.run.followups import follow_up_marker
 from aifactory.run.store import FAILED, SUCCEEDED
+from aifactory.run.task import blocked_reason
 
 CORE = "backlog/M01-core"
 STEP = "S01-model"
@@ -691,3 +693,75 @@ def test_retry_runs_first_then_fills_the_parallel_chain(
     assert [r.run.task_id for r in chain.runs] == [T01, T02, T03]
     assert (chain.stop, chain.ok) == (STOP_EXHAUSTED, True)
     assert chain.chain_id is not None
+
+
+# ── a member blocked during its run (HAIFA-REFINEMENT-T34) ───────────────────
+
+BLOCKER = "M01-TODO-T01"
+
+
+class BlockingRunner(FakeRunner):
+    """`blocked` tasks end blocked: the blocker is filed in base, the row fails as blocked."""
+
+    def __init__(self, repo: Path, *, blocked: tuple[str, ...], **kwargs: object) -> None:
+        super().__init__(repo, **kwargs)  # type: ignore[arg-type]
+        self.repo = repo
+        self.blocked = blocked
+
+    def wait_any(self) -> TaskRunResult:
+        task_id = next((t for t in self.order if t in self.rows), next(iter(self.rows)))
+        if task_id not in self.blocked:
+            return super().wait_any()
+        if task_id in self.order:
+            self.order.remove(task_id)
+        row = self.rows.pop(task_id)
+        write(
+            self.repo,
+            f"{CORE}/TODO/{BLOCKER}.md",
+            f"---\nid: {BLOCKER}\ntitle: Blocker\nstatus: todo\nwrites: [src/x/]\n---\n\n"
+            f"Blocker.\n\n{follow_up_marker(task_id)}\n",
+        )
+        commit_all(self.repo, "follow-up")
+        store = self._store()
+        try:
+            store.finish(row.run_id, FAILED, "abc", blocked_reason(task_id, [BLOCKER]))
+            final = store.get(row.run_id)
+        finally:
+            store.close()
+        assert final is not None
+        self.events.append(("end", task_id))
+        return TaskRunResult(run=final, workflow_run=None, warnings=(), trace_db=self.db)
+
+
+def setup_blocking(repo: Path, todo_extra: str = "auto_continue: true\n") -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    write(repo, f"{CORE}/TODO/index.md", f"---\nid: M01-TODO\ntitle: TODO\n{todo_extra}---\n")
+    commit_all(repo, "todo step")
+
+
+def test_blocked_member_refills_its_slot_with_its_blocker(repo: Path) -> None:
+    setup_blocking(repo)
+    runner = BlockingRunner(repo, blocked=(T02,), order=[T02])
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    # T02 ends blocked first: its blocker goes before T03 of the same step
+    assert started(runner) == [T01, T02, BLOCKER, T03]
+    assert chain.stop == STOP_EXHAUSTED
+    assert (T02, "blocked") in [(s.task_id, s.reason) for s in chain.waiting]
+
+
+def test_blocked_member_without_startable_blocker_takes_the_next(repo: Path) -> None:
+    setup_blocking(repo, todo_extra="")  # the blocker has no auto_continue: never started
+    runner = BlockingRunner(repo, blocked=(T02,), order=[T02])
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    assert started(runner) == [T01, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+
+
+def test_blocked_member_without_auto_continue_stops(repo: Path) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/")], step_extra="")
+    write(repo, f"{CORE}/TODO/index.md", "---\nid: M01-TODO\ntitle: TODO\n---\n")
+    commit_all(repo, "todo step")
+    runner = BlockingRunner(repo, blocked=(T01,))
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    assert started(runner) == [T01]
+    assert chain.stop == STOP_FAILED

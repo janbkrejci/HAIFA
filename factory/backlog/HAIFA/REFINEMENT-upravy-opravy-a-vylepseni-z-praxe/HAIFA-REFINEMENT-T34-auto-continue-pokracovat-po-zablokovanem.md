@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T34
 title: "Auto continue: pokračovat po zablokovaném tasku (přednostně blokátorem) a jen v rámci projektu"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S03-T16, HAIFA-S02-T06, HAIFA-TODO-T03]
@@ -35,3 +35,4 @@ Ověřte, že řetěz auto-continue nikdy nespustí task z jiného projektu (ko�
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/48 · náklady $2.11
