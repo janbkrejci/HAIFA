@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T27
 title: "Factory – úpravy stránky Factory (Vybavení továrny, chip konfigurace, nálezy)"
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-REFINEMENT-T24, HAIFA-REFINEMENT-T03, HAIFA-REFINEMENT-T01, HAIFA-S05-T14, HAIFA-S05-T16]
@@ -46,3 +46,4 @@ Dnes se warning o necommitnuté konfiguraci zobrazuje zvlášť pro každý soub
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/39 · náklady $8.00

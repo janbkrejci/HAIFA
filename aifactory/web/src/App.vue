@@ -5,6 +5,8 @@ import { BookOpen, Trash2 } from 'lucide-vue-next'
 import { fetchHealth, fetchRepos, type Health, type RepoItem } from './lib/api'
 import { useCodeState } from './lib/code'
 import { useBacklogStatus } from './lib/backlogStatus'
+import { useConfigStatus } from './lib/configStatus'
+import { openConfigCommit } from './lib/factory'
 import { useLimits } from './lib/limits'
 import { useRemoveRepo } from './lib/repos'
 import {
@@ -115,6 +117,9 @@ const backlogStatus = useBacklogStatus()
 /** The red chip of the uncommitted backlog sits in the topbar of a repo page (RepoScreen refreshes it). */
 const showBacklogChip = computed(() => page.value === 'repo' && repoState.value === 'ok')
 const commitBacklog = () => void backlogStatus.commit()
+/** The red chip of the uncommitted config opens its reviewed commit on the Factory screen. */
+const configStatus = useConfigStatus()
+const commitConfig = () => openConfigCommit(repoId.value ?? '')
 
 onMounted(async () => {
   window.addEventListener('harness-settings-open', openHarnesses)
@@ -159,6 +164,17 @@ onBeforeUnmount(() => {
           :commit-error="backlogStatus.commitError.value"
           :pr="backlogStatus.pendingPr.value"
           @commit="commitBacklog"
+        />
+        <UncommittedBanner
+          v-if="showBacklogChip"
+          kind="config"
+          title="Konfigurace"
+          chip-text="Necommitnutá konfigurace"
+          commit-label="Commitnout konfiguraci"
+          chip
+          :panel="false"
+          :status="configStatus.status.value"
+          @commit="commitConfig"
         />
         <UpdateChip />
         <OverviewReadiness chip />

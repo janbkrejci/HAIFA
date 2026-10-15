@@ -71,7 +71,7 @@ onMounted(load)
     </div>
     <p class="intro">
       Sdílené hodnoty se ukládají do pracovního stromu a běhy je použijí až po commitu do
-      <code>{{ settings?.shared?.base ?? 'base' }}</code> (Commitnout konfiguraci nahoře). Lokální hodnoty zůstávají jen na tomto stroji.
+      <code>{{ settings?.shared?.base ?? 'base' }}</code> (červený čip „Necommitnutá konfigurace“ v horní liště). Lokální hodnoty zůstávají jen na tomto stroji.
     </p>
     <p v-if="loadError" class="error-bar" data-test="error">{{ loadError }}</p>
     <SettingsForm

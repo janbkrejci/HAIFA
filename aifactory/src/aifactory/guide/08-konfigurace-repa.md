@@ -24,7 +24,7 @@ factory config status
 factory config commit
 ```
 
-`factory config commit` commitne sdílenou konfiguraci do base a odešle ji (nejdřív push, pak posun base). Na chráněnou base použij `factory config commit --pr`, nebo nastav repu `base_changes: pr` (sekce Chráněná base). V dashboardu je na to pruh **Commitnout konfiguraci** a záložka Factory. `factory config show` ukáže konfiguraci, kterou by použil běh; `factory config pull` posune lokální base na remote.
+`factory config commit` commitne sdílenou konfiguraci do base a odešle ji (nejdřív push, pak posun base). Na chráněnou base použij `factory config commit --pr`, nebo nastav repu `base_changes: pr` (sekce Chráněná base). V dashboardu je na to červený čip **Necommitnutá konfigurace** v horní liště, který otevře náhled commitu na záložce Factory. `factory config show` ukáže konfiguraci, kterou by použil běh; `factory config pull` posune lokální base na remote.
 
 ## Chráněná base
 
@@ -90,16 +90,15 @@ Lokální, necommitované nastavení tohoto počítače:
 
 ## Nastavení repozitáře
 
-Sekce **Nastavení repozitáře** je na záložce **Factory** (adresa `#/r/<repo>/factory/settings`), když je factory v repu nainstalovaná. Formulář **Sdílené nastavení repozitáře** upravuje `config.yaml`: pracovní adresář agentů, kořen dokumentů, adresář worktree, base větev, git provider, merge strategii, souběžné běhy auto-continue a chráněné soubory. **Lokální necommitované nastavení** upravuje cestu k trace DB v `local.yaml`. **Uložit** zapisuje do pracovního stromu a kontrolu factory zopakuje; sdílené nastavení pak commitni tlačítkem **Commitnout konfiguraci** na téže záložce. Ostatní klíče (`azure`, `levels`, `test_timeout`, `test_slots`, `generated`, `remote`) uprav v souboru.
+Sekce **Nastavení repozitáře** je na záložce **Factory** (adresa `#/r/<repo>/factory/settings`), když je factory v repu nainstalovaná. Formulář **Sdílené nastavení repozitáře** upravuje `config.yaml`: pracovní adresář agentů, kořen dokumentů, adresář worktree, base větev, git provider, merge strategii, souběžné běhy auto-continue a chráněné soubory. **Lokální necommitované nastavení** upravuje cestu k trace DB v `local.yaml`. **Uložit** zapisuje do pracovního stromu a kontrolu factory zopakuje; sdílené nastavení pak commitni čipem **Necommitnutá konfigurace** v horní liště. Ostatní klíče (`azure`, `levels`, `test_timeout`, `test_slots`, `generated`, `remote`) uprav v souboru.
 
 ## Záložka Factory
 
 - **Stav repa:** verdikt kontroly, verze, base a její náskok nebo zpoždění proti remote.
-- **Akce:** **Nainstalovat factory** (formulář: base, git hosting, kořen dokumentů), **Commitnout konfiguraci**, **Stáhnout konfiguraci z base**. Každá akce ukáže náhled plánu a zapíše ho do base, nebo jako PR (**Otevřít jako PR**, když base nepřijme přímý push).
-- **Nálezy** ve skupinách **Repozitář: opravit a commitnout** a **Tento počítač: potřebné pro toto repo** (jen skupiny s nálezy). Nálezy knihovny a nálezy počítače, které ukazuje i stránka **Tento počítač**, jsou jen tam; Factory na ně odkáže řádkem **Další nálezy tohoto počítače a knihovny**. Dashboard ukazuje jen nálezy, se kterými jde něco udělat. Vybrané nálezy repa vyřeší agent: **Vyřešit vybrané nálezy** založí a spustí task „Opravit vybrané nálezy Factory“.
-- **Definice agentů:** roster s harnessem, modelem a přemýšlením každého agenta a přepisy na krocích workflow.
+- **Akce:** **Nainstalovat factory** (formulář: base, git hosting, kořen dokumentů) a **Stáhnout konfiguraci z base**. Commit konfigurace otevírá červený čip **Necommitnutá konfigurace** v horní liště. Každá akce ukáže náhled plánu a zapíše ho do base, nebo jako PR (**Otevřít jako PR**, když base nepřijme přímý push).
+- **Nálezy** ve skupinách **Repozitář: opravit a commitnout** a **Tento počítač: potřebné pro toto repo** (jen skupiny s nálezy). Nálezy knihovny a nálezy počítače, které ukazuje i stránka **Tento počítač**, jsou jen tam; Factory na ně odkáže řádkem **Další nálezy tohoto počítače a knihovny**. Dashboard ukazuje jen nálezy, se kterými jde něco udělat. Vybrané nálezy repa vyřeší agent: **Vyřešit vybrané nálezy** založí a spustí task „Opravit vybrané nálezy Factory“; jeho panel se otevře hned pod tlačítkem, u nálezů. Necommitnuté soubory konfigurace jsou jeden souhrnný nález `config_uncommitted` se seznamem souborů.
 - **Nastavení repozitáře:** viz předchozí oddíl.
-- **Položky repa:** agenti, workflow, skilly a rozšíření pi, každý jako vlastní kopie, nebo z knihovny; vlastní kopii můžeš **Přesunout do knihovny**.
+- **Vybavení továrny:** úvodní věta uvádí knihovnu, ze které se položky bez vlastní kopie dědí, názvem a zkráceným commitem. **Agenti** jsou v tabulce každý jednou, s harnessem, modelem a přemýšlením a štítkem **zděděno** (z knihovny a výchozích hodnot projektu), nebo **přepsáno** (popisek ukáže zděděnou hodnotu). **Upravit** zapíše přepis do `.factory/agents.yaml`, **Vrátit na zděděné** přepis odstraní; obojí nejdřív ukáže náhled změny pod agentem a uloží se do pracovního stromu, běhy ji použijí po commitu konfigurace. Pod agenty jsou přepisy na krocích workflow. **Workflow**, **Skilly** a **Rozšíření pi** jsou karty s původem vlastní kopie, nebo z knihovny. Vlastní kopii můžeš **Přesunout do knihovny**.
 
 ## Instalace a odebrání
 

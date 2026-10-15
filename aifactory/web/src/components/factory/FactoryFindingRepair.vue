@@ -106,6 +106,9 @@ onMounted(() => { void load() })
 <template>
   <section class="repair" data-test="factory-repair">
     <h2>Vyřešit vybrané nálezy ({{ findings.length }})</h2>
+    <ul class="targets" data-test="repair-findings">
+      <li v-for="(f, i) in findings" :key="`${f.code}-${i}`"><code>{{ f.code }}</code> {{ f.message }}</li>
+    </ul>
     <p>Vytvoř opravný úkol, zvol workflow a povolené cesty, commitni backlog a spusť běh.</p>
     <template v-if="!task">
       <p v-if="loading">Načítám backlog…</p>
@@ -125,7 +128,7 @@ onMounted(() => { void load() })
       <p>Opravný úkol: <a :href="taskHref(task.id)">{{ task.id }}</a></p>
       <p v-if="!task.workflow || !task.writes.length">Před spuštěním nastav v úkolu workflow a povolené cesty.</p>
       <p>Commit backlogu zahrne všechny jeho necommitnuté změny.</p>
-      <p v-if="check?.config && !check.config.clean">Nové nebo upravené workflow nejprve zveřejni na <a :href="here('factory') + '/config_commit'">stránce Factory</a>.</p>
+      <p v-if="check?.config && !check.config.clean">Nové nebo upravené workflow nejprve commitni čipem „Necommitnutá konfigurace“ v horní liště.</p>
       <RunDialog :check="check" :start-disabled="!check?.in_base || !task.workflow || !task.writes.length"
         :loading="loading" :busy="busy" :error="error" :result="result" :action="action" :waiting="waiting"
         @start="start" @commit="commit" @cancel="emit('close')" />
@@ -135,7 +138,9 @@ onMounted(() => { void load() })
 </template>
 
 <style scoped>
-.repair { margin-top: 22px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
+.targets { margin: 0 0 10px; padding-left: 20px; color: var(--dim); font-size: 14px; }
+.targets code { color: var(--text); }
+.repair { margin-top: 12px; padding: 16px; border: 1px solid var(--border); border-radius: 10px; }
 h2 { margin-top: 0; font-size: 17px; }
 button { color: var(--text); background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
 </style>

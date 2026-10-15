@@ -32,7 +32,34 @@ function backlog(props: Partial<{ status: CommitStatus | null; statusError: stri
   })
 }
 
+function configChip(status: CommitStatus | null = DIRTY_STATUS) {
+  return mount(UncommittedBanner, {
+    props: {
+      kind: 'config', title: 'Konfigurace', chipText: 'Necommitnutá konfigurace',
+      commitLabel: 'Commitnout konfiguraci', chip: true, panel: false, status,
+    },
+  })
+}
+
 describe('UncommittedBanner', () => {
+  it('shows the config as a red chip that asks for the commit at once, without a panel', async () => {
+    const wrapper = configChip()
+    const chip = wrapper.get('[data-test="config-chip"]')
+    expect(chip.classes()).toContain('chip')
+    expect(wrapper.get('[data-test="config-banner"]').classes()).toContain('chip-wrap')
+    expect(chip.text()).toBe('Necommitnutá konfigurace · 2 soubory')
+    await chip.trigger('focusin')
+    expect(document.body.querySelector('[data-test="tooltip"]')?.textContent).toContain('.factory/config.yaml, .factory/workflows/new.yaml')
+    await chip.trigger('focusout')
+    expect(chip.attributes('aria-expanded')).toBeUndefined()
+    expect(wrapper.find('[data-test="config-panel"]').exists()).toBe(false)
+    await chip.trigger('click')
+    expect(wrapper.emitted('commit')).toHaveLength(1)
+    expect(wrapper.find('[data-test="config-panel"]').exists()).toBe(false)
+    expect(configChip(CLEAN_STATUS).find('[data-test="config-chip"]').exists()).toBe(false)
+    expect(configChip(null).find('[data-test="config-chip"]').exists()).toBe(false)
+  })
+
   it('links the pull request the changes wait in', () => {
     const wrapper = backlog({ pr: { url: 'https://github.com/o/r/pull/9', branch: 'factory-backlog/2' } })
     const link = wrapper.get('[data-test="backlog-pr"] a')

@@ -96,7 +96,7 @@ describe('App', () => {
     window.dispatchEvent(new Event('factory-applied')); await flushPromises()
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos')).toHaveLength(before + 2)
   })
-  it('opens a config commit preview from the banner and refreshes check/status/repos only after confirmation', async () => {
+  it('opens a config commit preview from the topbar chip and refreshes check/status/repos only after confirmation', async () => {
     let applied = false
     const fetchMock = stubApi({ handler: (url, init) => {
       if (url.endsWith('/config/status')) return envelope(applied ? CLEAN_STATUS : DIRTY_STATUS)
@@ -108,7 +108,10 @@ describe('App', () => {
     } })
     go('#/r/haifa/backlog')
     const wrapper = mount(App, { attachTo: document.body }); await flushPromises()
-    await wrapper.get('[data-test="config-commit"]').trigger('click')
+    expect(wrapper.get('.topbar [data-test="config-chip"]').text()).toContain('Necommitnutá konfigurace')
+    await wrapper.get('[data-test="config-chip"]').trigger('click')
+    expect(window.location.hash).toBe('#/r/haifa/factory/config_commit')
+    expect(wrapper.find('[data-test="config-panel"]').exists()).toBe(false)
     go(window.location.hash); await flushPromises()
     expect(wrapper.find('[data-test="factory-plan"]').exists()).toBe(true)
     const request = fetchMock.mock.calls.find(([url]) => url.endsWith('/factory/plan'))!
@@ -307,12 +310,13 @@ describe('App', () => {
     wrapper.unmount()
   })
 
-  it('shows the uncommitted config banner on every screen', async () => {
+  it('shows the red uncommitted config chip in the topbar on every screen', async () => {
     stubApi({ status: DIRTY_STATUS })
     const wrapper = mount(App)
     await flushPromises()
-    expect(wrapper.get('[data-test="config-banner"]').text()).toContain('main')
-    expect(wrapper.findAll('[data-test="config-change"]')).toHaveLength(2)
+    const chip = wrapper.get('.topbar [data-test="config-chip"]')
+    expect(chip.text()).toBe('Necommitnutá konfigurace · 2 soubory')
+    expect(chip.classes()).toContain('chip')
     go('#/r/haifa/runs')
     await flushPromises()
     expect(wrapper.find('main h1').text()).toBe('Běhy')

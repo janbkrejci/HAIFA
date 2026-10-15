@@ -1,5 +1,6 @@
 import { ref } from 'vue'
 import type { FactoryOptions, FactoryInitPlan, FactoryResult } from './api'
+import { repoHref } from './router'
 
 export function installOptions(plan: FactoryInitPlan): FactoryOptions {
   return { base: plan.base, provider: plan.provider,
@@ -44,4 +45,11 @@ const FILE_ACTION_TEXT: Record<string, string> = { create: 'nový', modify: 'zm�
 /** "nový / změna / smazání" of a planned file; an unknown action shows as it is. */
 export function fileActionText(action: string): string {
   return FILE_ACTION_TEXT[action] ?? action
+}
+
+/** Opens the reviewed commit of .factory/ on the Factory screen (the config chip in the topbar). */
+export function openConfigCommit(repoId: string): void {
+  const href = repoHref(repoId, 'factory', 'config_commit')
+  if (window.location.hash === href) window.dispatchEvent(new Event('factory-commit-preview'))
+  else window.location.hash = href
 }

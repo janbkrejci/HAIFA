@@ -41,10 +41,12 @@ def test_workflow_advice_browser(tmp_path: Path) -> None:
             expect(page.locator('[data-test="advice-result"]')).to_contain_text("nové workflow")
             assert not (repo / ".factory/workflows/research.yaml").exists()
             page.locator('[data-test="save"]').click()
-            # the uncommitted config banner offers the commit of the new workflow
-            expect(page.locator('[data-test="config-banner"]')).to_be_visible()
-            expect(page.locator('[data-test="config-commit"]')).to_be_visible()
+            # the red config chip in the topbar opens the commit of the new workflow
+            chip = page.locator('[data-test="config-chip"]')
+            expect(chip).to_be_visible()
             assert (repo / ".factory/workflows/research.yaml").is_file()
             page.screenshot(path=str(tmp_path / "workflow-advice.png"), full_page=True)
+            chip.click()
+            page.wait_for_url("**/factory/config_commit")
         finally:
             browser.close()

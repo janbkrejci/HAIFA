@@ -26,7 +26,12 @@ from aifactory.config.settings import (
     split_command,
 )
 from aifactory.config.source import CommitSource, WorktreeSource, repo_root, resolve_commit
-from aifactory.config.status import ConfigChange, change_warnings, config_changes
+from aifactory.config.status import (
+    ConfigChange,
+    change_summary,
+    change_warnings,
+    config_changes,
+)
 
 __all__ = [
     "AgentPrompts",
@@ -40,6 +45,7 @@ __all__ = [
     "ProjectSettings",
     "RunConfig",
     "WorktreeSource",
+    "change_summary",
     "change_warnings",
     "check_relative_dir",
     "check_timeout",

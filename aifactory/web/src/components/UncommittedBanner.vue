@@ -1,11 +1,13 @@
 <script setup lang="ts">
-// Changes kept in the working tree while runs read base (D4): the shared config in .factory/
-// (a banner at the top of the repo screen, its commit is reviewed on the Factory screen) and
-// the backlog (a red chip in the topbar, so it never moves the page while you click in it; the
-// chip opens a panel with the files and one button that commits it all at once).
+// Changes kept in the working tree while runs read base (D4), as red chips in the topbar (so they
+// never move the page while you click in it): the backlog chip opens a panel with the files and
+// one button that commits it all at once; the config chip (`panel` off) lists the files in its
+// tooltip and opens the reviewed commit of .factory/ on the Factory screen. Without `chip` it
+// is a banner in the page.
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { TriangleAlert } from 'lucide-vue-next'
 import Spinner from '@/components/ui/Spinner.vue'
+import Tooltip from '@/components/ui/Tooltip.vue'
 import type { CommitStatus } from '@/lib/commitStatus'
 import { plural, shortSha } from '@/lib/format'
 
@@ -19,6 +21,10 @@ const props = withDefaults(
     commitLabel: string
     /** A chip (in the topbar) opening a panel with the files, instead of a banner in the page. */
     chip?: boolean
+    /** The chip's text without the file count (default: "Necommitnutý <title>"). */
+    chipText?: string
+    /** The chip opens its panel; off, a click on the chip emits `commit` at once. */
+    panel?: boolean
     committing?: boolean
     /** The last commit failed. */
     commitError?: string | null
@@ -27,7 +33,7 @@ const props = withDefaults(
     /** The changes wait in this pull request (`base_changes: pr`). */
     pr?: { url: string; branch: string } | null
   }>(),
-  { chip: false, committing: false, commitError: null, statusError: null, pr: null },
+  { chip: false, chipText: undefined, panel: true, committing: false, commitError: null, statusError: null, pr: null },
 )
 const emit = defineEmits<{ commit: [] }>()
 
@@ -37,6 +43,13 @@ const files = computed(() => {
   const n = dirty.value?.changes.length ?? 0
   return `${n} ${plural(n, 'soubor', 'soubory', 'souborů')}`
 })
+
+const label = computed(() => props.chipText ?? `Necommitnutý ${props.title.toLocaleLowerCase('cs')}`)
+const paths = computed(() => dirty.value?.changes.map((c) => c.path).join(', ') ?? '')
+function onChip() {
+  if (props.panel) open.value = !open.value
+  else emit('commit')
+}
 
 /** The chip's panel is open. */
 const open = ref(false)
@@ -56,7 +69,7 @@ watch(open, (on) => {
 })
 // a failed commit shows its reason at once
 watch(() => props.commitError, (error) => {
-  if (error && props.chip) open.value = true
+  if (error && props.chip && props.panel) open.value = true
 })
 watch(dirty, (value) => {
   if (!value) open.value = false
@@ -76,18 +89,20 @@ onBeforeUnmount(() => {
     role="status"
     :data-test="`${kind}-banner`"
   >
-    <button
-      type="button"
-      class="chip"
-      :aria-expanded="open"
-      :data-test="`${kind}-chip`"
-      @click="open = !open"
-    >
-      <Spinner v-if="committing" />
-      <TriangleAlert v-else :size="14" aria-hidden="true" />
-      Necommitnutý {{ title.toLocaleLowerCase('cs') }} · {{ files }}
-    </button>
-    <div v-show="open" class="panel" :data-test="`${kind}-panel`">
+    <Tooltip :text="panel ? '' : paths">
+      <button
+        type="button"
+        class="chip"
+        :aria-expanded="panel ? open : undefined"
+        :data-test="`${kind}-chip`"
+        @click="onChip"
+      >
+        <Spinner v-if="committing" />
+        <TriangleAlert v-else :size="14" aria-hidden="true" />
+        {{ label }} · {{ files }}
+      </button>
+    </Tooltip>
+    <div v-if="panel" v-show="open" class="panel" :data-test="`${kind}-panel`">
       <p>
         <slot name="title">{{ title }}</slot> má necommitnuté změny. Běhy používají
         <code>{{ dirty.base }}</code><template v-if="sha"> (<code>{{ sha }}</code>)</template>, dokud změny

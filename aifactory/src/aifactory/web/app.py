@@ -103,11 +103,14 @@ digest does not depend on the target, so a rejected direct push can go as a PR w
 same digest. ``POST /api/config/pull`` is ``factory config pull``. Apply and pull run one
 at a time per repository (HTTP 409 ``busy``); apply takes no paths or file contents, any
 other body key is ``usage_error``. ``GET /api/factory/items`` lists the agents, workflows,
-skills and extensions with their origin (``repo`` or ``library``). ``GET
-/api/factory/roster`` returns the effective agents with harness, model
-and thinking, ``presets``, ``thinking_levels`` and the step overrides of the workflows
+skills and extensions with their origin (``repo`` or ``library``), the library commit and
+``library_name``. ``GET /api/factory/roster`` returns the effective agents with harness,
+model and thinking, which of them ``agents.yaml`` overrides (``overridden``) and the
+values without the overrides (``inherited``), ``presets``, ``thinking_levels`` and the
+step overrides of the workflows
 (``workflow_overrides``); ``POST /api/factory/roster`` (``{preset?, agent?, harness?,
-model?, thinking?, dry_run}``) is ``factory config roster set`` on the working tree and
+model?, thinking?, reset?, dry_run}``; ``reset`` lists bindings of ``agent`` returned to
+the inherited value) is ``factory config roster set`` on the working tree and
 returns ``{agents, before, diff, changed, dry_run, comments_preserved}``, an invalid change
 is HTTP 422 ``invalid_config``. ``move`` takes the global library write lock.
 

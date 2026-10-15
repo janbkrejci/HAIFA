@@ -199,3 +199,59 @@ def test_roster_without_agents_yaml_is_created(tmp_path: Path) -> None:
     raw = yaml.safe_load((repo / ".factory/agents.yaml").read_text())
     assert raw["defaults"]["harness"] == "codex"
     assert all(a["harness"] == "codex" for a in roster(repo)["agents"])
+
+
+def test_reset_returns_an_inherited_agent_to_the_library(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    library = {a["name"]: a for a in roster(repo)["agents"]}["reviewer"]
+    roster(repo, change=True, agent="reviewer", model="opus", thinking="high")
+    path = repo / ".factory/agents.yaml"
+    written = path.read_bytes()
+    preview = roster(repo, change=True, agent="reviewer", reset=("model",), dry_run=True)
+    assert preview["changed"] and "-    model: opus" in preview["diff"].replace('"', "")
+    assert path.read_bytes() == written
+    roster(repo, change=True, agent="reviewer", reset=("model",))
+    raw = yaml.safe_load(path.read_text())
+    assert raw["agents"][-1] == {"name": "reviewer", "thinking": "high"}
+    result = roster(repo, change=True, agent="reviewer", reset=("harness", "model", "thinking"))
+    assert result["changed"]
+    raw = yaml.safe_load(path.read_text())
+    assert all(a.get("name") != "reviewer" for a in raw["agents"])
+    reviewer = {a["name"]: a for a in roster(repo)["agents"]}["reviewer"]
+    assert (reviewer["harness"], reviewer["model"]) == (library["harness"], library["model"])
+    again = roster(repo, change=True, agent="reviewer", reset=("model",))
+    assert again["changed"] is False and again["diff"] == ""
+
+
+@pytest.mark.parametrize(
+    "options",
+    [
+        {"reset": ("model",)},
+        {"agent": "reviewer", "reset": ("model",), "model": "opus"},
+        {"agent": "reviewer", "reset": ("tools",)},
+    ],
+)
+def test_invalid_reset_is_a_config_error(tmp_path: Path, options: dict[str, Any]) -> None:
+    repo = make_repo(tmp_path / "repo")
+    with pytest.raises(ConfigError):
+        roster(repo, change=True, **options)
+
+
+def test_inherited_bindings_list_overrides_and_library_values(tmp_path: Path) -> None:
+    from aifactory.config.roster import inherited_bindings
+
+    repo = make_repo(tmp_path / "repo")
+    library = {a["name"]: a for a in roster(repo)["agents"]}["reviewer"]
+    roster(repo, change=True, agent="reviewer", model="gpt-6.1-sol", harness="codex")
+    text = (repo / ".factory/agents.yaml").read_text()
+    (repo / ".factory/agents.yaml").write_text(
+        text.replace("harness: codex", "coding_agent: codex")
+    )
+    bindings = inherited_bindings(repo)
+    assert sorted(bindings["reviewer"]["overridden"]) == ["harness", "model"]
+    assert bindings["reviewer"]["inherited"] == {
+        "harness": library["harness"],
+        "model": library["model"],
+        "thinking": library["thinking"],
+    }
+    assert bindings["planner"]["inherited"] is None

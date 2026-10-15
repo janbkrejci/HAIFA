@@ -368,8 +368,16 @@ def test_items_and_move_to_the_library(api: Api, tmp_path: Path) -> None:
     assert origins[("agent", "planner")] == "library"
     assert origins[("workflow", "simple-sdlc")] == "library"
     assert items["library"] == git(store.library_root(), "rev-parse", "HEAD")
+    assert items["library_name"] == "team"
     roster = api.get("a", "factory/roster")["data"]["agents"]
     assert {r["name"]: r["origin"] for r in roster}["builder"] == "repo"
+    by_name = {r["name"]: r for r in roster}
+    assert by_name["builder"]["inherited"] is None
+    assert by_name["builder"]["overridden"] == ["harness"]
+    assert by_name["planner"]["overridden"] == []
+    assert by_name["planner"]["inherited"] == {
+        k: by_name["planner"][k] for k in ("harness", "model", "thinking")
+    }
 
     overrides = api.client.get("/api/library/overrides").json()["data"]
     assert overrides["library"] == items["library"] and overrides["errors"] == []

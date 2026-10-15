@@ -21,7 +21,7 @@ from aifactory.config.errors import ConfigError
 from aifactory.config.loader import write_prompts
 from aifactory.config.settings import load_local
 from aifactory.config.source import LOCAL_FILE, git_try
-from aifactory.config.status import change_warnings
+from aifactory.config.status import change_summary
 from aifactory.harness import unenforced_disallowed
 from aifactory.harness.override import THINKING_LEVELS
 from aifactory.harness.repo_skills import MIRROR, SOURCE, commit_snapshot, diff_snapshots
@@ -190,16 +190,15 @@ def config(ctx: CheckContext) -> Iterator[Finding]:
                 f"{issue.path}: {issue.message}",
                 "fix .factory/ in the working tree before committing it",
             )
-    if ctx.commit is not None:
-        for warning in change_warnings(list(changes), ctx.base, ctx.commit):
-            yield Finding(
-                "config_uncommitted",
-                "repo",
-                "warning",
-                warning,
-                f"commit the change to {ctx.base}, or discard it",
-                "config_commit",
-            )
+    if ctx.commit is not None and changes:
+        yield Finding(
+            "config_uncommitted",
+            "repo",
+            "warning",
+            change_summary(list(changes), ctx.base, ctx.commit),
+            f"commit the change to {ctx.base}, or discard it",
+            "config_commit",
+        )
     cfg = ctx.base_config
     if cfg is not None and cfg.settings.base != ctx.base:
         yield Finding(

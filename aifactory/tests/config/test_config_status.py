@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from config_repo import git, make_repo, write
 
-from aifactory.config import ConfigChange, change_warnings, config_changes
+from aifactory.config import ConfigChange, change_summary, change_warnings, config_changes
 from aifactory.config.status import (
     CONFIG_PATHSPECS,
     ChangeStatus,
@@ -130,3 +130,20 @@ def test_wildcard_reports_wholly_deleted_skill_directory(tmp_path: Path) -> None
         == working_tree_changes(repo, sha, (".factory", ".claude/skills", ".agents/skills"))
         == [ConfigChange(".agents/skills/deep/skill.md", "deleted")]
     )
+
+
+def test_summary_lists_every_change_once() -> None:
+    sha = "1234567890abcdef"
+    one = change_summary([ConfigChange(".factory/agents.yaml", "modified")], "main", sha)
+    assert one.startswith("1 file of .factory/")
+    assert "main (1234567)" in one and ".factory/agents.yaml (modified)" in one
+    two = change_summary(
+        [
+            ConfigChange(".factory/agents.yaml", "modified"),
+            ConfigChange(".factory/workflows/x.yaml", "untracked"),
+        ],
+        "main",
+        sha,
+    )
+    assert two.startswith("2 files")
+    assert ".factory/agents.yaml (modified), .factory/workflows/x.yaml (untracked)" in two

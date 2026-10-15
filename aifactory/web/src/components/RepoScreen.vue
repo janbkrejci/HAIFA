@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// Everything of one repo page: the config banner, the backlog status (its chip is in the topbar), the live updates and the screen.
+// Everything of one repo page: the config and backlog statuses (their chips are in the topbar), the live updates and the screen.
 // App.vue keys it by the repo id, so a switch of the repo drops all of it (view data, run
 // cursors, subscriptions, banners) and the new repo starts clean.
 import { computed, onBeforeUnmount, onMounted, watch, type Component } from 'vue'
@@ -8,12 +8,11 @@ import { useConfigStatus } from '@/lib/configStatus'
 import { resetBacklogStatus, useBacklogStatus } from '@/lib/backlogStatus'
 import { useLive } from '@/lib/live'
 import { refreshNames, resetNames } from '@/lib/names'
-import { SCREENS, currentRepoId, here, repoHref, useRoute, type Screen } from '@/lib/router'
+import { SCREENS, currentRepoId, here, useRoute, type Screen } from '@/lib/router'
 import BacklogView from '@/views/BacklogView.vue'
 import RunsView from '@/views/RunsView.vue'
 import ReviewView from '@/views/ReviewView.vue'
 import FactoryView from '@/views/FactoryView.vue'
-import UncommittedBanner from './UncommittedBanner.vue'
 
 const VIEWS: Record<Screen, Component> = {
   backlog: BacklogView,
@@ -36,11 +35,6 @@ resetNames()
 const route = useRoute()
 const view = computed(() => VIEWS[route.value])
 
-function commitConfig() {
-  const href = repoHref(currentRepoId() ?? '', 'factory', 'config_commit')
-  if (window.location.hash === href) window.dispatchEvent(new Event('factory-commit-preview'))
-  else window.location.hash = href
-}
 const configStatus = useConfigStatus(currentRepoId() ?? '')
 const refreshConfig = () => void configStatus.refresh()
 watch(route, refreshConfig)
@@ -80,16 +74,6 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <UncommittedBanner
-    kind="config"
-    title="Konfigurace v .factory/"
-    commit-label="Commitnout konfiguraci"
-    :status="configStatus.status.value"
-    :status-error="configStatus.error.value"
-    @commit="commitConfig"
-  >
-    <template #title>Konfigurace v <code>.factory/</code></template>
-  </UncommittedBanner>
   <main>
     <nav class="screen-tabs" aria-label="Obrazovky repozitáře">
       <a

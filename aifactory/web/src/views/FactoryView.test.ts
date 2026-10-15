@@ -114,6 +114,7 @@ describe('FactoryView', () => {
     expect(wrapper.find('[data-test="factory-open-init"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="factory-open-update"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="roster-editor"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="repo-items"]').exists()).toBe(false)
   })
 
   it('names the pull of base config apart from the Review base sync', async () => {
@@ -121,7 +122,25 @@ describe('FactoryView', () => {
     const wrapper = mount(FactoryView)
     await flushPromises()
     expect(wrapper.get('[data-test="factory-open-pull"]').text()).toBe('Stáhnout konfiguraci z base')
-    expect(wrapper.find('[data-test="roster-editor"]').exists()).toBe(true)
+    // the roster is the agents of "Vybavení továrny", shown once
+    expect(wrapper.findAll('[data-test="roster-editor"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="repo-items"] h2').text()).toBe('Vybavení továrny')
+    expect(wrapper.get('[data-test="repo-items"]').find('[data-test="roster-editor"]').exists()).toBe(true)
+  })
+
+  it('has no button or link to commit the configuration; the topbar chip opens it', async () => {
+    lastFactoryResult.value = { repoId: 'haifa', result: { commit: 'abc' }, action: 'init' }
+    stub(ok(report()))
+    const wrapper = mount(FactoryView)
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Commitnout konfiguraci')
+    expect(wrapper.find('[data-test="factory-open-config_commit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="next-commit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="roster-commit"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="next-commit-hint"]').text()).toContain('Necommitnutá konfigurace')
+    window.dispatchEvent(new Event('factory-commit-preview')); await flushPromises()
+    expect(wrapper.find('[data-test="factory-operation"]').exists()).toBe(true)
+    lastFactoryResult.value = null
   })
 
   it('lists what next after an install here', async () => {
@@ -132,8 +151,7 @@ describe('FactoryView', () => {
     const next = wrapper.get('[data-test="factory-next-steps"]')
     expect(next.text()).toContain('Co dál')
     expect(next.get('[data-test="next-project"]').attributes('href')).toBe('#/r/haifa/backlog/new-container')
-    await next.get('[data-test="next-commit"]').trigger('click')
-    expect(wrapper.find('[data-test="factory-operation"]').exists()).toBe(true)
+    expect(next.get('[data-test="next-roster"]').text()).toBe('Vybavení továrny')
     lastFactoryResult.value = null
   })
 
@@ -270,6 +288,13 @@ describe('FactoryView', () => {
     expect(wrapper.get('[data-test="factory-selected-count"]').text()).toBe('Vybráno: 2')
     await wrapper.get('[data-test="factory-repair-open"]').trigger('click')
     await flushPromises()
+    // the repair panel is right under its button, above the findings it repairs
+    const repair = wrapper.get('[data-test="factory-repair"]').element
+    const button = wrapper.get('.repair-actions').element
+    const group = wrapper.get('[data-test="findings-repo"]').element
+    expect(button.compareDocumentPosition(repair) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(repair.compareDocumentPosition(group) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(wrapper.get('[data-test="repair-findings"]').text()).toContain('second occurrence')
     const body = wrapper.get('[data-test="body"]')
     expect((body.element as HTMLTextAreaElement).value).toContain('second occurrence')
     expect((body.element as HTMLTextAreaElement).value).toContain('gh_missing (machine, warning)')
@@ -351,10 +376,10 @@ describe('FactoryView', () => {
 it('reopens a fresh preview when the same operation is selected again', async () => {
   const plan = { action: 'config_commit', base: 'main', base_sha: 'a6f3e1c', digest: 'd', files: [], blockers: [] }
   const fetchMock = stub(ok(report()), ok(plan), ok({ repos: [], totals: {} }), ok(plan), ok({ repos: [], totals: {} }))
-  const wrapper = mount(FactoryView)
+  mount(FactoryView)
   await flushPromises()
-  await wrapper.get('[data-test="factory-open-config_commit"]').trigger('click'); await flushPromises()
-  await wrapper.get('[data-test="factory-open-config_commit"]').trigger('click'); await flushPromises()
+  window.dispatchEvent(new Event('factory-commit-preview')); await flushPromises()
+  window.dispatchEvent(new Event('factory-commit-preview')); await flushPromises()
   expect(fetchMock.mock.calls.filter(([url, init]) => url.endsWith('/factory/plan') && JSON.parse(String(init?.body)).action === 'config_commit')).toHaveLength(2)
   expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/factory/apply'))).toBe(false)
 })
