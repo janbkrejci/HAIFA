@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T38
 title: "Přehled: tlačítka ovládání jako ikony vpravo nahoře, aktivita dole, jednotné pozadí karet, cesta v tooltipu"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T30, HAIFA-REFINEMENT-T20, HAIFA-REFINEMENT-T37, HAIFA-REFINEMENT-T13]
@@ -38,3 +38,4 @@ writes: [aifactory/web/src/components/overview/, aifactory/web/src/views/Overvie
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/51 · náklady $2.53
