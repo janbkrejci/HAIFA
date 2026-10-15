@@ -2,10 +2,15 @@
 
 For each repository of the registry the overview returns ``running`` (runs in the ``running``
 state with their running phase, attempt, start and cost so far), ``review`` (open task PRs of
-``task_prs`` for tasks without an active run; ``source: trace`` says they come from the trace,
-not from the hosting), ``failed`` (tasks whose newest run ended ``failed`` or ``aborted`` and
-that are neither ``done`` nor ``cancelled`` in the backlog), ``config`` (whether the factory is
-installed, an invalid configuration in base and uncommitted shared configuration, D4),
+``task_prs`` for tasks without an active run that are neither ``done`` nor ``cancelled`` in the
+backlog; ``source: trace`` says they come from the trace, not from the hosting),
+``merged_outside`` (tasks without an active run whose newest PR is merged, that are neither
+``done`` nor ``cancelled`` in the backlog and whose ``## Běhy`` does not have the PR yet: a
+merge outside factory that ``factory backlog sync`` would mark done), ``sync_pr`` (the newest
+open sync PR ``{url, branch, tasks}`` or ``null``), ``failed`` (tasks whose newest run ended
+``failed`` or ``aborted`` and that are neither ``done`` nor ``cancelled`` in the backlog),
+``config`` (whether the factory is installed, an invalid configuration in base and uncommitted
+shared configuration, D4),
 ``last_activity`` and ``warnings``; ``totals`` sums them up. Every item of ``running`` has
 ``pause`` (``null``, ``pausing`` or ``paused``; ``null`` for a trace DB without the column).
 
@@ -27,15 +32,18 @@ It only reads. The trace DB is opened with a ``mode=ro`` sqlite connection (``qu
 never through ``TaskRunStore``, which creates tables and reaps dead runs: a running row whose
 process is gone is shown with ``status_label`` "proces skončil" and stays as it is. A missing
 trace DB is not created. Git is read only through the config readers, which run with
-``GIT_OPTIONAL_LOCKS=0``; there is no ``git fetch`` and no provider call. The config state is
-kept for ``CONFIG_TTL`` seconds and the task titles for ``TASKS_TTL`` seconds per repository.
-Repositories are computed concurrently with ``REPO_TIMEOUT`` seconds each; a slow or broken
-repository comes back with ``state`` ``timeout`` or ``error`` and a warning, the others as usual.
+``GIT_OPTIONAL_LOCKS=0``; there is no ``git fetch`` and no provider call. The PR states in
+``task_prs`` are kept fresh by the dashboard's background refresh (``pr_refresh.py``). The
+config state is kept for ``CONFIG_TTL`` seconds and the task titles for ``TASKS_TTL`` seconds
+per repository. Repositories are computed concurrently with ``REPO_TIMEOUT`` seconds each; a
+slow or broken repository comes back with ``state`` ``timeout`` or ``error`` and a warning, the
+others as usual.
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import os
 import sqlite3
 import sys
@@ -43,7 +51,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, TypeVar
@@ -51,6 +59,7 @@ from urllib.parse import quote
 
 from aifactory import database, oscompat
 from aifactory.backlog import Backlog, TaskEditError, iter_tasks, load_for_edit
+from aifactory.backlog.taskfile import has_entry
 from aifactory.config import ConfigError
 from aifactory.config.loader import load_config
 from aifactory.config.repo_state import repo_state
@@ -79,7 +88,7 @@ PROCESS_ENDED = "proces skončil"
 MAX_ISSUES = 20
 WORKERS = 8  # threads computing repositories
 
-TaskIndex = dict[str, tuple[str, str]]
+TaskIndex = dict[str, tuple[str, str, str]]  # task id -> (title, status, path)
 STARTABLE_STATES = frozenset({"ok", "uncommitted"})
 
 
@@ -195,6 +204,7 @@ class _Trace:
     phases: dict[str, JsonDict]
     costs: dict[str, tuple[float, int]]
     excluded: frozenset[str] = frozenset()
+    sync_prs: list[sqlite3.Row] = field(default_factory=list)
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -208,6 +218,7 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
     phases: dict[str, JsonDict] = {}
     costs: dict[str, tuple[float, int]] = {}
     excluded: frozenset[str] = frozenset()
+    sync_prs: list[sqlite3.Row] = []
     if _has_table(conn, "task_runs"):
         pause = "pause" if "pause" in _columns(conn, "task_runs") else "NULL AS pause"
         runs = conn.execute(
@@ -219,8 +230,15 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
             str(row[0]) for row in conn.execute("SELECT task_id FROM task_queue WHERE excluded")
         )
     if _has_table(conn, "task_prs"):
+        merged = "merged_at" if "merged_at" in _columns(conn, "task_prs") else "NULL AS merged_at"
         prs = conn.execute(
-            "SELECT branch, task_id, pr_id, url, state, created_at, updated_at FROM task_prs"
+            "SELECT rowid, branch, task_id, pr_id, url, state, created_at, updated_at, "
+            f"{merged} FROM task_prs"
+        ).fetchall()
+    if _has_table(conn, "sync_prs"):
+        sync_prs = conn.execute(
+            "SELECT branch, url, state, tasks, created_at FROM sync_prs "
+            "WHERE state = 'open' ORDER BY created_at DESC, rowid DESC"
         ).fetchall()
     running_ids = [r["run_id"] for r in runs if r["state"] == "running"]
     if running_ids and _has_table(conn, "phases"):
@@ -242,7 +260,7 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
             running_ids,
         ):
             costs[row["adw_id"]] = (float(row["total_cost"] or 0.0), int(row["total_tokens"] or 0))
-    return _Trace(runs, prs, phases, costs, excluded)
+    return _Trace(runs, prs, phases, costs, excluded, sync_prs)
 
 
 def _trace_view(db: Path) -> tuple[_Trace | None, list[str]]:
@@ -261,7 +279,67 @@ def _trace_view(db: Path) -> tuple[_Trace | None, list[str]]:
         conn.close()
 
 
-def _lists(trace: _Trace, tasks: TaskIndex, now: datetime) -> tuple[JsonDict, str | None]:
+def _closed(tasks: TaskIndex, task_id: str) -> bool:
+    hit = tasks.get(task_id)
+    return hit is not None and hit[1] in CLOSED_STATUSES
+
+
+def _merged_outside(
+    trace: _Trace, tasks: TaskIndex, active: set[str], root: Path
+) -> list[JsonDict]:
+    """Tasks whose newest PR is merged but which ``base`` does not have as done yet."""
+    newest: dict[str, sqlite3.Row] = {}
+    for pr in trace.prs:
+        seen = newest.get(pr["task_id"])
+        if seen is None or ((pr["created_at"] or ""), pr["rowid"]) > (
+            (seen["created_at"] or ""),
+            seen["rowid"],
+        ):
+            newest[pr["task_id"]] = pr
+    found: list[JsonDict] = []
+    for task_id, pr in newest.items():
+        hit = tasks.get(task_id)
+        if pr["state"] != "merged" or task_id in active or hit is None:
+            continue
+        title, status, path = hit
+        if status in CLOSED_STATUSES:
+            continue
+        try:
+            text = (root / path).read_text(encoding="utf-8")
+        except OSError:
+            continue
+        if pr["url"] and has_entry(text, pr["url"]):
+            continue  # reopened after the merge
+        found.append(
+            {
+                "task_id": task_id,
+                "task_title": title,
+                "pr_id": pr["pr_id"],
+                "url": pr["url"],
+                "branch": pr["branch"],
+                "merged_at": pr["merged_at"],
+            }
+        )
+    found.sort(key=lambda item: item["merged_at"] or "", reverse=True)
+    return found
+
+
+def _sync_pr(trace: _Trace) -> JsonDict | None:
+    """The newest open sync PR, or None."""
+    if not trace.sync_prs:
+        return None
+    row = trace.sync_prs[0]
+    try:
+        parsed = json.loads(row["tasks"] or "[]")
+    except (TypeError, ValueError):
+        parsed = []
+    ids = [str(t) for t in parsed] if isinstance(parsed, list) else []
+    return {"url": row["url"], "branch": row["branch"], "tasks": ids}
+
+
+def _lists(
+    trace: _Trace, tasks: TaskIndex, now: datetime, root: Path
+) -> tuple[JsonDict, str | None]:
     def title(task_id: str) -> str | None:
         hit = tasks.get(task_id)
         return hit[0] if hit else None
@@ -293,7 +371,7 @@ def _lists(trace: _Trace, tasks: TaskIndex, now: datetime) -> tuple[JsonDict, st
 
     open_prs: dict[str, sqlite3.Row] = {}
     for pr in trace.prs:
-        if pr["state"] != "open" or pr["task_id"] in active:
+        if pr["state"] != "open" or pr["task_id"] in active or _closed(tasks, pr["task_id"]):
             continue
         seen = open_prs.get(pr["task_id"])
         if seen is None or (pr["created_at"] or "") > (seen["created_at"] or ""):
@@ -323,8 +401,7 @@ def _lists(trace: _Trace, tasks: TaskIndex, now: datetime) -> tuple[JsonDict, st
         newest.add(row["task_id"])
         if row["state"] not in FAILED_STATES:
             continue
-        hit = tasks.get(row["task_id"])
-        if hit is not None and hit[1] in CLOSED_STATUSES:
+        if _closed(tasks, row["task_id"]):
             continue
         failed.append(
             {
@@ -345,7 +422,13 @@ def _lists(trace: _Trace, tasks: TaskIndex, now: datetime) -> tuple[JsonDict, st
         parsed = _time(value)
         if parsed is not None and (last is None or parsed > last[0]):
             last = (parsed, value)
-    lists = {"running": running, "review": review, "failed": failed}
+    lists = {
+        "running": running,
+        "review": review,
+        "failed": failed,
+        "merged_outside": _merged_outside(trace, tasks, active, root),
+        "sync_pr": _sync_pr(trace),
+    }
     return lists, (last[1] if last else None)
 
 
@@ -391,7 +474,8 @@ def _task_index(root: Path) -> tuple[_Tasks, list[str]]:
         backlog = load_for_edit(root)
     except (ConfigError, TaskEditError, OSError, ValueError) as exc:
         return _Tasks({}, None), [f"task titles are not available: {exc}"]
-    return _Tasks({t.id: (t.title, t.status) for t in iter_tasks(backlog)}, backlog), []
+    index = {t.id: (t.title, t.status, t.path) for t in iter_tasks(backlog)}
+    return _Tasks(index, backlog), []
 
 
 def _active_runs(trace: _Trace | None) -> list[sqlite3.Row]:
@@ -469,6 +553,8 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         "running": [],
         "review": [],
         "failed": [],
+        "merged_outside": [],
+        "sync_pr": None,
         "config": None,
         "last_activity": None,
         "warnings": warnings,
@@ -521,7 +607,7 @@ class Overview:
         item["tasks"] = summary
         item["factory"] = _factory(root, item["state"], ready, trace, active, self.control)
         if trace is not None:
-            lists, last = _lists(trace, tasks.index, datetime.now(UTC))
+            lists, last = _lists(trace, tasks.index, datetime.now(UTC), root)
             item.update(lists)
             item["has_trace"] = True
             item["last_activity"] = last
@@ -557,6 +643,7 @@ class Overview:
             "running": sum(len(r["running"]) for r in repos),
             "review": sum(len(r["review"]) for r in repos),
             "failed": sum(len(r["failed"]) for r in repos),
+            "merged_outside": sum(len(r["merged_outside"]) for r in repos),
             "process_ended": sum(
                 1 for r in repos for run in r["running"] if run["process"] == "ended"
             ),

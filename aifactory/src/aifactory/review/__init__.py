@@ -27,6 +27,8 @@
 * ``sync_backlog`` (``factory backlog sync``): tasks whose PR was merged outside
   factory get ``status: done`` in one PR from a ``factory-sync/<n>`` branch
   (never a commit on ``base``); the sync PR is a row in ``sync_prs``.
+* ``refresh_prs``: only the provider states of open task and sync PRs are
+  refreshed; the dashboard runs it in the background.
 
 A PR the provider reports as closed or merged is recorded so in ``task_prs``;
 approving or returning it fails with ``pr_not_open``.
@@ -53,7 +55,7 @@ from aifactory.review.flow import (
 )
 from aifactory.review.prbody import pr_body, pr_title
 from aifactory.review.publish import PublishResult, publish
-from aifactory.review.sync import SyncResult, sync_backlog
+from aifactory.review.sync import SyncResult, refresh_prs, sync_backlog
 
 __all__ = [
     "ApproveResult",
@@ -71,6 +73,7 @@ __all__ = [
     "pr_title",
     "publish",
     "publish_task",
+    "refresh_prs",
     "resolve_task",
     "return_task",
     "review_blocker",

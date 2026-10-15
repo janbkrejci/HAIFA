@@ -4,6 +4,7 @@ import type {
   OverviewData,
   OverviewFactory,
   OverviewFailed,
+  OverviewMergedOutside,
   OverviewRepo,
   OverviewReview,
   OverviewRunning,
@@ -63,6 +64,18 @@ export function failed(over: Partial<OverviewFailed> = {}): OverviewFailed {
     workflow: 'build-test-review',
     ended_at: '2026-10-06T08:00:00+00:00',
     error: 'tests failed',
+    ...over,
+  }
+}
+
+export function mergedOutside(over: Partial<OverviewMergedOutside> = {}): OverviewMergedOutside {
+  return {
+    task_id: 'M01-S01-T04',
+    task_title: 'Merged by hand',
+    pr_id: '37',
+    url: 'https://example.test/pr/37',
+    branch: 'factory/M01-S01-T04-1',
+    merged_at: '2026-10-06T09:00:00+00:00',
     ...over,
   }
 }

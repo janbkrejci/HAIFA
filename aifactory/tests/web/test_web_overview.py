@@ -29,7 +29,7 @@ from overview_fixture import (
 )
 from starlette.testclient import TestClient
 
-from aifactory.run.store import TaskRunStore
+from aifactory.run.store import SyncPrRow, TaskPrRow, TaskRunStore
 from aifactory.skill import envelope_problems
 from aifactory.web import create_multi_app, overview
 from aifactory.web.overview import CONFIG_TTL, PROCESS_ENDED, TASKS_TTL, Overview
@@ -165,6 +165,7 @@ def test_overview_of_repos_with_and_without_trace_and_a_missing_folder(
         "running": 4,
         "review": 2,
         "failed": 2,
+        "merged_outside": 0,
         "process_ended": 2,
         "with_warnings": 1,
     }
@@ -467,3 +468,121 @@ def test_missing_repo_has_no_tasks_nor_factory(tmp_path: Path) -> None:
     g = _get(_client(home, tmp_path))["repos"][0]
     assert g["state"] == "missing"
     assert (g["tasks"], g["factory"]) == (None, None)
+
+
+# ── PRs merged outside factory and closed tasks ──────────────────────────────
+
+
+def _save_pr(
+    root: Path, task_id: str, branch: str, state: str, day: int, merged_at: str | None = None
+) -> str:
+    """A PR row created on 2026-02-<day> (day 0: 2025-12-31, before the fixture's open PR)."""
+    created = f"2026-02-{day:02d}T10:00:00+00:00" if day else "2025-12-31T10:00:00+00:00"
+    url = f"https://example.test/pr/{branch}"
+    store = TaskRunStore(_db(root))
+    try:
+        store.save_pr(
+            TaskPrRow(
+                branch=branch,
+                task_id=task_id,
+                provider="local",
+                pr_id=branch,
+                url=url,
+                base="main",
+                base_sha="0" * 40,
+                title=task_id,
+                body="",
+                state=state,
+                created_at=created,
+                updated_at=created,
+                merged_at=merged_at,
+            )
+        )
+    finally:
+        store.close()
+    return url
+
+
+def test_review_leaves_out_done_and_cancelled_tasks(repo_a: Path, tmp_path: Path) -> None:
+    _save_pr(repo_a, T_DONE, "factory/done-1", "open", 1)
+    _save_pr(repo_a, T_CANC, "factory/canc-1", "open", 2)
+    a = _repo_item(repo_a, tmp_path)
+    assert [r["task_id"] for r in a["review"]] == [T_REV]
+    assert a["tasks"]["in review"] == 1
+
+
+def test_merged_outside_lists_tasks_not_done_in_base(repo_a: Path, tmp_path: Path) -> None:
+    url = _save_pr(repo_a, T_FAIL, "factory/fail-1", "merged", 1, "2026-02-01T12:00:00+00:00")
+    _save_pr(repo_a, T_DONE, "factory/done-1", "merged", 2, "2026-02-02T12:00:00+00:00")
+    _save_pr(repo_a, T_REV, "factory/rev-0", "merged", 0, "2025-12-31T12:00:00+00:00")
+    a = _repo_item(repo_a, tmp_path)
+    assert a["merged_outside"] == [
+        {
+            "task_id": T_FAIL,
+            "task_title": "Failing",
+            "pr_id": "factory/fail-1",
+            "url": url,
+            "branch": "factory/fail-1",
+            "merged_at": "2026-02-01T12:00:00+00:00",
+        }
+    ]
+    assert a["sync_pr"] is None
+
+
+def test_merged_outside_skips_a_newer_open_pr_and_a_reopened_task(
+    repo_a: Path, tmp_path: Path
+) -> None:
+    _save_pr(repo_a, T_FAIL, "factory/fail-1", "merged", 1)
+    _save_pr(repo_a, T_FAIL, "factory/fail-2", "open", 2)
+    url = _save_pr(repo_a, T_DEAD, "factory/dead-1", "merged", 3)
+    path = repo_a / "backlog/M01-core/S01-model/M01-S01-T06-orphan.md"
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\n## Běhy\n- 2026-02-03: PR {url} merged\n",
+        encoding="utf-8",
+    )
+    commit_all(repo_a, "reopened")
+    a = _repo_item(repo_a, tmp_path)
+    assert a["merged_outside"] == []
+
+
+def test_open_sync_pr_is_shown(repo_a: Path, tmp_path: Path) -> None:
+    _save_pr(repo_a, T_FAIL, "factory/fail-1", "merged", 1)
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.save_sync_pr(
+            SyncPrRow(
+                branch="factory-sync/1",
+                provider="local",
+                pr_id="factory-sync/1",
+                url="local:factory-sync/1",
+                base="main",
+                base_sha="0" * 40,
+                title="backlog sync",
+                body="",
+                state="open",
+                tasks=f'["{T_FAIL}"]',
+                created_at="2026-02-02T10:00:00+00:00",
+                updated_at="2026-02-02T10:00:00+00:00",
+            )
+        )
+    finally:
+        store.close()
+    a = _repo_item(repo_a, tmp_path)
+    assert [m["task_id"] for m in a["merged_outside"]] == [T_FAIL]
+    assert a["sync_pr"] == {
+        "url": "local:factory-sync/1",
+        "branch": "factory-sync/1",
+        "tasks": [T_FAIL],
+    }
+
+
+def test_new_keys_in_stub_and_totals(repo_a: Path, tmp_path: Path) -> None:
+    _save_pr(repo_a, T_FAIL, "factory/fail-1", "merged", 1)
+    gone = make_installed_repo(tmp_path / "gone")
+    home = tmp_path / "home"
+    register(home, repo_a, gone)
+    rmtree(gone)
+    data = _get(_client(home, tmp_path))
+    g = _by_id(data)["gone"]
+    assert (g["merged_outside"], g["sync_pr"]) == ([], None)
+    assert data["totals"]["merged_outside"] == 1

@@ -10,6 +10,10 @@ open sync PR is reused), and one PR is opened.
 The commit is made only in a temporary worktree on the sync branch, never on
 ``base``; the sync PR is never merged by factory. With nothing to mark done no
 branch, commit or PR is created.
+
+``refresh_prs`` only refreshes the provider states of open task PRs and open
+sync PRs (no fetch, worktree, commit or PR); the dashboard runs it in the
+background so a PR merged outside factory leaves the review lists.
 """
 
 from __future__ import annotations
@@ -98,6 +102,24 @@ def sync_backlog(repo: Path, *, provider: GitProvider | None = None) -> SyncResu
         raise ReviewError("invalid_config", str(exc)) from exc
     except RuntimeError as exc:
         raise ReviewError("worktree_failed", str(exc)) from exc
+    finally:
+        ctx.store.close()
+
+
+def refresh_prs(repo: Path, *, provider: GitProvider | None = None) -> SyncResult:
+    """Refresh the provider state of open task PRs and open sync PRs; nothing else.
+
+    No git fetch, no worktree, no commit, no PR is created. A provider error of one PR
+    is a warning in the result. Used by the dashboard's background refresh.
+    """
+    ctx = _context(repo, provider)
+    try:
+        result = SyncResult(pr=None, created=False, updated=False)
+        _refresh_task_prs(ctx, result)
+        _refresh_sync_prs(ctx, result)
+        return result
+    except ProviderError as exc:
+        raise ReviewError(exc.code, exc.message) from exc
     finally:
         ctx.store.close()
 

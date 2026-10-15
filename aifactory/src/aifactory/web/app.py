@@ -38,7 +38,9 @@ the same core functions as ``factory task add|edit|link``. A write that would br
 backlog is rejected with ``backlog_invalid`` (HTTP 422) and ``error.issues``. Writes stay in
 the working tree: ``GET /api/backlog/status`` lists the backlog files not committed to base
 (``{base, commit, clean, changes}``, shown on every screen) and ``POST /api/backlog/commit``
-commits them all like ``factory backlog commit``.
+commits them all like ``factory backlog commit``. ``POST /api/backlog/sync`` runs
+``factory backlog sync``: it opens (or extends) the sync PR that marks done the tasks whose PR
+was merged outside factory; it is only ever started by this request, never automatically.
 
 Run and auto-continue: ``GET /api/backlog/tasks/{task_id}/run-check`` (uncommitted config,
 D4, unmet dependencies in base, a running run), ``POST /api/backlog/tasks/{task_id}/run``
@@ -157,7 +159,10 @@ home (default: home) as
 ``{path}`` or ``{cancelled: true}`` (``picker_unavailable``, ``picker_busy``,
 ``picker_timeout``). ``GET /api/overview`` (``overview.py``) tells for every repository what
 runs, waits for review and failed, how many tasks are in each board state, its parallel
-slots (``factory``) and the state of its configuration; it only reads. The Overview's
+slots (``factory``) and the state of its configuration; it only reads. With background
+checks on, ``pr_refresh.py`` refreshes the open task PRs of every registered repository from
+the provider every ``PR_REFRESH_INTERVAL`` seconds, so a PR merged outside factory leaves the
+review lists without ``factory backlog sync``. The Overview's
 factory controls (``control.py``) are ``POST /api/repos/{id}/control/start`` (start ready
 tasks into the free ``max_parallel_runs`` slots, HTTP 200 also when nothing started),
 ``.../control/pause`` and ``.../control/resume`` (every running run) and
@@ -205,6 +210,7 @@ from aifactory.codeprint import CodeWatch
 from aifactory.config import ConfigError
 from aifactory.harness import settings as harness_settings
 from aifactory.home import haifa_home
+from aifactory.review import sync as review_sync
 from aifactory.review.errors import ReviewError
 from aifactory.run import gitops
 from aifactory.run import pause as run_pause
@@ -222,6 +228,7 @@ from aifactory.web.launcher import Launcher, RunLauncher
 from aifactory.web.limits import LimitsSource
 from aifactory.web.live import LiveHub
 from aifactory.web.overview import Overview
+from aifactory.web.pr_refresh import PR_REFRESH_INTERVAL, refresh_registered
 from aifactory.web.registry import Registry, RepoError
 from aifactory.web.repos import (
     RepoContext,
@@ -1022,6 +1029,18 @@ async def backlog_commit(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data, warnings))
 
 
+async def backlog_sync(request: Request) -> JSONResponse:
+    """``factory backlog sync``: open (or extend) the sync PR for tasks merged outside factory."""
+    repo: Path = _repo(request)
+    try:
+        result = await run_in_threadpool(review_sync.sync_backlog, repo)
+    except (ReviewError, TaskRunError, ConfigError) as exc:
+        return _review_error(exc)
+    data = result.to_json()
+    data.pop("ok", None)
+    return JSONResponse(envelope_ok(data, list(result.warnings)))
+
+
 async def backlog_run_check(request: Request) -> JSONResponse:
     """Warnings before a run: uncommitted config (D4), unmet dependencies, a running run."""
     repo: Path = _repo(request)
@@ -1172,6 +1191,7 @@ _REVIEW_ERROR_STATUS = {
     "unknown_base": 500,
     "invalid_config": 500,
     "worktree_failed": 500,
+    "sync_on_base": 409,
 }
 
 
@@ -1552,6 +1572,7 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/backlog/tasks", backlog_add, methods=["POST"]),
         Route("/backlog/status", backlog_status, methods=["GET"]),
         Route("/backlog/commit", backlog_commit, methods=["POST"]),
+        Route("/backlog/sync", backlog_sync, methods=["POST"]),
         Route("/backlog/tasks/{task_id}", backlog_task, methods=["GET"]),
         Route("/backlog/tasks/{task_id}/documents", backlog_task_documents, methods=["GET"]),
         Route("/backlog/tasks/{task_id}/edit", backlog_edit, methods=["POST"]),
@@ -2181,6 +2202,9 @@ def create_multi_app(
                 ),
                 asyncio.create_task(periodic(app.state.updates.check, 60)),
                 asyncio.create_task(periodic(lambda: app.state.limits.get(None), 60)),
+                asyncio.create_task(
+                    periodic(lambda: refresh_registered(app.state.registry), PR_REFRESH_INTERVAL)
+                ),
                 asyncio.create_task(
                     periodic(
                         lambda: app.state.library.harnesses(

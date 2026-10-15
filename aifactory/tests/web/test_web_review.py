@@ -418,3 +418,24 @@ def test_done_detail_is_read_only(client: TestClient, repo: Path, script: Script
     detail = _check(client.get(f"/api/review/{T01}"), 200)["data"]
     assert detail["provider_state"] == "merged"
     assert detail["actions"] == {"approve": False, "return": False, "resolve": False}
+
+
+def test_backlog_sync_opens_the_sync_pr(repo: Path, script: Script, client: TestClient) -> None:
+    first_run(repo, script)
+    git(repo, "merge", "-q", "--no-ff", "-m", "outside", BRANCH1)  # merged outside factory
+
+    data = _check(client.post("/api/backlog/sync"), 200)["data"]
+
+    assert data["created"] is True
+    assert data["url"] == "local:factory-sync/1"
+    assert [t["task_id"] for t in data["tasks"]] == [T01]
+    assert "ok" not in data
+
+
+def test_backlog_sync_error_is_mapped(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+    def fail(repo: Path) -> None:
+        raise aifactory.review.ReviewError("sync_on_base", "refusing")
+
+    monkeypatch.setattr(aifactory.review.sync, "sync_backlog", fail)
+    body = _check(client.post("/api/backlog/sync"), 409)
+    assert body["error"]["code"] == "sync_on_base"
