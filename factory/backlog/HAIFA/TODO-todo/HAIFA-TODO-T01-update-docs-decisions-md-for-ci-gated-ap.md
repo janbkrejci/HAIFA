@@ -2,7 +2,7 @@
 id: HAIFA-TODO-T01
 title: Update docs/decisions.md for CI-gated approve and auto-merge
 status: todo
-depends_on: []
+depends_on: [HAIFA-TODO-T05]
 related: [HAIFA-REFINEMENT-T28]
 ---
 
