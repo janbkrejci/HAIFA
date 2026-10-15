@@ -80,6 +80,32 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
+  it('Vylepšit agentem fills the improved task and the proposed workflow for saving', async () => {
+    const proposal = {
+      title: 'Improved task', body: 'Acceptance criteria', writes: null, depends_on: [], related: [],
+      workflow: null, reason: 'Clear scope', usage: null,
+    }
+    const recommendation = {
+      decision: 'new', workflow_name: 'research-x', workflow_yaml: 'name: research-x', reason: 'Analysis only', outline: [],
+    }
+    api.postApi.mockReset().mockImplementation(async (url: string) => ({ job_id: url === '/backlog/task-advice' ? 'improve-job' : 'advice-job' }))
+    api.getApi.mockReset().mockImplementation(async (url: string) => {
+      if (url.startsWith('/backlog/task-advice/')) return { state: 'succeeded', recommendation: proposal }
+      if (url.startsWith('/backlog/workflow-advice/')) return { state: 'succeeded', recommendation }
+      return { task_id: 'x', documents: [] }
+    })
+    const wrapper = detailWrapper()
+    await wrapper.get('[data-test="improve"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="advice-result"]').text()).toContain('Analysis only')
+    expect(wrapper.get('[data-test="improve-note"]').text()).toContain('Clear scope')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('edit')?.[0]?.[0]).toMatchObject({
+      title: 'Improved task', workflow: 'research-x', workflow_advice_id: 'advice-job',
+    })
+    wrapper.unmount()
+  })
+
   it('has no workflow or link inputs in the read-only view', () => {
     const wrapper = detailWrapper()
     expect(wrapper.find('input').exists()).toBe(false)

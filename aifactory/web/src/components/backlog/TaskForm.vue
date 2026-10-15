@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One form for a new task (factory task add) and for editing a task (factory task edit).
-import { computed, ref } from 'vue'
+import { computed, nextTick, ref } from 'vue'
 import {
   CODE_RE,
   INHERIT_LABEL,
@@ -143,7 +143,9 @@ const advancedOpen = ref(
     || hasOwnParameters(task.own_parameters)
   ),
 )
-function applyParameters(result: TaskProposal) {
+const workflowAdvice = ref<InstanceType<typeof WorkflowAdvice> | null>(null)
+/** Apply the improved task, then propose its workflow from the improved draft (same advice as the button). */
+async function applyParameters(result: TaskProposal) {
   const before = JSON.stringify([writesText.value, inheritWrites.value, depends.value, related.value, autoMerge.value])
   parameters.value = result.parameters
   if (result.parameters && 'auto_merge' in result.parameters) autoMerge.value = autoMode(result.parameters.auto_merge as boolean | null)
@@ -157,6 +159,9 @@ function applyParameters(result: TaskProposal) {
   advice.value = null
   const after = JSON.stringify([writesText.value, inheritWrites.value, depends.value, related.value, autoMerge.value])
   if (before !== after || hasOwnParameters(result.parameters)) advancedOpen.value = true
+  // Let the advice see the improved draft (its watcher drops the old result first).
+  await nextTick()
+  await workflowAdvice.value?.start()
 }
 function applyAdvice(result: Recommendation, id: string) {
   advice.value = { result, id }
@@ -334,6 +339,7 @@ function onSubmit() {
         </label>
 
         <WorkflowAdvice
+        ref="workflowAdvice"
         class="workflow-advice"
         :draft="adviceDraft"
         :task-id="task?.id"

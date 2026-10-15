@@ -39,6 +39,19 @@ describe('workflow advice', () => {
     wrapper.unmount()
   })
 
+  it('starts through its exposed start like through the button', async () => {
+    const wrapper = mount(WorkflowAdvice, { props: { draft: { title: 'Draft' } } })
+    await (wrapper.vm as unknown as { start: () => Promise<void> }).start()
+    await flushPromises()
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/workflow-advice', { draft: { title: 'Draft' } }, expect.any(AbortSignal))
+    expect(wrapper.emitted('result')?.[0]).toEqual([recommendation, 'job'])
+    expect(wrapper.emitted('busy')?.at(-1)).toEqual([false])
+    await wrapper.setProps({ disabled: true })
+    await (wrapper.vm as unknown as { start: () => Promise<void> }).start()
+    expect(api.postApi).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+  })
+
   it('shows explained result and renders YAML as text', async () => {
     const wrapper = mount(WorkflowAdvice, { props: { draft: { title: 'Draft', step: 'S01' } } })
     await wrapper.find('button').trigger('click')

@@ -125,6 +125,7 @@ async function start() {
     if (active()) await poll(job.job_id)
   } catch (e) { fail(e) }
 }
+defineExpose({ start })
 </script>
 
 <template>
