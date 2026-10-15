@@ -2,7 +2,7 @@
 id: HAIFA-TODO-T05
 title: Aktualizovat docs/decisions.md pro approve a auto-merge čekající na CI (s povolenou cestou docs/)
 status: todo
-depends_on: []
+depends_on: [HAIFA-TODO-T06]
 related: [HAIFA-TODO-T01]
 ---
 
