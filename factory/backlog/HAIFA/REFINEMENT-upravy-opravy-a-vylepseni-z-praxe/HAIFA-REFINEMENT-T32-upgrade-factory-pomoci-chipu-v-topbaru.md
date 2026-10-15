@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T32
 title: Upgrade factory pomocí chipu v topbaru
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -10,3 +10,4 @@ Nevhodná hláška v případě, že něco běží, vymysli lepší. Ale nejprve
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/43 · náklady $1.80

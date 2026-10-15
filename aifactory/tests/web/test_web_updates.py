@@ -120,6 +120,7 @@ def test_active_runs_prevent_update(tmp_path: Path) -> None:
         response = client.post("/api/updates/install")
         assert response.status_code == 409
         assert response.json()["error"]["code"] == "runs_active"
+        assert response.json()["error"]["message"].startswith("Aktualizace počká, běží 1 task.")
         assert not source.installing
 
 
@@ -136,3 +137,42 @@ def test_run_started_during_release_check_prevents_install(
         assert client.post("/api/updates/install").json()["error"]["code"] == "runs_active"
     assert not source.installing
     assert source.check()["status"] == "available"
+
+
+@pytest.mark.parametrize(
+    ("count", "phrase"),
+    [(2, "běží 2 tasky."), (4, "běží 4 tasky."), (5, "běží 5 tasků.")],
+)
+def test_refusal_names_active_runs_with_czech_plural(
+    tmp_path: Path, count: int, phrase: str
+) -> None:
+    source = updates.Updates(repository="test/haifa", fetch=lambda _: release())
+    app = create_multi_app(home=tmp_path)
+    app.state.updates = source
+    app.state.launcher = SimpleNamespace(running=lambda: [object()] * count)
+    with TestClient(app, base_url="http://127.0.0.1:4700") as client:
+        response = client.post("/api/updates/install")
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "runs_active"
+    assert error["message"].startswith(f"Aktualizace počká, {phrase}")
+    assert not source.installing
+
+
+def test_runs_seen_in_overview_prevent_update(tmp_path: Path) -> None:
+    class StubOverview:
+        async def collect(self) -> tuple[dict[str, Any], None]:
+            return {"totals": {"running": 3}}, None
+
+    source = updates.Updates(repository="test/haifa", fetch=lambda _: release())
+    app = create_multi_app(home=tmp_path)
+    app.state.updates = source
+    app.state.launcher = SimpleNamespace(running=lambda: [])
+    with TestClient(app, base_url="http://127.0.0.1:4700") as client:
+        app.state.overview = StubOverview()
+        response = client.post("/api/updates/install")
+    assert response.status_code == 409
+    error = response.json()["error"]
+    assert error["code"] == "runs_active"
+    assert "běží 3 tasky" in error["message"]
+    assert not source.installing

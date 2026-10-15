@@ -55,6 +55,25 @@ describe('updates', () => {
     expect(updates.state.value.error).toBe('checksum mismatch')
     expect(reload).not.toHaveBeenCalled()
   })
+  it('waits for active task runs instead of reporting a failed check', async () => {
+    const fetch = vi.fn(async (url: string) => {
+      if (url === '/api/code') return envelope({ started: 'old', stale: false, current: 'old' })
+      if (url === '/api/updates/install') {
+        return new Response(JSON.stringify({ ok: false, data: null, error: { code: 'runs_active', message: 'Aktualizace počká, běží 1 task.' }, warnings: [] }), { status: 409 })
+      }
+      return envelope({ status: 'available', current_version: '0.1.0', target_version: '0.2.0' })
+    })
+    vi.stubGlobal('fetch', fetch)
+    const { updates, reload } = host()
+    await flushPromises()
+    await updates.install()
+    expect(updates.state.value.status).toBe('waiting')
+    expect(updates.state.value.error).toBe('Aktualizace počká, běží 1 task.')
+    expect(reload).not.toHaveBeenCalled()
+    updates.activate()
+    await flushPromises()
+    expect(fetch.mock.calls.filter(([url]) => url === '/api/updates/install')).toHaveLength(2)
+  })
   it('resumes watching an installation when the page is opened during the update', async () => {
     let reads = 0
     vi.stubGlobal('fetch', vi.fn(async (url: string) => {
