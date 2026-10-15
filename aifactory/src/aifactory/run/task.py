@@ -35,7 +35,6 @@ from aifactory import harness as harness_mod
 from aifactory.backlog import (
     Backlog,
     Task,
-    effective,
     effective_test_timeout,
     effective_workflow,
     has_workflow,
@@ -148,15 +147,11 @@ def task_prompt(
 
     The only absolute path is the worktree; every other path is relative to it.
     """
-    values = effective(task)
     lines = [f"# Task {task.id}: {task.title}", "", f"- id: {task.id}", f"- title: {task.title}"]
     for container in reversed(ancestors(task)):
         label = " — ".join(x for x in (container.id, container.title) if x)
         if label:
             lines.append(f"- {container.level}: {label}")
-    for key in ("source", "target"):
-        value = values.get(key)
-        lines.append(f"- {key}: {value if value not in (None, '') else '(not set)'}")
     lines += [
         f"- working directory: {worktree} (all repository paths are relative to it)",
         f"- allowed paths: {', '.join(scope.paths)}",

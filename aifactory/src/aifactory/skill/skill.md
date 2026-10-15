@@ -207,8 +207,6 @@ Example `{{index_file}}` of a project (its id is any short code, e.g. `M01` or `
 id: M01
 title: Core
 workflow: plan-build-test
-source: src/
-target: src/
 writes: [src/]
 auto_continue: false
 auto_merge: false
@@ -312,7 +310,7 @@ double braces around their names:
 
 | Variable | Value |
 | --- | --- |
-| `prompt` | Task header, effective source/target, allowed paths, output paths, assignment and operator note. |
+| `prompt` | Task header, allowed paths, output paths, assignment and operator note. |
 | `previous_envelope` | Previous agent's Report JSON, or `(none)`. |
 | `context_handoff_dir` | Absolute session handoff directory. |
 | `task_id` | Current task ID. |

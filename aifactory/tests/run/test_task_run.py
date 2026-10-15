@@ -550,3 +550,26 @@ def test_project_and_task_model_choices_reach_run(repo: Path, script: Script) ->
     script.add("planner", ok(artifacts=[SPEC]))
     result = run_task(repo, T01)
     assert result.run.note == "[přepis rosteru: harness=claude, model=opus]"
+
+
+def test_prompt_header_has_no_source_or_target(repo: Path, script: Script) -> None:
+    # legacy keys left in backlog files are ignored and never reach the agent
+    project = repo / "backlog/M01-core/index.md"
+    project.write_text(
+        project.read_text().replace(
+            "workflow: plan-commit", "workflow: plan-commit\nsource: legacy/\ntarget: app/"
+        )
+    )
+    task_path = repo / "backlog/M01-core/S01-model/M01-S01-T01-schema.md"
+    task_path.write_text(
+        task_path.read_text().replace("status: todo", "status: todo\nsource: task-src/")
+    )
+    commit_all(repo, "Legacy source and target")
+    script.on("planner", lambda wt: write(wt, SPEC, "# spec\n"))
+    script.add("planner", ok(artifacts=[SPEC]))
+    result = run_task(repo, T01)
+    assert result.run.state == "succeeded", result.run.error
+    lines = script.calls[0].prompt.splitlines()
+    assert any(line.startswith("- id: ") for line in lines)
+    assert any(line.startswith("- working directory: ") for line in lines)
+    assert not [line for line in lines if line.startswith(("- source:", "- target:"))]

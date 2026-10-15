@@ -163,7 +163,6 @@ def test_edit_sets_and_clears_keys_and_keeps_unknown_ones(tmp_path: Path) -> Non
             "writes": ["src/", "tests/"],
             "auto_continue": True,
         },
-        clear=["source", "target"],
     )
     assert result.changed
     header = _header(root, M01_INDEX)
@@ -171,7 +170,6 @@ def test_edit_sets_and_clears_keys_and_keeps_unknown_ones(tmp_path: Path) -> Non
     assert header["workflow"] == "build-test"
     assert header["writes"] == ["src/", "tests/"]
     assert header["auto_continue"] is True
-    assert "source" not in header and "target" not in header
     assert header["owner"] == "alice"  # unknown key stays
     text = (root / M01_INDEX).read_text(encoding="utf-8")
     assert text.endswith("Jádro: datový model a API.\n")
@@ -201,6 +199,8 @@ def test_edit_rejects_bad_input(tmp_path: Path) -> None:
         ({"values": {"test": ["just", "check"]}}, "invalid_value"),  # removed key
         ({"values": {"specs_dir": "docs"}}, "invalid_value"),  # removed key
         ({"values": {"workdir": "src"}}, "invalid_value"),  # removed key
+        ({"values": {"source": "src/"}}, "invalid_value"),  # removed key
+        ({"clear": ["target"]}, "invalid_value"),  # removed key
         ({"title": " "}, "invalid_value"),
     ]
     for kwargs, code in cases:
@@ -221,7 +221,7 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
         "levels: [module, step, task]\ndocs_root: .\ntest_timeout: 300\n",
     )
     edit_container(root, "M01-S01", values={"workflow": "own-flow"})
-    edit_container(root, "M01", values={"target": "app"})
+    edit_container(root, "M01", values={"model": "app"})
     backlog = load_backlog(root)
     step = backlog.by_id["M01-S01"]
     sources = effective_sources(step, backlog.settings)
@@ -229,7 +229,7 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
         "value": "own-flow",
         "origin": {"source": "own", "level": "step", "id": "M01-S01", "path": S01_INDEX},
     }
-    assert sources["target"] == {
+    assert sources["model"] == {
         "value": "app",
         "origin": {"source": "inherited", "level": "module", "id": "M01", "path": M01_INDEX},
     }
@@ -238,11 +238,11 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
         "origin": {"source": "config", "path": ".factory/config.yaml", "key": "test_timeout"},
     }
     assert sources["auto_continue"] == {"value": False, "origin": {"source": "default"}}
-    edit_container(root, "M01", clear=["target"])
+    edit_container(root, "M01", clear=["model"])
     backlog = load_backlog(root)
     sources = effective_sources(backlog.by_id["M01-S01"], backlog.settings)
-    assert sources["target"] == {"value": None, "origin": None}
-    for key in ("test", "specs_dir", "docs_dir", "workdir"):
+    assert sources["model"] == {"value": None, "origin": None}
+    for key in ("test", "specs_dir", "docs_dir", "workdir", "source", "target"):
         assert key not in sources
 
 
@@ -270,7 +270,7 @@ def test_cli_add_and_edit(tmp_path: Path, capsys: Capsys) -> None:
 
     edit = ["backlog", "edit", "M01", "--title", "Jádro", "--workflow", "wf"]
     edit += ["--writes", "a/", "b/", "--auto-continue", "on"]
-    edit += ["--clear", "source", "target", "--json", *repo]
+    edit += ["--json", *repo]
     rc, env = run_json(capsys, edit)
     assert rc == 0
     container = env["data"]["container"]
@@ -278,18 +278,17 @@ def test_cli_add_and_edit(tmp_path: Path, capsys: Capsys) -> None:
     assert container["own"]["workflow"] == "wf"
     assert container["own"]["writes"] == ["a/", "b/"]
     assert container["own"]["auto_continue"] is True
-    assert "source" not in container["own"]
+    assert "source" not in container["own"] and "target" not in container["own"]
     assert container["extra"] == {"owner": "alice"}
     assert container["effective"]["workflow"]["origin"]["source"] == "own"
     header = _header(root, M01_INDEX)
     assert header["owner"] == "alice"
-    assert "target" not in header
 
-    step_edit = ["backlog", "edit", "M01-S01", "--target", "app", "--json"]
+    step_edit = ["backlog", "edit", "M01-S01", "--writes", "app/", "--json"]
     rc, env = run_json(capsys, step_edit + repo)
     assert rc == 0
     effective = env["data"]["container"]["effective"]
-    assert effective["target"]["value"] == "app"
+    assert effective["writes"]["value"] == ["app/"]
     assert "test" not in effective
     assert effective["workflow"] == {
         "value": "wf",

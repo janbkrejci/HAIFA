@@ -35,7 +35,8 @@ describe('ContainerSettings', () => {
     expect(wrapper.find('[data-setting="test"]').exists()).toBe(false)
     expect(row('auto_continue').get('[data-test="value-auto_continue"]').text()).toContain('vypnuto')
     expect(row('auto_continue').get('[data-test="origin"]').text()).toContain('výchozí')
-    expect(row('source').get('[data-test="origin"]').text()).toContain('nenastaveno')
+    expect(wrapper.find('[data-setting="source"]').exists()).toBe(false)
+    expect(wrapper.find('[data-setting="target"]').exists()).toBe(false)
     expect((wrapper.get('[data-test="inherit-workflow"]').element as HTMLInputElement).checked).toBe(false)
     expect((wrapper.get('[data-test="inherit-writes"]').element as HTMLInputElement).checked).toBe(true)
     expect(wrapper.find('[data-test="edit-writes"]').exists()).toBe(false)
@@ -69,8 +70,6 @@ describe('ContainerSettings', () => {
     // an inherited key switched to own starts from the inherited value
     expect((wrapper.get('[data-test="edit-writes"]').element as HTMLTextAreaElement).value).toBe('src/')
     await wrapper.get('[data-test="edit-writes"]').setValue('src/\n\ntests/\n')
-    await wrapper.get('[data-test="inherit-source"]').setValue(false)
-    await wrapper.get('[data-test="edit-source"]').setValue(' docs/brief.md ')
     expect(wrapper.find('[data-test="inherit-auto_continue"]').exists()).toBe(false)
     await chooseOption(wrapper, '[data-test="edit-auto_continue"]', 'on')
     await wrapper.get('form').trigger('submit')
@@ -78,7 +77,6 @@ describe('ContainerSettings', () => {
       {
         title: 'Model 2',
         writes: ['src/', 'tests/'],
-        source: 'docs/brief.md',
         auto_continue: true,
         clear: ['workflow'],
       },
@@ -94,8 +92,8 @@ describe('ContainerSettings', () => {
 
   it('shows Czech labels with the key', () => {
     const wrapper = panel()
-    expect(wrapper.get('[data-setting="target"] [data-test="setting-label"]').text()).toBe('Cíl')
-    expect(wrapper.get('[data-setting="target"] th').text()).toContain('target')
+    expect(wrapper.get('[data-setting="writes"] [data-test="setting-label"]').text()).toBe('Zápisy')
+    expect(wrapper.get('[data-setting="writes"] th').text()).toContain('writes')
   })
 
   it('keeps an unset auto continue inherited, never off', async () => {
@@ -117,12 +115,12 @@ describe('ContainerSettings', () => {
 
   it('shows a rejected save with its issues', () => {
     const wrapper = panel({}, {
-      message: "'source' must be a non-empty string",
+      message: "'workflow' must be a non-empty string",
       issues: [{ code: 'invalid_value', message: 'bad', path: null, id: null }],
       code: 'invalid_value',
     })
     const error = wrapper.get('[data-test="write-error"]')
-    expect(error.text()).toContain("'source' must be a non-empty string")
+    expect(error.text()).toContain("'workflow' must be a non-empty string")
     expect(error.find('[data-issue="invalid_value"]').exists()).toBe(true)
   })
 })

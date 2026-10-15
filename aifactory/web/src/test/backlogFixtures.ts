@@ -277,13 +277,11 @@ export function containerDetail(over: Partial<ContainerDetail> = {}): ContainerD
           origin: { source: 'own', level: 'step', id: 'M01-S01', path: 'backlog/M01-core/S01-model/index.md' },
         },
         writes: { value: ['src/'], origin: step },
-        source: { value: null, origin: null },
-        target: { value: null, origin: null },
         auto_continue: { value: false, origin: { source: 'default' } },
       },
       ...over,
     },
-    editable_keys: ['workflow', 'writes', 'source', 'target', 'auto_continue'],
+    editable_keys: ['workflow', 'writes', 'auto_continue'],
     issues: [],
   }
 }

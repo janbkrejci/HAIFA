@@ -1351,8 +1351,6 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     edit.add_argument("--title", metavar="TEXT", help="new title")
     edit.add_argument("--workflow", metavar="NAME", help="set the workflow")
     edit.add_argument("--writes", nargs="*", metavar="PATH", help="set writes (none = [])")
-    edit.add_argument("--source", metavar="TEXT", help="set source")
-    edit.add_argument("--target", metavar="TEXT", help="set target")
     edit.add_argument("--auto-continue", choices=("on", "off"), help="set auto_continue")
     edit.add_argument(
         "--clear",
@@ -1588,7 +1586,7 @@ def _backlog_container_write(args: argparse.Namespace) -> int:
             )
         else:
             values: dict[str, object] = {}
-            for key in ("workflow", "writes", "source", "target"):
+            for key in ("workflow", "writes"):
                 value = getattr(args, key)
                 if value is not None:
                     values[key] = value
