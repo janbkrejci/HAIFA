@@ -107,12 +107,11 @@ describe('TaskForm', () => {
     wrapper.unmount()
   })
 
-  it('explains the source and target parameters in a tooltip', () => {
+  it('offers no source or target parameter', () => {
     const wrapper = addForm()
     for (const key of ['source', 'target']) {
-      expect(wrapper.find(`[data-test="parameter-hint-${key}"]`).exists()).toBe(true)
+      expect(wrapper.find(`[data-parameter="${key}"]`).exists()).toBe(false)
     }
-    expect(wrapper.find('[data-test="parameter-hint-harness"]').exists()).toBe(false)
   })
 
   it('suggests the next free code and previews the full id of a new task', async () => {
@@ -302,9 +301,8 @@ describe('TaskForm', () => {
   })
 
   it('shows the own parameters of an edited task and sends only a changed one', async () => {
-    const wrapper = editForm({ own_parameters: { test_timeout: 120, target: 'src/x' } })
+    const wrapper = editForm({ own_parameters: { test_timeout: 120 } })
     expect((wrapper.get('[data-test="parameter-test_timeout"]').element as HTMLInputElement).value).toBe('120')
-    expect((wrapper.get('[data-test="parameter-target"]').element as HTMLInputElement).value).toBe('src/x')
     expect(wrapper.get('[data-test="save"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-test="parameter-test_timeout"]').setValue('600')
     await wrapper.get('form').trigger('submit')

@@ -540,14 +540,10 @@ CONTAINER_KEYS: tuple[str, ...] = (
     "thinking",
     "workflow",
     "writes",
-    "source",
-    "target",
     "auto_continue",
 )
 _STR_KEYS = (
     "workflow",
-    "source",
-    "target",
     "harness",
     "model",
     "thinking",

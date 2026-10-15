@@ -167,8 +167,6 @@ def _task_json(
             "harness",
             "model",
             "thinking",
-            "source",
-            "target",
             "test_timeout",
             "auto_continue",
             "auto_merge",

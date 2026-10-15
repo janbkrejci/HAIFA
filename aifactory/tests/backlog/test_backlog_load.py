@@ -61,8 +61,7 @@ def test_inheritance() -> None:
     eff = effective(loader)
     # `owner` in the module index is a legacy field and is not inherited
     assert "owner" not in eff
-    assert eff["source"] == "src/"
-    assert eff["target"] == "src/"
+    assert "source" not in eff and "target" not in eff
     # the task's own workflow beats the module's
     assert effective_workflow(loader) == "plan-build-test-review"
     assert effective_writes(loader) == ["src/"]

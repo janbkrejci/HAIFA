@@ -887,8 +887,6 @@ export const CONTAINER_KEYS = [
   'thinking',
   'workflow',
   'writes',
-  'source',
-  'target',
   'auto_continue',
 ] as const
 
@@ -952,8 +950,6 @@ export interface EditContainerInput {
   title?: string
   workflow?: string
   writes?: string[]
-  source?: string
-  target?: string
   auto_continue?: boolean
   /** Keys removed from `index.md` (the value is inherited again). */
   clear?: ContainerKey[]
@@ -1026,8 +1022,6 @@ export const SETTING_LABELS: Record<string, string> = {
   workflow: 'Workflow',
   writes: 'Zápisy',
   test_timeout: 'Limit testů (s)',
-  source: 'Zdroj',
-  target: 'Cíl',
   auto_continue: 'Auto continue',
   auto_merge: 'Auto-merge',
 }

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T23
 title: Vyhodit zdroj a cíl z detailu tasku
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T11, HAIFA-REFINEMENT-T21, HAIFA-REFINEMENT-T07, HAIFA-S01-T38]
@@ -35,3 +35,4 @@ Akceptační kritéria:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/36 · náklady $2.75

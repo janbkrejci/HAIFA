@@ -97,8 +97,6 @@ def context(
                     "parameters": {
                         k: task.own.get(k)
                         for k in (
-                            "source",
-                            "target",
                             "test_timeout",
                             "auto_continue",
                             "auto_merge",
@@ -197,8 +195,6 @@ def context(
             for key in (
                 "writes",
                 "workflow",
-                "source",
-                "target",
                 "harness",
                 "model",
                 "thinking",

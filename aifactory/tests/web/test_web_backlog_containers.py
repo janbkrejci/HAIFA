@@ -79,7 +79,8 @@ def test_detail_has_own_and_effective_values_with_origin(tmp_path: Path) -> None
     }
     assert not {"specs_dir", "docs_dir", "workdir"} & effective.keys()
     assert effective["auto_continue"] == {"value": False, "origin": {"source": "default"}}
-    assert effective["source"] == {"value": None, "origin": None}
+    assert effective["model"] == {"value": None, "origin": None}
+    assert not {"source", "target"} & effective.keys()
 
     project = _get(client, "/api/backlog/containers/M01")["data"]["container"]
     assert project["own"] == {"workflow": "plan-build"}
@@ -134,8 +135,7 @@ def test_edit_sets_clears_and_keeps_unknown_keys(tmp_path: Path) -> None:
     payload = {
         "title": "Jádro",
         "writes": ["src/"],
-        "source": "src/",
-        "target": "src/",
+        "model": "m1",
         "auto_continue": True,
     }
     data = _post(client, "/api/backlog/containers/M01/edit", payload)["data"]
@@ -147,25 +147,24 @@ def test_edit_sets_clears_and_keeps_unknown_keys(tmp_path: Path) -> None:
         "owner": "alice",
         "workflow": "plan-build",
         "writes": ["src/"],
-        "source": "src/",
-        "target": "src/",
+        "model": "m1",
         "auto_continue": True,
     }
-    assert data["container"]["effective"]["target"]["origin"]["source"] == "own"
+    assert data["container"]["effective"]["model"]["origin"]["source"] == "own"
 
     step = _post(client, "/api/backlog/containers/M01-S01/edit", {"workflow": "plan"})["data"]
     assert step["container"]["effective"]["workflow"]["origin"]["id"] == "M01-S01"
-    assert step["container"]["effective"]["target"]["origin"] == {
+    assert step["container"]["effective"]["model"]["origin"] == {
         "source": "inherited",
         "level": "module",
         "id": "M01",
         "path": M01_INDEX,
     }
 
-    payload2: dict[str, Any] = {"workflow": None, "clear": ["source", "target"]}
+    payload2: dict[str, Any] = {"workflow": None, "clear": ["model"]}
     _post(client, "/api/backlog/containers/M01/edit", payload2)
     header = _header(root, M01_INDEX)
-    assert "workflow" not in header and "source" not in header and "target" not in header
+    assert "workflow" not in header and "model" not in header
     assert header["owner"] == "alice"
     assert _header(root, S01_INDEX)["workflow"] == "plan"
 
@@ -181,6 +180,8 @@ def test_edit_rejects_bad_input(tmp_path: Path) -> None:
     body = _post(client, "/api/backlog/containers/M01/edit", {"auto_continue": "on"}, 400)
     assert body["error"]["code"] == "invalid_value"
     body = _post(client, "/api/backlog/containers/M01/edit", {"docs_dir": "docs"}, 400)
+    assert body["error"]["code"] == "usage_error"
+    body = _post(client, "/api/backlog/containers/M01/edit", {"source": "src/"}, 400)
     assert body["error"]["code"] == "usage_error"
     body = _post(client, "/api/backlog/containers/M09/edit", {"title": "X"}, 404)
     assert body["error"]["code"] == "unknown_container"

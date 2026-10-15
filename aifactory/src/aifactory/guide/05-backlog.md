@@ -49,13 +49,13 @@ Panel nahoře ukáže „Připraveno ke spuštění“, nebo co je před spušt�
 - **Auto-merge:** po úspěšném review se pull request mergne sám.
 - **Writes:** cesty (jedna na řádek, glob), které smí agenti měnit; nebo **dědit writes**. Bez nastavení na žádné úrovni platí celé repo.
 - **Závisí na** a **Související:** vazby na jiné tasky nebo celé projekty a stepy. Vybírají se ze seznamu backlogu, vybrané se ukážou jako čipy s křížkem k odebrání.
-- **Další parametry** (prázdné = zděděno): harness, model a thinking pro všechny agenty tasku a další. **Zdroj** (`source`) a **Cíl** (`target`) jsou volné texty, odkud práce vychází a kam má výsledek směřovat. Agent je dostane v hlavičce zadání, HAIFA je nijak nekontroluje.
+- **Další parametry** (prázdné = zděděno): harness, model a thinking pro všechny agenty tasku a další.
 
 Tlačítko **Navrhnout parametry tasku** nechá agenta navrhnout parametry podle zadání; návrh převezmeš tlačítkem **Použít návrh do formuláře**. **Navrhnout workflow** doporučí existující workflow, nebo navrhne nové včetně YAML. Oba pomocníci ukážou cenu dotazu.
 
 ## Dědění hodnot
 
-Task dědí od nejbližší úrovně, která hodnotu nastavuje: task, step, projekt. Dědí se `workflow`, `writes`, `harness`, `model`, `thinking`, `source`, `target`, `test_timeout`, `auto_continue` a `auto_merge`. Explicitní prázdná hodnota (například `workflow: null`) dědění zastaví.
+Task dědí od nejbližší úrovně, která hodnotu nastavuje: task, step, projekt. Dědí se `workflow`, `writes`, `harness`, `model`, `thinking`, `test_timeout`, `auto_continue` a `auto_merge`. Explicitní prázdná hodnota (například `workflow: null`) dědění zastaví.
 
 Nastavení projektu či stepu upravíš v jeho **Nastavení** (tabulka s platnou hodnotou, původem a vlastní hodnotou), nebo přes `factory backlog edit`. Změny se zapíší do `index.md` v pracovním stromu; běhy je použijí až po commitu backlogu.
 

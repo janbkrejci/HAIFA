@@ -1,7 +1,6 @@
 <script setup lang="ts">
 // One form for a new task (factory task add) and for editing a task (factory task edit).
 import { computed, ref } from 'vue'
-import { CircleHelp } from 'lucide-vue-next'
 import {
   CODE_RE,
   INHERIT_LABEL,
@@ -23,7 +22,6 @@ import type { SelectOption } from '@/lib/select'
 import { useLevels, useNames } from '@/lib/names'
 import { newStepHref } from '@/lib/router'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
-import Tooltip from '@/components/ui/Tooltip.vue'
 import IdPicker from './IdPicker.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import IssueList from './IssueList.vue'
@@ -80,7 +78,7 @@ const depends = ref<string[]>([...(task?.depends_on ?? [])])
 const related = ref<string[]>([...(task?.related ?? [])])
 const parameterBusy = ref(false)
 const parameters = ref<Record<string, unknown> | undefined>()
-const parameterFields = ['harness', 'model', 'thinking', 'source', 'target', 'test_timeout', 'auto_continue', 'auto_merge']
+const parameterFields = ['harness', 'model', 'thinking', 'test_timeout', 'auto_continue', 'auto_merge']
 const { harnessOptions, modelOptions } = useHarnessChoices()
 const projectHarness = computed(() => props.steps.find(s => s.id === step.value)?.harness ?? '')
 /** A parameter's value: the typed or proposed one, else the task's own one (edit). */
@@ -221,13 +219,6 @@ const codeOptions = computed<SelectOption[]>(() =>
     .sort(([a], [b]) => a.localeCompare(b))
     .map(([id, n]) => ({ value: id, label: n.title ? `${id} · ${n.title}` : id })),
 )
-/** What the free-text parameters mean (the agent gets them in the header of the task). */
-const PARAMETER_HINTS: Record<string, string> = {
-  source:
-    'Odkud práce vychází, např. původní systém, dokument nebo adresář. Agent ho dostane v hlavičce zadání (source); HAIFA ho nijak nekontroluje.',
-  target:
-    'Kam má výsledek směřovat, např. nový modul, cílový adresář nebo systém. Agent ho dostane v hlavičce zadání (target); HAIFA ho nijak nekontroluje.',
-}
 const workflowOptions = computed<SelectOption[]>(() => [
   { value: '', label: 'Zděděno' },
   ...Array.from(new Set([...props.workflows, ...(advice.value ? [advice.value.result.workflow_name] : [])])).map((w) => ({ value: w, label: w })),
@@ -412,9 +403,6 @@ function onSubmit() {
             <label v-for="key in visibleParameters" :key="key" :data-parameter="key">
               <span class="parameter-name">
                 {{ SETTING_LABELS[key] ?? key }} <code class="key">{{ key }}</code>
-                <Tooltip v-if="PARAMETER_HINTS[key]" :text="PARAMETER_HINTS[key]">
-                  <CircleHelp :size="14" class="help" :data-test="`parameter-hint-${key}`" aria-hidden="true" />
-                </Tooltip>
               </span>
               <SelectMenu
                 v-if="key === 'harness'" :model-value="parameterText(key)" :options="harnessOptions" label="Harness tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
@@ -546,11 +534,6 @@ label,
   display: inline-flex;
   align-items: center;
   gap: 6px;
-}
-
-.help {
-  color: var(--faint);
-  cursor: help;
 }
 
 label.check {

@@ -30,7 +30,7 @@ def proposal(**overrides: Any) -> dict[str, Any]:
         "parameters": {
             "test_timeout": 120,
             "auto_merge": False,
-            "source": "input.md",
+            "auto_continue": False,
         },
         **overrides,
     }
@@ -127,7 +127,16 @@ def test_repeat_select_cost_and_save(tmp_path: Path, monkeypatch: pytest.MonkeyP
         task = core.load_for_edit(repo).by_id[response.json()["data"]["task"]["id"]]
         assert isinstance(task, core.Task)
         assert task.own["auto_merge"] is False
-        assert task.own["source"] == "input.md"
+        assert task.own["auto_continue"] is False
+        assert "source" not in task.own
+
+
+def test_proposal_rejects_source_and_target() -> None:
+    from pydantic import ValidationError
+
+    for key in ("source", "target"):
+        with pytest.raises(ValidationError):
+            TaskRecommendationOutput.model_validate(proposal(parameters={key: "input.md"}))
 
 
 @pytest.mark.parametrize(
