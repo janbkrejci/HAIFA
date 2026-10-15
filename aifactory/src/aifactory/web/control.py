@@ -14,10 +14,17 @@ filled a slot just before its member was stopped) are stopped too, at most
 ``SWEEP_ROUNDS`` times. A finished stop is kept for ``KEEP_SECONDS`` so the Overview can
 show "Zastaveno". A pause is recorded with the runs it affects while any of them still
 runs; the Overview tells "pozastavuje se" from "pozastaveno" by the runs' ``pause``.
+
+A run paused during its last phase ends anyway, and its auto-continue chain (a separate
+process that knows nothing of this pause) then starts the next task. So while a pause is
+recorded, a watcher thread looks every ``HOLD_SECONDS`` for runs started after the pause
+began and pauses them too (``hold``). The record (and its watcher) stays until resume or
+stop, or until none of its runs runs and no chain of the repository runs any more.
 """
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 from collections.abc import Callable
@@ -41,6 +48,7 @@ JsonDict = dict[str, Any]
 
 KEEP_SECONDS = 60.0  # a finished stop stays visible this long
 SWEEP_ROUNDS = 3
+HOLD_SECONDS = 2.0  # how often a pause looks for runs a chain started after it
 
 
 def control_key(root: Path) -> str:
@@ -64,6 +72,17 @@ def running_runs(repo: Path) -> list[TaskRunRow]:
         return []
     try:
         return store.live_runs()
+    finally:
+        store.close()
+
+
+def running_chains(repo: Path) -> int:
+    """How many auto-continue chains of the repository run (dead ones are reaped)."""
+    store = existing_store(repo)
+    if store is None:
+        return 0
+    try:
+        return len(store.chains(0))
     finally:
         store.close()
 
@@ -100,6 +119,7 @@ class _Stop:
 class _Pause:
     run_ids: list[str]
     started_at: str
+    ended: threading.Event = field(default_factory=threading.Event)
 
 
 class FactoryControl:
@@ -110,13 +130,17 @@ class FactoryControl:
         stop: Callable[[Path, str], object] = run_stop.stop_run,
         *,
         clock: Callable[[], float] = time.monotonic,
+        hold_poll: float | None = HOLD_SECONDS,
     ) -> None:
+        """``hold_poll`` None: no watcher for a pause, ``hold`` is called by hand (tests)."""
         self._stop = stop
         self._clock = clock
+        self._hold_poll = hold_poll
         self._lock = threading.Lock()
         self._stops: dict[str, _Stop] = {}
         self._pauses: dict[str, _Pause] = {}
         self._threads: list[threading.Thread] = []
+        self._watchers: list[threading.Thread] = []
 
     # -- start --
 
@@ -145,10 +169,80 @@ class FactoryControl:
         affected = [r.run_id for r in runs if r.pause in (PAUSING, PAUSED)] + [
             rid for rid in requested if rid not in {e["run_id"] for e in errors}
         ]
+        key = control_key(repo)
         with self._lock:
             if affected:
-                self._pauses[control_key(repo)] = _Pause(affected, _now())
+                self._end_pause(key)
+                pause = self._pauses[key] = _Pause(affected, _now())
+                if self._hold_poll is not None:
+                    self._watch(repo, key, pause, self._hold_poll)
         return {"action": "pause", "run_ids": requested, "errors": errors}
+
+    def _end_pause(self, key: str) -> None:
+        """Drop the pause record of `key` and end its watcher; the caller holds the lock."""
+        pause = self._pauses.pop(key, None)
+        if pause is not None:
+            pause.ended.set()
+
+    def _watch(self, repo: Path, key: str, pause: _Pause, poll: float) -> None:
+        """Start the watcher of a new pause; the caller holds the lock."""
+
+        def loop() -> None:
+            while not pause.ended.wait(poll):
+                if not self._hold(repo, key, pause):
+                    return
+
+        thread = threading.Thread(target=loop, name=f"factory-pause-{key}", daemon=True)
+        self._watchers = [t for t in self._watchers if t.is_alive()]
+        self._watchers.append(thread)
+        thread.start()
+
+    def hold(self, repo: Path) -> list[str]:
+        """Pause the runs started after the repository's pause began; the runs now pausing.
+
+        A chain fills a slot when a run ends, also a run paused during its last phase.
+        Without a pause record of the repository nothing happens.
+        """
+        key = control_key(repo)
+        with self._lock:
+            pause = self._pauses.get(key)
+        if pause is None:
+            return []
+        before = len(pause.run_ids)
+        self._hold(repo, key, pause)
+        with self._lock:
+            return pause.run_ids[before:]
+
+    def _hold(self, repo: Path, key: str, pause: _Pause) -> bool:
+        """Pause late runs of `pause`; False when the pause is over (record dropped)."""
+        try:
+            runs = running_runs(repo)
+            for row in runs:
+                if (
+                    row.run_id in pause.run_ids
+                    or row.pause is not None
+                    or row.started_at < pause.started_at
+                ):
+                    continue
+                try:
+                    run_pause.pause_run(repo, row.run_id)
+                except (TaskRunError, ConfigError, OSError):
+                    continue  # ended meanwhile, or paused by hand: try again next time
+                with self._lock:
+                    if self._pauses.get(key) is not pause:
+                        return False
+                    pause.run_ids.append(row.run_id)
+            live = {r.run_id for r in runs}
+            chains = 0 if live & set(pause.run_ids) else running_chains(repo)
+        except (TaskRunError, ConfigError, OSError, sqlite3.Error):
+            return True  # a busy or broken DB: look again next time (resume and stop end it)
+        with self._lock:
+            if self._pauses.get(key) is not pause:
+                return False
+            if live & set(pause.run_ids) or chains:
+                return True
+            self._end_pause(key)
+            return False
 
     def resume(self, repo: Path) -> JsonDict:
         """Drop the pause of every paused (or pausing) run; the runs resumed and the errors."""
@@ -163,7 +257,7 @@ class FactoryControl:
             except (TaskRunError, ConfigError, OSError) as exc:
                 errors.append(_error(row, row.run_id, exc))
         with self._lock:
-            self._pauses.pop(control_key(repo), None)
+            self._end_pause(control_key(repo))
         return {"action": "resume", "run_ids": requested, "errors": errors}
 
     # -- stop --
@@ -173,7 +267,7 @@ class FactoryControl:
         key = control_key(repo)
         runs = running_runs(repo)
         with self._lock:
-            self._pauses.pop(key, None)
+            self._end_pause(key)
             state = self._stops.get(key)
             if state is None or not state.pending:
                 state = _Stop([], set(), _now())
@@ -248,8 +342,9 @@ class FactoryControl:
     def snapshot(self, root: Path, running: list[str] | None = None) -> JsonDict | None:
         """The progress of the newest stop or pause of the repository, or None.
 
-        ``running`` (the running run ids the caller sees) drops a pause none of whose runs
-        runs any more; without it a pause is kept.
+        ``running`` (the running run ids the caller sees) hides a pause none of whose runs
+        runs any more; without it a pause is shown. A hidden pause is kept: a chain may
+        still start a run, and ``hold`` drops the pause once no chain runs.
         """
         with self._lock:
             if not self._stops and not self._pauses:
@@ -275,7 +370,6 @@ class FactoryControl:
             if pause is None:
                 return None
             if running is not None and not set(pause.run_ids) & set(running):
-                del self._pauses[key]
                 return None
             return {
                 "action": "pause",
