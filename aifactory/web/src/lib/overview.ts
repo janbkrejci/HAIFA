@@ -9,8 +9,9 @@ import {
   type OverviewRepo,
   type OverviewRunning,
 } from './api'
+import { BOARD_STATES, STATE_LABELS, type BoardState } from './backlog'
 import { repoHref } from './router'
-import { errorText } from './format'
+import { errorText, plural } from './format'
 
 export const OVERVIEW_POLL_MS = 2000
 
@@ -121,7 +122,81 @@ export function urgency(repo: OverviewRepo): Urgency {
   if (failedRows(repo).length > 0) return 'failed'
   if (repo.review.length > 0) return 'review'
   if (activeRuns(repo).length > 0) return 'running'
+  // a stop still on its way keeps the card (and its progress) in sight
+  if ((repo.factory?.control?.pending.length ?? 0) > 0) return 'running'
   return 'calm'
+}
+
+/** One chip of the task summary: a board state with its count. */
+export interface TaskSummaryItem {
+  state: BoardState
+  label: string
+  count: number
+}
+
+/** The tasks of a repo per board state, in kanban order; states without a task are left out. */
+export function taskSummary(repo: OverviewRepo): TaskSummaryItem[] {
+  const tasks = repo.tasks
+  if (!tasks) return []
+  return BOARD_STATES.filter((state) => (tasks[state] ?? 0) > 0).map((state) => ({
+    state,
+    label: STATE_LABELS[state],
+    count: tasks[state],
+  }))
+}
+
+/** Spustit továrnu: a ready task and a free parallel slot. */
+export function canStart(repo: OverviewRepo): boolean {
+  return repo.factory?.can_start === true
+}
+
+/** Pauza: a running run without a pause. */
+export function canPause(repo: OverviewRepo): boolean {
+  return activeRuns(repo).some((r) => !r.pause)
+}
+
+/** Pokračovat: a run that pauses or is paused. */
+export function canResume(repo: OverviewRepo): boolean {
+  return activeRuns(repo).some((r) => r.pause === 'pausing' || r.pause === 'paused')
+}
+
+/** Stop: anything running. */
+export function canStop(repo: OverviewRepo): boolean {
+  return activeRuns(repo).length > 0
+}
+
+/** "dobíhá 1 běh", "dobíhají 2 běhy", "dobíhá 5 běhů". */
+export function runsFinishing(n: number): string {
+  return `${plural(n, 'dobíhá', 'dobíhají', 'dobíhá')} ${n} ${plural(n, 'běh', 'běhy', 'běhů')}`
+}
+
+/** The state of a stop or pause of the whole repo. */
+export interface ControlStatus {
+  kind: 'stopping' | 'stopped' | 'pausing' | 'paused'
+  text: string
+}
+
+export function controlStatus(repo: OverviewRepo): ControlStatus | null {
+  const control = repo.factory?.control
+  if (!control) return null
+  if (control.action === 'stop') {
+    const n = control.pending.length
+    if (n > 0) return { kind: 'stopping', text: `Zastavuje se – ${runsFinishing(n)}` }
+    return { kind: 'stopped', text: 'Zastaveno' }
+  }
+  const ids = new Set(control.run_ids)
+  const affected = activeRuns(repo).filter((r) => ids.has(r.run_id))
+  const left = affected.filter((r) => r.pause !== 'paused').length
+  if (left > 0) return { kind: 'pausing', text: `Pozastavuje se – ${runsFinishing(left)}` }
+  if (affected.length > 0) return { kind: 'paused', text: 'Pozastaveno' }
+  return null
+}
+
+/** The errors of a stop of the whole repo, one line each. */
+export function controlErrors(repo: OverviewRepo): string[] {
+  return (repo.factory?.control?.errors ?? []).map(
+    (e) => `Nepodařilo se: ${e.task_id ?? e.run_id} – ${e.message}`,
+  )
 }
 
 /** Repos by urgency (problems, failures, review, running, calm), then by name. */

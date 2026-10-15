@@ -156,7 +156,13 @@ home (default: home) as
 ``POST /api/fs/pick`` opens the system folder dialog on the server's session and answers
 ``{path}`` or ``{cancelled: true}`` (``picker_unavailable``, ``picker_busy``,
 ``picker_timeout``). ``GET /api/overview`` (``overview.py``) tells for every repository what
-runs, waits for review and failed and the state of its configuration; it only reads.
+runs, waits for review and failed, how many tasks are in each board state, its parallel
+slots (``factory``) and the state of its configuration; it only reads. The Overview's
+factory controls (``control.py``) are ``POST /api/repos/{id}/control/start`` (start ready
+tasks into the free ``max_parallel_runs`` slots, HTTP 200 also when nothing started),
+``.../control/pause`` and ``.../control/resume`` (every running run) and
+``.../control/stop`` (every running run, in the background; HTTP 202, the progress is in
+the overview's ``factory.control``).
 Each repository's endpoints above are under
 ``/api/repos/{id}/`` with the same relative paths (``/health`` excepted) and their own
 ``/live`` hub; an unknown id gives HTTP 404 ``unknown_repo``, a missing folder HTTP 404
@@ -209,6 +215,7 @@ from aifactory.skill.envelope import envelope_fail, envelope_ok
 from aifactory.web import backlog, chains, factory, library, machine, review, runs, settings
 from aifactory.web import server as web_server
 from aifactory.web.config_cache import ConfigCache
+from aifactory.web.control import FactoryControl
 from aifactory.web.fs import FolderPicker, list_dirs
 from aifactory.web.guard import StaleCodeMiddleware, WriteGuardMiddleware, is_api_path
 from aifactory.web.launcher import Launcher, RunLauncher
@@ -665,6 +672,47 @@ def pause_run(request: Request) -> JSONResponse:
 def resume_run(request: Request) -> JSONResponse:
     """Let a paused run go on with its next phase, as ``factory task resume`` does."""
     return _run_action(request, _resumed)
+
+
+async def _control(
+    request: Request, action: Callable[[Path], Any], status: int = 200
+) -> JSONResponse:
+    """One of the Overview's factory controls on the request's repository."""
+    repo: Path = _repo(request)
+    try:
+        if await request.body() and await _json_body(request):
+            return _usage_error("the request takes no fields")
+        data = await run_in_threadpool(action, repo)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except (TaskRunError, ConfigError) as exc:
+        return _run_error(exc)
+    return JSONResponse(envelope_ok(data), status_code=status)
+
+
+async def control_start(request: Request) -> JSONResponse:
+    """Start ready tasks into the free parallel slots (``FactoryControl.start``)."""
+    control: FactoryControl = request.app.state.control
+    launcher: Launcher = request.app.state.launcher
+    return await _control(request, lambda repo: control.start(repo, launcher))
+
+
+async def control_pause(request: Request) -> JSONResponse:
+    """Pause every running run of the repository."""
+    control: FactoryControl = request.app.state.control
+    return await _control(request, control.pause)
+
+
+async def control_resume(request: Request) -> JSONResponse:
+    """Resume every paused run of the repository."""
+    control: FactoryControl = request.app.state.control
+    return await _control(request, control.resume)
+
+
+async def control_stop(request: Request) -> JSONResponse:
+    """Stop every running run of the repository in the background; HTTP 202."""
+    control: FactoryControl = request.app.state.control
+    return await _control(request, control.stop, 202)
 
 
 async def publish_run(request: Request) -> JSONResponse:
@@ -1468,6 +1516,10 @@ def _repo_routes() -> list[BaseRoute]:
             methods=["GET"],
         ),
         Route("/live", live, methods=["GET"]),
+        Route("/control/start", control_start, methods=["POST"]),
+        Route("/control/pause", control_pause, methods=["POST"]),
+        Route("/control/resume", control_resume, methods=["POST"]),
+        Route("/control/stop", control_stop, methods=["POST"]),
         Route("/runs/{run_id}/stop", stop_run, methods=["POST"]),
         Route("/runs/{run_id}/pause", pause_run, methods=["POST"]),
         Route("/runs/{run_id}/resume", resume_run, methods=["POST"]),
@@ -1574,6 +1626,10 @@ def _shared_state(
     app.state.code = code_watch if code_watch is not None else CodeWatch()
     app.state.restart = restart if restart is not None else web_server.restart_process
     app.state.updates = Updates()
+    app.state.control = FactoryControl()
+    overview: Overview | None = getattr(app.state, "overview", None)
+    if overview is not None:
+        overview.control = app.state.control
 
     def enabled(name: str) -> bool:
         home = getattr(app.state, "home", None)

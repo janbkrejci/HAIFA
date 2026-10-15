@@ -1,17 +1,25 @@
 import { describe, expect, it } from 'vitest'
 import {
+  canPause,
+  canResume,
+  canStart,
+  canStop,
+  controlStatus,
   countsById,
   failedRows,
   matchesFilter,
   problems,
   reviewLink,
   runLink,
+  runsFinishing,
   sortRepos,
+  taskSummary,
   totals,
   urgency,
 } from './overview'
 import { fmtAge, fmtElapsed } from './format'
-import { config, failed, overview, repo, review, running } from '@/test/overviewFixtures'
+import type { OverviewFactory } from './api'
+import { config, factory, failed, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
 
 const CALM = repo('calm')
 const RUNS = repo('runs', { running: [running()] })
@@ -83,5 +91,68 @@ describe('overview formats', () => {
     expect(fmtAge(300)).toBe('před 5 min')
     expect(fmtAge(7200)).toBe('před 2 h')
     expect(fmtAge(2 * 86400)).toBe('před 2 d')
+  })
+})
+
+describe('overview factory controls', () => {
+  const stop = (over: Partial<NonNullable<OverviewFactory['control']>> = {}) =>
+    factory({
+      control: {
+        action: 'stop',
+        run_ids: [],
+        pending: [],
+        errors: [],
+        started_at: '2026-10-06T10:00:00+00:00',
+        finished_at: null,
+        ...over,
+      },
+    })
+
+  it('summarizes the tasks in kanban order without empty states', () => {
+    expect(taskSummary(repo('a'))).toEqual([])
+    expect(taskSummary(repo('a', { tasks: tasks({ done: 4, todo: 1, 'in review': 2 }) }))).toEqual([
+      { state: 'todo', label: 'Bez workflow', count: 1 },
+      { state: 'in review', label: 'V review', count: 2 },
+      { state: 'done', label: 'Hotovo', count: 4 },
+    ])
+  })
+
+  it('tells which controls apply', () => {
+    expect(canStart(repo('a'))).toBe(false)
+    expect(canStart(repo('a', { factory: factory({ can_start: true }) }))).toBe(true)
+    const r = repo('a', { running: [running(), running({ run_id: 'r2', pause: 'pausing' })] })
+    expect([canPause(r), canResume(r), canStop(r)]).toEqual([true, true, true])
+    const ended = repo('a', { running: [running({ process: 'ended' })] })
+    expect([canPause(ended), canResume(ended), canStop(ended)]).toEqual([false, false, false])
+  })
+
+  it('says how many runs are still finishing, in Czech plural', () => {
+    expect(runsFinishing(1)).toBe('dobíhá 1 běh')
+    expect(runsFinishing(3)).toBe('dobíhají 3 běhy')
+    expect(runsFinishing(5)).toBe('dobíhá 5 běhů')
+    expect(controlStatus(repo('a', { factory: stop({ pending: ['x', 'y', 'z', 'u', 'v'] }) }))).toEqual({
+      kind: 'stopping',
+      text: 'Zastavuje se – dobíhá 5 běhů',
+    })
+    expect(controlStatus(repo('a', { factory: stop({ finished_at: 'now' }) }))?.text).toBe('Zastaveno')
+    expect(controlStatus(repo('a'))).toBeNull()
+  })
+
+  it('tells a pause going on from a pause in effect', () => {
+    const pause = stop({ run_ids: ['run-1'] })
+    pause.control!.action = 'pause'
+    expect(controlStatus(repo('a', { running: [running({ pause: 'pausing' })], factory: pause }))?.text).toBe(
+      'Pozastavuje se – dobíhá 1 běh',
+    )
+    expect(controlStatus(repo('a', { running: [running({ pause: 'paused' })], factory: pause }))).toEqual({
+      kind: 'paused',
+      text: 'Pozastaveno',
+    })
+    expect(controlStatus(repo('a', { factory: pause }))).toBeNull()
+  })
+
+  it('keeps a repo whose stop goes on out of the calm list', () => {
+    expect(urgency(repo('a', { factory: stop({ pending: ['x'] }) }))).toBe('running')
+    expect(urgency(repo('a', { factory: stop({ finished_at: 'now' }) }))).toBe('calm')
   })
 })

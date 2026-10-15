@@ -32,6 +32,11 @@ def _max_parallel_runs(repo: Path) -> int | None:
         root = gitops.main_root(repo)
     except TaskRunError:
         root = repo
+    return max_parallel_runs_in(root)
+
+
+def max_parallel_runs_in(root: Path) -> int | None:
+    """``max_parallel_runs`` of ``.factory/config.yaml`` under `root` (None if invalid); no git."""
     path = root / CONFIG_FILE
     try:
         text = path.read_text(encoding="utf-8") if path.is_file() else None

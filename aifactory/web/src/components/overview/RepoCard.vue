@@ -1,17 +1,18 @@
 <script setup lang="ts">
 // A repo card of the overview: what runs, waits for review and failed, its configuration
-// problems and the newest activity. Every row is a link to the run, the review or the settings.
+// problems, the factory controls with the task summary and the newest activity. Every row is a link to the run, the review or the settings.
 import { computed } from 'vue'
 import type { OverviewRepo } from '@/lib/api'
 import { fmtAge, fmtCost, fmtElapsed, fmtTime, ts } from '@/lib/format'
 import { activeRuns, failedRows, problems, reviewLink, runLink } from '@/lib/overview'
 import { repoHref } from '@/lib/router'
+import RepoControls from './RepoControls.vue'
 import RepoMenu from './RepoMenu.vue'
 
 const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removing?: boolean }>(), {
   removing: false,
 })
-const emit = defineEmits<{ remove: [repo: OverviewRepo] }>()
+const emit = defineEmits<{ remove: [repo: OverviewRepo]; changed: [] }>()
 
 const running = computed(() => activeRuns(props.repo))
 const failed = computed(() => failedRows(props.repo))
@@ -36,6 +37,8 @@ function reviewAge(opened: string | null, ageS: number | null): string {
       <span class="repo-path mono">{{ repo.path }}</span>
       <RepoMenu class="card-menu" :name="repo.name" :removing="removing" @remove="emit('remove', repo)" />
     </header>
+
+    <RepoControls :repo="repo" @changed="emit('changed')" />
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
 

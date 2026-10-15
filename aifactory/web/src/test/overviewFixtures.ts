@@ -2,6 +2,7 @@
 import type {
   OverviewConfig,
   OverviewData,
+  OverviewFactory,
   OverviewFailed,
   OverviewRepo,
   OverviewReview,
@@ -34,6 +35,7 @@ export function running(over: Partial<OverviewRunning> = {}): OverviewRunning {
     tokens: 1000,
     process: 'alive',
     status_label: null,
+    pause: null,
     ...over,
   }
 }
@@ -78,8 +80,28 @@ export function repo(id: string, over: Partial<OverviewRepo> = {}): OverviewRepo
     config: config(),
     last_activity: '2026-10-06T10:00:00+00:00',
     warnings: [],
+    tasks: null,
+    factory: null,
     ...over,
   }
+}
+
+export function factory(over: Partial<OverviewFactory> = {}): OverviewFactory {
+  return {
+    max_parallel_runs: 2,
+    running: 0,
+    free_slots: 2,
+    ready: 0,
+    can_start: false,
+    paused: 0,
+    pausing: 0,
+    control: null,
+    ...over,
+  }
+}
+
+export function tasks(over: Partial<NonNullable<OverviewRepo['tasks']>> = {}): NonNullable<OverviewRepo['tasks']> {
+  return { todo: 0, ready: 0, blocked: 0, running: 0, 'in review': 0, done: 0, cancelled: 0, ...over }
 }
 
 export function overview(repos: OverviewRepo[]): OverviewData {
