@@ -56,7 +56,9 @@ def test_chain_with_runs_slots_and_skips(tmp_path: Path) -> None:
     assert chain["chain_id"] == "c1" and chain["state"] == "running"
     assert [r["run_id"] for r in chain["runs"]] == [r.run_id for r in chosen]
     assert chain["running"] == sum(1 for r in chosen if r.state == "running")
-    assert chain["free_slots"] == 3 - chain["running"]
+    # repo-wide: T2 runs (r-run) and T1's open PR waits for review, each takes a slot
+    assert chain["in_review"] == [T1]
+    assert chain["free_slots"] == 3 - 2
     assert chain["skipped"] == [skip]
     assert chain["exclusive"] == ["W"]
 
@@ -113,6 +115,21 @@ def test_a_sequential_chain_shows_the_run_going_on_in_its_process(tmp_path: Path
         ("r-run", "running"),
     ]
     assert (chain["running"], chain["free_slots"]) == (1, 0)
+
+
+def test_a_merged_pr_frees_the_slot_of_a_chain(tmp_path: Path) -> None:
+    root = make_trace_db(tmp_path / "repo", os.getpid())
+    now = str(now_iso())
+    _chain(root, TaskChainRow("c1", T1, os.getpid(), 2, "running", now, now), ["r-ok"])
+    (chain,) = _get(root, tmp_path)["chains"]
+    assert (chain["running"], chain["in_review"], chain["free_slots"]) == (1, [T1], 0)
+    store = TaskRunStore(root / ".factory" / "trace.db")
+    try:
+        store.update_pr(f"factory/{T1}-1", state="merged")
+    finally:
+        store.close()
+    (chain,) = _get(root, tmp_path)["chains"]
+    assert (chain["in_review"], chain["free_slots"]) == ([], 1)
 
 
 def test_dismiss_erases_an_ended_chain(tmp_path: Path) -> None:
