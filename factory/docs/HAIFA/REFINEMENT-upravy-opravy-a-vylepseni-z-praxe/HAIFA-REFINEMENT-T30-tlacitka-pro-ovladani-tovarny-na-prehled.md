@@ -85,6 +85,23 @@ rozbitého repa jsou `null`):
 Přehled dál jen čte: trace DB otevírá jen pro čtení a vyloučené tasky čte přímo z tabulky
 `task_queue`.
 
+## Kde to je
+
+- `aifactory/src/aifactory/run/queue.py`: `select_ready` (výběr přes celý backlog, sdílí
+  `_select` se `select_next`), `start_factory` a `FactoryStart`. `_run_parallel` nově
+  počítá do limitu i `live_runs()` celého repa. Export v `run/__init__.py`.
+- `aifactory/src/aifactory/web/control.py`: `FactoryControl` (start, pauza, pokračování,
+  stop na pozadí, průběh v paměti podle kořene repa, `snapshot`).
+- `aifactory/src/aifactory/web/overview.py`: klíče `tasks` a `factory`, `pause` u běhů.
+  `web/chains.py`: `max_parallel_runs_in` (čtení limitu bez gitu).
+- `aifactory/src/aifactory/web/app.py`: routy `/control/start|pause|resume|stop`,
+  `FactoryControl` ve sdíleném stavu aplikace a předaný `Overview`.
+- `aifactory/web/src/components/overview/RepoControls.vue` (nová komponenta, použitá
+  v `RepoCard.vue` a v řádku „v klidu“ v `OverviewView.vue`), logika v
+  `aifactory/web/src/lib/overview.ts` (`taskSummary`, `canStart`/`canPause`/`canResume`/
+  `canStop`, `controlStatus`, `controlErrors`), typy a volání v `aifactory/web/src/lib/api.ts`.
+- Přebuildovaný `aifactory/src/aifactory/web/static/`.
+
 ## Ověření
 
 - `just pytest tests/run/test_factory_start.py tests/run/test_parallel_chain.py tests/web/test_web_overview.py tests/web/test_web_control.py`
