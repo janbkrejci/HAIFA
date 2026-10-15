@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T28
 title: Automerge se musí postarat i o zelenou CI pipeline
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S03-T11, HAIFA-S02-T04, HAIFA-S03-T17, HAIFA-S03-T15, HAIFA-S02-T06, HAIFA-S09-T01]
@@ -32,3 +32,4 @@ Schválím-li PR a dám ho mergnout, nebo když ho jde mergnout automerge, tak s
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/40 · náklady $7.87
