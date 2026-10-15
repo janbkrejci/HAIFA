@@ -426,7 +426,7 @@ async function onCancel() {
           <div class="pair">
             <div class="field">
               <span>Závisí na</span>
-              <IdPicker v-model="depends" data-test="depends" label="Závisí na" :options="codeOptions" />
+              <IdPicker v-model="depends" data-test="depends" label="Závisí na" :options="codeOptions" :dialog="mode === 'edit'" />
             </div>
             <div class="field">
               <span>Související</span>
@@ -590,6 +590,12 @@ textarea {
 }
 
 textarea {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  resize: vertical;
+  overflow-wrap: anywhere;
   font-family: var(--mono);
   font-size: 14px;
 }
