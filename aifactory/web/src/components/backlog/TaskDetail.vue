@@ -683,9 +683,14 @@ dd {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
+  min-width: 0;
 }
 
+/* a long path without spaces wraps instead of growing past the card */
 .chip {
+  max-width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
   padding: 1px 6px;
   border: 1px solid var(--border-soft);
   border-radius: 6px;

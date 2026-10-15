@@ -4,6 +4,7 @@ import TaskDetail from './TaskDetail.vue'
 import TaskForm from './TaskForm.vue'
 import { runCheck, taskDetail } from '@/test/backlogFixtures'
 import { answerDialog, openDialog } from '@/test/modal'
+import { resetNamesForTests, setNames } from '@/lib/names'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
 vi.mock('@/lib/api', () => api)
@@ -283,6 +284,30 @@ describe('TaskDetail', () => {
       [{ depends_on: ['M01-S01-T01'], remove: true }],
       [{ related: ['M02-S01-T01'], remove: true }],
     ])
+  })
+
+  it('shows each writes path as a chip that shows the full path and wraps', () => {
+    const detail = taskDetail()
+    const long = 'aifactory/src/aifactory/some/really/long/path/without/any/spaces/at/all/file_name.py'
+    detail.task.writes = [long]
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    const chip = wrapper.get('[data-test="writes"] .chip')
+    expect(chip.text()).toBe(long)
+    expect(chip.attributes('title')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('opens the blocking-task search dialog from the edit form', async () => {
+    setNames({ names: { 'M02-S01-T09': { title: 'Filtr', level: 'task' } } })
+    const wrapper = mount(TaskDetail, {
+      props: { detail: taskDetail(), workflows: [], busy: false, error: null }, attachTo: document.body,
+    })
+    await wrapper.get('[data-test="edit"]').trigger('click')
+    await wrapper.get('[data-test="depends"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-test="code-picker-search"]')).not.toBeNull()
+    wrapper.unmount()
+    resetNamesForTests()
   })
 
   it('opens the edit form and emits edit', async () => {

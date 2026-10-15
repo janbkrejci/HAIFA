@@ -99,12 +99,41 @@ describe('TaskForm', () => {
       'M01-S01-T02': { title: 'API', level: 'task' },
     } })
     const wrapper = editForm({ id: 'M01-S01-T02', depends_on: ['M01-S01-T01'], related: [] })
-    expect(await selectLabels(wrapper, '[data-test="depends"]')).toEqual(['M01 · Projekt', 'M01-S01 · Step'])
     expect(await selectLabels(wrapper, '[data-test="related"]')).toEqual(['M01 · Projekt', 'M01-S01 · Step', 'M01-S01-T01 · Schema'])
     await chooseOption(wrapper, '[data-test="related"]', 'M01-S01-T01')
     await wrapper.get('[data-test="unpick-M01-S01-T01"]').trigger('click')
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('submit')?.[0]).toEqual([{ depends_on: [], related: ['M01-S01-T01'] }])
+    wrapper.unmount()
+  })
+
+  it('adds a blocking task in edit through the search dialog, never the task itself or a chosen one', async () => {
+    setNames({ names: {
+      M01: { title: 'Projekt', level: 'project' },
+      'M01-S01-T01': { title: 'Schema', level: 'task' },
+      'M01-S01-T02': { title: 'API', level: 'task' },
+      'M01-S01-T03': { title: 'Loader', level: 'task' },
+    } })
+    const wrapper = mount(TaskForm, {
+      props: { mode: 'edit', steps: [], workflows: data.workflows, busy: false, error: null,
+        task: taskNode({ id: 'M01-S01-T02', depends_on: ['M01-S01-T01'], related: [] }) },
+      attachTo: document.body,
+    })
+    await wrapper.get('[data-test="depends"]').trigger('click')
+    await flushPromises()
+    const codes = () => Array.from(document.body.querySelectorAll<HTMLElement>('[data-test="select-list"] [role="option"]')).map((o) => o.dataset.value)
+    expect(codes()).toEqual(['M01', 'M01-S01-T03'])
+    const input = document.body.querySelector<HTMLInputElement>('[data-test="code-picker-search"]')!
+    input.value = 'loader'; input.dispatchEvent(new Event('input', { bubbles: true }))
+    await flushPromises()
+    expect(codes()).toEqual(['M01-S01-T03'])
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }))
+    await flushPromises()
+    expect(document.body.querySelector('[data-test="select-list"]')).toBeNull()
+    expect(wrapper.find('[data-picked="M01-S01-T03"]').exists()).toBe(true)
+    await wrapper.get('[data-test="unpick-M01-S01-T01"]').trigger('click')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('submit')?.[0]).toEqual([{ depends_on: ['M01-S01-T03'] }])
     wrapper.unmount()
   })
 
