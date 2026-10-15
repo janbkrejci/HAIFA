@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T35
 title: "Knihovna místo „Tento počítač“, tabbar bez scrollbaru, dialogy knihovny a obnova knihovny při instalaci nové verze"
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-REFINEMENT-T24, HAIFA-REFINEMENT-T27, HAIFA-REFINEMENT-T32, HAIFA-S10-T04, HAIFA-S10-T05, HAIFA-S05-T17, HAIFA-S04-T02, HAIFA-S04-T04, HAIFA-S01-T15]
@@ -50,3 +50,4 @@ Soubor drobných úprav z praxe. Všechny se týkají UI dashboardu a knihovny.
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/49 · náklady $10.16
