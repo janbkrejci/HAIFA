@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // #/overview: what runs, waits for review and failed in every registered repo (GET /api/overview).
-// Totals on top filter the cards; cards go by urgency and calm repos fold into one line each.
+// Totals on top filter the cards; cards go by urgency and calm repos fold into a short row each
+// (the name with the path in a tooltip, the factory buttons and the menu, the newest activity last).
 // Reloads every 2 s while the tab is visible, on a return to the window and by Obnovit; reads only.
 // Readiness reports its progress and actionable findings above the overview.
 import { computed, ref } from 'vue'
@@ -21,11 +22,14 @@ import {
 import { REPOS_ADD_HREF, repoHref } from '@/lib/router'
 import { ADD_REPO_HINT, useRemoveRepo } from '@/lib/repos'
 import EmptyScreen from '@/components/EmptyScreen.vue'
+import RepoActions from '@/components/overview/RepoActions.vue'
 import RepoCard from '@/components/overview/RepoCard.vue'
 import RepoControls from '@/components/overview/RepoControls.vue'
 import RepoMenu from '@/components/overview/RepoMenu.vue'
 import RemoveRepoDialog from '@/components/repos/RemoveRepoDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
+import Tooltip from '@/components/ui/Tooltip.vue'
+import { NO_FEEDBACK, type ControlFeedback } from '@/components/overview/feedback'
 
 const props = withDefaults(defineProps<{ repos: RepoItem[] | null; error?: string | null }>(), {
   error: null,
@@ -40,6 +44,8 @@ const removal = useRemoveRepo(() => {
 })
 const { remove, removing, error: removeError } = removal
 const filter = ref<OverviewFilter | null>(null)
+/** The outcome of the last factory button of each calm repo, by repo id. */
+const feedback = ref<Record<string, ControlFeedback>>({})
 
 const sorted = computed(() => sortRepos(data.value?.repos ?? []))
 const sums = computed(() => totals(data.value?.repos ?? []))
@@ -119,11 +125,18 @@ function activity(iso: string | null): string {
 
       <ul v-if="calm.length" class="calm-list">
         <li v-for="repo in calm" :key="repo.id" class="calm" data-test="calm-repo" :data-repo="repo.id">
-          <a :href="repoHref(repo.id, 'backlog')" class="calm-name">{{ repo.name }}</a>
-          <span class="calm-state">v klidu</span>
+          <div class="calm-head">
+            <Tooltip :text="repo.path">
+              <a :href="repoHref(repo.id, 'backlog')" class="calm-name">{{ repo.name }}</a>
+            </Tooltip>
+            <span class="calm-state">v klidu</span>
+            <div class="calm-tools">
+              <RepoActions :repo="repo" @feedback="feedback[repo.id] = $event" @changed="refresh" />
+              <RepoMenu :name="repo.name" :removing="removing === repo.id" item-test="calm-remove" @remove="remove(repo)" />
+            </div>
+          </div>
+          <RepoControls :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" />
           <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>
-          <RepoMenu :name="repo.name" :removing="removing === repo.id" item-test="calm-remove" @remove="remove(repo)" />
-          <RepoControls :repo="repo" compact @changed="refresh" />
         </li>
       </ul>
 
@@ -263,14 +276,28 @@ h1 {
 
 .calm {
   display: flex;
-  align-items: center;
-  gap: 12px;
+  flex-direction: column;
+  gap: 6px;
   padding: 8px 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--panel);
+}
+
+.calm-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
   white-space: nowrap;
-  flex-wrap: wrap;
+}
+
+.calm-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
 }
 
 .calm-name {
@@ -284,8 +311,8 @@ h1 {
 }
 
 .calm-activity {
-  margin-left: auto;
   overflow: hidden;
+  white-space: nowrap;
   text-overflow: ellipsis;
   color: var(--faint);
   font-size: 13px;

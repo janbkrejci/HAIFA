@@ -9,7 +9,7 @@ import { LIVE_DEBOUNCE_MS, resetLiveForTests } from './lib/live'
 import { nameTip, resetNamesForTests } from './lib/names'
 import { resetBacklogStatusForTests } from './lib/backlogStatus'
 import type { RepoItem } from './lib/api'
-import { failed, overview, repo as ovRepo, review, running } from './test/overviewFixtures'
+import { factory, failed, overview, repo as ovRepo, review, running } from './test/overviewFixtures'
 import { answerDialog, openDialog } from './test/modal'
 import { installPlan, factoryCheck } from './test/factoryFixtures'
 import { lastFactoryResult } from './lib/factory'
@@ -454,6 +454,42 @@ describe('App', () => {
     expect(wrapper.find('[data-test="repo-row"]').exists()).toBe(false)
     wrapper.unmount()
     vi.useRealTimers()
+  })
+
+  it('lays out a calm repo like a card: path in a tooltip, icon buttons by the menu, activity last', async () => {
+    const fetchMock = stubApi({
+      repos: [repo('sandbox', 'sandbox', '/work/sandbox')],
+      handler: (url, init) => {
+        if (url === '/api/overview')
+          return envelope(overview([ovRepo('sandbox', { factory: factory({ can_start: true, ready: 1 }) })]))
+        if (url === '/api/repos/sandbox/control/start' && init?.method === 'POST')
+          return envelope({ max_parallel_runs: 2, running: 0, free_slots: 2, started: [{ task_id: 'T1', run_id: 'r1' }], skipped: [] })
+      },
+    })
+    go('#/overview')
+    const wrapper = mount(App, { attachTo: document.body })
+    await flushPromises()
+    const calm = wrapper.get('[data-test="calm-repo"]')
+    expect(calm.attributes('data-repo')).toBe('sandbox')
+    expect(calm.text()).not.toContain('/work/sandbox')
+    expect(calm.element.lastElementChild?.getAttribute('data-test')).toBe('last-activity')
+
+    const tools = calm.get('.calm-tools')
+    expect(tools.find('[data-test="repo-menu"]').exists()).toBe(true)
+    const start = tools.get('[data-test="factory-start"]')
+    expect(start.text()).toBe('')
+    expect(start.find('svg').exists()).toBe(true)
+    expect(start.attributes('aria-label')).toBe('Spustit továrnu')
+
+    await calm.get('.calm-name').trigger('focusin')
+    expect(document.body.querySelector('[data-test="tooltip"]')?.textContent?.trim()).toBe('/work/sandbox')
+    await calm.get('.calm-name').trigger('focusout')
+
+    await start.trigger('click')
+    await flushPromises()
+    expect(fetchMock.mock.calls.some(([url, init]) => url === '/api/repos/sandbox/control/start' && init?.method === 'POST')).toBe(true)
+    expect(wrapper.get('[data-test="calm-repo"] [data-test="factory-start-message"]').text()).toBe('Spuštěno 1 běh')
+    wrapper.unmount()
   })
 
   it('shows the running, review and failed counts of each repo in the switcher on opening', async () => {

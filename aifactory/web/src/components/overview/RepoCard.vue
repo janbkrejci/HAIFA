@@ -1,6 +1,7 @@
 <script setup lang="ts">
-// A repo card of the overview: what runs, waits for review and failed, its configuration
-// problems, the factory controls with the task summary and the newest activity. Every row is a link to the run, the review or the settings.
+// A repo card of the overview: the name (its path in a tooltip) with the factory buttons and the
+// menu in the top right corner, what runs, waits for review and failed, its configuration
+// problems, the factory state with the task summary and, always last, the newest activity. Every row is a link to the run, the review or the settings.
 // Tasks whose PR was merged outside factory get "Otevřít sync PR" (`factory backlog sync`), or a
 // link to the sync PR that is already open; the sync PR is never opened automatically.
 import { computed, ref } from 'vue'
@@ -8,9 +9,12 @@ import { backlogSync, type OverviewRepo } from '@/lib/api'
 import { errorText, fmtAge, fmtCost, fmtElapsed, fmtTime, ts } from '@/lib/format'
 import { activeRuns, failedRows, problems, reviewLink, runLink } from '@/lib/overview'
 import { repoHref } from '@/lib/router'
+import RepoActions from './RepoActions.vue'
 import RepoControls from './RepoControls.vue'
 import RepoMenu from './RepoMenu.vue'
 import Spinner from '@/components/ui/Spinner.vue'
+import Tooltip from '@/components/ui/Tooltip.vue'
+import { NO_FEEDBACK, type ControlFeedback } from './feedback'
 
 const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removing?: boolean }>(), {
   removing: false,
@@ -27,6 +31,8 @@ function since(iso: string | null | undefined): number | null {
   const t = ts(iso)
   return Number.isFinite(t) ? Math.max(0, (props.now - t) / 1000) : null
 }
+
+const feedback = ref<ControlFeedback>(NO_FEEDBACK)
 
 const mergedOutside = computed(() => props.repo.merged_outside ?? [])
 const syncing = ref(false)
@@ -57,12 +63,16 @@ function reviewAge(opened: string | null, ageS: number | null): string {
 <template>
   <article class="repo-card" data-test="overview-card" :data-repo="repo.id">
     <header class="card-head">
-      <a :href="repoHref(repo.id, 'backlog')" class="repo-name" data-test="card-name">{{ repo.name }}</a>
-      <span class="repo-path mono">{{ repo.path }}</span>
-      <RepoMenu class="card-menu" :name="repo.name" :removing="removing" @remove="emit('remove', repo)" />
+      <Tooltip :text="repo.path">
+        <a :href="repoHref(repo.id, 'backlog')" class="repo-name" data-test="card-name">{{ repo.name }}</a>
+      </Tooltip>
+      <div class="card-tools">
+        <RepoActions :repo="repo" @feedback="feedback = $event" @changed="emit('changed')" />
+        <RepoMenu :name="repo.name" :removing="removing" @remove="emit('remove', repo)" />
+      </div>
     </header>
 
-    <RepoControls :repo="repo" @changed="emit('changed')" />
+    <RepoControls :repo="repo" :feedback="feedback" />
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
 
@@ -186,12 +196,12 @@ function reviewAge(opened: string | null, ageS: number | null): string {
   padding: 14px 16px;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: var(--panel-2);
+  background: var(--panel);
 }
 
 .card-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   min-width: 0;
 }
@@ -202,17 +212,12 @@ function reviewAge(opened: string | null, ageS: number | null): string {
   font-size: 17px;
 }
 
-.card-menu {
-  align-self: flex-start;
+.card-tools {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
   margin-left: auto;
-}
-
-.repo-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--faint);
-  font-size: 13px;
 }
 
 .group {
