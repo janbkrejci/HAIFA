@@ -14,8 +14,20 @@ from advice_fixture import make_repo, output
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentResult
 from aifactory.harness.check import HarnessStatus
-from aifactory.web.backlog import UsageError
-from aifactory.workflow.adaptive import WorkflowRecommendationOutput, context, recommend, validate
+from aifactory.web.backlog import BOARD_STATES, UsageError
+from aifactory.workflow.adaptive import (
+    ADVICE_CLOSED_STATES,
+    WorkflowRecommendationOutput,
+    context,
+    recommend,
+    validate,
+)
+
+
+def test_no_advice_for_a_task_with_an_open_pr() -> None:
+    # both kinds of open PR: waiting for review and waiting for auto-merge
+    assert {"in review", "awaiting merge"} <= ADVICE_CLOSED_STATES
+    assert set(BOARD_STATES) - ADVICE_CLOSED_STATES == {"todo", "ready", "blocked"}
 
 
 def test_context_and_committed_catalog(tmp_path: Path) -> None:

@@ -107,6 +107,7 @@ describe('ReviewDetail', () => {
             provider_state: state,
             mergeability: 'conflict',
             awaiting_review: false,
+            awaiting_automerge: false,
             actions: none,
             pr: taskPr({ state, merged_at: state === 'merged' ? '2026-01-02T09:00:00+00:00' : null }),
           }),

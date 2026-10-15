@@ -9,9 +9,10 @@ committed except by ``commit`` (``factory backlog commit``), which commits the b
 changes to ``base``.
 
 Board states (the kanban columns), first match wins: ``done``, ``cancelled``,
-``running`` (a running run in the trace DB), ``in review`` (an open PR), ``blocked``,
-``ready`` (only with an effective workflow), otherwise ``todo`` (no workflow yet, or an
-invalid ``status`` flagged with ``invalid``).
+``running`` (a running run in the trace DB), ``awaiting merge`` (an open PR the factory
+merges by itself, see ``waits_for_automerge``), ``in review`` (any other open PR: it waits
+for the user), ``blocked``, ``ready`` (only with an effective workflow), otherwise ``todo``
+(no workflow yet, or an invalid ``status`` flagged with ``invalid``).
 """
 
 from __future__ import annotations
@@ -52,6 +53,7 @@ BOARD_STATES: tuple[str, ...] = (
     "blocked",
     "running",
     "in review",
+    "awaiting merge",
     "done",
     "cancelled",
 )
@@ -97,6 +99,8 @@ AUTO_MODES: dict[str, bool | None] = {"on": True, "off": False, "inherit": None}
 class _Runtime:
     running: set[str] = field(default_factory=set)
     in_review: set[str] = field(default_factory=set)
+    # tasks whose newest open PR has an auto_merge_error (auto-merge gave up on it)
+    merge_blocked: set[str] = field(default_factory=set)
     last_run: dict[str, str] = field(default_factory=dict)
     queue: QueuePrefs = field(default_factory=QueuePrefs)
 
@@ -122,7 +126,12 @@ def _runtime(repo: Path) -> tuple[_Runtime, list[str]]:
                 rt.last_run.setdefault(run.task_id, run.state)
                 if run.state == "running":
                     rt.running.add(run.task_id)
-            rt.in_review = {pr.task_id for pr in store.open_prs()}
+            for pr in store.open_prs():  # newest first
+                if pr.task_id in rt.in_review:
+                    continue
+                rt.in_review.add(pr.task_id)
+                if pr.auto_merge_error:
+                    rt.merge_blocked.add(pr.task_id)
             rt.queue = store.queue_prefs()
         finally:
             store.close()
@@ -135,6 +144,17 @@ def _runtime(repo: Path) -> tuple[_Runtime, list[str]]:
     return rt, []
 
 
+def waits_for_automerge(task: Task | None, auto_merge_error: str | None) -> bool:
+    """An open PR of `task` is merged by the factory itself.
+
+    True with an effective ``auto_merge`` (task, step or project) and no ``auto_merge_error``:
+    a failed auto-merge leaves the PR open for a manual approve, so it waits for review again.
+    """
+    return (
+        task is not None and core.effective(task).get("auto_merge") is True and not auto_merge_error
+    )
+
+
 def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
     """The kanban column of ``task`` (see the module docstring)."""
     if task.status == "done":
@@ -144,7 +164,8 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
     if task.id in rt.running:
         return "running"
     if task.id in rt.in_review:
-        return "in review"
+        error = "auto_merge_error" if task.id in rt.merge_blocked else None
+        return "awaiting merge" if waits_for_automerge(task, error) else "in review"
     state = core.derived_state(backlog, task)
     if state == "blocked":
         return "blocked"

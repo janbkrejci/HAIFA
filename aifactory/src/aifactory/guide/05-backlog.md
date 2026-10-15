@@ -28,7 +28,8 @@ Nahoře jsou tlačítka **Nový projekt**, **Nový step**, **Nový task** a **Ob
 | Hotovo | Pull request byl schválen a mergnut (`status: done`). |
 | Zrušeno | Task je zrušený (`status: cancelled`). |
 | Běží | Task má běžící běh. |
-| V review | Task má otevřený pull request. |
+| Čeká na review | Task má otevřený pull request a čeká na tvoje review. |
+| Čeká na automerge PR | Task má otevřený pull request se zapnutým auto-merge; factory ho mergne sama. Sloupec kanbanu se ukáže, jen když v něm nějaký task je. |
 | Blokováno | Některá závislost (`depends_on`) není hotová. |
 | Připraveno | Task jde spustit. |
 | Bez workflow | Task nemá workflow, a proto nejde spustit. |

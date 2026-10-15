@@ -7,6 +7,7 @@ import {
   type OverviewData,
   type OverviewFailed,
   type OverviewRepo,
+  type OverviewReview,
   type OverviewRunning,
 } from './api'
 import { BOARD_STATES, STATE_LABELS, type BoardState } from './backlog'
@@ -16,18 +17,20 @@ import { errorText, plural } from './format'
 export const OVERVIEW_POLL_MS = 2000
 
 /** The totals at the top; a click on one filters the cards. */
-export type OverviewFilter = 'running' | 'review' | 'failed' | 'problems'
+export type OverviewFilter = 'running' | 'review' | 'automerge' | 'failed' | 'problems'
 
 export const TOTALS: readonly { id: OverviewFilter; label: string }[] = [
   { id: 'running', label: 'Běží' },
   { id: 'review', label: 'Čeká na review' },
+  { id: 'automerge', label: 'Čeká na automerge PR' },
   { id: 'failed', label: 'Selhalo' },
   { id: 'problems', label: 'Problémy' },
 ]
 
-/** Urgency of a repo card, most urgent first. */
-export type Urgency = 'problems' | 'failed' | 'review' | 'running' | 'calm'
-const URGENCY_ORDER: readonly Urgency[] = ['problems', 'failed', 'review', 'running', 'calm']
+/** Urgency of a repo card, most urgent first. A PR waiting for auto-merge needs nobody, so it
+ * ranks after running runs: the factory still works on the repo, but the user need not. */
+export type Urgency = 'problems' | 'failed' | 'review' | 'running' | 'automerge' | 'calm'
+const URGENCY_ORDER: readonly Urgency[] = ['problems', 'failed', 'review', 'running', 'automerge', 'calm']
 
 /** The text a run whose process is gone shows. */
 export const PROCESS_ENDED = 'proces skončil'
@@ -65,6 +68,11 @@ const PROBLEM_TEXT: Record<Problem['kind'], string> = {
   not_git: 'Není git repozitář',
   timeout: 'Repo neodpovědělo včas',
   error: 'Repo se nepodařilo přečíst',
+}
+
+/** Open PRs the factory merges by itself (older responses have no list). */
+export function automergePrs(repo: OverviewRepo): OverviewReview[] {
+  return repo.automerge ?? []
 }
 
 /** Runs that still run (a run whose process ended counts as failed). */
@@ -124,6 +132,7 @@ export function urgency(repo: OverviewRepo): Urgency {
   if (activeRuns(repo).length > 0) return 'running'
   // a stop still on its way keeps the card (and its progress) in sight
   if ((repo.factory?.control?.pending.length ?? 0) > 0) return 'running'
+  if (automergePrs(repo).length > 0) return 'automerge'
   return 'calm'
 }
 
@@ -205,7 +214,7 @@ export function controlErrors(repo: OverviewRepo): string[] {
   )
 }
 
-/** Repos by urgency (problems, failures, review, running, calm), then by name. */
+/** Repos by urgency (problems, failures, review, running, auto-merge, calm), then by name. */
 export function sortRepos(repos: readonly OverviewRepo[]): OverviewRepo[] {
   const rank = (r: OverviewRepo) => URGENCY_ORDER.indexOf(urgency(r))
   return [...repos].sort((a, b) => rank(a) - rank(b) || a.name.localeCompare(b.name, 'cs'))
@@ -215,11 +224,17 @@ export function sortRepos(repos: readonly OverviewRepo[]): OverviewRepo[] {
 export interface RepoCounts {
   running: number
   review: number
+  automerge: number
   failed: number
 }
 
 export function repoCounts(repo: OverviewRepo): RepoCounts {
-  return { running: activeRuns(repo).length, review: repo.review.length, failed: failedRows(repo).length }
+  return {
+    running: activeRuns(repo).length,
+    review: repo.review.length,
+    automerge: automergePrs(repo).length,
+    failed: failedRows(repo).length,
+  }
 }
 
 /** Counts of every repo by id. */
@@ -229,13 +244,14 @@ export function countsById(data: OverviewData | null): Record<string, RepoCounts
   return out
 }
 
-/** The totals at the top: runs, PRs and failures, and repos with problems. */
+/** The totals at the top: runs, PRs (review and auto-merge apart), failures, problem repos. */
 export function totals(repos: readonly OverviewRepo[]): Record<OverviewFilter, number> {
-  const sum = { running: 0, review: 0, failed: 0, problems: 0 }
+  const sum = { running: 0, review: 0, automerge: 0, failed: 0, problems: 0 }
   for (const repo of repos) {
     const c = repoCounts(repo)
     sum.running += c.running
     sum.review += c.review
+    sum.automerge += c.automerge
     sum.failed += c.failed
     if (hasProblems(repo)) sum.problems += 1
   }

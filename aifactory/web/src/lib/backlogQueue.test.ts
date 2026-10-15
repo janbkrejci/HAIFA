@@ -41,6 +41,7 @@ describe('kanban queue', () => {
     expect(kanbanColumn(taskNode({ board_state: 'todo', auto_excluded: true }))).toBe('deferred')
     expect(kanbanColumn(taskNode({ board_state: 'running', auto_excluded: true }))).toBe('running')
     expect(kanbanColumn(taskNode({ board_state: 'in review', auto_excluded: true }))).toBe('in review')
+    expect(kanbanColumn(taskNode({ board_state: 'awaiting merge', auto_excluded: true }))).toBe('awaiting merge')
     expect(kanbanColumn(taskNode({ board_state: 'done', auto_excluded: true }))).toBe('done')
     expect(kanbanColumn(taskNode())).toBe('ready')
   })

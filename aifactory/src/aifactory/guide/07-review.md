@@ -4,7 +4,7 @@ Výsledkem úspěšného běhu je pull request z větve běhu do base. Na zálo�
 
 ## Seznam
 
-**Čeká na review** jsou PR tasků, které čekají na tebe; **Ostatní otevřené PR** jsou další PR repa. **Zobrazit hotové** přidá sloučené a zavřené. Sloupce: task, projekt, mergeabilita (lze mergovat, konflikt, neznámé), běh, náklady, tokeny a odkaz na PR.
+**Čeká na review** jsou PR tasků, které čekají na tebe; **Čeká na automerge PR** jsou PR tasků se zapnutým auto-merge, které factory mergne sama (skupina se ukáže, jen když nějaký takový PR je); **Ostatní otevřené PR** jsou další PR repa (například s běžícím během). **Zobrazit hotové** přidá sloučené a zavřené. Sloupce: task, projekt, mergeabilita (lze mergovat, konflikt, neznámé), běh, náklady, tokeny a odkaz na PR.
 
 ## Detail pull requestu
 
@@ -64,6 +64,8 @@ Se zapnutým `auto_merge` (na tasku, stepu nebo projektu) se PR mergne sám, kdy
 4. CI je zelená nebo PR žádné kontroly nemá. Auto-merge schvaluje stejně jako ruční schválení, takže čeká na kontroly commitu se `status: done` a červenou CI opravuje nejvýš dvěma běhy `ci-fix` do téhož PR (viz oddíl CI před merge). Když CI zůstane červená nebo nedoběhne do 30 minut, PR zůstane otevřený s důvodem `checks_failing`, `checks_pending` nebo `ci_fix_failed`.
 
 Při konfliktu zkusí jednou automaticky `resolve-reviewed`. Když se merge nepovede, PR čeká na ruční schválení a detail ukáže „Auto-merge nesloučil: … – schval ručně.“ Workflow bez review se nikdy nemerguje automaticky.
+
+Dokud auto-merge PR nemergne, je PR na Přehledu, v Review i na Backlogu ve stavu **Čeká na automerge PR**: nemusíš nic dělat. Když se auto-merge nepovede, přejde PR do **Čeká na review** a čeká na tebe.
 
 Auto-merge zapneš přepínačem **Auto-merge** ve stromu backlogu, ve formuláři tasku, nebo `factory backlog auto-merge ID --on` (task: `factory task edit ID --auto-merge on`). Změnu backlogu nezapomeň commitnout.
 

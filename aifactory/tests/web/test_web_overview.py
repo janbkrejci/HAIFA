@@ -164,6 +164,7 @@ def test_overview_of_repos_with_and_without_trace_and_a_missing_folder(
         "repos": 4,
         "running": 4,
         "review": 2,
+        "automerge": 0,
         "failed": 2,
         "merged_outside": 0,
         "process_ended": 2,
@@ -407,6 +408,7 @@ def test_task_summary_counts_tasks_per_board_state(repo_a: Path, tmp_path: Path)
         "blocked": 0,
         "running": 1,
         "in review": 1,
+        "awaiting merge": 0,
         "done": 1,
         "cancelled": 1,
     }
@@ -482,6 +484,72 @@ def test_missing_repo_has_no_tasks_nor_factory(tmp_path: Path) -> None:
     g = _get(_client(home, tmp_path))["repos"][0]
     assert g["state"] == "missing"
     assert (g["tasks"], g["factory"]) == (None, None)
+
+
+# ── PRs waiting for review or for auto-merge ─────────────────────────────────
+
+
+def _auto_merge_step(root: Path) -> None:
+    """Turn auto_merge on for the step of every fixture task (inherited by T_REV)."""
+    write(
+        root,
+        "backlog/M01-core/S01-model/index.md",
+        "---\nid: M01-S01\ntitle: Model\nwrites: [src/app/]\nauto_merge: true\n---\n",
+    )
+    commit_all(root, "auto-merge")
+
+
+def _set_auto_merge_error(root: Path, branch: str, error: str) -> None:
+    store = TaskRunStore(_db(root))
+    try:
+        store.update_pr(branch, auto_merge_error=error)
+    finally:
+        store.close()
+
+
+def test_open_pr_without_auto_merge_waits_for_review(repo_a: Path, tmp_path: Path) -> None:
+    a = _repo_item(repo_a, tmp_path)
+    assert [r["task_id"] for r in a["review"]] == [T_REV]
+    assert a["automerge"] == []
+    assert (a["tasks"]["in review"], a["tasks"]["awaiting merge"]) == (1, 0)
+
+
+def test_open_pr_with_auto_merge_waits_for_automerge(repo_a: Path, tmp_path: Path) -> None:
+    _auto_merge_step(repo_a)
+    home = tmp_path / "home"
+    register(home, repo_a)
+    data = _get(_client(home, tmp_path))
+    a = data["repos"][0]
+    assert a["review"] == []
+    assert [r["task_id"] for r in a["automerge"]] == [T_REV]
+    assert a["automerge"][0]["pr_id"] == "7"
+    assert a["automerge"][0]["source"] == "trace"
+    assert (a["tasks"]["in review"], a["tasks"]["awaiting merge"]) == (0, 1)
+    # the PR still holds its slot
+    assert a["factory"]["in_review"] == 1
+    assert (data["totals"]["review"], data["totals"]["automerge"]) == (0, 1)
+
+
+def test_failed_auto_merge_waits_for_review_again(repo_a: Path, tmp_path: Path) -> None:
+    _auto_merge_step(repo_a)
+    _set_auto_merge_error(repo_a, f"factory/{T_REV}-r-rev", "checks_failing: ci")
+    a = _repo_item(repo_a, tmp_path)
+    assert [r["task_id"] for r in a["review"]] == [T_REV]
+    assert a["automerge"] == []
+    assert (a["tasks"]["in review"], a["tasks"]["awaiting merge"]) == (1, 0)
+
+
+def test_trace_db_without_the_auto_merge_error_column(repo_a: Path, tmp_path: Path) -> None:
+    _auto_merge_step(repo_a)
+    conn = sqlite3.connect(str(_db(repo_a)), isolation_level=None)
+    try:
+        conn.execute("ALTER TABLE task_prs DROP COLUMN auto_merge_error")
+    finally:
+        conn.close()
+    a = _repo_item(repo_a, tmp_path)
+    assert a["warnings"] == []
+    assert [r["task_id"] for r in a["automerge"]] == [T_REV]
+    assert a["tasks"]["awaiting merge"] == 1
 
 
 # ── PRs merged outside factory and closed tasks ──────────────────────────────
@@ -599,4 +667,5 @@ def test_new_keys_in_stub_and_totals(repo_a: Path, tmp_path: Path) -> None:
     data = _get(_client(home, tmp_path))
     g = _by_id(data)["gone"]
     assert (g["merged_outside"], g["sync_pr"]) == ([], None)
+    assert g["automerge"] == []
     assert data["totals"]["merged_outside"] == 1

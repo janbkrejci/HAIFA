@@ -4,10 +4,12 @@ On request the list also has the done task PRs (merged and closed, newest first)
 are read only and the provider is not asked about them.
 
 Reads the open pull requests from ``task_prs`` in the trace DB (a missing trace DB is not
-created), the title and project (top level) of each task from the backlog of the main checkout, the
-mergeability from the git provider and the costs, gates, tests and the reviewer's verdict
-from the trace. Listing never writes the provider state into ``task_prs``; the actions do,
-through the core functions.
+created), the title and project (top level) of each task from the backlog of the main
+checkout, the mergeability from the git provider and the costs, gates, tests and the
+reviewer's verdict from the trace. An open PR without a running run is ``awaiting_review``
+(by the user) or ``awaiting_automerge`` (the factory merges it by itself,
+``web.backlog.waits_for_automerge``). Listing never writes the provider state into
+``task_prs``; the actions do, through the core functions.
 
 The actions call the same functions as ``factory task approve|return|resolve``
 (``aifactory.review.approve_task``, ``return_task``, ``resolve_task``), looked up on the
@@ -45,7 +47,7 @@ from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
 from aifactory.run.store import SUCCEEDED, TaskPrRow, TaskRunRow, TaskRunStore
 from aifactory.run.task import existing_store
-from aifactory.web.backlog import UsageError
+from aifactory.web.backlog import UsageError, waits_for_automerge
 from aifactory.web.launcher import Launcher
 
 JsonDict = dict[str, Any]
@@ -161,6 +163,8 @@ def _pr_summary(ctx: _Ctx, store: TaskRunStore, row: TaskPrRow) -> JsonDict:
     runs = store.runs_on_branch(row.branch)
     cost, tokens = branch_cost(store.db_path, [r.run_id for r in runs])
     last = runs[0] if runs else None
+    waiting = status.state == OPEN and running is None
+    automerge = waiting and waits_for_automerge(task, row.auto_merge_error)
     return {
         "task_id": row.task_id,
         "task_title": None if task is None else task.title,
@@ -168,7 +172,8 @@ def _pr_summary(ctx: _Ctx, store: TaskRunStore, row: TaskPrRow) -> JsonDict:
         "provider_state": status.state,
         "mergeability": status.mergeability,
         "running_run": running,
-        "awaiting_review": status.state == OPEN and running is None,
+        "awaiting_review": waiting and not automerge,
+        "awaiting_automerge": automerge,
         "cost": cost,
         "tokens": tokens,
         "runs": len(runs),
@@ -225,7 +230,7 @@ def review_list(repo: Path, include_done: bool = False) -> tuple[JsonDict, list[
                 seen.add(row.task_id)
                 items.append(_pr_summary(ctx, store, row))
         items.sort(key=lambda i: i["_row"].created_at, reverse=True)
-        items.sort(key=lambda i: not i["awaiting_review"])
+        items.sort(key=lambda i: (not i["awaiting_review"], not i["awaiting_automerge"]))
         prs: list[JsonDict] = []
         for item in items:
             row = item.pop("_row")

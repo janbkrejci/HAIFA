@@ -33,6 +33,9 @@ from aifactory.workflow.parse import outline, parse_workflow
 
 install()
 
+# Board states of a task that the workflow advice is not offered for.
+ADVICE_CLOSED_STATES = frozenset({"running", "in review", "awaiting merge", "done", "cancelled"})
+
 
 class WorkflowRecommendationOutput(EnvelopeBase):
     model_config = ConfigDict(extra="forbid")
@@ -82,7 +85,7 @@ def context(
     parent: core.Container
     if task:
         rt, _ = _runtime(repo)
-        if board_state(backlog, task, rt) in {"running", "in review", "done", "cancelled"}:
+        if board_state(backlog, task, rt) in ADVICE_CLOSED_STATES:
             raise UsageError("workflow advice is unavailable for this task state")
         parent = task.parent
         current = {

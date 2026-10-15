@@ -159,6 +159,7 @@ def test_list_shows_open_pr_with_mergeability_cost(
     assert item["provider_state"] == "open"
     assert item["mergeability"] == "mergeable"
     assert item["awaiting_review"] is True
+    assert item["awaiting_automerge"] is False
     assert item["running_run"] is None
     assert isinstance(item["cost"], float)
     assert isinstance(item["tokens"], int)
@@ -168,6 +169,43 @@ def test_list_shows_open_pr_with_mergeability_cost(
     assert data["provider"] == "local"
     assert data["approve_review_sent"] is False
     assert "OB3" in data["approve_note"]
+
+
+def _pr_waits(client: TestClient) -> dict[str, tuple[bool, bool]]:
+    """``{task id: (awaiting_review, awaiting_automerge)}`` in list order."""
+    prs = _check(client.get("/api/review"), 200)["data"]["prs"]
+    return {p["task_id"]: (p["awaiting_review"], p["awaiting_automerge"]) for p in prs}
+
+
+def test_list_tells_review_from_automerge(client: TestClient, repo: Path, script: Script) -> None:
+    first_run(repo, script)
+    assert _pr_waits(client) == {T01: (True, False)}
+    # auto_merge inherited from the project: the factory merges the PR by itself
+    write(
+        repo,
+        MODULE_INDEX,
+        "---\nid: M01\ntitle: Core\nworkflow: plan-commit\nauto_merge: true\n---\n\nJádro.\n",
+    )
+    assert _pr_waits(client) == {T01: (False, True)}
+    # an auto-merge that gave up leaves the PR to the user
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        store.update_pr(BRANCH1, auto_merge_error="checks_failing: ci")
+    finally:
+        store.close()
+    assert _pr_waits(client) == {T01: (True, False)}
+
+
+def test_list_orders_review_before_automerge(
+    client: TestClient, repo: Path, script: Script
+) -> None:
+    plan(script, SPEC)
+    assert run_task(repo, T01).ok
+    plan(script, SPEC2)
+    assert run_task(repo, T02, force=True).ok
+    # the newer T02 waits for auto-merge, the older T01 for review
+    _check(client.post(f"/api/backlog/tasks/{T02}/edit", json={"auto_merge": True}), 200)
+    assert list(_pr_waits(client).items()) == [(T01, (True, False)), (T02, (False, True))]
 
 
 def test_list_without_trace_db_is_empty(client: TestClient) -> None:

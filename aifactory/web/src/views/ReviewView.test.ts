@@ -433,6 +433,7 @@ describe('ReviewView', () => {
           task_id: merged.task_id,
           provider_state: 'merged',
           awaiting_review: false,
+          awaiting_automerge: false,
           pr: merged.pr,
           actions: { approve: false, return: false, resolve: false },
         }),

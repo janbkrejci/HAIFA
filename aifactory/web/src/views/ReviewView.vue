@@ -99,7 +99,8 @@ function message(e: unknown): string {
 async function nextPr(id: string): Promise<string | null> {
   try {
     const prs = normalise(await fetchReviews()).prs.filter((p) => p.task_id !== id)
-    return (prs.find((p) => p.awaiting_review) ?? prs[0])?.task_id ?? null
+    const next = prs.find((p) => p.awaiting_review) ?? prs.find((p) => p.awaiting_automerge) ?? prs[0]
+    return next?.task_id ?? null
   } catch {
     return null // the box keeps "Zpět na seznam"
   }

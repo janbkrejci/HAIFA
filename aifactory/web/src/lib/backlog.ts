@@ -11,6 +11,7 @@ export type BoardState =
   | 'blocked'
   | 'running'
   | 'in review'
+  | 'awaiting merge'
   | 'done'
   | 'cancelled'
 
@@ -21,6 +22,7 @@ export const BOARD_STATES: readonly BoardState[] = [
   'blocked',
   'running',
   'in review',
+  'awaiting merge',
   'done',
   'cancelled',
 ]
@@ -30,7 +32,8 @@ export const STATE_LABELS: Record<BoardState, string> = {
   ready: 'Připraveno',
   blocked: 'Blokováno',
   running: 'Běží',
-  'in review': 'V review',
+  'in review': 'Čeká na review',
+  'awaiting merge': 'Čeká na automerge PR',
   done: 'Hotovo',
   cancelled: 'Zrušeno',
 }
@@ -38,6 +41,8 @@ export const STATE_LABELS: Record<BoardState, string> = {
 /** Tooltips of the board states that need an explanation. */
 export const STATE_TOOLTIPS: Partial<Record<BoardState, string>> = {
   todo: 'Task nejde spustit, dokud nemá workflow (vlastní nebo zděděné z projektu či stepu).',
+  'in review': 'Pull request čeká na tvoje review.',
+  'awaiting merge': 'Auto-merge je zapnutý, factory pull request mergne sama.',
 }
 
 /** A kanban column: a board state, or Odloženo (tasks excluded from auto continue). */
@@ -81,7 +86,7 @@ export function mergeQueueOrder(all: readonly string[], shown: readonly string[]
 }
 
 /** States shown only when some task is in them (kanban column, status filter option). */
-export const OPTIONAL_STATES: readonly BoardState[] = ['todo']
+export const OPTIONAL_STATES: readonly BoardState[] = ['todo', 'awaiting merge']
 
 /** States hidden by the „Skrýt hotové“ switch. */
 export const DONE_STATES: readonly BoardState[] = ['done', 'cancelled']
@@ -900,7 +905,7 @@ export function stateCounts(data: BacklogData | null | undefined): Partial<Recor
   return out
 }
 
-/** States worth showing: an optional state (Bez workflow) only when some task is in it. */
+/** States worth showing: an optional state (Bez workflow, Čeká na automerge PR) only when some task is in it. */
 export function presentStates(
   states: readonly BoardState[],
   counts: Partial<Record<BoardState, number>>,

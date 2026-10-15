@@ -61,7 +61,7 @@ Které harnessy a modely smí dashboard na tvém počítači používat, nastav�
 ## Souběžná práce
 
 - Backlog je v gitu. Úpravy z dashboardu i CLI se commitují do base; kolegové je dostanou přes `git pull` (nebo stažením base v dashboardu).
-- Dva lidé by neměli spouštět stejný task současně. Běh a jeho stav zná jen počítač, na kterém běží (trace DB je lokální); otevřený pull request ale vidí všichni a task s ním je na Backlogu ve stavu **V review**. Sdílený přehled běhů dává volitelný sdílený databázový server (kapitola [Počítač a harnessy](#/guide/pocitac/sdilena-databaze)).
+- Dva lidé by neměli spouštět stejný task současně. Běh a jeho stav zná jen počítač, na kterém běží (trace DB je lokální); otevřený pull request ale vidí všichni a task s ním je na Backlogu ve stavu **Čeká na review** (se zapnutým auto-merge **Čeká na automerge PR**). Sdílený přehled běhů dává volitelný sdílený databázový server (kapitola [Počítač a harnessy](#/guide/pocitac/sdilena-databaze)).
 - Pull requesty jsou na společném hostingu; schválit a mergnout je může kdokoli s právy k repu.
 
 ## Agent jako člen týmu
