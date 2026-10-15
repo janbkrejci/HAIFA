@@ -30,7 +30,9 @@ and tasks with new trace rows; ``resync`` asks the client to reload its screen.
 Backlog: ``GET /api/backlog?status=`` (tree, kanban tasks, workflows, steps),
 ``GET /api/backlog/names`` (``{levels, names: {id: {title, level}}}`` for every project,
 step and task id, the tooltips of codes),
-``GET /api/backlog/tasks/{task_id}`` (``factory task show`` plus both link directions) and
+``GET /api/backlog/tasks/{task_id}`` (``factory task show`` plus both link directions),
+``GET /api/backlog/tasks/{task_id}/documents`` (read-only: the task's backlog item, spec and
+doc markdown, located by the task ID) and
 ``POST /api/backlog/tasks``, ``/api/backlog/tasks/{task_id}/edit`` and ``.../link``, which call
 the same core functions as ``factory task add|edit|link``. A write that would break the
 backlog is rejected with ``backlog_invalid`` (HTTP 422) and ``error.issues``. Writes stay in
@@ -819,6 +821,15 @@ def backlog_task(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data, warnings))
 
 
+def backlog_task_documents(request: Request) -> JSONResponse:
+    repo: Path = _repo(request)
+    try:
+        data, warnings = backlog.task_documents(repo, request.path_params["task_id"])
+    except (TaskEditError, ConfigError, TaskRunError) as exc:
+        return _edit_error(exc)
+    return JSONResponse(envelope_ok(data, warnings))
+
+
 async def workflow_advice_start(request: Request) -> JSONResponse:
     try:
         body = await _json_body(request)
@@ -1467,6 +1478,7 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/backlog/status", backlog_status, methods=["GET"]),
         Route("/backlog/commit", backlog_commit, methods=["POST"]),
         Route("/backlog/tasks/{task_id}", backlog_task, methods=["GET"]),
+        Route("/backlog/tasks/{task_id}/documents", backlog_task_documents, methods=["GET"]),
         Route("/backlog/tasks/{task_id}/edit", backlog_edit, methods=["POST"]),
         Route("/backlog/tasks/{task_id}/link", backlog_link, methods=["POST"]),
         Route("/backlog/tasks/{task_id}/run-check", backlog_run_check, methods=["GET"]),

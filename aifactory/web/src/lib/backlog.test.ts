@@ -6,11 +6,13 @@ import {
   addTask,
   autoMode,
   commitBacklog,
+  documentMarkdown,
   editTask,
   fetchBacklog,
   fetchGraph,
   fetchRunCheck,
   fetchTask,
+  fetchTaskDocuments,
   flattenIssues,
   linkTask,
   setAutoContinue,
@@ -56,6 +58,12 @@ describe('backlog api', () => {
     const fetchMock = stubFetch(() => ok({}))
     await fetchTask('a/b')
     expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/a%2Fb')
+  })
+
+  it('asks for task documents by task id', async () => {
+    const fetchMock = stubFetch(() => ok({ task_id: 'a/b', documents: [] }))
+    await fetchTaskDocuments('a/b')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/a%2Fb/documents')
   })
 
   it('posts writes as JSON', async () => {
@@ -280,5 +288,15 @@ describe('Bez workflow', () => {
   it('counts the states from state_counts, else from the tasks', () => {
     expect(stateCounts(backlogData({ state_counts: { todo: 5 } }))).toEqual({ todo: 5 })
     expect(stateCounts(backlogData())).toEqual({ done: 1, ready: 1, blocked: 1, todo: 1 })
+  })
+})
+
+describe('documentMarkdown', () => {
+  it('turns front matter into a yaml fence', () => {
+    expect(documentMarkdown('---\nid: T1\n---\n\n## Zadání\n')).toBe('```yaml\nid: T1\n```\n\n\n## Zadání\n')
+  })
+
+  it('keeps markdown without front matter', () => {
+    expect(documentMarkdown('# Plán\n---\nx\n---\n')).toBe('# Plán\n---\nx\n---\n')
   })
 })

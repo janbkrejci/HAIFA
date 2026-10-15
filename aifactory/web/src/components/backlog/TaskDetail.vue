@@ -39,6 +39,7 @@ import StatusChip from '@/components/runs/StatusChip.vue'
 import IssueList from './IssueList.vue'
 import RunDialog from './RunDialog.vue'
 import StateChip from './StateChip.vue'
+import TaskDocuments from './TaskDocuments.vue'
 import TaskForm from './TaskForm.vue'
 import MarkdownView from '@/components/ui/MarkdownView.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
@@ -313,6 +314,8 @@ function onEdit(input: EditTaskInput) {
             <MarkdownView :source="detail.body" empty="Zadání je prázdné." data-test="body" />
           </section>
         </template>
+
+        <TaskDocuments :task-id="task.id" />
 
         <section class="card">
           <h3><History :size="16" /> Běhy <span class="count">{{ detail.runs.length }}</span></h3>

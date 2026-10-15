@@ -19,6 +19,15 @@ function detailWrapper(error: { message: string; issues: [] } | null = null) {
 }
 
 describe('TaskDetail', () => {
+  it('shows the task documents card, loaded by the task id', async () => {
+    api.getApi.mockReset().mockResolvedValue({ task_id: 'x', documents: [] })
+    const wrapper = detailWrapper()
+    await flushPromises()
+    expect(wrapper.find('[data-test="task-documents"]').exists()).toBe(true)
+    expect(api.getApi).toHaveBeenCalledWith(`/backlog/tasks/${taskDetail().task.id}/documents`)
+    wrapper.unmount()
+  })
+
   it('opens shared advice editing with stored body and relationships and forwards the save reference', async () => {
     api.postApi.mockResolvedValue({ job_id: 'detail-job' })
     api.getApi.mockResolvedValue({ state: 'succeeded', recommendation: {

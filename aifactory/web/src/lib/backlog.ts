@@ -540,6 +540,38 @@ export function fetchTask(taskId: string): Promise<TaskDetail> {
   return getApi<TaskDetail>(taskPath(taskId))
 }
 
+/** One markdown document of a task (GET /backlog/tasks/<id>/documents), found by the task id. */
+export interface TaskDocument {
+  kind: 'backlog' | 'spec' | 'doc'
+  label: string
+  /** Repo-relative path where the document is (or would be). */
+  path: string
+  exists: boolean
+  /** The file's text; null when it is missing, too large or unreadable. */
+  content: string | null
+  /** Why the content is not shown (e.g. `outside the repository`), null when fine. */
+  problem: string | null
+}
+
+export interface TaskDocuments {
+  task_id: string
+  documents: TaskDocument[]
+}
+
+export function fetchTaskDocuments(taskId: string): Promise<TaskDocuments> {
+  return getApi<TaskDocuments>(`${taskPath(taskId)}/documents`)
+}
+
+/**
+ * Markdown to render for a document: a leading YAML front matter (`---` … `---`) becomes a
+ * ```yaml fence, so it shows as code instead of rules and paragraphs.
+ */
+export function documentMarkdown(content: string): string {
+  const match = /^---\r?\n([\s\S]*?)\r?\n---[ \t]*(?:\r?\n|$)/.exec(content)
+  if (!match) return content
+  return '```yaml\n' + (match[1] ?? '') + '\n```\n\n' + content.slice(match[0].length)
+}
+
 export function addTask(input: AddTaskInput): Promise<WriteResult> {
   return postApi<WriteResult>('/backlog/tasks', input)
 }
