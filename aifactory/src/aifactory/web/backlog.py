@@ -34,7 +34,7 @@ from aifactory.harness import canonical
 from aifactory.harness.override import THINKING_LEVELS
 from aifactory.run import gitops, task_prs_for, task_runs_for
 from aifactory.run.errors import TaskRunError
-from aifactory.run.scope import effective_task_writes
+from aifactory.run.scope import effective_task_writes, output_paths
 from aifactory.run.store import QueuePrefs, TaskRunStore, is_db_busy
 from aifactory.run.task import existing_store
 from aifactory.web.launcher import Launcher
@@ -380,6 +380,68 @@ def task_detail(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
         "blocks": blocked,
     }
     return data, warnings + _warnings(own_issues)
+
+
+DOCUMENT_KINDS: tuple[tuple[str, str], ...] = (
+    ("backlog", "Položka backlogu"),
+    ("spec", "Spec"),
+    ("doc", "Dokumentace"),
+)
+DOCUMENT_MAX_BYTES = 1_000_000
+"""A larger markdown file is listed but its content is not sent."""
+
+
+def _read_document(repo: Path, rel: str) -> tuple[bool, str | None, str | None]:
+    """``(exists, content, problem)`` of the markdown file ``rel`` inside ``repo``.
+
+    Only a regular ``*.md`` file whose resolved path (symlinks followed) stays inside
+    the repo is read; anything else counts as missing or carries a ``problem``.
+    """
+    if not rel.lower().endswith(".md"):
+        return False, None, "not a markdown file"
+    root = repo.resolve()
+    try:
+        target = (root / rel).resolve()
+        target.relative_to(root)
+    except (OSError, ValueError):
+        return False, None, "outside the repository"
+    if target.suffix.lower() != ".md":
+        return False, None, "not a markdown file"
+    if not target.is_file():
+        return False, None, None
+    try:
+        if target.stat().st_size > DOCUMENT_MAX_BYTES:
+            return True, None, "file too large to show"
+        return True, target.read_text(encoding="utf-8", errors="replace"), None
+    except OSError as exc:
+        return True, None, f"cannot read: {exc.strerror or exc}"
+
+
+def task_documents(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
+    """The markdown documents of a task: its backlog item, spec and documentation.
+
+    Paths come from the task ID (the backlog item's path and ``run.scope.output_paths``,
+    the same names a task run writes), never from the request. Read-only.
+    """
+    backlog = core.load_for_edit(repo)
+    task = core.find_task(backlog, task_id)
+    outputs = output_paths(task, backlog.settings)
+    paths = {"backlog": task.path, "spec": outputs.spec, "doc": outputs.doc}
+    documents: list[JsonDict] = []
+    for kind, label in DOCUMENT_KINDS:
+        rel = paths[kind]
+        exists, content, problem = _read_document(repo, rel)
+        documents.append(
+            {
+                "kind": kind,
+                "label": label,
+                "path": rel,
+                "exists": exists,
+                "content": content,
+                "problem": problem,
+            }
+        )
+    return {"task_id": task.id, "documents": documents}, []
 
 
 def _write_json(repo: Path, result: core.WriteResult) -> tuple[JsonDict, list[str]]:

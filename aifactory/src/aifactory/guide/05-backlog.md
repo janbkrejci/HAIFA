@@ -39,6 +39,8 @@ V souboru tasku je uložen jen `status`: `todo`, `done` nebo `cancelled`. Ostatn
 
 Kliknutím na task otevřeš jeho detail: **Zadání**, **Běhy** (všechny běhy s větví a stavem), **PR** (stav a odkaz do Review), kartu **Spuštění** (workflow, auto-merge, writes, pozice ve frontě auto-continue) a **Vazby** (**Závisí na**, **Blokuje**, **Související**). Tlačítka **Spustit**, **Upravit** a **Zrušit**.
 
+Karta **Dokumenty** otevře markdowny tasku jen ke čtení: **Položku backlogu** (celý soubor tasku, front matter jako YAML), **Spec** (`<docs_root>/specs/<projekt>/<step>/<task-id>-<slug>.md`) a **Dokumentaci** (`<docs_root>/docs/…`). Dashboard je hledá podle ID tasku ve stejných cestách, kam je zapisuje běh; soubor, který ještě neexistuje, je označený **chybí** a otevřít nejde.
+
 Panel nahoře ukáže „Připraveno ke spuštění“, nebo co je před spuštěním potřeba (workflow, závislosti, commit backlogu).
 
 ## Formulář tasku
