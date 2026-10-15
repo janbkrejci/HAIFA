@@ -2,9 +2,9 @@
 
 ## Aktualizace z dashboardu
 
-Dashboard se jednou za půl hodiny podívá na poslední stabilní vydání HAIFA. Chip v horní liště ukazuje stav: **Systém je aktuální**, **Je k dispozici aktualizace** (tooltip uvede novou verzi), **Instaluji aktualizaci…**, nebo **Nepodařilo se zkontrolovat aktualizace**. Kliknutí na chip v jiném stavu než dostupná aktualizace zopakuje kontrolu.
+Dashboard se jednou za půl hodiny podívá na poslední stabilní vydání HAIFA. Chip v horní liště ukazuje stav: **Systém je aktuální**, **Je k dispozici aktualizace** (tooltip uvede novou verzi), **Aktualizace čeká na tasky**, **Instaluji aktualizaci…**, nebo **Nepodařilo se zkontrolovat aktualizace**. Kliknutí na chip v jiném stavu než dostupná aktualizace zopakuje kontrolu.
 
-Kliknutím na **Je k dispozici aktualizace** dashboard balíček stáhne, ověří součty, nainstaluje, restartuje se a spustí kontrolu systému. Dokud běží nějaký task, aktualizaci odmítne se zprávou „Nejdřív nech doběhnout aktivní tasky.“
+Kliknutím na **Je k dispozici aktualizace** dashboard balíček stáhne, ověří součty, nainstaluje, restartuje se a spustí kontrolu systému. Dokud běží nějaký task, aktualizaci neinstaluje: chip ukáže **Aktualizace čeká na tasky** a tooltip, kolik tasků běží. Každý běh je samostatný proces `factory` ze stejné instalace, kterou aktualizace nahrazuje; na Windows by instalace na zamčených souborech selhala a nechala HAIFA rozbitou, jinde by běžící task načítal moduly nové verze do staré. Až tasky doběhnou, klikni na chip znovu.
 
 Zdroj vydání je GitHub repo `janbkrejci/HAIFA`; firemní instalace může nastavit jiné repo proměnnou `HAIFA_UPDATE_REPO` (ve tvaru `vlastník/repo`) v prostředí nebo v `$HAIFA_HOME/env`.
 

@@ -1,10 +1,11 @@
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { getGlobal, postGlobal } from './api'
+import { ApiError, getGlobal, postGlobal } from './api'
 import { fetchCode } from './code'
 import { errorText } from './format'
 
 export interface UpdateState {
-  status: 'checking' | 'current' | 'available' | 'error' | 'installing'
+  // 'waiting' is client-side only: the server refused to install while task runs are active.
+  status: 'checking' | 'current' | 'available' | 'waiting' | 'error' | 'installing'
   current_version: string
   target_version?: string
   error?: string | null
@@ -37,7 +38,9 @@ export function useUpdates(options: { reload?: () => void; wait?: (ms: number) =
       const before = await fetchCode()
       await postGlobal<UpdateState>('/updates/install')
       await watchRestart(before.started, state.value.current_version)
-    } catch (error) { if (!disposed) state.value = { ...state.value, status: 'error', error: errorText(error) } }
+    } catch (error) {
+      if (!disposed) state.value = { ...state.value, status: error instanceof ApiError && error.code === 'runs_active' ? 'waiting' : 'error', error: errorText(error) }
+    }
     finally { busy = false }
   }
   async function watchRestart(started: string, currentVersion: string) {
@@ -65,7 +68,7 @@ export function useUpdates(options: { reload?: () => void; wait?: (ms: number) =
       }
       if (!disposed) throw new Error('Aktualizace se do pěti minut nedokončila. Zkontroluj běžící dashboard.')
   }
-  function activate() { if (state.value.status === 'available') void install(); else void check(true) }
+  function activate() { if (state.value.status === 'available' || state.value.status === 'waiting') void install(); else void check(true) }
   onMounted(() => { void check(); timer = setInterval(() => void check(), 30 * 60 * 1000) })
   onBeforeUnmount(() => { disposed = true; if (timer) clearInterval(timer) })
   return { state, check, install, activate }

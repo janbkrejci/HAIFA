@@ -341,37 +341,51 @@ async def guide_get(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok({"chapters": [item.as_dict() for item in items]}))
 
 
+def _runs_active(count: int) -> JSONResponse:
+    """409 for an update refused while task runs are active.
+
+    Every run is a separate ``factory`` process from the same tool environment the update
+    replaces: on Windows its locked files make ``uv tool install --force`` fail half way,
+    elsewhere the run would import modules of the new version into the old one.
+    """
+    if count == 1:
+        runs = "běží 1 task"
+    elif 2 <= count <= 4:
+        runs = f"běží {count} tasky"
+    else:
+        runs = f"běží {count} tasků"
+    message = (
+        f"Aktualizace počká, {runs}. Instalace nahrazuje soubory HAIFA, které běžící tasky "
+        "používají, a mohla by je shodit. Až tasky doběhnou, klikni na chip znovu."
+    )
+    return JSONResponse(envelope_fail("runs_active", message), status_code=409)
+
+
+async def _active_runs(request: Request) -> int:
+    """How many task runs are active: launched by this server or seen in the overview."""
+    count = len(request.app.state.launcher.running())
+    overview = getattr(request.app.state, "overview", None)
+    if overview is not None:
+        data, _ = await overview.collect()
+        count = max(count, int(data["totals"]["running"]))
+    return count
+
+
 async def updates_install(request: Request) -> JSONResponse:
     from aifactory.upgrade import UpgradeError
 
     source: Updates = request.app.state.updates
-    if request.app.state.launcher.running():
-        return JSONResponse(
-            envelope_fail("runs_active", "Nejdřív nech doběhnout aktivní tasky."), status_code=409
-        )
-    overview = getattr(request.app.state, "overview", None)
-    if overview is not None:
-        data, _ = await overview.collect()
-        if data["totals"]["running"]:
-            return JSONResponse(
-                envelope_fail("runs_active", "Nejdřív nech doběhnout aktivní tasky."),
-                status_code=409,
-            )
+    if active := await _active_runs(request):
+        return _runs_active(active)
     try:
         data = await run_in_threadpool(source.begin)
     except UpgradeError as exc:
         return JSONResponse(envelope_fail(exc.code, exc.message), status_code=409)
     # The fresh release request can take seconds. A run may have started meanwhile;
     # begin now blocks new writes, so check again before scheduling installation.
-    newly_running = bool(request.app.state.launcher.running())
-    if overview is not None and not newly_running:
-        latest, _ = await overview.collect()
-        newly_running = bool(latest["totals"]["running"])
-    if newly_running:
+    if active := await _active_runs(request):
         source.cancel()
-        return JSONResponse(
-            envelope_fail("runs_active", "Nejdřív nech doběhnout aktivní tasky."), status_code=409
-        )
+        return _runs_active(active)
     return JSONResponse(
         envelope_ok(data),
         status_code=202,

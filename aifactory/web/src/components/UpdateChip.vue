@@ -11,6 +11,7 @@ const label = computed(() => ({
   checking: 'Kontrola aktualizací',
   current: 'Systém je aktuální',
   available: 'Je k dispozici aktualizace',
+  waiting: 'Aktualizace čeká na tasky',
   error: 'Nepodařilo se zkontrolovat aktualizace',
   installing: 'Instaluji aktualizaci…',
 })[state.value.status])
@@ -38,6 +39,6 @@ const hint = computed(() => state.value.error || (state.value.status === 'availa
 .update-chip:disabled { opacity: 1; cursor: progress; }
 .checking, .installing { color: var(--blue); }
 .current { color: var(--green); }
-.available, .error { color: var(--amber); }
+.available, .waiting, .error { color: var(--amber); }
 @media (max-width: 1000px) { .update-chip { max-width: 145px; } }
 </style>
