@@ -2,20 +2,84 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RepoCard from './RepoCard.vue'
 import type { OverviewRepo } from '@/lib/api'
-import { mergedOutside, repo } from '@/test/overviewFixtures'
+import { factory, mergedOutside, repo, running, tasks } from '@/test/overviewFixtures'
 
-const api = vi.hoisted(() => ({ backlogSync: vi.fn() }))
+const api = vi.hoisted(() => ({ backlogSync: vi.fn(), controlStart: vi.fn(), controlPause: vi.fn() }))
 vi.mock('@/lib/api', async (importOriginal) => ({ ...(await importOriginal<object>()), ...api }))
 
 enableAutoUnmount(afterEach)
 
 beforeEach(() => {
-  api.backlogSync.mockReset()
+  for (const fn of Object.values(api)) fn.mockReset()
 })
 
 function mountWith(r: OverviewRepo) {
-  return mount(RepoCard, { props: { repo: r, now: Date.parse('2026-10-06T10:00:00Z') } })
+  return mount(RepoCard, { props: { repo: r, now: Date.parse('2026-10-06T10:00:00Z') }, attachTo: document.body })
 }
+
+afterEach(() => {
+  document.body.innerHTML = ''
+})
+
+describe('RepoCard layout', () => {
+  const busy = () =>
+    repo('a', {
+      running: [running()],
+      tasks: tasks({ running: 1, ready: 1 }),
+      factory: factory({ can_start: true, ready: 1, running: 1 }),
+      warnings: ['pozor'],
+      merged_outside: [mergedOutside()],
+    })
+
+  it('puts the icon buttons next to the menu in the header', () => {
+    const head = mountWith(busy()).get('.card-head')
+    const tools = head.get('.card-tools')
+    expect(tools.findAll('button[data-test^="factory-"]').map((b) => b.attributes('data-test'))).toEqual([
+      'factory-start',
+      'factory-pause',
+      'factory-stop',
+    ])
+    for (const b of tools.findAll('button[data-test^="factory-"]')) expect(b.text()).toBe('')
+    expect(tools.find('[data-test="repo-menu"]').exists()).toBe(true)
+  })
+
+  it('keeps the last activity as the last element of the card', () => {
+    const card = mountWith(busy()).get('[data-test="overview-card"]').element
+    expect(card.lastElementChild?.getAttribute('data-test')).toBe('last-activity')
+  })
+
+  it('shows the message of a button under the header and emits changed', async () => {
+    api.controlStart.mockResolvedValue({
+      max_parallel_runs: 2,
+      running: 0,
+      free_slots: 2,
+      started: [{ task_id: 'T1', run_id: 'r1' }],
+      skipped: [],
+    })
+    const wrapper = mountWith(busy())
+    await wrapper.get('[data-test="factory-start"]').trigger('click')
+    await flushPromises()
+    expect(api.controlStart).toHaveBeenCalledWith('a')
+    expect(wrapper.get('[data-test="factory-controls"] [data-test="factory-start-message"]').text()).toBe('Spuštěno 1 běh')
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
+
+  it('shows the error of a button under the header', async () => {
+    api.controlPause.mockRejectedValue(new Error('boom'))
+    const wrapper = mountWith(busy())
+    await wrapper.get('[data-test="factory-pause"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="factory-controls"] [data-test="factory-control-error"]').text()).toContain('boom')
+    expect(wrapper.find('[data-test="factory-start-message"]').exists()).toBe(false)
+  })
+
+  it('shows the path only in the tooltip of the name', async () => {
+    const wrapper = mountWith(busy())
+    expect(wrapper.text()).not.toContain('/work/a')
+    await wrapper.get('[data-test="card-name"]').trigger('focusin')
+    expect(document.body.querySelector('[data-test="tooltip"]')?.textContent?.trim()).toBe('/work/a')
+  })
+})
 
 describe('RepoCard merged outside factory', () => {
   it('has no section without merged tasks', () => {
