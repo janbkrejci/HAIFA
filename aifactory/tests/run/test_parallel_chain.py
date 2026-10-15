@@ -92,7 +92,11 @@ def _pr(task_id: str, url: str | None = None) -> TaskPrRow:
 
 
 class FakeRunner:
-    """Claims a `running` row on start; `wait_any` finishes one (FIFO unless `order`)."""
+    """Claims a `running` row on start; `wait_any` finishes one (FIFO unless `order`).
+
+    A successful run saves its PR merged (its slot frees); the PR of a task in `review`,
+    or of every task with `open_prs`, stays open and waits for review (it holds a slot).
+    """
 
     def __init__(
         self,
@@ -102,8 +106,12 @@ class FakeRunner:
         merge: dict[str, AutoMergeResult] | None = None,
         order: list[str] | None = None,
         resolve: dict[str, bool] | None = None,
+        review: tuple[str, ...] = (),
+        open_prs: bool = False,
     ) -> None:
         self.db = _db(repo)
+        self.review = review
+        self.open_prs = open_prs
         self.resolve = resolve or {}
         self.fail = fail
         self.merge = merge or {}
@@ -170,6 +178,8 @@ class FakeRunner:
             pr = None
             if not failed:
                 pr = _pr(task_id)
+                if not (self.open_prs or task_id in self.review):
+                    pr = replace(pr, state="merged", merged_at=pr.created_at)
                 store.save_pr(pr)
             final = store.get(row.run_id)
             assert final is not None
@@ -297,6 +307,64 @@ def test_slot_is_refilled_after_a_run_ends(repo: Path) -> None:
     assert row.max_parallel == 2
 
 
+# ── PRs waiting for review hold slots (HAIFA-REFINEMENT-T39) ─────────────────
+
+
+def test_a_pr_waiting_for_review_holds_its_slot(repo: Path) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    runner = FakeRunner(repo, review=(T01,))
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    # T01's PR waits for review after its run: while T02 runs no slot is free for T03,
+    # it starts only when T02's PR is merged
+    assert runner.events == [
+        ("start", T01),
+        ("start", T02),
+        ("end", T01),
+        ("end", T02),
+        ("start", T03),
+        ("end", T03),
+    ]
+    assert chain.stop == STOP_EXHAUSTED
+    # what the chain recorded while T02 still ran (before its wait_any)
+    skip = Skip(**runner.skips_seen[1][-1])  # type: ignore[arg-type]
+    assert (skip.task_id, skip.reason, skip.waits_on) == (T03, "no_slot", [T01])
+    assert "PR čekající na review" in skip.detail and T02 in skip.detail
+
+
+def test_review_prs_hold_every_slot_the_chain_ends_with_no_slot(repo: Path) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    runner = FakeRunner(repo, open_prs=True)
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    assert started(runner) == [T01, T02]
+    assert chain.stop == STOP_EXHAUSTED
+    (skip,) = chain.waiting
+    assert (skip.task_id, skip.reason) == (T03, "no_slot")
+    assert sorted(skip.waits_on) == [T01, T02]
+
+
+def test_a_merged_pr_frees_its_slot(repo: Path) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    runner = FakeRunner(repo, review=(T02,))
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    # T01's PR is merged: its slot goes to T03, T02's PR holds the other one
+    assert started(runner) == [T01, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+
+
+def test_an_open_pr_of_another_task_holds_a_slot_of_the_chain(repo: Path) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    store = TaskRunStore(_db(repo))
+    try:
+        store.save_pr(_pr("M09-S01-T01"))
+    finally:
+        store.close()
+    runner = FakeRunner(repo)
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    assert runner.max_active == 1
+    assert started(runner) == [T01, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+
+
 def test_without_auto_continue_only_the_first_runs(repo: Path) -> None:
     setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/")], step_extra="")
     runner = FakeRunner(repo)
@@ -416,7 +484,7 @@ def test_overlap_with_an_open_pr_is_skipped(repo: Path) -> None:
 
 def test_unknown_pr_files_fall_back_to_the_task_writes(repo: Path) -> None:
     setup_tasks(repo, [(T01, "src/a/"), (T02, "src/a/deep/"), (T03, "src/b/")])
-    runner = FakeRunner(repo)
+    runner = FakeRunner(repo, open_prs=True)
     # T01's PR files cannot be read: its writes src/a/ stand for them
     chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=lambda pr: None)
     assert T02 not in started(runner)

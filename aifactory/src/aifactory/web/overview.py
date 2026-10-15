@@ -19,7 +19,10 @@ every state present, zeros included), computed by ``board_state`` from the trace
 here: a task with a running row whose process did not end is ``running``, one with an open PR
 ``in review``. ``factory`` is what the Overview's factory controls need (``control.py``):
 ``max_parallel_runs`` (``.factory/config.yaml`` of the main checkout; ``null`` when invalid),
-``running`` (running rows whose process did not end), ``free_slots``, ``ready`` (tasks in
+``running`` (running rows whose process did not end), ``in_review`` (tasks with an open PR
+and no such row: waiting for review, they hold a slot too), ``free_slots``
+(``max_parallel_runs`` minus the tasks of ``running`` and ``in_review``, each once,
+``run.queue.Slots``), ``ready`` (tasks in
 board state ``ready`` not excluded from auto-continue in the kanban, ``task_queue``),
 ``can_start`` (a ready task, a free slot and a configuration in state ``ok`` or
 ``uncommitted``: runs read the base commit), ``paused`` and ``pausing`` (running rows by
@@ -66,6 +69,7 @@ from aifactory.config.repo_state import repo_state
 from aifactory.config.source import CommitSource
 from aifactory.config.status import config_changes
 from aifactory.run.gitops import repo_layout
+from aifactory.run.queue import Slots
 from aifactory.web.backlog import BOARD_STATES, _Runtime, board_state
 from aifactory.web.chains import max_parallel_runs_in
 from aifactory.web.config_cache import CONFIG_TTL as CONFIG_TTL
@@ -514,7 +518,11 @@ def _factory(
     limit = max_parallel_runs_in(root)
     excluded = trace.excluded if trace is not None else frozenset()
     ready = sum(1 for t in ready_ids if t not in excluded)
-    free = max(0, limit - len(active)) if limit is not None else 0
+    prs = trace.prs if trace is not None else []
+    slots = Slots.count(
+        (r["task_id"] for r in active), (p["task_id"] for p in prs if p["state"] == "open")
+    )
+    free = slots.free(limit) if limit is not None else 0
     pauses = [r["pause"] for r in active]
     snapshot = (
         control.snapshot(root, [r["run_id"] for r in active]) if control is not None else None
@@ -522,6 +530,7 @@ def _factory(
     return {
         "max_parallel_runs": limit,
         "running": len(active),
+        "in_review": len(slots.in_review),
         "free_slots": free,
         "ready": ready,
         "can_start": ready > 0 and free > 0 and state in STARTABLE_STATES,

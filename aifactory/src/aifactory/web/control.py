@@ -3,8 +3,10 @@
 ``start`` is ``run.queue.start_factory``: it picks ready tasks of the whole repository the
 way auto-continue does and starts each like the Spustit button (``factory task run ID`` as
 a separate process through the launcher), at most as many as there are free parallel
-slots (``max_parallel_runs`` minus the live runs). ``pause``, ``resume`` and ``stop`` call
-``pause_run``, ``resume_run`` and ``stop_run`` for every running run of the repository.
+slots (``max_parallel_runs`` minus the slots taken: tasks with a live run and tasks
+whose open PR waits for review, each once, ``run.queue.Slots``). ``pause``, ``resume``
+and ``stop`` call ``pause_run``, ``resume_run`` and ``stop_run`` for every running run of
+the repository.
 
 ``stop_run`` marks a run ``stopped`` at once and then waits for its processes to end (up
 to 10 s), so the trace DB cannot tell that a run is still dying: the stops run in

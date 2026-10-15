@@ -89,7 +89,7 @@ Panel **Řetěz** na záložce Běhy ukazuje stav řetězu, obsazené sloty, př
 
 ## Souběžné běhy
 
-`max_parallel_runs` v konfiguraci repa (v dashboardu **Souběžné běhy auto-continue**, výchozí 1) určuje, kolik běhů řetězu může běžet zároveň. Task se spustí souběžně, jen když se jeho writes nepřekrývají s běžícími běhy ani se soubory otevřených PR; task s širokými writes (celé repo nebo balíček) běží sám. Kroky testů se navíc střídají v `test_slots` slotech na počítač (výchozí 1).
+`max_parallel_runs` v konfiguraci repa (v dashboardu **Souběžné běhy auto-continue**, výchozí 1) určuje, kolik slotů pro tasky má repo. Slot obsazuje task s živým během a také task, jehož PR je otevřený a nesloučený (čeká na review); task s během i otevřeným PR zabere jen jeden slot. Slot se uvolní, až když se PR sloučí nebo zavře, nebo když task skončí bez PR (selhal, je zablokovaný nebo zastavený). Podle toho plní sloty paralelní řetěz i **Spustit továrnu** v Přehledu a tak počítá volné sloty i dashboard. Když volné sloty drží PR čekající na review, další připravený task se přeskočí s důvodem `no_slot` a výčtem těch PR. Task se spustí souběžně, jen když se jeho writes nepřekrývají s běžícími běhy ani se soubory otevřených PR; task s širokými writes (celé repo nebo balíček) běží sám. Kroky testů se navíc střídají v `test_slots` slotech na počítač (výchozí 1).
 
 ## Bezpečnost běhu
 

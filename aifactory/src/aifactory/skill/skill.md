@@ -708,8 +708,13 @@ exceptions on the task; the nearest value wins.
    (`not_merged`).
 7. Parallel runs (`max_parallel_runs` in `.factory/config.yaml`, whole number ≥ 1,
    default 1): with 1 the chain runs one task after another. Above 1 the chain keeps up to
-   that many runs at once (each a separate `factory task run` process) and refills a slot
-   whenever a run ends. A task starts only when its effective `writes` do not overlap (path
+   that many slots taken (each run a separate `factory task run` process) and refills a
+   slot whenever one frees. A slot is taken by a task with a live run and by a task whose
+   PR is open and unmerged (waiting for review); a task with both counts once. The slot
+   frees when the PR is merged or closed, or when the run ends without a PR (failed,
+   blocked, stopped). The dashboard's "Spustit továrnu" and its `free_slots` count the
+   same way. When PRs waiting for review hold the free slots, the next ready task is
+   skipped as `no_slot` (`waits_on` lists those PRs' tasks). A task starts only when its effective `writes` do not overlap (path
    prefix) the `writes` of a running run nor the files of an open, unmerged PR; otherwise it
    is skipped as `writes_overlap` (which run or PR, which paths). A task whose `writes` cover
    the whole repo or a whole package (e.g. `src/`) runs alone (`exclusive`,

@@ -417,6 +417,7 @@ def test_factory_block_with_the_default_limit(repo_a: Path, tmp_path: Path) -> N
     assert a["factory"] == {
         "max_parallel_runs": 1,
         "running": 1,
+        "in_review": 1,
         "free_slots": 0,
         "ready": 2,
         "can_start": False,
@@ -440,12 +441,25 @@ def test_factory_can_start_with_a_free_slot_and_excluded_tasks_are_not_ready(
         store.close()
     a = _repo_item(repo_a, tmp_path)
     factory = a["factory"]
-    assert (factory["max_parallel_runs"], factory["running"], factory["free_slots"]) == (3, 1, 2)
+    # T_RUN runs and T_REV's PR waits for review: both take a slot
+    assert (factory["max_parallel_runs"], factory["running"], factory["free_slots"]) == (3, 1, 1)
+    assert factory["in_review"] == 1
     assert factory["ready"] == 1
     assert factory["can_start"] is True
     assert (factory["pausing"], factory["paused"]) == (1, 0)
     assert a["tasks"]["ready"] == 2  # the summary is the kanban's, exclusion aside
     assert next(r for r in a["running"] if r["task_id"] == T_RUN)["pause"] == "pausing"
+
+
+def test_a_pr_waiting_for_review_takes_the_last_free_slot(repo_a: Path, tmp_path: Path) -> None:
+    write(repo_a, ".factory/config.yaml", "base: main\ndocs_root: .\nmax_parallel_runs: 2\n")
+    commit_all(repo_a, "two slots")
+    factory = _repo_item(repo_a, tmp_path)["factory"]
+    assert (factory["running"], factory["in_review"], factory["free_slots"]) == (1, 1, 0)
+    assert factory["can_start"] is False
+    _save_pr(repo_a, T_RUN, "factory/run-1", "open", 1)  # a running task with a PR: once
+    factory = _repo_item(repo_a, tmp_path)["factory"]
+    assert (factory["running"], factory["in_review"], factory["free_slots"]) == (1, 1, 0)
 
 
 def test_trace_db_without_the_pause_column(repo_a: Path, tmp_path: Path) -> None:

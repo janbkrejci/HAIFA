@@ -3,7 +3,9 @@
 A chain is a row of ``task_chains`` (``run.store.TaskChainRow``, written by
 ``run.queue.run_chain``). ``list_chains`` returns the running chains and the newest
 ended ones with all their runs, the number of running runs, the free slots of a running
-chain (``max_parallel`` minus running), the tasks the last selection skipped with their
+chain (``max_parallel`` minus the slots taken in the repository, ``run.queue.Slots``: tasks
+with a live run and tasks whose open PR waits for review, each once; ``in_review`` lists
+the latter), the tasks the last selection skipped with their
 reasons and the tasks that ran alone (wide ``writes``). A run shows its result: state and
 error from ``task_runs``, its pull request and what auto-merge did from ``task_prs``. A
 sequential chain records a run when it ends, so the run going on in the chain's process
@@ -19,6 +21,7 @@ from typing import Any
 from aifactory.config.settings import CONFIG_FILE, parse_project_settings
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
+from aifactory.run.queue import Slots
 from aifactory.run.store import RUNNING, TaskChainRow, TaskRunRow, TaskRunStore
 from aifactory.run.task import existing_store
 
@@ -78,7 +81,7 @@ def _unrecorded_ids(store: TaskRunStore, chain: TaskChainRow, recorded: list[str
     return [str(r[0]) for r in rows if r[0] not in recorded]
 
 
-def _chain_json(store: TaskRunStore, chain: TaskChainRow) -> JsonDict:
+def _chain_json(store: TaskRunStore, chain: TaskChainRow, slots: Slots) -> JsonDict:
     recorded = chain.run_id_list()
     ids = [*recorded, *_unrecorded_ids(store, chain, recorded)]
     runs = [_run_json(store, run_id, store.get(run_id)) for run_id in ids]
@@ -95,7 +98,8 @@ def _chain_json(store: TaskRunStore, chain: TaskChainRow) -> JsonDict:
         "ended_at": chain.ended_at,
         "runs": runs,
         "running": running,
-        "free_slots": max(0, chain.max_parallel - running) if live else 0,
+        "in_review": list(slots.in_review) if live else [],
+        "free_slots": slots.free(chain.max_parallel) if live else 0,
         "skipped": chain.skipped_list(),
         "exclusive": chain.exclusive_list(),
     }
@@ -121,7 +125,9 @@ def list_chains(repo: Path, limit: int = CHAINS_LIMIT) -> tuple[JsonDict, list[s
     if store is None:
         return data, []
     try:
-        data["chains"] = [_chain_json(store, c) for c in store.chains(limit)]
+        chains = store.chains(limit)
+        slots = Slots.of(store) if any(c.state == RUNNING for c in chains) else Slots()
+        data["chains"] = [_chain_json(store, c, slots) for c in chains]
     finally:
         store.close()
     return data, []

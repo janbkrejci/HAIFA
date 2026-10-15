@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 from run_repo import commit_all, make_run_repo, write
-from test_parallel_chain import CORE, STEP, T01, T02, T03, T04, _db, no_files, setup_tasks
+from test_parallel_chain import CORE, STEP, T01, T02, T03, T04, _db, _pr, no_files, setup_tasks
 
 from aifactory.engine.utils import now_iso
 from aifactory.run import TaskRunError, TaskRunRow, TaskRunStore, start_factory
@@ -135,6 +135,78 @@ def test_no_free_slot_starts_nothing(repo: Path) -> None:
     result = start_factory(repo, start, max_parallel=1, pr_files=no_files)
     assert start.calls == []
     assert (result.free_slots, result.started, result.skipped) == (0, [], [])
+    assert result.to_json()["in_review"] == []
+
+
+# ── PRs waiting for review hold slots (HAIFA-REFINEMENT-T39) ─────────────────
+
+OTHER = "M09-S01-T01"  # a task outside the backlog with an open PR
+
+
+def open_pr(repo: Path, task_id: str) -> None:
+    store = TaskRunStore(_db(repo))
+    try:
+        store.save_pr(_pr(task_id))
+    finally:
+        store.close()
+
+
+def close_pr(repo: Path, task_id: str, state: str) -> None:
+    store = TaskRunStore(_db(repo))
+    try:
+        store.update_pr(f"factory/{task_id}-1", state=state)
+    finally:
+        store.close()
+
+
+def test_a_live_run_and_a_pr_waiting_for_review_take_both_slots(repo: Path) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    claim(repo, T01)
+    open_pr(repo, OTHER)
+    start = FakeStart(repo)
+    result = start_factory(repo, start, max_parallel=2, pr_files=no_files)
+    assert start.calls == []
+    assert (result.running, result.free_slots, result.started) == (1, 0, [])
+    data = result.to_json()
+    assert (data["free_slots"], data["in_review"]) == (0, [OTHER])
+    # the reason is visible: the next ready task found no slot, PRs in review hold it
+    assert [(s.task_id, s.reason) for s in result.skipped] == [(T01, "running"), (T02, "no_slot")]
+    skip = result.skipped[-1]
+    assert skip.waits_on == [OTHER]
+    assert "PR čekající na review" in skip.detail and T01 in skip.detail
+
+
+@pytest.mark.parametrize("state", ["merged", "closed"])
+def test_a_merged_or_closed_pr_frees_its_slot(repo: Path, state: str) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    claim(repo, T01)
+    open_pr(repo, OTHER)
+    close_pr(repo, OTHER, state)
+    start = FakeStart(repo)
+    result = start_factory(repo, start, max_parallel=2, pr_files=no_files)
+    assert (result.free_slots, result.in_review) == (1, [])
+    assert start.calls == [T02]
+    assert "no_slot" not in {s.reason for s in result.skipped}
+
+
+def test_a_task_with_a_live_run_and_an_open_pr_takes_one_slot(repo: Path) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    claim(repo, T01)  # e.g. its resolve run
+    open_pr(repo, T01)
+    start = FakeStart(repo)
+    result = start_factory(repo, start, max_parallel=2, pr_files=no_files)
+    assert (result.running, result.in_review, result.free_slots) == (1, [], 1)
+    assert start.calls == [T02]
+
+
+def test_free_slots_are_filled_and_the_rest_waits_on_review(repo: Path) -> None:
+    setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    open_pr(repo, OTHER)
+    start = FakeStart(repo)
+    result = start_factory(repo, start, max_parallel=2, pr_files=no_files)
+    assert result.free_slots == 1
+    assert start.calls == [T01]
+    assert [(s.task_id, s.reason) for s in result.skipped] == [(T02, "no_slot")]
 
 
 @pytest.mark.parametrize("pending", [False, True])

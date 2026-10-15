@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T39
 title: Task čekající na review neuvolňuje slot pro paralelní běhy
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S03-T16, HAIFA-REFINEMENT-T34, HAIFA-REFINEMENT-T30, HAIFA-S03-T14]
@@ -38,3 +38,4 @@ Dotčená místa (současný stav):
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/52 · náklady $2.91

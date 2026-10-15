@@ -45,24 +45,29 @@ the chain (``stop == "not_merged"``, or ``disabled`` when it would not continue
 anyway) and waits for ``factory task approve``. A PR in conflict is first resolved once
 (``review.automerge.resolve_and_merge``) and merged when that resolve succeeds.
 
-Parallel runs (``max_parallel_runs`` in ``.factory/config.yaml``, default 1): with 1
-the chain runs one task after another as described above, with no other check. Above
-1 the chain keeps up to that many runs going at once in the repository (runs of other
-chains and single runs take slots too), each a separate process
+Parallel runs (``max_parallel_runs`` in ``.factory/config.yaml``, default 1): with 1 the
+chain runs one task after another as described above, with no other check. Above 1 the
+chain keeps up to that many slots taken in the repository, each run a separate process
 (``members.ProcessRunner``, ``factory task run --member``): after the first task it
-fills the free slots with the next ready tasks and refills a slot whenever a run
-ends. A task starts only when its effective ``writes`` do not overlap (on path
-prefixes, ``scope.paths_overlap``) the ``writes`` of any running run (of this chain or
-not) nor the files changed by any open, unmerged PR (``gitops.pr_changed_files``;
-when they cannot be read, the PR's task's ``writes``, else everything). Otherwise it
-is skipped as ``writes_overlap`` (which run or PR, which paths) and the chain tries
-the next one. A task whose ``writes`` cover the whole repo or a whole package
-(``scope.is_wide``, e.g. ``aifactory/``) runs alone: it does not start while anything
-runs, and nothing starts while it runs (``exclusive``); ``ChainResult.exclusive``
-lists such tasks. A failed run stops the filling (``stop == "failed"``); runs already
-going are left to finish. A blocked run refills its slot as described above. With
-``auto_merge`` the member process merges its own PR
-(under the store's merge lock); a PR it did not merge stops the filling as above.
+fills the free slots with the next ready tasks and refills a slot whenever one frees. A
+slot (``Slots``) is taken by a task with a live run (of this chain, of other chains, a
+single run) and by a task whose PR is open and unmerged (waiting for review); a task
+with both counts once. The slot frees when the PR is merged or closed, or when the run
+ends without a PR (failed, blocked, stopped). When PRs waiting for review hold the free
+slots, the next ready task is skipped as ``no_slot`` (which PRs and runs hold them). The
+same counting limits ``start_factory`` (the Overview's "Spustit továrnu") and the
+``free_slots`` of the dashboard. A task starts only when its effective ``writes`` do not
+overlap (on path prefixes, ``scope.paths_overlap``) the ``writes`` of any running run
+(of this chain or not) nor the files changed by any open, unmerged PR
+(``gitops.pr_changed_files``; when they cannot be read, the PR's task's ``writes``, else
+everything). Otherwise it is skipped as ``writes_overlap`` (which run or PR, which
+paths) and the chain tries the next one. A task whose ``writes`` cover the whole repo or
+a whole package (``scope.is_wide``, e.g. ``aifactory/``) runs alone: it does not start
+while anything runs, and nothing starts while it runs (``exclusive``);
+``ChainResult.exclusive`` lists such tasks. A failed run stops the filling (``stop ==
+"failed"``); runs already going are left to finish. A blocked run refills its slot as
+described above. With ``auto_merge`` the member process merges its own PR (under the
+store's merge lock); a PR it did not merge stops the filling as above.
 
 Every chain that goes on has a row in ``task_chains`` (``store.TaskChainRow``): its
 runs, the skipped tasks of the last selection with their reasons, the exclusive tasks
@@ -81,7 +86,7 @@ import secrets
 import sqlite3
 import sys
 import tempfile
-from collections.abc import Callable, Collection, Iterator, Sequence
+from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -130,6 +135,7 @@ SKIP_REASONS: tuple[str, ...] = (
     "writes_overlap",
     "exclusive",
     "excluded",
+    "no_slot",
 )
 EXCLUDED_DETAIL = "vyloučeno z auto continue v kanbanu"
 NO_WORKFLOW_DETAIL = "bez workflow"
@@ -152,6 +158,45 @@ class Skip:
             "detail": self.detail,
             "waits_on": list(self.waits_on),
         }
+
+
+@dataclass(frozen=True)
+class Slots:
+    """Who holds the repository's parallel slots: live runs and PRs waiting for review.
+
+    ``running``: tasks with a live run (or a started chain member). ``in_review``: tasks
+    with an open, unmerged PR and no live run. A task counts once, also when it has a
+    live run (a resolve, a retry) and an open PR at the same time.
+    """
+
+    running: tuple[str, ...] = ()
+    in_review: tuple[str, ...] = ()
+
+    @classmethod
+    def count(cls, running: Iterable[str], open_pr_tasks: Iterable[str]) -> Slots:
+        live = tuple(dict.fromkeys(running))
+        review = tuple(t for t in dict.fromkeys(open_pr_tasks) if t not in live)
+        return cls(live, review)
+
+    @classmethod
+    def of(cls, store: TaskRunStore, members: Iterable[str] = ()) -> Slots:
+        """The slots taken in `store`'s repository, plus the started `members` of a chain."""
+        live = [*members, *(row.task_id for row in store.live_runs())]
+        return cls.count(live, (pr.task_id for pr in store.open_prs()))
+
+    @property
+    def taken(self) -> int:
+        return len(self.running) + len(self.in_review)
+
+    def free(self, limit: int) -> int:
+        return max(0, limit - self.taken)
+
+    def skip(self, task_id: str) -> Skip:
+        """`task_id` did not start: no free slot, PRs waiting for review hold some (``no_slot``)."""
+        detail = f"žádný volný slot: PR čekající na review ({', '.join(self.in_review)})"
+        if self.running:
+            detail += f", běží ({', '.join(self.running)})"
+        return Skip(task_id, "no_slot", detail, list(self.in_review))
 
 
 @dataclass
@@ -610,8 +655,9 @@ class FactoryStart:
     """What ``start_factory`` started: claimed rows, or task ids whose claim was not seen yet."""
 
     max_parallel: int
-    running: int  # live runs before the start
-    free_slots: int  # max(0, max_parallel - running)
+    running: int  # tasks with a live run before the start
+    free_slots: int  # max(0, max_parallel - running - len(in_review))
+    in_review: list[str] = field(default_factory=list)  # tasks holding a slot with an open PR
     started: list[TaskRunRow | str] = field(default_factory=list)
     skipped: list[Skip] = field(default_factory=list)
 
@@ -619,6 +665,7 @@ class FactoryStart:
         return {
             "max_parallel_runs": self.max_parallel,
             "running": self.running,
+            "in_review": list(self.in_review),
             "free_slots": self.free_slots,
             "started": [
                 {"task_id": s, "run_id": None}
@@ -678,31 +725,38 @@ def start_factory(
     and write collisions with running runs, open PRs and the tasks started just before)
     and each is started with `start` (``factory task run ID`` as a separate process; it
     then continues according to its inherited ``auto_continue``). At most
-    ``max_parallel_runs`` minus the live runs are started. A task `start` refuses with a
-    ``TaskRunError`` is skipped as ``cannot_start`` and the next one is tried. A missing
-    trace DB is not created here.
+    ``max_parallel_runs`` minus the taken slots (``Slots``: tasks with a live run or an
+    open PR waiting for review, each once) are started. When PRs waiting for review hold
+    a slot the next ready task that found none is skipped as ``no_slot``. A task `start`
+    refuses with a ``TaskRunError`` is skipped as ``cannot_start`` and the next one is
+    tried. A missing trace DB is not created here.
     """
     main = gitops.main_root(repo)
     limit = max_parallel if max_parallel is not None else _max_parallel(repo)
     db = task_mod._load(main).local.trace_db_path(main)
     files_of = pr_files if pr_files is not None else _pr_files_default(main)
 
-    def live() -> int:
+    def taken() -> Slots:
         if not db.is_file():
-            return 0
+            return Slots()
         store = TaskRunStore(db)
         try:
-            return len(store.live_runs())
+            return Slots.of(store)
         finally:
             store.close()
 
-    running = live()
-    result = FactoryStart(limit, running, max(0, limit - running))
+    slots = taken()
+    result = FactoryStart(
+        limit, len(slots.running), slots.free(limit), in_review=list(slots.in_review)
+    )
     exclude: set[str] = set()
     pending: list[tuple[str, tuple[str, ...]]] = []
     start_skips: list[Skip] = []
     last_skips: list[Skip] = []
-    while len(result.started) < result.free_slots:
+    while True:
+        full = len(result.started) >= result.free_slots
+        if full and not slots.in_review:
+            break
         with _fresh_backlog(repo) as backlog:
             if db.is_file():
                 store = TaskRunStore(db)
@@ -729,6 +783,9 @@ def start_factory(
         last_skips = selection.skipped
         nxt = selection.next
         if nxt is None:
+            break
+        if full:  # PRs waiting for review hold the slot this task would take
+            last_skips = [*last_skips, slots.skip(nxt.id)]
             break
         exclude.add(nxt.id)
         try:
@@ -1101,8 +1158,11 @@ def _run_parallel(
                     return
                 store = TaskRunStore(db)
                 try:
-                    # Runs of other chains (and single runs) take slots of the repo too.
-                    if max(len(runner.active()), len(store.live_runs())) >= max_parallel:
+                    # Runs of other chains, single runs and PRs waiting for review take
+                    # slots of the repo too.
+                    slots = Slots.of(store, runner.active())
+                    full = slots.taken >= max_parallel
+                    if full and not slots.in_review:
                         save()
                         return
                     occupancy = Occupancy.build(backlog, store, main, files_of)
@@ -1122,6 +1182,10 @@ def _run_parallel(
             last_skips = selection.skipped
             nxt = selection.next
             if nxt is None:
+                save()
+                return
+            if full:  # PRs waiting for review hold the slot this task would take
+                last_skips = [*last_skips, slots.skip(nxt.id)]
                 save()
                 return
             exclude.add(nxt.id)
