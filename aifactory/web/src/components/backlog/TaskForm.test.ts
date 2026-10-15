@@ -245,7 +245,9 @@ describe('TaskForm', () => {
     expect(api.postApi.mock.calls[0]?.[1]).not.toHaveProperty('harness')
     expect(wrapper.get('fieldset[data-test="fields"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-test="save"]').attributes('disabled')).toBeDefined()
-    api.getApi.mockResolvedValue({ state: 'succeeded', recommendation: proposal })
+    api.getApi.mockImplementation(async (url: string) => url.startsWith('/backlog/task-advice/')
+      ? { state: 'succeeded', recommendation: proposal }
+      : { state: 'succeeded', recommendation: { decision: 'existing', workflow_name: 'plan', workflow_yaml: null, reason: 'Plan fits', outline: [] } })
     await vi.advanceTimersByTimeAsync(1000)
     await flushPromises()
     vi.useRealTimers()
@@ -259,6 +261,64 @@ describe('TaskForm', () => {
       step: 'M01-S01', title: 'Improved task', body: 'Acceptance criteria', writes: ['src/'],
       depends_on: ['M01-S01-T01'], workflow: 'plan', parameters: { test_timeout: 120 },
     })
+    wrapper.unmount()
+  })
+
+  it('proposes the workflow from the improved draft and saves a new one by its reference', async () => {
+    const proposal = {
+      title: 'Improved task', body: 'Acceptance criteria', writes: null, depends_on: [], related: [],
+      workflow: 'plan', reason: 'Clear scope', usage: null,
+    }
+    const recommendation = {
+      decision: 'new', workflow_name: 'research-x', workflow_yaml: 'name: research-x\nsteps: []',
+      reason: 'Analysis only', outline: [{ name: 'research' }],
+    }
+    api.postApi.mockImplementation(async (url: string) => ({ job_id: url === '/backlog/task-advice' ? 'improve-job' : 'advice-job' }))
+    api.getApi.mockImplementation(async (url: string) => ({
+      state: 'succeeded', recommendation: url.startsWith('/backlog/task-advice/') ? proposal : recommendation,
+    }))
+    const wrapper = addForm({ initialTitle: 'Original' })
+    await wrapper.get('[data-test="improve"]').trigger('click')
+    await flushPromises()
+    expect(api.postApi.mock.calls.map((call) => call[0])).toEqual(['/backlog/task-advice', '/backlog/workflow-advice'])
+    expect(api.postApi.mock.calls[1]?.[1]).toMatchObject({ draft: { title: 'Improved task', body: 'Acceptance criteria', workflow: 'plan' } })
+    const result = wrapper.get('[data-test="advice-result"]')
+    expect(result.text()).toContain('research-x')
+    expect(result.text()).toContain('nové workflow')
+    expect(result.text()).toContain('Analysis only')
+    expect(result.get('pre').text()).toContain('name: research-x')
+    expect(await selectLabels(wrapper, '[data-test="workflow"]')).toContain('research-x')
+    expect(wrapper.get('[data-test="improve-note"]').text()).toContain('Clear scope')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
+      title: 'Improved task', workflow: 'research-x', workflow_advice_id: 'advice-job',
+    })
+    wrapper.unmount()
+  })
+
+  it('keeps the improvement when the workflow proposal fails', async () => {
+    const proposal = {
+      title: 'Improved task', body: 'Acceptance criteria', writes: null, depends_on: [], related: [],
+      workflow: 'plan', reason: 'Clear scope', usage: null,
+    }
+    api.postApi.mockImplementation(async (url: string) => ({ job_id: url === '/backlog/task-advice' ? 'improve-job' : 'advice-job' }))
+    api.getApi.mockImplementation(async (url: string) => url.startsWith('/backlog/task-advice/')
+      ? { state: 'succeeded', recommendation: proposal }
+      : { state: 'failed', recommendation: null, error: 'Workflow agent selhal.' })
+    const wrapper = addForm({ initialTitle: 'Original' })
+    await wrapper.get('[data-test="improve"]').trigger('click')
+    await flushPromises()
+    expect((wrapper.get('[data-test="title"]').element as HTMLInputElement).value).toBe('Improved task')
+    expect((wrapper.get('[data-test="body"]').element as HTMLTextAreaElement).value).toBe('Acceptance criteria')
+    expect(wrapper.get('[data-test="workflow-advice"] [role="alert"]').text()).toBe('Workflow agent selhal.')
+    expect(wrapper.find('[data-test="advice-result"]').exists()).toBe(false)
+    const adviceButton = wrapper.get('[data-test="workflow-advice"] button')
+    expect(adviceButton.attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-test="save"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('form').trigger('submit')
+    const input = wrapper.emitted('submit')?.[0]?.[0] as Record<string, unknown>
+    expect(input).toMatchObject({ title: 'Improved task', workflow: 'plan' })
+    expect(input).not.toHaveProperty('workflow_advice_id')
     wrapper.unmount()
   })
 
