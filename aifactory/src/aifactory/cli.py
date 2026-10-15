@@ -2233,6 +2233,7 @@ def _run_json(result: TaskRunResult) -> dict[str, Any]:
         "pr_error": result.pr_error,
         "auto_merge": result.auto_merge.to_json() if result.auto_merge is not None else None,
         "resolve_run": result.resolve_run.run.to_json() if result.resolve_run is not None else None,
+        "follow_ups": result.follow_ups.to_json() if result.follow_ups is not None else None,
     }
 
 
@@ -2263,6 +2264,10 @@ def _print_run(command: str, result: TaskRunResult) -> None:
         print(f"factory task {command}: {row.error}", file=sys.stderr)
     if result.pr_error:
         print(f"factory task {command}: pr: {result.pr_error}", file=sys.stderr)
+    if result.follow_ups is not None:
+        for item in result.follow_ups.created:
+            kind = "blocks this task" if item.blocks else "new task"
+            print(f"follow-up ({kind}): {item.id} {item.title}")
     merge = result.auto_merge
     if merge is not None and merge.merged:
         sha = f" ({merge.merge_sha[:7]})" if merge.merge_sha else ""

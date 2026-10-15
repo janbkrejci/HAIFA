@@ -61,8 +61,9 @@ from aifactory.harness.override import THINKING_LEVELS
 from aifactory.library.inherit import copy_library_items
 from aifactory.providers import GitProvider, ProviderError, get_provider
 from aifactory.providers import git as provider_git
-from aifactory.run import basemoves, gitops
+from aifactory.run import basemoves, followups, gitops
 from aifactory.run.errors import TaskRunError
+from aifactory.run.followups import FollowUpOutcome
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.pause import PauseGate
 from aifactory.run.resolve import (
@@ -129,6 +130,8 @@ class TaskRunResult:
     auto_merge: AutoMergeResult | None = None
     # a chain member's auto-resolve run of its conflicting PR (cli `--member`)
     resolve_run: TaskRunResult | None = None
+    # new work and blockers the run's agents reported, filed in the backlog (followups.py)
+    follow_ups: FollowUpOutcome | None = None
 
     @property
     def ok(self) -> bool:
@@ -788,18 +791,32 @@ def _execute(
         error = "accept not met"
     if resolve is not None:
         error = _finish_resolve(worktree, wf, row.task_id, resolve, error)
+    follow: FollowUpOutcome | None = None
+    follow_warnings: list[str] = []
+    if wf is not None and resolve is None and followups.reported_any(wf):
+        follow, follow_warnings, blockers = _record_follow_ups(main, store, row, wf)
+        if blockers:
+            # a blocked task is neither published nor done: the run fails
+            reason = f"blocked: task {row.task_id} waits for {', '.join(blockers)}"
+            error = reason if error is None else f"{reason}; {error}"[:2000]
     state = SUCCEEDED if error is None else FAILED
     store.finish(row.run_id, state, gitops.head(worktree), error)
     final = store.get(row.run_id)
     assert final is not None
     result = TaskRunResult(
-        run=final, workflow_run=wf, warnings=tuple(rc.warnings), trace_db=store.db_path
+        run=final,
+        workflow_run=wf,
+        warnings=tuple(rc.warnings) + tuple(follow_warnings),
+        trace_db=store.db_path,
+        follow_ups=follow,
     )
     if state == SUCCEEDED:
         # Local import: aifactory.review imports aifactory.run.
         from aifactory.review.publish import publish, run_pr_body
 
-        body = run_pr_body(store, final, job.task, wf)
+        body = run_pr_body(
+            store, final, job.task, wf, follow_ups=follow.created if follow is not None else ()
+        )
         try:
             result.pr = publish(
                 main,
@@ -821,6 +838,22 @@ def _execute(
             if kept is not None:
                 result.run = kept
     return result
+
+
+def _record_follow_ups(
+    main: Path, store: TaskRunStore, row: TaskRunRow, wf: WorkflowRun
+) -> tuple[FollowUpOutcome | None, list[str], list[str]]:
+    """File the run's follow-ups (``followups.record``): outcome, warnings, blockers.
+
+    A failure to record never hides a blocker an agent reported.
+    """
+    try:
+        with store.serialized():
+            follow = followups.record(main, row.task_id, row.run_id, wf)
+    except Exception as exc:
+        blockers = ["(neuložené hlášení agenta)"] if followups.reported_blockers(wf) else []
+        return None, [f"follow-ups not recorded: {exc}"], blockers
+    return follow, list(follow.warnings), list(follow.blocked_by)
 
 
 def _retry_rebase(

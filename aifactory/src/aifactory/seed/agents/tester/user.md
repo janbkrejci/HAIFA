@@ -79,9 +79,13 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
     { "name": "old-check", "reason": "<why it no longer applies: reverted code, or the reviewer's finding>" }
   ],
   "artifacts": ["<context_handoff_dir>/test-plan.md"],
+  "follow_ups": [],
+  "blocked_by": [],
   "notes_for_next_agent": ""
 }
 ```
+
+`follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false}`; `blocked_by` holds ids of existing backlog tasks.
 
 Order the checks from the fastest to the slowest. `stop_on_fail` (optional, default `false`) is only for a prerequisite such as a build or an install whose failure makes the remaining checks pointless: `{ "name": "build", "argv": ["npm", "run", "build"], "stop_on_fail": true }`.
 

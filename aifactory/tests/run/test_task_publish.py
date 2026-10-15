@@ -174,7 +174,7 @@ def test_publish_after_pr_failed(
         kept_body = store.pr_body_of(run_id)
     finally:
         store.close()
-    assert kept_body is not None and "## Agenti" in kept_body
+    assert kept_body is not None and "### Agenti" in kept_body
     assert "- žádný agent neběžel" not in kept_body  # the body of the run, not a rebuilt one
     log.clear()
 

@@ -9,6 +9,7 @@ for the branch.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -16,14 +17,36 @@ from aifactory.backlog import Task
 from aifactory.config.settings import ProjectSettings
 from aifactory.providers.base import OPEN, GitProvider, ProviderError, PullRequest
 from aifactory.review.prbody import pr_body, pr_title
+from aifactory.run.followups import CreatedFollowUp
+from aifactory.run.resolve import INTERNAL_WORKFLOWS
 from aifactory.run.store import SUCCEEDED, TaskPrRow, TaskRunRow, TaskRunStore, _now
 from aifactory.workflow import WorkflowRun
 
 
-def run_pr_body(store: TaskRunStore, row: TaskRunRow, task: Task, wf: WorkflowRun | None) -> str:
-    """The PR body for `row`: every successful run on its branch (a returned task adds runs)."""
+def run_pr_body(
+    store: TaskRunStore,
+    row: TaskRunRow,
+    task: Task,
+    wf: WorkflowRun | None,
+    follow_ups: Sequence[CreatedFollowUp] = (),
+) -> str:
+    """The PR body for `row`: every successful run on its branch (a returned task adds runs).
+
+    A resolve run keeps the summary of the branch's PR; so does a run whose agents wrote
+    none. `follow_ups` are the backlog tasks the run filed.
+    """
     runs = [r for r in store.runs_on_branch(row.branch) if r.state == SUCCEEDED]
-    return pr_body(task, runs, wf, store.db_path, row.branch)
+    existing = store.pr_for_branch(row.branch)
+    return pr_body(
+        task,
+        runs,
+        wf,
+        store.db_path,
+        row.branch,
+        follow_ups=follow_ups,
+        previous_body=existing.body if existing is not None else None,
+        reuse_summary=row.workflow in INTERNAL_WORKFLOWS,
+    )
 
 
 def _save_new(

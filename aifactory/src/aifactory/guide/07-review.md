@@ -15,6 +15,8 @@ Výsledkem úspěšného běhu je pull request z větve běhu do base. Na zálo�
 - **Verdikt revieweru:** schváleno nebo neschváleno, blokující nálezy a požadavky,
 - **Diff** změn.
 
+Popis PR začíná shrnutím od agentů běhu: **Cíl**, **Co bylo uděláno**, **Co uděláno nebylo** (včetně nových tasků v backlogu, nebo „nic“) a případně **Důležité pro schválení**. Zadání tasku se do popisu nekopíruje. Technické podrobnosti (agenti, gates a testy, review, náklady) následují až za shrnutím. Běh, který jen řešil konflikt s base, shrnutí z předchozího popisu ponechá.
+
 Sloučený nebo zavřený PR je jen pro čtení. Dokud na PR běží běh (například vrácení nebo řešení konfliktu), akce počkají.
 
 ## Schválení
@@ -25,6 +27,8 @@ Sloučený nebo zavřený PR je jen pro čtení. Dokud na PR běží běh (např
 2. v Azure DevOps odešle hlas „approve“ za přihlášeného uživatele (GitHub vlastní schválení autora nepovoluje, lokální provider review nemá),
 3. mergne PR podle `merge_strategy` repa (výchozí squash),
 4. srovná lokální base s remote a smaže worktree větve.
+
+Task s nesplněnými závislostmi (`depends_on`) schválit nejde (chyba `task_blocked`); nejdřív dokonči tasky, které ho blokují.
 
 Po merge nabídne **Další PR ke schválení**. Z CLI: `factory task approve ID`.
 

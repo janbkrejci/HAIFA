@@ -40,8 +40,20 @@ Respond with ONLY valid JSON matching `DocumentOutput` — no prose before or af
   "documented_files": ["src/server.ts"],
   "artifacts": ["<context_handoff_dir>/document.md", "{{doc_path}}"],
   "commit_message": "<imperative one-line git subject for committing THIS WRITE-UP, not the change it describes — e.g. 'Document the /health endpoint'; the workflow makes this commit, do not run git commit yourself>",
+  "follow_ups": [],
+  "blocked_by": [],
+  "pr_summary": {
+    "goal": "<why the task exists, 1-2 sentences>",
+    "done": ["<an outcome, not a file>"],
+    "not_done": ["<what was left out or deviates from the task, and why>"],
+    "notes": ["<risk, behaviour change, or what to check by hand>"]
+  },
   "notes_for_next_agent": "<anything the diff left unexplained>"
 }
 ```
+
+`follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false}`; `blocked_by` holds ids of existing backlog tasks.
+
+`pr_summary` is the summary of the whole change on the branch, not just your step, for the person who approves the pull request. Write it in the language of the task. Do not copy the task text and do not list files: `goal` says why the task exists, `done` the outcomes, `not_done` what was left out or deviates from the task and why (empty when nothing), `notes` risks, behaviour changes and what to check by hand. The latest agent's summary is the one in the pull request, so correct an earlier one when it is wrong or incomplete.
 
 `document_path` and the repo entry in `artifacts` are exactly `{{doc_path}}`. Gates open these files — any other name fails them.

@@ -73,9 +73,13 @@ def test_publish_opens_pr(repo: Path, script: Script) -> None:
     assert result.pr.base_sha == result.run.base_sha
     saved = stored_pr(repo)
     assert saved == result.pr
-    for part in ("## Zadání", "Navrhnout schéma", "## Agenti", "## Gates a testy"):
-        assert part in saved.body
-    assert "## Review" in saved.body and "## Náklady" in saved.body
+    body = saved.body
+    assert "## Zadání" not in body and "Navrhnout schéma" not in body  # no task text
+    heads = ("## Cíl", "## Co bylo uděláno", "## Co uděláno nebylo", "## Technické podrobnosti")
+    positions = [body.index(h) for h in heads]
+    assert positions == sorted(positions)
+    for part in ("### Agenti", "### Gates a testy", "### Review", "### Náklady"):
+        assert body.index(part) > positions[-1]
     assert f"<!-- factory: task={T01} branch={BRANCH} -->" in saved.body
 
 

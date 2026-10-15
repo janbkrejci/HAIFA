@@ -190,7 +190,7 @@ def test_owner_query_is_ignored(client: TestClient, repo: Path, script: Script) 
 def test_detail_has_body_diff_checks_runs(client: TestClient, repo: Path, script: Script) -> None:
     result = first_run(repo, script)
     data = _check(client.get(f"/api/review/{T01}"), 200)["data"]
-    assert "## Zadání" in data["pr"]["body"]
+    assert "## Cíl" in data["pr"]["body"] and "## Zadání" not in data["pr"]["body"]
     assert "owner" not in data
     assert data["project_id"] == "M01"
     assert data["levels"] == ["project", "step", "task"]

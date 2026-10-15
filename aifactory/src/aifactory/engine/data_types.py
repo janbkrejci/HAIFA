@@ -72,6 +72,29 @@ class Phase(BaseModel):
 
 # ── Envelopes (agent output types) ───────────────────────────────────────────
 
+# aifactory 3.2: work a run found but does not finish; the factory files it as a task in
+# the project's TODO step (run/followups.py). `blocks_task`: this task cannot be done
+# before the new one, so the run fails as blocked and the task gets `depends_on` on it.
+class FollowUp(BaseModel):
+    title: str = Field(min_length=1)
+    reason: str = Field(min_length=1)   # what was found, where, and why it is not done here
+    details: str = ""                   # what the new task must do (its task text)
+    blocks_task: bool = False
+
+
+# aifactory 3.2: the summary of the whole PR for the person who approves it, written by
+# the agents (review/prbody.py puts the latest one at the top of the PR body).
+class PrSummary(BaseModel):
+    goal: str = ""                                        # why the task exists, 1-2 sentences
+    done: list[str] = Field(default_factory=list)         # outcomes, not file lists
+    not_done: list[str] = Field(default_factory=list)     # omissions, deviations from the ask
+    notes: list[str] = Field(default_factory=list)        # risks, behaviour changes, manual checks
+
+    @property
+    def empty(self) -> bool:
+        return not (self.goal.strip() or any(d.strip() for d in self.done))
+
+
 class EnvelopeBase(BaseModel):
     """Base of every agent's final JSON response. Output types extend this."""
 
@@ -79,6 +102,11 @@ class EnvelopeBase(BaseModel):
     summary: str = ""
     artifacts: list[str] = Field(default_factory=list)
     notes_for_next_agent: str = ""
+    # aifactory 3.2: new work and blockers the agent reports (see FollowUp), the ids of
+    # existing backlog tasks that block this one, and the PR summary (see PrSummary).
+    follow_ups: list[FollowUp] = Field(default_factory=list)
+    blocked_by: list[str] = Field(default_factory=list)
+    pr_summary: Optional[PrSummary] = None
 
 
 class GenericOutput(EnvelopeBase):

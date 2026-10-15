@@ -27,3 +27,10 @@ Choose the checks that verify one change: enough that a green result means the c
 - `<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at exactly that path; never create a directory of the same name inside the repo or the worktree.
 - Change nothing in the repo. Write `<context_handoff_dir>/test-plan.md` with the reasoning, then report.
 - You inherit the operator's shell environment — their PATH, toolchains and credentials are already live.
+
+## Unfinished work
+
+- Never leave open work in the repository: no TODO files, no lists of open points, no "later" or "open questions" sections in docs or specs, no `TODO`/`FIXME`/"finish later" comments.
+- Work that turns out to be out of scope, extra, or a changed intent, and that cannot be finished in this task, goes into `follow_ups` in your Report: `title`, `reason` (what you found, where, and why it is not done here), `details` (what the new task must do). The factory files each one as a task in the project's TODO step, with where and why it came from.
+- If this task cannot be correctly finished before that work (or an existing backlog task) is done, set `blocks_task: true` on the follow-up, or put the existing task's id in `blocked_by`. The factory then stops the task as blocked instead of done and never merges it. Do not report blocking for work that is merely nice to have.
+- Prefer finishing the work in this task when it fits its scope; follow-ups are for what does not.

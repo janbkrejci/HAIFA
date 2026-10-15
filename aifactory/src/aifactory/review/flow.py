@@ -24,9 +24,10 @@ import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aifactory.backlog import Task, load_backlog
+from aifactory.backlog import Task, load_backlog, unmet
 from aifactory.backlog.taskfile import mark_done, run_entry
 from aifactory.config import ConfigError, RunConfig, load_run_config
+from aifactory.config.settings import ProjectSettings
 from aifactory.providers import (
     CLOSED,
     CONFLICT,
@@ -264,6 +265,22 @@ def approve_task(
         ctx.store.close()
 
 
+def _refuse_blocked(main: Path, settings: ProjectSettings, task_id: str) -> None:
+    """``task_blocked`` when the task has unmet ``depends_on`` in the main checkout's backlog.
+
+    A run whose agents reported a blocker links the task to it there
+    (``run/followups.py``); a blocked task must not become done or be merged.
+    """
+    backlog = load_backlog(main, settings)
+    node = backlog.by_id.get(task_id)
+    if not isinstance(node, Task):
+        return
+    missing = unmet(backlog, node)
+    if missing:
+        ids = ", ".join(u.id for u in missing)
+        raise ReviewError("task_blocked", f"task {task_id} is blocked by {ids}; finish them first")
+
+
 def _approve(ctx: _Ctx, task_id: str, merged_by: str = MERGED_BY_OPERATOR) -> ApproveResult:
     row, status = _checked_pr(ctx, task_id)
     if status.mergeability == CONFLICT:
@@ -275,6 +292,7 @@ def _approve(ctx: _Ctx, task_id: str, merged_by: str = MERGED_BY_OPERATOR) -> Ap
 
     settings = ctx.rc.config.settings
     main, branch = ctx.main, row.branch
+    _refuse_blocked(main, settings, task_id)
     worktree, temp = _branch_worktree(ctx, branch, "approve")
 
     backlog = load_backlog(worktree, settings)

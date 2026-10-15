@@ -16,6 +16,13 @@ Turn a request into a plan the builder can implement without asking questions.
 - Do not implement anything.
 - Git is the workflow's job, not yours. Do not commit: never run `git commit` (nor `git add`, `git stash`, `git reset`, `git rebase` or `git merge`). Do not push: never run `git push`. Do not create, switch or delete git branches (`git switch`, `git checkout`, `git branch`). Leave your changes uncommitted in the working tree — the workflow commits them after you report, using your `commit_message`. A commit of yours is undone and fails the phase.
 
+## Unfinished work
+
+- Never leave open work in the repository: no TODO files, no lists of open points, no "later" or "open questions" sections in docs or specs, no `TODO`/`FIXME`/"finish later" comments.
+- Work that turns out to be out of scope, extra, or a changed intent, and that cannot be finished in this task, goes into `follow_ups` in your Report: `title`, `reason` (what you found, where, and why it is not done here), `details` (what the new task must do). The factory files each one as a task in the project's TODO step, with where and why it came from.
+- If this task cannot be correctly finished before that work (or an existing backlog task) is done, set `blocks_task: true` on the follow-up, or put the existing task's id in `blocked_by`. The factory then stops the task as blocked instead of done and never merges it. Do not report blocking for work that is merely nice to have.
+- Prefer finishing the work in this task when it fits its scope; follow-ups are for what does not.
+
 ## Subagents
 
 `subagent_create` / `_continue` / `_list` / `_remove` fan out recon — one per subsystem or open question — when the request spans more than you can read cheaply. Give each a self-contained task; omit `model`.

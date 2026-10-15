@@ -362,6 +362,7 @@ class ChainResult:
                     "pr": r.pr.to_json() if r.pr is not None else None,
                     "pr_error": r.pr_error,
                     "auto_merge": r.auto_merge.to_json() if r.auto_merge is not None else None,
+                    "follow_ups": r.follow_ups.to_json() if r.follow_ups is not None else None,
                 }
                 for r in self.runs
             ],
