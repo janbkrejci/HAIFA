@@ -1,13 +1,16 @@
 <script setup lang="ts">
 // A repo card of the overview: what runs, waits for review and failed, its configuration
 // problems, the factory controls with the task summary and the newest activity. Every row is a link to the run, the review or the settings.
-import { computed } from 'vue'
-import type { OverviewRepo } from '@/lib/api'
-import { fmtAge, fmtCost, fmtElapsed, fmtTime, ts } from '@/lib/format'
+// Tasks whose PR was merged outside factory get "Otevřít sync PR" (`factory backlog sync`), or a
+// link to the sync PR that is already open; the sync PR is never opened automatically.
+import { computed, ref } from 'vue'
+import { backlogSync, type OverviewRepo } from '@/lib/api'
+import { errorText, fmtAge, fmtCost, fmtElapsed, fmtTime, ts } from '@/lib/format'
 import { activeRuns, failedRows, problems, reviewLink, runLink } from '@/lib/overview'
 import { repoHref } from '@/lib/router'
 import RepoControls from './RepoControls.vue'
 import RepoMenu from './RepoMenu.vue'
+import Spinner from '@/components/ui/Spinner.vue'
 
 const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removing?: boolean }>(), {
   removing: false,
@@ -23,6 +26,27 @@ const stateProblems = computed(() => problems(props.repo).filter((p) => p.href =
 function since(iso: string | null | undefined): number | null {
   const t = ts(iso)
   return Number.isFinite(t) ? Math.max(0, (props.now - t) / 1000) : null
+}
+
+const mergedOutside = computed(() => props.repo.merged_outside ?? [])
+const syncing = ref(false)
+const syncError = ref<string | null>(null)
+const syncUrl = ref<string | null>(null)
+const syncPrUrl = computed(() => props.repo.sync_pr?.url ?? syncUrl.value)
+
+async function onSync() {
+  syncing.value = true
+  syncError.value = null
+  try {
+    const result = await backlogSync(props.repo.id)
+    syncUrl.value = result.url
+    if (!result.url) syncError.value = 'Sync PR nebyl potřeba: nic k označení jako hotové.'
+  } catch (err) {
+    syncError.value = errorText(err)
+  } finally {
+    syncing.value = false
+    emit('changed')
+  }
 }
 
 function reviewAge(opened: string | null, ageS: number | null): string {
@@ -80,6 +104,38 @@ function reviewAge(opened: string | null, ageS: number | null): string {
         <span class="meta" data-test="row-age">{{ reviewAge(pr.opened_at, pr.age_s) }}</span>
         <span class="meta faint">podle trace</span>
       </a>
+    </section>
+
+    <section v-if="mergedOutside.length" class="group" data-test="merged-outside">
+      <h3>Sloučeno mimo factory</h3>
+      <a
+        v-for="pr in mergedOutside"
+        :key="pr.task_id"
+        :href="pr.url ?? undefined"
+        target="_blank"
+        rel="noopener"
+        class="row"
+        data-test="row-merged-outside"
+        :data-task="pr.task_id"
+      >
+        <span class="task mono">{{ pr.task_id }}</span>
+        <span class="title">{{ pr.task_title ?? '' }}</span>
+        <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
+      </a>
+      <div class="sync">
+        <a v-if="syncPrUrl" :href="syncPrUrl" target="_blank" rel="noopener" data-test="sync-pr-link">Sync PR čeká na merge</a>
+        <button
+          v-else
+          type="button"
+          data-test="sync-open"
+          :disabled="syncing"
+          :aria-busy="syncing || undefined"
+          @click="onSync"
+        >
+          <Spinner v-if="syncing" /> Otevřít sync PR
+        </button>
+        <span v-if="syncError" class="sync-error" data-test="sync-error">{{ syncError }}</span>
+      </div>
     </section>
 
     <section v-if="failed.length" class="group">
@@ -223,6 +279,18 @@ h3 {
 
 .config {
   color: var(--amber);
+}
+
+.sync {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 8px;
+}
+
+.sync-error {
+  color: var(--red);
+  font-size: 14px;
 }
 
 .state-problem {

@@ -12,6 +12,10 @@ import pytest
 from run_repo import SPEC, T01, Script, fake_env, git, make_run_repo, ok, write
 
 from aifactory.cli import main
+from aifactory.config import load_run_config
+from aifactory.providers import ProviderError, PrStatus, PullRequest
+from aifactory.providers.local import LocalProvider
+from aifactory.review import refresh_prs
 from aifactory.run import SyncPrRow, TaskPrRow, TaskRunStore, run_task
 from cli_json import run_json
 
@@ -304,3 +308,34 @@ def test_sync_help(capsys: Capsys) -> None:
     out = capsys.readouterr().out
     assert "base" in out
     assert "factory-sync" in out
+
+
+def test_refresh_prs_records_outside_merge(repo: Path, script: Script) -> None:
+    run_and_merge_outside(repo, script)
+    before = git(repo, "rev-parse", "main")
+
+    result = refresh_prs(repo)
+
+    saved = stored_pr(repo)
+    assert saved is not None and saved.state == "merged"
+    assert [s["task_id"] for s in result.states] == [T01]
+    assert result.warnings == [] and result.pr is None and not result.created
+    assert not branch_exists(repo, SYNC)
+    assert git(repo, "rev-parse", "main") == before
+    assert "sync-check" not in git(repo, "worktree", "list")
+
+
+class _FailingProvider(LocalProvider):
+    def status(self, pr: PullRequest) -> PrStatus:
+        raise ProviderError("gh_failed", "x")
+
+
+def test_refresh_prs_provider_error_is_warning(repo: Path, script: Script) -> None:
+    run_and_merge_outside(repo, script)
+
+    provider = _FailingProvider(repo, load_run_config(repo).config.settings)
+    result = refresh_prs(repo, provider=provider)
+
+    saved = stored_pr(repo)
+    assert saved is not None and saved.state == "open"
+    assert len(result.warnings) == 1 and "gh_failed" in result.warnings[0]

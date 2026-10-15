@@ -211,6 +211,23 @@ export interface OverviewReview {
   source: string
 }
 
+/** A task whose newest PR was merged outside factory and that is not done in base yet. */
+export interface OverviewMergedOutside {
+  task_id: string
+  task_title: string | null
+  pr_id: string | null
+  url: string | null
+  branch: string | null
+  merged_at: string | null
+}
+
+/** The newest open `factory backlog sync` PR of a repo. */
+export interface OverviewSyncPr {
+  url: string
+  branch: string
+  tasks: string[]
+}
+
 /** A task whose newest run ended failed or aborted. */
 export interface OverviewFailed {
   run_id: string
@@ -311,6 +328,9 @@ export interface OverviewRepo {
   running: OverviewRunning[]
   review: OverviewReview[]
   failed: OverviewFailed[]
+  /** Tasks merged outside factory that `factory backlog sync` would mark done. */
+  merged_outside?: OverviewMergedOutside[]
+  sync_pr?: OverviewSyncPr | null
   config: OverviewConfig | null
   last_activity: string | null
   warnings: string[]
@@ -334,6 +354,8 @@ export async function fetchOverview(): Promise<OverviewData> {
       running: r.running ?? [],
       review: r.review ?? [],
       failed: r.failed ?? [],
+      merged_outside: r.merged_outside ?? [],
+      sync_pr: r.sync_pr ?? null,
       warnings: r.warnings ?? [],
     })),
     totals: data.totals ?? {},
@@ -362,6 +384,19 @@ export async function controlResume(repoId: string): Promise<FactoryPauseResult>
 /** Stop every running run of the repo; the progress shows in the overview. */
 export async function controlStop(repoId: string): Promise<FactoryStopResult> {
   return postGlobal<FactoryStopResult>(controlPath(repoId, 'stop'), {})
+}
+
+/** POST /api/repos/{id}/backlog/sync (`factory backlog sync`). */
+export interface BacklogSyncResult {
+  url: string | null
+  created: boolean
+  updated: boolean
+  tasks: { task_id: string }[]
+}
+
+/** Open (or extend) the sync PR that marks done the tasks merged outside factory. */
+export async function backlogSync(repoId: string): Promise<BacklogSyncResult> {
+  return postGlobal<BacklogSyncResult>(`/repos/${encodeURIComponent(repoId)}/backlog/sync`, {})
 }
 
 /** DELETE /api<path> of the dashboard itself (remove a repo), with an optional JSON body. */
