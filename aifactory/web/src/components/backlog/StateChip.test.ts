@@ -42,4 +42,11 @@ describe('StateChip', () => {
       'Task nejde spustit, dokud nemá workflow (vlastní nebo zděděné z projektu či stepu).',
     )
   })
+
+  it('carries the shared state colour classes', () => {
+    wrapper = mount(StateChip, { props: { state: 'in review', count: 2 } })
+    const chip = wrapper.find('[data-state="in review"]')
+    expect(chip.classes()).toEqual(expect.arrayContaining(['state-chip', 'state-in-review']))
+    expect(chip.text()).toBe('V review 2')
+  })
 })

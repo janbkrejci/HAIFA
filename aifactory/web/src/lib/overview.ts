@@ -128,6 +128,12 @@ export function urgency(repo: OverviewRepo): Urgency {
 }
 
 /** One chip of the task summary: a board state with its count. */
+/** The class that colours a state chip (`state-in-review`); the colours are in style.css under
+ * `.state-chip`, shared by the backlog StateChip and the overview task summary. */
+export function stateClass(state: BoardState): string {
+  return `state-${state.replace(/\s+/g, '-')}`
+}
+
 export interface TaskSummaryItem {
   state: BoardState
   label: string

@@ -456,3 +456,49 @@ body button.btn-improve:disabled {
   cursor: default;
   pointer-events: none;
 }
+
+/* State chips: one source of the state colours for the backlog StateChip and the overview
+   task summary. The components set only the shape (padding, radius, size). */
+.state-chip {
+  border: 1px solid var(--border);
+  color: var(--dim);
+}
+
+.state-chip.state-todo {
+  border-style: dashed;
+}
+
+.state-chip.state-ready {
+  color: var(--cyan);
+  border-color: rgba(90, 210, 221, 0.45);
+  background: rgba(90, 210, 221, 0.08);
+}
+
+.state-chip.state-blocked {
+  color: var(--amber);
+  border-color: rgba(232, 182, 74, 0.45);
+  background: rgba(232, 182, 74, 0.08);
+}
+
+.state-chip.state-running {
+  color: var(--blue);
+  border-color: rgba(108, 182, 255, 0.45);
+  background: rgba(108, 182, 255, 0.09);
+}
+
+.state-chip.state-in-review {
+  color: var(--purple);
+  border-color: rgba(200, 155, 255, 0.45);
+  background: rgba(200, 155, 255, 0.08);
+}
+
+.state-chip.state-done {
+  color: var(--green);
+  border-color: rgba(74, 222, 128, 0.45);
+  background: rgba(74, 222, 128, 0.09);
+}
+
+.state-chip.state-cancelled {
+  color: var(--faint);
+  text-decoration: line-through;
+}
