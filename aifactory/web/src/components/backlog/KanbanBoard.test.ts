@@ -36,7 +36,7 @@ describe('KanbanBoard', () => {
     const columns = wrapper.findAll('[data-column]')
     expect(columns.map((c) => c.attributes('data-column'))).toEqual(kanbanColumns(BOARD_STATES))
     expect(columns.map((c) => c.attributes('data-column'))).toEqual([
-      'todo', 'ready', 'deferred', 'blocked', 'running', 'in review', 'done', 'cancelled',
+      'todo', 'ready', 'deferred', 'blocked', 'running', 'in review', 'awaiting merge', 'done', 'cancelled',
     ])
     expect(columns[0].find('h2').text()).toContain('Bez workflow')
     expect(cards(wrapper, 'todo')).toEqual(['M02-S01-T01', 'X-1'])

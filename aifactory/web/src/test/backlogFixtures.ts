@@ -131,7 +131,7 @@ export function backlogData(over: Partial<BacklogData> = {}): BacklogData {
     levels: ['module', 'step', 'task'],
     backlog_dir: 'backlog',
     filters: { status: null },
-    states: ['todo', 'ready', 'blocked', 'running', 'in review', 'done', 'cancelled'],
+    states: ['todo', 'ready', 'blocked', 'running', 'in review', 'awaiting merge', 'done', 'cancelled'],
     workflows: ['custom-flow', 'plan', 'plan-build'],
     steps: [
       { id: 'M01-S01', title: 'Model', path: 'backlog/M01-core/S01-model', project: 'M01' },

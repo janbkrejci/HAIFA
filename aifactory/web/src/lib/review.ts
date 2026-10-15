@@ -53,7 +53,10 @@ interface ReviewBase {
   provider_state: ProviderState | null
   mergeability: Mergeability
   running_run: RunningRun | null
+  /** Open, no running run, and the user has to act. */
   awaiting_review: boolean
+  /** Open, no running run, and the factory merges it by itself (effective auto_merge). */
+  awaiting_automerge: boolean
   cost: number
   tokens: number
 }

@@ -89,6 +89,7 @@ export function repo(id: string, over: Partial<OverviewRepo> = {}): OverviewRepo
     has_trace: true,
     running: [],
     review: [],
+    automerge: [],
     failed: [],
     config: config(),
     last_activity: '2026-10-06T10:00:00+00:00',
@@ -114,7 +115,7 @@ export function factory(over: Partial<OverviewFactory> = {}): OverviewFactory {
 }
 
 export function tasks(over: Partial<NonNullable<OverviewRepo['tasks']>> = {}): NonNullable<OverviewRepo['tasks']> {
-  return { todo: 0, ready: 0, blocked: 0, running: 0, 'in review': 0, done: 0, cancelled: 0, ...over }
+  return { todo: 0, ready: 0, blocked: 0, running: 0, 'in review': 0, 'awaiting merge': 0, done: 0, cancelled: 0, ...over }
 }
 
 export function overview(repos: OverviewRepo[]): OverviewData {

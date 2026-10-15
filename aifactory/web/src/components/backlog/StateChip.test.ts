@@ -47,6 +47,13 @@ describe('StateChip', () => {
     wrapper = mount(StateChip, { props: { state: 'in review', count: 2 } })
     const chip = wrapper.find('[data-state="in review"]')
     expect(chip.classes()).toEqual(expect.arrayContaining(['state-chip', 'state-in-review']))
-    expect(chip.text()).toBe('V review 2')
+    expect(chip.text()).toBe('Čeká na review 2')
+  })
+
+  it('tells a PR waiting for auto-merge apart from one waiting for review', () => {
+    wrapper = mount(StateChip, { props: { state: 'awaiting merge', count: 1 } })
+    const chip = wrapper.find('[data-state="awaiting merge"]')
+    expect(chip.classes()).toEqual(expect.arrayContaining(['state-chip', 'state-awaiting-merge']))
+    expect(chip.text()).toBe('Čeká na automerge PR 1')
   })
 })

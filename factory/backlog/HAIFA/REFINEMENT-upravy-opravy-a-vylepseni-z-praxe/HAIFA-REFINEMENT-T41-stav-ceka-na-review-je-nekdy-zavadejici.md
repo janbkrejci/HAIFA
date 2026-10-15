@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T41
 title: "Stav „Čeká na review“ je někdy zavádějící: rozlišit čekání na review a na automerge PR"
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-REFINEMENT-T33, HAIFA-REFINEMENT-T37, HAIFA-REFINEMENT-T28, HAIFA-REFINEMENT-T39]
@@ -29,3 +29,4 @@ Když má task zapnutý automerge, nečeká na review, ale na mergnutí PR. Dash
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/54 · náklady $6.50

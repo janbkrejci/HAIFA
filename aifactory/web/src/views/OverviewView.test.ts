@@ -28,6 +28,7 @@ const DATA = overview([
   repo('calm-a', { last_activity: '2026-10-06T09:05:00+00:00' }),
   repo('busy', { running: [running()] }),
   repo('waiting', { review: [review()] }),
+  repo('merging', { automerge: [review({ task_id: 'M01-S01-T09', pr_id: '9' })] }),
   repo('broken', {
     failed: [failed()],
     running: [running({ run_id: 'run-dead', process: 'ended', status_label: 'proces skončil' })],
@@ -82,7 +83,7 @@ describe('OverviewView', () => {
     stubOverview()
     const wrapper = await mountView()
     const cards = wrapper.findAll('[data-test="overview-card"]').map((c) => c.attributes('data-repo'))
-    expect(cards).toEqual(['dirty', 'gone', 'broken', 'waiting', 'busy'])
+    expect(cards).toEqual(['dirty', 'gone', 'broken', 'waiting', 'busy', 'merging'])
     const calm = wrapper.findAll('[data-test="calm-repo"]')
     expect(calm.map((c) => c.attributes('data-repo'))).toEqual(['calm-a', 'calm-b'])
     expect(calm[0].text()).toContain('v klidu')
@@ -112,8 +113,21 @@ describe('OverviewView', () => {
     stubOverview()
     const wrapper = await mountView()
     const count = (id: string) => wrapper.get(`[data-test="total-${id}"] [data-test="total-count"]`).text()
-    expect([count('running'), count('review'), count('failed'), count('problems')]).toEqual(['1', '1', '2', '2'])
+    expect([count('running'), count('review'), count('automerge'), count('failed'), count('problems')]).toEqual([
+      '1',
+      '1',
+      '1',
+      '2',
+      '2',
+    ])
     expect(wrapper.get('[data-test="total-failed"]').text()).toContain('Selhalo')
+    expect(wrapper.get('[data-test="total-review"]').text()).toContain('Čeká na review')
+    expect(wrapper.get('[data-test="total-automerge"]').text()).toContain('Čeká na automerge PR')
+
+    await wrapper.get('[data-test="total-review"]').trigger('click')
+    expect(wrapper.findAll('[data-test="overview-card"]').map((c) => c.attributes('data-repo'))).toEqual(['waiting'])
+    await wrapper.get('[data-test="total-automerge"]').trigger('click')
+    expect(wrapper.findAll('[data-test="overview-card"]').map((c) => c.attributes('data-repo'))).toEqual(['merging'])
 
     await wrapper.get('[data-test="total-failed"]').trigger('click')
     expect(wrapper.get('[data-test="total-failed"]').attributes('aria-pressed')).toBe('true')
@@ -124,7 +138,7 @@ describe('OverviewView', () => {
     expect(wrapper.findAll('[data-test="overview-card"]').map((c) => c.attributes('data-repo'))).toEqual(['dirty', 'gone'])
 
     await wrapper.get('[data-test="total-problems"]').trigger('click')
-    expect(wrapper.findAll('[data-test="overview-card"]')).toHaveLength(5)
+    expect(wrapper.findAll('[data-test="overview-card"]')).toHaveLength(6)
     expect(wrapper.findAll('[data-test="calm-repo"]')).toHaveLength(2)
   })
 
@@ -261,7 +275,7 @@ describe('OverviewView', () => {
     const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, attachTo: document.body, global })
     await flushPromises()
     expect(wrapper.findAll('[data-test="card-remove"]')).toHaveLength(0)
-    expect(wrapper.findAll('[data-test="overview-card"] [data-test="repo-menu"]')).toHaveLength(5)
+    expect(wrapper.findAll('[data-test="overview-card"] [data-test="repo-menu"]')).toHaveLength(6)
     expect(wrapper.findAll('[data-test="calm-repo"] [data-test="repo-menu"]')).toHaveLength(2)
     await wrapper.get('[data-test="calm-repo"] [data-test="repo-menu"]').trigger('click')
     expect(wrapper.findAll('[data-test="calm-remove"]')).toHaveLength(1)

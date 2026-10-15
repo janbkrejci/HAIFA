@@ -22,6 +22,7 @@ from backlog_fixture import (
 from starlette.testclient import TestClient
 
 import aifactory.backlog
+from aifactory.run.store import TaskRunStore
 from aifactory.skill import envelope_problems
 from aifactory.web import create_app
 from aifactory.web.backlog import BOARD_STATES
@@ -89,7 +90,7 @@ def test_tree_follows_levels_and_board_states(tmp_path: Path) -> None:
         B3: "in review",
     }
     assert data["states"] == list(BOARD_STATES)
-    assert data["state_counts"] == {state: 1 for state in BOARD_STATES}
+    assert data["state_counts"] == {state: 1 for state in BOARD_STATES} | {"awaiting merge": 0}
     assert "owners" not in data
     assert {"custom-flow", "plan-build"} <= set(data["workflows"])
     assert [s["id"] for s in data["steps"]] == [S1, S2]
@@ -186,6 +187,48 @@ def test_filters(tmp_path: Path) -> None:
 
     body = _get(client, "/api/backlog?status=bogus", 400)
     assert body["error"]["code"] == "invalid_status"
+
+
+def test_open_pr_waits_for_review_without_auto_merge(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    client = _client(root, tmp_path)
+    _post(client, f"/api/backlog/containers/{S2}/auto-merge", {"mode": "off"})
+    data = _get(client, "/api/backlog")["data"]
+    assert _states(data)[B3] == "in review"
+    assert data["state_counts"]["awaiting merge"] == 0
+
+
+def test_open_pr_waits_for_automerge_with_inherited_auto_merge(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    client = _client(root, tmp_path)
+    _post(client, "/api/backlog/containers/M02/auto-merge", {"mode": "on"})
+    data = _get(client, "/api/backlog")["data"]
+    assert _states(data)[B3] == "awaiting merge"
+    assert (data["state_counts"]["in review"], data["state_counts"]["awaiting merge"]) == (0, 1)
+    module = next(m for m in data["items"] if m["id"] == "M02")
+    assert module["state_counts"]["awaiting merge"] == 1
+    data = _get(client, "/api/backlog?status=awaiting%20merge")["data"]
+    assert [t["id"] for t in data["tasks"]] == [B3]
+    assert _get(client, "/api/backlog?status=in%20review")["data"]["tasks"] == []
+    detail = _get(client, f"/api/backlog/tasks/{B3}")["data"]
+    assert detail["task"]["board_state"] == "awaiting merge"
+
+    # the task's own switch wins over the inherited one
+    _post(client, f"/api/backlog/tasks/{B3}/edit", {"auto_merge": False})
+    assert _states(_get(client, "/api/backlog")["data"])[B3] == "in review"
+
+
+def test_failed_auto_merge_puts_the_pr_back_to_review(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    client = _client(root, tmp_path)
+    _post(client, f"/api/backlog/containers/{S2}/auto-merge", {"mode": "on"})
+    assert _states(_get(client, "/api/backlog")["data"])[B3] == "awaiting merge"
+    store = TaskRunStore(root / ".factory" / "trace.db")
+    try:
+        store.update_pr(f"factory/{B3}-1", auto_merge_error="checks_failing: ci")
+    finally:
+        store.close()
+    assert _states(_get(client, "/api/backlog")["data"])[B3] == "in review"
 
 
 def test_no_trace_db_means_no_runtime_states(tmp_path: Path) -> None:

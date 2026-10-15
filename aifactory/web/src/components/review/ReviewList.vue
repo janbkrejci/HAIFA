@@ -23,10 +23,13 @@ const props = withDefaults(
 
 const prs = computed<ReviewPr[]>(() => (Array.isArray(props.list.prs) ? props.list.prs : []))
 const awaiting = computed(() => prs.value.filter((p) => p.awaiting_review))
-const other = computed(() => prs.value.filter((p) => !p.awaiting_review))
+const automerge = computed(() => prs.value.filter((p) => !p.awaiting_review && p.awaiting_automerge))
+const other = computed(() => prs.value.filter((p) => !p.awaiting_review && !p.awaiting_automerge))
 
+// "Čeká na automerge PR" needs nobody, so it only shows when it has a PR.
 const sections = computed(() => [
   { key: 'awaiting', title: 'Čeká na review', items: awaiting.value },
+  ...(automerge.value.length ? [{ key: 'automerge', title: 'Čeká na automerge PR', items: automerge.value }] : []),
   { key: 'other', title: 'Ostatní otevřené PR', items: other.value },
 ])
 

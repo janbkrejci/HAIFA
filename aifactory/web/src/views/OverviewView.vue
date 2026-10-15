@@ -251,6 +251,10 @@ h1 {
   color: var(--purple);
 }
 
+.total-automerge .total-count {
+  color: var(--violet);
+}
+
 .total-failed .total-count {
   color: var(--red);
 }

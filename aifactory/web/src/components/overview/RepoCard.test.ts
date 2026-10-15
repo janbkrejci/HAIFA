@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RepoCard from './RepoCard.vue'
 import type { OverviewRepo } from '@/lib/api'
-import { factory, mergedOutside, repo, running, tasks } from '@/test/overviewFixtures'
+import { factory, mergedOutside, repo, review, running, tasks } from '@/test/overviewFixtures'
 
 const api = vi.hoisted(() => ({ backlogSync: vi.fn(), controlStart: vi.fn(), controlPause: vi.fn() }))
 vi.mock('@/lib/api', async (importOriginal) => ({ ...(await importOriginal<object>()), ...api }))
@@ -19,6 +19,31 @@ function mountWith(r: OverviewRepo) {
 
 afterEach(() => {
   document.body.innerHTML = ''
+})
+
+describe('RepoCard pull requests', () => {
+  it('shows PRs waiting for review and PRs waiting for auto-merge in separate sections', () => {
+    const card = mountWith(
+      repo('a', {
+        review: [review({ task_id: 'M01-S01-T02', pr_id: '42' })],
+        automerge: [review({ task_id: 'M01-S01-T05', pr_id: '45' })],
+      }),
+    )
+    const sections = card.findAll('section.group h3').map((h) => h.text())
+    expect(sections).toEqual(['Čeká na review', 'Čeká na automerge PR'])
+    expect(card.findAll('[data-test="row-review"]').map((r) => r.attributes('data-task'))).toEqual(['M01-S01-T02'])
+    const merge = card.get('[data-test="automerge"]')
+    const rows = merge.findAll('[data-test="row-automerge"]')
+    expect(rows.map((r) => r.attributes('data-task'))).toEqual(['M01-S01-T05'])
+    expect(rows[0].attributes('href')).toBe('#/r/a/review/M01-S01-T05')
+    expect(rows[0].text()).toContain('PR #45')
+  })
+
+  it('has no auto-merge section without such a PR', () => {
+    const card = mountWith(repo('a', { review: [review()] }))
+    expect(card.find('[data-test="automerge"]').exists()).toBe(false)
+    expect(card.text()).not.toContain('Čeká na automerge PR')
+  })
 })
 
 describe('RepoCard layout', () => {

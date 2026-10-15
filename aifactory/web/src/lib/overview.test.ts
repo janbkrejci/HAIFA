@@ -25,15 +25,23 @@ import { config, factory, failed, overview, repo, review, running, tasks } from 
 const CALM = repo('calm')
 const RUNS = repo('runs', { running: [running()] })
 const REVIEW = repo('review', { review: [review()] })
+const AUTOMERGE = repo('automerge', { automerge: [review({ task_id: 'M01-S01-T05' })] })
 const FAILED = repo('failed', { failed: [failed()] })
 const ENDED = repo('ended', { running: [running({ process: 'ended', status_label: 'proces skončil' })] })
 const DIRTY = repo('dirty', { state: 'uncommitted', config: config({ uncommitted: [{ path: '.factory/x' }], clean: false }) })
 const MISSING = repo('missing', { state: 'missing', config: null, has_trace: false, last_activity: null })
 
 describe('overview urgency', () => {
-  it('orders problems, failures, review, running, calm', () => {
-    const order = sortRepos([CALM, RUNS, REVIEW, FAILED, DIRTY]).map((r) => r.id)
-    expect(order).toEqual(['dirty', 'failed', 'review', 'runs', 'calm'])
+  it('orders problems, failures, review, running, automerge, calm', () => {
+    const order = sortRepos([CALM, AUTOMERGE, RUNS, REVIEW, FAILED, DIRTY]).map((r) => r.id)
+    expect(order).toEqual(['dirty', 'failed', 'review', 'runs', 'automerge', 'calm'])
+  })
+
+  it('does not rank a repo that only waits for auto-merge as waiting for the user', () => {
+    expect(urgency(AUTOMERGE)).toBe('automerge')
+    expect(urgency(repo('both', { review: [review()], automerge: [review({ task_id: 'X' })] }))).toBe('review')
+    // an older response without the list
+    expect(urgency(repo('old', { automerge: undefined }))).toBe('calm')
   })
 
   it('orders repos of the same urgency by name', () => {
@@ -43,7 +51,7 @@ describe('overview urgency', () => {
   it('counts a running row whose process ended as a failure', () => {
     expect(urgency(ENDED)).toBe('failed')
     expect(failedRows(ENDED)[0].label).toBe('proces skončil')
-    expect(countsById(overview([ENDED])).ended).toEqual({ running: 0, review: 0, failed: 1 })
+    expect(countsById(overview([ENDED])).ended).toEqual({ running: 0, review: 0, automerge: 0, failed: 1 })
   })
 
   it('treats warnings and a missing folder as problems', () => {
@@ -54,15 +62,16 @@ describe('overview urgency', () => {
 })
 
 describe('overview totals and filter', () => {
-  const all = [CALM, RUNS, REVIEW, FAILED, ENDED, DIRTY, MISSING]
+  const all = [CALM, RUNS, REVIEW, AUTOMERGE, FAILED, ENDED, DIRTY, MISSING]
 
-  it('sums runs, review, failures and repos with problems', () => {
-    expect(totals(all)).toEqual({ running: 1, review: 1, failed: 2, problems: 2 })
+  it('sums runs, review, auto-merge, failures and repos with problems', () => {
+    expect(totals(all)).toEqual({ running: 1, review: 1, automerge: 1, failed: 2, problems: 2 })
   })
 
   it('filters the cards by a total', () => {
     expect(all.filter((r) => matchesFilter(r, 'running')).map((r) => r.id)).toEqual(['runs'])
     expect(all.filter((r) => matchesFilter(r, 'review')).map((r) => r.id)).toEqual(['review'])
+    expect(all.filter((r) => matchesFilter(r, 'automerge')).map((r) => r.id)).toEqual(['automerge'])
     expect(all.filter((r) => matchesFilter(r, 'failed')).map((r) => r.id)).toEqual(['failed', 'ended'])
     expect(all.filter((r) => matchesFilter(r, 'problems')).map((r) => r.id)).toEqual(['dirty', 'missing'])
     expect(all.filter((r) => matchesFilter(r, null))).toHaveLength(all.length)
@@ -111,15 +120,19 @@ describe('overview factory controls', () => {
 
   it('summarizes the tasks in kanban order without empty states', () => {
     expect(taskSummary(repo('a'))).toEqual([])
-    expect(taskSummary(repo('a', { tasks: tasks({ done: 4, todo: 1, 'in review': 2 }) }))).toEqual([
+    expect(
+      taskSummary(repo('a', { tasks: tasks({ done: 4, todo: 1, 'in review': 2, 'awaiting merge': 3 }) })),
+    ).toEqual([
       { state: 'todo', label: 'Bez workflow', count: 1 },
-      { state: 'in review', label: 'V review', count: 2 },
+      { state: 'in review', label: 'Čeká na review', count: 2 },
+      { state: 'awaiting merge', label: 'Čeká na automerge PR', count: 3 },
       { state: 'done', label: 'Hotovo', count: 4 },
     ])
   })
 
   it('names the state chip colour class', () => {
     expect(stateClass('in review')).toBe('state-in-review')
+    expect(stateClass('awaiting merge')).toBe('state-awaiting-merge')
     expect(stateClass('ready')).toBe('state-ready')
   })
 

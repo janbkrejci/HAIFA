@@ -40,9 +40,10 @@ async function loadCounts() {
 }
 
 const COUNTS: readonly { key: keyof RepoCounts; label: string }[] = [
-  { key: 'running', label: 'běží' },
-  { key: 'review', label: 'čeká na review' },
-  { key: 'failed', label: 'selhalo' },
+  { key: 'running', label: 'Běží' },
+  { key: 'review', label: 'Čeká na review' },
+  { key: 'automerge', label: 'Čeká na automerge PR' },
+  { key: 'failed', label: 'Selhalo' },
 ]
 
 /** The status label of a repo in the menu; a healthy repo has none. */
@@ -149,7 +150,7 @@ onBeforeUnmount(() => listen(false))
               v-if="counts[repo.id][c.key] > 0"
               class="count"
               :class="`count-${c.key}`"
-              :aria-label="`${counts[repo.id][c.key]} ${c.label}`"
+              :aria-label="`${c.label}: ${counts[repo.id][c.key]}`"
               :data-test="`count-${c.key}`"
             >{{ counts[repo.id][c.key] }}</span>
           </template>
@@ -299,6 +300,11 @@ onBeforeUnmount(() => listen(false))
 .count-review {
   background: rgba(200, 155, 255, 0.18);
   color: var(--purple);
+}
+
+.count-automerge {
+  background: rgba(148, 163, 255, 0.18);
+  color: var(--violet);
 }
 
 .count-failed {

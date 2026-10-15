@@ -3,7 +3,10 @@
 For each repository of the registry the overview returns ``running`` (runs in the ``running``
 state with their running phase, attempt, start and cost so far), ``review`` (open task PRs of
 ``task_prs`` for tasks without an active run that are neither ``done`` nor ``cancelled`` in the
-backlog; ``source: trace`` says they come from the trace, not from the hosting),
+backlog and that wait for the user; ``source: trace`` says they come from the trace, not from
+the hosting), ``automerge`` (the same kind of open PR, but the factory merges it by itself:
+the task has an effective ``auto_merge`` and the PR no ``auto_merge_error``,
+``web.backlog.waits_for_automerge``),
 ``merged_outside`` (tasks without an active run whose newest PR is merged, that are neither
 ``done`` nor ``cancelled`` in the backlog and whose ``## Běhy`` does not have the PR yet: a
 merge outside factory that ``factory backlog sync`` would mark done), ``sync_pr`` (the newest
@@ -17,10 +20,11 @@ shared configuration, D4),
 ``tasks`` counts the backlog's tasks per kanban board state (``web.backlog.BOARD_STATES``,
 every state present, zeros included), computed by ``board_state`` from the trace rows read
 here: a task with a running row whose process did not end is ``running``, one with an open PR
-``in review``. ``factory`` is what the Overview's factory controls need (``control.py``):
+``awaiting merge`` when the factory merges it by itself, otherwise ``in review``. ``factory``
+is what the Overview's factory controls need (``control.py``):
 ``max_parallel_runs`` (``.factory/config.yaml`` of the main checkout; ``null`` when invalid),
 ``running`` (running rows whose process did not end), ``in_review`` (tasks with an open PR
-and no such row: waiting for review, they hold a slot too), ``free_slots``
+and no such row: waiting for review or for auto-merge, they hold a slot too), ``free_slots``
 (``max_parallel_runs`` minus the tasks of ``running`` and ``in_review``, each once,
 ``run.queue.Slots``), ``ready`` (tasks in
 board state ``ready`` not excluded from auto-continue in the kanban, ``task_queue``),
@@ -61,7 +65,7 @@ from typing import Any, TypeVar
 from urllib.parse import quote
 
 from aifactory import database, oscompat
-from aifactory.backlog import Backlog, TaskEditError, iter_tasks, load_for_edit
+from aifactory.backlog import Backlog, Task, TaskEditError, iter_tasks, load_for_edit
 from aifactory.backlog.taskfile import has_entry
 from aifactory.config import ConfigError
 from aifactory.config.loader import load_config
@@ -70,7 +74,7 @@ from aifactory.config.source import CommitSource
 from aifactory.config.status import config_changes
 from aifactory.run.gitops import repo_layout
 from aifactory.run.queue import Slots
-from aifactory.web.backlog import BOARD_STATES, _Runtime, board_state
+from aifactory.web.backlog import BOARD_STATES, _Runtime, board_state, waits_for_automerge
 from aifactory.web.chains import max_parallel_runs_in
 from aifactory.web.config_cache import CONFIG_TTL as CONFIG_TTL
 from aifactory.web.config_cache import ConfigCache
@@ -234,10 +238,12 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
             str(row[0]) for row in conn.execute("SELECT task_id FROM task_queue WHERE excluded")
         )
     if _has_table(conn, "task_prs"):
-        merged = "merged_at" if "merged_at" in _columns(conn, "task_prs") else "NULL AS merged_at"
+        columns = _columns(conn, "task_prs")
+        merged = "merged_at" if "merged_at" in columns else "NULL AS merged_at"
+        error = "auto_merge_error" if "auto_merge_error" in columns else "NULL AS auto_merge_error"
         prs = conn.execute(
             "SELECT rowid, branch, task_id, pr_id, url, state, created_at, updated_at, "
-            f"{merged} FROM task_prs"
+            f"{merged}, {error} FROM task_prs"
         ).fetchall()
     if _has_table(conn, "sync_prs"):
         sync_prs = conn.execute(
@@ -341,8 +347,25 @@ def _sync_pr(trace: _Trace) -> JsonDict | None:
     return {"url": row["url"], "branch": row["branch"], "tasks": ids}
 
 
+def _newest_open_prs(prs: list[sqlite3.Row]) -> dict[str, sqlite3.Row]:
+    """The newest open PR of each task (by ``created_at``, then ``rowid``)."""
+    newest: dict[str, sqlite3.Row] = {}
+    for pr in prs:
+        if pr["state"] != "open":
+            continue
+        seen = newest.get(pr["task_id"])
+        key = (pr["created_at"] or "", pr["rowid"] or 0)
+        if seen is None or key > (seen["created_at"] or "", seen["rowid"] or 0):
+            newest[pr["task_id"]] = pr
+    return newest
+
+
 def _lists(
-    trace: _Trace, tasks: TaskIndex, now: datetime, root: Path
+    trace: _Trace,
+    tasks: TaskIndex,
+    now: datetime,
+    root: Path,
+    backlog: Backlog | None = None,
 ) -> tuple[JsonDict, str | None]:
     def title(task_id: str) -> str | None:
         hit = tasks.get(task_id)
@@ -373,18 +396,21 @@ def _lists(
             }
         )
 
-    open_prs: dict[str, sqlite3.Row] = {}
-    for pr in trace.prs:
-        if pr["state"] != "open" or pr["task_id"] in active or _closed(tasks, pr["task_id"]):
-            continue
-        seen = open_prs.get(pr["task_id"])
-        if seen is None or (pr["created_at"] or "") > (seen["created_at"] or ""):
-            open_prs[pr["task_id"]] = pr
+    open_prs = [
+        pr
+        for pr in _newest_open_prs(trace.prs).values()
+        if pr["task_id"] not in active and not _closed(tasks, pr["task_id"])
+    ]
     review: list[JsonDict] = []
-    for pr in sorted(open_prs.values(), key=lambda p: p["created_at"] or "", reverse=True):
+    automerge: list[JsonDict] = []
+    for pr in sorted(open_prs, key=lambda p: p["created_at"] or "", reverse=True):
         opened = _time(pr["created_at"])
         age = None if opened is None else round(max(0.0, (now - opened).total_seconds()), 1)
-        review.append(
+        task = backlog.by_id.get(pr["task_id"]) if backlog is not None else None
+        merges = waits_for_automerge(
+            task if isinstance(task, Task) else None, pr["auto_merge_error"]
+        )
+        (automerge if merges else review).append(
             {
                 "task_id": pr["task_id"],
                 "task_title": title(pr["task_id"]),
@@ -429,6 +455,7 @@ def _lists(
     lists = {
         "running": running,
         "review": review,
+        "automerge": automerge,
         "failed": failed,
         "merged_outside": _merged_outside(trace, tasks, active, root),
         "sync_pr": _sync_pr(trace),
@@ -496,7 +523,9 @@ def _task_summary(
     rt = _Runtime()
     if trace is not None:
         rt.running = {r["task_id"] for r in active}
-        rt.in_review = {p["task_id"] for p in trace.prs if p["state"] == "open"}
+        newest = _newest_open_prs(trace.prs)
+        rt.in_review = set(newest)
+        rt.merge_blocked = {t for t, p in newest.items() if p["auto_merge_error"]}
     counts: JsonDict = dict.fromkeys(BOARD_STATES, 0)
     ready: list[str] = []
     for task in iter_tasks(backlog):
@@ -561,6 +590,7 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         "has_trace": False,
         "running": [],
         "review": [],
+        "automerge": [],
         "failed": [],
         "merged_outside": [],
         "sync_pr": None,
@@ -616,7 +646,7 @@ class Overview:
         item["tasks"] = summary
         item["factory"] = _factory(root, item["state"], ready, trace, active, self.control)
         if trace is not None:
-            lists, last = _lists(trace, tasks.index, datetime.now(UTC), root)
+            lists, last = _lists(trace, tasks.index, datetime.now(UTC), root, tasks.backlog)
             item.update(lists)
             item["has_trace"] = True
             item["last_activity"] = last
@@ -651,6 +681,7 @@ class Overview:
             "repos": len(repos),
             "running": sum(len(r["running"]) for r in repos),
             "review": sum(len(r["review"]) for r in repos),
+            "automerge": sum(len(r["automerge"]) for r in repos),
             "failed": sum(len(r["failed"]) for r in repos),
             "merged_outside": sum(len(r["merged_outside"]) for r in repos),
             "process_ended": sum(

@@ -50,7 +50,7 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['done', 'cancelled', 'running', 'in review'] as const)('disables Vylepšit agentem for %s tasks', (state) => {
+  it.each(['done', 'cancelled', 'running', 'in review', 'awaiting merge'] as const)('disables Vylepšit agentem for %s tasks', (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
@@ -261,7 +261,7 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['done', 'cancelled', 'running', 'in review'] as const)('offers no cancel for %s tasks', (state) => {
+  it.each(['done', 'cancelled', 'running', 'in review', 'awaiting merge'] as const)('offers no cancel for %s tasks', (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })

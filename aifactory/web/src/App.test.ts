@@ -492,7 +492,7 @@ describe('App', () => {
     wrapper.unmount()
   })
 
-  it('shows the running, review and failed counts of each repo in the switcher on opening', async () => {
+  it('shows the running, review, automerge and failed counts of each repo in the switcher on opening', async () => {
     let calls = 0
     const fetchMock = stubApi({
       repos: [HAIFA, OTHER],
@@ -504,6 +504,7 @@ describe('App', () => {
             ovRepo('haifa', {
               running: [running(), running({ run_id: 'run-2' })],
               review: [review()],
+              automerge: [review({ task_id: 'T-9' })],
               failed: [failed()],
             }),
             ovRepo('other'),
@@ -519,12 +520,16 @@ describe('App', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/overview')
     const haifa = wrapper.get('[data-test="switch-repo-haifa"]')
     expect(haifa.get('[data-test="count-running"]').text()).toBe('2')
-    expect(haifa.get('[data-test="count-running"]').attributes('aria-label')).toBe('2 běží')
+    expect(haifa.get('[data-test="count-running"]').attributes('aria-label')).toBe('Běží: 2')
     expect(haifa.get('[data-test="count-review"]').text()).toBe('1')
+    expect(haifa.get('[data-test="count-review"]').attributes('aria-label')).toBe('Čeká na review: 1')
+    expect(haifa.get('[data-test="count-automerge"]').text()).toBe('1')
+    expect(haifa.get('[data-test="count-automerge"]').attributes('aria-label')).toBe('Čeká na automerge PR: 1')
     expect(haifa.get('[data-test="count-failed"]').text()).toBe('1')
     const other = wrapper.get('[data-test="switch-repo-other"]')
     expect(other.find('[data-test="count-running"]').exists()).toBe(false)
     expect(other.find('[data-test="count-failed"]').exists()).toBe(false)
+    expect(other.find('[data-test="count-automerge"]').exists()).toBe(false)
     wrapper.unmount()
   })
 

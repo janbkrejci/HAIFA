@@ -103,7 +103,9 @@ const runBlocked = computed(() => noWorkflow.value || finished.value)
 /** The task can wait in the auto-continue queue (it has not started). */
 const queueable = computed(() => DEFERRABLE_STATES.includes(task.value.board_state))
 /** Advice is offered only for a task that has not started. */
-const adviceBlocked = computed(() => ['done', 'cancelled', 'running', 'in review'].includes(task.value.board_state))
+const adviceBlocked = computed(() =>
+  ['done', 'cancelled', 'running', 'in review', 'awaiting merge'].includes(task.value.board_state),
+)
 const improveTooltip = computed(() => (adviceBlocked.value ? `${levelLabel(level.task.value)} už nejde měnit.` : ''))
 
 function openEdit(improve: boolean) {
@@ -124,7 +126,7 @@ type Readiness = { tone: 'ok' | 'warn' | 'muted'; title: string; reasons: string
 const readiness = computed<Readiness>(() => {
   const state = task.value.board_state
   if (finished.value) return { tone: 'muted', title: runTooltip.value, reasons: [], runId: null }
-  if (state === 'running' || state === 'in review') {
+  if (state === 'running' || state === 'in review' || state === 'awaiting merge') {
     return {
       tone: 'muted',
       title: `${levelLabel(level.task.value)} je ve stavu ${STATE_LABELS[state]}.`,

@@ -1,13 +1,13 @@
 <script setup lang="ts">
 // A repo card of the overview: the name (its path in a tooltip) with the factory buttons and the
-// menu in the top right corner, what runs, waits for review and failed, its configuration
+// menu in the top right corner, what runs, waits for review, waits for auto-merge and failed, its configuration
 // problems, the factory state with the task summary and, always last, the newest activity. Every row is a link to the run, the review or the settings.
 // Tasks whose PR was merged outside factory get "Otevřít sync PR" (`factory backlog sync`), or a
 // link to the sync PR that is already open; the sync PR is never opened automatically.
 import { computed, ref } from 'vue'
 import { backlogSync, type OverviewRepo } from '@/lib/api'
 import { errorText, fmtAge, fmtCost, fmtElapsed, fmtTime, ts } from '@/lib/format'
-import { activeRuns, failedRows, problems, reviewLink, runLink } from '@/lib/overview'
+import { activeRuns, automergePrs, failedRows, problems, reviewLink, runLink } from '@/lib/overview'
 import { repoHref } from '@/lib/router'
 import RepoActions from './RepoActions.vue'
 import RepoControls from './RepoControls.vue'
@@ -35,6 +35,7 @@ function since(iso: string | null | undefined): number | null {
 const feedback = ref<ControlFeedback>(NO_FEEDBACK)
 
 const mergedOutside = computed(() => props.repo.merged_outside ?? [])
+const automerge = computed(() => automergePrs(props.repo))
 const syncing = ref(false)
 const syncError = ref<string | null>(null)
 const syncUrl = ref<string | null>(null)
@@ -106,6 +107,24 @@ function reviewAge(opened: string | null, ageS: number | null): string {
         :href="reviewLink(repo, pr.task_id)"
         class="row"
         data-test="row-review"
+        :data-task="pr.task_id"
+      >
+        <span class="task mono">{{ pr.task_id }}</span>
+        <span class="title">{{ pr.task_title ?? '' }}</span>
+        <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
+        <span class="meta" data-test="row-age">{{ reviewAge(pr.opened_at, pr.age_s) }}</span>
+        <span class="meta faint">podle trace</span>
+      </a>
+    </section>
+
+    <section v-if="automerge.length" class="group" data-test="automerge">
+      <h3>Čeká na automerge PR</h3>
+      <a
+        v-for="pr in automerge"
+        :key="pr.task_id"
+        :href="reviewLink(repo, pr.task_id)"
+        class="row"
+        data-test="row-automerge"
         :data-task="pr.task_id"
       >
         <span class="task mono">{{ pr.task_id }}</span>

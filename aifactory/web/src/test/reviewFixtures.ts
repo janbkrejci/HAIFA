@@ -33,6 +33,7 @@ export function reviewPr(over: Partial<ReviewPr> = {}): ReviewPr {
     mergeability: 'mergeable',
     running_run: null,
     awaiting_review: true,
+    awaiting_automerge: false,
     cost: 0.25,
     tokens: 1180,
     runs: 1,
@@ -75,6 +76,7 @@ export function reviewList(over: Partial<ReviewList> = {}): ReviewList {
         mergeability: 'conflict',
         running_run: { run_id: 'r-run', workflow: 'resolve', started_at: '2026-01-01T11:00:00+00:00' },
         awaiting_review: false,
+        awaiting_automerge: false,
         cost: 1.5,
         tokens: 20000,
       }),
@@ -109,6 +111,7 @@ export function reviewDetail(over: Partial<ReviewDetail> = {}): ReviewDetail {
     mergeability: 'mergeable',
     running_run: null,
     awaiting_review: true,
+    awaiting_automerge: false,
     cost: 0.25,
     tokens: 1180,
     runs: [

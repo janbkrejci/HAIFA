@@ -65,7 +65,7 @@ Workflow nemusíš nastavovat u každého tasku: nastav ho jednou v projektu neb
 
 V detailu tasku klikni na **Spustit**. Dialog **Spustit task** shrne workflow, povolené cesty a commit base a upozorní na problémy (necommitnutý backlog nebo konfigurace, nesplněné závislosti). Potvrď **Spustit** a otevři běh odkazem **Otevřít běh**.
 
-Na záložce **Běhy** sleduješ fáze běhu živě. Po úspěchu HAIFA otevře pull request a task se na Backlogu přesune do **V review**.
+Na záložce **Běhy** sleduješ fáze běhu živě. Po úspěchu HAIFA otevře pull request a task se na Backlogu přesune do **Čeká na review** (se zapnutým auto-merge do **Čeká na automerge PR**).
 
 ## Schval výsledek
 

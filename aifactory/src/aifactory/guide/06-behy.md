@@ -59,7 +59,7 @@ Z CLI: `factory task pause ID`, `factory task resume ID`, `factory task stop ID`
 
 ## Úspěch a pull request
 
-Po úspěšném workflow HAIFA odešle větev a otevře pull request; task je **V review**. Selže-li publikace (například síť), běh zůstane úspěšný s chybou publikace a v detailu běhu je tlačítko **Publikovat** (v CLI `factory task publish ID`).
+Po úspěšném workflow HAIFA odešle větev a otevře pull request; task je ve stavu **Čeká na review** (se zapnutým auto-merge **Čeká na automerge PR**). Selže-li publikace (například síť), běh zůstane úspěšný s chybou publikace a v detailu běhu je tlačítko **Publikovat** (v CLI `factory task publish ID`).
 
 ## Nedodělky a blokace
 

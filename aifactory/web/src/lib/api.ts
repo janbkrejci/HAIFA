@@ -326,7 +326,10 @@ export interface OverviewRepo {
   state: OverviewState
   has_trace: boolean
   running: OverviewRunning[]
+  /** Open task PRs waiting for the user's review. */
   review: OverviewReview[]
+  /** Open task PRs the factory merges by itself (effective auto_merge, no auto-merge error). */
+  automerge?: OverviewReview[]
   failed: OverviewFailed[]
   /** Tasks merged outside factory that `factory backlog sync` would mark done. */
   merged_outside?: OverviewMergedOutside[]
@@ -353,6 +356,7 @@ export async function fetchOverview(): Promise<OverviewData> {
       ...r,
       running: r.running ?? [],
       review: r.review ?? [],
+      automerge: r.automerge ?? [],
       failed: r.failed ?? [],
       merged_outside: r.merged_outside ?? [],
       sync_pr: r.sync_pr ?? null,
