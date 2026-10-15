@@ -38,6 +38,7 @@ from aifactory.backlog import Backlog, Container, Task
 from aifactory.config import ConfigError, RunConfig, load_run_config
 from aifactory.engine.tracer import BUSY_TIMEOUT
 from aifactory.providers import OPEN, UNKNOWN, GitProvider, ProviderError, get_provider
+from aifactory.review import ci
 from aifactory.review.errors import ReviewError
 from aifactory.review.prbody import branch_cost, run_checks, run_cost
 from aifactory.run import gitops
@@ -502,8 +503,24 @@ def _check_keys(body: JsonDict, allowed: tuple[str, ...]) -> None:
             raise UsageError(f"unknown field '{key}', allowed: {listed}")
 
 
-def approve(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
-    """``factory task approve``: the done commit and the merge (no approve review, OB3)."""
+def approve(
+    repo: Path, task_id: str, launcher: Launcher | None = None
+) -> tuple[JsonDict, list[str]]:
+    """``factory task approve``: the done commit, the CI wait and the merge (OB3).
+
+    On a hosting that reports CI checks (GitHub) the wait, and the ``ci-fix`` runs of
+    red checks, take long: with a `launcher` the approve then runs as a separate process
+    and the data says ``started``; otherwise it runs here and returns the merge.
+    """
+    if launcher is not None and ci.provider_reports_checks(repo):
+        launcher.start_approve(repo, task_id)
+        return {
+            "task_id": task_id,
+            "action": "approve",
+            "started": True,
+            "approve_review_sent": False,
+            "approve_note": APPROVE_NOTE,
+        }, []
     result = review_core.approve_task(repo, task_id)
     data: JsonDict = {
         **result.to_json(),

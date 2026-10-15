@@ -458,6 +458,7 @@ def run_task(
     resolve_with: str = RESOLVE_WORKFLOW,
     started_by: str = STARTED_MANUAL,
     agents_override: dict[str, str] | None = None,
+    workflow_name: str | None = None,
 ) -> TaskRunResult:
     """Start `task_id` in a fresh worktree; raise `TaskRunError` if it cannot start.
 
@@ -472,9 +473,11 @@ def run_task(
     the branch of the returned PR, and the run continues on it instead of a new
     branch from ``base``. ``resolve_onto`` is internal too: ``review.resolve_task``
     passes the commit of ``base`` to rebase `branch` onto, and the run uses the
-    workflow ``resolve`` (or ``resolve_with``) instead of the task's own. ``started_by``
-    records who started the run (``manual``; a chain ``auto-continue``, auto-merge
-    ``auto-resolve``).
+    workflow ``resolve`` (or ``resolve_with``) instead of the task's own. ``workflow_name``
+    is internal as well: ``review.ci`` passes ``ci-fix`` with `branch`, and the run uses
+    that workflow instead of the task's own, with the task's scope and prompt (the note
+    holds the red checks). ``started_by`` records who started the run (``manual``; a chain
+    ``auto-continue``, auto-merge ``auto-resolve``, a CI repair ``auto-ci-fix``).
     """
     main = gitops.main_root(repo)
     rc = _load(main)
@@ -490,6 +493,10 @@ def run_task(
         before: str | None = None
         if resolve_onto is not None and branch is None:
             raise TaskRunError("unknown_branch", "a resolve run needs the branch of the PR")
+        if workflow_name is not None and branch is None:
+            raise TaskRunError(
+                "unknown_branch", f"a {workflow_name} run needs the branch of the PR"
+            )
         if branch is not None:
             before = provider_git.rev_parse(main, f"refs/heads/{branch}")
             if before is None:
@@ -520,7 +527,7 @@ def run_task(
             busy = store.running(task_id)
             if busy is not None:
                 raise already_running(busy)
-            if resolve_onto is None and not has_workflow(task):
+            if resolve_onto is None and workflow_name is None and not has_workflow(task):
                 raise no_workflow_error(task)
             if not force:
                 blocked = _unmet_error(backlog, task, rc.base)
@@ -541,7 +548,9 @@ def run_task(
                     f"task {task_id} has no writes, neither its own nor inherited from index.md",
                 )
             test_timeout = resolve_test_timeout(task, settings)
-            if resolve_onto is None:
+            if resolve_onto is None and workflow_name is not None:
+                workflow = named_workflow(workflow_name, rc.config, task_id)
+            elif resolve_onto is None:
                 workflow = resolve_workflow(task, rc.config)
             else:
                 workflow = named_workflow(resolve_with, rc.config, task_id)

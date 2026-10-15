@@ -1,7 +1,9 @@
 """Approve, return, resolve and clean task pull requests (steps 5 to 7 of "Běh úkolu").
 
 * ``approve_task``: PR state -> one commit on the PR branch with ``status: done``
-  and a ``## Běhy`` line -> push -> supported host approval -> merge ->
+  and a ``## Běhy`` line -> push -> the CI checks of that head (``review.ci``; red
+  checks get up to ``CI_FIX_ROUNDS`` ``ci-fix`` repair runs on the same branch, each
+  followed by a new done commit, push and wait) -> supported host approval -> merge ->
   ``task_prs`` merged -> ``base`` caught up with the remote -> worktrees removed.
   ``merged_by``
   (``operator``, or ``auto-merge`` from ``review/automerge.py``) goes to ``task_prs``.
@@ -29,6 +31,7 @@ from aifactory.backlog.taskfile import mark_done, run_entry
 from aifactory.config import ConfigError, RunConfig, load_run_config
 from aifactory.config.settings import ProjectSettings
 from aifactory.providers import (
+    CHECKS_FAILING,
     CLOSED,
     CONFLICT,
     MERGED,
@@ -40,12 +43,13 @@ from aifactory.providers import (
     get_provider,
 )
 from aifactory.providers import git as pgit
+from aifactory.review import ci
 from aifactory.review.errors import ReviewError
 from aifactory.review.prbody import branch_cost
 from aifactory.review.publish import PublishResult, publish
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
-from aifactory.run.resolve import RESOLVE_REVIEWED_WORKFLOW, RESOLVE_WORKFLOW
+from aifactory.run.resolve import CI_FIX_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW, RESOLVE_WORKFLOW
 from aifactory.run.store import (
     MERGED_BY_OPERATOR,
     RUNNING,
@@ -71,6 +75,7 @@ class ApproveResult:
     removed_worktrees: list[str] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     merged_by: str = MERGED_BY_OPERATOR
+    ci_fix_runs: list[str] = field(default_factory=list)  # ci-fix runs before the merge
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -84,6 +89,7 @@ class ApproveResult:
             "base_sha": self.base_sha,
             "removed_worktrees": list(self.removed_worktrees),
             "warnings": list(self.warnings),
+            "ci_fix_runs": list(self.ci_fix_runs),
         }
 
 
@@ -231,8 +237,9 @@ def _done_entry(ctx: _Ctx, row: TaskPrRow) -> str:
     """The ``## Běhy`` line for the PR `row`: workflow of its last successful run and the cost."""
     runs = ctx.store.runs_on_branch(row.branch)
     done = [r for r in runs if r.state == SUCCEEDED and r.workflow]
-    # A resolve run only rebased the work; the line names the workflow that did it.
-    resolves = (RESOLVE_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW)
+    # A resolve or ci-fix run only rebased or repaired the work; the line names the
+    # workflow that did it.
+    resolves = (RESOLVE_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW, CI_FIX_WORKFLOW)
     workflow = next((r.workflow for r in done if r.workflow not in resolves), None)
     if workflow is None:
         workflow = next((r.workflow for r in done), None)
@@ -249,20 +256,78 @@ def approve_task(
     *,
     provider: GitProvider | None = None,
     merged_by: str = MERGED_BY_OPERATOR,
+    code: CodeRunner | None = None,
 ) -> ApproveResult:
-    """Commit ``status: done`` to the task's PR branch and merge the PR.
+    """Commit ``status: done`` to the task's PR branch, wait for its CI and merge the PR.
 
-    ``merged_by`` is recorded in ``task_prs`` (``operator`` or ``auto-merge``).
+    ``merged_by`` is recorded in ``task_prs`` (``operator`` or ``auto-merge``). The
+    checks of the pushed head decide (``review.ci``): none or green merge; red ones
+    start up to ``ci.CI_FIX_ROUNDS`` ``ci-fix`` runs on the PR branch (``code`` runs
+    their code steps), each followed by a new wait. Checks still red or running leave
+    the PR open with the reason in ``task_prs.auto_merge_error`` and raise ``ReviewError``.
     """
     ctx = _context(repo, provider)
     try:
-        return _approve(ctx, task_id, merged_by)
+        return _approve_gated(repo, ctx, task_id, merged_by, code)
     except ProviderError as exc:
         raise ReviewError(exc.code, exc.message) from exc
     except RuntimeError as exc:
         raise ReviewError("worktree_failed", str(exc)) from exc
     finally:
         ctx.store.close()
+
+
+def _approve_gated(
+    repo: Path, ctx: _Ctx, task_id: str, merged_by: str, code: CodeRunner | None
+) -> ApproveResult:
+    """``_prepare_approve``, the CI gate with its repair runs, then ``_finish_approve``."""
+    fixes: list[str] = []
+    while True:
+        prepared = _prepare_approve(ctx, task_id)
+        row = prepared.row
+
+        def stop(code_: str, reason: str, row: TaskPrRow = row) -> ReviewError:
+            ctx.store.update_pr(row.branch, auto_merge_error=f"{code_}: {reason}")
+            return ReviewError(code_, reason)
+
+        try:
+            checks = ci.head_checks(ctx.provider, row.request(), prepared.head)
+        except ProviderError as exc:
+            raise stop("checks_unavailable", f"{exc.code}: {exc.message}") from exc
+        if checks.state != CHECKS_FAILING or len(fixes) >= ci.CI_FIX_ROUNDS:
+            blocker = ci.checks_reason(checks, len(fixes))
+            if blocker is not None:
+                raise stop(*blocker)
+            result = _finish_approve(ctx, prepared, merged_by)
+            result.ci_fix_runs = fixes
+            return result
+        try:
+            logs = ctx.provider.check_logs(row.request(), checks.failing)
+        except ProviderError as exc:
+            logs = {name: f"log unavailable: {exc.code}: {exc.message}" for name in checks.failing}
+        if prepared.temp is not None:
+            _remove(ctx, prepared.temp, [], [])
+        _free_branch(ctx, row)
+        try:
+            fixed = ci.run_ci_fix(
+                repo,
+                task_id,
+                row.branch,
+                ci.ci_report(checks.failing, logs),
+                ctx.provider,
+                code,
+            )
+        except TaskRunError as exc:
+            reason = f"ci-fix run did not start: {exc.code}: {exc.message}"
+            raise stop("ci_fix_failed", reason) from exc
+        fixes.append(fixed.run.run_id)
+        if fixed.run.state != SUCCEEDED:
+            detail = f": {fixed.run.error}" if fixed.run.error else ""
+            raise stop(
+                "ci_fix_failed",
+                f"ci-fix run {fixed.run.run_id} ended {fixed.run.state}{detail} "
+                f"(red checks: {', '.join(checks.failing) or '?'})",
+            )
 
 
 def _refuse_blocked(main: Path, settings: ProjectSettings, task_id: str) -> None:
@@ -281,7 +346,18 @@ def _refuse_blocked(main: Path, settings: ProjectSettings, task_id: str) -> None
         raise ReviewError("task_blocked", f"task {task_id} is blocked by {ids}; finish them first")
 
 
-def _approve(ctx: _Ctx, task_id: str, merged_by: str = MERGED_BY_OPERATOR) -> ApproveResult:
+@dataclass
+class _Prepared:
+    """The PR after the ``status: done`` commit was pushed: ``head`` is what gets merged."""
+
+    row: TaskPrRow
+    worktree: Path
+    temp: Path | None
+    head: str
+
+
+def _prepare_approve(ctx: _Ctx, task_id: str) -> _Prepared:
+    """Check the PR, commit ``status: done`` on its branch and push; safe to call again."""
     row, status = _checked_pr(ctx, task_id)
     if status.mergeability == CONFLICT:
         raise ReviewError(
@@ -309,7 +385,14 @@ def _approve(ctx: _Ctx, task_id: str, merged_by: str = MERGED_BY_OPERATOR) -> Ap
         gitops.git(worktree, "commit", "-q", "-m", f"{task_id}: status done")
     ctx.provider.push(worktree, branch)
     head = gitops.git(worktree, "rev-parse", "HEAD")
+    return _Prepared(row, worktree, temp, head)
 
+
+def _finish_approve(ctx: _Ctx, prepared: _Prepared, merged_by: str) -> ApproveResult:
+    """Host approval, merge of ``prepared.head``, ``task_prs``, base caught up, cleanup."""
+    row, head, temp = prepared.row, prepared.head, prepared.temp
+    settings = ctx.rc.config.settings
+    main, branch, task_id = ctx.main, row.branch, row.task_id
     try:
         reviewed = ctx.provider.approve(row.request(), head)
     except ProviderError as exc:

@@ -18,7 +18,7 @@ Běh spuštěný z dashboardu je samostatný proces; jeho výstup se ukládá do
 
 ## Seznam běhů
 
-Záložka **Běhy** přepíná **Aktivní** a **Archivované** běhy. Sloupce: task, workflow, stav, začátek, kdo běh spustil (ručně, auto-continue, auto-resolve), doba, tokeny, náklady, pull request a tečky fází.
+Záložka **Běhy** přepíná **Aktivní** a **Archivované** běhy. Sloupce: task, workflow, stav, začátek, kdo běh spustil (ručně, auto-continue, auto-resolve, auto-ci-fix: oprava červené CI při schválení), doba, tokeny, náklady, pull request a tečky fází.
 
 **Archivovat dokončené** přesune dokončené běhy do archivu; **Vymazat všechny** v archivu je nevratně smaže z databáze. Jednotlivé běhy archivuješ, vrátíš z archivu nebo smažeš v řádku.
 

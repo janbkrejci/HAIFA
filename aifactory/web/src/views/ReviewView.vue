@@ -11,6 +11,7 @@ import { errorText, shortSha } from '@/lib/format'
 import { newRun } from '@/lib/backlog'
 import {
   approvePr,
+  approveStarted,
   fetchReview,
   fetchReviews,
   loadShowDone,
@@ -31,6 +32,8 @@ const busy = ref(false)
 const error = ref<string | null>(null)
 /** The PR this screen just merged, and the next PR waiting for approval (null: none). */
 const merged = ref<{ taskId: string; sha: string; note: string; next: string | null } | null>(null)
+/** The task whose approve goes on in the background (waits for CI on GitHub). */
+const approving = ref<string | null>(null)
 /** Bumped after a successful return: ReviewActions clears the note. */
 const returned = ref(0)
 const started = ref<ActionStarted | null>(null)
@@ -218,6 +221,7 @@ async function act(key: ReviewAction, run: () => Promise<void>, failure: string)
   knownRuns = new Set((detail.value?.runs ?? []).map((r) => r.run_id))
   error.value = null
   merged.value = null
+  approving.value = null
   started.value = null
   retryAction.value = null
   let failed: string | null = null
@@ -243,6 +247,10 @@ function onApprove() {
   if (!id) return
   void act('approve', async () => {
     const result = await approvePr(id)
+    if (approveStarted(result)) {
+      approving.value = id
+      return
+    }
     const next = await nextPr(id)
     merged.value = { taskId: id, sha: shortSha(result.merge_sha), note: result.approve_note ?? '', next }
   }, 'Schválení selhalo')
@@ -275,6 +283,7 @@ watch(
   (id, previous) => {
     if (id !== previous || id === null) {
       merged.value = null
+      approving.value = null
       started.value = null
       waiting.value = false
       pendingAction.value = null
@@ -319,6 +328,10 @@ watch(
         <a class="btn" :href="here('review')" data-test="back-to-list">Zpět na seznam</a>
       </div>
     </div>
+    <p v-if="approving && approving === taskId" class="notice" data-test="approve-started">
+      Schvalování běží na pozadí: čeká na CI, při červené CI proběhne oprava do téhož PR.
+      Výsledek uvidíš v detailu PR a v Bězích.
+    </p>
     <p v-if="started" class="notice" data-test="started">
       <template v-if="started.run">
         Spuštěn běh

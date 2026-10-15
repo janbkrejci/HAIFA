@@ -128,6 +128,36 @@ describe('ReviewView', () => {
     wrapper.unmount()
   })
 
+  it('shows an approve that waits for CI in the background', async () => {
+    go('#/r/haifa/review/M01-S01-T01')
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        return ok(
+          {
+            task_id: 'M01-S01-T01',
+            action: 'approve',
+            started: true,
+            approve_review_sent: false,
+            approve_note: APPROVE_NOTE,
+          },
+          202,
+        )
+      }
+      return ok(reviewDetail())
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(ReviewView)
+    await flushPromises()
+    await wrapper.find('[data-test="approve"]').trigger('click')
+    await answerDialog(true)
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/review/M01-S01-T01/approve', { method: 'POST' })
+    const gets = fetchMock.mock.calls.filter(([u, i]) => u === '/api/repos/haifa/review/M01-S01-T01' && !i)
+    expect(gets).toHaveLength(2)
+    expect(wrapper.find('[data-test="approve-started"]').text()).toContain('Schvalování běží na pozadí')
+    expect(wrapper.find('[data-test="merged"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('offers the next PR waiting for approval after a merge', async () => {
     go('#/r/haifa/review/M01-S01-T01')
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {

@@ -57,10 +57,12 @@ def view(
         {
             "state": state,
             "mergeable": mergeable or ("MERGEABLE" if state == "OPEN" else "UNKNOWN"),
-            "headRefOid": "x",
             "mergeCommit": {"oid": merge} if merge else None,
         }
     )
+
+
+NO_CHECKS = reply(exit=1, stderr="no checks reported on the 'factory/x' branch\n")
 
 
 def stored_pr(repo: Path) -> TaskPrRow | None:
@@ -90,6 +92,7 @@ def test_approve_again_after_transient_merge_failure(
         {
             "pr create": reply("https://github.com/o/r/pull/7\n"),
             "pr view": view(),
+            "pr checks": NO_CHECKS,
             "pr merge": reply(exit=1, stderr=BASE_MODIFIED),
         },
     )
@@ -115,7 +118,7 @@ def test_approve_again_after_transient_merge_failure(
 
     log.clear()
     log.respond("pr merge", reply(""))
-    log.respond("pr view", [view(), view(), view("MERGED", MERGE_SHA)])
+    log.respond("pr view", [view(), view(), view(), view("MERGED", MERGE_SHA)])
 
     result = approve_task(repo, T01, provider=provider)
 
@@ -143,7 +146,9 @@ def _github_task(
     git(repo, "remote", "add", "origin", str(origin))
     git(repo, "push", "-q", "-u", "origin", "main")
     log = install_fake_gh(
-        tmp_path, monkeypatch, {"pr create": reply("https://github.com/o/r/pull/7\n")}
+        tmp_path,
+        monkeypatch,
+        {"pr create": reply("https://github.com/o/r/pull/7\n"), "pr checks": NO_CHECKS},
     )
     provider = GitHubProvider(
         repo, load_run_config(repo).config.settings, delay=0, sleep=lambda _: None, **kwargs
@@ -163,8 +168,9 @@ def test_approve_retries_not_mergeable_while_unknown(
         repo, script, tmp_path, monkeypatch, attempts=1, merge_attempts=5
     )
     unknown = view(mergeable="UNKNOWN")
-    # approve's check, merge's wait (all unknown), status after the rejection, merged
-    log.respond("pr view", [view()] + [unknown] * 5 + [unknown, view("MERGED", MERGE_SHA)])
+    # approve's check, the head of the checks, merge's wait (all unknown), status after the
+    # rejection, merged
+    log.respond("pr view", [view(), view()] + [unknown] * 5 + [unknown, view("MERGED", MERGE_SHA)])
     log.respond("pr merge", [reply(exit=1, stderr=NOT_MERGEABLE), reply("")])
 
     result = approve_task(repo, T01, provider=provider)
@@ -181,7 +187,7 @@ def test_approve_not_mergeable_runs_out(
     provider, log, origin = _github_task(
         repo, script, tmp_path, monkeypatch, attempts=1, merge_attempts=3
     )
-    log.respond("pr view", [view(), view(mergeable="UNKNOWN")])
+    log.respond("pr view", [view(), view(), view(mergeable="UNKNOWN")])
     log.respond("pr merge", reply(exit=1, stderr=NOT_MERGEABLE))
 
     with pytest.raises(ReviewError) as info:
@@ -199,7 +205,7 @@ def test_approve_not_mergeable_conflicting_not_retried(
     repo: Path, script: Script, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     provider, log, _ = _github_task(repo, script, tmp_path, monkeypatch, attempts=1)
-    log.respond("pr view", [view(), view(), view(mergeable="CONFLICTING")])
+    log.respond("pr view", [view(), view(), view(), view(mergeable="CONFLICTING")])
     log.respond("pr merge", reply(exit=1, stderr=NOT_MERGEABLE))
 
     with pytest.raises(ReviewError) as info:

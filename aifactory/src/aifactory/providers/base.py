@@ -113,6 +113,14 @@ class GitProvider(abc.ABC):
         """CI checks of `pr` on the hosting; providers without checks report ``none``."""
         return ChecksStatus(CHECKS_NONE)
 
+    def check_logs(self, pr: PullRequest, failing: tuple[str, ...]) -> dict[str, str]:
+        """The output or log of each red check in `failing`, so a repair run can read it.
+
+        Providers without logs return nothing; a check without a log is left out or
+        carries a short note instead.
+        """
+        return {}
+
     def approve(self, pr: PullRequest, head_sha: str) -> bool:
         """Submit a host approval for the expected head; True only when actually sent.
 

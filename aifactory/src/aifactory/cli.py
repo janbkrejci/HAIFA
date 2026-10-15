@@ -1720,8 +1720,8 @@ task run: a failed run keeps its worktree and branch. After a successful run the
   pr_error says why. --auto: after a run opens its PR the next ready task of the step,
   then of the project, starts. Without --auto only a task with auto_continue: true
   (inherited from index.md) is followed, by a task that has it too. auto_merge: true
-  (inherited): a succeeded run with a review phase whose last review approved, a PR that
-  merges cleanly and no red checks is approved and merged like 'task approve'; the chain
+  (inherited): a succeeded run with a review phase whose last review approved and a PR that
+  merges cleanly is approved and merged like 'task approve' (CI wait, ci-fix runs); the chain
   continues only after that merge. Otherwise the PR stays open and auto_merge says why.
 task publish: for the last succeeded run without a pull request (pr_failed) push the
   branch and open the PR as 'task run' does, or adopt the open PR the hosting has for the
@@ -1729,8 +1729,11 @@ task publish: for the last succeeded run without a pull request (pr_failed) push
   progress (already_running): exit 2, nothing changed. Push or PR failed again: pr_failed,
   exit 1. A push failing on the network (RPC, HTTP2, hung up, timeout) is retried a few
   times; a rejected push is not.
-task approve: on conflict run 'factory task resolve <task-id>'. On GitHub an approve review
-  is sent as github_approver (config.yaml) when it is set; otherwise none is sent.
+task approve: on conflict run 'factory task resolve <task-id>'. Waits for the CI checks of
+  the pushed head (none: merge at once); red checks get up to 2 ci-fix runs on the PR
+  branch, then checks_failing, checks_pending or ci_fix_failed and the PR stays open. On
+  GitHub an approve review is sent as github_approver (config.yaml) when it is set;
+  otherwise none is sent.
 task resolve: a run that fails leaves the branch as it was before the rebase.
 task stop: the run is marked stopped; its worktree and branch stay (task clean).
   A paused run can be stopped too.
@@ -1873,18 +1876,21 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     # internal: who started a member run (a chain: auto-continue)
     run.add_argument(
         "--started-by",
-        choices=("manual", "auto-continue", "auto-resolve"),
+        choices=("manual", "auto-continue", "auto-resolve", "auto-ci-fix"),
         default="manual",
         help=argparse.SUPPRESS,
     )
 
     approve = sub.add_parser(
         "approve",
-        help="merge the task's pull request after a commit with status: done",
+        help="merge the task's pull request after a commit with status: done and green CI",
         description="Add a commit with status: done and a line in '## Běhy' to the task's "
-        "pull request, merge it, bring base up to date with the remote and remove the "
-        "branch's worktrees. Azure sends an approval vote after the final push and before "
-        "merge; local and GitHub do not send a self-approval review.",
+        "pull request, wait for the CI checks of that head, merge it, bring base up to date "
+        "with the remote and remove the branch's worktrees. Red checks start up to 2 "
+        "ci-fix repair runs on the PR branch (started_by auto-ci-fix), each followed by a "
+        "new wait; checks still red or running leave the PR open (auto_merge_error). Azure "
+        "sends an approval vote after the final push and before merge; local and GitHub do "
+        "not send a self-approval review.",
     )
     approve.add_argument("task_id", metavar="ID", help="task id")
 
@@ -2430,6 +2436,8 @@ def _task_approve(args: argparse.Namespace, root: Path) -> int:
     sha = result.merge_sha[:7] if result.merge_sha else "?"
     print(f"merged {result.pr.url} into {result.pr.base} ({sha})")
     print("note: approve review sent" if result.reviewed else "note: approve review not sent")
+    if result.ci_fix_runs:
+        print(f"ci-fix runs: {', '.join(result.ci_fix_runs)}")
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
     return 0

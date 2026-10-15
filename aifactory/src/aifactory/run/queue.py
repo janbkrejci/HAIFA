@@ -615,7 +615,7 @@ def member_auto_merge(
         store = TaskRunStore(result.trace_db)
         try:
             with store.merge_lock():
-                result.auto_merge = try_auto_merge(repo, result, task)
+                result.auto_merge = try_auto_merge(repo, result, task, code=code)
             if not result.auto_merge.merged and result.auto_merge.code == "conflict":
                 result.resolve_run, result.auto_merge = resolve_and_merge(
                     repo, result, task, code=code, merge_lock=store.merge_lock
@@ -717,7 +717,7 @@ def _sequential(
                 # Local import: aifactory.review imports aifactory.run.
                 from aifactory.review.automerge import try_auto_merge
 
-                last.auto_merge = try_auto_merge(repo, last, after, provider=provider)
+                last.auto_merge = try_auto_merge(repo, last, after, provider=provider, code=code)
                 if not last.auto_merge.merged and last.auto_merge.code == "conflict":
                     # one auto-resolve (whole suite, reviewed resolution), then merge
                     from aifactory.review.automerge import resolve_and_merge

@@ -1,8 +1,8 @@
 """Start a task run from the dashboard as a separate ``factory`` process.
 
 ``RunLauncher.start`` (Spustit), ``start_return`` (Vrátit), ``start_resolve`` (Vyřešit
-konflikt) and ``start_retry`` (Pokračovat) start
-``<prefix> task run|return|resolve|retry ID --repo ROOT --json`` with
+konflikt), ``start_retry`` (Pokračovat) and ``start_approve`` (Schválit on a hosting with
+CI checks) start ``<prefix> task run|return|resolve|retry|approve ID --repo ROOT --json`` with
 ``start_new_session``, stdin closed, the repository root as cwd and the server's
 environment. The process's stdout (its JSON envelope) and stderr (its narration) go to two
 new files with mode 0600 in ``logs/`` of the HAIFA home (``aifactory.home``), never into
@@ -91,6 +91,8 @@ class Launcher(Protocol):
     def start_resolve(
         self, repo: Path, task_id: str, *, timeout: float = 30.0
     ) -> TaskRunRow | None: ...
+
+    def start_approve(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None: ...
 
     def start_retry(
         self,
@@ -234,6 +236,15 @@ class RunLauncher:
         """``factory task resolve``; like ``start``."""
         args = ["task", "resolve", task_id, "--repo", str(repo), "--json"]
         return self._launch(repo, task_id, "resolve", args, timeout)
+
+    def start_approve(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None:
+        """``factory task approve`` in the background: it waits for the PR's CI.
+
+        Approve claims no run; an error the process reports within ``timeout`` (no PR,
+        a conflict, ...) propagates, a longer approve goes on in its process.
+        """
+        args = ["task", "approve", task_id, "--repo", str(repo), "--json"]
+        self._launch(repo, task_id, "approve", args, timeout, lambda: None)
 
     def start_retry(
         self,

@@ -1,10 +1,11 @@
 """Test double of the dashboard's launcher: an in-process thread (not a fixture).
 
 For tests whose fake harnesses live in the test process (``workflow_fakes``), so a run
-must not leave it. ``ThreadLauncher`` calls ``run_chain``, ``return_task`` and
-``resolve_task`` (looked up on ``aifactory.review`` at call time, tests patch them) on a
-daemon thread and waits until the run is claimed in ``task_runs``, like the launcher of
-the dashboard did before runs became separate processes: one run at a time.
+must not leave it. ``ThreadLauncher`` calls ``run_chain``, ``return_task``,
+``resolve_task`` and ``approve_task`` (looked up on ``aifactory.review`` at call time,
+tests patch them) on a daemon thread and waits until the run is claimed in ``task_runs``,
+like the launcher of the dashboard did before runs became separate processes: one run at
+a time.
 """
 
 from __future__ import annotations
@@ -95,6 +96,16 @@ class ThreadLauncher:
             lambda: review_core.resolve_task(repo, task_id),
             f"resolve {task_id}",
             timeout,
+        )
+
+    def start_approve(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None:
+        self._start(
+            repo,
+            task_id,
+            lambda: review_core.approve_task(repo, task_id),
+            f"approve {task_id}",
+            timeout,
+            lambda: None,
         )
 
     def start_retry(

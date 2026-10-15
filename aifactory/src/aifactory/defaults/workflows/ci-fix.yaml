@@ -1,0 +1,23 @@
+# Repair a PR whose CI checks went red, on the PR's own branch.
+# The prompt's Note holds the names and logs of the red checks.
+name: ci-fix
+description: Repair what the PR's red CI checks reported, test, review, commit to the same PR
+steps:
+  - fix:
+      description: Repair what the red CI checks in the Note reported, from their verbatim log
+  - test_plan:
+      description: Plan the checks that reproduce the CI failures and cover the repair
+  - repeat: {max: 3, until: test.passed}
+    steps:
+      - test
+      - fix:
+          description: Repair what the checks reported, from their verbatim output
+      - test_plan:
+          description: Plan the checks again — the fix changed code, keep every earlier check
+  - review:
+      input: [fix]
+      description: Confirm the repair fixes the CI failures and keeps what the task asked
+  - commit:
+      when: test.passed and review.approved
+      description: Land the repair on the PR branch
+accept: test.passed and review.approved

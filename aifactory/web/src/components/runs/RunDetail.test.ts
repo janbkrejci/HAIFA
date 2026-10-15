@@ -41,6 +41,8 @@ describe('RunDetail', () => {
     expect(manual.get('[data-test="started-by"]').text()).toBe('Spuštěno ručně (dashboard nebo factory task run)')
     const auto = mount(RunDetail, { props: { detail: detail({ started_by: 'auto-resolve' }), events: events() } })
     expect(auto.get('[data-test="started-by"]').text()).toBe('Spuštěno automaticky: auto-merge řeší konflikt PR')
+    const fix = mount(RunDetail, { props: { detail: detail({ started_by: 'auto-ci-fix' }), events: events() } })
+    expect(fix.get('[data-test="started-by"]').text()).toBe('Spuštěno automaticky: schválení opravuje červenou CI PR')
   })
 
   it('names the library commit the run read, seed without one', () => {

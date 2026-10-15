@@ -30,6 +30,7 @@ from run_repo import (
 from workflow_fakes import FakeCodeRunner
 
 import aifactory.review.automerge as automerge
+import aifactory.review.ci as ci
 from aifactory.backlog import Task, load_backlog
 from aifactory.cli import main
 from aifactory.config import load_run_config
@@ -75,9 +76,13 @@ def _shared_gh(tmp_path_factory: pytest.TempPathFactory) -> None:
 
 @pytest.fixture(autouse=True)
 def _no_checks_wait(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Checks are taken as they are; the tests of the wait set their own limits and clock."""
-    monkeypatch.setattr(automerge, "AUTO_MERGE_CHECKS_TIMEOUT", 0.0)
-    monkeypatch.setattr(automerge, "AUTO_MERGE_CHECKS_APPEAR", 0.0)
+    """Checks are taken as they are, red ones get no ci-fix run (tests/review/test_ci_gate.py).
+
+    The tests of the wait set their own limits and clock.
+    """
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_TIMEOUT", 0.0)
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_APPEAR", 0.0)
+    monkeypatch.setattr(ci, "CI_FIX_ROUNDS", 0)
 
 
 class _Clock:
@@ -98,10 +103,10 @@ class _Clock:
 @pytest.fixture(name="clock")
 def clock_fixture(monkeypatch: pytest.MonkeyPatch) -> _Clock:
     clock = _Clock()
-    monkeypatch.setattr(automerge, "_clock", clock)
-    monkeypatch.setattr(automerge, "sleep", clock.sleep)
-    monkeypatch.setattr(automerge, "AUTO_MERGE_CHECKS_TIMEOUT", 60.0)
-    monkeypatch.setattr(automerge, "AUTO_MERGE_CHECKS_APPEAR", 30.0)
+    monkeypatch.setattr(ci, "_clock", clock)
+    monkeypatch.setattr(ci, "sleep", clock.sleep)
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_TIMEOUT", 60.0)
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_APPEAR", 30.0)
     return clock
 
 
@@ -475,7 +480,6 @@ def _view(state: str = "OPEN", merge: str | None = None) -> dict[str, Any]:
         {
             "state": state,
             "mergeable": "MERGEABLE" if state == "OPEN" else "UNKNOWN",
-            "headRefOid": "x",
             "mergeCommit": {"oid": merge} if merge else None,
         }
     )
@@ -547,8 +551,9 @@ def test_github_merges_without_red_checks(
     checks: dict[str, Any],
 ) -> None:
     result, provider, log = _github_run(repo, script, tmp_path, monkeypatch)
-    # auto-merge status, approve's status, merge's status, the state after `pr merge`
-    log.respond("pr view", [_view(), _view(), _view(), _view("MERGED", MERGE_SHA)])
+    # auto-merge status, approve's status, the head of the checks, merge's status, the state
+    # after `pr merge`
+    log.respond("pr view", [_view(), _view(), _view(), _view(), _view("MERGED", MERGE_SHA)])
     log.respond("pr checks", checks)
     log.respond("pr merge", reply(""))
 
@@ -582,14 +587,14 @@ def test_github_waits_for_checks_to_finish(
     checks: list[dict[str, Any]],
 ) -> None:
     result, provider, log = _github_run(repo, script, tmp_path, monkeypatch)
-    log.respond("pr view", [_view(), _view(), _view(), _view("MERGED", MERGE_SHA)])
+    log.respond("pr view", [_view(), _view(), _view(), _view(), _view("MERGED", MERGE_SHA)])
     log.respond("pr checks", checks)
     log.respond("pr merge", reply(""))
 
     merge = try_auto_merge(repo, result, base_task(repo, T01), provider=provider)
 
     assert merge.merged, (merge.code, merge.reason)
-    assert clock.sleeps == [automerge.AUTO_MERGE_CHECKS_DELAY] * 2
+    assert clock.sleeps == [ci.AUTO_MERGE_CHECKS_DELAY] * 2
     assert len(_merges(log)) == 1
 
 
@@ -607,7 +612,7 @@ def test_github_checks_running_past_the_limit_keep_the_pr_open(
     merge = try_auto_merge(repo, result, base_task(repo, T01), provider=provider)
 
     assert not merge.merged and merge.code == "checks_pending"
-    assert clock.sleeps == [automerge.AUTO_MERGE_CHECKS_DELAY] * 4  # 60 s limit
+    assert clock.sleeps == [ci.AUTO_MERGE_CHECKS_DELAY] * 4  # 60 s limit
     assert _merges(log) == []
     row = pr_row(repo, T01)
     assert row is not None and row.state == "open"
@@ -672,7 +677,8 @@ def test_github_auto_merge_waits_for_slow_mergeability(
     )
     # Resolve beyond two full polling batches without any operator action.
     log.respond(
-        "pr view", [unknown] * 64 + [resolved, _view(), _view(), _view("MERGED", MERGE_SHA)]
+        "pr view",
+        [unknown] * 64 + [resolved, _view(), _view(), _view(), _view("MERGED", MERGE_SHA)],
     )
     log.respond(
         "pr checks",

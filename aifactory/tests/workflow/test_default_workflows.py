@@ -22,6 +22,7 @@ NAMES = {
     "scout",
     "resolve",
     "resolve-reviewed",
+    "ci-fix",
     "heal",
     "build",
     "build-review",
