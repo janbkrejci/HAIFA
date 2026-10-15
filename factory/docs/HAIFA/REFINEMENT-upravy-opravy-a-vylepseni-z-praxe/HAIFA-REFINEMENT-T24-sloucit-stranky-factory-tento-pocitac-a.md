@@ -2,62 +2,68 @@
 
 ## Rozhodnutí o uspořádání
 
-Dřív byly čtyři stránky a jejich obsah se překrýval:
+Dřív měl dashboard čtyři stránky a jejich obsah se překrýval:
 
 | Stránka | Překryv |
 |---|---|
-| Factory (`#/r/<id>/factory`) | ukazovala i nálezy knihovny a nálezy počítače nezávislé na repu (jsou i na Tento počítač) |
+| Factory (`#/r/<id>/factory`) | ukazovala i nálezy knihovny a nálezy počítače nezávislé na repu, které byly i na Tento počítač |
 | Nastavení (`#/r/<id>/settings`) | jen polovina úkonu „změnit konfiguraci a commitnout“, commit byl na Factory |
-| Tento počítač (`#/setup`) | synchronizace knihovny (i na Knihovně), Začínáme (i v readiness / Problémech), info bez akce |
-| Knihovna (`#/library`) | synchronizace knihovny (i na Tento počítač) |
+| Tento počítač (`#/setup`) | synchronizace knihovny (byla i na Knihovně), Začínáme (bylo i v readiness a Problémech), info bez akce |
+| Knihovna (`#/library`) | synchronizace knihovny (byla i na Tento počítač) |
 
-Teď jsou **dvě stránky podle rozsahu**. Obě vycházejí ze stránky Factory: hlavička s „Znovu zkontrolovat“, verdikt, jen akční nálezy a pod nimi sekce s akcemi.
+Teď jsou **dvě stránky, každá pro jeden rozsah**. Obě vycházejí ze stránky Factory: hlavička s tlačítkem „Znovu zkontrolovat“, verdikt, jen akční nálezy a pod nimi sekce s akcemi.
 
-1. **Factory** (`#/r/<id>/factory`) obsahuje vše o factory jednoho repa: kontrolu repa, instalaci, commit a stažení konfigurace, roster, **Nastavení repozitáře** a položky repa. Nastavení patří sem, protože uložená sdílená hodnota se na téže stránce hned objeví jako `config_uncommitted` a commitne se tlačítkem **Commitnout konfiguraci**.
-2. **Tento počítač** (`#/setup`) obsahuje vše o tomto počítači: kontrolu počítače, sekci **Knihovna** a nastavení dashboardu. Knihovna leží v `$HAIFA_HOME` tohoto počítače. Proto je její sekce tady a je to jediné místo její synchronizace.
+1. **Factory** (`#/r/<id>/factory`) obsahuje vše o factory jednoho repa: kontrolu repa, instalaci, commit a stažení konfigurace, roster, sekci **Nastavení repozitáře** a položky repa. Nastavení patří sem, protože uložená sdílená hodnota se na téže stránce hned objeví jako `config_uncommitted` a commitne se tlačítkem **Commitnout konfiguraci**.
+2. **Tento počítač** (`#/setup`) obsahuje vše o tomto počítači: kontrolu počítače, sekci **Knihovna** (knihovna leží v `$HAIFA_HOME` tohoto počítače) a nastavení dashboardu. Je to jediné místo, kde se knihovna synchronizuje.
 
-Horní lišta (readiness chip, `#/problems`, chip knihovny) problémy jen počítá a odkazuje na jediné místo, kde se řeší. Nejde o duplicitní obsah.
+Horní lišta (readiness chip, `#/problems`, chip knihovny) problémy jen počítá a odkazuje na jediné místo, kde se řeší. Obsah tedy neduplikuje.
 
 ## Kam se co přesunulo
 
 | Dřív | Teď |
 |---|---|
-| záložka Nastavení repa | sekce **Nastavení repozitáře** na Factory, `#/r/<id>/factory/settings` (jen s nainstalovanou factory, bez ní `config.yaml` neexistuje) |
-| stránka Knihovna (sync, PR, remote, reseed, import, prohlížeč, kopie rep, přesun do knihovny) | sekce **Knihovna** na Tento počítač, `#/setup/library` |
-| založení / naklonování knihovny na Tento počítač | sekce Knihovna (formulář je tam, dokud knihovna neexistuje) |
-| nálezy knihovny (Factory i Tento počítač) | jen v sekci Knihovna |
-| nálezy počítače nezávislé na repu na Factory | jen na Tento počítač. Factory místo nich ukáže jeden řádek „Další nálezy tohoto počítače a knihovny: N · Otevřít Tento počítač“ |
-| nálezy počítače, které plynou z repa (harness z rosteru, node pro pi, login k hostingu repa, `trace_db_shared`) | dál na Factory ve skupině **Tento počítač: potřebné pro toto repo** |
-| položka **Knihovna** v menu přepínače rep | chip knihovny v horní liště a sekce Knihovna |
+| záložka Nastavení repa (`views/SettingsView.vue`) | sekce na Factory, `components/factory/RepoSettings.vue`, adresa `#/r/<id>/factory/settings`. Zobrazí se jen s nainstalovanou factory, protože bez ní `config.yaml` neexistuje. |
+| stránka Knihovna (`views/LibraryView.vue`): sync, PR, remote, reseed, import, prohlížeč, kopie rep, přesun do knihovny | sekce na Tento počítač, `components/setup/LibrarySection.vue`, adresa `#/setup/library` |
+| založení nebo naklonování knihovny na Tento počítač | sekce Knihovna (formulář je tam, dokud knihovna neexistuje) |
+| nálezy knihovny (na Factory i na Tento počítač) | jen v sekci Knihovna |
+| nálezy počítače nezávislé na repu na Factory | jen na Tento počítač. Factory místo nich ukáže jeden řádek „Další nálezy tohoto počítače a knihovny: N“ s odkazem na Tento počítač. |
+| nálezy počítače, které plynou z repa | dál na Factory ve skupině **Tento počítač: potřebné pro toto repo** |
+| položka **Knihovna** v menu přepínače rep (`RepoSwitcher.vue`) | chip knihovny v horní liště a sekce Knihovna |
 
-Factory skryje nález počítače, který má machine check (`GET /api/machine/check`) se stejným `code` a `message`. Když se machine check nenačte, Factory neskryje nic. Verdikt a počty na Factory se počítají z viditelných nálezů.
+Factory skryje nález počítače, pokud machine check (`GET /api/machine/check`) má nález se stejným `code` a `message`. Skryje také každý nález se `scope: library`. Když se machine check nenačte, Factory nic neskryje. Verdikt a počty na Factory se počítají jen z viditelných nálezů (`FactoryView.vue`, funkce `elsewhere`).
 
-## Přesměrování
+## Přesměrování a odkazy
 
-- `#/r/<id>/settings[/…]` vede na `#/r/<id>/factory/settings`. Factory pak sjede na sekci Nastavení repozitáře.
-- `#/library` vede na `#/setup/library`. Tento počítač sjede na sekci Knihovna.
-- Odkazy jsou v `lib/router.ts` (`SETUP_HREF`, `LIBRARY_HREF`, `repoSettingsHref`). Chip knihovny vede v obou stavech na `#/setup/library`. Krok „Knihovna“ prvního spuštění vede tamtéž. Problémy repa na Přehledu (`not_installed`, `invalid`, `uncommitted`) vedou na Factory, `uncommitted` rovnou na náhled commitu (`#/r/<id>/factory/config_commit`).
+- `#/r/<id>/settings` přesměruje na `#/r/<id>/factory/settings` a Factory sjede na sekci Nastavení repozitáře.
+- `#/library` přesměruje na `#/setup/library` a Tento počítač sjede na sekci Knihovna.
+- Konstanty a helpery jsou v `lib/router.ts`: `SETUP_HREF`, `LIBRARY_HREF` a `repoSettingsHref`. Typ `Screen` už nemá `settings` a `Page` nemá `library`.
+- Chip knihovny (`LibraryChip.vue`) vede v obou stavech na `#/setup/library`. Krok „Knihovna“ v `lib/gettingStarted.ts` vede tamtéž. Readiness (`lib/readiness.ts`) posílá nálezy knihovny na `LIBRARY_HREF` a ostatní nálezy na `SETUP_HREF`.
+- Problémy repa na Přehledu (`lib/overview.ts`) vedou takto: `not_installed` a `invalid` na `#/r/<id>/factory`, `uncommitted` rovnou na náhled commitu `#/r/<id>/factory/config_commit`.
 
 ## Výslovně odstraněno
 
-- **Začínáme** na Tento počítač (komponenta `GettingStarted.vue`). Hotové kroky jsou informace bez akce. Nehotové kroky dál ukazuje readiness chip a stránka **Problémy a řešení** se stejnými akcemi (`lib/gettingStarted.ts` zůstává).
-- Text „HAIFA je spuštěná na tomto počítači.“ a prázdné skupiny „Bez nálezů“ (na Tento počítač i na Factory). Prázdná skupina se nevykresluje.
-- Seznam harnessů s počty rep (`harness-counts`). Počty dál počítá server, aby věděl, který chybějící harness je potřeba. Harnessy se nastavují v dialogu z horní lišty.
-- Patička „Další krok: Přidat repozitář · Přehled“ na Tento počítač. Je to jen navigace, kterou nabízí přepínač rep a readiness.
-- Náhradní text „Zkontroluj nastavení prostředí podle nálezu.“ u nálezu bez opravy. Takové nálezy server dashboardu neposílá.
-- Štítek „knihovna“ u nálezu na Factory. Nálezy knihovny tam nejsou.
+- **Začínáme** na Tento počítač (`components/GettingStarted.vue` a jeho test jsou smazané). Hotové kroky jsou jen informace. Nehotové kroky dál ukazuje readiness chip a stránka Problémy a řešení, se stejnými akcemi. `lib/gettingStarted.ts` zůstává.
+- Text „HAIFA je spuštěná na tomto počítači.“ a prázdné skupiny „Bez nálezů“. Prázdná skupina se nevykresluje.
+- Seznam harnessů s počty rep. Počty dál počítá server, aby věděl, který chybějící harness je potřeba.
+- Patička „Další krok“ na Tento počítač. Šlo jen o navigaci, kterou nabízí přepínač rep a readiness.
+- Náhradní text u nálezu bez opravy. Takové nálezy server dashboardu neposílá. Nález počítače teď vykresluje `components/setup/MachineFinding.vue`.
 
-## Jen akční nálezy
+## Jen akční nálezy (server)
 
-Dashboard filtruje nálezy na serveru, ve vrstvě webu (`web/factory.py`: `is_actionable`, `actionable_findings`, `DASHBOARD_HIDDEN`). `factory check` v CLI se nemění.
+Filtr je ve webové vrstvě. `factory check` v CLI se nemění.
 
-- Nález bez `fix` a bez `action` se nezobrazí. Kontrola všech `Finding(` v `check/*_rules.py` a `web/` ukázala jediný takový nález, `repo_installed` („factory is installed in … come from library …“).
-- `hosting_skipped` se nezobrazí. Dashboard nemá přepínač offline a rada „run without --offline“ platí jen pro CLI.
-- Info `harness_missing` mimo repo (machine check) se nezobrazí pro harness, který nepoužívá žádné registrované repo. Pro harness, který repo používá, zůstane. Seznam všech chybějících harnessů vrací API v `missing_harnesses`. Podle něj roster editor a krok „Harnessy“ dál poznají, které harnessy počítač nemá.
-- Chyba (`error`) se nikdy neodfiltruje, takže `ok` zůstává beze změny. `counts` se přepočítá podle vrácených nálezů.
+- `web/factory.py`: `is_actionable` propustí nález s `fix` nebo `action`, který není v `DASHBOARD_HIDDEN` (`{"hosting_skipped"}`, protože dashboard nemá přepínač offline). `actionable_findings` vždy ponechá `error`, takže `ok` platí beze změny, a přepočítá `counts`. Funkci používá `check_view` repa. Tím zmizí `repo_installed` („factory is installed in … come from library …“), jediný nález bez `fix` a bez `action`.
+- `web/machine.py`: `check_view` vrací `actionable_findings(view, _needed)`. `_needed` navíc vyřadí info `harness_missing` pro harness, který žádné registrované repo nepoužívá. Nové pole `missing_harnesses` vrací všechny chybějící harnessy. Podle něj `lib/roster.ts` (`detectedHarnesses`) a krok Harnessy dál poznají, co na počítači chybí. Typ pole je v `lib/api.ts`.
+- Docstringy endpointů v `web/app.py` popisují nové chování.
 
-Na dalších místech dashboardu (Přehled, karta repa, readiness, Problémy) jiné neakční nálezy nejsou. Readiness bere jen `error` a `warning`. Stavové údaje (base, verze, napřed/pozadu) nejsou nálezy, a proto zůstávají.
+## Příručka
 
-## Dokumentace a rozhodnutí
+Kapitoly `guide/03`, `04`, `08`, `10`, `12` a `15` popisují nové uspořádání. Soubor `docs/decisions.md` není mezi změněnými.
 
-Kapitoly příručky 03, 04, 08, 10, 12 a 15 popisují nové uspořádání. `docs/decisions.md` je mimo povolené cesty tasku, proto se nemění. Rozdělení těchto stránek ani `repo_installed` v něm nejsou, takže úprava není potřeba.
+## Ověření
+
+- Backend: `cd aifactory && uv run pytest tests/web/test_web_factory.py tests/web/test_web_machine.py -n0`. Nové testy jsou `test_check_shows_only_actionable_findings` a `test_missing_harness_info_only_for_harnesses_repos_use`.
+- Frontend: `just web-test`. Pokrývá `router.test.ts` (přesměrování, čtyři obrazovky), `FactoryView.test.ts` (skrývání nálezů, sekce nastavení), `SetupView.test.ts`, `LibrarySection.test.ts`, `RepoSettings*.test.ts`, `App.test.ts`, `LibraryChip.test.ts`, `overview.test.ts` a `gettingStarted.test.ts`.
+- Prohlížeč: `cd aifactory && uv run pytest tests/e2e/test_library_browser.py -n0`. Test klikne na chip knihovny a čeká `#/setup/library` s nadpisem „Tento počítač“.
+- Ručně: `just dash`, pak otevřít `#/library` a `#/r/<id>/settings` (obě adresy musí přesměrovat) a ověřit, že na Factory není `repo_installed`.
+- `web/static` je přebuildovaný (`just web-build`, nové hashe assetů v `index.html`).
