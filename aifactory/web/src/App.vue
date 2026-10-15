@@ -18,6 +18,8 @@ import {
   useRoute,
 } from './lib/router'
 import { useTheme } from './lib/theme'
+import { cancelLeave, confirmLeave, leaveDialog } from './lib/leaveGuard'
+import ConfirmDialog from './components/ui/ConfirmDialog.vue'
 import SetupView from './views/SetupView.vue'
 import OverviewView from './views/OverviewView.vue'
 import ProblemsView from './views/ProblemsView.vue'
@@ -265,6 +267,7 @@ onBeforeUnmount(() => {
     </main>
   </div>
   <MachineHarnessesDialog :open="harnessDialog" @close="harnessDialog = false" @saved="limits.refresh(); readiness.recheck()" @tested="limits.refresh(); readiness.recheck()" />
+  <ConfirmDialog v-bind="leaveDialog" @confirm="confirmLeave" @cancel="cancelLeave" />
 </template>
 
 <style scoped>

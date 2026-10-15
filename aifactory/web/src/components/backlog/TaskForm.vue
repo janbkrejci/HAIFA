@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // One form for a new task (factory task add) and for editing a task (factory task edit).
-import { computed, nextTick, ref } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
   CODE_RE,
   INHERIT_LABEL,
@@ -21,6 +21,7 @@ import {
 import type { SelectOption } from '@/lib/select'
 import { useLevels, useNames } from '@/lib/names'
 import { newStepHref } from '@/lib/router'
+import { askDiscard, useUnsavedGuard } from '@/lib/leaveGuard'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
 import IdPicker from './IdPicker.vue'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -280,9 +281,38 @@ const canSubmit = computed(() => {
   return Object.keys(editInput.value).length > 0
 })
 
+/** Everything the user can change, to tell an edited form from the opened one. */
+function formState(): string {
+  return JSON.stringify([
+    step.value, title.value, taskId.value, workflow.value, writesText.value, inheritWrites.value,
+    depends.value, related.value, parameters.value ?? null, body.value, status.value, autoMerge.value,
+  ])
+}
+const pristine = formState()
+/** Submitted (or discarded): leaving after the save must not ask. A failed write makes it dirty again. */
+const settled = ref(false)
+const dirty = computed(() => !settled.value && formState() !== pristine)
+useUnsavedGuard(() => dirty.value)
+watch(
+  () => props.error,
+  (error) => {
+    if (error) settled.value = false
+  },
+)
+
 function onSubmit() {
   if (!canSubmit.value) return
+  settled.value = true
   emit('submit', props.mode === 'add' ? addInput() : editInput.value)
+}
+
+/** Zrušit drops the changes only after the user agrees. */
+async function onCancel() {
+  if (dirty.value) {
+    if (!(await askDiscard())) return
+    settled.value = true
+  }
+  emit('cancel')
 }
 </script>
 
@@ -446,7 +476,7 @@ function onSubmit() {
         <Spinner v-if="pending" />
         {{ mode === 'add' ? 'Založit' : 'Uložit' }}
       </button>
-      <button type="button" data-test="cancel" @click="emit('cancel')">Zrušit</button>
+      <button type="button" data-test="cancel" @click="onCancel">Zrušit</button>
     </div>
 
     <IssueList v-if="error" :message="error.message" :issues="error.issues" />

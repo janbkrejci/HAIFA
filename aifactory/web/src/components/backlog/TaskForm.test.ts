@@ -4,6 +4,7 @@ import TaskForm from './TaskForm.vue'
 import { backlogData, taskNode } from '@/test/backlogFixtures'
 import { chooseOption, selectLabels } from '@/test/select'
 import { resetNamesForTests, setNames } from '@/lib/names'
+import { confirmLeave, hasUnsavedChanges, leaveDialog } from '@/lib/leaveGuard'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
 vi.mock('@/lib/api', () => api)
@@ -392,5 +393,32 @@ describe('TaskForm', () => {
     const error = wrapper.find('[data-test="write-error"]')
     expect(error.text()).toContain('change rejected')
     expect(error.find('[data-issue="unknown_ref"]').text()).toContain('unknown NOPE')
+  })
+
+  it('reports unsaved changes until the form is submitted', async () => {
+    const wrapper = addForm()
+    expect(hasUnsavedChanges()).toBe(false)
+    await wrapper.find('[data-test="title"]').setValue('Rozepsaný')
+    expect(hasUnsavedChanges()).toBe(true)
+    await wrapper.find('form').trigger('submit')
+    expect(hasUnsavedChanges()).toBe(false)
+    await wrapper.setProps({ error: { message: 'change rejected', issues: [] } })
+    expect(hasUnsavedChanges()).toBe(true)
+    wrapper.unmount()
+    expect(hasUnsavedChanges()).toBe(false)
+  })
+
+  it('asks before Zrušit drops the changes', async () => {
+    const wrapper = addForm()
+    await wrapper.find('[data-test="cancel"]').trigger('click')
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
+    await wrapper.find('[data-test="title"]').setValue('Rozepsaný')
+    await wrapper.find('[data-test="cancel"]').trigger('click')
+    expect(leaveDialog.open).toBe(true)
+    expect(wrapper.emitted('cancel')).toHaveLength(1)
+    confirmLeave()
+    await flushPromises()
+    expect(wrapper.emitted('cancel')).toHaveLength(2)
+    wrapper.unmount()
   })
 })
