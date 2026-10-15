@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T25
 title: Markdown browser a viewer pro task
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T21, HAIFA-REFINEMENT-T11, HAIFA-S01-T04, HAIFA-S10-T03]
 writes: [aifactory/]
@@ -31,3 +31,4 @@ Navrhni a implementuj funkci, která umožní prohlížet markdowny souvisejíc�
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/38 · náklady $2.32
