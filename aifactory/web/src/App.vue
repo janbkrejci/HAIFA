@@ -97,7 +97,7 @@ watchEffect(() => {
     const name = currentRepo.value?.name ?? repoId.value ?? ''
     document.title = `${name} · ${SCREEN_LABELS[route.value]} · HAIFA`
   } else if (page.value === 'setup') {
-    document.title = 'Tento počítač · HAIFA'
+    document.title = 'Knihovna · HAIFA'
   } else if (page.value === 'repos-add') {
     document.title = 'Přidat repozitář · HAIFA'
   } else if (page.value === 'problems') {

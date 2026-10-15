@@ -38,13 +38,14 @@ FAKE_UV = (
     'echo "$FACTORY_BIN"; fi\n'
 )
 # A fake factory for install.sh: logs its arguments; the library is missing unless
-# $FAKE_LIBRARY is "ok".
+# $FAKE_LIBRARY is "ok"; `library seed` exits with $FAKE_SEED_EXIT (default 0).
 FAKE_FACTORY = (
     '#!/bin/sh\nprintf "%s\\n" "$*" >> "$FACTORY_LOG"\n'
     'if [ "$1 $2" = "library status" ]; then\n'
     '  if [ "${FAKE_LIBRARY:-}" = "ok" ]; then echo \'{"ok": true, "data": {}}\'; exit 0; fi\n'
     '  echo \'{"ok": false, "error": {"code": "library_missing", "message": "no"}}\'; exit 2\n'
     "fi\n"
+    'if [ "$1 $2" = "library seed" ]; then exit "${FAKE_SEED_EXIT:-0}"; fi\n'
 )
 
 
@@ -161,9 +162,9 @@ def _fake_factory_bin(tmp_path: Path) -> Path:
     return bin_dir
 
 
-@pytest.mark.parametrize("library", ["missing", "ok"])
-def test_install_sh_clones_a_missing_library_and_keeps_an_existing_one(
-    unpacked: Path, tmp_path: Path, library: str
+@pytest.mark.parametrize(("library", "seed_exit"), [("missing", 0), ("ok", 0), ("ok", 1)])
+def test_install_sh_clones_a_missing_library_and_refreshes_it(
+    unpacked: Path, tmp_path: Path, library: str, seed_exit: int
 ) -> None:
     log = tmp_path / "factory.log"
     env = {
@@ -173,6 +174,7 @@ def test_install_sh_clones_a_missing_library_and_keeps_an_existing_one(
         "FACTORY_BIN": str(_fake_factory_bin(tmp_path)),
         "FACTORY_LOG": str(log),
         "FAKE_LIBRARY": library,
+        "FAKE_SEED_EXIT": str(seed_exit),
     }
     proc = subprocess.run(
         _install_sh("./install.sh"),
@@ -185,10 +187,17 @@ def test_install_sh_clones_a_missing_library_and_keeps_an_existing_one(
     assert proc.returncode == 0, proc.stdout + proc.stderr
     calls = log.read_text("utf-8").splitlines()
     if library == "missing":
-        assert calls == ["library status --json", "library clone --seed-fallback"]
+        assert calls == [
+            "library status --json",
+            "library clone --seed-fallback",
+            "library seed --all",
+        ]
     else:
-        assert calls == ["library status --json"]
-        assert "left unchanged" in proc.stdout
+        assert calls == ["library status --json", "library seed --all"]
+    assert f"Refreshing the library to HAIFA {__version__}" in proc.stdout
+    refused = "the library was not refreshed; run: factory library seed --all"
+    assert (refused in proc.stderr) == bool(seed_exit)
+    assert "installed" in proc.stdout  # a failed refresh does not stop the install
 
 
 def test_install_sh_runs_uv_tool_install(unpacked: Path, tmp_path: Path) -> None:
@@ -268,8 +277,8 @@ def test_install_sh_without_uv_explains_and_fails(unpacked: Path, tmp_path: Path
 
 WIN_TOOLS = ("git", "uv", "gh", "node", "npm", "claude", "codex", "winget")
 # A fake tool: appends "<name> <args>" to $FAKE_LOG; git knows the identity, uv the bin
-# directory, factory the library state; winget and npm "install" a tool by copying it from
-# $FAKE_STASH into the bin directory.
+# directory, factory the library state (`library seed` exits with $FAKE_SEED_EXIT); winget
+# and npm "install" a tool by copying it from $FAKE_STASH into the bin directory.
 FAKE_TOOL = """#!/usr/bin/env python3
 import json, os, shutil, sys
 name, args = {name!r}, sys.argv[1:]
@@ -291,6 +300,8 @@ elif name == "factory" and args[:2] == ["library", "status"]:
         print(json.dumps({{"ok": False, "error": {{"code": "library_missing", "message": "no"}}}}))
         sys.exit(2)
     print(json.dumps({{"ok": True, "data": {{}}}}))
+elif name == "factory" and args[:2] == ["library", "seed"]:
+    sys.exit(int(os.environ.get("FAKE_SEED_EXIT", "0")))
 """
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="install.ps1 runs on Windows")
 
@@ -302,7 +313,7 @@ def _fake_tool(directory: Path, name: str) -> None:
 
 
 def _windows_env(
-    tmp_path: Path, missing: tuple[str, ...] = (), library: str = "ok"
+    tmp_path: Path, missing: tuple[str, ...] = (), library: str = "ok", seed_exit: int = 0
 ) -> dict[str, str]:
     """Fakes of every tool and factory in bin/, the `missing` ones only in stash/."""
     bin_dir, stash = tmp_path / "bin", tmp_path / "stash"
@@ -319,6 +330,7 @@ def _windows_env(
         "FAKE_BIN": str(bin_dir),
         "FAKE_STASH": str(stash),
         "FAKE_LIBRARY": library,
+        "FAKE_SEED_EXIT": str(seed_exit),
     }
 
 
@@ -359,10 +371,11 @@ def test_windows_installers_are_versioned(unpacked: Path) -> None:
 
 
 @windows_only
-def test_install_ps1_on_a_ready_machine_installs_factory_and_keeps_the_library(
-    unpacked: Path, tmp_path: Path
+@pytest.mark.parametrize("seed_exit", [0, 1])
+def test_install_ps1_on_a_ready_machine_installs_factory_and_refreshes_the_library(
+    unpacked: Path, tmp_path: Path, seed_exit: int
 ) -> None:
-    env = _windows_env(tmp_path)
+    env = _windows_env(tmp_path, seed_exit=seed_exit)
     proc = _install_ps1(unpacked, env)
     assert proc.returncode == 0, proc.stdout + proc.stderr
     wheel = f"aifactory-{__version__}-py3-none-any.whl"
@@ -370,8 +383,10 @@ def test_install_ps1_on_a_ready_machine_installs_factory_and_keeps_the_library(
         f"uv tool install --force {wheel} --constraints constraints.txt",
         "uv tool update-shell",
         "factory library status --json",
+        "factory library seed --all",
     ]
     assert "factory check" in proc.stdout
+    assert ("the library was not refreshed" in proc.stdout + proc.stderr) == bool(seed_exit)
 
 
 @windows_only
@@ -386,7 +401,11 @@ def test_install_ps1_installs_missing_tools_and_creates_the_library(
         "winget install --id GitHub.cli -e --accept-source-agreements --accept-package-agreements",
         "npm install -g @openai/codex",
     ]
-    assert log[-2:] == ["factory library status --json", "factory library clone --seed-fallback"]
+    assert log[-3:] == [
+        "factory library status --json",
+        "factory library clone --seed-fallback",
+        "factory library seed --all",
+    ]
 
 
 @windows_only

@@ -15,7 +15,7 @@ factory upgrade --dry-run haifa-<verze>.zip
 factory upgrade haifa-<verze>.zip
 ```
 
-`factory upgrade` přijme cestu k souboru i `https` URL. Balíček rozbalí do dočasného adresáře, ověří `SHA256SUMS`, porovná verzi s nainstalovanou (starší nebo stejnou neinstaluje) a spustí `uv tool install --force` s připnutými závislostmi. `--dry-run` jen ukáže verze a příkaz. Běžící dashboard (`factory obs`) pak restartuj.
+`factory upgrade` přijme cestu k souboru i `https` URL. Balíček rozbalí do dočasného adresáře, ověří `SHA256SUMS`, porovná verzi s nainstalovanou (starší nebo stejnou neinstaluje) a spustí `uv tool install --force` s připnutými závislostmi. Po instalaci nový `factory` obnoví knihovnu (viz [Knihovna po aktualizaci](#/guide/aktualizace/knihovna-po-aktualizaci)). `--dry-run` jen ukáže verze a příkaz. Běžící dashboard (`factory obs`) pak restartuj.
 
 Instalaci ze zdrojů (editable, vývoj HAIFA) `factory upgrade` odmítne; tu aktualizuješ přes `git pull`.
 
@@ -25,7 +25,9 @@ Windows nedovolí běžícímu programu přepsat vlastní soubory. Dashboard i `
 
 ## Knihovna po aktualizaci
 
-Nová verze může přinést nové verze agentů a workflow v semínku. `factory check` to ohlásí jako `seed_update_available`.
+Nová verze může přinést nové verze agentů, workflow a skillu `factory` v semínku. Instalace (`install.sh`, `install.bat`) i aktualizace (`factory upgrade`, chip v dashboardu, na Windows i skript na pozadí) proto knihovnu hned obnoví novým `factory`: chybějící knihovnu naklonují (`factory library clone --seed-fallback`) a pak spustí `factory library seed --all`. Ten každou položku semínka v knihovně nahradí verzí z instalované HAIFA, včetně skillu `factory`, i když ji tým v knihovně upravil. Položky, které semínko nemá (týmové importy), zůstanou a repa se nemění; vlastní úpravy patří do `.factory/` repa. Selhané obnovení je jen varování (`library_refreshed` je `false`); zopakuješ ho přes `factory library seed --all`.
+
+Bez `--all` pracuje `factory library seed` jako dřív a `factory check` hlásí nepřevzaté verze jako `seed_update_available`:
 
 ```bash
 factory library seed --dry-run

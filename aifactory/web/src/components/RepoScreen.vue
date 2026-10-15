@@ -97,8 +97,12 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 4px;
   padding: 12px 28px 0;
-  border-bottom: 1px solid var(--border-soft);
+  /* An inset line instead of a border, so the active tab's border paints over it
+     without sticking out of the box; overflow-y stays hidden (no vertical scrollbar). */
+  box-shadow: inset 0 -1px 0 var(--border-soft);
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
 }
 
 .screen-tabs a {
@@ -106,7 +110,6 @@ onBeforeUnmount(() => {
   flex: none;
   align-items: center;
   gap: 7px;
-  margin-bottom: -1px;
   padding: 8px 14px;
   border-bottom: 2px solid transparent;
   color: var(--dim);

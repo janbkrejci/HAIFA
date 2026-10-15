@@ -45,7 +45,7 @@ from aifactory.library.load import (
 )
 from aifactory.library.load import library_path as item_library_path
 from aifactory.library.model import ITEM_TYPES, ItemType, check_name
-from aifactory.library.seed import SEED_DIR, SEED_WORKFLOWS_ROOT
+from aifactory.library.seed import SEED_DIR, SEED_WORKFLOWS_ROOT, skill_seed_item
 from aifactory.library.tree import (
     item_paths,
     item_tree_path,
@@ -476,8 +476,18 @@ def read_seed(agents_root: Path, workflows_root: Path) -> tuple[SeedItem, ...]:
 
 @functools.cache
 def packaged_seed() -> tuple[SeedItem, ...]:
-    """The seed shipped in the package (validated once per process)."""
-    return read_seed(SEED_DIR, SEED_WORKFLOWS_ROOT)
+    """The seed shipped in the package plus the generated skill ``factory`` (validated once
+    per process), sorted by type and name."""
+    skill = skill_seed_item()
+    rel = item_library_path(skill.type, skill.name)
+    generated = SeedItem(
+        skill.type,
+        skill.name,
+        skill.version,
+        tuple(NewFile(f"{rel}/{f.path}", f.executable, f.data) for f in skill.files),
+    )
+    items = [*read_seed(SEED_DIR, SEED_WORKFLOWS_ROOT), generated]
+    return tuple(sorted(items, key=lambda i: (ITEM_TYPES.index(i.type), i.name)))
 
 
 def seed_versions(seed: Sequence[SeedItem]) -> dict[str, str]:

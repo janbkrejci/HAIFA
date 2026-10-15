@@ -99,4 +99,13 @@ describe('ConfirmDialog', () => {
     expect(q('confirm-dialog')).toBeNull()
     expect(document.activeElement).toBe(outside)
   })
+
+  it('hides the confirm button with hideConfirm; Enter then confirms nothing', async () => {
+    const w = await open({ hideConfirm: true, cancelLabel: 'Zavřít' })
+    expect(q('confirm-ok')).toBeNull()
+    expect(q('confirm-cancel')!.textContent).toContain('Zavřít')
+    expect(document.activeElement).toBe(q('confirm-cancel'))
+    key(q('confirm-dialog')!, 'Enter')
+    expect(w.emitted('confirm')).toBeUndefined()
+  })
 })

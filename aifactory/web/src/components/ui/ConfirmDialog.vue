@@ -1,7 +1,8 @@
 <script setup lang="ts">
 // Shared modal confirmation dialog — replaces the browser confirm() across the dashboard.
 // Esc and a click outside cancel, Enter confirms, Tab stays inside, and focus
-// returns to the element that opened it.
+// returns to the element that opened it. `hideConfirm` leaves only the cancel button, for a
+// dialog that has nothing to confirm (instead of a faded, disabled confirm button).
 import { nextTick, onBeforeUnmount, ref, watch } from 'vue'
 
 let seq = 0
@@ -15,6 +16,7 @@ const props = withDefaults(
     cancelLabel?: string
     tone?: 'default' | 'danger'
     confirmDisabled?: boolean
+    hideConfirm?: boolean
   }>(),
   { message: '', confirmLabel: 'Potvrdit', cancelLabel: 'Zrušit', tone: 'default' },
 )
@@ -81,7 +83,7 @@ function onKeydown(e: KeyboardEvent) {
     e.stopPropagation()
     emit('cancel')
   } else if (e.key === 'Enter') {
-    if (props.confirmDisabled) return
+    if (props.confirmDisabled || props.hideConfirm) return
     const target = e.target as HTMLElement | null
     if (target?.dataset?.test === 'confirm-cancel') return // Enter activates Zrušit natively
     e.preventDefault()
@@ -128,6 +130,7 @@ function onKeydown(e: KeyboardEvent) {
             {{ cancelLabel }}
           </button>
           <button
+            v-if="!hideConfirm"
             ref="okBtn"
             :disabled="confirmDisabled"
             type="button"

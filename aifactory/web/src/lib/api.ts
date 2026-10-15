@@ -741,3 +741,15 @@ export function applyMove(options: MoveOptions, digest: string, id: string): Pro
   return applyEnvelope(factoryUrl('/factory/apply', id),
     { action: 'move', options: { type: options.type, name: options.name }, target: 'base', digest })
 }
+/** The plan deleting the repo's own copy of an item, so the repo inherits it from the library again. */
+export interface FactoryRemovePlan extends FactoryPlanCommon { action: 'remove'; type?: FactoryItemType; name?: string }
+/** Plans deleting the repo's own copy of an item; writes nothing. */
+export function previewRemove(options: MoveOptions, id: string): Promise<FactoryRemovePlan> {
+  return factoryEnvelope<FactoryRemovePlan>(factoryUrl('/factory/plan', id),
+    postInit({ action: 'remove', options: { type: options.type, name: options.name }, target: 'base' }))
+}
+/** Applies the reviewed remove plan: deletes the repo's copy and commits it on base. */
+export function applyRemove(options: MoveOptions, digest: string, id: string): Promise<FactoryResult> {
+  return applyEnvelope(factoryUrl('/factory/apply', id),
+    { action: 'remove', options: { type: options.type, name: options.name }, target: 'base', digest })
+}

@@ -1,14 +1,24 @@
 <script setup lang="ts">
-// The folder path of the Add repository page, with suggestions of the subfolders of the typed
+// A folder path field (Add repository page, library import), with suggestions of the subfolders of the typed
 // folder (GET /api/fs/dirs, tagged git and factory). ↑↓ pick a suggestion, Enter or a click
 // takes it, Esc and blur close the list; Enter without a picked suggestion submits.
+// `label` (aria-label), `dataTest`, `autofocus` and `disabled` default to the Add repository page.
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { fetchDirs, type FsEntry } from '@/lib/api'
 import { expandHome, filterEntries, splitForSuggest } from '@/lib/addRepo'
 
-const props = withDefaults(defineProps<{ modelValue: string; home: string | null; debounce?: number }>(), {
-  debounce: 150,
-})
+const props = withDefaults(
+  defineProps<{
+    modelValue: string
+    home: string | null
+    debounce?: number
+    label?: string
+    dataTest?: string
+    autofocus?: boolean
+    disabled?: boolean
+  }>(),
+  { debounce: 150, label: 'Cesta ke složce repozitáře', dataTest: 'add-path', autofocus: true, disabled: false },
+)
 const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: [] }>()
 
 const input = ref<HTMLInputElement | null>(null)
@@ -101,7 +111,9 @@ function onBlur() {
   hide()
 }
 
-onMounted(() => input.value?.focus())
+onMounted(() => {
+  if (props.autofocus) input.value?.focus()
+})
 onBeforeUnmount(() => {
   if (timer !== null) clearTimeout(timer)
 })
@@ -115,12 +127,13 @@ onBeforeUnmount(() => {
       type="text"
       spellcheck="false"
       autocomplete="off"
-      aria-label="Cesta ke složce repozitáře"
+      :aria-label="label"
       role="combobox"
       :aria-expanded="open ? 'true' : 'false'"
       aria-autocomplete="list"
       :value="modelValue"
-      data-test="add-path"
+      :data-test="dataTest"
+      :disabled="disabled"
       @input="onInput"
       @keydown="onKeydown"
       @blur="onBlur"

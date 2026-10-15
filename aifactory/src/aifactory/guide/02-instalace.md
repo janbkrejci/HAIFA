@@ -14,7 +14,7 @@ Přístup ke zdrojovému repu HAIFA nepotřebuješ. Balíček obsahuje wheel `ai
 - **Alespoň jeden harness**, tedy CLI agenta, nainstalovaný a přihlášený: [Claude Code](https://code.claude.com/docs/en/setup) (`claude`), [Codex CLI](https://github.com/openai/codex) (`codex`) nebo [pi](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) (`pi`, potřebuje Node.js).
 - **just**, pokud tvoje repa spouštějí testy přes `justfile`.
 
-Co chybí, ti po instalaci ukáže `factory check` a v dashboardu stránka **Tento počítač**.
+Co chybí, ti po instalaci ukáže `factory check` a v dashboardu sekce **Kontrola počítače** na stránce **Knihovna**.
 
 ## macOS
 
@@ -78,7 +78,7 @@ cd haifa-<verze>
 uv tool update-shell
 ```
 
-Skript ověří součty v `SHA256SUMS`, nainstaluje nástroj `factory` přes `uv tool install` s verzemi závislostí z `constraints.txt` do samostatného prostředí uv a připraví knihovnu (viz [Výchozí knihovna](#/guide/instalace/vychozi-knihovna)). `uv tool update-shell` přidá adresář nástrojů uv na PATH; pak otevři nový terminál.
+Skript ověří součty v `SHA256SUMS`, nainstaluje nástroj `factory` přes `uv tool install` s verzemi závislostí z `constraints.txt` do samostatného prostředí uv a připraví a obnoví knihovnu (viz [Výchozí knihovna](#/guide/instalace/vychozi-knihovna)). `uv tool update-shell` přidá adresář nástrojů uv na PATH; pak otevři nový terminál.
 
 ## Windows bez WSL
 
@@ -93,7 +93,7 @@ Instalátor:
 2. doinstaluje chybějící `git`, `uv`, `gh` a Node.js přes `winget` a harnessy `claude` a `codex` přes `npm`,
 3. když git nemá jméno nebo e-mail pro commity, zeptá se na ně,
 4. nainstaluje nástroj `factory` přes `uv tool install` s verzemi závislostí z `constraints.txt` a přidá adresář nástrojů uv na PATH,
-5. na počítači bez knihovny naklonuje výchozí týmovou knihovnu (`factory library clone --seed-fallback`, viz [Výchozí knihovna](#/guide/instalace/vychozi-knihovna)); existující knihovnu nechá beze změny.
+5. na počítači bez knihovny naklonuje výchozí týmovou knihovnu (`factory library clone --seed-fallback`, viz [Výchozí knihovna](#/guide/instalace/vychozi-knihovna)) a pak knihovnu obnoví na semínko instalované verze (`factory library seed --all`).
 
 Instalace přes `winget` si může vyžádat potvrzení správce. Opakované spuštění je bezpečné: přítomné nástroje znovu neinstaluje. Nakonec se přihlas tam, kde ještě nejsi (`gh auth login`, `gh auth setup-git`, `claude`, `codex login`), a otevři nový terminál, aby se načetl nový PATH.
 
@@ -101,7 +101,7 @@ Instalace přes `winget` si může vyžádat potvrzení správce. Opakované spu
 
 Instalátor (`install.sh` i `install.bat`) na počítači, který ještě knihovnu nemá, naklonuje výchozí týmovou knihovnu [HAIFA-LIBRARY](https://github.com/janbkrejci/HAIFA-LIBRARY) (veřejné repo, větev `main`). Firemní instalace nastaví jinou knihovnu proměnnou `HAIFA_LIBRARY_URL` (celá git URL) v prostředí nebo v `$HAIFA_HOME/env`, podobně jako `HAIFA_UPDATE_REPO` pro vydání.
 
-Když se klon nepovede (bez sítě, bez přístupu), instalátor založí lokální knihovnu ze semínka a vypíše varování. Týmovou knihovnu pak naklonuješ později: lokální knihovnu smaž (nebo přesuň) a spusť `factory library clone`. Existující knihovnu instalátor nikdy nemění; nové verze semínka do ní převezmeš sám přes `factory library seed`.
+Když se klon nepovede (bez sítě, bez přístupu), instalátor založí lokální knihovnu ze semínka a vypíše varování. Týmovou knihovnu pak naklonuješ později: lokální knihovnu smaž (nebo přesuň) a spusť `factory library clone`. Pak instalátor (nová i existující knihovna) spustí `factory library seed --all`: každou položku semínka v knihovně (agenty, workflow, rozšíření pi a skill `factory`) nahradí verzí z instalované HAIFA, i když ji tým upravil. Položky, které semínko nemá (týmové importy), zůstanou, a repa se nemění: vlastní úpravy patří do `.factory/` repa. Když obnovení selže, instalace doběhne s varováním a obnovíš ji sám přes `factory library seed --all`.
 
 Změny knihovny se do HAIFA-LIBRARY dostávají jen pull requestem (kapitola [Knihovna](#/guide/knihovna)).
 

@@ -25,7 +25,9 @@ fi
 uv tool install --force "$WHEEL" --constraints constraints.txt
 
 # The library: clone the default team library (HAIFA_LIBRARY_URL overrides it); without
-# network a local library from the seed (factory warns). An existing library is left alone.
+# network a local library from the seed (factory warns). Then every seed item of the library
+# is refreshed to this version's seed (factory library seed --all); items the seed lacks and
+# the repos' .factory/ copies (the customizations) stay. A failed refresh only warns.
 echo
 echo "== Setting up the library"
 bin="$(uv tool dir --bin 2>/dev/null || true)"
@@ -39,17 +41,26 @@ for candidate in "$bin/factory" "$bin/factory.exe"; do
         break
     fi
 done
+library=""
 if [ -z "$factory" ]; then
     echo "warning: factory is not in the uv tool directory; set up the library later with:" >&2
     echo "  factory library clone --seed-fallback" >&2
 elif status="$("$factory" library status --json 2>/dev/null)"; then
-    echo "The library exists; it is left unchanged."
+    library="ok"
 elif printf '%s' "$status" | grep -q '"library_missing"'; then
-    if ! "$factory" library clone --seed-fallback; then
+    if "$factory" library clone --seed-fallback; then
+        library="ok"
+    else
         echo "warning: the library is not set up; run: factory library clone --seed-fallback" >&2
     fi
 else
     echo "warning: factory library status failed; check the library with: factory check" >&2
+fi
+if [ -n "$library" ]; then
+    echo "Refreshing the library to HAIFA @VERSION@"
+    if ! "$factory" library seed --all; then
+        echo "warning: the library was not refreshed; run: factory library seed --all" >&2
+    fi
 fi
 
 echo

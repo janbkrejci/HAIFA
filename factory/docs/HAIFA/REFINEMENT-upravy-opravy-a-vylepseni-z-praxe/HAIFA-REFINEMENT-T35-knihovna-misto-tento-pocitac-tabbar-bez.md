@@ -1,0 +1,32 @@
+# HAIFA-REFINEMENT-T35: Knihovna místo „Tento počítač“, tabbar, dialogy knihovny a obnova knihovny při instalaci
+
+Soubor drobných úprav dashboardu a knihovny a jedna změna chování instalace: instalace i upgrade teď vždy obnoví knihovnu na semínko instalované verze a semínko obsahuje skill `factory` generovaný z `factory --skill`.
+
+## Co se změnilo
+
+### Dashboard
+
+- **Tabbar repa** (`components/RepoScreen.vue`): spodní linka `nav.screen-tabs` je místo `border-bottom` vnitřní `box-shadow` a záložky už nemají `margin-bottom: -1px`. Kvůli tomu ráme přetékal a ukazoval vertikální scrollbar. Nově je tam `overflow-y: hidden` (vodorovný posun zůstává, `scrollbar-width: thin`).
+- **Stránka „Tento počítač“ → „Knihovna“** (`views/SetupView.vue`, `App.vue`, `RepoSwitcher.vue`): nadpis, `document.title` (`Knihovna · HAIFA`) i popisek přepínače jsou „Knihovna“. Pořadí sekcí je nové: nejdřív knihovna (sekce přejmenovaná na „Obsah knihovny“), pak „Kontrola počítače“ (nadpis i tlačítko **Znovu zkontrolovat** jsou teď uvnitř sekce `data-test="machine-check"`), nakonec Dashboard. Položka `switch-setup` z menu přepínače rep zmizela. Stránku otevře jen chip knihovny (`#/setup/library`). Texty, které na stránku odkazují, se změnily v `lib/readiness.ts`, `views/FactoryView.vue` a `components/setup/DashboardSettings.vue`. Krok průvodce v `lib/gettingStarted.ts` se teď jmenuje „Počítač“ a skupina nálezů ve FactoryView „Počítač: potřebné pro toto repo“.
+- **Dialog obnovy ze semínka** (`LibrarySection.vue`, `ui/ConfirmDialog.vue`): dialog používá běžný `tone` z `ConfirmDialog`. Je `default`, dokud není zaškrtnutá žádná týmem změněná položka. Se zaškrtnutou položkou je `danger` a tlačítko se jmenuje „Přepsat a obnovit“. Když není co obnovit, potvrzovací tlačítko se neukáže vůbec (nová prop `hideConfirm`, Enter pak nic nepotvrdí) a zrušení se jmenuje „Zavřít“. Dřív tam bylo vybledlé zakázané tlačítko.
+- **Import do knihovny**: místo holého `<input>` je tu `repos/PathField.vue` (našeptávání podsložek přes `GET /api/fs/dirs`) a tlačítko **Procházet…**, které otevře `repos/FolderBrowser.vue` z přidávání repa. `PathField` má nové volitelné props `label`, `dataTest`, `autofocus` a `disabled`. Jejich výchozí hodnoty zachovávají chování stránky Přidat repozitář. Domovskou složku pro našeptávání načte první otevření dialogu, výchozí cesta je `~/`.
+- **Seznam položek knihovny**: tabulka je nahrazená seznamem `ul.item-list`. Každý řádek je tlačítko se jménem, počtem rep s vlastní kopií (štítek s tooltipem), účelem (nejvýš 2 řádky) a řádkem „verze · datum · autor“. Vybraná položka má cyan proužek. Záložky typů (`.item-tabs`) jsou podtržené jako tabbar.
+- **Smazání kopie z repa** (pravý panel, „Repa s vlastní kopií“): u každého repa přibylo tlačítko **Smazat kopii z repa** (`data-test="override-remove"`). Načte plán `previewRemove`, tj. `POST /factory/plan` s `action: 'remove'`, `target: 'base'`, nové funkce v `lib/api.ts`. Plán ukáže v dialogu s tónem `danger`. Teprve potvrzení zavolá `applyRemove` (`/factory/apply` s digestem plánu). Ten kopii smaže a commitne na base. Potom se znovu načtou kopie v repech a ukáže se hláška „…kopie v repu X smazána (sha), repo dědí z knihovny.“ Plán s blockery potvrdit nejde.
+
+### Knihovna a instalace
+
+- **`factory library seed --all`** (`cli.py`, `library/reseed.py`): `seed_library(take_all=True)` vezme do `take` všechny položky semínka. Každá položka semínka se tak nahradí verzí z balíčku, i ta, kterou tým v knihovně změnil. Položky, které semínko nemá (týmové importy), zůstanou. Repa (`.factory/`) se nemění. `--all` a `--take` se navzájem vylučují (`usage_error`).
+- **Skill `factory` v semínku** (`library/seed.py`, `library/store.py`): `skill_seed_item()` vyrenderuje `render_skill()` do `skill/factory/SKILL.md` a ověří ho jako každý skill. `store.packaged_seed()` ho přidá k semínku z balíčku. Dostane se tak do `library init` i `library seed`. Do `seed_items()` (fallback dědění bez knihovny) se záměrně nepřidává.
+- **Instalátory** (`bundle/install.sh`, `bundle/install.ps1`): když knihovna existuje nebo se ji podaří naklonovat (`clone --seed-fallback`), spustí `factory library seed --all`. Když selže, vypíšou jen varování „run: factory library seed --all“.
+- **`factory upgrade`** (`upgrade.py`): po úspěšném `uv tool install` zavolá `refresh_library(uv)`. Ta najde **nový** `factory` přes `uv tool dir --bin`, protože běžící proces má ještě staré semínko. Spustí `library status --json`, při `library_missing` `library clone --seed-fallback` a pak `library seed --all`. Výsledek je nové pole `library_refreshed` v JSON. Selhání je jen warning a upgrade dál uspěje.
+- **Windows handoff** (`upgrade_handoff.ps1`): po úspěšné instalaci dělá totéž funkce `Update-Library`. Výsledek zapíše do logu handoffu a restart dashboardu kvůli němu nespadne.
+- **Dokumentace**: v příručce (`guide/02`, `03`, `04`, `08`, `10`–`15`) se přejmenovala stránka a jsou popsané `seed --all`, skill `factory` a obnova knihovny při instalaci a upgradu. Totéž popisuje agentní skill `skill/skill.md`.
+
+## Ověření
+
+- Backend:
+  `cd aifactory && uv run pytest tests/library/test_library_reseed.py tests/library/test_library_seed.py tests/library/test_library_store.py tests/test_upgrade.py tests/test_bundle.py -n0`
+  Nové testy pokrývají `--all` (přepsání týmové změny, ponechání týmového importu, nedotčené kopie v repech, obnovu skillu `factory` shodného s `render_skill()`, `--all` + `--take` → `usage_error`). Dál přítomnost skillu v `packaged_seed()` a v `library init`, refresh v `install.sh` a `install.ps1` a refresh při upgradu (klon chybějící knihovny, selhání → warning, chybějící nový `factory` → warning).
+- Frontend: `just web-test`. Nové testy jsou v `LibrarySection.test.ts` (styl dialogu obnovy, dialog bez potvrzovacího tlačítka, import přes PathField/FolderBrowser, mazání kopie jen po potvrzení) a v `ConfirmDialog.test.ts` (`hideConfirm`). Upravené jsou `App.test.ts`, `SetupView.test.ts` a `FactoryView.test.ts`.
+- Prohlížeč: `just pytest tests/e2e/test_limits_layout.py -n0` přidává `test_repo_tabbar_has_no_vertical_scrollbar` (1280×800, obrazovky backlog, runs, review, factory). V `tests/e2e/test_library_browser.py` je nový nadpis „Knihovna“ a skill `factory` v plánu založení i na záložce Skilly.
+- Ručně: dashboard → chip knihovny → stránka „Knihovna“. Menu přepínače rep ji nenabízí. Barvu dialogu obnovy v dark i light motivu automatický test nekontroluje (testy ověřují jen použitý `tone`).

@@ -12,6 +12,11 @@ otherwise (team change)     ``kept`` with the diff, ``take`` with ``--take``
 
 ``seed`` is then set to S for every seed item; keys the seed no longer has stay. The write
 goes the way of every library write: lock, clean library, fetch, commit, push, fast-forward.
+
+With ``take_all`` every team-changed seed item is ``take`` (replaced), never ``kept``. On
+install and upgrade, ``factory library seed --all`` replaces every seed item; customizations
+live in the repos' ``.factory/``, which are never touched. Library items the seed does not
+have (team imports) stay.
 """
 
 from __future__ import annotations
@@ -136,12 +141,16 @@ def _seed_plan(root: Path, head: str, take: set[str], seed: Sequence[SeedItem]) 
 def seed_library(
     take: Iterable[str] = (),
     *,
+    take_all: bool = False,
     dry_run: bool = False,
     environ: Mapping[str, str] | None = None,
 ) -> WriteResult:
-    """Plan taking the installed seed into the library and, without `dry_run`, commit it."""
+    """Plan taking the installed seed into the library and, without `dry_run`, commit it.
+
+    `take_all` takes every team-changed seed item, as if each were in `take`.
+    """
     seed = store.packaged_seed()
-    wanted = _parse_take(take, seed)
+    wanted = {i.key for i in seed} if take_all else _parse_take(take, seed)
     root = library_root(environ)
     if dry_run:
         head = require_library(root)

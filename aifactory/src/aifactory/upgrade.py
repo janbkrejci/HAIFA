@@ -7,11 +7,19 @@ the wheel's metadata and compared with the running ``__version__``. Then, unless
 exactly like the bundle's ``install.sh``. An editable install (development from the repo) is
 refused: it is updated with ``git pull``.
 
+After a successful install the library is refreshed to the new version's seed
+(``refresh_library``): the **new** ``factory`` from ``uv tool dir --bin`` runs ``library
+status --json``, ``library clone --seed-fallback`` when the library is missing, and ``library
+seed --all``. The running process still has the old seed, so it cannot do this itself. A
+failed refresh is a warning, never a failed upgrade. Repos are never touched: their
+``.factory/`` copies are the customizations.
+
 On Windows the running process cannot replace its own tool environment: Windows locks the
 files of a running Python, and uv deletes the environment before it fails, which leaves a
 broken install. There the unpacked bundle is kept and handed off (``hand_off``) to a
 detached PowerShell script (``upgrade_handoff.ps1``) that waits until this process exits,
-runs the same uv command and optionally starts the dashboard again. The caller exits.
+runs the same uv command, refreshes the library the same way and optionally starts the
+dashboard again. The caller exits.
 """
 
 from __future__ import annotations
@@ -78,6 +86,7 @@ class UpgradeResult:
     warnings: list[str] = field(default_factory=list)
     handed_off: bool = False
     log: str | None = None
+    library_refreshed: bool = False
 
     def to_json(self) -> dict[str, Any]:
         return {
@@ -94,6 +103,7 @@ class UpgradeResult:
             "restart_dashboard": self.installed,
             "handed_off": self.handed_off,
             "log": self.log,
+            "library_refreshed": self.library_refreshed,
         }
 
 
@@ -245,6 +255,66 @@ def wheel_version(wheel: Path) -> str:
 
 def install_command(wheel: str) -> list[str]:
     return ["uv", "tool", "install", "--force", wheel, "--constraints", CONSTRAINTS_FILE]
+
+
+def _factory_call(
+    argv: Sequence[str], env: Mapping[str, str] | None
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        list(argv),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        env=None if env is None else dict(env),
+    )
+
+
+def _failure(proc: subprocess.CompletedProcess[str]) -> str:
+    detail = (proc.stderr or proc.stdout or "").strip().splitlines()
+    return f"exit code {proc.returncode}" + (f": {detail[-1]}" if detail else "")
+
+
+def refresh_library(uv: str, environ: Mapping[str, str] | None = None) -> str | None:
+    """Refresh the library with the newly installed ``factory``; a warning, or None on success.
+
+    ``library status --json``; when the library is missing ``library clone --seed-fallback``;
+    then ``library seed --all``.
+    """
+    hint = "the library was not refreshed; run: factory library seed --all"
+    try:
+        found = _factory_call([uv, "tool", "dir", "--bin"], environ)
+    except OSError as exc:
+        return f"{hint} (uv tool dir --bin: {exc})"
+    bin_dir = found.stdout.strip() if found.returncode == 0 else ""
+    if not bin_dir:
+        return f"{hint} (uv tool dir --bin: {_failure(found)})"
+    factory = Path(bin_dir) / ("factory.exe" if os.name == "nt" else "factory")
+    if not factory.is_file():
+        return f"{hint} (factory is not at {factory})"
+    try:
+        status = _factory_call([str(factory), "library", "status", "--json"], environ)
+        if status.returncode != 0:
+            try:
+                envelope = json.loads(status.stdout)
+            except json.JSONDecodeError:
+                envelope = None
+            error = envelope.get("error") if isinstance(envelope, dict) else None
+            code = error.get("code") if isinstance(error, dict) else None
+            if code != "library_missing":
+                return f"{hint} (factory library status: {_failure(status)})"
+            clone = _factory_call([str(factory), "library", "clone", "--seed-fallback"], environ)
+            if clone.returncode != 0:
+                return (
+                    "the library is not set up; run: factory library clone --seed-fallback "
+                    f"({_failure(clone)})"
+                )
+        seed = _factory_call([str(factory), "library", "seed", "--all"], environ)
+    except OSError as exc:
+        return f"{hint} ({factory}: {exc})"
+    if seed.returncode != 0:
+        return f"{hint} (factory library seed --all: {_failure(seed)})"
+    return None
 
 
 def needs_handoff() -> bool:
@@ -414,6 +484,11 @@ def run_upgrade(
                 data={**result.to_json(), "returncode": proc.returncode},
             )
         result.installed = True
+        warning = refresh_library(uv, environ)
+        if warning is None:
+            result.library_refreshed = True
+        else:
+            result.warnings.append(warning)
         return result
     finally:
         if not handed_off:

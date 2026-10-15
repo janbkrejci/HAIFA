@@ -1,6 +1,6 @@
 # Řešení problémů
 
-Problémy počítače, knihovny a repa hledá `factory check`. V dashboardu je výsledek na stránce **Tento počítač** (počítač a knihovna), v záložce **Factory** repa (repo a nálezy počítače, které plynou z repa) a souhrnně pod chipem **Nalezeny problémy** v horní liště, který otevře stránku **Problémy a řešení** s návody a tlačítky k opravě.
+Problémy počítače, knihovny a repa hledá `factory check`. V dashboardu je výsledek na stránce **Knihovna** (počítač a knihovna), v záložce **Factory** repa (repo a nálezy počítače, které plynou z repa) a souhrnně pod chipem **Nalezeny problémy** v horní liště, který otevře stránku **Problémy a řešení** s návody a tlačítky k opravě.
 
 ```bash
 factory check            # počítač a knihovna, v repu i repo
@@ -31,7 +31,7 @@ Každé zjištění má kód, závažnost a radu. `error` blokuje práci (tasky 
 | `az_login` | `az login`, nebo nastav `AZURE_DEVOPS_EXT_PAT`. |
 | `hosting_skipped` | Kontrola běžela s `--offline`; hosting zkontroluje běh bez něj. Dashboard ji nezobrazuje. |
 | `local_config_invalid` | Oprav `.factory/local.yaml` (`trace_db`) podle zprávy kontroly. |
-| `local_port_ignored` | Smaž řádek `port` z `.factory/local.yaml`; port dashboardu nastavíš na stránce Tento počítač nebo přes `factory obs --port N`. |
+| `local_port_ignored` | Smaž řádek `port` z `.factory/local.yaml`; port dashboardu nastavíš na stránce Knihovna nebo přes `factory obs --port N`. |
 | `env_file_mode` | Soubor s tajemstvími `$HAIFA_HOME/env` je čitelný i pro ostatní: `chmod 600 $HAIFA_HOME/env`. |
 | `env_override` | Proměnná prostředí (`CLAUDE_SAFE_MODE`, `CODEX_SANDBOX`, …) mění chování harnessu. Zruš ji v shellu nebo v `$HAIFA_HOME/env`, pokud ji nechceš. |
 

@@ -41,7 +41,7 @@ function createReadiness() {
         return !step.done
       })
       for (const finding of machineErrors) {
-      issues.value.push({ id: 'machine', title: finding.message, hint: finding.fix ?? 'Otevři Tento počítač a oprav uvedený problém.', href: finding.code === 'harness_test_failed' ? '#harness-settings' : finding.scope === 'library' ? LIBRARY_HREF : SETUP_HREF, action: finding.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači' })
+      issues.value.push({ id: 'machine', title: finding.message, hint: finding.fix ?? 'Otevři stránku Knihovna a oprav uvedený problém.', href: finding.code === 'harness_test_failed' ? '#harness-settings' : finding.scope === 'library' ? LIBRARY_HREF : SETUP_HREF, action: finding.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači' })
       }
       for (const item of registry.repos.filter(r => r.status !== 'ok')) {
         const uncommitted = item.status === 'uncommitted'
@@ -52,7 +52,7 @@ function createReadiness() {
       else phase.value = 'success'
     } catch (error) {
       if (!disposed) {
-        issues.value = [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít Tento počítač' }]
+        issues.value = [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít stránku Knihovna' }]
         phase.value = 'warning'
       }
     } finally { checking = false }

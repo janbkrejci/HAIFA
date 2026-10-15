@@ -2,6 +2,7 @@
 
 import json
 import mimetypes
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -31,8 +32,9 @@ def _provider(harness: str, state: str) -> dict[str, Any]:
     }
 
 
-@pytest.mark.parametrize("state", ["live", "stale", "unavailable"])
-def test_stacked_limits_do_not_overlap_topbar_controls(state: str) -> None:
+def _server(state: str) -> Callable[[Route], None]:
+    """Serve the static build and canned API answers (limits in ``state``)."""
+
     def serve(route: Route) -> None:
         path = urlsplit(route.request.url).path
         if path.startswith("/api/"):
@@ -70,6 +72,13 @@ def test_stacked_limits_do_not_overlap_topbar_controls(state: str) -> None:
             )
         else:
             route.abort()
+
+    return serve
+
+
+@pytest.mark.parametrize("state", ["live", "stale", "unavailable"])
+def test_stacked_limits_do_not_overlap_topbar_controls(state: str) -> None:
+    serve = _server(state)
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(headless=True)
@@ -139,4 +148,23 @@ def test_stacked_limits_do_not_overlap_topbar_controls(state: str) -> None:
                     assert row.bounding_box() is None
             assert page.locator(".theme-toggle").is_visible()
             assert page.locator(".repo-switcher").is_visible()
+        browser.close()
+
+
+def test_repo_tabbar_has_no_vertical_scrollbar() -> None:
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(headless=True)
+        page = browser.new_page(viewport={"width": 1280, "height": 800})
+        page.route("**/*", _server("live"))
+        for screen in ("backlog", "runs", "review", "factory"):
+            page.goto(f"http://haifa.test/#/r/haifa/{screen}")
+            tabs = page.locator("nav.screen-tabs")
+            tabs.wait_for()
+            page.evaluate("document.fonts.ready")
+            size = tabs.evaluate(
+                "el => ({ scroll: el.scrollHeight, client: el.clientHeight,"
+                " overflowY: getComputedStyle(el).overflowY })"
+            )
+            assert size["scroll"] <= size["client"], (screen, size)
+            assert size["overflowY"] == "hidden", (screen, size)
         browser.close()

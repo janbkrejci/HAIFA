@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { errorText } from '../../lib/format'
-// The dashboard section of #/setup (Tento počítač): its port (GET/POST /api/dashboard/settings, applies after
+// The dashboard section of #/setup (Knihovna): its port (GET/POST /api/dashboard/settings, applies after
 // a restart), the registry file and the home folder.
 import { computed, onMounted, ref } from 'vue'
 import { ApiError, fetchDashboardSettings, saveDashboardSettings, type DashboardSettings } from '@/lib/api'
