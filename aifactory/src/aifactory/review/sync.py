@@ -154,7 +154,10 @@ def _refresh_sync_prs(ctx: _Ctx, result: SyncResult) -> None:
             ctx.store.update_sync_pr(row.branch, state=CLOSED)
         elif status.state == MERGED:
             ctx.store.update_sync_pr(
-                row.branch, state=MERGED, merged_at=_now(), merge_sha=status.merge_sha
+                row.branch,
+                state=MERGED,
+                merged_at=status.merged_at or _now(),
+                merge_sha=status.merge_sha,
             )
 
 

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T04
 title: Ukládat merged_at podle času merge od providera
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T33]
 ---
@@ -18,3 +18,4 @@ Důvod: Bod 4 tasku HAIFA-REFINEMENT-T33 vyžaduje změnu v aifactory/src/aifact
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/47 · náklady $1.19
