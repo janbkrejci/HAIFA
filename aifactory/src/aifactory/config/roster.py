@@ -160,6 +160,181 @@ def _with_entry(text: str, agent: str) -> str:
     return edit_yaml(text, lambda doc: roster_add(doc, {"name": agent}))
 
 
+RESETTABLE = ("harness", "model", "thinking")
+
+
+def _finish(
+    root: Path,
+    path: Path,
+    original: str,
+    rendered: str,
+    before: list[dict[str, Any]],
+    result: dict[str, Any],
+    dry_run: bool,
+    preserved: bool,
+) -> dict[str, Any]:
+    """Validate `rendered`, add the diff to `result` and write it unless `dry_run`."""
+    after = _effective(root, rendered)
+    diff = "".join(
+        difflib.unified_diff(
+            original.splitlines(True),
+            rendered.splitlines(True),
+            fromfile="agents.yaml",
+            tofile="agents.yaml",
+        )
+    )
+    result.update(
+        agents=after,
+        before=before,
+        diff=diff,
+        changed=bool(diff),
+        dry_run=dry_run,
+        comments_preserved=preserved,
+    )
+    if diff and not dry_run:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(prefix=".agents-", suffix=".yaml", dir=path.parent)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
+                stream.write(rendered)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    return result
+
+
+def _reset(
+    root: Path,
+    path: Path,
+    original: str,
+    before: list[dict[str, Any]],
+    result: dict[str, Any],
+    agent: str | None,
+    reset: tuple[str, ...],
+    dry_run: bool,
+    preset: str | None,
+    values: tuple[str | None, ...],
+) -> dict[str, Any]:
+    """Remove the overrides `reset` of `agent` from ``agents.yaml``."""
+    from aifactory.config.yamledit import edit_yaml, roster_remove, roster_set
+
+    if agent is None:
+        raise ValueError("reset needs an agent")
+    if preset is not None or any(v is not None for v in values):
+        raise ValueError("reset cannot be combined with a preset or --harness/--model/--thinking")
+    unknown = [k for k in reset if k not in RESETTABLE]
+    if unknown:
+        raise ValueError(f"cannot reset {', '.join(map(repr, unknown))}")
+    if agent not in {a["name"] for a in before}:
+        raise ValueError(f"unknown agent {agent!r}")
+    keys = {k for k in reset} | ({"coding_agent"} if "harness" in reset else set())
+    raw = yamlload.safe_load(original) if original.strip() else {}
+    listed = raw.get("agents") if isinstance(raw, dict) else None
+    entry = next(
+        (a for a in listed or [] if isinstance(a, dict) and a.get("name") == agent),
+        None,
+    )
+    if entry is None or not keys & set(entry):
+        return _finish(root, path, original, original, before, result, dry_run, True)
+    library = any(a["name"] == agent and a["origin"] == "library" for a in before)
+
+    def change(doc: Any) -> None:
+        roster_set(doc, agent, dict.fromkeys(sorted(keys)))
+        remaining = next(
+            (a for a in doc.get("agents") or [] if isinstance(a, dict) and a.get("name") == agent),
+            None,
+        )
+        if library and remaining is not None and set(remaining) <= {"name"}:
+            roster_remove(doc, agent)
+
+    rendered = edit_yaml(original, change)
+    return _finish(root, path, original, rendered, before, result, dry_run, True)
+
+
+def _bindings(root: Path, text: str) -> dict[str, dict[str, str]]:
+    """Harness, model, thinking and origin per agent with ``agents.yaml`` as `text`.
+
+    Unlike ``_effective`` the models are not checked against the harness.
+    """
+    source = OverlaySource(WorktreeSource(root), {AGENTS_FILE: text.encode("utf-8")})
+    try:
+        cfg = load_config(source)
+    except ConfigError as exc:
+        raise ValueError("; ".join(f"{i.path}: {i.message}" for i in exc.issues)) from exc
+    return {
+        agent.name: {
+            "harness": canonical(str(agent.coding_agent)),
+            "model": agent.model,
+            "thinking": agent.thinking,
+            "origin": "library" if f"agent/{agent.name}" in cfg.inherited else "repo",
+        }
+        for agent in cfg.agents.agents
+    }
+
+
+def inherited_bindings(root: Path) -> dict[str, dict[str, Any]]:
+    """Per agent: which bindings ``agents.yaml`` overrides, and the values without them.
+
+    ``overridden`` lists ``harness`` (also for a legacy ``coding_agent``), ``model`` and
+    ``thinking`` set by the agent's entry in the working tree. ``inherited`` holds the
+    values without those entries (the library and the roster defaults) for a library
+    agent, None for the repo's own copy. A roster that does not load gives ``{}``.
+    """
+    path = repo_root(root) / AGENTS_FILE
+    try:
+        text = path.read_text(encoding="utf-8") if path.is_file() else ""
+        raw = yamlload.safe_load(text) if text.strip() else {}
+        if not isinstance(raw, dict):
+            return {}
+        overridden: dict[str, list[str]] = {}
+        for entry in raw.get("agents") or []:
+            if not isinstance(entry, dict):
+                continue
+            fields = overridden.setdefault(str(entry.get("name")), [])
+            for key in RESETTABLE:
+                legacy = key == "harness" and "coding_agent" in entry
+                if (key in entry or legacy) and key not in fields:
+                    fields.append(key)
+        # a legacy ``prompt_engineering`` key does not load; only the bindings matter
+        clean = {
+            **raw,
+            "agents": [
+                {k: v for k, v in a.items() if k != "prompt_engineering"}
+                if isinstance(a, dict)
+                else a
+                for a in raw.get("agents") or []
+            ],
+        }
+        current = _bindings(
+            root, yaml.safe_dump(clean, sort_keys=False, allow_unicode=True) if raw else ""
+        )
+        library = {name for name, a in current.items() if a["origin"] == "library"}
+        stripped = {
+            **clean,
+            "agents": [
+                {k: v for k, v in a.items() if k not in FIELDS}
+                if isinstance(a, dict) and a.get("name") in library
+                else a
+                for a in clean["agents"]
+            ],
+        }
+        base = _bindings(root, yaml.safe_dump(stripped, sort_keys=False, allow_unicode=True))
+    except (OSError, ValueError, TypeError, AttributeError, KeyError, yaml.YAMLError):
+        return {}
+    return {
+        name: {
+            "overridden": overridden.get(name, []),
+            "inherited": {k: base[name][k] for k in RESETTABLE}
+            if name in library and name in base
+            else None,
+        }
+        for name in current
+    }
+
+
 def roster(
     repo: Path,
     *,
@@ -169,8 +344,15 @@ def roster(
     harness: str | None = None,
     model: str | None = None,
     thinking: str | None = None,
+    reset: tuple[str, ...] = (),
     dry_run: bool = False,
 ) -> dict[str, Any]:
+    """The effective roster; with `change`, set bindings or `reset` an agent's overrides.
+
+    `reset` names bindings (``harness``, ``model``, ``thinking``) of `agent` whose override
+    in ``agents.yaml`` is removed, so the inherited value applies again. An entry of a
+    library agent that keeps only its name is removed as well.
+    """
     root = repo_root(repo)
     path = root / AGENTS_FILE
     try:
@@ -179,6 +361,19 @@ def roster(
         result: dict[str, Any] = {"path": str(path), "agents": before}
         if not change:
             return result
+        if reset:
+            return _reset(
+                root,
+                path,
+                original,
+                before,
+                result,
+                agent,
+                reset,
+                dry_run,
+                preset,
+                (harness, model, thinking),
+            )
         if preset is not None and preset not in PRESETS:
             raise ValueError(f"unknown preset {preset!r}")
         settings = dict(PRESETS[preset]) if preset else {}
@@ -230,35 +425,6 @@ def roster(
                 True,
             )
         )
-        after = _effective(root, rendered)
-        diff = "".join(
-            difflib.unified_diff(
-                original.splitlines(True),
-                rendered.splitlines(True),
-                fromfile="agents.yaml",
-                tofile="agents.yaml",
-            )
-        )
-        result.update(
-            agents=after,
-            before=before,
-            diff=diff,
-            changed=bool(diff),
-            dry_run=dry_run,
-            comments_preserved=preserved,
-        )
-        if diff and not dry_run:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            fd, temporary = tempfile.mkstemp(prefix=".agents-", suffix=".yaml", dir=path.parent)
-            try:
-                with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as stream:
-                    stream.write(rendered)
-                    stream.flush()
-                    os.fsync(stream.fileno())
-                os.replace(temporary, path)
-            finally:
-                if os.path.exists(temporary):
-                    os.unlink(temporary)
-        return result
+        return _finish(root, path, original, rendered, before, result, dry_run, preserved)
     except (OSError, ValueError, TypeError, AttributeError, KeyError, yaml.YAMLError) as exc:
         raise ConfigError([ConfigIssue(str(path), str(exc))]) from exc

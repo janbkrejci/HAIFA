@@ -103,6 +103,8 @@ def test_roster_body_validation(api: Api, tmp_path: Path) -> None:
         {"preset": "codex", "dry_run": "yes"},
         {"preset": "codex", "path": "/etc/passwd"},
         {"harness": 3},
+        {"agent": "builder", "reset": "model"},
+        {"agent": "builder", "reset": ["tools"]},
     ):
         error = api.post("a", "factory/roster", body, status=400)["error"]
         assert error["code"] == "usage_error", body
@@ -117,3 +119,25 @@ def test_roster_write_passes_the_write_guard(api: Api, tmp_path: Path) -> None:
     assert cross.json()["error"]["code"] == "cross_origin"
     plain = api.client.post(url, content="x=1", headers={"Content-Type": "text/plain"})
     assert plain.status_code == 415
+
+
+def test_roster_reset_returns_an_override_to_the_inherited_value(api: Api, tmp_path: Path) -> None:
+    install(api, "a")
+    root = tmp_path / "a"
+    api.post("a", "factory/roster", {"agent": "builder", "thinking": "high", "dry_run": False})
+    builder = next(
+        a for a in api.get("a", "factory/roster")["data"]["agents"] if a["name"] == "builder"
+    )
+    assert builder["overridden"] == ["thinking"]
+    assert builder["inherited"]["thinking"] != "high"
+    inherited = builder["inherited"]
+    body = {"agent": "builder", "reset": ["thinking"], "dry_run": True}
+    preview = api.post("a", "factory/roster", body)["data"]
+    assert preview["changed"] is True and "high" in preview["diff"]
+    assert _agents(root)["builder"] == {"name": "builder", "thinking": "high"}
+    api.post("a", "factory/roster", {**body, "dry_run": False})
+    assert "builder" not in _agents(root)
+    after = next(
+        a for a in api.get("a", "factory/roster")["data"]["agents"] if a["name"] == "builder"
+    )
+    assert after["overridden"] == [] and after["thinking"] == inherited["thinking"]

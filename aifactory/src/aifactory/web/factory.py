@@ -525,7 +525,8 @@ def items(root: Path) -> JsonDict:
     """Agents, workflows, skills and extensions of the working tree's configuration.
 
     ``origin`` is ``repo`` for the repo's own copy and ``library`` for an inherited item;
-    ``library`` is the library commit (None: the seed).
+    ``library`` is the library commit (None: the seed) and ``library_name`` the library's
+    name from its metadata (None: the seed or a library that cannot be read).
     """
     from aifactory.config.loader import load_worktree_config
     from aifactory.harness.repo_skills import SOURCE
@@ -557,7 +558,20 @@ def items(root: Path) -> JsonDict:
             for n in sorted(inherited)
             if n not in own
         ]
-    return {"library": cfg.library, "items": rows}
+    return {"library": cfg.library, "library_name": _library_name(cfg.library), "items": rows}
+
+
+def _library_name(commit: str | None) -> str | None:
+    """The name in the metadata of the library at `commit`; None when it cannot be read."""
+    if commit is None:
+        return None
+    from aifactory.library.store import library_root, read_meta
+
+    try:
+        name = read_meta(library_root(), commit).get("name")
+    except Exception:
+        return None
+    return name if isinstance(name, str) and name else None
 
 
 def workflow_overrides(root: Path) -> list[JsonDict]:
@@ -605,10 +619,12 @@ def roster(root: Path) -> JsonDict:
     """The effective agents (the repo's and the inherited ones) and backlog usage.
 
     Also the presets and thinking levels the editor offers and the step overrides of the
-    workflows (``workflow_overrides``). Each agent has ``origin``: ``repo`` or ``library``.
+    workflows (``workflow_overrides``). Each agent has ``origin``: ``repo`` or ``library``,
+    ``overridden`` (the bindings ``agents.yaml`` sets for it) and ``inherited`` (the values
+    without those overrides; None for the repo's own copy), see ``inherited_bindings``.
     """
     from aifactory.config.loader import load_worktree_config
-    from aifactory.config.roster import PRESETS
+    from aifactory.config.roster import PRESETS, inherited_bindings
     from aifactory.harness import canonical
     from aifactory.harness.override import THINKING_LEVELS
     from aifactory.library.config_edit import _base_tasks, read_state
@@ -620,6 +636,7 @@ def roster(root: Path) -> JsonDict:
         for _, workflow in _base_tasks(state):
             if isinstance(workflow, str):
                 counts[workflow] = counts.get(workflow, 0) + 1
+        bindings = inherited_bindings(root)
         agents = [
             {
                 "name": a.name,
@@ -630,6 +647,8 @@ def roster(root: Path) -> JsonDict:
                 "skills": list(a.skills),
                 "writes": a.writes,
                 "origin": "library" if f"agent/{a.name}" in cfg.inherited else "repo",
+                "overridden": bindings.get(a.name, {}).get("overridden", []),
+                "inherited": bindings.get(a.name, {}).get("inherited"),
             }
             for a in cfg.agents.agents
         ]
@@ -642,7 +661,8 @@ def roster(root: Path) -> JsonDict:
         }
 
 
-ROSTER_KEYS = ("preset", "agent", "harness", "model", "thinking", "dry_run")
+ROSTER_KEYS = ("preset", "agent", "harness", "model", "thinking", "reset", "dry_run")
+RESETTABLE = ("harness", "model", "thinking")
 
 
 @dataclass(frozen=True)
@@ -654,6 +674,7 @@ class RosterChange:
     harness: str | None = None
     model: str | None = None
     thinking: str | None = None
+    reset: tuple[str, ...] = ()
     dry_run: bool = False
 
 
@@ -663,8 +684,14 @@ def parse_roster_body(body: Mapping[str, Any]) -> RosterChange:
     dry_run = body.get("dry_run", False)
     if not isinstance(dry_run, bool):
         raise UsageError("dry_run must be a boolean")
-    values = {k: _opt_str(body.get(k), k) for k in ROSTER_KEYS if k != "dry_run"}
-    return RosterChange(dry_run=dry_run, **values)
+    reset = body.get("reset", [])
+    if not isinstance(reset, list) or not all(isinstance(k, str) for k in reset):
+        raise UsageError("reset must be a list of strings")
+    unknown = [k for k in reset if k not in RESETTABLE]
+    if unknown:
+        raise UsageError(f"reset accepts only {', '.join(RESETTABLE)}")
+    values = {k: _opt_str(body.get(k), k) for k in ROSTER_KEYS if k not in ("dry_run", "reset")}
+    return RosterChange(dry_run=dry_run, reset=tuple(reset), **values)
 
 
 def roster_change(root: Path, change: RosterChange, state: FactoryState | None = None) -> JsonDict:
@@ -685,6 +712,7 @@ def roster_change(root: Path, change: RosterChange, state: FactoryState | None =
                 harness=change.harness,
                 model=change.model,
                 thinking=change.thinking,
+                reset=change.reset,
                 dry_run=change.dry_run,
             )
     finally:

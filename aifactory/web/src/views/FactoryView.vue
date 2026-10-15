@@ -3,8 +3,11 @@
 // (GET /api/repos/<id>/factory/check) with the package version, and the findings in two
 // groups: fix in the repo and commit, or fix on this machine for this repo. Machine findings
 // the machine check (#/setup) shows too and the library findings live only there; one line
-// links to them. Below: the roster, the repo settings (#/r/<id>/factory/settings) and the
-// repo's items. Writes use a reviewed and confirmed server plan.
+// links to them; "Vyřešit vybrané nálezy" opens its panel right under that button, next to the
+// findings. Below: the repo settings (#/r/<id>/factory/settings) and "Vybavení továrny" (the
+// agents with their harness, model and thinking, workflows, skills and extensions). The config
+// commit (#/r/<id>/factory/config_commit) is opened by the red config chip in the topbar.
+// Writes use a reviewed and confirmed server plan.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { fetchFactoryCheck, fetchMachineCheck, type CheckFinding, type CheckSeverity, type FactoryCheck } from '@/lib/api'
@@ -17,7 +20,6 @@ import { NEW_CONTAINER, SETUP_HREF, currentRepoId, repoHref, useRouteParams } fr
 import type { FactoryAction } from '@/lib/api'
 import Spinner from '@/components/ui/Spinner.vue'
 import RepoItems from '@/components/factory/RepoItems.vue'
-import RosterEditor from '@/components/factory/RosterEditor.vue'
 import RepoSettings from '@/components/factory/RepoSettings.vue'
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = { error: 0, warning: 1, info: 2 }
@@ -29,11 +31,11 @@ const repair = ref<CheckFinding[] | null>(null)
 const operationSerial = ref(0)
 /** Install just finished here: what to do next. */
 const installed = computed(() => completed.value !== null && lastFactoryResult.value?.action === 'init')
-const rosterBusy = ref(false)
 const rosterSection = ref<HTMLElement | null>(null)
+const repairSection = ref<HTMLElement | null>(null)
 function showRoster() { rosterSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
 function openOperation(action: FactoryAction) {
-  if (operationBusy.value || itemsBusy.value || rosterBusy.value || repair.value) return
+  if (operationBusy.value || itemsBusy.value || repair.value) return
   operation.value = action
   ++operationSerial.value
 }
@@ -58,10 +60,12 @@ watch(params, value => {
 }, { immediate: true })
 const report = ref<FactoryCheck | null>(null)
 const selected = ref<number[]>([])
-function openRepair() {
+async function openRepair() {
   if (loading.value || error.value || operationBusy.value || itemsBusy.value || repair.value || !selected.value.length) return
   repair.value = selected.value.map(i => findings.value[i]).filter((f): f is CheckFinding => !!f)
   operation.value = null
+  await nextTick()
+  repairSection.value?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
 }
 const loading = ref(true) // the check starts on mount
 const error = ref<string | null>(null)
@@ -154,15 +158,14 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
     <section v-if="installed" class="next-steps" data-test="factory-next-steps">
       <h2>Co dál</h2>
       <ol>
-        <li>Zkontroluj harnessy a modely agentů. <button type="button" class="btn" data-test="next-roster" @click="showRoster">Harnessy a modely</button></li>
-        <li>Commitni konfiguraci, běhy čtou jen commitnutou base. <button type="button" class="btn" :disabled="operationBusy" data-test="next-commit" @click="openConfig">Commitnout konfiguraci</button></li>
+        <li>Zkontroluj harnessy a modely agentů. <button type="button" class="btn" data-test="next-roster" @click="showRoster">Vybavení továrny</button></li>
+        <li data-test="next-commit-hint">Commitni konfiguraci červeným čipem „Necommitnutá konfigurace“ v horní liště, běhy čtou jen commitnutou base.</li>
         <li>Založ první projekt v backlogu. <a :href="repoHref(repoId, 'backlog', NEW_CONTAINER)" class="btn" data-test="next-project">Založit projekt</a></li>
       </ol>
     </section>
     <template v-if="report">
-      <div class="actions" :inert="repair || itemsBusy || rosterBusy ? true : undefined">
+      <div class="actions" :inert="repair || itemsBusy ? true : undefined">
         <button v-if="report.state === 'none'" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-init" @click="openOperation('init')">Nainstalovat factory</button>
-        <button type="button" class="btn" :disabled="operationBusy" data-test="factory-open-config_commit" @click="openOperation('config_commit')">Commitnout konfiguraci</button>
         <button v-if="completed?.pr || (report.behind ?? 0) > 0 || report.findings.some(f => f.code === 'base_behind')" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-pull" @click="openOperation('pull')">Stáhnout konfiguraci z base</button>
       </div>
       <div class="summary" data-test="factory-summary">
@@ -196,6 +199,9 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
         <button type="button" class="btn" data-test="factory-repair-open"
           :disabled="!selected.length || loading || !!error || operationBusy || !!repair || itemsBusy" @click="openRepair">Vyřešit vybrané nálezy</button>
       </div>
+      <div v-if="repair" ref="repairSection" class="repair-section">
+        <FactoryFindingRepair :findings="repair" @close="repair = null" />
+      </div>
       <section v-for="group in groups" :key="group.id" class="group" :data-test="`findings-${group.id}`">
         <h2>{{ group.title }}</h2>
         <ul class="findings">
@@ -221,14 +227,12 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
         · <a :href="SETUP_HREF">Otevřít Tento počítač</a>
       </p>
     </template>
-    <div v-if="report && report.state !== 'none'" ref="rosterSection">
-      <RosterEditor readonly :repo-id="repoId" :disabled="operationBusy || itemsBusy || !!repair" />
-    </div>
     <section v-if="report && report.state !== 'none'" ref="settingsSection" data-test="factory-settings">
       <RepoSettings @saved="load(true)" />
     </section>
-    <RepoItems ref="itemManager" :repo-id="repoId" :disabled="operationBusy || rosterBusy || !!repair" @busy="itemsBusy = $event; if ($event) operation = null" @success="load(true)" />
-    <FactoryFindingRepair v-if="repair" :findings="repair" @close="repair = null" />
+    <div v-if="report && report.state !== 'none'" ref="rosterSection">
+      <RepoItems ref="itemManager" :repo-id="repoId" :disabled="operationBusy || !!repair" @busy="itemsBusy = $event; if ($event) operation = null" @success="load(true)" />
+    </div>
   </section>
 </template>
 

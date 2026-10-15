@@ -117,3 +117,14 @@ def change_warnings(changes: list[ConfigChange], base: str, sha: str) -> list[st
         f"({sha[:7]}); runs use the committed version"
         for c in changes
     ]
+
+
+def change_summary(changes: list[ConfigChange], base: str, sha: str) -> str:
+    """One warning for all changes: how many, where runs read from, and each path."""
+    count = len(changes)
+    files = "1 file" if count == 1 else f"{count} files"
+    listed = ", ".join(f"{c.path} ({c.status})" for c in changes)
+    return (
+        f"{files} of .factory/ changed in the working tree but not committed to {base} "
+        f"({sha[:7]}); runs use the committed version: {listed}"
+    )

@@ -1,7 +1,8 @@
 import { afterEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RepoScreen from './RepoScreen.vue'
-import { resetConfigStatusForTests } from '@/lib/configStatus'
+import { resetConfigStatusForTests, useConfigStatus } from '@/lib/configStatus'
+import { openConfigCommit } from '@/lib/factory'
 import { resetBacklogStatusForTests } from '@/lib/backlogStatus'
 import { resetNamesForTests } from '@/lib/names'
 import { resetLiveForTests } from '@/lib/live'
@@ -15,7 +16,7 @@ afterEach(() => {
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
-it('routes the banner to a reviewed commit and refreshes status only after applying', async () => {
+it('opens the reviewed config commit on its route and refreshes status only after applying', async () => {
   let applied = false
   const fetchMock = vi.fn(async (url: string) => {
     let data: unknown = { items: [], levels: [], tasks: [] }
@@ -32,12 +33,15 @@ it('routes the banner to a reviewed commit and refreshes status only after apply
   vi.stubGlobal('fetch', fetchMock)
   window.location.hash = '#/r/haifa/backlog'; window.dispatchEvent(new HashChangeEvent('hashchange'))
   const w = mount(RepoScreen, { attachTo: document.body }); await flushPromises()
-  await w.get('[data-test="config-commit"]').trigger('click')
+  // the config chip is in the topbar (App.vue), not on the repo screen
+  expect(w.find('[data-test="config-banner"]').exists()).toBe(false)
+  expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/config/status'))).toBe(true)
+  openConfigCommit('haifa')
   window.dispatchEvent(new HashChangeEvent('hashchange')); await flushPromises()
   expect(w.get('[data-test="factory-plan"]').text()).toContain('.factory/config.yaml')
   expect(applied).toBe(false)
   await w.get('[data-test="factory-perform"]').trigger('click'); await answerDialog(true)
   expect(applied).toBe(true)
-  expect(w.find('[data-test="config-banner"]').exists()).toBe(false)
+  expect(useConfigStatus('haifa').status.value?.clean).toBe(true)
   expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/factory/check?fresh=1'))).toBe(true)
 })

@@ -143,6 +143,17 @@ def test_uncommitted_prompt_change(repo: Path) -> None:
     assert report.ok
 
 
+def test_several_uncommitted_files_give_one_finding(repo: Path) -> None:
+    write(repo, ".factory/prompts/builder/user.md", "Changed: {{prompt}}\n")
+    write(repo, ".factory/workflows/extra.yaml", "name: extra\n")
+    report = run_check(repo, machine=FakeMachine())
+    findings = [f for f in report.findings if f.code == "config_uncommitted"]
+    assert len(findings) == 1
+    assert ".factory/prompts/builder/user.md" in findings[0].message
+    assert ".factory/workflows/extra.yaml" in findings[0].message
+    assert findings[0].message.startswith("2 files")
+
+
 def test_backlog_problems(repo: Path) -> None:
     write(
         repo,

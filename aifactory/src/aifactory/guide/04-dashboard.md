@@ -20,7 +20,7 @@ Limity ukazují poslední hodnoty, které harness sám vrátil při běhu (Claud
 ## Pruhy upozornění
 
 - **Kód HAIFA se od spuštění dashboardu změnil:** po aktualizaci nebo změně balíčku jsou zápisy vypnuté, dokud neklikneš na **Restartovat dashboard**.
-- **Konfigurace v `.factory/` má necommitnuté změny:** běhy používají konfiguraci z base, dokud změny necommitneš tlačítkem **Commitnout konfiguraci**.
+- **Konfigurace v `.factory/` má necommitnuté změny:** v horní liště stránky repa se ukáže červený čip **Necommitnutá konfigurace** s počtem souborů (seznam souborů je v jeho popisku). Klik na čip otevře na záložce Factory náhled commitu konfigurace; běhy do té doby používají konfiguraci z base.
 - **Backlog má necommitnuté změny:** červený čip **Necommitnutý backlog** v horní liště stránky repa. Kliknutím otevřeš seznam souborů a tlačítko **Commitnout backlog**.
 
 ## Přehled
@@ -50,7 +50,7 @@ Po otevření repa jsou nahoře záložky:
 - **Backlog:** projekty, stepy a tasky ve stromu nebo kanbanu, detail tasku, spouštění běhů. Kapitola [Backlog a tasky](#/guide/backlog).
 - **Běhy:** běžící a dokončené běhy, řetězy auto-continue, náklady a detail běhu s fázemi. Kapitola [Běhy](#/guide/behy).
 - **Review:** pull requesty ke schválení. Kapitola [Review a merge](#/guide/review).
-- **Factory:** vše o factory repa: stav instalace, nálezy kontroly, roster agentů, **Nastavení repozitáře** (sdílené `config.yaml` a lokální `local.yaml`) a položky repa. Kapitola [Konfigurace repa](#/guide/konfigurace-repa). Dřívější záložka Nastavení (`#/r/<repo>/settings`) vede na sekci Nastavení repozitáře (`#/r/<repo>/factory/settings`).
+- **Factory:** vše o factory repa: stav instalace, nálezy kontroly, **Nastavení repozitáře** (sdílené `config.yaml` a lokální `local.yaml`) a **Vybavení továrny** (agenti s harnessem, modelem a přemýšlením, workflow, skilly a rozšíření). Kapitola [Konfigurace repa](#/guide/konfigurace-repa). Dřívější záložka Nastavení (`#/r/<repo>/settings`) vede na sekci Nastavení repozitáře (`#/r/<repo>/factory/settings`).
 
 Adresa v prohlížeči vždy odpovídá obrazovce (například `#/r/<repo>/runs/<běh>`), takže odkazy na task, běh nebo pull request můžeš sdílet nebo si je uložit.
 

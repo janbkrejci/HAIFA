@@ -562,7 +562,14 @@ export interface FactoryRepoItem { type: FactoryItemType; name: string; origin: 
 export interface FactoryRosterAgent {
   name: string; purpose?: string; harness?: string; coding_agent?: string; model?: string; thinking?: string
   skills?: string[]; extensions?: string[]; writes?: string[]; origin?: FactoryItemOrigin
+  /** The bindings .factory/agents.yaml sets for this agent. */
+  overridden?: RosterField[]
+  /** The values without those overrides (library and roster defaults); null for the repo's own copy. */
+  inherited?: RosterBindingValues | null
 }
+/** A binding of an agent that the roster can override or reset. */
+export type RosterField = 'harness' | 'model' | 'thinking'
+export interface RosterBindingValues { harness: string; model: string; thinking: string }
 /** A roster preset of `factory roster set --preset`: one harness, model and thinking for every agent. */
 export interface RosterPreset { harness: string; model: string; thinking: string }
 /** A harness/model/thinking override on a workflow step; it wins over the roster. */
@@ -576,7 +583,10 @@ export interface FactoryRoster {
 /** The effective binding of one agent after a roster change. */
 export interface RosterBinding { name: string; harness: string; model: string; thinking: string }
 export interface RosterChange {
-  preset?: string; agent?: string; harness?: string; model?: string; thinking?: string; dry_run: boolean
+  preset?: string; agent?: string; harness?: string; model?: string; thinking?: string
+  /** Bindings of `agent` whose override is removed, so the inherited value applies again. */
+  reset?: RosterField[]
+  dry_run: boolean
 }
 export interface RosterChangeResult {
   agents: RosterBinding[]; before: RosterBinding[]; diff: string; changed: boolean; dry_run?: boolean; comments_preserved?: boolean
@@ -588,7 +598,7 @@ export interface FactoryMovePlan extends FactoryPlanCommon {
   library: string | null
   library_plan: { digest: string; files: FactoryFile[]; blockers?: PlanBlocker[]; warnings?: PlanWarning[] }
 }
-export function fetchFactoryItems(id: string): Promise<{ library: string | null; items: FactoryRepoItem[] }> {
+export function fetchFactoryItems(id: string): Promise<{ library: string | null; library_name?: string | null; items: FactoryRepoItem[] }> {
   return request(factoryUrl('/factory/items', id))
 }
 export function fetchFactoryRoster(id: string): Promise<FactoryRoster> {

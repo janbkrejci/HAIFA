@@ -1,19 +1,27 @@
 <script setup lang="ts">
-// The repo's agents, workflows, skills and extensions (GET .../factory/items): inherited from the
-// library, or the repo's own copy in .factory/ that wins. An own copy can move to the library:
-// a reviewed plan (repo files and library files) applied with its digest after a confirmation.
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+// "Vybavení továrny": the repo's agents, workflows, skills and extensions (GET .../factory/items):
+// inherited from the library, or the repo's own copy in .factory/ that wins. The agents are the
+// roster table (RosterEditor: harness, model and thinking, inherited or overridden), the other
+// items cards. An own copy can move to the library: a reviewed plan (repo files and library
+// files) applied with its digest after a confirmation.
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ApiError, applyMove, fetchFactoryItems, previewMove, type FactoryMovePlan, type FactoryRepoItem } from '@/lib/api'
 import { ITEM_TABS } from '@/lib/library'
 import { planCodeText } from '@/lib/factory'
 import { errorText, shortSha } from '@/lib/format'
 import PlanView from './PlanView.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import RosterEditor from './RosterEditor.vue'
 
 const props = defineProps<{ repoId: string; disabled?: boolean }>()
 const emit = defineEmits<{ busy: [value: boolean]; success: [] }>()
 const items = ref<FactoryRepoItem[]>([])
 const library = ref<string | null>(null)
+const libraryName = ref<string | null>(null)
+// a function ref: a plain ref inside v-for would collect an array
+const roster = ref<InstanceType<typeof RosterEditor> | null>(null)
+function setRoster(el: unknown) { roster.value = (el as InstanceType<typeof RosterEditor> | null) ?? null }
+const rosterBusy = ref(false)
 const loading = ref(false)
 const error = ref('')
 const result = ref('')
@@ -32,11 +40,26 @@ async function load() {
     if (mine !== generation) return
     items.value = data.items
     library.value = data.library
+    libraryName.value = data.library_name ?? null
   } catch (e) {
     if (mine === generation) error.value = errorText(e)
   } finally {
     if (mine === generation) loading.value = false
   }
+}
+
+/** Where an item without its own copy comes from: the library by name and short commit, or the seed. */
+const inheritText = computed(() => library.value
+  ? `Bez vlastní kopie v .factory/ se položka dědí z knihovny „${libraryName.value ?? 'knihovna'}“ (${shortSha(library.value)}).`
+  : 'Bez vlastní kopie v .factory/ se položka dědí z vestavěné výchozí sady.')
+const counts = computed(() => Object.fromEntries(ITEM_TABS.map(t => [t.type, items.value.filter(i => i.type === t.type).length])))
+
+function agentItem(name: string): FactoryRepoItem {
+  return items.value.find(i => i.type === 'agent' && i.name === name) ?? { type: 'agent', name, origin: 'repo' }
+}
+
+async function reload() {
+  await Promise.all([load(), roster.value?.reload()])
 }
 
 function close() { moving.value = null; plan.value = null; confirm.value = false; error.value = '' }
@@ -66,7 +89,7 @@ async function apply() {
     const done = await applyMove({ type: item.type, name: item.name }, plan.value.digest, props.repoId)
     result.value = `${item.type}/${item.name} je v knihovně${done.library_commit ? ` (${shortSha(done.library_commit)})` : ''}.`
     close()
-    await load()
+    await reload()
     emit('success')
   } catch (e) {
     error.value = e instanceof ApiError ? `${planCodeText(e.code)}: ${e.message}` : errorText(e)
@@ -75,24 +98,26 @@ async function apply() {
   }
 }
 
-watch(moving, value => emit('busy', !!value))
+watch(() => !!moving.value || rosterBusy.value, value => emit('busy', value))
 onMounted(load)
 onBeforeUnmount(() => { ++generation; emit('busy', false) })
-defineExpose({ reload: load })
+defineExpose({ reload })
 </script>
 
 <template>
   <section class="items" data-test="repo-items">
-    <h2>Položky repa</h2>
-    <p class="hint">Bez vlastní kopie v .factory/ se položka dědí z knihovny<template v-if="library"> {{ library }}</template>.</p>
+    <h2>Vybavení továrny</h2>
+    <p class="hint" data-test="items-inherit">{{ inheritText }}</p>
     <p v-if="loading && !items.length" class="hint">Načítám položky…</p>
     <p v-if="error" role="alert" class="error" data-test="item-error">{{ error }}</p>
     <p v-if="result" class="ok" data-test="item-result">{{ result }}</p>
-    <section v-for="tab in ITEM_TABS" :key="tab.type">
-      <h3>{{ tab.label }}</h3>
-      <ul v-if="items.some(i => i.type === tab.type)">
-        <li v-for="item in items.filter(i => i.type === tab.type)" :key="item.name" :data-test="`item-${item.type}-${item.name}`">
-          <span class="mono">{{ item.name }}</span>
+    <section v-for="tab in ITEM_TABS" :key="tab.type" :data-test="`items-${tab.type}`">
+      <h3>{{ `${tab.label} (${counts[tab.type] ?? 0})` }}</h3>
+      <RosterEditor v-if="tab.type === 'agent'" :ref="setRoster" :repo-id="repoId" :disabled="disabled || working || !!moving"
+        @busy="rosterBusy = $event" @saved="emit('success')" @move="name => preview(agentItem(name))" />
+      <ul v-else-if="counts[tab.type]" class="cards">
+        <li v-for="item in items.filter(i => i.type === tab.type)" :key="item.name" class="card" :data-test="`item-${item.type}-${item.name}`">
+          <span class="mono name">{{ item.name }}</span>
           <span class="tag" :data-origin="item.origin">{{ item.origin === 'repo' ? 'vlastní kopie' : 'z knihovny' }}</span>
           <button v-if="item.origin === 'repo'" type="button" class="btn" :disabled="disabled || working || !!moving"
             :data-test="`item-move-${item.type}-${item.name}`" @click="preview(item)">Přesunout do knihovny</button>
@@ -119,11 +144,12 @@ defineExpose({ reload: load })
 </template>
 
 <style scoped>
-.items { margin: 24px 0; }
+.items { margin: 24px 0; padding: 16px 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
 h2 { margin: 0 0 8px; color: var(--dim); font-size: 14px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 h3 { margin: 14px 0 6px; font-size: 15px; }
-ul { margin: 0; padding: 0; list-style: none; }
-li { display: flex; align-items: center; gap: 10px; padding: 4px 0; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: 0; padding: 0; list-style: none; }
+.card { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel-2); }
+.card .name { flex: 1 1 100%; overflow-wrap: anywhere; }
 .tag { padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; color: var(--dim); font-size: 12px; }
 .tag[data-origin='repo'] { color: var(--purple); }
 .hint { color: var(--dim); }
