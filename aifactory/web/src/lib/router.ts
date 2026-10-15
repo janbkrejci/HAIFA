@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue'
+import { acceptHash, allowHashChange } from './leaveGuard'
 
 // Hash routes of the multi-repo dashboard:
 //   #/overview                       the registered repositories and getting started (default)
@@ -123,10 +124,16 @@ function sync(): void {
   params.value = parsed.params
   currentPage.value = parsed.page
   repoId.value = parsed.repo
+  acceptHash()
+}
+
+/** A hash change leaving a form with unsaved changes waits for the user's answer. */
+function onHashChange(): void {
+  if (allowHashChange()) sync()
 }
 
 sync()
-window.addEventListener('hashchange', sync)
+window.addEventListener('hashchange', onHashChange)
 
 /** The screen of the repo page (`backlog` off a repo page). */
 export function useRoute(): Ref<Screen> {

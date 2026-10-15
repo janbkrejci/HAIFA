@@ -13,6 +13,8 @@ const recommendation = {
 }
 beforeEach(() => {
   window.location.hash = '#/r/repo/backlog/new'
+  // the router accepts the hash now, before a dirty form would guard the late timer event
+  window.dispatchEvent(new HashChangeEvent('hashchange'))
   api.postApi.mockReset().mockResolvedValue({ job_id: 'job' })
   api.getApi.mockReset().mockResolvedValue({ state: 'succeeded', recommendation })
 })
