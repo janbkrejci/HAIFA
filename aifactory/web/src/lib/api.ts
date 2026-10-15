@@ -1,5 +1,6 @@
 // The dashboard API answers in the same envelope as `factory --json`. Repo endpoints live under
 // /api/repos/<id> of the repo in the URL; health, the repo list, code and restart are global.
+import type { BoardState } from './backlog'
 import { currentRepoId } from './router'
 
 /** One validation problem (`error.issues[i]`), e.g. a `backlog check` issue. */
@@ -194,6 +195,8 @@ export interface OverviewRunning {
   /** `ended`: the run's process is gone ("proces skončil"), the row stays as it is. */
   process: 'alive' | 'ended' | 'unknown'
   status_label: string | null
+  /** The run's pause: asked for (the phase still runs), in effect, or none. */
+  pause?: 'pausing' | 'paused' | null
 }
 
 /** An open task PR of the trace without a running run. */
@@ -240,6 +243,64 @@ export type OverviewState =
   | 'timeout'
   | 'error'
 
+/** Tasks of a repo per kanban board state (GET /api/overview `tasks`). */
+export type OverviewTaskCounts = Record<BoardState, number>
+
+/** The progress of a stop or pause of the whole repo the dashboard started. */
+export interface OverviewControl {
+  action: 'stop' | 'pause'
+  run_ids: string[]
+  /** Stops still on their way (a pause reads its progress from the runs' `pause`). */
+  pending: string[]
+  errors: { run_id: string; task_id?: string | null; code: string; message: string }[]
+  started_at: string
+  finished_at: string | null
+}
+
+/** What the factory controls of a repo need (GET /api/overview `factory`). */
+export interface OverviewFactory {
+  max_parallel_runs: number | null
+  running: number
+  free_slots: number
+  /** Ready tasks not excluded from auto-continue. */
+  ready: number
+  can_start: boolean
+  paused: number
+  pausing: number
+  control: OverviewControl | null
+}
+
+/** A task the factory start did not start, and why (run.queue SKIP_REASONS). */
+export interface FactorySkip {
+  task_id: string
+  reason: string
+  detail: string
+  waits_on: string[]
+}
+
+/** POST /api/repos/{id}/control/start. */
+export interface FactoryStartResult {
+  max_parallel_runs: number
+  running: number
+  free_slots: number
+  started: { task_id: string; run_id: string | null }[]
+  skipped: FactorySkip[]
+}
+
+/** POST /api/repos/{id}/control/pause|resume. */
+export interface FactoryPauseResult {
+  action: 'pause' | 'resume'
+  run_ids: string[]
+  errors: OverviewControl['errors']
+}
+
+/** POST /api/repos/{id}/control/stop (the stops go on in the background). */
+export interface FactoryStopResult {
+  action: 'stop'
+  run_ids: string[]
+  pending: string[]
+}
+
 /** One repository of GET /api/overview. */
 export interface OverviewRepo {
   id: string
@@ -253,6 +314,9 @@ export interface OverviewRepo {
   config: OverviewConfig | null
   last_activity: string | null
   warnings: string[]
+  /** Null for a repo that is missing, not git, slow or broken. */
+  tasks?: OverviewTaskCounts | null
+  factory?: OverviewFactory | null
 }
 
 export interface OverviewData {
@@ -274,6 +338,30 @@ export async function fetchOverview(): Promise<OverviewData> {
     })),
     totals: data.totals ?? {},
   }
+}
+
+function controlPath(repoId: string, action: string): string {
+  return `/repos/${encodeURIComponent(repoId)}/control/${action}`
+}
+
+/** Start ready tasks of the repo into its free parallel slots. */
+export async function controlStart(repoId: string): Promise<FactoryStartResult> {
+  return postGlobal<FactoryStartResult>(controlPath(repoId, 'start'), {})
+}
+
+/** Pause every running run of the repo. */
+export async function controlPause(repoId: string): Promise<FactoryPauseResult> {
+  return postGlobal<FactoryPauseResult>(controlPath(repoId, 'pause'), {})
+}
+
+/** Resume every paused run of the repo. */
+export async function controlResume(repoId: string): Promise<FactoryPauseResult> {
+  return postGlobal<FactoryPauseResult>(controlPath(repoId, 'resume'), {})
+}
+
+/** Stop every running run of the repo; the progress shows in the overview. */
+export async function controlStop(repoId: string): Promise<FactoryStopResult> {
+  return postGlobal<FactoryStopResult>(controlPath(repoId, 'stop'), {})
 }
 
 /** DELETE /api<path> of the dashboard itself (remove a repo), with an optional JSON body. */

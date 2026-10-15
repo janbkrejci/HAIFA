@@ -36,7 +36,8 @@ anyway) and waits for ``factory task approve``. A PR in conflict is first resolv
 
 Parallel runs (``max_parallel_runs`` in ``.factory/config.yaml``, default 1): with 1
 the chain runs one task after another as described above, with no other check. Above
-1 the chain keeps up to that many runs going at once, each a separate process
+1 the chain keeps up to that many runs going at once in the repository (runs of other
+chains and single runs take slots too), each a separate process
 (``members.ProcessRunner``, ``factory task run --member``): after the first task it
 fills the free slots with the next ready tasks and refills a slot whenever a run
 ends. A task starts only when its effective ``writes`` do not overlap (on path
@@ -72,7 +73,15 @@ from collections.abc import Callable, Collection, Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from aifactory.backlog import Backlog, Task, effective, has_workflow, load_backlog, unmet
+from aifactory.backlog import (
+    Backlog,
+    Task,
+    effective,
+    has_workflow,
+    iter_tasks,
+    load_backlog,
+    unmet,
+)
 from aifactory.backlog.derived import ancestors, descendant_tasks
 from aifactory.config import ConfigError
 from aifactory.engine.utils import now_iso
@@ -190,9 +199,69 @@ def select_next(
     and excludes tasks: an excluded task is skipped as ``excluded``, with ``--auto`` too.
     """
     prefs = prefs or QueuePrefs()
+    return _select(
+        candidates(after, prefs.order),
+        backlog,
+        open_pr=open_pr,
+        running=running,
+        exclude=exclude,
+        conflict=conflict,
+        require_auto_continue=require_auto_continue,
+        prefs=prefs,
+    )
+
+
+def repo_candidates(backlog: Backlog, order: Sequence[str] = ()) -> list[Task]:
+    """Every `todo` task of the backlog: first those in `order` (the kanban's manual
+    queue), then the rest in backlog order (project by project)."""
+    pool = [task for task in iter_tasks(backlog) if task.status == "todo"]
+    rank = {task_id: i for i, task_id in enumerate(order)}
+    ranked = sorted((t for t in pool if t.id in rank), key=lambda t: rank[t.id])
+    return [*ranked, *(t for t in pool if t.id not in rank)]
+
+
+def select_ready(
+    backlog: Backlog,
+    *,
+    open_pr: Callable[[str], TaskPrRow | None],
+    running: Callable[[str], TaskRunRow | None],
+    exclude: Collection[str] = frozenset(),
+    conflict: Callable[[Task], Skip | None] | None = None,
+    prefs: QueuePrefs | None = None,
+) -> Selection:
+    """The first startable task of the whole backlog (the Overview's "Spustit továrnu").
+
+    The same checks as ``select_next`` over ``repo_candidates``; ``auto_continue`` is not
+    required (a start by hand), a task excluded in the kanban is skipped as ``excluded``.
+    """
+    prefs = prefs or QueuePrefs()
+    return _select(
+        repo_candidates(backlog, prefs.order),
+        backlog,
+        open_pr=open_pr,
+        running=running,
+        exclude=exclude,
+        conflict=conflict,
+        require_auto_continue=False,
+        prefs=prefs,
+    )
+
+
+def _select(
+    pool: Sequence[Task],
+    backlog: Backlog,
+    *,
+    open_pr: Callable[[str], TaskPrRow | None],
+    running: Callable[[str], TaskRunRow | None],
+    exclude: Collection[str],
+    conflict: Callable[[Task], Skip | None] | None,
+    require_auto_continue: bool,
+    prefs: QueuePrefs,
+) -> Selection:
+    """The first startable task of `pool` and every task of it that was skipped."""
     chosen: Task | None = None
     skipped: list[Skip] = []
-    for task in candidates(after, prefs.order):
+    for task in pool:
         if task.id in exclude:
             continue
         if require_auto_continue and not auto_continue_enabled(task):
@@ -483,6 +552,155 @@ def _max_parallel(repo: Path) -> int:
         return task_mod._load(gitops.main_root(repo)).config.settings.max_parallel_runs
     except (TaskRunError, ConfigError, OSError):
         return 1  # the run itself reports the problem
+
+
+def _pr_files_default(main: Path) -> Callable[[TaskPrRow], list[str] | None]:
+    """The files an open PR changes, read in the main checkout (``gitops.pr_changed_files``)."""
+
+    def files_of(pr: TaskPrRow) -> list[str] | None:
+        return gitops.pr_changed_files(main, pr.base, pr.branch, pr.base_sha)
+
+    return files_of
+
+
+@dataclass
+class FactoryStart:
+    """What ``start_factory`` started: claimed rows, or task ids whose claim was not seen yet."""
+
+    max_parallel: int
+    running: int  # live runs before the start
+    free_slots: int  # max(0, max_parallel - running)
+    started: list[TaskRunRow | str] = field(default_factory=list)
+    skipped: list[Skip] = field(default_factory=list)
+
+    def to_json(self) -> dict[str, object]:
+        return {
+            "max_parallel_runs": self.max_parallel,
+            "running": self.running,
+            "free_slots": self.free_slots,
+            "started": [
+                {"task_id": s, "run_id": None}
+                if isinstance(s, str)
+                else {"task_id": s.task_id, "run_id": s.run_id}
+                for s in self.started
+            ],
+            "skipped": [s.to_json() for s in self.skipped],
+        }
+
+
+@dataclass
+class _Pending:
+    """A ``conflict`` that adds the started but not yet claimed tasks to an ``Occupancy``."""
+
+    occupancy: Occupancy
+    pending: list[tuple[str, tuple[str, ...]]]
+
+    def __call__(self, task: Task) -> Skip | None:
+        clash = self.occupancy(task)
+        if clash is not None:
+            return clash
+        writes = effective_task_writes(task)
+        if not writes:
+            return None
+        root = self.occupancy.root
+        for task_id, other in self.pending:
+            if is_wide(writes, root) or is_wide(other, root):
+                return Skip(
+                    task.id,
+                    "exclusive",
+                    f"spouští se {task_id}; široké writes běží jen samostatně",
+                    [task_id],
+                )
+            hit = overlaps(writes, other)
+            if hit:
+                return Skip(
+                    task.id,
+                    "writes_overlap",
+                    f"spouští se {task_id}: {_paths_text(hit)}",
+                    [task_id],
+                )
+        return None
+
+
+def start_factory(
+    repo: Path,
+    start: Callable[[str], TaskRunRow | None],
+    *,
+    max_parallel: int | None = None,
+    pr_files: Callable[[TaskPrRow], list[str] | None] | None = None,
+) -> FactoryStart:
+    """Start ready tasks of the whole repository, as many as there are free parallel slots.
+
+    The Overview's "Spustit továrnu": the tasks are chosen like auto-continue does
+    (``select_ready``: the kanban's queue first, excluded tasks, dependencies, open PRs
+    and write collisions with running runs, open PRs and the tasks started just before)
+    and each is started with `start` (``factory task run ID`` as a separate process; it
+    then continues according to its inherited ``auto_continue``). At most
+    ``max_parallel_runs`` minus the live runs are started. A task `start` refuses with a
+    ``TaskRunError`` is skipped as ``cannot_start`` and the next one is tried. A missing
+    trace DB is not created here.
+    """
+    main = gitops.main_root(repo)
+    limit = max_parallel if max_parallel is not None else _max_parallel(repo)
+    db = task_mod._load(main).local.trace_db_path(main)
+    files_of = pr_files if pr_files is not None else _pr_files_default(main)
+
+    def live() -> int:
+        if not db.is_file():
+            return 0
+        store = TaskRunStore(db)
+        try:
+            return len(store.live_runs())
+        finally:
+            store.close()
+
+    running = live()
+    result = FactoryStart(limit, running, max(0, limit - running))
+    exclude: set[str] = set()
+    pending: list[tuple[str, tuple[str, ...]]] = []
+    start_skips: list[Skip] = []
+    last_skips: list[Skip] = []
+    while len(result.started) < result.free_slots:
+        with _fresh_backlog(repo) as backlog:
+            if db.is_file():
+                store = TaskRunStore(db)
+                try:
+                    occupancy = Occupancy.build(backlog, store, main, files_of)
+                    selection = select_ready(
+                        backlog,
+                        open_pr=store.open_pr,
+                        running=store.running,
+                        exclude=exclude,
+                        conflict=_Pending(occupancy, pending),
+                        prefs=store.queue_prefs(),
+                    )
+                finally:
+                    store.close()
+            else:
+                selection = select_ready(
+                    backlog,
+                    open_pr=lambda _: None,
+                    running=lambda _: None,
+                    exclude=exclude,
+                    conflict=_Pending(Occupancy([], [], main), pending),
+                )
+        last_skips = selection.skipped
+        nxt = selection.next
+        if nxt is None:
+            break
+        exclude.add(nxt.id)
+        try:
+            row = start(nxt.id)
+        except TaskRunError as exc:
+            start_skips.append(Skip(nxt.id, "cannot_start", f"{exc.code}: {exc.message}"))
+            continue
+        if row is None:
+            pending.append((nxt.id, effective_task_writes(nxt) or ("",)))
+            result.started.append(nxt.id)
+        else:
+            result.started.append(row)
+    result.skipped = [*start_skips, *last_skips]
+    return result
 
 
 def run_chain(
@@ -791,12 +1009,7 @@ def _run_parallel(
     """
     main = gitops.main_root(repo)
     db = task_mod._load(main).local.trace_db_path(main)
-    files_of = pr_files
-    if files_of is None:
-
-        def files_of(pr: TaskPrRow) -> list[str] | None:
-            return gitops.pr_changed_files(main, pr.base, pr.branch, pr.base_sha)
-
+    files_of = pr_files if pr_files is not None else _pr_files_default(main)
     first_task = _first_task(repo, task_id)
     goes_on = first_task is not None and (auto or auto_continue_enabled(first_task))
     record = _ChainRecord(db, task_id, max_parallel, enabled=goes_on)
@@ -826,13 +1039,19 @@ def _run_parallel(
 
     def fill(after_id: str) -> None:
         nonlocal last_skips
-        while len(runner.active()) < max_parallel and halt is None:
+        while halt is None:
+            if len(runner.active()) >= max_parallel:
+                return
             with _fresh_backlog(repo) as backlog:
                 after = backlog.by_id.get(after_id)
                 if not isinstance(after, Task):
                     return
                 store = TaskRunStore(db)
                 try:
+                    # Runs of other chains (and single runs) take slots of the repo too.
+                    if max(len(runner.active()), len(store.live_runs())) >= max_parallel:
+                        save()
+                        return
                     occupancy = Occupancy.build(backlog, store, main, files_of)
                     selection = select_next(
                         backlog,

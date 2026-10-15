@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T30
 title: Tlačítka pro ovládání továrny na Přehledu
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S01-T19, HAIFA-S03-T16, HAIFA-S03-T19, HAIFA-REFINEMENT-T20, HAIFA-S10-T02]
@@ -34,3 +34,4 @@ Na Přehledu repozitářů (`OverviewView.vue` / `RepoCard.vue`, API `GET /api/o
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/42 · náklady $7.95

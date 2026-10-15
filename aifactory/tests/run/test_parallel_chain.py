@@ -242,6 +242,36 @@ def test_limit_is_never_exceeded(repo: Path) -> None:
     assert data["max_parallel_runs"] == 2 and data["chain_id"] == chain.chain_id
 
 
+def test_runs_of_other_chains_take_slots_of_the_repo(repo: Path) -> None:
+    t05 = "M01-S01-T05"
+    setup_tasks(
+        repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/"), (T04, "src/d/"), (t05, "src/e/")]
+    )
+    other = TaskRunRow(
+        run_id="r-other",
+        task_id=t05,
+        branch=f"factory/{t05}-1",
+        worktree="wt",
+        base="main",
+        base_sha="0",
+        head_sha=None,
+        state="running",
+        started_at=str(now_iso()),
+        pid=os.getpid(),
+    )
+    store = TaskRunStore(_db(repo))
+    try:
+        store.claim(other)
+    finally:
+        store.close()
+    runner = FakeRunner(repo)
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    # the other chain's run holds one of the two slots the whole time
+    assert runner.max_active == 1
+    assert started(runner) == [T01, T02, T03, T04]
+    assert [(s.task_id, s.reason) for s in chain.waiting] == [(t05, "running")]
+
+
 def test_slot_is_refilled_after_a_run_ends(repo: Path) -> None:
     setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
     runner = FakeRunner(repo)

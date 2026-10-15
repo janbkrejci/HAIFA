@@ -3,7 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import OverviewView from './OverviewView.vue'
 import type { OverviewData, RepoItem } from '@/lib/api'
 import { OVERVIEW_POLL_MS } from '@/lib/overview'
-import { config, failed, overview, repo, review, running } from '@/test/overviewFixtures'
+import { config, factory, failed, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
 import { answerDialog, openDialog } from '@/test/modal'
 import { defineComponent, onMounted } from 'vue'
 
@@ -88,6 +88,24 @@ describe('OverviewView', () => {
     expect(calm[0].text()).toContain('v klidu')
     expect(calm[0].get('[data-test="last-activity"]').text()).toContain('před 1 h')
     expect(calm[0].find('[data-test="row-running"]').exists()).toBe(false)
+  })
+
+  it('offers Spustit továrnu in the calm list and the task summary on a card', async () => {
+    const fetchMock = stubOverview(() =>
+      overview([
+        repo('calm-ready', { factory: factory({ can_start: true, ready: 2 }), tasks: tasks({ ready: 2 }) }),
+        repo('busy', { running: [running()], tasks: tasks({ running: 1, done: 3 }), factory: factory({ running: 1 }) }),
+      ]),
+    )
+    const wrapper = await mountView()
+    const calm = wrapper.get('[data-test="calm-repo"]')
+    expect(calm.attributes('data-repo')).toBe('calm-ready')
+    expect(calm.find('[data-test="factory-start"]').exists()).toBe(true)
+    const card = wrapper.get('[data-test="overview-card"]')
+    expect(card.get('[data-test="task-summary"]').text()).toBe('Běží 1Hotovo 3')
+    expect(card.find('[data-test="factory-stop"]').exists()).toBe(true)
+    expect(card.find('[data-test="factory-start"]').exists()).toBe(false)
+    expect(fetchMock.mock.calls.every(([, init]) => !init || init.method !== 'POST')).toBe(true)
   })
 
   it('shows the totals and filters the cards by a click on one', async () => {

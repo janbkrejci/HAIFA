@@ -22,6 +22,7 @@ import { REPOS_ADD_HREF, repoHref } from '@/lib/router'
 import { ADD_REPO_HINT, useRemoveRepo } from '@/lib/repos'
 import EmptyScreen from '@/components/EmptyScreen.vue'
 import RepoCard from '@/components/overview/RepoCard.vue'
+import RepoControls from '@/components/overview/RepoControls.vue'
 import RepoMenu from '@/components/overview/RepoMenu.vue'
 import RemoveRepoDialog from '@/components/repos/RemoveRepoDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -112,6 +113,7 @@ function activity(iso: string | null): string {
           :now="now"
           :removing="removing === repo.id"
           @remove="remove"
+          @changed="refresh"
         />
       </div>
 
@@ -121,6 +123,7 @@ function activity(iso: string | null): string {
           <span class="calm-state">v klidu</span>
           <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>
           <RepoMenu :name="repo.name" :removing="removing === repo.id" item-test="calm-remove" @remove="remove(repo)" />
+          <RepoControls :repo="repo" compact @changed="refresh" />
         </li>
       </ul>
 
@@ -267,6 +270,7 @@ h1 {
   border-radius: 10px;
   background: var(--panel);
   white-space: nowrap;
+  flex-wrap: wrap;
 }
 
 .calm-name {

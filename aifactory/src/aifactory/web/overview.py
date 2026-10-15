@@ -6,7 +6,21 @@ state with their running phase, attempt, start and cost so far), ``review`` (ope
 not from the hosting), ``failed`` (tasks whose newest run ended ``failed`` or ``aborted`` and
 that are neither ``done`` nor ``cancelled`` in the backlog), ``config`` (whether the factory is
 installed, an invalid configuration in base and uncommitted shared configuration, D4),
-``last_activity`` and ``warnings``; ``totals`` sums them up.
+``last_activity`` and ``warnings``; ``totals`` sums them up. Every item of ``running`` has
+``pause`` (``null``, ``pausing`` or ``paused``; ``null`` for a trace DB without the column).
+
+``tasks`` counts the backlog's tasks per kanban board state (``web.backlog.BOARD_STATES``,
+every state present, zeros included), computed by ``board_state`` from the trace rows read
+here: a task with a running row whose process did not end is ``running``, one with an open PR
+``in review``. ``factory`` is what the Overview's factory controls need (``control.py``):
+``max_parallel_runs`` (``.factory/config.yaml`` of the main checkout; ``null`` when invalid),
+``running`` (running rows whose process did not end), ``free_slots``, ``ready`` (tasks in
+board state ``ready`` not excluded from auto-continue in the kanban, ``task_queue``),
+``can_start`` (a ready task, a free slot and a configuration in state ``ok`` or
+``uncommitted``: runs read the base commit), ``paused`` and ``pausing`` (running rows by
+``pause``) and ``control`` (``FactoryControl.snapshot``: the progress of a stop or pause the
+dashboard started, or ``null``). A repository that is missing, not git, slow or broken has
+``tasks`` and ``factory`` ``null``.
 
 It only reads. The trace DB is opened with a ``mode=ro`` sqlite connection (``query_only``;
 ``immutable`` for a WAL DB nobody has open, so no ``-wal``/``-shm`` file appears),
@@ -36,15 +50,18 @@ from typing import Any, TypeVar
 from urllib.parse import quote
 
 from aifactory import database, oscompat
-from aifactory.backlog import TaskEditError, iter_tasks, load_for_edit
+from aifactory.backlog import Backlog, TaskEditError, iter_tasks, load_for_edit
 from aifactory.config import ConfigError
 from aifactory.config.loader import load_config
 from aifactory.config.repo_state import repo_state
 from aifactory.config.source import CommitSource
 from aifactory.config.status import config_changes
 from aifactory.run.gitops import repo_layout
+from aifactory.web.backlog import BOARD_STATES, _Runtime, board_state
+from aifactory.web.chains import max_parallel_runs_in
 from aifactory.web.config_cache import CONFIG_TTL as CONFIG_TTL
 from aifactory.web.config_cache import ConfigCache
+from aifactory.web.control import FactoryControl
 from aifactory.web.registry import Registry, RepoEntry
 from aifactory.web.repos import trace_db_of
 
@@ -63,6 +80,13 @@ MAX_ISSUES = 20
 WORKERS = 8  # threads computing repositories
 
 TaskIndex = dict[str, tuple[str, str]]
+STARTABLE_STATES = frozenset({"ok", "uncommitted"})
+
+
+@dataclass
+class _Tasks:
+    index: TaskIndex
+    backlog: Backlog | None
 
 
 def _time(value: object) -> datetime | None:
@@ -170,6 +194,11 @@ class _Trace:
     prs: list[sqlite3.Row]
     phases: dict[str, JsonDict]
     costs: dict[str, tuple[float, int]]
+    excluded: frozenset[str] = frozenset()
+
+
+def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
 
 
 def _read_trace(conn: sqlite3.Connection) -> _Trace:
@@ -178,11 +207,17 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
     prs: list[sqlite3.Row] = []
     phases: dict[str, JsonDict] = {}
     costs: dict[str, tuple[float, int]] = {}
+    excluded: frozenset[str] = frozenset()
     if _has_table(conn, "task_runs"):
+        pause = "pause" if "pause" in _columns(conn, "task_runs") else "NULL AS pause"
         runs = conn.execute(
-            "SELECT rowid, run_id, task_id, state, started_at, ended_at, pid, workflow, error "
-            "FROM task_runs ORDER BY started_at DESC, rowid DESC"
+            "SELECT rowid, run_id, task_id, state, started_at, ended_at, pid, workflow, error, "
+            f"{pause} FROM task_runs ORDER BY started_at DESC, rowid DESC"
         ).fetchall()
+    if _has_table(conn, "task_queue"):
+        excluded = frozenset(
+            str(row[0]) for row in conn.execute("SELECT task_id FROM task_queue WHERE excluded")
+        )
     if _has_table(conn, "task_prs"):
         prs = conn.execute(
             "SELECT branch, task_id, pr_id, url, state, created_at, updated_at FROM task_prs"
@@ -207,7 +242,7 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
             running_ids,
         ):
             costs[row["adw_id"]] = (float(row["total_cost"] or 0.0), int(row["total_tokens"] or 0))
-    return _Trace(runs, prs, phases, costs)
+    return _Trace(runs, prs, phases, costs, excluded)
 
 
 def _trace_view(db: Path) -> tuple[_Trace | None, list[str]]:
@@ -252,6 +287,7 @@ def _lists(trace: _Trace, tasks: TaskIndex, now: datetime) -> tuple[JsonDict, st
                 "tokens": tokens,
                 "process": process,
                 "status_label": PROCESS_ENDED if process == "ended" else None,
+                "pause": row["pause"],
             }
         )
 
@@ -350,12 +386,65 @@ def _config_view(root: Path) -> tuple[JsonDict | None, list[str]]:
     return config, warnings
 
 
-def _task_index(root: Path) -> tuple[TaskIndex, list[str]]:
+def _task_index(root: Path) -> tuple[_Tasks, list[str]]:
     try:
         backlog = load_for_edit(root)
     except (ConfigError, TaskEditError, OSError, ValueError) as exc:
-        return {}, [f"task titles are not available: {exc}"]
-    return {t.id: (t.title, t.status) for t in iter_tasks(backlog)}, []
+        return _Tasks({}, None), [f"task titles are not available: {exc}"]
+    return _Tasks({t.id: (t.title, t.status) for t in iter_tasks(backlog)}, backlog), []
+
+
+def _active_runs(trace: _Trace | None) -> list[sqlite3.Row]:
+    """Running rows whose process did not end (newest first)."""
+    if trace is None:
+        return []
+    return [r for r in trace.runs if r["state"] == "running" and _process(r["pid"]) != "ended"]
+
+
+def _task_summary(
+    backlog: Backlog, trace: _Trace | None, active: list[sqlite3.Row]
+) -> tuple[JsonDict, list[str]]:
+    """The number of tasks per kanban board state (every state present) and the ready ids."""
+    rt = _Runtime()
+    if trace is not None:
+        rt.running = {r["task_id"] for r in active}
+        rt.in_review = {p["task_id"] for p in trace.prs if p["state"] == "open"}
+    counts: JsonDict = dict.fromkeys(BOARD_STATES, 0)
+    ready: list[str] = []
+    for task in iter_tasks(backlog):
+        state = board_state(backlog, task, rt)
+        counts[state] += 1
+        if state == "ready":
+            ready.append(task.id)
+    return counts, ready
+
+
+def _factory(
+    root: Path,
+    state: str,
+    ready_ids: list[str],
+    trace: _Trace | None,
+    active: list[sqlite3.Row],
+    control: FactoryControl | None,
+) -> JsonDict:
+    limit = max_parallel_runs_in(root)
+    excluded = trace.excluded if trace is not None else frozenset()
+    ready = sum(1 for t in ready_ids if t not in excluded)
+    free = max(0, limit - len(active)) if limit is not None else 0
+    pauses = [r["pause"] for r in active]
+    snapshot = (
+        control.snapshot(root, [r["run_id"] for r in active]) if control is not None else None
+    )
+    return {
+        "max_parallel_runs": limit,
+        "running": len(active),
+        "free_slots": free,
+        "ready": ready,
+        "can_start": ready > 0 and free > 0 and state in STARTABLE_STATES,
+        "paused": pauses.count("paused"),
+        "pausing": pauses.count("pausing"),
+        "control": snapshot,
+    }
 
 
 def _state(config: JsonDict | None) -> str:
@@ -383,6 +472,8 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         "config": None,
         "last_activity": None,
         "warnings": warnings,
+        "tasks": None,
+        "factory": None,
     }
 
 
@@ -395,8 +486,10 @@ class Overview:
         *,
         timeout: float = REPO_TIMEOUT,
         clock: Callable[[], float] = time.monotonic,
+        control: FactoryControl | None = None,
     ) -> None:
         self.registry = registry
+        self.control = control
         self.timeout = timeout
         self._configs = ConfigCache(clock)
         self._tasks = _TtlCache(clock)
@@ -421,8 +514,14 @@ class Overview:
         trace, trace_warnings = _trace_view(trace_db_of(root))
         item = _stub(entry, _state(config), [*config_warnings, *task_warnings, *trace_warnings])
         item["config"] = config
+        active = _active_runs(trace)
+        summary, ready = (
+            (None, []) if tasks.backlog is None else _task_summary(tasks.backlog, trace, active)
+        )
+        item["tasks"] = summary
+        item["factory"] = _factory(root, item["state"], ready, trace, active, self.control)
         if trace is not None:
-            lists, last = _lists(trace, tasks, datetime.now(UTC))
+            lists, last = _lists(trace, tasks.index, datetime.now(UTC))
             item.update(lists)
             item["has_trace"] = True
             item["last_activity"] = last

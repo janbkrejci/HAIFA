@@ -29,6 +29,7 @@ from overview_fixture import (
 )
 from starlette.testclient import TestClient
 
+from aifactory.run.store import TaskRunStore
 from aifactory.skill import envelope_problems
 from aifactory.web import create_multi_app, overview
 from aifactory.web.overview import CONFIG_TTL, PROCESS_ENDED, TASKS_TTL, Overview
@@ -384,3 +385,85 @@ def test_config_cache_invalidated_before_ttl(tmp_path: Path) -> None:
     assert _get(client)["repos"][0]["config"]["clean"] is False
     commit_all(root)
     assert _get(client)["repos"][0]["config"]["clean"] is True
+
+
+# ── task summary and factory controls ────────────────────────────────────────
+
+
+def _repo_item(repo: Path, tmp_path: Path) -> dict[str, Any]:
+    home = tmp_path / "home"
+    register(home, repo)
+    item: dict[str, Any] = _get(_client(home, tmp_path))["repos"][0]
+    return item
+
+
+def test_task_summary_counts_tasks_per_board_state(repo_a: Path, tmp_path: Path) -> None:
+    a = _repo_item(repo_a, tmp_path)
+    # T_DEAD's process ended: its board state comes from the backlog (ready)
+    assert a["tasks"] == {
+        "todo": 0,
+        "ready": 2,
+        "blocked": 0,
+        "running": 1,
+        "in review": 1,
+        "done": 1,
+        "cancelled": 1,
+    }
+
+
+def test_factory_block_with_the_default_limit(repo_a: Path, tmp_path: Path) -> None:
+    a = _repo_item(repo_a, tmp_path)
+    assert a["factory"] == {
+        "max_parallel_runs": 1,
+        "running": 1,
+        "free_slots": 0,
+        "ready": 2,
+        "can_start": False,
+        "paused": 0,
+        "pausing": 0,
+        "control": None,
+    }
+    assert {r["task_id"]: r["pause"] for r in a["running"]} == {T_RUN: None, T_DEAD: None}
+
+
+def test_factory_can_start_with_a_free_slot_and_excluded_tasks_are_not_ready(
+    repo_a: Path, tmp_path: Path
+) -> None:
+    write(repo_a, ".factory/config.yaml", "base: main\ndocs_root: .\nmax_parallel_runs: 3\n")
+    commit_all(repo_a, "three slots")
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.set_excluded(T_FAIL, True)
+        store.request_pause("r-run")
+    finally:
+        store.close()
+    a = _repo_item(repo_a, tmp_path)
+    factory = a["factory"]
+    assert (factory["max_parallel_runs"], factory["running"], factory["free_slots"]) == (3, 1, 2)
+    assert factory["ready"] == 1
+    assert factory["can_start"] is True
+    assert (factory["pausing"], factory["paused"]) == (1, 0)
+    assert a["tasks"]["ready"] == 2  # the summary is the kanban's, exclusion aside
+    assert next(r for r in a["running"] if r["task_id"] == T_RUN)["pause"] == "pausing"
+
+
+def test_trace_db_without_the_pause_column(repo_a: Path, tmp_path: Path) -> None:
+    conn = sqlite3.connect(str(_db(repo_a)), isolation_level=None)
+    try:
+        conn.execute("ALTER TABLE task_runs DROP COLUMN pause")
+    finally:
+        conn.close()
+    a = _repo_item(repo_a, tmp_path)
+    assert a["warnings"] == []
+    assert {r["task_id"]: r["pause"] for r in a["running"]} == {T_RUN: None, T_DEAD: None}
+    assert a["factory"]["running"] == 1
+
+
+def test_missing_repo_has_no_tasks_nor_factory(tmp_path: Path) -> None:
+    gone = make_installed_repo(tmp_path / "gone")
+    home = tmp_path / "home"
+    register(home, gone)
+    rmtree(gone)
+    g = _get(_client(home, tmp_path))["repos"][0]
+    assert g["state"] == "missing"
+    assert (g["tasks"], g["factory"]) == (None, None)

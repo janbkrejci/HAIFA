@@ -58,6 +58,7 @@ from aifactory.run.queue import (
     STOP_FAILED,
     STOP_NOT_MERGED,
     ChainResult,
+    FactoryStart,
     Occupancy,
     Skip,
     auto_continue_enabled,
@@ -65,6 +66,8 @@ from aifactory.run.queue import (
     retry_chain,
     run_chain,
     select_next,
+    select_ready,
+    start_factory,
 )
 from aifactory.run.retry import retry_run
 from aifactory.run.scope import OutputPaths, TaskScope, output_paths, task_scope
@@ -94,6 +97,7 @@ __all__ = [
     "STOP_NOT_MERGED",
     "ChainResult",
     "ChainRunner",
+    "FactoryStart",
     "Occupancy",
     "PauseGate",
     "OutputPaths",
@@ -120,6 +124,8 @@ __all__ = [
     "run_task",
     "running_run",
     "select_next",
+    "select_ready",
+    "start_factory",
     "stop_run",
     "task_prompt",
     "task_prs_for",
