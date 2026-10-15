@@ -28,6 +28,8 @@ PR = PullRequest(
     id="7", url="https://github.com/o/r/pull/7", branch="factory/T01-1", base="main", title="T01"
 )
 DELAY = 0.5
+MERGED_AT = "2026-09-27T11:00:05Z"
+MERGED_AT_ISO = "2026-09-27T11:00:05.000+00:00"
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -36,10 +38,13 @@ def _shared_gh(tmp_path_factory: pytest.TempPathFactory) -> None:
 
 
 def view(
-    state: str = "OPEN", mergeable: str = "MERGEABLE", merge: str | None = None
+    state: str = "OPEN",
+    mergeable: str = "MERGEABLE",
+    merge: str | None = None,
 ) -> dict[str, Any]:
     data: dict[str, Any] = {"state": state, "mergeable": mergeable, "headRefOid": HEAD}
     data["mergeCommit"] = {"oid": merge} if merge else None
+    data["mergedAt"] = MERGED_AT if state == "MERGED" else None
     return reply(data)
 
 
@@ -101,12 +106,12 @@ def test_create_pr_without_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
 
 
 @pytest.mark.parametrize(
-    ("answer", "state", "mergeability", "merge_sha"),
+    ("answer", "state", "mergeability", "merge_sha", "merged_at"),
     [
-        (view("OPEN", "MERGEABLE"), OPEN, MERGEABLE, None),
-        (view("OPEN", "CONFLICTING"), OPEN, CONFLICT, None),
-        (view("MERGED", "UNKNOWN", MERGE_SHA), MERGED, UNKNOWN, MERGE_SHA),
-        (view("CLOSED", "UNKNOWN"), CLOSED, UNKNOWN, None),
+        (view("OPEN", "MERGEABLE"), OPEN, MERGEABLE, None, None),
+        (view("OPEN", "CONFLICTING"), OPEN, CONFLICT, None, None),
+        (view("MERGED", "UNKNOWN", MERGE_SHA), MERGED, UNKNOWN, MERGE_SHA, MERGED_AT_ISO),
+        (view("CLOSED", "UNKNOWN"), CLOSED, UNKNOWN, None, None),
     ],
 )
 def test_status(
@@ -116,6 +121,7 @@ def test_status(
     state: str,
     mergeability: str,
     merge_sha: str | None,
+    merged_at: str | None,
 ) -> None:
     log = install_fake_gh(tmp_path, monkeypatch, {"pr view": answer})
     sleeps: list[float] = []
@@ -123,7 +129,9 @@ def test_status(
     assert (status.state, status.mergeability) == (state, mergeability)
     assert status.head_sha == HEAD
     assert status.merge_sha == merge_sha
-    assert log.argvs() == [["pr", "view", "7", "--json", "state,mergeable,headRefOid,mergeCommit"]]
+    assert status.merged_at == merged_at
+    fields = "state,mergeable,headRefOid,mergeCommit,mergedAt"
+    assert log.argvs() == [["pr", "view", "7", "--json", fields]]
     assert sleeps == []
 
 

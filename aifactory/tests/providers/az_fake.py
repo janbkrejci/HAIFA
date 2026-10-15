@@ -183,7 +183,7 @@ def pr_json(
         "repository": repository,
         "createdBy": {"displayName": "Factory Bot", "uniqueName": "bot@contoso.com"},
         "creationDate": "2026-09-27T10:00:00.000000+00:00",
-        "closedDate": "2026-09-27T11:00:00.000000+00:00" if status != "active" else None,
+        "closedDate": "2026-09-27T11:00:00.4513593Z" if status != "active" else None,
         "mergeId": "f5fc8381-3fb2-49fe-8a0d-27dcc2d6ef82",
         "url": f"{repository['url']}/pullRequests/{id}",
         "completionOptions": None,

@@ -136,7 +136,12 @@ def _record_state(ctx: _Ctx, row: TaskPrRow, status: PrStatus) -> None:
     if status.state == CLOSED:
         ctx.store.update_pr(row.branch, state=CLOSED)
     elif status.state == MERGED:
-        ctx.store.update_pr(row.branch, state=MERGED, merged_at=_now(), merge_sha=status.merge_sha)
+        ctx.store.update_pr(
+            row.branch,
+            state=MERGED,
+            merged_at=status.merged_at or _now(),
+            merge_sha=status.merge_sha,
+        )
 
 
 def _checked_pr(ctx: _Ctx, task_id: str) -> tuple[TaskPrRow, PrStatus]:

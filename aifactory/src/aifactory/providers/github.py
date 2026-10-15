@@ -63,6 +63,7 @@ from aifactory.providers.base import (
     ProviderError,
     PrStatus,
     PullRequest,
+    utc_iso,
 )
 
 UNKNOWN_ATTEMPTS = 30
@@ -125,7 +126,7 @@ class GhCli:
             raise ProviderError("gh_failed", f"gh {' '.join(args[:2])}: not JSON: {exc}") from exc
 
 
-_STATUS_FIELDS = "state,mergeable,headRefOid,mergeCommit"
+_STATUS_FIELDS = "state,mergeable,headRefOid,mergeCommit,mergedAt"
 CHECK_LOG_LINES = 150
 """How many trailing lines of a red check's log ``check_logs`` keeps."""
 _JOB_LINK = re.compile(r"/actions/runs/\d+/job/(\d+)")
@@ -223,7 +224,12 @@ class GitHubProvider(GitProvider):
         raw_head = data.get("headRefOid")
         head = raw_head if isinstance(raw_head, str) else None
         if state == "MERGED":
-            return PrStatus(MERGED, head_sha=head, merge_sha=_merge_oid(data))
+            return PrStatus(
+                MERGED,
+                head_sha=head,
+                merge_sha=_merge_oid(data),
+                merged_at=utc_iso(data.get("mergedAt")),
+            )
         if state == "CLOSED":
             return PrStatus(CLOSED, head_sha=head)
         mergeable = str(data.get("mergeable", "")).upper()

@@ -67,6 +67,7 @@ from aifactory.providers.base import (
     ProviderError,
     PrStatus,
     PullRequest,
+    utc_iso,
 )
 
 UNKNOWN_ATTEMPTS = 5
@@ -342,7 +343,12 @@ class AzureProvider(GitProvider):
         head = _commit(data, "lastMergeSourceCommit")
         state = str(data.get("status", "")).lower()
         if state == "completed":
-            return PrStatus(MERGED, head_sha=head, merge_sha=_commit(data, "lastMergeCommit"))
+            return PrStatus(
+                MERGED,
+                head_sha=head,
+                merge_sha=_commit(data, "lastMergeCommit"),
+                merged_at=utc_iso(data.get("closedDate")),
+            )
         if state == "abandoned":
             return PrStatus(CLOSED, head_sha=head)
         merge_status = str(data.get("mergeStatus", "")).lower()

@@ -349,12 +349,18 @@ def test_create_pr_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.parametrize(
-    ("answer", "state", "mergeability", "merge_sha"),
+    ("answer", "state", "mergeability", "merge_sha", "merged_at"),
     [
-        (show(merge_status="succeeded"), OPEN, MERGEABLE, None),
-        (show(merge_status="conflicts"), OPEN, CONFLICT, None),
-        (show(status="completed", merge=MERGE_SHA), MERGED, UNKNOWN, MERGE_SHA),
-        (show(status="abandoned", merge_status="notSet"), CLOSED, UNKNOWN, None),
+        (show(merge_status="succeeded"), OPEN, MERGEABLE, None, None),
+        (show(merge_status="conflicts"), OPEN, CONFLICT, None, None),
+        (
+            show(status="completed", merge=MERGE_SHA),
+            MERGED,
+            UNKNOWN,
+            MERGE_SHA,
+            "2026-09-27T11:00:00.451+00:00",
+        ),
+        (show(status="abandoned", merge_status="notSet"), CLOSED, UNKNOWN, None, None),
     ],
 )
 def test_status(
@@ -364,6 +370,7 @@ def test_status(
     state: str,
     mergeability: str,
     merge_sha: str | None,
+    merged_at: str | None,
 ) -> None:
     log = install_fake_az(tmp_path, monkeypatch, {"repos pr show": answer})
     sleeps: list[float] = []
@@ -371,6 +378,7 @@ def test_status(
     assert (status.state, status.mergeability) == (state, mergeability)
     assert status.head_sha == HEAD
     assert status.merge_sha == merge_sha
+    assert status.merged_at == merged_at
     assert _calls(log, "repos pr show") == [
         ["repos", "pr", "show", "--id", "7", "--org", ORG_URL, *TAIL]
     ]

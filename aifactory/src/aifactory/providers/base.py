@@ -10,7 +10,9 @@ CI checks of a PR on the hosting (``none`` when the provider has none).
 from __future__ import annotations
 
 import abc
+import re
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 
 from aifactory.config.settings import ProjectSettings
@@ -53,6 +55,29 @@ class PrStatus:
     mergeability: str = UNKNOWN  # MERGEABLE | CONFLICT | UNKNOWN; UNKNOWN unless OPEN
     head_sha: str | None = None
     merge_sha: str | None = None
+    merged_at: str | None = None  # when the hosting merged it, UTC ISO with ms; None if unknown
+
+
+_LONG_FRACTION = re.compile(r"(\.\d{6})\d+")
+
+
+def utc_iso(value: object) -> str | None:
+    """A hosting timestamp as UTC ISO with ms, like ``engine.utils.now_iso``; None if unusable.
+
+    A timestamp without an offset is taken as UTC.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    text = _LONG_FRACTION.sub(r"\1", value.strip())
+    if text.endswith(("Z", "z")):
+        text = text[:-1] + "+00:00"
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).isoformat(timespec="milliseconds")
 
 
 @dataclass(frozen=True)
