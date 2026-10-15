@@ -37,8 +37,12 @@ Respond with ONLY valid JSON matching `PlanOutput` — no prose before or after:
   "summary": "<one sentence describing the plan>",
   "artifacts": ["<context_handoff_dir>/plan.md", "{{spec_path}}"],
   "commit_message": "<imperative one-line git subject for committing THIS PLAN DOCUMENT, not the work it describes — e.g. 'Add spec for the /health endpoint'; the workflow makes this commit, do not run git commit yourself>",
+  "follow_ups": [],
+  "blocked_by": [],
   "notes_for_next_agent": "<what the builder must know>"
 }
 ```
+
+`follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false}`; `blocked_by` holds ids of existing backlog tasks.
 
 The `artifacts` entry in the repo is exactly `{{spec_path}}`. Gates open these files — any other name fails them.

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T26
 title: Lepší popisy pull requestů a tvrdé zacházení s nedodělky
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S10-T01, HAIFA-S03-T09, HAIFA-S03-T04, HAIFA-S03-T11]
@@ -47,3 +47,4 @@ Pravidla musí respektovat všichni agenti, kterých se týkají (builder, fix, 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/35 · náklady $7.03

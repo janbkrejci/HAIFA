@@ -39,13 +39,21 @@ CODE_ACTIONS: tuple[str, ...] = (
 )
 VERIFY_ACTIONS: tuple[str, ...] = ("test", "command")
 COMMIT_FIELDS: frozenset[str] = frozenset({"sha", "committed", "message"})
-# Fields of ``aifactory.workflow.rebase.RebaseOutput`` (spelled out: workflow imports this module).
-REBASE_FIELDS: frozenset[str] = frozenset(
+# aifactory 3.2: the fields every envelope has (``data_types.EnvelopeBase``).
+_ENVELOPE_FIELDS: frozenset[str] = frozenset(
     {
         "status",
         "summary",
         "artifacts",
         "notes_for_next_agent",
+        "follow_ups",
+        "blocked_by",
+        "pr_summary",
+    }
+)
+# Fields of ``aifactory.workflow.rebase.RebaseOutput`` (spelled out: workflow imports this module).
+REBASE_FIELDS: frozenset[str] = _ENVELOPE_FIELDS | frozenset(  # aifactory 3.2: base fields
+    {
         "onto",
         "before",
         "clean",
@@ -55,8 +63,8 @@ REBASE_FIELDS: frozenset[str] = frozenset(
     }
 )
 # Fields of ``aifactory.workflow.rebuild.RebuildOutput``.
-REBUILD_FIELDS: frozenset[str] = frozenset(
-    {"status", "summary", "artifacts", "notes_for_next_agent", "built", "files"}
+REBUILD_FIELDS: frozenset[str] = _ENVELOPE_FIELDS | frozenset(  # aifactory 3.2: base fields
+    {"built", "files"}
 )
 RAN_FIELD = "ran"
 

@@ -8,12 +8,16 @@ import sqlite3
 from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from aifactory import database
 from aifactory.backlog import Task
+from aifactory.engine.data_types import PrSummary
 from aifactory.engine.tracer import BUSY_TIMEOUT
 from aifactory.workflow import StepRecord, WorkflowRun
+
+if TYPE_CHECKING:  # aifactory.run imports aifactory.review lazily; keep it one-way here
+    from aifactory.run.followups import CreatedFollowUp
 
 
 class RunLike(Protocol):
@@ -178,6 +182,12 @@ def _gates(trace_db: Path, run_id: str) -> list[str]:
     return lines
 
 
+def _short(text: str, limit: int = 160) -> str:
+    """`text` on one line, cut to `limit` characters with an ellipsis."""
+    line = " ".join(text.split())
+    return line if len(line) <= limit else line[: limit - 1].rstrip() + "…"
+
+
 def _agents(wf: WorkflowRun) -> list[str]:
     last: dict[str, StepRecord] = {}
     for record in wf.records:
@@ -186,7 +196,7 @@ def _agents(wf: WorkflowRun) -> list[str]:
     lines = []
     for step, record in last.items():
         envelope = wf.envelopes.get(step)
-        summary = str(getattr(envelope, "summary", "") or "").strip() or "(bez shrnutí)"
+        summary = _short(str(getattr(envelope, "summary", "") or "")) or "(bez shrnutí)"
         how = "/".join(x for x in (record.harness, record.model) if x) or "?"
         lines.append(f"- `{step}` ({record.owner}, {how}): {summary}")
     return lines
@@ -227,31 +237,123 @@ def _reviews(wf: WorkflowRun) -> list[str]:
         blocking = [str(b) for b in result.get("blocking") or []]
         if blocking:
             line += f"; blokující: {'; '.join(blocking)}"
-        summary = str(result.get("summary") or "").strip()
+        summary = _short(str(result.get("summary") or ""))
         if summary:
             line += f" — {summary}"
         lines.append(line)
     return lines
 
 
-def pr_body(
-    task: Task, runs: Sequence[RunLike], wf: WorkflowRun | None, trace_db: Path, branch: str
+SUMMARY_END = "<!-- factory: summary-end -->"
+_NO_SUMMARY = "_Agenti běhu shrnutí nedodali._"
+
+
+def latest_summary(wf: WorkflowRun | None) -> PrSummary | None:
+    """The newest non-empty ``pr_summary`` an agent of the run reported, else None."""
+    if wf is None:
+        return None
+    for _, envelope in reversed(wf.history):
+        summary = getattr(envelope, "pr_summary", None)
+        if isinstance(summary, PrSummary) and not summary.empty:
+            return summary
+    return None
+
+
+def previous_summary(body: str | None) -> str | None:
+    """The summary block of an earlier PR body (between the marker line and SUMMARY_END)."""
+    if not body or SUMMARY_END not in body:
+        return None
+    head = body.split(SUMMARY_END, 1)[0]
+    lines = head.splitlines()
+    if lines and lines[0].startswith("<!-- factory: task="):
+        lines = lines[1:]
+    text = "\n".join(lines).strip()
+    return text or None
+
+
+def _items(values: Sequence[str]) -> list[str]:
+    return [f"- {v.strip()}" for v in values if v.strip()]
+
+
+def _last_build_summary(wf: WorkflowRun | None) -> str:
+    """The summary of the last envelope that reported changed files (a build or a fix)."""
+    if wf is None:
+        return ""
+    for _, envelope in reversed(wf.history):
+        if "changed_files" in type(envelope).model_fields:
+            return str(getattr(envelope, "summary", "") or "").strip()
+    return ""
+
+
+def summary_block(
+    summary: PrSummary | None,
+    task: Task,
+    wf: WorkflowRun | None,
+    follow_ups: Sequence[CreatedFollowUp] = (),
 ) -> str:
-    """Markdown body: task, agents, gates and tests, review, costs (all runs on the branch)."""
-    out = [f"<!-- factory: task={task.id} branch={branch} -->", "", "## Zadání", ""]
-    body = task.body.strip()
-    if body.splitlines()[:1] == ["## Zadání"]:
-        body = body.split("\n", 1)[1].strip() if "\n" in body else ""
-    out.append(body or f"{task.id}: {task.title}")
+    """Goal, what was done, what was not (with new backlog tasks), notes for approval.
+
+    The text comes from the agents' ``pr_summary``; without one, the task title and the
+    build's summary stand in. The task text itself is never copied.
+    """
+    if summary is None or summary.empty:
+        goal = f"{task.title}\n\n{_NO_SUMMARY}"
+        build = _last_build_summary(wf)
+        done = [f"- {build}"] if build else ["- (bez shrnutí)"]
+        not_done: list[str] = []
+        notes: list[str] = []
+    else:
+        goal = summary.goal.strip() or task.title
+        done = _items(summary.done) or ["- (bez shrnutí)"]
+        not_done = _items(summary.not_done)
+        notes = _items(summary.notes)
+    for item in follow_ups:
+        tag = "blokuje tento task" if item.blocks else "nový task"
+        reason = f" ({item.reason})" if item.reason else ""
+        not_done.append(f"- {tag} `{item.id}`: {item.title}{reason}")
+    out = ["## Cíl", "", goal, "", "## Co bylo uděláno", "", *done]
+    out += ["", "## Co uděláno nebylo", "", *(not_done or ["- nic"])]
+    if notes:
+        out += ["", "## Důležité pro schválení", "", *notes]
+    return "\n".join(out)
+
+
+def pr_body(
+    task: Task,
+    runs: Sequence[RunLike],
+    wf: WorkflowRun | None,
+    trace_db: Path,
+    branch: str,
+    *,
+    follow_ups: Sequence[CreatedFollowUp] = (),
+    previous_body: str | None = None,
+    reuse_summary: bool = False,
+) -> str:
+    """Markdown body: the agents' summary first, then the technical details.
+
+    The summary (goal, done, not done, notes for approval) comes from the run's agents.
+    `reuse_summary` (a resolve run) or a run without one keeps the summary of
+    `previous_body`, the branch's earlier PR body, when it has one. The technical part
+    covers every run on the branch: agents, gates and tests, review, costs.
+    """
+    out = [f"<!-- factory: task={task.id} branch={branch} -->", ""]
+    summary = latest_summary(wf)
+    kept = previous_summary(previous_body)
+    if kept is not None and (reuse_summary or summary is None):
+        out.append(kept)
+    else:
+        out.append(summary_block(summary, task, wf, follow_ups))
+    out += ["", SUMMARY_END, "", "## Technické podrobnosti"]
     notes = [(r.run_id, r.note.strip()) for r in reversed(list(runs)) if r.note and r.note.strip()]
-    for run_id, note in notes:
-        out += ["", f"Poznámka k běhu {run_id}: {note}"]
-    out += ["", "## Agenti", ""]
+    if notes:
+        out += ["", "### Poznámky k běhům", ""]
+        out += [f"- běh {run_id}: {_short(note, 300)}" for run_id, note in notes]
+    out += ["", "### Agenti", ""]
     out += (_agents(wf) if wf else []) or ["- žádný agent neběžel"]
     checks = (_gates(trace_db, wf.adw_id) if wf else []) + (_tests(wf) if wf else [])
-    out += ["", "## Gates a testy", ""] + (checks or ["- nic neběželo"])
-    out += ["", "## Review", ""] + ((_reviews(wf) if wf else []) or ["- review neběželo"])
-    out += ["", "## Náklady", ""]
+    out += ["", "### Gates a testy", ""] + (checks or ["- nic neběželo"])
+    out += ["", "### Review", ""] + ((_reviews(wf) if wf else []) or ["- review neběželo"])
+    out += ["", "### Náklady", ""]
     total = 0.0
     for r in reversed(list(runs)):
         cost, tokens = run_cost(trace_db, r.run_id)

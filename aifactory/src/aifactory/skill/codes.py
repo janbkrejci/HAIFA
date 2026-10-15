@@ -112,6 +112,11 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ),
     ("pr_not_open", "2", "the task's pull request is not open"),
     ("conflict", "2", "the pull request conflicts with base (run factory task resolve)"),
+    (
+        "task_blocked",
+        "2",
+        "the task has unmet depends_on (a blocker a run reported); finish them first",
+    ),
     ("branch_checked_out", "2", "the branch is checked out in another worktree"),
     ("dirty_worktree", "2", "the worktree has uncommitted changes"),
     ("missing_note", "2", "task return needs a non-empty --note"),

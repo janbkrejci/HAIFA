@@ -61,6 +61,12 @@ Z CLI: `factory task pause ID`, `factory task resume ID`, `factory task stop ID`
 
 Po úspěšném workflow HAIFA odešle větev a otevře pull request; task je **V review**. Selže-li publikace (například síť), běh zůstane úspěšný s chybou publikace a v detailu běhu je tlačítko **Publikovat** (v CLI `factory task publish ID`).
 
+## Nedodělky a blokace
+
+Agenti nenechávají nedodělky v repu (žádné TODO soubory, seznamy otevřených bodů ani komentáře „dodělat později“). Práci, která se do tasku nevejde, ohlásí ve své odpovědi (`follow_ups`) a HAIFA ji založí jako nový task ve stepu **TODO** projektu (step založí, když chybí). Task uvádí, z jakého běhu a tasku vznikl a proč. Změny backlogu HAIFA commitne do base.
+
+Když agent ohlásí, že task nejde dokončit, dokud není hotová jiná práce (nový TODO task s `blocks_task` nebo existující task v `blocked_by`), dostane task `depends_on` na blokující task a běh skončí jako **chyba** s důvodem `blocked: …`. Pull request se neotevře, task se neoznačí za hotový a nemerguje se. Až bude blokující task hotový, spusť task znovu.
+
 ## Selhání a nový pokus
 
 Selhaný běh nechá worktree i větev pro rozbor a task se vrátí do předchozího stavu (obvykle **Připraveno**). Nový pokus spustíš znovu tlačítkem **Spustit**: vznikne nová větev a nový worktree. Před ním zvaž, zda neupravit zadání, workflow nebo poznámku pro agenty.
