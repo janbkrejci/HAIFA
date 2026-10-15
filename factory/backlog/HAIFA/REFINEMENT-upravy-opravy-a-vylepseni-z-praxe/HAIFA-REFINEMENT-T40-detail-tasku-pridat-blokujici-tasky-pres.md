@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T40
 title: "Detail tasku: přidat blokující tasky přes modální výběr s hledáním a opravit přetékání ve Writes"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T21, HAIFA-REFINEMENT-T11, HAIFA-REFINEMENT-T23]
@@ -33,3 +33,4 @@ Na detailu tasku v režimu editace je potřeba umět přidat, kdo task blokuje (
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/53 · náklady $2.23
