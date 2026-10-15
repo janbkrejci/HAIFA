@@ -29,7 +29,15 @@ Ruční schválení PR (`factory task approve`, tlačítko **Schválit** v dashb
 - Web:
   - Na hostingu s kontrolami (GitHub) spouští `POST /api/review/<id>/approve` schválení jako samostatný proces (`Launcher.start_approve`) a vrací HTTP 202 s `started: true`. Dashboard pak ukáže „Schvalování běží na pozadí…“.
   - U ostatních providerů zůstává synchronní odpověď s výsledkem merge.
+  - Spouštěč `auto-ci-fix` má v **Bězích** vlastní popisek (`lib/runs.ts`), výsledek schválení nese `ci_fix_runs` (`lib/review.ts`).
+- CLI: `factory task approve` vypíše `ci-fix runs: …` a interní volba `task run --started-by` přijímá `auto-ci-fix`. Průvodce `guide/07-review.md` má nový oddíl „CI před merge“.
 
 ## Omezení
 
 - Azure DevOps kontroly zatím nečte, takže tam brána CI vždy vidí `none` a merguje hned.
+
+## Jak ověřit
+
+- `cd aifactory && uv run pytest tests/review/test_ci_gate.py -n0`: falešný provider pro auto-merge i ruční approve (parametr `auto`). Pokrývá merge bez kontrol a se zelenými, opravu na téže větvi a pak merge, červenou CI i po všech opravách, kontroly běžící přes limit, selhaný opravný běh, ignorování kontrol předchozího headu a zkracování logů v poznámce.
+- `uv run pytest tests/run/test_auto_merge.py tests/review/ tests/providers/test_providers_github.py tests/web/test_web_review.py -n0` a `just web-test` pro dashboard.
+- Ručně na GitHubu: schválit PR s červenou kontrolou a v **Bězích** sledovat běh `auto-ci-fix` na větvi PR. Po vyčerpání pokusů ukáže detail PR důvod v `auto_merge_error`.
