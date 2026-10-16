@@ -1,7 +1,7 @@
 ---
 id: HEAL-S01-T02
 title: "Accept not met vysvětlí, co neprošlo"
-status: todo
+status: done
 depends_on: [HEAL-S01-T01]
 ---
 
@@ -19,3 +19,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/68 · náklady $2.22
