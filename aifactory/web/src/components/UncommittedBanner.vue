@@ -1,10 +1,10 @@
 <script setup lang="ts">
 // Changes kept in the working tree while runs read base (D4), as red chips in the topbar (so they
-// never move the page while you click in it): the backlog chip opens a panel with the files and
-// one button that commits it all at once; the config chip (`panel` off) lists the files in its
+// never move the page while you click in it): the backlog chip opens a short panel with the
+// number of changes and one button that commits it all at once, kept inside the viewport; the config chip (`panel` off) lists the files in its
 // tooltip and opens the reviewed commit of .factory/ on the Factory screen. Without `chip` it
 // is a banner in the page.
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { TriangleAlert } from 'lucide-vue-next'
 import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
@@ -44,6 +44,11 @@ const files = computed(() => {
   return `${n} ${plural(n, 'soubor', 'soubory', 'souborů')}`
 })
 
+const changes = computed(() => {
+  const n = dirty.value?.changes.length ?? 0
+  return `${n} ${plural(n, 'změna', 'změny', 'změn')}`
+})
+
 const label = computed(() => props.chipText ?? `Necommitnutý ${props.title.toLocaleLowerCase('cs')}`)
 const paths = computed(() => dirty.value?.changes.map((c) => c.path).join(', ') ?? '')
 function onChip() {
@@ -54,6 +59,24 @@ function onChip() {
 /** The chip's panel is open. */
 const open = ref(false)
 const root = ref<HTMLElement | null>(null)
+const panelEl = ref<HTMLElement | null>(null)
+/** Viewport position of the open panel: under the chip, right-aligned, clamped to the window. */
+const GAP = 8
+const pos = reactive({ top: 0, left: 0, measured: false })
+function place() {
+  const chip = root.value
+  const panelBox = panelEl.value
+  if (!chip || !panelBox) return
+  const r = chip.getBoundingClientRect()
+  const width = panelBox.getBoundingClientRect().width
+  const maxLeft = Math.max(GAP, window.innerWidth - width - GAP)
+  pos.top = r.bottom + GAP
+  pos.left = Math.min(Math.max(r.right - width, GAP), maxLeft)
+  pos.measured = true
+}
+const panelStyle = computed(() =>
+  pos.measured ? { top: `${pos.top}px`, left: `${pos.left}px` } : { visibility: 'hidden' as const },
+)
 function onOutside(event: Event) {
   const target = event.target as Node | null
   if (target && root.value?.contains(target)) return
@@ -66,6 +89,10 @@ watch(open, (on) => {
   const method = on ? 'addEventListener' : 'removeEventListener'
   document[method]('mousedown', onOutside, true)
   document[method]('keydown', onKey)
+  window[method]('resize', place)
+  window[method]('scroll', place, true)
+  pos.measured = false
+  if (on) void nextTick(place)
 })
 // a failed commit shows its reason at once
 watch(() => props.commitError, (error) => {
@@ -78,6 +105,8 @@ onBeforeUnmount(() => {
   open.value = false
   document.removeEventListener('mousedown', onOutside, true)
   document.removeEventListener('keydown', onKey)
+  window.removeEventListener('resize', place)
+  window.removeEventListener('scroll', place, true)
 })
 </script>
 
@@ -102,17 +131,15 @@ onBeforeUnmount(() => {
         {{ label }} · {{ files }}
       </button>
     </Tooltip>
-    <div v-if="panel" v-show="open" class="panel" :data-test="`${kind}-panel`">
-      <p>
-        <slot name="title">{{ title }}</slot> má necommitnuté změny. Běhy používají
-        <code>{{ dirty.base }}</code><template v-if="sha"> (<code>{{ sha }}</code>)</template>, dokud změny
-        necommitneš.
-      </p>
-      <ul class="files">
-        <li v-for="change in dirty.changes" :key="change.path" :data-test="`${kind}-change`">
-          <span class="change-status">{{ change.status }}</span> {{ change.path }}
-        </li>
-      </ul>
+    <div
+      v-if="panel"
+      v-show="open"
+      ref="panelEl"
+      class="panel"
+      :style="panelStyle"
+      :data-test="`${kind}-panel`"
+    >
+      <p :data-test="`${kind}-summary`">Commitne se {{ changes }}.</p>
       <p v-if="pr" class="pr" :data-test="`${kind}-pr`">
         Změny čekají v pull requestu <a :href="pr.url" target="_blank" rel="noopener">{{ pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.
       </p>
@@ -211,15 +238,14 @@ onBeforeUnmount(() => {
 }
 
 .panel {
-  position: absolute;
-  top: calc(100% + 8px);
-  right: 0;
+  position: fixed;
   z-index: 30;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
   gap: 8px;
-  width: min(560px, calc(100vw - 32px));
+  width: max-content;
+  max-width: min(420px, calc(100vw - 16px));
   max-height: 60vh;
   overflow: auto;
   padding: 12px 14px;
@@ -232,10 +258,6 @@ onBeforeUnmount(() => {
 }
 
 .panel p {
-  margin: 0;
-}
-
-.panel .files {
   margin: 0;
 }
 
