@@ -240,6 +240,7 @@ from aifactory.web.repos import (
 )
 from aifactory.web.updates import Updates
 from aifactory.web.workflow_advice import AdviceManager
+from aifactory.workflow.adaptive import cleanup_orphans
 
 STATIC_DIR = Path(__file__).parent / "static"
 """The frontend build (``just web-build``), shipped inside the package."""
@@ -2202,6 +2203,8 @@ def create_multi_app(
                         )
                     )
                 ),
+                # Advice directories left behind by a dashboard that ended mid-advice.
+                asyncio.create_task(once(cleanup_orphans)),
                 asyncio.create_task(periodic(app.state.updates.check, 60)),
                 asyncio.create_task(periodic(lambda: app.state.limits.get(None), 60)),
                 asyncio.create_task(

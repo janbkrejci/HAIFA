@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T18
 title: Návrh workflow bez kopie celého repa a bez úniku dočasných adresářů
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -19,3 +19,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/63 · náklady $1.83
