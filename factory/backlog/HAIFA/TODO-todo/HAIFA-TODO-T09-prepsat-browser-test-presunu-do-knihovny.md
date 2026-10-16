@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T09
 title: Přepsat browser test přesunu do knihovny na stránku Knihovna
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T36]
 ---
@@ -19,3 +19,4 @@ Task `HAIFA-REFINEMENT-T36` na tomto tasku závisí a do jeho dokončení zůst�
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/57 · náklady $0.88
