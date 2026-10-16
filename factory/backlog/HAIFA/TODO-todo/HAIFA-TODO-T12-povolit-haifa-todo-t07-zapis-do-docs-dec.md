@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T12
 title: Povolit HAIFA-TODO-T07 zápis do docs/decisions.md a zrušit duplicitní HAIFA-TODO-T08
-status: todo
+status: done
 assignee: human
 workflow: build-review
 depends_on: []
@@ -22,3 +22,4 @@ Task `HAIFA-TODO-T07` na tomto tasku závisí a do jeho dokončení zůstává b
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · hotovo ručně

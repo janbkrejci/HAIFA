@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T14
 title: Povolit docs/decisions.md v HAIFA-TODO-T08
-status: todo
+status: done
 assignee: human
 depends_on: []
 related: [HAIFA-TODO-T08]
@@ -20,3 +20,4 @@ Task `HAIFA-TODO-T08` na tomto tasku závisí a do jeho dokončení zůstává b
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · hotovo ručně
