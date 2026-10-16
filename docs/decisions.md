@@ -11,6 +11,7 @@ Platná rozhodnutí, jejichž důvod z kódu nevyčteš. Historie (product brief
 - **Smyčky:** `until` se vyhodnocuje po každém kroku těla `repeat` a smyčka hned končí. Po posledním zamítnutí review se `revise` nespouští.
 - **Testy:** kontroly volí agent tester pro každý běh, krok `test` spustí všechny i po prvním selhání a selhání jde nejdřív k triáži testerem (chyba plánu, nebo kódu). Builder spouští jen testovací soubory své změny.
 - **Konflikty PR:** řeší je workflow `resolve` (rebase, a jen při konfliktu agent, který smí měnit jen konfliktní soubory).
+- **Approve a auto-merge čekají na CI:** `factory task approve` i auto-merge čekají na checky merge headu, tedy commitu po pushi `status: done`, a mergují jen zelený PR nebo PR bez checků. Když jsou checky červené, factory spustí na větvi PR nejvýš `CI_FIX_ROUNDS` (2) interních běhů workflow `ci-fix` (`started_by` `auto-ci-fix`) a po každém znovu čeká. Když CI zůstane červené, nedoběhne v časovém limitu nebo oprava selže, PR zůstane otevřený a důvod je v `auto_merge_error`. Na GitHubu, kde se na checky čeká dlouho, dashboard schvaluje na pozadí v samostatném procesu.
 - **Auto-continue:** bez `--auto` řetěz pokračuje jen po tasku, který má `auto_continue` zapnuté (vlastní nebo zděděné), a spouští jen tasky, které ho mají zapnuté. `--auto` platí pro celý řetěz.
 
 ## Konfigurace a knihovna

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T05
 title: Aktualizovat docs/decisions.md pro approve a auto-merge čekající na CI (s povolenou cestou docs/)
-status: todo
+status: done
 depends_on: [HAIFA-TODO-T06]
 related: [HAIFA-TODO-T01]
 writes: [docs/decisions.md]
@@ -20,3 +20,4 @@ Task `HAIFA-TODO-T01` na tomto tasku závisí a do jeho dokončení zůstává b
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/55 · náklady $0.75
