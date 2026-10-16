@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T11
 title: Popisek důvodu no_slot v dashboardu
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T39]
 ---
@@ -18,3 +18,4 @@ Důvod: HAIFA-REFINEMENT-T39 přidal důvod přeskočení `no_slot` (PR čekají
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/60 · náklady $0.98
