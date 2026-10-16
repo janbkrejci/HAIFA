@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T10
 title: Přegenerovat statický build dashboardu po T38
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T38]
 ---
@@ -18,3 +18,4 @@ Důvod: T38 changed the Vue source of the Overview (aifactory/web/src), but aifa
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · bez změn, běh f39d90bc · náklady $0.53
