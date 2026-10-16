@@ -1,5 +1,5 @@
 <script setup lang="ts">
-// The agents of "Vybavení továrny" on the Factory tab (GET /api/repos/<id>/factory/roster): every
+// The agents of "Nastavení agentů" on the Factory tab (GET /api/repos/<id>/factory/roster): every
 // agent once, with its harness, model and thinking and whether each value is inherited (library
 // and roster defaults) or overridden in .factory/agents.yaml. "Upravit" sets an override, "Vrátit
 // na zděděné" removes it (`reset`); each change is previewed (dry_run) under its agent before it
@@ -20,7 +20,7 @@ import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 
 const props = defineProps<{ repoId: string; disabled?: boolean }>()
-const emit = defineEmits<{ busy: [value: boolean]; saved: []; move: [name: string] }>()
+const emit = defineEmits<{ busy: [value: boolean]; saved: [] }>()
 
 interface Row { harness: string; model: string; thinking: string }
 const FIELDS: readonly RosterField[] = ['harness', 'model', 'thinking']
@@ -241,8 +241,6 @@ defineExpose({ reload: load })
                   <button type="button" class="btn" :disabled="locked || editing !== null" data-test="roster-edit" @click="edit(agent)">Upravit</button>
                   <button v-if="resettable(agent).length" type="button" class="btn" :disabled="locked || editing !== null"
                     data-test="roster-reset" @click="previewReset(agent)">Vrátit na zděděné</button>
-                  <button v-if="agent.origin === 'repo'" type="button" class="btn" :disabled="locked || editing !== null"
-                    :data-test="`item-move-agent-${agent.name}`" @click="emit('move', agent.name)">Přesunout do knihovny</button>
                 </td>
               </template>
             </tr>
