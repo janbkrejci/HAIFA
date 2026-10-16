@@ -278,6 +278,8 @@ export interface OverviewControl {
 export interface OverviewFactory {
   max_parallel_runs: number | null
   running: number
+  /** Tasks whose open PR waits for review; each holds a slot. */
+  in_review?: number
   free_slots: number
   /** Ready tasks not excluded from auto-continue. */
   ready: number
@@ -299,6 +301,8 @@ export interface FactorySkip {
 export interface FactoryStartResult {
   max_parallel_runs: number
   running: number
+  /** Tasks whose open PR waits for review; each holds a slot. */
+  in_review?: string[]
   free_slots: number
   started: { task_id: string; run_id: string | null }[]
   skipped: FactorySkip[]

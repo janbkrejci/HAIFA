@@ -34,6 +34,11 @@ function chain(over: Partial<Chain> = {}): Chain {
 }
 
 describe('ChainPanel', () => {
+  it('names the tasks whose PR waits for review among the slots', () => {
+    const wrapper = mount(ChainPanel, { props: { chains: [chain({ free_slots: 1, in_review: ['M01-S01-T06'] })] } })
+    expect(wrapper.get('[data-test="chain-slots"]').text()).toBe('Sloty: 1/3 (volné 1) · v review: M01-S01-T06')
+  })
+
   it('shows nothing without chains', () => {
     const wrapper = mount(ChainPanel, { props: { chains: [] } })
     expect(wrapper.find('[data-test="chain-panel"]').exists()).toBe(false)
@@ -43,6 +48,7 @@ describe('ChainPanel', () => {
     const wrapper = mount(ChainPanel, { props: { chains: [chain()] } })
     expect(wrapper.get('[data-test="chain-state"]').text()).toContain('běží')
     expect(wrapper.get('[data-test="chain-slots"]').text()).toBe('Sloty: 1/3 (volné 2)')
+    expect(wrapper.find('[data-test="chain-in-review"]').exists()).toBe(false)
     const runs = wrapper.findAll('[data-test="chain-run"]')
     expect(runs.map((r) => r.text())).toEqual([
       expect.stringContaining('M01-S01-T01'),
