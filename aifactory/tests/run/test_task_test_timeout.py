@@ -190,7 +190,7 @@ def test_exceeded_timeout_fails_the_step(repo: Path, script: Script, code: str) 
 
     assert time.monotonic() - clock < 25
     assert result.run.state == "failed", result.run.error
-    assert result.run.error == "accept not met"
+    assert (result.run.error or "").startswith("Testy neprošly"), result.run.error
     wf = result.workflow_run
     assert wf is not None and wf.accepted is False
     assert wf.results["test"]["passed"] is False

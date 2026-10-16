@@ -30,8 +30,10 @@ from run_repo import (
     plan_envelope,
     write,
 )
-from workflow_fakes import FakeCodeRunner
+from workflow_fakes import FakeCodeRunner, triage_envelope
 
+from aifactory import failure
+from aifactory.engine import data_types as dt
 from aifactory.review import approve_task
 from aifactory.run import TaskRunError, TaskRunRow, TaskRunStore, run_task
 from aifactory.run.retry import plan_retry, retry_run
@@ -130,8 +132,50 @@ def rejected_run(repo: Path, script: Script) -> Any:
     review(script, approved=False)
     result = run_task(repo, T01, code=GitCode([True, True]))
     assert result.run.state == "failed"
-    assert result.run.error == "accept not met"
+    assert result.run.error == "Review neschválilo ani po 2 kolech: missing tests"
     return result
+
+
+def test_rejected_run_explains_accept(repo: Path, script: Script) -> None:
+    """accept_not_met: the expression, its values, the loop rounds and the objections."""
+    run = rejected_run(repo, script).run
+    assert run.failure_kind == failure.ACCEPT_NOT_MET
+    detail = run.failure_detail_dict()
+    assert detail is not None
+    assert detail["accept"] == "test.passed and review.approved"
+    assert detail["values"] == {"test.passed": True, "review.approved": False}
+    rounds = {r["until"]: (r["rounds"], r["max"]) for r in detail["rounds"]}
+    assert rounds == {"test.passed": (1, 2), "review.approved": (2, 2)}
+    assert detail["review"]["step"] == "review"
+    assert detail["review"]["objections"] == ["missing tests"]
+    assert "test" not in detail  # every test passed
+
+
+def test_failed_tests_explain_accept(repo: Path, script: Script) -> None:
+    """A test loop that stays red: the error quotes the failed check, the detail keeps it."""
+
+    class RedCode(GitCode):
+        def _result(self, passed: bool, what: str) -> dt.QualityResult:
+            failures = [] if passed else ["unit: `pytest` exited 1\n" + "x" * 5000]
+            return dt.QualityResult(passed=passed, checks=[], failures=failures, artifacts=[])
+
+    build(script)
+    test_plan(script)
+    triage = triage_envelope("code", sys.executable, "-c", "pass")
+    script.add("tester", triage)
+    script.add("builder", ok(changed_files=[], commit_message="Fix"))
+    script.add("tester", triage)
+    review(script, approved=True)
+    run = run_task(repo, T01, code=RedCode([False, False])).run
+    assert run.state == "failed" and run.failure_kind == failure.ACCEPT_NOT_MET
+    assert run.error == "Testy neprošly ani po 2 kolech: unit: `pytest` exited 1"
+    detail = run.failure_detail_dict()
+    assert detail is not None
+    assert detail["values"] == {"test.passed": False, "review.approved": True}
+    assert "review" not in detail
+    checks = detail["test"]["failed_checks"]
+    assert checks[0].startswith("unit: `pytest` exited 1\n…\n")
+    assert len(checks[0]) <= 800 and checks[0].endswith("x")
 
 
 def calls(script: Script, agent: str) -> list[Any]:
