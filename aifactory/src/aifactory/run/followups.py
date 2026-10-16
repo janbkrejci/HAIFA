@@ -221,15 +221,22 @@ def _error(exc: TaskEditError) -> str:
     return f"{exc.code}: {exc.message}"
 
 
-def record(main: Path, task_id: str, run_id: str, wf: WorkflowRun) -> FollowUpOutcome:
+def record(
+    main: Path, task_id: str, run_id: str, wf: WorkflowRun, *, blocking: bool = True
+) -> FollowUpOutcome:
     """File the run's follow-ups in the TODO step and link the task to its blockers.
 
     Returns what was written; problems that do not stop the rest (an unknown id, a
     rejected write, a commit that failed) are ``warnings``. A blocker counts even when
-    its ``depends_on`` could not be written.
+    its ``depends_on`` could not be written. ``blocking=False`` (a resolve run, whose
+    task is built already) files every follow-up as not blocking and ignores
+    ``blocked_by``.
     """
     outcome = FollowUpOutcome()
     reported, blocked_ids = collect(wf)
+    if not blocking:
+        reported = [replace(r, blocks_task=False) for r in reported]
+        blocked_ids = []
     if not reported and not blocked_ids:
         return outcome
     backlog = load_for_edit(main)

@@ -117,13 +117,23 @@ class ConflictWriteGuard(TaskWriteGuard):
         self.generated = generated
         self.fixed = False
 
-    def snapshot(self, run: Any) -> dict[str, Any]:
+    def fix_scope(self) -> None:
         if not self.fixed:
             files = unmerged_files(self.worktree)
             if files:
                 mine = tuple(f for f in files if not covered(f, self.generated))
                 self.scope = TaskScope(self.scope.task_id, mine, ())
                 self.fixed = True
+
+    def allows_writes(self) -> bool:
+        """Whether an agent may change any file: False without a conflict, and when
+        every conflicted file lies in a generated output. The workflow then runs no
+        repair step (``fix``, ``test_fix``)."""
+        self.fix_scope()
+        return bool(self.scope.writes)
+
+    def snapshot(self, run: Any) -> dict[str, Any]:
+        self.fix_scope()
         return super().snapshot(run)
 
 

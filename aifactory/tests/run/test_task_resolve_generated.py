@@ -24,7 +24,9 @@ from run_repo import (
     git,
     make_run_repo,
     ok,
+    plan_envelope,
     scripted_plan,
+    triage_envelope,
     write,
 )
 from workflow_fakes import FakeCodeRunner
@@ -225,3 +227,59 @@ def test_conflict_only_in_sources_builds_nothing(repo: Path, script: Script) -> 
     assert git(repo, "show", f"{BRANCH2}:{INDEX}") == "<script src=assets/index-base.js>"
     message = git(repo, "log", "-1", "--format=%s", BRANCH2)
     assert "rebuild" not in message
+
+
+# Both tasks change only the bundle: the conflict lies wholly in the generated output,
+# so the resolve run may change no file at all.
+ONLY_BUNDLE_ONE = {INDEX: "<script src=assets/index-one.js>\n"}
+ONLY_BUNDLE_TWO = {INDEX: "<script src=assets/index-two.js>\n"}
+MISSING_TEST = "tests/run/test_chain_parts.py: the task_chains.events column is migrated"
+
+
+def review_wants_a_test(script: Script) -> None:
+    """The resolver changes nothing; the test review asks for a test the repo lacks."""
+    script.add("builder", ok(changed_files=[]))
+    script.add("tester", plan_envelope())
+    script.add(
+        "test-reviewer",
+        ok(summary="no migration test", approved=False, blocking=[f"missing {MISSING_TEST}"]),
+    )
+    script.add("tester", {**plan_envelope(), "missing_tests": [MISSING_TEST]})
+
+
+def test_missing_test_in_a_bundle_only_resolve_becomes_a_follow_up(
+    repo: Path, script: Script
+) -> None:
+    run_both(repo, script, ONLY_BUNDLE_ONE, ONLY_BUNDLE_TWO)
+    review_wants_a_test(script)
+
+    result = resolve_task(repo, T02, code=ResolveCode([True]))
+
+    assert result.ok, (result.run.error, result.pr_error)
+    assert result.run.failure_kind is None
+    # only the resolver ran as builder: no test_fix wrote the missing test
+    assert [c.agent for c in script.calls if c.agent == "builder"] == ["builder"]
+    assert result.workflow_run is not None
+    assert "test_fix" not in [name for name, _, _ in result.workflow_run.phases]
+    assert result.follow_ups is not None
+    (created,) = result.follow_ups.created
+    assert MISSING_TEST in created.title and not created.blocks
+    assert result.follow_ups.blocked_by == []
+    assert builds(result) == 1
+    assert git(Path(result.run.worktree), "status", "--porcelain") == ""
+
+
+def test_red_suite_without_writable_files_stops_with_a_reason(repo: Path, script: Script) -> None:
+    run_both(repo, script, ONLY_BUNDLE_ONE, ONLY_BUNDLE_TWO)
+    before = tip(repo)
+    script.add("builder", ok(changed_files=[]))
+    scripted_plan(script)
+    script.add("tester", triage_envelope("code"))
+
+    result = resolve_task(repo, T02, code=ResolveCode([False]))
+
+    assert result.run.state == "failed"
+    assert result.run.failure_kind != "writes_violation"
+    assert result.run.error is not None and "may change no file" in result.run.error
+    assert [c.agent for c in script.calls if c.agent == "builder"] == ["builder"]
+    assert tip(repo) == before

@@ -23,6 +23,7 @@ from workflow_fakes import (  # noqa: F401
 
 from aifactory.testing.model import Evidence
 from aifactory.workflow import DEFAULT_WORKFLOWS_DIR, WorkflowRun, load_workflow, run_workflow
+from aifactory.workflow.rebase import RebaseOutput
 
 REQUEST = ("request", "engineer")
 PLAN_PHASE = ("plan", "agent", "planner")
@@ -510,3 +511,57 @@ def test_heal_never_healed(workflow_env: EngineEnv, tmp_path: Path) -> None:
     assert (result.exit_code, result.accepted) == (1, False)
     assert code.commits == []
     _assert_done(workflow_env, code)
+
+
+# ── test review mode ──────────────────────────────────────────────────────
+
+MODE_START, MODE_END = "MODE<<", ">>MODE"
+
+
+class CleanRebase(FakeCodeRunner):
+    """A rebase without a conflict, so resolve runs only the test plan and the test."""
+
+    def rebase(self, run: Any) -> Any:
+        return RebaseOutput(
+            status="success",
+            summary="clean",
+            onto="1" * 40,
+            before="0" * 40,
+            clean=True,
+            conflict=False,
+        )
+
+
+def _review_modes(env: EngineEnv, tmp_path: Path, name: str, code: FakeCodeRunner) -> list[str]:
+    """Run workflow `name`; the test reviewer's prompt shows its ``review_mode``."""
+    user = tmp_path / "test_reviewer_user.md"
+    user.write_text(
+        f"{{{{prompt}}}}\n{MODE_START}{{{{review_mode}}}}{MODE_END}\n", encoding="utf-8"
+    )
+    tester = next(a for a in env.cfg.agents if a.name == "tester")
+    reviewer = tester.model_copy(update={"name": "test-reviewer"}, deep=True)
+    reviewer.prompt_engineering.user = str(user)
+    env.cfg.agents.append(reviewer)
+    workflow = load_workflow(DEFAULT_WORKFLOWS_DIR / f"{name}.yaml")
+    result = run_workflow(workflow, "do it", env.cfg, code=code)
+    assert (result.exit_code, result.accepted) == (0, True)
+    _assert_done(env, code)
+    return [
+        call.prompt.split(MODE_START)[1].split(MODE_END)[0]
+        for call in env.script.calls
+        if call.agent == "test-reviewer"
+    ]
+
+
+def test_test_review_mode_is_resolve_in_a_resolve_run(
+    workflow_env: EngineEnv, tmp_path: Path
+) -> None:
+    _script(workflow_env, tester=[TEST_PLAN], **{"test-reviewer": [APPROVE]})
+    modes = _review_modes(workflow_env, tmp_path, "resolve", CleanRebase([True]))
+    assert modes == ["resolve"]
+
+
+def test_test_review_mode_is_task_in_a_task_run(workflow_env: EngineEnv, tmp_path: Path) -> None:
+    _script(workflow_env, builder=[BUILD], tester=[TEST_PLAN], **{"test-reviewer": [APPROVE]})
+    modes = _review_modes(workflow_env, tmp_path, "build-test", FakeCodeRunner([True]))
+    assert modes == ["task"]

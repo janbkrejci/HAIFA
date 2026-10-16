@@ -4,6 +4,9 @@
 # Code commits and pushes after the workflow: only without conflict markers and with a green suite.
 # `fix` runs only on a conflict: without one the write guard allows no file and
 # finish_resolve commits nothing, so a repair could neither be written nor pushed.
+# When the guard allows no file (the conflict was only in generated outputs), `fix`
+# does not run and a red test ends the run with that reason. Missing tests the
+# test review finds become follow-ups of the task; no builder writes them here.
 # `rebuild` rebuilds the generated outputs (`generated:` in .factory/config.yaml)
 # that have a conflicted file; the agents may not touch them. It runs before
 # every test, so a fix of the sources is built too; without such a conflict it

@@ -859,8 +859,12 @@ def _execute(
             failure_kind, failure_detail = failures.OTHER, {"cause": "resolve"}
     follow: FollowUpOutcome | None = None
     follow_warnings: list[str] = []
-    if wf is not None and resolve is None and followups.reported_any(wf):
-        follow, follow_warnings, blockers = _record_follow_ups(main, store, row, wf)
+    if wf is not None and followups.reported_any(wf):
+        # a resolve run files follow-ups too (e.g. a test its review found missing),
+        # but never blocks: its task is built already
+        follow, follow_warnings, blockers = _record_follow_ups(
+            main, store, row, wf, blocking=resolve is None
+        )
         if blockers:
             # a blocked task is neither published nor done: the run fails
             reason = blocked_reason(row.task_id, blockers)
@@ -949,17 +953,18 @@ def run_blockers(row: TaskRunRow) -> list[str] | None:
 
 
 def _record_follow_ups(
-    main: Path, store: TaskRunStore, row: TaskRunRow, wf: WorkflowRun
+    main: Path, store: TaskRunStore, row: TaskRunRow, wf: WorkflowRun, *, blocking: bool = True
 ) -> tuple[FollowUpOutcome | None, list[str], list[str]]:
     """File the run's follow-ups (``followups.record``): outcome, warnings, blockers.
 
-    A failure to record never hides a blocker an agent reported.
+    A failure to record never hides a blocker an agent reported (``blocking``).
     """
     try:
         with store.serialized():
-            follow = followups.record(main, row.task_id, row.run_id, wf)
+            follow = followups.record(main, row.task_id, row.run_id, wf, blocking=blocking)
     except Exception as exc:
-        blockers = ["(neuložené hlášení agenta)"] if followups.reported_blockers(wf) else []
+        reported = blocking and followups.reported_blockers(wf)
+        blockers = ["(neuložené hlášení agenta)"] if reported else []
         return None, [f"follow-ups not recorded: {exc}"], blockers
     return follow, list(follow.warnings), list(follow.blocked_by)
 
