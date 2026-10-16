@@ -464,6 +464,8 @@ def _run_json(trace_db: Path, run: TaskRunRow) -> JsonDict:
         "ended_at": run.ended_at,
         "note": run.note,
         "error": run.error,
+        "failure_kind": run.shown_failure_kind,
+        "failure_detail": run.failure_detail_dict(),
         "cost": cost,
         "tokens": tokens,
     }

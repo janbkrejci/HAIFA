@@ -14,6 +14,7 @@ from engine_fakes import (  # noqa: F401
     start,
 )
 
+from aifactory import failure
 from aifactory.engine import agents, permissions
 
 
@@ -34,6 +35,10 @@ def test_writes_outside_allowlist_are_rolled_back(engine_env: EngineEnv) -> None
 
     message = str(exc.value)
     assert "stray.txt" in message and "README.md" in message
+    kind, detail = failure.classify(exc.value)
+    assert kind == failure.WRITES_VIOLATION
+    assert detail["agent"] == "builder"
+    assert set(detail["paths"]) == {"stray.txt", "README.md"}
     assert not (env.repo / "stray.txt").exists()
     assert (env.repo / "README.md").read_text() == "readme\n"
     assert (env.repo / "allowed" / "a.txt").read_text() == "fine\n"

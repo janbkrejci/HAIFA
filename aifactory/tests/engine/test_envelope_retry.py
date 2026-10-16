@@ -7,6 +7,7 @@ import json
 import pytest
 from engine_fakes import EngineEnv, agent_phase, engine_env_fixture, ok, rows, start  # noqa: F401
 
+from aifactory import failure
 from aifactory.engine import agents
 
 FIX_PREFIX = "Your response was not valid JSON for the required structure"
@@ -55,8 +56,11 @@ def test_retries_are_bounded(engine_env: EngineEnv) -> None:
     attempts = agents.JSON_FIX_ATTEMPTS + 1
     env.script.add("builder", *(["garbage"] * attempts))
 
-    with pytest.raises(RuntimeError, match="never produced valid GenericOutput JSON"):
+    with pytest.raises(RuntimeError, match="never produced valid GenericOutput JSON") as exc:
         agent_phase(run, "builder")
+    kind, detail = failure.classify(exc.value)
+    assert kind == failure.INVALID_OUTPUT
+    assert detail["cause"] == "json" and detail["output_type"] == "GenericOutput"
 
     assert len(env.script.calls) == attempts
     assert len({c.session_id for c in env.script.calls}) == 1

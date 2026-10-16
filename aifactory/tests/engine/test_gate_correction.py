@@ -15,6 +15,7 @@ from engine_fakes import (  # noqa: F401
     start,
 )
 
+from aifactory import failure
 from aifactory.engine import agents
 from aifactory.engine.data_types import EnvelopeBase, GateCheck, GateReport
 from aifactory.engine.runner import Run
@@ -64,8 +65,11 @@ def test_no_retries_fails_on_first_violation(engine_env: EngineEnv) -> None:
     run = start(env)
     env.script.add_ok("builder", summary="wrong")
 
-    with pytest.raises(agents.GateFailure):
+    with pytest.raises(agents.GateFailure) as exc:
         agent_phase(run, "builder", retries=0, gates=[summary_fixed])
+    kind, detail = failure.classify(exc.value)
+    assert kind == failure.INVALID_OUTPUT
+    assert detail["cause"] == "gates" and detail["violations"]
 
     assert len(env.script.calls) == 1
 
@@ -92,5 +96,22 @@ def test_reported_fail_status_fails_the_phase(engine_env: EngineEnv) -> None:
     run = start(env)
     env.script.add("builder", json.dumps({"status": "fail", "summary": "gave up"}))
 
-    with pytest.raises(RuntimeError, match="reported status='fail'"):
+    with pytest.raises(RuntimeError, match="reported status='fail'") as exc:
         agent_phase(run, "builder")
+    assert failure.classify(exc.value) == (
+        failure.OTHER,
+        {"agent": "builder", "summary": "gave up", "fail_kind": None},
+    )
+
+
+def test_reported_nothing_to_do_is_its_own_kind(engine_env: EngineEnv) -> None:
+    env = engine_env
+    run = start(env)
+    envelope = {"status": "fail", "summary": "already done", "fail_kind": "nothing_to_do"}
+    env.script.add("builder", json.dumps(envelope))
+
+    with pytest.raises(RuntimeError, match="reported status='fail'") as exc:
+        agent_phase(run, "builder")
+    kind, detail = failure.classify(exc.value)
+    assert kind == failure.NOTHING_TO_DO
+    assert detail["summary"] == "already done"

@@ -28,6 +28,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Callable, Optional
 
+from aifactory.failure import QuotaExhausted  # aifactory 3.4
+
 from .data_types import PiRequest, PiResult
 from .utils import env_flag, now_iso, operator_env, prompt_file, send_stdin
 
@@ -81,6 +83,11 @@ def isolation_args(cwd: str) -> list[str]:
 TRANSIENT_MARKERS = ("429", "500", "502", "503", "504", "529",
                      "rate limit", "overloaded", "too many requests")
 TRANSIENT_BACKOFF = (5, 20, 60)   # seconds; one entry per retry, in order
+# aifactory 3.4: an exhausted quota or credit balance is not waited out (a provider may
+# report it as a 429 too); the run fails with failure_kind quota.
+QUOTA_MARKERS = ("insufficient_quota", "exceeded your current quota", "quota exceeded",
+                 "usage limit", "credit balance", "insufficient credits",
+                 "requires more credits", "out of credits", "billing")
 MODELS_JSON = os.environ.get("PI_MODELS_PATH",
                              str(Path.home() / ".pi" / "agent" / "models.json"))
 
@@ -345,6 +352,12 @@ def _is_transient(error: str) -> bool:
     return any(marker in lowered for marker in TRANSIENT_MARKERS)
 
 
+def quota_exhausted(text: str) -> bool:
+    """aifactory 3.4: True when pi's provider error reports an exhausted quota or credit."""
+    lowered = text.lower()
+    return any(marker in lowered for marker in QUOTA_MARKERS)
+
+
 def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
         on_spawn: Optional[Callable[[int], None]] = None,
         on_exit: Optional[Callable[[int], None]] = None,
@@ -358,6 +371,8 @@ def run(request: PiRequest, on_event: Optional[Callable[[dict], None]] = None,
     """
     for attempt, pause in enumerate(TRANSIENT_BACKOFF + (0,), start=1):
         result, error = _attempt(request, on_event, on_spawn, on_exit)
+        if not result.text and quota_exhausted(error):   # aifactory 3.4
+            raise QuotaExhausted("pi", error)
         if result.text or not _is_transient(error):
             return result
         if not pause:
@@ -457,6 +472,8 @@ def _attempt(request: PiRequest, on_event: Optional[Callable[[dict], None]] = No
     result.returncode = process.wait()
     if on_exit:
         on_exit(process.pid)
+    if result.returncode != 0 and not result.text and quota_exhausted(f"{last_error}\n{stderr}"):
+        raise QuotaExhausted("pi", last_error or stderr)   # aifactory 3.4
     if result.returncode != 0 and not result.text and not _is_transient(last_error):
         raise RuntimeError(f"pi exited {result.returncode}: {stderr.strip()[-800:]}")
     return result, last_error or (stderr.strip() if result.returncode else "")

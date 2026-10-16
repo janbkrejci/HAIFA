@@ -6,6 +6,10 @@ Every harness is a module with the same interface as ``aifactory.engine.agent_cc
 written on the agent (``harness: claude | codex | pi``); it is never inferred
 from the model name.
 
+An adapter recognizes an exhausted quota or credit of its own harness (its
+``quota_exhausted(text)``) and raises ``aifactory.failure.QuotaExhausted``, so the
+run records ``failure_kind: quota`` instead of guessing from the error text.
+
 ``install()`` registers the adapters into ``aifactory.engine.agents.INTERFACES``.
 The engine itself is left untouched: ``writes:`` stays with
 ``aifactory.engine.permissions``, which checks the git diff independently of

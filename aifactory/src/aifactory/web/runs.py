@@ -214,6 +214,9 @@ def _summary(
         "tokens": int((session or {}).get("total_tokens") or 0),
         "cost": float((session or {}).get("total_cost") or 0.0),
         "error": row.error,
+        # the typed kind of a run that did not succeed (``aifactory.failure``) and its facts
+        "failure_kind": row.shown_failure_kind,
+        "failure_detail": row.failure_detail_dict(),
         "note": row.note,
         "archived": bool(row.archived),
         "started_by": row.started_by,

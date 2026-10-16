@@ -57,6 +57,7 @@ def _run_json(store: TaskRunStore, run_id: str, row: TaskRunRow | None) -> JsonD
         "state": row.state if row is not None else None,
         "workflow": row.workflow if row is not None else None,
         "error": row.error if row is not None else None,
+        "failure_kind": row.shown_failure_kind if row is not None else None,
         "pause": row.pause if row is not None and row.state == RUNNING else None,
         "pr": None
         if pr is None
