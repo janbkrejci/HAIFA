@@ -268,3 +268,95 @@ def test_missing_planner_agent_is_reported(tmp_path: Path, monkeypatch: pytest.M
     monkeypatch.setattr("aifactory.workflow.adaptive.prepare_cfg", lambda *args: cfg)
     with pytest.raises(UsageError, match="plan agent 'planner' is missing"):
         recommend(repo, ctx, "missing-agent", threading.Event())
+
+
+def _size(root: Path) -> int:
+    return sum(path.stat().st_size for path in root.rglob("*") if path.is_file())
+
+
+def test_advice_shares_objects_and_removes_orphans(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import os
+    import stat
+    import subprocess
+    import sys
+    import tempfile
+    import time
+
+    from advice_fixture import git
+
+    repo = make_repo(tmp_path / "repo")
+    # History heavier than the checkout: large incompressible blobs that are later deleted.
+    for index in range(4):
+        (repo / "blob.bin").write_bytes(os.urandom(1_000_000))
+        git(repo, "add", "blob.bin")
+        git(repo, "commit", "-qm", f"blob {index}")
+    git(repo, "rm", "-q", "blob.bin")
+    git(repo, "commit", "-qm", "drop blob")
+    temp = tmp_path / "temp"
+    temp.mkdir()
+    monkeypatch.setattr(tempfile, "tempdir", str(temp))
+
+    finished = subprocess.run(
+        [sys.executable, "-c", "import os; print(os.getpid())"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    dead = temp / "factory-advice-dead"
+    (dead / "repo/.git/objects/ab").mkdir(parents=True)
+    (dead / "owner.pid").write_text(finished.stdout.strip())
+    readonly = dead / "repo/.git/objects/ab/cdef"
+    readonly.write_bytes(b"x")
+    readonly.chmod(stat.S_IREAD)
+    unowned = temp / "factory-advice-legacy"
+    unowned.mkdir()
+    old = time.time() - 7200
+    os.utime(unowned, (old, old))
+    fresh = temp / "factory-advice-starting"
+    fresh.mkdir()
+    alive = temp / "factory-advice-other"
+    alive.mkdir()
+    (alive / "owner.pid").write_text(str(os.getppid()))
+    save = temp / "factory-advice-save-x"
+    save.mkdir()
+    os.utime(save, (old, old))
+
+    monkeypatch.setattr(
+        "aifactory.workflow.adaptive.check_harness",
+        lambda name: HarnessStatus(name, "fake", "fake", "1"),
+    )
+    sizes: list[int] = []
+
+    def run(request: Any, **kwargs: Any) -> AgentResult:
+        cwd = Path(request.cwd)
+        assert cwd.parent.parent == temp
+        assert (cwd / ".git/objects/info/alternates").exists()
+        sizes.append(_size(cwd.parent))
+        return AgentResult(text=json.dumps(output()), returncode=0)
+
+    monkeypatch.setattr(agents.INTERFACES["claude"], "run", run)
+    recommend(repo, context(repo, "P01-S01-T01", {}), "shared-advice", threading.Event())
+    assert sizes and sizes[0] * 10 < _size(repo / ".git")
+    assert not dead.exists() and not unowned.exists()
+    assert fresh.exists() and alive.exists() and save.exists()
+    assert sorted(path.name for path in temp.iterdir()) == [
+        "factory-advice-other",
+        "factory-advice-save-x",
+        "factory-advice-starting",
+    ]
+
+
+def test_remove_tree_handles_read_only_files(tmp_path: Path) -> None:
+    import stat
+
+    from aifactory.workflow.adaptive import remove_tree
+
+    root = tmp_path / "tree"
+    (root / "sub").mkdir(parents=True)
+    for path in (root / "sub/a", root / "b"):
+        path.write_text("x")
+        path.chmod(stat.S_IREAD)
+    remove_tree(root)
+    assert not root.exists()

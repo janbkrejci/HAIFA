@@ -4,10 +4,17 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import shutil
+import stat
 import subprocess
+import sys
 import tempfile
 import threading
+import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -264,6 +271,95 @@ catalog, bounded repeats only. Never invent models or roles. Return ONLY JSON ma
 this schema (status must be success, reason nonempty, YAML null for existing):\n"""
 
 
+ADVICE_PREFIX = "factory-advice-"
+# The save step uses its own short-lived "factory-advice-save-" directories.
+_SAVE_PREFIX = "factory-advice-save-"
+_OWNER = "owner.pid"
+# A directory without an owner file (written right after creation, or by an older HAIFA)
+# is an orphan only once it is clearly not being set up at this moment.
+_UNOWNED_GRACE = 3600.0
+_active_lock = threading.Lock()
+_active: set[Path] = set()
+
+
+def remove_tree(path: Path) -> None:
+    """Delete ``path`` recursively, including read-only files (git objects on Windows)."""
+
+    def writable(func: Any, name: str, *_: Any) -> None:
+        try:
+            os.chmod(name, stat.S_IWRITE | stat.S_IREAD | stat.S_IEXEC)
+            func(name)
+        except FileNotFoundError:
+            pass
+
+    if sys.version_info >= (3, 12):
+        shutil.rmtree(path, onexc=writable)
+    else:
+        shutil.rmtree(path, onerror=writable)
+
+
+def _orphaned(path: Path, now: float) -> bool:
+    if path in _active:
+        return False
+    try:
+        owner = int((path / _OWNER).read_text().strip())
+    except (OSError, ValueError):
+        try:
+            return now - path.stat().st_mtime > _UNOWNED_GRACE
+        except OSError:
+            return False
+    # The same process tracks its running advice in _active; another process owns its
+    # directories while it lives.
+    return owner == os.getpid() or not oscompat.alive(owner)
+
+
+def cleanup_orphans(root: Path | None = None) -> list[Path]:
+    """Remove ``factory-advice-*`` directories left by advice whose process ended."""
+    base = Path(root or tempfile.gettempdir())
+    removed: list[Path] = []
+    try:
+        entries = list(base.iterdir())
+    except OSError:
+        return removed
+    now = time.time()
+    for path in entries:
+        name = path.name
+        if not name.startswith(ADVICE_PREFIX) or name.startswith(_SAVE_PREFIX):
+            continue
+        with _active_lock:
+            orphan = not path.is_symlink() and path.is_dir() and _orphaned(path, now)
+        if not orphan:
+            continue
+        try:
+            remove_tree(path)
+        except OSError:
+            continue
+        removed.append(path)
+    return removed
+
+
+@contextmanager
+def advice_dir() -> Iterator[Path]:
+    """A temporary directory for one advice; orphans of ended processes are removed first."""
+    cleanup_orphans()
+    with _active_lock:
+        path = Path(tempfile.mkdtemp(prefix=ADVICE_PREFIX))
+        _active.add(path)
+    try:
+        (path / _OWNER).write_text(str(os.getpid()))
+        yield path
+    finally:
+        try:
+            remove_tree(path)
+        except OSError:
+            # Still locked (e.g. by a lingering agent process on Windows): the owner is this
+            # process and the directory is no longer active, so the next cleanup removes it.
+            pass
+        finally:
+            with _active_lock:
+                _active.discard(path)
+
+
 def recommend(
     repo: Path, ctx: dict[str, Any], job_id: str, cancelled: threading.Event
 ) -> dict[str, Any]:
@@ -283,8 +379,8 @@ def recommend(
     role = rc.config.roles.roles.get("plan")
     if role is None:
         raise UsageError("configured plan role is missing")
-    with tempfile.TemporaryDirectory(prefix="factory-advice-") as tmp:
-        isolated = Path(tmp) / "repo"
+    with advice_dir() as tmp:
+        isolated = tmp / "repo"
         # --shared borrows the objects instead of copying them all; the agent cannot write
         # through the alternates link, and the clone lives only for this job.
         subprocess.run(
