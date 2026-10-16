@@ -1,7 +1,7 @@
 ---
 id: HEAL-S02-T03
 title: "Vyčerpaná kvóta: pokračovat na záložním harnessu"
-status: todo
+status: done
 depends_on: [HEAL-S01-T01]
 related: [HEAL-S02-T04, HAIFA-S02-T05]
 writes: [aifactory/, docs/decisions.md]
@@ -24,3 +24,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/74 · náklady $8.33
