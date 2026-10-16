@@ -104,3 +104,39 @@ def test_factory_check_reports_unenforced_restriction() -> None:
     assert findings[0].severity == "warning"
     assert "'reviewer'" in findings[0].message and "codex" in findings[0].message
     assert list(check_rule(SimpleNamespace(roster=None))) == []  # type: ignore[arg-type]
+
+
+def test_claude_read_only_agent_runs_only_allowed_commands(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.engine.data_types import AgentRequest
+
+    seen: list[list[str]] = []
+
+    class Spawned(Exception):
+        pass
+
+    def popen(cmd: list[str], **kwargs: Any) -> Any:
+        seen.append(cmd)
+        raise Spawned
+
+    monkeypatch.setattr("aifactory.engine.agent_cc.subprocess.Popen", popen)
+    request = AgentRequest(
+        prompt="x",
+        system_prompt="s",
+        model="sonnet",
+        session_id="guide-1",
+        session_dir=str(tmp_path),
+        raw_output_path=str(tmp_path / "raw.jsonl"),
+        tools=["bash"],
+        allowed_commands=["./guide", "./guide *"],
+        cwd=str(tmp_path),
+    )
+    with pytest.raises(Spawned):
+        agent_cc.run(request)
+    (cmd,) = seen
+    assert cmd[cmd.index("--permission-mode") + 1] == "dontAsk"
+    assert cmd[cmd.index("--tools") + 1] == "Bash"
+    at = cmd.index("--allowedTools")
+    assert cmd[at + 1 : at + 3] == ["Bash(./guide)", "Bash(./guide *)"]
+    assert cmd[at + 3].startswith("--")

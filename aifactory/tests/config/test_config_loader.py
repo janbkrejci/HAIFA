@@ -21,6 +21,7 @@ def test_sample_config_loads(tmp_path: Path) -> None:
         "planner",
         "builder",
         "documenter",
+        "guide",
         "reviewer",
         "scout",
         "test-reviewer",
@@ -148,6 +149,7 @@ def test_missing_agents_inherits_the_whole_roster(tmp_path: Path) -> None:
     assert {a.name for a in config.agents.agents} == {
         "builder",
         "documenter",
+        "guide",
         "planner",
         "reviewer",
         "scout",

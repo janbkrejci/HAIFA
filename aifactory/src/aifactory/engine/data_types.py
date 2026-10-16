@@ -506,6 +506,9 @@ class PiRequest(BaseModel):
     extensions: list[str] = Field(default_factory=list)
     disallowed_commands: list[str] = Field(default_factory=list)  # shell commands the agent may not run
     cwd: str = "."                  # set from run.repo_root — the codebase root agents work in
+    # aifactory 3.5: non-empty = a read-only agent that may run only these shell commands
+    # (claude: --permission-mode dontAsk with allow rules; codex: read-only sandbox).
+    allowed_commands: list[str] = Field(default_factory=list)
 
 
 class UsageBreakdown(BaseModel):
