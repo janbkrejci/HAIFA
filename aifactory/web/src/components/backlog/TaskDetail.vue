@@ -4,7 +4,6 @@ import {
   AlertTriangle,
   Ban,
   CheckCircle2,
-  FileText,
   GitPullRequest,
   History,
   Info,
@@ -41,7 +40,6 @@ import RunDialog from './RunDialog.vue'
 import StateChip from './StateChip.vue'
 import TaskDocuments from './TaskDocuments.vue'
 import TaskForm from './TaskForm.vue'
-import MarkdownView from '@/components/ui/MarkdownView.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import CodeTip from '@/components/ui/CodeTip.vue'
 import { useLevels, useNames } from '@/lib/names'
@@ -326,13 +324,8 @@ function onEdit(input: EditTaskInput) {
         />
         <template v-else>
           <IssueList v-if="error" :message="error.message" :issues="error.issues" />
-          <section class="card">
-            <h3><FileText :size="16" /> Zadání</h3>
-            <MarkdownView :source="detail.body" empty="Zadání je prázdné." data-test="body" />
-          </section>
+          <TaskDocuments :task-id="task.id" :body="detail.body" />
         </template>
-
-        <TaskDocuments :task-id="task.id" />
 
         <section class="card">
           <h3><History :size="16" /> Běhy <span class="count">{{ detail.runs.length }}</span></h3>

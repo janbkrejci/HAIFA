@@ -434,11 +434,12 @@ describe('TaskDetail', () => {
     expect(banner.text()).toContain('Task je hotový, znovu se nespouští.')
   })
 
-  it('replaces the body with the edit form while editing', async () => {
+  it('replaces the body and documents card with the edit form while editing', async () => {
     const wrapper = detailWrapper()
-    expect(wrapper.find('.mdview[data-test="body"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="task-documents"] .mdview[data-test="body"]').exists()).toBe(true)
     await wrapper.get('[data-test="edit"]').trigger('click')
     expect(wrapper.find('.mdview').exists()).toBe(false)
+    expect(wrapper.find('[data-test="task-documents"]').exists()).toBe(false)
     expect(wrapper.find('form').exists()).toBe(true)
   })
 })
