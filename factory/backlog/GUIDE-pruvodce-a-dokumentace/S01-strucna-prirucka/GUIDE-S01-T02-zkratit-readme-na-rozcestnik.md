@@ -1,7 +1,7 @@
 ---
 id: GUIDE-S01-T02
 title: Zkrátit README na rozcestník
-status: todo
+status: done
 depends_on: [GUIDE-S01-T01]
 writes: [README.md]
 ---
@@ -19,3 +19,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/66 · náklady $0.78
