@@ -63,6 +63,7 @@ from aifactory.library.inherit import copy_library_items
 from aifactory.providers import GitProvider, ProviderError, get_provider
 from aifactory.providers import git as provider_git
 from aifactory.run import basemoves, followups, gitops
+from aifactory.run.accept import accept_failure
 from aifactory.run.errors import TaskRunError
 from aifactory.run.followups import FollowUpOutcome
 from aifactory.run.guard import TaskWriteGuard
@@ -839,13 +840,8 @@ def _execute(
         )
         raise
     if error is None and wf is not None and not (wf.accepted and wf.exit_code == 0):
-        error = "accept not met"
         failure_kind = failures.ACCEPT_NOT_MET
-        failure_detail = {
-            "accept": workflow.accept.source if workflow.accept is not None else None,
-            "accepted": wf.accepted,
-            "exit_code": wf.exit_code,
-        }
+        error, failure_detail = accept_failure(workflow, wf)
     if resolve is not None:
         before_resolve = error
         error = _finish_resolve(worktree, wf, row.task_id, resolve, error)

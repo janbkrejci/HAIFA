@@ -225,6 +225,7 @@ class WorkflowRun:
     phases: list[tuple[str, str, str]] = field(default_factory=list)  # (name, kind, owner)
     warnings: list[str] = field(default_factory=list)
     history: list[tuple[str, Any]] = field(default_factory=list)  # (key, envelope), oldest first
+    rounds: dict[str, int] = field(default_factory=dict)  # Repeat.path -> iterations that ran
 
 
 def unenforced_restrictions(workflow: Workflow, cfg: dt.SSSFConfig) -> list[str]:
@@ -312,6 +313,7 @@ class _Interpreter:
         self.plan_repairs = 0
         self.test_fixes = 0
         self.reviewing_plan = False
+        self.rounds: dict[str, int] = {}  # Repeat.path -> the latest iteration that started
 
     # -- helpers --
 
@@ -483,6 +485,7 @@ class _Interpreter:
         """Run the body up to ``max`` times; see the module docstring for ``until``."""
         for i in range(1, step.max + 1):
             last = i == step.max
+            self.rounds[step.path] = i
             for index, inner in enumerate(step.steps):
                 ran = self.dispatch(inner, (*suffix, i))
                 # `until` is checked after every step of the body, which is what
@@ -869,4 +872,5 @@ def run_workflow(
         phases=[(p.params.name, p.params.kind, p.params.owner) for p in run.phases],
         warnings=warnings,
         history=list(interp.history),
+        rounds=dict(interp.rounds),
     )

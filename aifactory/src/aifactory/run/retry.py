@@ -18,9 +18,9 @@ What the retry does, in order; any refusal before the claim changes nothing:
    with that error.
 3. Reads the configuration, the backlog and the task's workflow from the current base.
 4. Picks the phase to continue from (``plan_retry``): the phase that failed or was
-   stopped (the journal's ``current``); after ``accept not met`` the top-level step whose
-   result failed ``accept`` (a review loop gets a new round); with ``--from`` the named
-   phase. A phase whose step the current workflow lacks starts the workflow from its
+   stopped (the journal's ``current``); after an ``accept_not_met`` failure the top-level
+   step whose result failed ``accept`` (a review loop gets a new round); with ``--from``
+   the named phase. A phase whose step the current workflow lacks starts the workflow from its
    first phase, with a warning.
 5. Claims the run again (``TaskRunStore.reclaim``).
 6. When base moved past the branch, rebases the branch onto it (uncommitted work is
@@ -43,6 +43,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from aifactory import failure as failures
 from aifactory.backlog import Task, load_backlog
 from aifactory.backlog.derived import is_done
 from aifactory.config import ProjectSettings
@@ -82,7 +83,7 @@ from aifactory.workflow.rebase import rebase_onto
 if TYPE_CHECKING:  # task.py imports this module at run time
     from aifactory.run.task import TaskRunResult
 
-ACCEPT_NOT_MET = "accept not met"  # the error ``task._execute`` records
+ACCEPT_NOT_MET = "accept not met"  # the error of a resolve whose accept failed
 _REVIEW_OUTPUT = "ReviewOutput"
 _OVERRIDE_TAG = re.compile(r"\[přepis rosteru: ([^\]]*)\]")
 
@@ -158,16 +159,21 @@ def plan_retry(
     error: str | None,
     from_phase: str | None = None,
     rebased: bool = False,
+    failure_kind: str | None = None,
 ) -> RetryPlan:
     """The replay limit and resume phase of a retry (see the module docstring, step 4)."""
     entries = journal.entries
     warnings: list[str] = []
     if from_phase:
         limit = _from_phase(journal, from_phase.strip(), run_id)
-    elif error == ACCEPT_NOT_MET or (
-        journal.current is None
-        and workflow.accept is not None
-        and not evaluate(workflow.accept.node, _results(journal))
+    elif (
+        failure_kind == failures.ACCEPT_NOT_MET
+        or error == ACCEPT_NOT_MET
+        or (
+            journal.current is None
+            and workflow.accept is not None
+            and not evaluate(workflow.accept.node, _results(journal))
+        )
     ):
         limit = _accept_target(journal, workflow)
     else:
@@ -407,6 +413,7 @@ def retry_run(
             error=row.error,
             from_phase=from_phase,
             rebased=rebase,
+            failure_kind=row.failure_kind,
         )
         warnings += plan.warnings
         prompt = run_mod.task_prompt(task, scope, outputs, worktree, row.note)

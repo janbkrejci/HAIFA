@@ -1753,8 +1753,8 @@ task resume: the paused run goes on with its next phase (a pending pause is drop
 task retry: continues the task's newest failed, stopped or aborted run (or --run) as its
   next attempt: same run id, worktree, branch and trace (tokens and costs add up). Done
   phases are not repeated; the run goes on from the phase that failed or was stopped, after
-  'accept not met' from the step whose result failed accept (a review gets a new round),
-  or from --from PHASE. Agents rejoin their sessions; --note goes to every agent of the
+  an accept_not_met failure from the step whose result failed accept (a review gets a new
+  round), or from --from PHASE. Agents rejoin their sessions; --note goes to every agent of the
   continuing phases. Base is pulled from the remote first (as 'config pull'); when it moved
   past the branch, the branch is rebased onto it, a conflict resolved like 'task resolve',
   and the tests run again before any review. Refused: a task merged or done (task_done), a

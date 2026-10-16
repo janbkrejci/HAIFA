@@ -136,7 +136,9 @@ What to do with the common ones:
   `writes_violation`, `invalid_output`, `process_gone`, `stopped`, `other`), its facts in
   `data.run.failure_detail` and the text in `data.run.error`; `factory task runs ID --json`
   and `factory task show ID --json` give them for every run (a run recorded before the
-  field reads as `other`). The worktree and branch are kept. Continue the run
+  field reads as `other`). For `accept_not_met` the detail holds `accept`, the `values`
+  of the fields it reads, the `rounds` of each `repeat`, the latest review `objections`
+  and the test's `failed_checks`; `error` names the first of them in one sentence. The worktree and branch are kept. Continue the run
   where it ended with `factory task retry ID --note TEXT --json` (see Procedures, Retry), or
   start over with `factory task run ID --note TEXT --json`.
 - `run_not_retryable`, `task_done`: see Procedures, Retry.
@@ -758,7 +760,7 @@ task's newest `failed`, `stopped` or `aborted` run (or `--run`) as its next atte
    `rebased_onto`.
 2. Done phases are not repeated: their results are replayed from the run's phase journal
    (`<session>/workflow_journal.json`). The run continues from the phase that failed or
-   was stopped; after `accept not met` from the top-level step whose result failed
+   was stopped; after `accept_not_met` from the top-level step whose result failed
    `accept` (a review loop gets a new round); with `--from` from that phase (a phase name
    like `review_2` or a step like `review`, `unknown_phase` otherwise).
 3. Every agent rejoins its coding-agent session when its model is unchanged. The prompt

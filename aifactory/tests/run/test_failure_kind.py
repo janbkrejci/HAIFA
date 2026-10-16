@@ -135,10 +135,13 @@ def test_accept_not_met(repo: Path, script: Script) -> None:
     commit_all(repo, "accept the plan only when approved")
     script.add("planner", ok())
     data = _failed(repo)
-    assert data["error"] == "accept not met"
+    assert data["error"] == (
+        "Podmínka accept `plan.summary == 'approved'` nesplněna: plan.summary='done'"
+    )
     assert data["failure_kind"] == failure.ACCEPT_NOT_MET
     detail = data["failure_detail"]
     assert isinstance(detail, dict) and detail["accept"] == "plan.summary == 'approved'"
+    assert detail["values"] == {"plan.summary": "done"} and detail["rounds"] == []
 
 
 def test_succeeded_run_has_no_failure(repo: Path, script: Script) -> None:
