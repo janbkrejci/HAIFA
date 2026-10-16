@@ -51,6 +51,7 @@ Když base přijímá změny jen přes pull request, nastav repu `base_changes: 
 | `worktrees_dir` | `.factory/worktrees` | Kam se zakládají worktree běhů. |
 | `protected_files` | `[".factory/"]` | Cesty, které agenti nesmějí měnit. |
 | `max_parallel_runs` | `1` | Souběžné běhy jednoho řetězu auto-continue. |
+| `stacked_prs` | `false` | Task, jehož závislosti čekají jen v otevřených PR, se spustí z větve PR závislosti a nečeká na její merge. Jeho PR se mergne až po závislosti, předtím ho factory přebázuje na base. |
 | `test_timeout` | 600 s | Časový limit kroku testů (task ho může přepsat). |
 | `test_slots` | `1` | Kolik kroků testů smí běžet zároveň na počítači. |
 | `generated` | — | Generované soubory `{path, command, timeout}`, které se při řešení konfliktu přegenerují. |

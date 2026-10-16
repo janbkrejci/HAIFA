@@ -10,7 +10,7 @@ from aifactory.config import ProjectSettings
 
 VALID_STATUSES: tuple[str, ...] = ("todo", "done", "cancelled")
 # computed from `depends_on`, never stored in a file
-DERIVED_STATES: tuple[str, ...] = ("ready", "blocked")
+DERIVED_STATES: tuple[str, ...] = ("ready", "blocked", "human")
 INHERITED_KEYS: tuple[str, ...] = (
     "harness",
     "model",
@@ -20,7 +20,11 @@ INHERITED_KEYS: tuple[str, ...] = (
     "writes",
     "auto_continue",
     "auto_merge",
+    "assignee",
 )
+# who does a task: an agent run (the default) or a person; a person's task never runs
+ASSIGNEES: tuple[str, ...] = ("agent", "human")
+HUMAN = "human"
 # inherited keys whose value must be ``true`` or ``false``
 FLAG_KEYS: tuple[str, ...] = ("auto_continue", "auto_merge")
 LIST_FIELDS: tuple[str, ...] = ("depends_on", "related", "writes")

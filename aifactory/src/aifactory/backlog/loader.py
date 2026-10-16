@@ -11,6 +11,7 @@ from pathlib import Path
 
 from aifactory.backlog.frontmatter import FrontmatterError, parse_frontmatter
 from aifactory.backlog.model import (
+    ASSIGNEES,
     FLAG_KEYS,
     INDEX_FILE,
     INHERITED_KEYS,
@@ -170,6 +171,9 @@ class _Loader:
                     if key in FLAG_KEYS and not _flag(value):
                         self.issue("invalid_field", _flag_message(key), index, container.id)
                         continue
+                    if key == "assignee" and not _assignee(value):
+                        self.issue("invalid_field", _ASSIGNEE_MESSAGE, index, container.id)
+                        continue
                     if key == "test_timeout" and (problem := _timeout_issue(value)) is not None:
                         # Kept: a task inheriting it must fail, not fall back to 600 s.
                         self.issue("invalid_field", problem, index, container.id)
@@ -231,6 +235,9 @@ class _Loader:
             if not _flag(own.get(key)):
                 self.issue("invalid_field", _flag_message(key), path, task_id)
                 own.pop(key)
+        if not _assignee(own.get("assignee")):
+            self.issue("invalid_field", _ASSIGNEE_MESSAGE, path, task_id)
+            own.pop("assignee")
         if (problem := _timeout_issue(own.get("test_timeout"))) is not None:
             # Kept: running the task must fail, not fall back to an inherited limit.
             self.issue("invalid_field", problem, path, task_id)
@@ -282,6 +289,14 @@ def _timeout_issue(value: object) -> str | None:
             f"field 'test_timeout' must be a whole number of seconds greater than 0, got {value!r}"
         )
     return None
+
+
+_ASSIGNEE_MESSAGE = f"field 'assignee' must be one of {', '.join(ASSIGNEES)}"
+
+
+def _assignee(value: object) -> bool:
+    """A valid ``assignee``: missing (``None``) or one of ``ASSIGNEES``."""
+    return value is None or value in ASSIGNEES
 
 
 def _flag(value: object) -> bool:

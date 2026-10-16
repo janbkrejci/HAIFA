@@ -237,7 +237,9 @@ def test_empty_commit_does_not_fail(repo: Path, script: Script) -> None:
     assert result.run.state == "succeeded", result.run.error
     assert result.workflow_run is not None
     assert result.workflow_run.results["commit"]["committed"] is False
-    assert git(repo, "rev-parse", result.run.branch) == git(repo, "rev-parse", "main")
+    assert git(repo, "rev-parse", result.run.branch) == result.run.base_sha
+    # nothing to publish: the task is done in main without a PR (run/unchanged.py)
+    assert result.done_without_pr and result.pr is None
 
 
 def _row(run_id: str, pid: int) -> TaskRunRow:

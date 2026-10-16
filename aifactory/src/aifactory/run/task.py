@@ -38,6 +38,7 @@ from aifactory.backlog import (
     effective_test_timeout,
     effective_workflow,
     has_workflow,
+    is_human,
     load_backlog,
     unmet,
 )
@@ -80,6 +81,7 @@ from aifactory.run.scope import (
     output_paths,
     task_scope,
 )
+from aifactory.run.stack import stack_point
 from aifactory.run.store import (
     FAILED,
     RUNNING,
@@ -91,6 +93,7 @@ from aifactory.run.store import (
     _now,
     already_running,
 )
+from aifactory.run.unchanged import finish_unchanged, unchanged
 from aifactory.run.workdir import agent_workdir, project_workdir, validate_base_dirs
 from aifactory.workflow import (
     DEFAULT_WORKFLOWS_DIR,
@@ -131,6 +134,8 @@ class TaskRunResult:
     resolve_run: TaskRunResult | None = None
     # new work and blockers the run's agents reported, filed in the backlog (followups.py)
     follow_ups: FollowUpOutcome | None = None
+    # the run changed nothing, so the task was marked done without a PR (run/unchanged.py)
+    done_without_pr: bool = False
 
     @property
     def ok(self) -> bool:
@@ -504,6 +509,7 @@ def run_task(
             existing_pr = store.pr_for_branch(branch)
             if existing_pr is not None:
                 fork_sha = existing_pr.base_sha
+        fork_base = fork_sha
         if resolve_onto is not None:
             fork_sha = resolve_onto
         with tempfile.TemporaryDirectory(prefix="factory-base-") as tmp:
@@ -527,11 +533,26 @@ def run_task(
             busy = store.running(task_id)
             if busy is not None:
                 raise already_running(busy)
+            if resolve_onto is None and is_human(task):
+                raise TaskRunError(
+                    "human_task", f"task {task.id} is for a person (assignee: human), not a run"
+                )
             if resolve_onto is None and workflow_name is None and not has_workflow(task):
                 raise no_workflow_error(task)
+            stacked: str | None = None
             if not force:
                 blocked = _unmet_error(backlog, task, rc.base)
-                if blocked is not None:
+                stack = (
+                    stack_point(main, backlog, task, store)
+                    if blocked is not None and settings.stacked_prs and branch is None
+                    else None
+                )
+                if stack is not None:
+                    # the dependencies wait in open PRs: fork from the newest of them
+                    point, prs = stack
+                    fork_sha, stacked = point.sha, point.branch
+                    note = f"{note}\n\n{point.note(prs)}" if note else point.note(prs)
+                elif blocked is not None:
                     raise blocked
             outputs = output_paths(task, settings)
             workdir = project_workdir(settings)
@@ -579,8 +600,17 @@ def run_task(
                 Generated(path=g.path, argv=g.command, timeout=g.timeout)
                 for g in settings.generated
             )
+            upstream = (
+                fork_base
+                if fork_base and not provider_git.is_ancestor(main, fork_base, resolve_onto)
+                else None
+            )
             resolve = ResolveSpec(
-                onto=resolve_onto, before=before, base=rc.base, generated=generated
+                onto=resolve_onto,
+                before=before,
+                base=rc.base,
+                generated=generated,
+                upstream=upstream,
             )
             prompt = resolve_prompt(
                 task, worktree, rc.base, resolve_onto, tuple(g.path for g in generated)
@@ -609,6 +639,7 @@ def run_task(
             note=note,
             started_by=started_by,
             library_commit=rc.config.library,
+            stacked_on=stacked,
         )
         store.claim(row)
         return _execute(
@@ -692,7 +723,7 @@ def _execute(
                     "-b",
                     row.branch,
                     str(worktree),
-                    rc.commit,
+                    row.base_sha,
                 )
             else:
                 if job.retry is not None:
@@ -724,6 +755,8 @@ def _execute(
     }
     if resolve is not None:
         variables["rebase_onto"] = resolve.onto
+        if resolve.upstream:
+            variables["rebase_upstream"] = resolve.upstream
     retry = job.retry
     journal: Journal | None = None
     if retry is not None:
@@ -814,6 +847,20 @@ def _execute(
         trace_db=store.db_path,
         follow_ups=follow,
     )
+    if (
+        state == SUCCEEDED
+        and resolve is None
+        and store.pr_for_branch(final.branch) is None
+        and unchanged(final)
+    ):
+        failure, notes = finish_unchanged(main, store, final)
+        result.warnings += tuple(notes)
+        if failure is not None:
+            result.pr_error = failure
+            store.set_pr_error(final.run_id, failure)
+        else:
+            result.done_without_pr = True
+        return result
     if state == SUCCEEDED:
         # Local import: aifactory.review imports aifactory.run.
         from aifactory.review.publish import publish, run_pr_body

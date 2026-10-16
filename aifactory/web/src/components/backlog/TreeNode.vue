@@ -162,7 +162,7 @@ function openTask(event: MouseEvent) {
         <span class="id">{{ node.id }}</span>
         <span class="title">{{ node.title }}</span>
       </a>
-      <StateChip :state="node.board_state" :blocked-by="node.blocked_by" />
+      <StateChip :state="node.board_state" :blocked-by="node.blocked_by" :waits-for-human="node.waits_for_human" />
       <span v-if="node.invalid" class="warn" data-test="invalid">neplatný status</span>
       <span class="workflow" :class="{ faint: !node.workflow }">
         {{ node.workflow ?? 'bez workflow' }}

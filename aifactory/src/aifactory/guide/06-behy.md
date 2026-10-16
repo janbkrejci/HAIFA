@@ -63,7 +63,9 @@ Po úspěšném workflow HAIFA odešle větev a otevře pull request; task je ve
 
 ## Nedodělky a blokace
 
-Agenti nenechávají nedodělky v repu (žádné TODO soubory, seznamy otevřených bodů ani komentáře „dodělat později“). Práci, která se do tasku nevejde, ohlásí ve své odpovědi (`follow_ups`) a HAIFA ji založí jako nový task ve stepu **TODO** projektu (step založí, když chybí). Task uvádí, z jakého běhu a tasku vznikl a proč. Když nová práce potřebuje měnit cesty mimo povolené cesty tasku, agent je uvede ve follow-upu (`writes`) a nový task je dostane jako vlastní `writes`. Změny backlogu HAIFA commitne do base.
+Agenti nenechávají nedodělky v repu (žádné TODO soubory, seznamy otevřených bodů ani komentáře „dodělat později“). Práci, která se do tasku nevejde, ohlásí ve své odpovědi (`follow_ups`) a HAIFA ji založí jako nový task ve stepu **TODO** projektu (step založí, když chybí). Task uvádí, z jakého běhu a tasku vznikl a proč. Když nová práce potřebuje měnit cesty mimo povolené cesty tasku, agent je uvede ve follow-upu (`writes`) a nový task je dostane jako vlastní `writes`. Dokumentační follow-up dostane workflow `build-review` (bez testů). Práci, kterou může udělat jen člověk (úprava backlogu, přístupy, externí systém), založí HAIFA jako task pro člověka (`assignee: human`): žádný běh ho nespustí, v backlogu je ve stavu **Pro člověka** a až ho uděláš, označ ho v detailu tasku tlačítkem **Hotovo**. Task, který na něj čeká, ukazuje **Čeká na člověka**.
+
+Běh, který skončí úspěšně, ale na větvi nenechá žádný commit (práce už je v base), PR nezakládá a task rovnou označí jako hotový. Změny backlogu HAIFA commitne do base.
 
 Když agent ohlásí, že task nejde dokončit, dokud není hotová jiná práce (nový TODO task s `blocks_task` nebo existující task v `blocked_by`), dostane task `depends_on` na blokující task a běh skončí jako **chyba** s důvodem `blocked: …`. Pull request se neotevře, task se neoznačí za hotový a nemerguje se. Až bude blokující task hotový, spusť task znovu.
 
@@ -90,6 +92,8 @@ Panel **Řetěz** na záložce Běhy ukazuje stav řetězu, obsazené sloty, př
 ## Souběžné běhy
 
 `max_parallel_runs` v konfiguraci repa (v dashboardu **Souběžné běhy auto-continue**, výchozí 1) určuje, kolik slotů pro tasky má repo. Slot obsazuje task s živým během a také task, jehož PR je otevřený a nesloučený (čeká na review); task s během i otevřeným PR zabere jen jeden slot. Slot se uvolní, až když se PR sloučí nebo zavře, nebo když task skončí bez PR (selhal, je zablokovaný nebo zastavený). Podle toho plní sloty paralelní řetěz i **Spustit továrnu** v Přehledu a tak počítá volné sloty i dashboard. Když volné sloty drží PR čekající na review, další připravený task se přeskočí s důvodem `no_slot` a výčtem těch PR. Task se spustí souběžně, jen když se jeho writes nepřekrývají s běžícími běhy ani se soubory otevřených PR; task s širokými writes (celé repo nebo balíček) běží sám. Kroky testů se navíc střídají v `test_slots` slotech na počítač (výchozí 1).
+
+Se `stacked_prs: true` v konfiguraci repa task, jehož závislosti čekají jen v otevřených PR, nečeká na jejich merge: běh začne z větve PR závislosti a jeho PR na ni navazuje (v popisu PR je odkaz). Schválit ho jde až po závislosti a auto-merge na ni počká. Po merge závislosti ho HAIFA sama přebázuje na base (při konfliktu workflow `resolve`) a s `auto_merge` ho mergne.
 
 ## Bezpečnost běhu
 

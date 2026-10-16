@@ -474,6 +474,12 @@ body button.btn-improve:disabled {
   background: rgba(90, 210, 221, 0.08);
 }
 
+.state-chip.state-human {
+  color: var(--red);
+  border-color: rgba(255, 111, 103, 0.5);
+  background: rgba(255, 111, 103, 0.09);
+}
+
 .state-chip.state-blocked {
   color: var(--amber);
   border-color: rgba(232, 182, 74, 0.45);

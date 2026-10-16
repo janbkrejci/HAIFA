@@ -3,9 +3,13 @@ name: Test and release
 on:
   push:
     branches: [main]
-    # backlog and the operator's .factory/ change no product code: no tests, no new release
-    paths-ignore: ['factory/backlog/**', '.factory/**']
+    # backlog, task specs and docs, decisions and the operator's .factory/ change no
+    # product code: no tests, no new release
+    paths-ignore: ['factory/**', 'docs/**', '.factory/**']
   pull_request:
+    # a PR that changes only these (a documentation task) needs no test run; approve and
+    # auto-merge merge a PR without checks
+    paths-ignore: ['factory/**', 'docs/**', '.factory/**']
   workflow_dispatch:
 
 permissions:

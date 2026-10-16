@@ -76,13 +76,17 @@ class Phase(BaseModel):
 # the project's TODO step (run/followups.py). `blocks_task`: this task cannot be done
 # before the new one, so the run fails as blocked and the task gets `depends_on` on it.
 # aifactory 3.3: `writes` becomes the new task's own `writes` (it replaces the inherited
-# value), for work outside this task's allowed paths; None inherits.
+# value), for work outside this task's allowed paths; None inherits. `for_human`: only a
+# person can do it (the task gets `assignee: human`). `workflow`: the new task's own
+# workflow, e.g. `build-review` for a change that needs no tests; None inherits.
 class FollowUp(BaseModel):
     title: str = Field(min_length=1)
     reason: str = Field(min_length=1)   # what was found, where, and why it is not done here
     details: str = ""                   # what the new task must do (its task text)
     blocks_task: bool = False
     writes: Optional[list[str]] = None
+    for_human: bool = False
+    workflow: Optional[str] = None
 
 
 # aifactory 3.2: the summary of the whole PR for the person who approves it, written by

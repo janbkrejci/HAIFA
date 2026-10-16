@@ -57,6 +57,9 @@ class ResolveSpec:
     before: str
     base: str
     generated: tuple[Generated, ...] = ()
+    # the PR's fork point when base does not contain it (a stacked PR whose dependency
+    # was squashed into base): only the commits after it are rebased
+    upstream: str | None = None
 
 
 def resolve_prompt(

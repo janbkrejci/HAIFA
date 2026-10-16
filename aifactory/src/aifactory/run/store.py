@@ -110,7 +110,8 @@ CREATE TABLE IF NOT EXISTS task_runs (
   pr_error TEXT,
   library_commit TEXT,
   pr_body TEXT,
-  retries TEXT
+  retries TEXT,
+  stacked_on TEXT
 );
 CREATE INDEX IF NOT EXISTS task_runs_task ON task_runs(task_id);
 CREATE TABLE IF NOT EXISTS task_prs (
@@ -245,6 +246,7 @@ _COLUMNS = (
     "pr_error",
     "library_commit",
     "retries",
+    "stacked_on",
 )
 # columns added to task_runs after its first release; older DBs get them on open
 # (``pr_body``: the PR body a succeeded run could not send; not part of ``TaskRunRow``)
@@ -256,6 +258,7 @@ _RUN_ADDED_COLUMNS = {
     "pr_body": "TEXT",
     "library_commit": "TEXT",
     "retries": "TEXT",
+    "stacked_on": "TEXT",
 }
 # who started a run (``task_runs.started_by``)
 STARTED_MANUAL, STARTED_AUTO_CONTINUE, STARTED_AUTO_RESOLVE = (
@@ -298,6 +301,8 @@ class TaskRunRow:
     pr_error: str | None = None  # why a succeeded run has no PR (push or hosting failed)
     library_commit: str | None = None  # the library commit the run read; None: the seed
     retries: str | None = None  # JSON list of the run's retries (``retry_list``); None: none
+    # the branch of the dependency's open PR the run forked from (``stacked_prs``); None: base
+    stacked_on: str | None = None
 
     def retry_list(self) -> list[dict[str, Any]]:
         """One item per retry, oldest first (see the module docstring)."""

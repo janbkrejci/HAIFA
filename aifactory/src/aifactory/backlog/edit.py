@@ -40,6 +40,7 @@ code                                   exit  when
 from __future__ import annotations
 
 import contextlib
+import datetime
 import os
 import re
 import shutil
@@ -48,10 +49,20 @@ import unicodedata
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from aifactory.backlog.derived import is_human
 from aifactory.backlog.loader import iter_containers, load_backlog
-from aifactory.backlog.model import INDEX_FILE, Backlog, Container, Issue, Task, node_file
+from aifactory.backlog.model import (
+    ASSIGNEES,
+    INDEX_FILE,
+    Backlog,
+    Container,
+    Issue,
+    Task,
+    node_file,
+)
 from aifactory.backlog.roots import backlog_roots, owning_root
 from aifactory.backlog.taskfile import (
+    mark_done,
     new_index_text,
     new_task_text,
     remove_field,
@@ -298,6 +309,7 @@ def add_task(
     related: list[str] | None = None,
     body: str = "",
     parameters: dict[str, object] | None = None,
+    assignee: str | None = None,
 ) -> WriteResult:
     """Create a new ``todo`` task file in the directory of ``step``."""
     backlog = load_for_edit(root)
@@ -314,6 +326,7 @@ def add_task(
         )
     if workflow is not None and not workflow.strip():
         raise TaskEditError("invalid_value", "workflow must not be empty")
+    _check_assignee(assignee)
     if related and task_id in related:
         raise TaskEditError("self_ref", f"task '{task_id}' cannot relate to itself", id=task_id)
     name = f"{task_id}-{slug}.md" if slug else f"{task_id}.md"
@@ -324,6 +337,7 @@ def add_task(
         "id": task_id,
         "title": title,
         "status": "todo",
+        "assignee": assignee,
         "workflow": workflow,
         "depends_on": _dedupe(depends_on or []),
         "related": _dedupe(related) if related is not None else None,
@@ -334,6 +348,18 @@ def add_task(
         fields.update({k: v for k, v in parameters.items() if v is not None})
     text = new_task_text(fields, body)
     return _commit(backlog, check_backlog(backlog), {rel: text}, "add", rel, task_id)
+
+
+def _check_assignee(assignee: str | None) -> None:
+    if assignee is not None and assignee not in ASSIGNEES:
+        raise TaskEditError(
+            "invalid_value", f"assignee must be one of {', '.join(ASSIGNEES)}, got '{assignee}'"
+        )
+
+
+def human_done_entry() -> str:
+    """The ``## Běhy`` line of a task a person marked done."""
+    return f"- {datetime.date.today().isoformat()} · hotovo ručně"
 
 
 def _read(root: Path, task: Task) -> str:
@@ -366,12 +392,14 @@ def edit_task(
     depends_on: list[str] | None = None,
     related: list[str] | None = None,
     parameters: dict[str, object] | None = None,
+    assignee: str | None = None,
+    clear_assignee: bool = False,
 ) -> WriteResult:
     """Change header fields of a task: title, status (todo|cancelled), workflow, writes,
-    auto_merge (``clear_auto_merge`` removes the task's own value, so it inherits again)."""
-    if all(
-        v is None for v in (title, status, workflow, writes, body, depends_on, related, parameters)
-    ):
+    auto_merge (``clear_auto_merge`` removes the task's own value, so it inherits again),
+    assignee. ``status: done`` is set here only for a person's task (``assignee: human``)."""
+    given = (title, status, workflow, writes, body, depends_on, related, parameters, assignee)
+    if all(v is None for v in given) and not clear_assignee:
         if not clear_workflow and not clear_writes and auto_merge is None and not clear_auto_merge:
             raise TaskEditError("no_changes", "nothing to change, give at least one option")
     if workflow is not None and clear_workflow:
@@ -380,6 +408,9 @@ def edit_task(
         raise TaskEditError("conflicting_options", "--writes and --clear-writes are exclusive")
     if auto_merge is not None and clear_auto_merge:
         raise TaskEditError("conflicting_options", "--auto-merge and inherit are exclusive")
+    if assignee is not None and clear_assignee:
+        raise TaskEditError("conflicting_options", "--assignee and inherit are exclusive")
+    _check_assignee(assignee)
     backlog = load_for_edit(root)
     baseline = check_backlog(backlog)
     task = find_task(backlog, task_id, baseline)
@@ -388,7 +419,16 @@ def edit_task(
         if not title.strip():
             raise TaskEditError("invalid_value", "title must not be empty", id=task_id)
         text = _apply(text, "set", "title", title.strip())
-    if status is not None:
+    if status == "done" and task.status != "done":
+        if not is_human(task):
+            raise TaskEditError(
+                "invalid_status",
+                "'done' is set only by PR approval; a person's task (assignee: human) "
+                "can be marked done",
+                id=task_id,
+            )
+        text = mark_done(text, human_done_entry())
+    elif status is not None:
         if status not in EDITABLE_STATUSES:
             raise TaskEditError(
                 "invalid_status",
@@ -417,6 +457,10 @@ def edit_task(
         text = _apply(text, "set", "auto_merge", auto_merge)
     if clear_auto_merge:
         text = _apply(text, "remove", "auto_merge")
+    if assignee is not None:
+        text = _apply(text, "set", "assignee", assignee)
+    if clear_assignee:
+        text = _apply(text, "remove", "assignee")
     for key, values in (("depends_on", depends_on), ("related", related)):
         if values is not None:
             if task_id in values:
@@ -430,6 +474,21 @@ def edit_task(
     if body is not None:
         text = replace_body(text, body)
     return _commit(backlog, baseline, {task.path: text}, "edit", task.path, task_id)
+
+
+def complete_task(root: Path, task_id: str, entry: str) -> WriteResult:
+    """``status: done`` and `entry` in ``## Běhy`` for a task that ends without a PR.
+
+    For a run that found nothing to change and for a task done by a person. A cancelled
+    task is not completed; a done one comes back unchanged.
+    """
+    backlog = load_for_edit(root)
+    baseline = check_backlog(backlog)
+    task = find_task(backlog, task_id, baseline)
+    if task.status == "cancelled":
+        raise TaskEditError("invalid_status", "task is cancelled", id=task_id)
+    text = mark_done(_read(root, task), entry)
+    return _commit(backlog, baseline, {task.path: text}, "done", task.path, task_id)
 
 
 def link_task(

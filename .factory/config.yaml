@@ -2,3 +2,4 @@
 base: main
 git_provider: github
 docs_root: factory
+stacked_prs: true

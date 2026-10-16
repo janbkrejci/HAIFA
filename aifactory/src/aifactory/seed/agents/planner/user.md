@@ -43,6 +43,6 @@ Respond with ONLY valid JSON matching `PlanOutput` — no prose before or after:
 }
 ```
 
-`follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false, "writes": null}`; `blocked_by` holds ids of existing backlog tasks.
+`follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false, "writes": null, "for_human": false, "workflow": null}`; `blocked_by` holds ids of existing backlog tasks.
 
 The `artifacts` entry in the repo is exactly `{{spec_path}}`. Gates open these files — any other name fails them.

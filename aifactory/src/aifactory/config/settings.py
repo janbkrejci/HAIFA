@@ -258,6 +258,14 @@ class ProjectSettings(BaseModel):
             "their timeout."
         ),
     )
+    stacked_prs: bool = Field(
+        default=False,
+        strict=True,
+        description=(
+            "A task whose dependencies wait only in open pull requests starts from the "
+            "dependency's PR branch; its PR is rebased onto base and merged after theirs."
+        ),
+    )
     max_parallel_runs: int = Field(
         default=1,
         ge=1,

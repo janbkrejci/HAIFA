@@ -90,6 +90,9 @@ const NO_WORKFLOW_HINT = computed(() => {
   return `${levelLabel(level.task.value)} nemá workflow – nastav ho na ${list}.`
 })
 const noWorkflow = computed(() => !task.value.workflow)
+/** A person's task (`assignee: human`): no run starts it, the person marks it done. */
+const forHuman = computed(() => task.value.assignee === 'human')
+const HUMAN_HINT = 'Task udělá člověk, factory ho nespustí. Až bude hotový, označ ho jako hotový.'
 /** A done or cancelled task never runs again. */
 const finished = computed(() => ['done', 'cancelled'].includes(task.value.board_state))
 const runTooltip = computed(() => {
@@ -97,9 +100,10 @@ const runTooltip = computed(() => {
     const noun = levelLabel(level.task.value)
     return task.value.board_state === 'done' ? `${noun} je hotový, znovu se nespouští.` : `${noun} je zrušený, nespouští se.`
   }
+  if (forHuman.value) return HUMAN_HINT
   return noWorkflow.value ? NO_WORKFLOW_HINT.value : ''
 })
-const runBlocked = computed(() => noWorkflow.value || finished.value)
+const runBlocked = computed(() => noWorkflow.value || finished.value || forHuman.value)
 /** The task can wait in the auto-continue queue (it has not started). */
 const queueable = computed(() => DEFERRABLE_STATES.includes(task.value.board_state))
 /** Advice is offered only for a task that has not started. */
@@ -134,8 +138,10 @@ const readiness = computed<Readiness>(() => {
       runId: props.detail.runs[0]?.run_id ?? null,
     }
   }
+  if (state === 'human') return { tone: 'muted', title: HUMAN_HINT, reasons: [], runId: null }
   const reasons: string[] = []
-  if (noWorkflow.value) reasons.push(NO_WORKFLOW_HINT.value)
+  if (forHuman.value) reasons.push(HUMAN_HINT)
+  else if (noWorkflow.value) reasons.push(NO_WORKFLOW_HINT.value)
   for (const u of task.value.blocked_by) reasons.push(unmetLine(u, names.value))
   if (task.value.invalid || props.detail.issues.length) reasons.push('Soubor má chyby – oprav je před spuštěním.')
   if (!reasons.length) return { tone: 'ok', title: 'Připraveno ke spuštění', reasons, runId: null }
@@ -199,7 +205,7 @@ function onEdit(input: EditTaskInput) {
       <div class="title-row">
         <span class="id" data-test="task-id">{{ task.id }}</span>
         <h2 data-test="task-title">{{ task.title }}</h2>
-        <StateChip :state="task.board_state" :blocked-by="task.blocked_by" />
+        <StateChip :state="task.board_state" :blocked-by="task.blocked_by" :waits-for-human="task.waits_for_human" />
         <div class="head-buttons">
           <Tooltip :text="runTooltip">
             <button
@@ -223,6 +229,15 @@ function onEdit(input: EditTaskInput) {
             @click="openEdit(false)"
           >
             <Pencil :size="14" /> Upravit
+          </button>
+          <button
+            v-if="forHuman && !finished"
+            type="button"
+            data-test="mark-done"
+            :disabled="busy"
+            @click="onEdit({ status: 'done' })"
+          >
+            <CheckCircle2 :size="14" /> Hotovo
           </button>
           <button
             v-if="queueable"

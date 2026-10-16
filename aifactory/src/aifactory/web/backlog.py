@@ -11,7 +11,8 @@ changes to ``base``.
 Board states (the kanban columns), first match wins: ``done``, ``cancelled``,
 ``running`` (a running run in the trace DB), ``awaiting merge`` (an open PR the factory
 merges by itself, see ``waits_for_automerge``), ``in review`` (any other open PR: it waits
-for the user), ``blocked``, ``ready`` (only with an effective workflow), otherwise ``todo``
+for the user), ``blocked``, ``human`` (a person's task, ``assignee: human``), ``ready``
+(only with an effective workflow), otherwise ``todo``
 (no workflow yet, or an invalid ``status`` flagged with ``invalid``).
 """
 
@@ -50,6 +51,7 @@ JsonDict = dict[str, Any]
 BOARD_STATES: tuple[str, ...] = (
     "todo",
     "ready",
+    "human",
     "blocked",
     "running",
     "in review",
@@ -70,6 +72,7 @@ ADD_KEYS = (
     "depends_on",
     "related",
     "body",
+    "assignee",
 )
 EDIT_KEYS = (
     "parameters",
@@ -82,6 +85,8 @@ EDIT_KEYS = (
     "clear_writes",
     "auto_merge",
     "clear_auto_merge",
+    "assignee",
+    "clear_assignee",
     "body",
     "depends_on",
     "related",
@@ -167,8 +172,8 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
         error = "auto_merge_error" if task.id in rt.merge_blocked else None
         return "awaiting merge" if waits_for_automerge(task, error) else "in review"
     state = core.derived_state(backlog, task)
-    if state == "blocked":
-        return "blocked"
+    if state in ("blocked", "human"):
+        return state
     if state == "ready" and core.effective_workflow(task):
         return "ready"
     return "todo"
@@ -558,6 +563,7 @@ def add(
         related=related,
         body=text,
         parameters=_parameters(body),
+        assignee=_opt_str(body, "assignee"),
     )
     return _write_json(repo, result)
 
@@ -594,6 +600,8 @@ def edit(
         body=_opt_str(body, "body"),
         depends_on=_opt_str_list(body, "depends_on"),
         related=_opt_str_list(body, "related"),
+        assignee=_opt_str(body, "assignee"),
+        clear_assignee=_opt_bool(body, "clear_assignee"),
     )
     return _write_json(repo, result)
 

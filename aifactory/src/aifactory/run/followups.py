@@ -7,7 +7,9 @@ and why it came from. A follow-up with ``blocks_task`` and every not-done id in
 ``blocked_by`` become ``depends_on`` of the task: the run then fails as blocked
 (``run/task.py``), so the task is neither done nor merged until its blockers are done.
 A follow-up with ``writes`` gets them as its own ``writes`` (they replace the inherited
-value), for work outside the paths this task may change.
+value), for work outside the paths this task may change, and ``workflow`` its own
+workflow. A follow-up only a person can do (``for_human``, or ``writes`` that reach the
+backlog or ``protected_files``) gets ``assignee: human``: no run starts it.
 
 The backlog is written in the main checkout through ``aifactory.backlog.edit`` and
 committed to ``base``. A follow-up task carries the marker
@@ -17,7 +19,7 @@ by the marker and title and creates nothing new.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from aifactory.backlog import (
@@ -33,6 +35,9 @@ from aifactory.backlog import (
     load_for_edit,
 )
 from aifactory.backlog.edit import compose_id
+from aifactory.backlog.model import HUMAN
+from aifactory.config import ProjectSettings
+from aifactory.run.scope import literal_prefix
 from aifactory.workflow import WorkflowRun
 
 TODO_CODE = "TODO"
@@ -62,6 +67,8 @@ class Reported:
     details: str
     blocks_task: bool
     writes: tuple[str, ...] | None = None
+    for_human: bool = False
+    workflow: str | None = None
 
 
 @dataclass(frozen=True)
@@ -126,15 +133,7 @@ def collect(wf: WorkflowRun) -> tuple[list[Reported], list[str]]:
             known = reported.get(_norm(title))
             if known is not None:
                 if blocks and not known.blocks_task:
-                    reported[_norm(title)] = Reported(
-                        known.step,
-                        known.owner,
-                        known.title,
-                        known.reason,
-                        known.details,
-                        True,
-                        known.writes,
-                    )
+                    reported[_norm(title)] = replace(known, blocks_task=True)
                 continue
             reported[_norm(title)] = Reported(
                 step=str(key),
@@ -144,6 +143,8 @@ def collect(wf: WorkflowRun) -> tuple[list[Reported], list[str]]:
                 details=str(getattr(item, "details", "") or "").strip(),
                 blocks_task=blocks,
                 writes=_writes(getattr(item, "writes", None)),
+                for_human=bool(getattr(item, "for_human", False)),
+                workflow=str(getattr(item, "workflow", None) or "").strip() or None,
             )
         for raw in getattr(envelope, "blocked_by", None) or []:
             value = str(raw).strip()
@@ -157,6 +158,16 @@ def _writes(value: object) -> tuple[str, ...] | None:
         return None
     paths = [str(v).strip() for v in value if str(v).strip()]
     return tuple(dict.fromkeys(paths)) or None
+
+
+def _for_human(item: Reported, settings: ProjectSettings) -> bool:
+    """A person's task: the agent said so, or one of its writes lies in what no run may
+    change (the backlog, ``protected_files``)."""
+    if item.for_human:
+        return True
+    closed = [c.rstrip("/") for c in (*settings.backlog_patterns, *settings.protected_files)]
+    prefixes = [literal_prefix(w).rstrip("/") for w in item.writes or ()]
+    return any(p and (p == c or p.startswith(c + "/")) for p in prefixes for c in closed if c)
 
 
 def reported_any(wf: WorkflowRun) -> bool:
@@ -258,6 +269,8 @@ def record(main: Path, task_id: str, run_id: str, wf: WorkflowRun) -> FollowUpOu
                             item.title,
                             related=[task_id],
                             writes=list(item.writes) if item.writes else None,
+                            workflow=item.workflow,
+                            assignee=HUMAN if _for_human(item, backlog.settings) else None,
                             body=_task_body(item, task, run_id),
                         )
                     except TaskEditError as exc:

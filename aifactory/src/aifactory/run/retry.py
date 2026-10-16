@@ -59,6 +59,7 @@ from aifactory.run.resolve import (
     restore,
 )
 from aifactory.run.scope import output_paths, task_scope
+from aifactory.run.stack import open_stack
 from aifactory.run.store import MERGED_BY_AUTO, RUNNING, TaskRunRow, TaskRunStore, _now
 from aifactory.run.workdir import project_workdir
 from aifactory.workflow import (
@@ -380,7 +381,10 @@ def retry_run(
                     f"branch {row.branch} is checked out in {other}; free it first",
                 )
         onto = rc.commit
-        rebase = not provider_git.is_ancestor(main, onto, tip)
+        # a run stacked on a still open PR keeps its fork: base lacks the work it builds on
+        rebase = not provider_git.is_ancestor(main, onto, tip) and (
+            open_stack(store, row.branch) is None
+        )
         lease = None
         if rebase:
             published_tip = provider_git.rev_parse(

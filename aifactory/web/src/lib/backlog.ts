@@ -8,6 +8,7 @@ import { errorText } from './format'
 export type BoardState =
   | 'todo'
   | 'ready'
+  | 'human'
   | 'blocked'
   | 'running'
   | 'in review'
@@ -19,6 +20,7 @@ export type BoardState =
 export const BOARD_STATES: readonly BoardState[] = [
   'todo',
   'ready',
+  'human',
   'blocked',
   'running',
   'in review',
@@ -30,6 +32,7 @@ export const BOARD_STATES: readonly BoardState[] = [
 export const STATE_LABELS: Record<BoardState, string> = {
   todo: 'Bez workflow',
   ready: 'Připraveno',
+  human: 'Pro člověka',
   blocked: 'Blokováno',
   running: 'Běží',
   'in review': 'Čeká na review',
@@ -41,6 +44,7 @@ export const STATE_LABELS: Record<BoardState, string> = {
 /** Tooltips of the board states that need an explanation. */
 export const STATE_TOOLTIPS: Partial<Record<BoardState, string>> = {
   todo: 'Task nejde spustit, dokud nemá workflow (vlastní nebo zděděné z projektu či stepu).',
+  human: 'Task udělá člověk, factory ho nespustí. Až bude hotový, označ ho v detailu jako hotový.',
   'in review': 'Pull request čeká na tvoje review.',
   'awaiting merge': 'Auto-merge je zapnutý, factory pull request mergne sama.',
 }
@@ -86,7 +90,7 @@ export function mergeQueueOrder(all: readonly string[], shown: readonly string[]
 }
 
 /** States shown only when some task is in them (kanban column, status filter option). */
-export const OPTIONAL_STATES: readonly BoardState[] = ['todo', 'awaiting merge']
+export const OPTIONAL_STATES: readonly BoardState[] = ['todo', 'human', 'awaiting merge']
 
 /** States hidden by the „Skrýt hotové“ switch. */
 export const DONE_STATES: readonly BoardState[] = ['done', 'cancelled']
@@ -215,6 +219,9 @@ export function unmetLine(u: Unmet, names: CodeNames = {}): string {
 }
 
 /** Tooltip text of the Blokováno badge; '' when nothing blocks. */
+/** Label of a blocked task that waits for a person's task. */
+export const WAITS_FOR_HUMAN_LABEL = 'Čeká na člověka'
+
 export function blockedTooltip(blockedBy: readonly Unmet[] | undefined, names: CodeNames = {}): string {
   if (!blockedBy?.length) return ''
   return ['Blokuje:', ...blockedBy.map((u) => unmetLine(u, names))].join('\n')
@@ -236,6 +243,10 @@ export interface TaskNode {
   own_writes: string[]
   blocked_by: Unmet[]
   blocks: string[]
+  /** `human`: a person's task (`assignee: human`, inherited), no run starts it. */
+  assignee?: 'agent' | 'human'
+  /** Unmet dependencies that are a person's tasks: the task waits for a person. */
+  waits_for_human?: string[]
   board_state: BoardState
   /** The task's own `workflow` (null when inherited or missing). */
   own_workflow: string | null
@@ -401,7 +412,8 @@ export interface EditTaskInput {
   related?: string[]
   workflow_advice_id?: string
   title?: string
-  status?: 'todo' | 'cancelled'
+  /** `done` only for a person's task. */
+  status?: 'todo' | 'cancelled' | 'done'
   workflow?: string
   clear_workflow?: boolean
   writes?: string[]

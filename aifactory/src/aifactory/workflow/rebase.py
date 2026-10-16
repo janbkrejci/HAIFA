@@ -1,7 +1,9 @@
 """The ``rebase`` code step: bring the branch of a worktree up to date with base.
 
 Used by the ``resolve`` workflow (``factory task resolve``). First a plain
-``git rebase <onto>``; when it goes through, the branch history is kept and no
+``git rebase <onto>`` (``git rebase --onto <onto> <upstream>`` with an ``upstream``: a
+stacked PR whose fork point is not in base drops the commits below it, which base got
+squashed); when it goes through, the branch history is kept and no
 agent is needed. When it stops on a conflict, the rebase is aborted, the branch
 is reset to ``onto`` and ``git merge --squash <before>`` replays all of its
 changes at once: every conflict is then in the tree with its markers, so the
@@ -98,8 +100,10 @@ def _summary(onto: str, files: list[str], squashed: bool) -> str:
     return f"rebased onto {onto[:7]} cleanly"
 
 
-def rebase_onto(root: Path, onto: str) -> RebaseOutput:
+def rebase_onto(root: Path, onto: str, upstream: str | None = None) -> RebaseOutput:
     """Rebase the branch checked out in `root` onto `onto` (see the module docstring).
+
+    `upstream`: only the commits after it are replayed (``git rebase --onto``).
 
     Raises ``RuntimeError`` on any git failure other than the expected conflict.
     """
@@ -117,9 +121,10 @@ def rebase_onto(root: Path, onto: str) -> RebaseOutput:
             squashed=squashed,
         )
 
-    if _git(root, "merge-base", "--is-ancestor", onto, "HEAD").returncode == 0:
+    if upstream is None and _git(root, "merge-base", "--is-ancestor", onto, "HEAD").returncode == 0:
         return clean()
-    if _git(root, "rebase", "-q", "--no-autostash", onto).returncode == 0:
+    target = ("--onto", onto, upstream) if upstream else (onto,)
+    if _git(root, "rebase", "-q", "--no-autostash", *target).returncode == 0:
         return clean()
 
     _git(root, "rebase", "--abort")

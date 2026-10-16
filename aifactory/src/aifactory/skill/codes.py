@@ -65,6 +65,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("unmet_dependencies", "2", "depends_on are not done in base (use --force)"),
     ("no_writes", "2", "the task has no writes"),
     ("no_workflow", "2", "the task has no workflow (none set nor inherited)"),
+    ("human_task", "2", "the task is for a person (assignee: human); mark it done when it is"),
     (
         "unknown_workflow",
         "2",
@@ -112,6 +113,11 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ),
     ("pr_not_open", "2", "the task's pull request is not open"),
     ("conflict", "2", "the pull request conflicts with base (run factory task resolve)"),
+    (
+        "stacked_on_open_pr",
+        "2",
+        "the PR builds on a dependency's open PR; it is rebased onto base after that merge",
+    ),
     (
         "task_blocked",
         "2",

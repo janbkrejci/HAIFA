@@ -50,6 +50,7 @@ from aifactory.review.publish import PublishResult, publish
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
 from aifactory.run.resolve import CI_FIX_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW, RESOLVE_WORKFLOW
+from aifactory.run.stack import open_stack
 from aifactory.run.store import (
     MERGED_BY_OPERATOR,
     RUNNING,
@@ -61,6 +62,7 @@ from aifactory.run.store import (
     already_running,
 )
 from aifactory.run.task import TaskRunResult, run_task
+from aifactory.run.unchanged import finish_unchanged, unchanged
 from aifactory.workflow import CodeRunner
 
 
@@ -273,13 +275,20 @@ def approve_task(
     """
     ctx = _context(repo, provider)
     try:
-        return _approve_gated(repo, ctx, task_id, merged_by, code)
+        result = _approve_gated(repo, ctx, task_id, merged_by, code)
     except ProviderError as exc:
         raise ReviewError(exc.code, exc.message) from exc
     except RuntimeError as exc:
         raise ReviewError("worktree_failed", str(exc)) from exc
     finally:
         ctx.store.close()
+    # Local import: review.stack resolves and merges through this module.
+    from aifactory.review.stack import restack_dependents
+
+    result.warnings += restack_dependents(
+        repo, ctx.store.db_path, result.pr.branch, provider=ctx.provider, code=code
+    )
+    return result
 
 
 def _approve_gated(
@@ -516,7 +525,8 @@ def publish_task(
     For a run whose push or PR failed at the end of ``task run`` (``pr_failed``): the
     same push (transient failures retried) and PR as there, with the body kept from the
     run. A PR the hosting already has for the branch is adopted (recorded and its body
-    updated). Without a succeeded run (``no_succeeded_run``), with a PR already known
+    updated). A run that left no commit on its branch marks the task done instead
+    (``run/unchanged.py``). Without a succeeded run (``no_succeeded_run``), with a PR already known
     (``pr_exists``) or while a run of the task is in progress (``already_running``)
     nothing changes. `run_id` (the dashboard) must name that last succeeded run. A failed
     push or hosting call is ``result.pr_error`` and is kept on the run.
@@ -557,6 +567,16 @@ def _publish(ctx: _Ctx, task_id: str, run_id: str | None) -> PublishResult:
     task = load_backlog(source, settings).by_id.get(task_id)
     if not isinstance(task, Task):
         raise ReviewError("unknown_task", f"no task {task_id} in {source}")
+    if unchanged(row):
+        failure, notes = finish_unchanged(ctx.main, ctx.store, row)
+        ctx.store.set_pr_error(row.run_id, failure)
+        return PublishResult(
+            run=ctx.store.get(row.run_id) or row,
+            pr=None,
+            pr_error=failure,
+            warnings=notes,
+            done_without_pr=failure is None,
+        )
     body = ctx.store.pr_body_of(row.run_id)
     try:
         pr = publish(
@@ -603,6 +623,13 @@ def resolve_task(
     ctx = _context(repo, provider)
     try:
         row, _ = _checked_pr(ctx, task_id)
+        stack = open_stack(ctx.store, row.branch)
+        if stack is not None:
+            raise ReviewError(
+                "stacked_on_open_pr",
+                f"the PR of {task_id} builds on {stack.url} ({stack.task_id}), which is not "
+                "merged yet; it is rebased onto base after that merge",
+            )
         _free_branch(ctx, row)
         warnings = _catch_up_base(ctx)
         base = ctx.rc.config.settings.base

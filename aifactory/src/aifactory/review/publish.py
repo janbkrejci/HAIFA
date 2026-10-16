@@ -19,6 +19,7 @@ from aifactory.providers.base import OPEN, GitProvider, ProviderError, PullReque
 from aifactory.review.prbody import pr_body, pr_title
 from aifactory.run.followups import CreatedFollowUp
 from aifactory.run.resolve import INTERNAL_WORKFLOWS
+from aifactory.run.stack import open_stack
 from aifactory.run.store import SUCCEEDED, TaskPrRow, TaskRunRow, TaskRunStore, _now
 from aifactory.workflow import WorkflowRun
 
@@ -104,6 +105,12 @@ def publish(
     """
     if body is None:
         body = run_pr_body(store, row, task, wf)
+    stack = open_stack(store, row.branch)
+    if stack is not None:
+        body = (
+            f"> Navazuje na {stack.url} ({stack.task_id}), který ještě není mergnutý. "
+            "Mergne se až po něm, předtím se přebázuje na base.\n\n" + body
+        )
     worktree = Path(row.worktree)
     provider.push(worktree if worktree.is_dir() else main, row.branch, lease=lease)
     existing = store.pr_for_branch(row.branch)
@@ -139,14 +146,17 @@ class PublishResult:
     pr: TaskPrRow | None
     pr_error: str | None = None
     warnings: list[str] = field(default_factory=list)
+    # the run changed nothing: the task is done without a PR (run/unchanged.py)
+    done_without_pr: bool = False
 
     @property
     def ok(self) -> bool:
-        return self.pr is not None and self.pr_error is None
+        return (self.pr is not None or self.done_without_pr) and self.pr_error is None
 
     def to_json(self) -> dict[str, object]:
         return {
             "run": self.run.to_json(),
             "pr": self.pr.to_json() if self.pr is not None else None,
             "pr_error": self.pr_error,
+            "done_without_pr": self.done_without_pr,
         }

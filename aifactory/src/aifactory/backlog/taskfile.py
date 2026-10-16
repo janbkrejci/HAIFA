@@ -103,6 +103,7 @@ FIELD_ORDER: tuple[str, ...] = (
     "id",
     "title",
     "status",
+    "assignee",
     "workflow",
     "depends_on",
     "related",

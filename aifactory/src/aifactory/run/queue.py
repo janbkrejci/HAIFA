@@ -32,7 +32,8 @@ dependencies are only waiting in open (not merged) pull requests is skipped
 (``waits_on_pr``) and the chain goes on with what can run; after ``task
 approve`` the operator starts the skipped task again. A task without a
 workflow (effective ``workflow`` unset or ``null``) is never started: it is
-skipped as ``no_workflow`` ("bez workflow") and the chain goes on. The chain never
+skipped as ``no_workflow`` ("bez workflow") and the chain goes on. A person's task
+(``assignee: human``) is skipped as ``human_task``. The chain never
 waits: when nothing can start it stops (``stop == "exhausted"``) and reports what it
 waits on.
 
@@ -95,6 +96,7 @@ from aifactory.backlog import (
     Task,
     effective,
     has_workflow,
+    is_human,
     iter_tasks,
     load_backlog,
     unmet,
@@ -109,6 +111,7 @@ from aifactory.run.errors import TaskRunError
 from aifactory.run.followups import follow_up_marker
 from aifactory.run.members import ChainRunner, ProcessRunner
 from aifactory.run.scope import effective_task_writes, is_wide, overlaps
+from aifactory.run.stack import stack_tip, unmet_ids
 from aifactory.run.store import (
     ABORTED,
     CHAIN_FINISHED,
@@ -126,6 +129,7 @@ STOP_FAILED, STOP_EXHAUSTED, STOP_DISABLED = "failed", "exhausted", "disabled"
 STOP_NOT_MERGED = "not_merged"
 STOP_REASONS: tuple[str, ...] = (STOP_FAILED, STOP_EXHAUSTED, STOP_DISABLED, STOP_NOT_MERGED)
 SKIP_REASONS: tuple[str, ...] = (
+    "human_task",
     "no_workflow",
     "waits_on_pr",
     "blocked",
@@ -139,6 +143,7 @@ SKIP_REASONS: tuple[str, ...] = (
 )
 EXCLUDED_DETAIL = "vyloučeno z auto continue v kanbanu"
 NO_WORKFLOW_DETAIL = "bez workflow"
+HUMAN_TASK_DETAIL = "pro člověka"
 _HARD_REASONS = ("unknown", "cancelled", "empty")
 
 
@@ -247,6 +252,7 @@ def select_next(
     require_auto_continue: bool = False,
     prefs: QueuePrefs | None = None,
     prefer: Sequence[str] = (),
+    stack: Stacker | None = None,
 ) -> Selection:
     """The first startable candidate after `after`, and every candidate that was skipped.
 
@@ -269,6 +275,7 @@ def select_next(
         conflict=conflict,
         require_auto_continue=require_auto_continue,
         prefs=prefs,
+        stack=stack,
     )
 
 
@@ -315,6 +322,7 @@ def select_ready(
     exclude: Collection[str] = frozenset(),
     conflict: Callable[[Task], Skip | None] | None = None,
     prefs: QueuePrefs | None = None,
+    stack: Stacker | None = None,
 ) -> Selection:
     """The first startable task of the whole backlog (the Overview's "Spustit továrnu").
 
@@ -331,6 +339,7 @@ def select_ready(
         conflict=conflict,
         require_auto_continue=False,
         prefs=prefs,
+        stack=stack,
     )
 
 
@@ -344,8 +353,13 @@ def _select(
     conflict: Callable[[Task], Skip | None] | None,
     require_auto_continue: bool,
     prefs: QueuePrefs,
+    stack: Stacker | None = None,
 ) -> Selection:
-    """The first startable task of `pool` and every task of it that was skipped."""
+    """The first startable task of `pool` and every task of it that was skipped.
+
+    With `stack` (``stacked_prs``) a task whose dependencies all wait in open PRs that
+    one branch holds starts stacked on it instead of waiting (``waits_on_pr``).
+    """
     chosen: Task | None = None
     skipped: list[Skip] = []
     for task in pool:
@@ -355,6 +369,9 @@ def _select(
             continue
         if task.id in prefs.excluded:
             skipped.append(Skip(task.id, "excluded", EXCLUDED_DETAIL))
+            continue
+        if is_human(task):
+            skipped.append(Skip(task.id, "human_task", HUMAN_TASK_DETAIL))
             continue
         if not has_workflow(task):
             skipped.append(Skip(task.id, "no_workflow", NO_WORKFLOW_DETAIL))
@@ -376,18 +393,21 @@ def _select(
                 hard = hard or u.reason in _HARD_REASONS
                 waits.extend(i for i in ids if i not in waits)
             prs = {i: open_pr(i) for i in waits}
-            if hard or any(pr is None for pr in prs.values()):
-                detail = ", ".join(
-                    f"{u.id} ({u.reason}"
-                    + (f": {', '.join(u.missing)}" if u.missing and u.missing != [u.id] else "")
-                    + ")"
-                    for u in missing
-                )
-                skipped.append(Skip(task.id, "blocked", detail, waits))
-            else:
-                detail = ", ".join(f"{i} (PR {pr.url})" for i, pr in prs.items() if pr)
-                skipped.append(Skip(task.id, "waits_on_pr", detail, waits))
-            continue
+            found = {i: pr for i, pr in prs.items() if pr is not None}
+            stackable = not hard and len(found) == len(prs) and stack is not None and stack(found)
+            if not stackable:
+                if hard or any(pr is None for pr in prs.values()):
+                    detail = ", ".join(
+                        f"{u.id} ({u.reason}"
+                        + (f": {', '.join(u.missing)}" if u.missing and u.missing != [u.id] else "")
+                        + ")"
+                        for u in missing
+                    )
+                    skipped.append(Skip(task.id, "blocked", detail, waits))
+                else:
+                    detail = ", ".join(f"{i} (PR {pr.url})" for i, pr in prs.items() if pr)
+                    skipped.append(Skip(task.id, "waits_on_pr", detail, waits))
+                continue
         if chosen is None:
             clash = conflict(task) if conflict is not None else None
             if clash is not None:
@@ -422,6 +442,9 @@ class Occupancy:
     runs: list[tuple[TaskRunRow, tuple[str, ...]]]
     prs: list[tuple[TaskPrRow, list[str], bool]]  # (pr, paths, files known)
     root: Path | None = None
+    # the backlog the selection reads: a task never waits for the PRs of its dependencies,
+    # it waits for them as dependencies or stacks on them (``stacked_prs``)
+    backlog: Backlog | None = None
 
     @classmethod
     def build(
@@ -445,7 +468,7 @@ class Occupancy:
                 prs.append((pr, files, True))
             else:
                 prs.append((pr, list(writes_of(pr.task_id) or ("",)), False))
-        return cls(runs, prs, root)
+        return cls(runs, prs, root, backlog)
 
     def _wide(self, writes: Collection[str]) -> list[str]:
         return is_wide(writes, self.root)
@@ -481,8 +504,9 @@ class Occupancy:
             if hit:
                 details.append(f"běh {row.run_id} ({row.task_id}): {_paths_text(hit)}")
                 waits.append(row.task_id)
+        deps = set(unmet_ids(self.backlog, task) or ()) if self.backlog is not None else set()
         for pr, paths, known in self.prs:
-            if pr.task_id == task.id:
+            if pr.task_id == task.id or pr.task_id in deps:
                 continue
             hit = overlaps(writes, paths)
             if hit:
@@ -634,6 +658,30 @@ def _first_task(repo: Path, task_id: str) -> Task | None:
     return node if isinstance(node, Task) else None
 
 
+Stacker = Callable[[dict[str, TaskPrRow]], bool]
+"""Whether a task can stack on these open PRs of its dependencies (``run/stack.py``)."""
+
+
+def stacker(main: Path) -> Stacker | None:
+    """With ``stacked_prs`` in the config: the ``stack`` check of the selection."""
+    try:
+        enabled = task_mod._load(main).config.settings.stacked_prs
+    except (TaskRunError, ConfigError, OSError):
+        return None
+    if not enabled:
+        return None
+    return lambda prs: stack_tip(main, prs) is not None
+
+
+WAITS_FOR_STACK = "waits_for_stack"
+"""A stacked PR's auto-merge waits for the PR it builds on (``review/stack.py``)."""
+
+
+def _waits_for_stack(merge: object) -> bool:
+    """A stacked PR waits for its dependency's merge: the chain goes on (``run/stack.py``)."""
+    return getattr(merge, "code", None) == WAITS_FOR_STACK
+
+
 def _max_parallel(repo: Path) -> int:
     try:
         return task_mod._load(gitops.main_root(repo)).config.settings.max_parallel_runs
@@ -769,6 +817,7 @@ def start_factory(
                         exclude=exclude,
                         conflict=_Pending(occupancy, pending),
                         prefs=store.queue_prefs(),
+                        stack=stacker(main),
                     )
                 finally:
                     store.close()
@@ -1019,7 +1068,7 @@ def _sequential(
     last = first
     while True:
         blocked: list[str] | None = None
-        if not last.ok or last.pr is None:
+        if not last.ok or (last.pr is None and not last.done_without_pr):
             blocked = task_mod.run_blockers(last.run)
             if blocked is None:
                 return ChainResult(runs, STOP_FAILED)
@@ -1054,9 +1103,9 @@ def _sequential(
                     )
                     if resolved is not None:
                         runs.append(resolved)
-                if not last.auto_merge.merged:
+                if not last.auto_merge.merged and not _waits_for_stack(last.auto_merge):
                     return ChainResult(runs, STOP_NOT_MERGED if cont else STOP_DISABLED)
-                merged = True
+                merged = last.auto_merge.merged
             if not cont:
                 return ChainResult(runs, STOP_DISABLED)
             if merged:  # base moved: the next task starts from the merged change
@@ -1078,6 +1127,7 @@ def _sequential(
                     require_auto_continue=not auto,
                     prefs=store.queue_prefs(),
                     prefer=prefer,
+                    stack=stacker(gitops.main_root(repo)),
                 )
             finally:
                 store.close()
@@ -1176,6 +1226,7 @@ def _run_parallel(
                         require_auto_continue=not auto,
                         prefs=store.queue_prefs(),
                         prefer=prefer,
+                        stack=stacker(main),
                     )
                 finally:
                     store.close()
@@ -1211,7 +1262,7 @@ def _run_parallel(
         if halt is not None:
             return
         blocked: list[str] | None = None
-        if not result.ok or result.pr is None:
+        if not result.ok or (result.pr is None and not result.done_without_pr):
             blocked = task_mod.run_blockers(result.run)
             if blocked is None:
                 halt = STOP_FAILED
@@ -1247,8 +1298,9 @@ def _run_parallel(
             save()
         merge = result.auto_merge
         if auto_merge_enabled(after) and (merge is None or not merge.merged):
-            halt = STOP_NOT_MERGED if cont else STOP_DISABLED
-            return
+            if merge is None or not _waits_for_stack(merge):
+                halt = STOP_NOT_MERGED if cont else STOP_DISABLED
+                return
         if cont:
             fill(after.id)
 

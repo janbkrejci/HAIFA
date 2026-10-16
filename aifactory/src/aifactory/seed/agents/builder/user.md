@@ -43,6 +43,6 @@ Respond with ONLY valid JSON matching `BuildOutput` — no prose before or after
 }
 ```
 
-`follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false, "writes": null}`; `blocked_by` holds ids of existing backlog tasks.
+`follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false, "writes": null, "for_human": false, "workflow": null}`; `blocked_by` holds ids of existing backlog tasks.
 
 `pr_summary` is the summary of the whole change on the branch, not just your step, for the person who approves the pull request. Write it in the language of the task. Do not copy the task text and do not list files: `goal` says why the task exists, `done` the outcomes, `not_done` what was left out or deviates from the task and why (empty when nothing), `notes` risks, behaviour changes and what to check by hand. The latest agent's summary is the one in the pull request, so correct an earlier one when it is wrong or incomplete.

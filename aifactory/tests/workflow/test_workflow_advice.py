@@ -27,7 +27,7 @@ from aifactory.workflow.adaptive import (
 def test_no_advice_for_a_task_with_an_open_pr() -> None:
     # both kinds of open PR: waiting for review and waiting for auto-merge
     assert {"in review", "awaiting merge"} <= ADVICE_CLOSED_STATES
-    assert set(BOARD_STATES) - ADVICE_CLOSED_STATES == {"todo", "ready", "blocked"}
+    assert set(BOARD_STATES) - ADVICE_CLOSED_STATES == {"todo", "ready", "human", "blocked"}
 
 
 def test_context_and_committed_catalog(tmp_path: Path) -> None:

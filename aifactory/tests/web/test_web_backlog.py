@@ -90,7 +90,10 @@ def test_tree_follows_levels_and_board_states(tmp_path: Path) -> None:
         B3: "in review",
     }
     assert data["states"] == list(BOARD_STATES)
-    assert data["state_counts"] == {state: 1 for state in BOARD_STATES} | {"awaiting merge": 0}
+    assert data["state_counts"] == {state: 1 for state in BOARD_STATES} | {
+        "awaiting merge": 0,
+        "human": 0,
+    }
     assert "owners" not in data
     assert {"custom-flow", "plan-build"} <= set(data["workflows"])
     assert [s["id"] for s in data["steps"]] == [S1, S2]
@@ -430,6 +433,7 @@ def test_api_calls_core_functions(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "related": None,
         "body": "",
         "parameters": None,
+        "assignee": None,
     }
     assert calls[1][1] == (root, B1)
     assert calls[1][2] == {
@@ -445,6 +449,8 @@ def test_api_calls_core_functions(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "body": None,
         "depends_on": None,
         "related": None,
+        "assignee": None,
+        "clear_assignee": False,
     }
     assert calls[2][1] == (root, B1)
     assert calls[2][2] == {"depends_on": None, "related": [B2], "remove": False}

@@ -405,6 +405,7 @@ def test_task_summary_counts_tasks_per_board_state(repo_a: Path, tmp_path: Path)
     assert a["tasks"] == {
         "todo": 0,
         "ready": 2,
+        "human": 0,
         "blocked": 0,
         "running": 1,
         "in review": 1,

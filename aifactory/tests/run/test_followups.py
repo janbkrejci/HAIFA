@@ -9,10 +9,19 @@ from typing import Any
 import pytest
 from run_repo import SPEC, T01, T02, Script, fake_env, git, make_run_repo, ok, write
 
-from aifactory.backlog import Task, check_backlog, derived_state, load_backlog
+from aifactory.backlog import (
+    Task,
+    check_backlog,
+    commit_backlog,
+    derived_state,
+    edit_task,
+    is_human,
+    load_backlog,
+)
 from aifactory.engine.data_types import FollowUp, PlanOutput
 from aifactory.review import ReviewError, approve_task
 from aifactory.run import TaskRunStore, run_task
+from aifactory.run.errors import TaskRunError
 from aifactory.run.followups import collect, follow_up_marker, record
 from aifactory.workflow import StepRecord, WorkflowRun
 
@@ -100,6 +109,42 @@ def test_record_gives_follow_up_its_writes(repo: Path) -> None:
     assert with_writes.writes == ["docs/decisions.md"]
     assert inherited.writes == []
     assert check_backlog(backlog_of(repo)) == []
+
+
+@pytest.mark.parametrize(
+    ("update", "human"),
+    [
+        ({"for_human": True}, True),
+        ({"writes": ["backlog/M01-core/S01-model/"]}, True),
+        ({"writes": [".factory/config.yaml"]}, True),
+        ({"writes": ["docs/decisions.md"]}, False),
+        ({"writes": ["**"]}, False),
+    ],
+)
+def test_record_files_a_persons_follow_up(repo: Path, update: dict[str, Any], human: bool) -> None:
+    item = follow_up().model_copy(update=update)
+    outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[item]))
+
+    filed = task_of(repo, outcome.created[0].id)
+    assert is_human(filed) is human
+
+
+def test_record_gives_follow_up_its_workflow(repo: Path) -> None:
+    item = follow_up().model_copy(update={"workflow": "build-review"})
+    outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[item]))
+
+    assert task_of(repo, outcome.created[0].id).own["workflow"] == "build-review"
+
+
+def test_run_refuses_a_persons_task(repo: Path, script: Script) -> None:
+    outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[follow_up(blocks=True)]))
+    new_id = outcome.created[0].id
+    edit_task(repo, new_id, assignee="human")
+    commit_backlog(repo, "human")
+
+    with pytest.raises(TaskRunError) as caught:
+        run_task(repo, new_id)
+    assert caught.value.code == "human_task"
 
 
 def test_record_is_idempotent(repo: Path) -> None:

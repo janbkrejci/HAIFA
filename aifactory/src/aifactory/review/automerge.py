@@ -9,7 +9,9 @@ worktrees removed), with ``merged_by == "auto-merge"``, but only when all holds:
 1. the run ended ``succeeded`` and opened its PR;
 2. the run's workflow has a review phase (a role step returning ``ReviewOutput``);
    a workflow without review is never merged automatically;
-3. the last review of the run approved, with no blocking and no unmet item;
+3. the last review of the run approved, with no blocking and no unmet item; a stacked PR
+   (``stacked_prs``) whose dependency's PR is still open then waits (``waits_for_stack``,
+   no ``auto_merge_error``) and is merged after it (``review/stack.py``);
 4. the PR is open and merges cleanly (``mergeable``) into base;
 5. its CI checks are green or it has none. ``approve_task`` waits for the checks of the
    merge head, after the ``status: done`` push (``review.ci``): running checks up to
@@ -63,8 +65,9 @@ from aifactory.review.errors import ReviewError
 from aifactory.review.flow import ApproveResult, approve_task
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
-from aifactory.run.queue import auto_merge_enabled
+from aifactory.run.queue import WAITS_FOR_STACK, auto_merge_enabled
 from aifactory.run.resolve import RESOLVE_REVIEWED_WORKFLOW
+from aifactory.run.stack import open_stack
 from aifactory.run.store import (
     MERGED_BY_AUTO,
     STARTED_AUTO_RESOLVE,
@@ -76,6 +79,7 @@ from aifactory.run.task import TaskRunResult, named_workflow
 from aifactory.workflow import CodeRunner, RoleStep, Workflow, WorkflowRun, walk
 
 AUTO_MERGE = MERGED_BY_AUTO
+
 AUTO_MERGE_POLL_DELAY = 2.0
 __all__ = [
     "AUTO_MERGE",
@@ -201,7 +205,10 @@ def try_auto_merge(
     if pr is None:
         return AutoMergeResult(False, "no_pr", result.pr_error or "the run opened no PR", None)
     outcome = _check_and_merge(repo, result, task, provider, code)
-    if not outcome.merged:
+    if outcome.code == WAITS_FOR_STACK:
+        # not an error: the PR is merged by itself after its dependency (review/stack.py)
+        _record_error(result.trace_db, pr.branch, None)
+    elif not outcome.merged:
         _record_error(result.trace_db, pr.branch, f"{outcome.code}: {outcome.reason}")
     return outcome
 
@@ -292,6 +299,15 @@ def _check_and_merge(
     review = review_blocker(last_review(result.workflow_run))
     if review is not None:
         return blocked(*review)
+    store = TaskRunStore(result.trace_db)
+    try:
+        stack = open_stack(store, pr.branch)
+    finally:
+        store.close()
+    if stack is not None:
+        return blocked(
+            WAITS_FOR_STACK, f"merged after {stack.url} ({stack.task_id}), which it builds on"
+        )
     return _hosting_and_merge(repo, pr, task, provider, rc, main, code)
 
 

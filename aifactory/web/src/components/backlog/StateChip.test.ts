@@ -56,4 +56,16 @@ describe('StateChip', () => {
     expect(chip.classes()).toEqual(expect.arrayContaining(['state-chip', 'state-awaiting-merge']))
     expect(chip.text()).toBe('Čeká na automerge PR 1')
   })
+
+  it('names a person\'s task and a task that waits for one', () => {
+    wrapper = mount(StateChip, { props: { state: 'human' } })
+    expect(wrapper.find('[data-state="human"]').text()).toBe('Pro člověka')
+    wrapper.unmount()
+    wrapper = mount(StateChip, {
+      props: { state: 'blocked', waitsForHuman: ['M01-S01-T01'], blockedBy: [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }] },
+    })
+    const chip = wrapper.find('[data-state="blocked"]')
+    expect(chip.text()).toBe('Čeká na člověka')
+    expect(chip.classes()).toContain('state-human')
+  })
 })

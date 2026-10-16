@@ -3,7 +3,16 @@
 from __future__ import annotations
 
 from aifactory.backlog.loader import iter_tasks
-from aifactory.backlog.model import INHERITED_KEYS, Backlog, Container, Node, Task, Unmet, node_file
+from aifactory.backlog.model import (
+    HUMAN,
+    INHERITED_KEYS,
+    Backlog,
+    Container,
+    Node,
+    Task,
+    Unmet,
+    node_file,
+)
 from aifactory.config import ProjectSettings
 from aifactory.config.settings import CONFIG_FILE
 
@@ -42,6 +51,22 @@ def effective_workflow(task: Task) -> object:
 def has_workflow(task: Task) -> bool:
     """False only when the nearest level sets ``workflow: null``; unset means the default."""
     return effective_workflow(task) is not None
+
+
+def is_human(task: Task) -> bool:
+    """A task for a person (``assignee: human``, inherited): no run starts it."""
+    return effective(task).get("assignee") == HUMAN
+
+
+def waits_for_human(backlog: Backlog, task: Task) -> list[str]:
+    """The unmet dependencies of `task` (tasks, or tasks of a container) that are a person's."""
+    result: list[str] = []
+    for item in unmet(backlog, task):
+        for dep in item.missing or [item.id]:
+            node = backlog.by_id.get(dep)
+            if isinstance(node, Task) and is_human(node) and dep not in result:
+                result.append(dep)
+    return result
 
 
 def effective_test_timeout(task: Task) -> object:
@@ -112,12 +137,15 @@ def unmet(backlog: Backlog, task: Task) -> list[Unmet]:
 
 
 def derived_state(backlog: Backlog, task: Task) -> str:
-    """``done``/``cancelled`` as stored; ``todo`` becomes ``ready`` or ``blocked``."""
+    """``done``/``cancelled`` as stored; ``todo`` becomes ``blocked``, else ``human`` for a
+    person's task and ``ready`` for an agent's."""
     if task.status in ("done", "cancelled"):
         return task.status
     if task.status != "todo":
         return "invalid"
-    return "blocked" if unmet(backlog, task) else "ready"
+    if unmet(backlog, task):
+        return "blocked"
+    return "human" if is_human(task) else "ready"
 
 
 def blocks(backlog: Backlog) -> dict[str, list[str]]:

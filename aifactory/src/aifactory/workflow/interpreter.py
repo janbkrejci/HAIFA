@@ -177,7 +177,8 @@ class EngineCodeRunner:
                 "the rebase step needs a target: run the resolve workflow through "
                 "`factory task resolve`"
             )
-        return rebase_onto(Path(run.repo_root), str(onto))
+        upstream = (getattr(run, "prompt_variables", None) or {}).get("rebase_upstream")
+        return rebase_onto(Path(run.repo_root), str(onto), str(upstream) if upstream else None)
 
     def rebuild(self, run: Any, files: list[str]) -> Any:
         """Rebuild the run's generated outputs (``run.generated``) that contain one of `files`."""

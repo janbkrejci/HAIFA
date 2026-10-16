@@ -248,6 +248,18 @@ def test_step_switched_off_is_passed_by(repo: Path, script: Script) -> None:
     assert runs_of(repo, S02_T01) == []
 
 
+def test_dependent_task_stacks_on_the_open_pr(repo: Path, script: Script) -> None:
+    write(repo, ".factory/config.yaml", "base: main\ndocs_root: .\nstacked_prs: true\n")
+    setup_chain(repo, t02_depends=True)
+    for name in ("one", "two", "three"):
+        build(script, name)
+    chain = run_chain(repo, T01, auto=True)
+    assert ids(chain) == [T01, T02, T03]
+    assert chain.ok and chain.waiting == []
+    [stacked] = runs_of(repo, T02)
+    assert stacked.stacked_on == runs_of(repo, T01)[0].branch
+
+
 def test_dependent_task_skipped_until_approve(repo: Path, script: Script) -> None:
     setup_chain(repo, t02_depends=True)
     main_before = git(repo, "rev-parse", "main")
@@ -311,6 +323,16 @@ def test_task_without_workflow_is_skipped(repo: Path, script: Script) -> None:
     assert ids(chain) == [T01, T03]
     assert chain.ok and chain.stop == STOP_EXHAUSTED
     assert chain.waiting == [Skip(T02, "no_workflow", "bez workflow")]
+    assert runs_of(repo, T02) == []
+
+
+def test_persons_task_is_skipped(repo: Path, script: Script) -> None:
+    setup_chain(repo, t02_extra="assignee: human\n")
+    build(script, "one")
+    build(script, "three")
+    chain = run_chain(repo, T01, auto=True)
+    assert ids(chain) == [T01, T03]
+    assert chain.waiting == [Skip(T02, "human_task", "pro člověka")]
     assert runs_of(repo, T02) == []
 
 

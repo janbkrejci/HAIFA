@@ -79,6 +79,7 @@ const SKIP_LABELS: Record<string, string> = {
   waits_on_pr: 'čeká na PR',
   blocked: 'blokováno',
   no_workflow: 'bez workflow',
+  human_task: 'pro člověka',
   in_review: 'v review',
   running: 'běží',
   cannot_start: 'nelze spustit',

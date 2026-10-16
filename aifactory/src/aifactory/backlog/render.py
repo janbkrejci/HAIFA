@@ -14,13 +14,15 @@ from aifactory.backlog.derived import (
     effective_workflow,
     effective_writes,
     is_done,
+    is_human,
     progress,
     unmet,
+    waits_for_human,
 )
 from aifactory.backlog.loader import iter_containers, iter_tasks
 from aifactory.backlog.model import Backlog, Container, Issue, Task
 
-STATUS_FILTERS: tuple[str, ...] = ("todo", "done", "cancelled", "ready", "blocked")
+STATUS_FILTERS: tuple[str, ...] = ("todo", "done", "cancelled", "ready", "blocked", "human")
 
 
 def _jsonable(value: object) -> object:
@@ -92,6 +94,8 @@ def task_to_json(backlog: Backlog, task: Task, reverse: dict[str, list[str]]) ->
         "own_writes": list(task.writes),
         "blocked_by": [u.to_dict() for u in unmet(backlog, task)] if task.status == "todo" else [],
         "blocks": list(reverse.get(task.id, [])),
+        "assignee": "human" if is_human(task) else "agent",
+        "waits_for_human": waits_for_human(backlog, task) if task.status == "todo" else [],
     }
 
 
@@ -159,6 +163,9 @@ def waits_for(backlog: Backlog, task: Task) -> str:
             waits.append(u.id)
         else:
             waits.append(f"{u.id} ({u.reason})")
+    people = waits_for_human(backlog, task)
+    if people:
+        waits.append(f"for a person: {', '.join(people)}")
     return ", ".join(waits)
 
 

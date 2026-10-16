@@ -1787,16 +1787,25 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     add.add_argument("--depends-on", nargs="+", default=[], metavar="ID", help="dependencies")
     add.add_argument("--related", nargs="+", metavar="ID", help="related tasks")
     add.add_argument("--body", default="", metavar="TEXT", help="text of '## Zadání'")
+    add.add_argument(
+        "--assignee",
+        choices=("agent", "human"),
+        help="human: a task for a person, no run starts it (default: inherited, agent)",
+    )
 
     edit = sub.add_parser(
         "edit",
         help="change header fields of a task",
-        description="Change title, status (todo|cancelled), workflow, writes or auto_merge "
-        "of a task.",
+        description="Change title, status (todo|cancelled, or done for a person's task), "
+        "workflow, writes, auto_merge or assignee of a task.",
     )
     edit.add_argument("task_id", metavar="ID", help="task id")
     edit.add_argument("--title", metavar="TEXT", help="new title")
-    edit.add_argument("--status", metavar="STATUS", help="todo or cancelled")
+    edit.add_argument(
+        "--status",
+        metavar="STATUS",
+        help="todo or cancelled; done for a task with assignee human (a person did it)",
+    )
     edit.add_argument("--workflow", metavar="NAME", help="set the workflow")
     edit.add_argument(
         "--clear-workflow", action="store_true", help="remove the workflow (inherit it)"
@@ -1808,6 +1817,11 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         choices=("on", "off", "inherit"),
         help="set auto_merge of the task (off, e.g. when it changes the guard or permissions) "
         "or remove it (inherit)",
+    )
+    edit.add_argument(
+        "--assignee",
+        choices=("agent", "human", "inherit"),
+        help="human: the task is for a person and no run starts it; inherit removes it",
     )
 
     link = sub.add_parser(
@@ -2199,6 +2213,7 @@ def _task_write(args: argparse.Namespace, root: Path) -> int:
             depends_on=args.depends_on,
             related=args.related,
             body=args.body,
+            assignee=args.assignee,
         )
     elif command == "edit":
         result = edit_task(
@@ -2212,6 +2227,8 @@ def _task_write(args: argparse.Namespace, root: Path) -> int:
             clear_writes=args.clear_writes,
             auto_merge={"on": True, "off": False}.get(args.auto_merge or ""),
             clear_auto_merge=args.auto_merge == "inherit",
+            assignee=args.assignee if args.assignee != "inherit" else None,
+            clear_assignee=args.assignee == "inherit",
         )
     else:
         result = link_task(
@@ -2248,6 +2265,7 @@ def _run_json(result: TaskRunResult) -> dict[str, Any]:
         "auto_merge": result.auto_merge.to_json() if result.auto_merge is not None else None,
         "resolve_run": result.resolve_run.run.to_json() if result.resolve_run is not None else None,
         "follow_ups": result.follow_ups.to_json() if result.follow_ups is not None else None,
+        "done_without_pr": result.done_without_pr,
     }
 
 
@@ -2274,6 +2292,8 @@ def _print_run(command: str, result: TaskRunResult) -> None:
     print(f"run {row.run_id} {row.state}: branch {row.branch}, worktree {row.worktree}")
     if result.pr is not None:
         print(f"pr {result.pr.url}")
+    if result.done_without_pr:
+        print(f"no changes: task {row.task_id} is done without a pull request")
     if row.error:
         print(f"factory task {command}: {row.error}", file=sys.stderr)
     if result.pr_error:
@@ -2466,6 +2486,9 @@ def _task_publish(args: argparse.Namespace, root: Path) -> int:
     if result.pr_error is not None:
         print(f"factory task publish: pr: {result.pr_error}", file=sys.stderr)
         return 1
+    if result.done_without_pr:
+        print(f"run {row.run_id}: no changes, task {row.task_id} is done without a pull request")
+        return 0
     assert result.pr is not None
     print(f"run {row.run_id}: branch {row.branch} pushed")
     print(f"pr {result.pr.url}")
