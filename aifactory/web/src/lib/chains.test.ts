@@ -9,6 +9,7 @@ describe('skipReasonLabel', () => {
     expect(skipReasonLabel('blocked')).toBe('blokováno')
     expect(skipReasonLabel('no_workflow')).toBe('bez workflow')
     expect(skipReasonLabel('in_review')).toBe('v review')
+    expect(skipReasonLabel('no_slot')).toBe('žádný volný slot (PR v review)')
     expect(skipReasonLabel('running')).toBe('běží')
     expect(skipReasonLabel('cannot_start')).toBe('nelze spustit')
     expect(skipReasonLabel('excluded')).toBe('odloženo v kanbanu')

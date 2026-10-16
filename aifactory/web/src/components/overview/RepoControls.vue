@@ -56,7 +56,8 @@ const anything = computed(
         >{{ item.label }} <b>{{ item.count }}</b></span>
       </span>
       <span v-if="factory && factory.max_parallel_runs !== null" class="slots" data-test="factory-slots">
-        Sloty: {{ factory.running }}/{{ factory.max_parallel_runs }}
+        Sloty: {{ factory.running }}/{{ factory.max_parallel_runs }}<template v-if="factory.in_review">
+          · v review {{ factory.in_review }}</template>
       </span>
     </div>
   </div>

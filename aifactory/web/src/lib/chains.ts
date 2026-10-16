@@ -42,6 +42,8 @@ export interface Chain {
   ended_at: string | null
   runs: ChainRun[]
   running: number
+  /** Tasks whose open PR waits for review and holds a slot (empty once the chain ended). */
+  in_review?: string[]
   free_slots: number
   skipped: ChainSkip[]
   exclusive: string[]
@@ -81,6 +83,7 @@ const SKIP_LABELS: Record<string, string> = {
   no_workflow: 'bez workflow',
   human_task: 'pro člověka',
   in_review: 'v review',
+  no_slot: 'žádný volný slot (PR v review)',
   running: 'běží',
   cannot_start: 'nelze spustit',
   excluded: 'odloženo v kanbanu',

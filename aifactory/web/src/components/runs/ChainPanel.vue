@@ -25,7 +25,8 @@ const emit = defineEmits<{ dismiss: [chainId: string] }>()
         <strong>Řetěz od <a class="mono" :href="taskHref(chain.task_id)" data-test="chain-task">{{ chain.task_id }}</a></strong>
         <span class="faint" data-test="chain-state">· {{ chainStateLabel(chain) }}</span>
         <span class="slots" data-test="chain-slots">
-          Sloty: {{ chain.running }}/{{ chain.max_parallel }} (volné {{ chain.free_slots }})
+          Sloty: {{ chain.running }}/{{ chain.max_parallel }} (volné {{ chain.free_slots }})<template v-if="chain.in_review?.length">
+            · v review: <span class="mono" data-test="chain-in-review">{{ chain.in_review.join(', ') }}</span></template>
         </span>
         <button
           v-if="chain.state !== 'running'"

@@ -86,4 +86,9 @@ describe('RepoControls', () => {
     ])
     expect(wrapper.find('[data-test="factory-slots"]').text()).toBe('Sloty: 1/2')
   })
+
+  it('counts the open PRs waiting for review among the slots', () => {
+    const wrapper = mountWith(repo('a', { tasks: tasks({ ready: 1 }), factory: factory({ running: 1, in_review: 1, max_parallel_runs: 2 }) }))
+    expect(wrapper.find('[data-test="factory-slots"]').text()).toBe('Sloty: 1/2 · v review 1')
+  })
 })
