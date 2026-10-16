@@ -1,7 +1,7 @@
 ---
 id: GUIDE-TODO-T02
 title: "Aktualizovat dokumentaci backendu průvodce: panel už existuje"
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [GUIDE-S02-T02]
@@ -20,3 +20,4 @@ Důvod: factory/docs/GUIDE-pruvodce-a-dokumentace/S02-ai-pruvodce-v-dashboardu/G
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/77 · náklady $0.29
