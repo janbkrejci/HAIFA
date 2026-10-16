@@ -2,7 +2,7 @@
 id: HAIFA-TODO-T07
 title: Record the install-time library refresh in docs/decisions.md
 status: todo
-depends_on: []
+depends_on: [HAIFA-TODO-T12]
 related: [HAIFA-REFINEMENT-T35]
 ---
 
