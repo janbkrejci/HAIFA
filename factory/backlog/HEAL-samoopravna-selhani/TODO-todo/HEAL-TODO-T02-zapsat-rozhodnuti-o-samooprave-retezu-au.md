@@ -1,7 +1,7 @@
 ---
 id: HEAL-TODO-T02
 title: Zapsat rozhodnutí o samoopravě řetězu (auto_heal) do docs/decisions.md
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [HEAL-S02-T04]
@@ -20,3 +20,4 @@ Důvod: CLAUDE.md žádá aktualizovat docs/decisions.md, když změna mění pl
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/81 · náklady $0.31
