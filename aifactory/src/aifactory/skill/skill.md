@@ -777,6 +777,13 @@ task's newest `failed`, `stopped` or `aborted` run (or `--run`) as its next atte
 6. Refused, exit 2, nothing changed: `task_done` (the task's PR is merged or the task is
    `done`), `already_running`, `run_not_retryable` (a succeeded or running run, or a
    resolve run), `unknown_branch` (the run's branch is gone).
+7. After a `writes_violation` (`data.run.failure_detail.paths` are the worktree paths
+   written outside `writes`), `factory task retry ID --allow-writes --json` first adds
+   them to the task's `writes` and commits the backlog to base (by `base_changes`), then
+   retries; `data.allow_writes` lists `allow` and `refused` (with `reason`). A path in
+   `protected_files`, in the backlog or in the main checkout is never added. Refused:
+   `not_writes_violation`, `nothing_to_allow`, `writes_in_pr` (base_changes: pr and the
+   backlog PR is not merged yet: retry after the merge).
 
 ### Review
 

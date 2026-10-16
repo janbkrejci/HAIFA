@@ -555,6 +555,38 @@ export function retryRun(runId: string, note?: string): Promise<RetryResponse> {
   return postApi<RetryResponse>(runPath(runId, 'retry'), text ? { note: text } : {})
 }
 
+/** Why „Povolit tyto cesty a pokračovat“ does not add a path (`run/allow_writes.py`). */
+export type AllowWritesReason = 'protected' | 'backlog' | 'main_checkout' | 'already_allowed'
+
+export interface AllowWritesRefused {
+  path: string
+  reason: AllowWritesReason | string
+  message: string
+}
+
+/** What the action adds to the task's writes and what it refuses, for a writes_violation run. */
+export interface AllowWritesPlan {
+  run_id: string
+  task_id: string
+  writes: string[]
+  allow: string[]
+  refused: AllowWritesRefused[]
+}
+
+export interface AllowWritesResponse extends RetryResponse {
+  allow_writes: AllowWritesPlan & { new_writes: string[] }
+}
+
+/** The plan of „Povolit tyto cesty a pokračovat“ for a run that wrote outside writes. */
+export function allowWritesPlan(runId: string, signal?: AbortSignal): Promise<AllowWritesPlan> {
+  return getApi<AllowWritesPlan>(runPath(runId, 'allow-writes'), signal)
+}
+
+/** `factory task retry --allow-writes`: add the paths to the task's writes in base, retry. */
+export function allowWritesAndRetry(runId: string): Promise<AllowWritesResponse> {
+  return postApi<AllowWritesResponse>(runPath(runId, 'allow-writes'), {})
+}
+
 /** Where a retry continued, for the run detail: `od fáze review_1, po rebase na abc1234`. */
 export function retryLabel(retry: RunRetry): string {
   const parts = [retry.from_phase ? `od fáze ${retry.from_phase}` : 'od první fáze']

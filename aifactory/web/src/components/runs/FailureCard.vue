@@ -1,14 +1,16 @@
 <script setup lang="ts">
 // The failure card at the top of a run detail: the kind of the failure in Czech, one
 // sentence and the facts from the run's `failure_detail`, the whole error text, and the
-// actions that exist for the kind (lib/failure.ts).
-import { computed, ref } from 'vue'
-import { Ban } from 'lucide-vue-next'
+// actions that exist for the kind (lib/failure.ts). A writes_violation offers „Povolit tyto
+// cesty a pokračovat“ (`factory task retry --allow-writes`) for the paths writes can allow
+// and says why the others stay forbidden (GET /api/runs/{id}/allow-writes).
+import { computed, ref, watch } from 'vue'
+import { Ban, ShieldCheck } from 'lucide-vue-next'
 import { editTask } from '@/lib/backlog'
 import { useConfirm } from '@/lib/confirm'
-import { failureCard, type FailurePhase } from '@/lib/failure'
+import { allowWritesReason, failureCard, type FailurePhase } from '@/lib/failure'
 import { errorText } from '@/lib/format'
-import { canRetry, type RunSummary } from '@/lib/runs'
+import { allowWritesAndRetry, allowWritesPlan, canRetry, type AllowWritesPlan, type RunSummary } from '@/lib/runs'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import RetryRunButton from './RetryRunButton.vue'
@@ -19,6 +21,32 @@ const emit = defineEmits<{ retried: []; cancelled: [] }>()
 const card = computed(() => failureCard(props.run, props.phases ?? []))
 const canContinue = computed(() => !!card.value?.actions.includes('continue') && canRetry(props.run))
 const canCancel = computed(() => !!card.value?.actions.includes('cancel_task'))
+const wantsAllow = computed(() => !!card.value?.actions.includes('allow_writes') && canRetry(props.run))
+
+const plan = ref<AllowWritesPlan | null>(null)
+const allowing = ref(false)
+const allowed = ref(false)
+const allowError = ref<string | null>(null)
+const canAllow = computed(() => wantsAllow.value && !!plan.value?.allow.length)
+const refused = computed(() =>
+  (plan.value?.refused ?? []).map((r) => `${r.path} — ${allowWritesReason(r.reason, r.message)}`),
+)
+
+watch(
+  () => [props.run.run_id, wantsAllow.value] as const,
+  async ([runId, wants], _old, onCleanup) => {
+    plan.value = null
+    if (!wants) return
+    const controller = new AbortController()
+    onCleanup(() => controller.abort())
+    try {
+      plan.value = await allowWritesPlan(runId, controller.signal)
+    } catch {
+      plan.value = null // the card still offers Pokračovat and Zrušit task
+    }
+  },
+  { immediate: true },
+)
 // The whole error, when it says more than the sentence of the card.
 const fullError = computed(() => {
   const error = props.run.error?.trim()
@@ -30,6 +58,29 @@ const cancelling = ref(false)
 const cancelled = ref(false)
 const cancelError = ref<string | null>(null)
 const { dialog, ask, confirm: onDialogConfirm, cancel: onDialogCancel } = useConfirm()
+
+async function onAllowWrites() {
+  const paths = plan.value?.allow ?? []
+  if (!paths.length) return
+  const ok = await ask({
+    title: `Povolit cesty tasku ${props.run.task_id}?`,
+    message: `Do writes tasku přibude ${paths.join(', ')}. Změna backlogu se commitne do base a běh pokračuje.`,
+    confirmLabel: 'Povolit a pokračovat',
+    cancelLabel: 'Ponechat',
+  })
+  if (!ok) return
+  allowing.value = true
+  allowError.value = null
+  try {
+    await allowWritesAndRetry(props.run.run_id)
+    allowed.value = true
+    emit('retried')
+  } catch (e) {
+    allowError.value = `Cesty se nepodařilo povolit: ${errorText(e)}`
+  } finally {
+    allowing.value = false
+  }
+}
 
 async function onCancelTask() {
   const ok = await ask({
@@ -59,6 +110,18 @@ async function onCancelTask() {
     <header class="card-head">
       <h3 data-test="failure-kind">{{ card.label }}</h3>
       <div class="actions">
+        <button
+          v-if="canAllow"
+          type="button"
+          class="allow-writes"
+          data-test="allow-writes"
+          :disabled="allowing || allowed"
+          :aria-busy="allowing || undefined"
+          @click="onAllowWrites"
+        >
+          <Spinner v-if="allowing" />
+          <ShieldCheck v-else :size="14" /> Povolit tyto cesty a pokračovat
+        </button>
         <RetryRunButton v-if="canContinue" :run-id="run.run_id" label="Pokračovat" @started="emit('retried')" />
         <button
           v-if="canCancel"
@@ -81,10 +144,24 @@ async function onCancelTask() {
         <li v-for="(item, i) in fact.items" :key="i" data-test="failure-item">{{ item }}</li>
       </ul>
     </div>
+    <div v-if="canAllow" class="fact" data-fact="allow">
+      <h4>Akce přidá do writes</h4>
+      <ul class="mono">
+        <li v-for="path in plan?.allow ?? []" :key="path" data-test="failure-item">{{ path }}</li>
+      </ul>
+    </div>
+    <div v-if="wantsAllow && refused.length" class="fact" data-fact="refused">
+      <h4>Tyto cesty akce nepovolí</h4>
+      <ul>
+        <li v-for="(item, i) in refused" :key="i" data-test="failure-item">{{ item }}</li>
+      </ul>
+    </div>
     <details v-if="fullError" class="full-error">
       <summary>Celá chybová zpráva</summary>
       <pre data-test="run-error">{{ fullError }}</pre>
     </details>
+    <p v-if="allowed" class="done" data-test="allow-done">Writes tasku {{ run.task_id }} rozšířené, běh pokračuje.</p>
+    <p v-if="allowError" class="error" data-test="allow-error">{{ allowError }}</p>
     <p v-if="cancelled" class="done" data-test="cancel-done">Task {{ run.task_id }} je zrušený.</p>
     <p v-if="cancelError" class="error" data-test="cancel-error">{{ cancelError }}</p>
     <ConfirmDialog v-bind="dialog" @confirm="onDialogConfirm" @cancel="onDialogCancel" />
@@ -119,12 +196,14 @@ h3 {
   margin-left: auto;
 }
 
+.allow-writes,
 .cancel-task {
   display: inline-flex;
   align-items: center;
   gap: 6px;
 }
 
+.allow-writes:disabled,
 .cancel-task:disabled {
   opacity: 0.6;
   cursor: default;

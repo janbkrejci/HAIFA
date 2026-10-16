@@ -472,6 +472,9 @@ _RUN_ERROR_STATUS = {
     "run_already_paused": 409,
     "run_not_paused": 409,
     "run_not_retryable": 409,
+    "not_writes_violation": 409,
+    "nothing_to_allow": 409,
+    "writes_in_pr": 409,
     "task_done": 409,
     "unknown_branch": 404,
     "base_diverged": 409,
@@ -770,6 +773,34 @@ async def retry_run(request: Request) -> JSONResponse:
     except backlog.UsageError as exc:
         return _usage_error(exc.message)
     except (ReviewError, TaskRunError, ConfigError) as exc:
+        return _review_error(exc)
+    return JSONResponse(envelope_ok(data, warnings), status_code=202)
+
+
+async def allow_writes_plan(request: Request) -> JSONResponse:
+    """The paths „Povolit tyto cesty a pokračovat“ adds to writes and those it refuses."""
+    repo: Path = _repo(request)
+    try:
+        data = await run_in_threadpool(runs.allow_writes_plan, repo, request.path_params["run_id"])
+    except (TaskEditError, TaskRunError, ConfigError) as exc:
+        return _edit_error(exc)
+    return JSONResponse(envelope_ok(data))
+
+
+async def allow_writes_run(request: Request) -> JSONResponse:
+    """``factory task retry --allow-writes``: extend writes in base, start the retry; 202."""
+    repo: Path = _repo(request)
+    launcher: Launcher = request.app.state.launcher
+    try:
+        body = await _json_body(request)
+        data, warnings = await run_in_threadpool(
+            runs.start_allow_writes, repo, request.path_params["run_id"], body, launcher
+        )
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except (TaskEditError, TaskRunError, ConfigError) as exc:
+        return _edit_error(exc)
+    except ReviewError as exc:
         return _review_error(exc)
     return JSONResponse(envelope_ok(data, warnings), status_code=202)
 
@@ -1569,6 +1600,8 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/runs/{run_id}/pause", pause_run, methods=["POST"]),
         Route("/runs/{run_id}/resume", resume_run, methods=["POST"]),
         Route("/runs/{run_id}/retry", retry_run, methods=["POST"]),
+        Route("/runs/{run_id}/allow-writes", allow_writes_plan, methods=["GET"]),
+        Route("/runs/{run_id}/allow-writes", allow_writes_run, methods=["POST"]),
         Route("/runs/{run_id}/publish", publish_run, methods=["POST"]),
         Route("/runs/{run_id}/archive", archive_run, methods=["POST"]),
         Route("/runs/{run_id}/unarchive", unarchive_run, methods=["POST"]),
