@@ -5,7 +5,7 @@ Implemented: `check`, `harness check`, `config status`, `config show`,
 `backlog list`, `backlog sync`, `backlog auto-continue`, `backlog auto-merge`, `backlog add`,
 `backlog edit`, `task add`,
 `task edit`, `task link`, `task show`, `task list`, `task run`, `task approve`, `task return`,
-`task resolve`, `task publish`, `task clean`, `init`, `workflow check`,
+`task resolve`, `task publish`, `task clean`, `init`, `try`, `workflow check`,
 `skills sync`, `library init`, `library list`, `library show`, `library import`,
 `library clone`, `library status`, `library pull`, `library push`, `library seed`, `upgrade`,
 `obs` (the local dashboard of every registered repository, ``aifactory.web``), and
@@ -43,6 +43,10 @@ if TYPE_CHECKING:
 SUBCOMMANDS: tuple[tuple[str, str], ...] = (
     ("check", "check that factory will run in this repo and on this machine"),
     ("init", "install factory into this repository (agents and workflows come from the library)"),
+    (
+        "try",
+        "create the sample repository with a backlog of three tasks and register it",
+    ),
     ("task", "run and inspect backlog tasks"),
     ("backlog", "load and validate the backlog"),
     ("workflow", "validate and inspect workflows"),
@@ -99,6 +103,8 @@ def build_parser() -> argparse.ArgumentParser:
             _add_check_command(child)
         elif name == "init":
             _add_init_command(child)
+        elif name == "try":
+            _add_try_command(child)
         elif name == "harness":
             _add_harness_commands(child)
         elif name == "skills":
@@ -509,6 +515,48 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("-m", "--message", metavar="TEXT", help="with --commit: commit message")
     parser.add_argument("--force", action="store_true", help="overwrite existing files")
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+
+
+def _add_try_command(parser: argparse.ArgumentParser) -> None:
+    parser.description = (
+        "Create the sample repository: a small Python library with tests "
+        "(python -m unittest discover -s tests -t .) and a backlog of three tasks of "
+        "growing size (DEMO-S01-T01..T03). The folder (default: demo in the HAIFA home) "
+        "gets git init with base main, .factory/config.yaml with git_provider local (no "
+        "GitHub, no gh), the .gitignore lines and one commit; the repository is registered "
+        "in the dashboard. A folder that exists and is not empty is not changed: its path "
+        "is returned with created false (a git repository there is registered). git needs "
+        "user.name and user.email (git_identity_missing); a path that is a file is "
+        "invalid_value."
+    )
+    parser.add_argument(
+        "directory",
+        nargs="?",
+        metavar="DIR",
+        help="folder of the sample repository (default: $HAIFA_HOME/demo)",
+    )
+    parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
+
+
+def _try(args: argparse.Namespace) -> int:
+    from aifactory.demo import create_demo
+    from aifactory.library.store import LibraryStoreError
+
+    directory = Path(args.directory) if args.directory else None
+    try:
+        result = create_demo(directory)
+    except LibraryStoreError as exc:
+        return _library_fail(exc, args.json, "factory try")
+    if args.json:
+        return _emit_ok(result.to_json(), result.warnings)
+    if result.created:
+        print(f"created {result.path}")
+        print(f"next: factory obs --repo {result.path}  (or: factory task run DEMO-S01-T01)")
+    else:
+        print(result.path)
+    for warning in result.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    return 0
 
 
 def _init_conflict(args: argparse.Namespace) -> str | None:
@@ -3076,6 +3124,8 @@ def _dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
         return _check(args)
     if command == "init":
         return _init(args)
+    if command == "try":
+        return _try(args)
     if command == "harness":
         return _harness(args)
     if command == "skills":
