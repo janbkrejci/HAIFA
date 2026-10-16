@@ -467,6 +467,19 @@ def start_allow_writes(
     return data, list(result.commit.warnings)
 
 
+def finish_nothing_to_do(repo: Path, run_id: str) -> tuple[JsonDict, list[str]]:
+    """„Hotovo“ of a ``nothing_to_do`` run: ``{task_id, commit, run}``, warnings."""
+    from aifactory.run.unchanged import finish_nothing_to_do as finish
+
+    row, commit = finish(repo, run_id)
+    data: JsonDict = {
+        "task_id": row.task_id,
+        "commit": commit.to_json(),
+        "run": run_summary(repo, run_id),
+    }
+    return data, list(commit.warnings)
+
+
 def _agent_sessions(conn: sqlite3.Connection, run_id: str) -> list[JsonDict]:
     if not _has_table(conn, "agent_sessions"):
         return []

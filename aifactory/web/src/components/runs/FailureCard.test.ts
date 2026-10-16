@@ -74,7 +74,7 @@ describe('FailureCard', () => {
     expect(wrapper.get('[data-test="failure-sentence"]').text()).toBe('Podmínka accept `review.approved` nebyla splněna.')
   })
 
-  it('nothing_to_do: the agent and its summary, only Zrušit task', () => {
+  it('nothing_to_do: the agent and its summary, Hotovo and Zrušit task', () => {
     const wrapper = card({
       error: "builder reported status='fail': vše už je hotové",
       failure_kind: 'nothing_to_do',
@@ -82,7 +82,7 @@ describe('FailureCard', () => {
     })
     expect(wrapper.get('[data-test="failure-kind"]').text()).toBe('Agent neměl co dělat')
     expect(wrapper.get('[data-test="failure-sentence"]').text()).toBe('Agent builder neměl co dělat: vše už je hotové v HEAD.')
-    expect(actions(wrapper)).toEqual(['Zrušit task'])
+    expect(actions(wrapper)).toEqual(['Hotovo', 'Zrušit task'])
   })
 
   it('quota: the harness, the model and its message', () => {
@@ -199,6 +199,43 @@ describe('FailureCard', () => {
     expect(url).toMatch(/\/runs\/r-fail\/retry$/)
     expect(JSON.parse(String(init.body))).toEqual({ note: 'oprav README' })
     expect(wrapper.emitted('retried')).toHaveLength(1)
+  })
+
+  it('nothing_to_do: Hotovo marks the task done without changes after a confirmation', async () => {
+    const fetchMock = vi.fn(async () => okResponse({ task_id: 'M01-S01-T01', commit: {}, run: summary({}) }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = card({
+      error: "builder reported status='fail': jen front matter",
+      failure_kind: 'nothing_to_do',
+      failure_detail: { agent: 'builder', summary: 'zadání žádá jen změnu front matter', fail_kind: 'nothing_to_do' },
+    })
+    await wrapper.get('[data-test="mark-done"]').trigger('click')
+    await flushPromises()
+    expect(openDialog()?.textContent).toContain('Označit task M01-S01-T01 jako hotový?')
+    await answerDialog(false)
+    expect(fetchMock).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="mark-done"]').trigger('click')
+    await answerDialog(true)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/runs\/r-fail\/done$/)
+    expect(init.method).toBe('POST')
+    expect(wrapper.emitted('done')).toHaveLength(1)
+    expect(wrapper.get('[data-test="mark-done-done"]').text()).toBe('Task M01-S01-T01 je hotový bez změn.')
+    expect(wrapper.get('[data-test="mark-done"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="cancel-task"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('nothing_to_do: a refused Hotovo shows the error', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response(JSON.stringify({ ok: false, error: { code: 'not_nothing_to_do', message: 'not nothing_to_do' } }), { status: 409 })),
+    )
+    const wrapper = card({ error: 'x', failure_kind: 'nothing_to_do', failure_detail: { agent: 'builder', summary: 's' } })
+    await wrapper.get('[data-test="mark-done"]').trigger('click')
+    await answerDialog(true)
+    await flushPromises()
+    expect(wrapper.get('[data-test="mark-done-error"]').text()).toContain('Task se nepodařilo označit jako hotový')
+    expect(wrapper.emitted('done')).toBeUndefined()
   })
 
   it('Zrušit task cancels the task after a confirmation', async () => {

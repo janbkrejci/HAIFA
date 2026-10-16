@@ -117,6 +117,11 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "2",
         "task retry --allow-writes: the writes change waits in an unmerged backlog PR",
     ),
+    (
+        "not_nothing_to_do",
+        "2",
+        "dashboard Hotovo of a run: the run did not fail with nothing_to_do",
+    ),
     ("unknown_chain", "2", "no auto-continue chain with this id in the trace database"),
     ("chain_running", "2", "the chain is still running and cannot be dismissed"),
     # Review, PR and provider.

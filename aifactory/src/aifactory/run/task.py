@@ -874,7 +874,8 @@ def _execute(
         and store.pr_for_branch(final.branch) is None
         and unchanged(final)
     ):
-        failure, notes = finish_unchanged(main, store, final)
+        evidence = wf.already_done.evidence if wf is not None and wf.already_done else ()
+        failure, notes = finish_unchanged(main, store, final, evidence)
         result.warnings += tuple(notes)
         if failure is not None:
             result.pr_error = failure

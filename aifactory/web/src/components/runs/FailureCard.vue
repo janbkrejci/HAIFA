@@ -3,24 +3,33 @@
 // sentence and the facts from the run's `failure_detail`, the whole error text, and the
 // actions that exist for the kind (lib/failure.ts). A writes_violation offers „Povolit tyto
 // cesty a pokračovat“ (`factory task retry --allow-writes`) for the paths writes can allow
-// and says why the others stay forbidden (GET /api/runs/{id}/allow-writes).
+// and says why the others stay forbidden (GET /api/runs/{id}/allow-writes). A nothing_to_do
+// run offers „Hotovo“: the task is done in base without changes (POST /api/runs/{id}/done).
 import { computed, ref, watch } from 'vue'
-import { Ban, ShieldCheck } from 'lucide-vue-next'
+import { Ban, CircleCheck, ShieldCheck } from 'lucide-vue-next'
 import { editTask } from '@/lib/backlog'
 import { useConfirm } from '@/lib/confirm'
 import { allowWritesReason, failureCard, type FailurePhase } from '@/lib/failure'
 import { errorText } from '@/lib/format'
-import { allowWritesAndRetry, allowWritesPlan, canRetry, type AllowWritesPlan, type RunSummary } from '@/lib/runs'
+import {
+  allowWritesAndRetry,
+  allowWritesPlan,
+  canRetry,
+  markRunDone,
+  type AllowWritesPlan,
+  type RunSummary,
+} from '@/lib/runs'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import RetryRunButton from './RetryRunButton.vue'
 
 const props = defineProps<{ run: RunSummary; phases?: readonly FailurePhase[] }>()
-const emit = defineEmits<{ retried: []; cancelled: [] }>()
+const emit = defineEmits<{ retried: []; cancelled: []; done: [] }>()
 
 const card = computed(() => failureCard(props.run, props.phases ?? []))
 const canContinue = computed(() => !!card.value?.actions.includes('continue') && canRetry(props.run))
 const canCancel = computed(() => !!card.value?.actions.includes('cancel_task'))
+const canMarkDone = computed(() => !!card.value?.actions.includes('mark_done'))
 const wantsAllow = computed(() => !!card.value?.actions.includes('allow_writes') && canRetry(props.run))
 
 const plan = ref<AllowWritesPlan | null>(null)
@@ -82,6 +91,31 @@ async function onAllowWrites() {
   }
 }
 
+const marking = ref(false)
+const marked = ref(false)
+const markError = ref<string | null>(null)
+
+async function onMarkDone() {
+  const ok = await ask({
+    title: `Označit task ${props.run.task_id} jako hotový?`,
+    message: 'Task dostane stav hotovo v base se záznamem „bez změn“ a důvodem agenta. PR nevznikne.',
+    confirmLabel: 'Hotovo',
+    cancelLabel: 'Ponechat',
+  })
+  if (!ok) return
+  marking.value = true
+  markError.value = null
+  try {
+    await markRunDone(props.run.run_id)
+    marked.value = true
+    emit('done')
+  } catch (e) {
+    markError.value = `Task se nepodařilo označit jako hotový: ${errorText(e)}`
+  } finally {
+    marking.value = false
+  }
+}
+
 async function onCancelTask() {
   const ok = await ask({
     title: `Zrušit task ${props.run.task_id}?`,
@@ -122,13 +156,25 @@ async function onCancelTask() {
           <Spinner v-if="allowing" />
           <ShieldCheck v-else :size="14" /> Povolit tyto cesty a pokračovat
         </button>
+        <button
+          v-if="canMarkDone"
+          type="button"
+          class="mark-done"
+          data-test="mark-done"
+          :disabled="marking || marked || cancelled"
+          :aria-busy="marking || undefined"
+          @click="onMarkDone"
+        >
+          <Spinner v-if="marking" />
+          <CircleCheck v-else :size="14" /> Hotovo
+        </button>
         <RetryRunButton v-if="canContinue" :run-id="run.run_id" label="Pokračovat" @started="emit('retried')" />
         <button
           v-if="canCancel"
           type="button"
           class="cancel-task"
           data-test="cancel-task"
-          :disabled="cancelling || cancelled"
+          :disabled="cancelling || cancelled || marked"
           :aria-busy="cancelling || undefined"
           @click="onCancelTask"
         >
@@ -162,6 +208,8 @@ async function onCancelTask() {
     </details>
     <p v-if="allowed" class="done" data-test="allow-done">Writes tasku {{ run.task_id }} rozšířené, běh pokračuje.</p>
     <p v-if="allowError" class="error" data-test="allow-error">{{ allowError }}</p>
+    <p v-if="marked" class="done" data-test="mark-done-done">Task {{ run.task_id }} je hotový bez změn.</p>
+    <p v-if="markError" class="error" data-test="mark-done-error">{{ markError }}</p>
     <p v-if="cancelled" class="done" data-test="cancel-done">Task {{ run.task_id }} je zrušený.</p>
     <p v-if="cancelError" class="error" data-test="cancel-error">{{ cancelError }}</p>
     <ConfirmDialog v-bind="dialog" @confirm="onDialogConfirm" @cancel="onDialogCancel" />
@@ -197,6 +245,7 @@ h3 {
 }
 
 .allow-writes,
+.mark-done,
 .cancel-task {
   display: inline-flex;
   align-items: center;
@@ -204,6 +253,7 @@ h3 {
 }
 
 .allow-writes:disabled,
+.mark-done:disabled,
 .cancel-task:disabled {
   opacity: 0.6;
   cursor: default;

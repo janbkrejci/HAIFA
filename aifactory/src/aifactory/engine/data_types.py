@@ -131,9 +131,33 @@ class PlanOutput(EnvelopeBase):
     commit_message: str = ""
 
 
+# aifactory 3.5: the builder found the task's work done already (another task did it).
+# `evidence` names where the change is: commits (sha or subject) or files of the repo.
+class AlreadyDone(BaseModel):
+    evidence: list[str] = Field(min_length=1)
+    reason: str = ""                # why the work is done, in one sentence
+
+    @field_validator("evidence")
+    @classmethod
+    def _evidence_not_blank(cls, value: list[str]) -> list[str]:
+        items = [item.strip() for item in value if item.strip()]
+        if not items:
+            raise ValueError("already_done.evidence needs a commit or a file where the change is")
+        return items
+
+
 class BuildOutput(EnvelopeBase):
     changed_files: list[str] = Field(default_factory=list)
     commit_message: str = ""        # consumed by the git commit phase
+    # aifactory 3.5: set with status=success when there is nothing to build; the first
+    # build of a run then ends the workflow and the task is done without changes.
+    already_done: Optional[AlreadyDone] = None
+
+    @model_validator(mode="after")
+    def _already_done_is_success(self) -> "BuildOutput":
+        if self.already_done is not None and self.status != "success":
+            raise ValueError("already_done is reported with status 'success'")
+        return self
 
 
 class ScoutFinding(BaseModel):
