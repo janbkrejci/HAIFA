@@ -21,6 +21,7 @@ from pydantic import Field
 from aifactory import yamlload
 from aifactory.engine import data_types as dt
 from aifactory.harness import HARNESSES, HarnessName, canonical, install
+from aifactory.harness.fallback import Fallback
 
 # Keys an agent inherits from `defaults`, exactly as `agents.load_config` does.
 INHERITED = (
@@ -44,6 +45,8 @@ class HarnessConfigError(ValueError):
 
 class AgentConfig(dt.AgentConfig):
     coding_agent: HarnessName  # type: ignore[assignment]
+    # the harness the run continues on after a quota failure of this agent (fallback.py)
+    fallback: Fallback | None = None
 
     @property
     def harness(self) -> str:
@@ -52,6 +55,8 @@ class AgentConfig(dt.AgentConfig):
 
 class ConfigDefaults(dt.ConfigDefaults):
     coding_agent: HarnessName | None = None  # type: ignore[assignment]
+    # the roster's fallback after a quota failure; an agent's own `fallback` wins
+    fallback: Fallback | None = None
 
     @property
     def harness(self) -> str | None:

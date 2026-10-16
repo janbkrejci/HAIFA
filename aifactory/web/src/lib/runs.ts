@@ -534,6 +534,26 @@ export interface RunRetry {
   rebased_onto: string | null
   previous_state: string
   previous_error: string | null
+  /** The retry continued on another harness (`run/fallback.py`). */
+  harness_switch?: HarnessSwitch | null
+}
+
+/** A harness, model and thinking of one side of a switch. */
+export interface HarnessBinding {
+  harness?: string
+  model?: string
+  thinking?: string
+}
+
+/** A retry on another harness: from where, to where and why (`quota`, ...). */
+export interface HarnessSwitch {
+  from: HarnessBinding
+  to: HarnessBinding
+  reason: string
+  /** true: the quota fallback switched by itself; false: the operator chose. */
+  auto: boolean
+  agent?: string
+  source?: string
 }
 
 export interface RetryResponse {
@@ -604,7 +624,42 @@ export function retryLabel(retry: RunRetry): string {
   const parts = [retry.from_phase ? `od fáze ${retry.from_phase}` : 'od první fáze']
   if (retry.replayed) parts.push(`převzato ${retry.replayed} hotových fází`)
   if (retry.rebased_onto) parts.push(`po rebase na ${retry.rebased_onto.slice(0, 7)}`)
+  if (retry.harness_switch) parts.push(switchLabel(retry.harness_switch))
   return parts.join(', ')
+}
+
+function bindingLabel(side: HarnessBinding): string {
+  const harness = side.harness ?? '?'
+  return side.model ? `${harness}/${side.model}` : harness
+}
+
+/** „přepnuto codex/gpt → claude/opus (kvóta, automaticky)“ */
+export function switchLabel(sw: HarnessSwitch): string {
+  const why = [sw.reason === 'quota' ? 'kvóta' : sw.reason, sw.auto ? 'automaticky' : 'operátor']
+  return `přepnuto ${bindingLabel(sw.from)} → ${bindingLabel(sw.to)} (${why.join(', ')})`
+}
+
+/** A harness „Pokračovat s jiným harnessem“ offers, with the model it would run. */
+export interface HarnessChoice {
+  harness: string
+  model: string
+  thinking: string | null
+}
+
+export interface HarnessChoices {
+  run_id: string
+  exhausted: { harness: string | null; model: string | null }
+  choices: HarnessChoice[]
+}
+
+/** The enabled and tested harnesses a run can continue on (never the exhausted one). */
+export function harnessChoices(runId: string, signal?: AbortSignal): Promise<HarnessChoices> {
+  return getApi<HarnessChoices>(runPath(runId, 'harness-choices'), signal)
+}
+
+/** `factory task retry --harness`: continue the run with every agent on `harness`. */
+export function retryOnHarness(runId: string, harness: string): Promise<RetryResponse> {
+  return postApi<RetryResponse>(runPath(runId, 'retry'), { harness })
 }
 
 /** A succeeded run without a PR: the dashboard offers to publish it. */

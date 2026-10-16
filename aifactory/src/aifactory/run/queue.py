@@ -941,8 +941,11 @@ def retry_chain(
     max_parallel: int | None = None,
     runner: ChainRunner | None = None,
     pr_files: Callable[[TaskPrRow], list[str] | None] | None = None,
+    agents_override: dict[str, str] | None = None,
 ) -> ChainResult:
     """``factory task retry``: the retry of a run, then auto-merge and auto-continue.
+
+    ``agents_override`` continues the run on another harness (``retry_run``).
 
     After a successful attempt the chain goes on exactly as after ``run_chain``: the
     PR is merged with ``auto_merge`` and the next ready task starts with ``--auto``
@@ -961,6 +964,7 @@ def retry_chain(
             from_phase=from_phase,
             code=code,
             provider=provider,
+            agents_override=agents_override,
         )
 
     return run_chain(

@@ -3,10 +3,12 @@
 The retry is another attempt of the same run: the same ``run_id``, worktree and branch,
 the same trace session (phases, tokens and costs add up) and the same session directory,
 so every agent rejoins its coding-agent session (``agent_map.json``: ``claude --resume``,
-``codex exec resume``, pi's ``--session-id``) when its model is unchanged. The prompt gets
-a ``## Continuation`` section with the phases already done, their summaries and the
-``context_handoff/`` directory, for an agent whose session is gone, and the operator's
-note.
+``codex exec resume``, pi's ``--session-id``) when its harness and model are unchanged.
+The prompt gets a ``## Continuation`` section with the phases already done, their
+summaries and the ``context_handoff/`` directory, for an agent whose session is gone, and
+the operator's note. A retry on another harness (``--harness``, the dashboard's
+„Pokračovat s jiným harnessem“, the quota fallback of ``fallback.py``) replaces the run's
+roster override and records the switch (``harness_switch`` in ``task_runs.retries``).
 
 What the retry does, in order; any refusal before the claim changes nothing:
 
@@ -214,6 +216,7 @@ def continuation(
     note: str | None,
     handoff: Path,
     rebased_onto: str | None,
+    switched: str | None = None,
 ) -> str:
     """The ``## Continuation`` section of a retry's prompt."""
     lines = [
@@ -226,6 +229,11 @@ def continuation(
     ]
     if row.error:
         lines.append(f"The earlier attempt ended: {row.error.strip()[:500]}")
+    if switched:
+        lines.append(
+            f"The harness changed for this attempt: {switched}. Your earlier session may be "
+            "gone; the work so far is in the working directory and the summaries below."
+        )
     if rebased_onto:
         lines.append(
             f"The branch was rebased onto `{row.base}` (`{rebased_onto[:7]}`) before this "
@@ -306,10 +314,21 @@ def retry_run(
     from_phase: str | None = None,
     code: CodeRunner | None = None,
     provider: GitProvider | None = None,
+    agents_override: dict[str, str] | None = None,
+    switch: dict[str, Any] | None = None,
 ) -> TaskRunResult:
-    """Continue the task's newest (or `run_id`) failed or stopped run; a ``TaskRunResult``."""
+    """Continue the task's newest (or `run_id`) failed or stopped run; a ``TaskRunResult``.
+
+    ``agents_override`` (``harness``, ``model``, ``thinking``) continues on another harness:
+    it replaces the roster override the run started with (its note says so from now on)
+    and the switch is recorded (``fallback.harness_switch``). `switch` says how it came
+    about: ``{"auto": True, "source": ...}`` for the quota fallback (``fallback.py``).
+    A retry without a switch that fails with ``quota`` continues on the configured
+    fallback once (``fallback.continue_on_fallback``).
+    """
     from aifactory.harness.settings import effective_override
     from aifactory.run import task as run_mod
+    from aifactory.run.fallback import SWITCH_KEY, continue_on_fallback, harness_switch, switch_text
 
     main = gitops.main_root(repo)
     rc = run_mod._load(main)
@@ -356,13 +375,26 @@ def retry_run(
         if task is None:
             raise run_mod._missing_task(main, rc, backlog, task_id)
         _refuse_done(store, task, task_id)
+        previous = _note_override(row.note)
+        switching = {k: v for k, v in (agents_override or {}).items() if v and v.strip()}
         try:
-            binding = effective_override(
-                run_mod.task_harness_values(task), _note_override(row.note)
-            )
+            binding = effective_override(run_mod.task_harness_values(task), switching or previous)
             rc = run_mod.apply_agents_override(rc, binding)
         except ValueError as exc:
             raise TaskRunError("invalid_override", str(exc)) from exc
+        record: dict[str, Any] | None = None
+        run_note = row.note
+        if switching:
+            record = harness_switch(
+                row,
+                binding,
+                auto=bool((switch or {}).get("auto")),
+                source=(switch or {}).get("source"),
+                previous=previous,
+            )
+            run_note = run_mod.override_note(
+                _OVERRIDE_TAG.sub("", row.note or "").strip() or None, binding
+            )
         outputs = output_paths(task, settings)
         workdir = project_workdir(settings)
         scope = task_scope(task, outputs)
@@ -416,7 +448,7 @@ def retry_run(
             failure_kind=row.failure_kind,
         )
         warnings += plan.warnings
-        prompt = run_mod.task_prompt(task, scope, outputs, worktree, row.note)
+        prompt = run_mod.task_prompt(task, scope, outputs, worktree, run_note)
         if workdir != ".":
             prompt += (
                 f"\nAgent working directory: {worktree / workdir}. "
@@ -425,9 +457,15 @@ def retry_run(
                 "including when running from this subdirectory.\n"
             )
         prompt += continuation(
-            row, journal, plan, note, session_dir / "context_handoff", onto if rebase else None
+            row,
+            journal,
+            plan,
+            note,
+            session_dir / "context_handoff",
+            onto if rebase else None,
+            switch_text(record) if record is not None else None,
         )
-        retry = {
+        retry: dict[str, Any] = {
             "started_at": _now(),
             "from_phase": plan.resume,
             "replayed": plan.limit,
@@ -436,7 +474,11 @@ def retry_run(
             "previous_state": row.state,
             "previous_error": row.error,
         }
-        claimed = store.reclaim(row.run_id, os.getpid(), retry)
+        if record is not None:
+            retry[SWITCH_KEY] = record
+        claimed = store.reclaim(
+            row.run_id, os.getpid(), retry, run_note if record is not None else None
+        )
         result = run_mod._execute(
             main,
             rc,
@@ -464,6 +506,7 @@ def retry_run(
                         "replayed_phases": plan.limit,
                         **({"rebased_onto": onto[:7]} if rebase else {}),
                         **({"retry_note": retry["note"]} if retry["note"] else {}),
+                        **({SWITCH_KEY: switch_text(record)} if record is not None else {}),
                     },
                 ),
             ),
@@ -471,9 +514,11 @@ def retry_run(
             provider,
         )
         result.warnings = (*result.warnings, *warnings)
-        return result
     finally:
         store.close()
+    if record is not None:
+        return result  # a switch is never followed by another one
+    return continue_on_fallback(main, result, code=code, provider=provider)
 
 
 def rebase_for_retry(

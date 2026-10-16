@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import FailureCard from './FailureCard.vue'
+import SelectMenu from '@/components/ui/SelectMenu.vue'
 import { failureCard, failureLabel } from '@/lib/failure'
 import type { RunSummary } from '@/lib/runs'
 import { okResponse, summary } from '@/test/runsFixtures'
@@ -98,7 +99,53 @@ describe('FailureCard', () => {
     expect(fact(wrapper, 'harness')).toEqual(['claude'])
     expect(fact(wrapper, 'model')).toEqual(['claude-opus-5-5'])
     expect(fact(wrapper, 'message')).toEqual(['You have hit your limit · resets 3pm'])
-    expect(actions(wrapper)).toEqual(['Pokračovat', 'Zrušit task'])
+    expect(actions(wrapper)).toEqual(['Pokračovat s jiným harnessem', 'Pokračovat', 'Zrušit task'])
+  })
+
+  it('quota: „Pokračovat s jiným harnessem“ offers the tested harnesses and retries on one', async () => {
+    const choices = {
+      run_id: 'r-fail',
+      exhausted: { harness: 'codex', model: 'gpt-6.1-sol' },
+      choices: [
+        { harness: 'claude', model: 'claude-opus-5-5', thinking: 'high' },
+        { harness: 'pi', model: 'x/y', thinking: null },
+      ],
+    }
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? okResponse({ task_id: 'M01-S01-T01', action: 'retry', run: null, pending: true })
+        : okResponse(choices),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = card({ error: 'codex: quota exhausted', failure_kind: 'quota', failure_detail: { harness: 'codex' } })
+    expect(fetchMock).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="switch-harness"]').trigger('click')
+    await flushPromises()
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/runs\/r-fail\/harness-choices$/)
+    const select = wrapper.getComponent(SelectMenu)
+    expect(select.props('options').map((o: { label: string }) => o.label)).toEqual([
+      'claude · claude-opus-5-5 · high',
+      'pi · x/y',
+    ])
+    expect(select.props('modelValue')).toBe('claude')
+    select.vm.$emit('update:modelValue', 'pi')
+    await flushPromises()
+    await wrapper.get('[data-test="switch-form"]').trigger('submit')
+    await flushPromises()
+    const [url, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/runs\/r-fail\/retry$/)
+    expect(init.method).toBe('POST')
+    expect(JSON.parse(String(init.body))).toEqual({ harness: 'pi' })
+    expect(wrapper.emitted('retried')).toHaveLength(1)
+  })
+
+  it('quota without another tested harness says so', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => okResponse({ run_id: 'r-fail', exhausted: { harness: 'codex', model: null }, choices: [] })))
+    const wrapper = card({ error: 'codex: quota exhausted', failure_kind: 'quota', failure_detail: { harness: 'codex' } })
+    await wrapper.get('[data-test="switch-harness"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="switch-none"]').text()).toContain('Žádný jiný harness')
+    expect(wrapper.find('[data-test="switch-submit"]').exists()).toBe(false)
   })
 
   it('quota recorded without a model: the model of the phase that failed', () => {

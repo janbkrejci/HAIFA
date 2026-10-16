@@ -117,13 +117,21 @@ class ThreadLauncher:
         note: str | None = None,
         from_phase: str | None = None,
         timeout: float = 30.0,
+        agents_override: dict[str, str] | None = None,
     ) -> TaskRunRow | None:
         from aifactory.run.retry import retry_run
 
         return self._start(
             repo,
             task_id,
-            lambda: retry_run(repo, task_id, run_id=run_id, note=note, from_phase=from_phase),
+            lambda: retry_run(
+                repo,
+                task_id,
+                run_id=run_id,
+                note=note,
+                from_phase=from_phase,
+                agents_override=agents_override,
+            ),
             f"retry {task_id}",
             timeout,
             retried_row(repo, run_id),

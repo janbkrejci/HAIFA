@@ -4,7 +4,8 @@
 // actions that exist for the kind (lib/failure.ts). A writes_violation offers „Povolit tyto
 // cesty a pokračovat“ (`factory task retry --allow-writes`) for the paths writes can allow
 // and says why the others stay forbidden (GET /api/runs/{id}/allow-writes). A nothing_to_do
-// run offers „Hotovo“: the task is done in base without changes (POST /api/runs/{id}/done).
+// run offers „Hotovo“: the task is done in base without changes (POST /api/runs/{id}/done). A
+// quota run offers „Pokračovat s jiným harnessem“ (SwitchHarnessButton, `task retry --harness`).
 import { computed, ref, watch } from 'vue'
 import { Ban, CircleCheck, ShieldCheck } from 'lucide-vue-next'
 import { editTask } from '@/lib/backlog'
@@ -22,6 +23,7 @@ import {
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import RetryRunButton from './RetryRunButton.vue'
+import SwitchHarnessButton from './SwitchHarnessButton.vue'
 
 const props = defineProps<{ run: RunSummary; phases?: readonly FailurePhase[] }>()
 const emit = defineEmits<{ retried: []; cancelled: []; done: [] }>()
@@ -30,6 +32,7 @@ const card = computed(() => failureCard(props.run, props.phases ?? []))
 const canContinue = computed(() => !!card.value?.actions.includes('continue') && canRetry(props.run))
 const canCancel = computed(() => !!card.value?.actions.includes('cancel_task'))
 const canMarkDone = computed(() => !!card.value?.actions.includes('mark_done'))
+const canSwitch = computed(() => !!card.value?.actions.includes('switch_harness') && canRetry(props.run))
 const wantsAllow = computed(() => !!card.value?.actions.includes('allow_writes') && canRetry(props.run))
 
 const plan = ref<AllowWritesPlan | null>(null)
@@ -168,6 +171,7 @@ async function onCancelTask() {
           <Spinner v-if="marking" />
           <CircleCheck v-else :size="14" /> Hotovo
         </button>
+        <SwitchHarnessButton v-if="canSwitch" :run-id="run.run_id" @started="emit('retried')" />
         <RetryRunButton v-if="canContinue" :run-id="run.run_id" label="Pokračovat" @started="emit('retried')" />
         <button
           v-if="canCancel"

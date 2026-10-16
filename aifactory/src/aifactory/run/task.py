@@ -644,7 +644,7 @@ def run_task(
             stacked_on=stacked,
         )
         store.claim(row)
-        return _execute(
+        result = _execute(
             main,
             rc,
             store,
@@ -665,6 +665,11 @@ def run_task(
         )
     finally:
         store.close()
+    if resolve_onto is not None or workflow_name is not None:
+        return result  # a resolve or ci-fix run is not retried
+    from aifactory.run.fallback import continue_on_fallback
+
+    return continue_on_fallback(main, result, code=code, provider=provider)
 
 
 @dataclass

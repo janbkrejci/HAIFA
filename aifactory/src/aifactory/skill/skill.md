@@ -756,8 +756,9 @@ Run states in `data.run.state` and `task_runs`: `running`, `succeeded`, `failed`
 
 ### Retry
 
-`factory task retry ID [--run RUN_ID] [--note TEXT] [--from PHASE] --json` continues the
-task's newest `failed`, `stopped` or `aborted` run (or `--run`) as its next attempt.
+`factory task retry ID [--run RUN_ID] [--note TEXT] [--from PHASE] [--harness NAME [--model
+NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped` or
+`aborted` run (or `--run`) as its next attempt.
 
 1. Same `run_id`, worktree, branch and trace session: tokens and costs add up,
    `data.run.attempt` counts the attempts and `data.run.retries` says per retry where it
@@ -768,9 +769,9 @@ task's newest `failed`, `stopped` or `aborted` run (or `--run`) as its next atte
    was stopped; after `accept_not_met` from the top-level step whose result failed
    `accept` (a review loop gets a new round); with `--from` from that phase (a phase name
    like `review_2` or a step like `review`, `unknown_phase` otherwise).
-3. Every agent rejoins its coding-agent session when its model is unchanged. The prompt
-   gets a `## Continuation` section (the done phases, `context_handoff/`) and `--note` as
-   `## Retry note`.
+3. Every agent rejoins its coding-agent session when its harness and model are unchanged.
+   The prompt gets a `## Continuation` section (the done phases, `context_handoff/`) and
+   `--note` as `## Retry note`.
 4. Base is pulled from the remote first, like `factory config pull`; a base that cannot
    move stops the retry with that error (`base_diverged`, `dirty_base`, `run_in_progress`)
    and nothing changes. When base moved past the branch, the branch is rebased onto it
@@ -789,6 +790,15 @@ task's newest `failed`, `stopped` or `aborted` run (or `--run`) as its next atte
    `protected_files`, in the backlog or in the main checkout is never added. Refused:
    `not_writes_violation`, `nothing_to_allow`, `writes_in_pr` (base_changes: pr and the
    backlog PR is not merged yet: retry after the merge).
+8. `--harness` (with `--model`, `--thinking`) continues with every agent on another
+   harness, e.g. after `failure_kind: quota`; it replaces the run's roster override. The
+   switch is in `data.run.retries[].harness_switch` (`from`, `to`, `reason`, `auto`), in
+   the run's events (the `request` phase) and in the PR body (`Přepnutí harnessu`).
+9. Quota fallback: a run or retry that fails with `quota` retries itself once on the
+   fallback harness, when one is set: `fallback: {harness, model?, thinking?}` in
+   `.factory/local.yaml` (this computer, wins), on the agent in `.factory/agents.yaml`, or
+   in its `defaults`. When the fallback fails too, the run stays failed (`quota`) and no
+   further switch happens. Without a fallback, retry with `--harness` yourself.
 
 ### Review
 

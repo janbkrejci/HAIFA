@@ -1764,6 +1764,12 @@ task retry: continues the task's newest failed, stopped or aborted run (or --run
   protected_files, in the backlog or in the main checkout are never added; refused: a run
   of another kind (not_writes_violation), no path to add (nothing_to_allow), a change
   waiting in an unmerged backlog PR (writes_in_pr).
+  --harness [--model --thinking] continues with every agent on another harness (after a
+  quota failure); the switch is recorded in the run's retries, its events and its PR.
+quota fallback: a run (or retry) that fails with failure_kind quota continues once by itself
+  as a retry on the configured fallback harness: 'fallback: {harness, model?, thinking?}' in
+  .factory/local.yaml (this computer, wins), on the agent in agents.yaml, or in its defaults.
+  When the fallback fails too, the run stays failed (quota); a switch never switches again.
 """
 
 
@@ -2043,6 +2049,22 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="after a writes_violation: add the paths written outside writes to the task's "
         "writes (committed to base by base_changes), then retry. Paths in protected_files, "
         "in the backlog or in the main checkout are never added",
+    )
+    retry.add_argument(
+        "--harness",
+        metavar="NAME",
+        help="continue with every agent on this harness (e.g. after a quota failure); it "
+        "replaces the run's harness override, the switch is recorded in the run and its PR. "
+        "Without --model the computer's model for the harness, else its preset model",
+    )
+    retry.add_argument(
+        "--model", metavar="NAME", help="model of every agent for the retry (with --harness)"
+    )
+    retry.add_argument(
+        "--thinking",
+        metavar="LEVEL",
+        choices=THINKING_LEVELS,
+        help="thinking level of every agent for the retry (with --harness)",
     )
 
     for child in (
@@ -2510,6 +2532,7 @@ def _task_retry(args: argparse.Namespace, root: Path) -> int:
             note=args.note,
             from_phase=args.from_phase,
             auto=args.auto,
+            agents_override=_agents_override(args),
         ),
         extra,
     )

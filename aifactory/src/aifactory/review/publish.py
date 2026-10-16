@@ -36,6 +36,8 @@ def run_pr_body(
     A resolve run keeps the summary of the branch's PR; so does a run whose agents wrote
     none. `follow_ups` are the backlog tasks the run filed.
     """
+    from aifactory.run.fallback import harness_switches
+
     runs = [r for r in store.runs_on_branch(row.branch) if r.state == SUCCEEDED]
     existing = store.pr_for_branch(row.branch)
     return pr_body(
@@ -47,6 +49,7 @@ def run_pr_body(
         follow_ups=follow_ups,
         previous_body=existing.body if existing is not None else None,
         reuse_summary=row.workflow in INTERNAL_WORKFLOWS,
+        switches=harness_switches(reversed(runs)),
     )
 
 
