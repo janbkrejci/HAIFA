@@ -1,0 +1,198 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import AssistantPanel from './AssistantPanel.vue'
+import { assistant, resetAssistantForTests, setOpen } from '@/lib/assistant'
+import { FakeEventSource } from '@/test/fakeEventSource'
+
+function envelope(data: unknown, status = 200) {
+  return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] }), { status })
+}
+
+function failure(code: string, message: string, status: number) {
+  return new Response(JSON.stringify({ ok: false, data: null, error: { code, message }, warnings: [] }), { status })
+}
+
+const THREAD = {
+  id: 'a1b2c3d4e5f6',
+  title: '',
+  harness: 'claude',
+  model: 'claude-opus-5-5',
+  created_at: '2026-10-16T10:00:00+00:00',
+  updated_at: '2026-10-16T10:00:00+00:00',
+  busy: false,
+  messages: [],
+  seq: 0,
+}
+
+interface Sent {
+  url: string
+  body: unknown
+}
+
+function stubApi(options: { runState?: string; threads?: unknown[]; detail?: unknown; busy?: boolean } = {}) {
+  const sent: Sent[] = []
+  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+    const body = init?.body ? JSON.parse(String(init.body)) : undefined
+    if (init?.method === 'POST') sent.push({ url, body })
+    if (url.startsWith('/api/repos/haifa/runs/')) return envelope({ run: { state: options.runState ?? 'failed' } })
+    if (url === '/api/assistant/threads' && init?.method === 'POST') return envelope(THREAD, 201)
+    if (url === '/api/assistant/threads') return envelope({ threads: options.threads ?? [] })
+    if (url.endsWith('/messages')) {
+      if (options.busy) return failure('busy', 'the guide is still answering in this thread', 409)
+      const message = { id: 'm1', role: 'user', text: body.text, screen: body.screen ?? {}, at: THREAD.created_at }
+      return envelope({ thread: { ...THREAD, title: body.text, busy: true, messages: 1 }, message, seq: 1 }, 202)
+    }
+    if (url.startsWith('/api/assistant/threads/')) return envelope(options.detail ?? THREAD)
+    return envelope({})
+  })
+  vi.stubGlobal('fetch', fetchMock)
+  return { fetchMock, sent }
+}
+
+function go(hash: string) {
+  window.location.hash = hash
+  window.dispatchEvent(new HashChangeEvent('hashchange'))
+}
+
+enableAutoUnmount(afterEach)
+
+beforeEach(() => {
+  vi.stubGlobal('EventSource', FakeEventSource)
+})
+
+afterEach(() => {
+  resetAssistantForTests()
+  FakeEventSource.reset()
+  vi.unstubAllGlobals()
+})
+
+async function openPanel() {
+  setOpen(true)
+  const wrapper = mount(AssistantPanel, { props: { repos: ['haifa', 'other'] } })
+  await flushPromises()
+  return wrapper
+}
+
+describe('AssistantPanel', () => {
+  it('offers why a failed run failed, with the run as a context chip', async () => {
+    stubApi({ runState: 'failed' })
+    go('#/r/haifa/runs/740183f7')
+    const wrapper = await openPanel()
+    expect(wrapper.get('[data-test="assistant-context"]').text()).toContain('repo haifa · běh 740183f7')
+    const offered = wrapper.findAll('[data-test="assistant-suggestion"]').map((b) => b.text())
+    expect(offered).toHaveLength(3)
+    expect(offered[0]).toBe('Proč tenhle běh selhal?')
+  })
+
+  it('streams the answer as markdown with dashboard links', async () => {
+    const { sent } = stubApi()
+    go('#/r/haifa/runs/740183f7')
+    const wrapper = await openPanel()
+    await wrapper.findAll('[data-test="assistant-suggestion"]')[0]!.trigger('click')
+    await flushPromises()
+
+    expect(sent.map((s) => s.url)).toEqual(['/api/assistant/threads', '/api/assistant/threads/a1b2c3d4e5f6/messages'])
+    expect(sent[1]!.body).toEqual({ text: 'Proč tenhle běh selhal?', screen: { repo: 'haifa', run: '740183f7' } })
+    const stream = FakeEventSource.latest()
+    expect(stream.url).toBe('/api/assistant/threads/a1b2c3d4e5f6/stream?after=1')
+    expect(wrapper.get('[data-test="assistant-harness"]').text()).toBe('claude · claude-opus-5-5')
+
+    stream.emit('tool', { seq: 2, label: './guide sql haifa "SELECT …"' })
+    stream.emit('text', { seq: 3, text: 'Task **P01-S01-T01** selhal v testech.' })
+    await flushPromises()
+    const streaming = wrapper.get('[data-test="assistant-streaming"]')
+    expect(streaming.text()).toContain('./guide sql haifa')
+    expect(streaming.find('strong').exists()).toBe(true)
+
+    const answer = { id: 'm2', role: 'assistant', text: 'Task `P01-S01-T01` selhal, viz PR #4.', at: THREAD.created_at }
+    stream.emit('done', { seq: 4, message: answer })
+    await flushPromises()
+    expect(stream.closed).toBe(true)
+    expect(wrapper.find('[data-test="assistant-streaming"]').exists()).toBe(false)
+    const links = wrapper.get('[data-test="assistant-answer"]').findAll('a').map((a) => a.attributes('href'))
+    expect(links).toEqual(['#/r/haifa/backlog/P01-S01-T01', '#/r/haifa/review'])
+  })
+
+  it('keeps the open thread when the screen changes', async () => {
+    stubApi()
+    go('#/r/haifa/runs/740183f7')
+    const wrapper = await openPanel()
+    await wrapper.get('[data-test="assistant-input"]').setValue('Co se stalo?')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    FakeEventSource.latest().emit('done', { seq: 2, message: { id: 'm2', role: 'assistant', text: 'Nic.' } })
+    go('#/r/haifa/backlog/P01-S01-T01')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="assistant-user"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Nic.')
+    expect(wrapper.get('[data-test="assistant-context"]').text()).toContain('task P01-S01-T01')
+  })
+
+  it('sends without the screen once the chip is removed', async () => {
+    const { sent } = stubApi()
+    go('#/r/haifa/backlog/P01-S01-T01')
+    const wrapper = await openPanel()
+    await wrapper.get('[data-test="assistant-context-remove"]').trigger('click')
+    expect(wrapper.find('[data-test="assistant-context"]').exists()).toBe(false)
+    await wrapper.get('[data-test="assistant-input"]').setValue('Co dál?')
+    await wrapper.get('[data-test="assistant-input"]').trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(sent[1]!.body).toEqual({ text: 'Co dál?' })
+    // another screen brings its own chip back
+    go('#/r/haifa/backlog/P01-S01-T02')
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-context"]').text()).toContain('P01-S01-T02')
+  })
+
+  it('lists older threads and opens one', async () => {
+    const older = { ...THREAD, id: 'ffffffffffff', title: 'Co běží?', harness: 'codex', model: 'gpt-5.5', messages: 2 }
+    const detail = {
+      ...older,
+      messages: [
+        { id: 'u', role: 'user', text: 'Co běží?', screen: {} },
+        { id: 'a', role: 'assistant', text: 'Nic neběží.' },
+      ],
+    }
+    stubApi({ threads: [older], detail })
+    go('#/overview')
+    const wrapper = await openPanel()
+    expect(wrapper.find('[data-test="assistant-context"]').exists()).toBe(false)
+    await wrapper.get('[data-test="assistant-threads"]').trigger('click')
+    await flushPromises()
+    const items = wrapper.findAll('[data-test="assistant-thread-item"]')
+    expect(items).toHaveLength(1)
+    expect(items[0]!.text()).toContain('codex · gpt-5.5')
+    await items[0]!.trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Nic neběží.')
+    expect(wrapper.get('[data-test="assistant-harness"]').text()).toBe('codex · gpt-5.5')
+    expect(assistant.thread?.id).toBe('ffffffffffff')
+
+    await wrapper.get('[data-test="assistant-new"]').trigger('click')
+    expect(wrapper.findAll('[data-test="assistant-suggestion"]')).toHaveLength(3)
+  })
+
+  it('shows an answer that failed and a refused message', async () => {
+    stubApi({ busy: true })
+    go('#/overview')
+    const wrapper = await openPanel()
+    await wrapper.get('[data-test="assistant-input"]').setValue('Ahoj')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-error"]').text()).toContain('still answering')
+  })
+
+  it('follows an answer still running when a thread is opened', async () => {
+    const detail = { ...THREAD, busy: true, messages: [{ id: 'u', role: 'user', text: 'Co běží?' }], seq: 3 }
+    stubApi({ detail })
+    const wrapper = await openPanel()
+    resetAssistantForTests()
+    sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
+    setOpen(true)
+    await flushPromises()
+    expect(FakeEventSource.latest().url).toBe('/api/assistant/threads/a1b2c3d4e5f6/stream?after=0')
+    FakeEventSource.latest().emit('error', { seq: 4, message: { id: 'e', role: 'assistant', text: '', error: 'agent exited 1' } })
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-answer-error"]').text()).toBe('agent exited 1')
+  })
+})
