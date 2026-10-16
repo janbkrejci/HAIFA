@@ -13,6 +13,7 @@ import { factory, failed, overview, repo as ovRepo, review, running } from './te
 import { answerDialog, openDialog } from './test/modal'
 import { installPlan, factoryCheck } from './test/factoryFixtures'
 import { lastFactoryResult } from './lib/factory'
+import { resetAssistantForTests } from './lib/assistant'
 
 function envelope(data: unknown) {
   return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] }))
@@ -62,6 +63,7 @@ function go(hash: string) {
 enableAutoUnmount(afterEach)
 
 afterEach(() => {
+  resetAssistantForTests()
   lastFactoryResult.value = null
   vi.unstubAllGlobals()
   resetConfigStatusForTests()
@@ -656,5 +658,24 @@ describe('App', () => {
     expect(window.location.hash).toBe('#/overview')
     expect(wrapper.find('[data-test="readiness-warning"]').exists()).toBe(true)
     wrapper.unmount()
+  })
+
+  it('opens the AI guide from the topbar on every screen and keeps it open across screens', async () => {
+    stubApi({
+      handler: (url) => (url === '/api/assistant/threads' ? envelope({ threads: [] }) : undefined),
+    })
+    go('#/overview')
+    const wrapper = mount(App)
+    await flushPromises()
+    expect(wrapper.find('[data-test="assistant-panel"]').exists()).toBe(false)
+    await wrapper.get('[data-test="assistant-toggle"]').trigger('click')
+    expect(wrapper.get('[data-test="assistant-toggle"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('[data-test="assistant-context"]').exists()).toBe(false)
+    go('#/r/haifa/backlog')
+    await flushPromises()
+    expect(wrapper.find('[data-test="assistant-panel"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="assistant-context"]').text()).toBe('repo haifa')
+    await wrapper.get('[data-test="assistant-close"]').trigger('click')
+    expect(wrapper.find('[data-test="assistant-panel"]').exists()).toBe(false)
   })
 })

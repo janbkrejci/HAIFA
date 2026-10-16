@@ -12,6 +12,7 @@ Zleva doprava:
 - **Chip kontroly:** **Systém v pořádku**, nebo **Nalezeny problémy** (stránka **Problémy a řešení**).
 - **Chip knihovny:** **Knihovna OK**, nebo **Založit knihovnu** (stránka **Knihovna**).
 - **Harnessy:** limity předplatného; klik otevře dialog **Harnessy tohoto počítače**.
+- **AI průvodce** (ikona jiskry): boční panel, ve kterém se ptáš na repa, tasky, běhy, PR, konfiguraci a knihovnu. Průvodce data jen čte. K otázce přiloží aktuální obrazovku (chip nad polem zprávy, křížkem ho odebereš), odpověď se píše průběžně a zmíněné tasky, běhy a PR jsou odkazy. Vlákno zůstane otevřené při přechodu mezi obrazovkami; starší vlákna jsou pod ikonou hodin, nové vlákno pod **+**. V hlavičce je harness a model, který odpovídá (z dialogu **Harnessy tohoto počítače**).
 - Příručka, motiv a přepínač rep.
 
 ## Problémy a řešení

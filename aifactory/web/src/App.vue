@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { errorText } from './lib/format'
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
-import { BookOpen, Trash2 } from 'lucide-vue-next'
+import { BookOpen, Sparkles, Trash2 } from 'lucide-vue-next'
+import { assistant, restoreOpen, toggleOpen } from './lib/assistant'
+import AssistantPanel from './components/assistant/AssistantPanel.vue'
 import { fetchHealth, fetchRepos, type Health, type RepoItem } from './lib/api'
 import { useCodeState } from './lib/code'
 import { useBacklogStatus } from './lib/backlogStatus'
@@ -85,6 +87,7 @@ const missingRemoval = useRemoveRepo(() => {
   reloadRepos()
 })
 
+const repoIds = computed(() => (repos.value ?? []).map((r) => r.id))
 const currentRepo = computed(() => repos.value?.find((r) => r.id === repoId.value) ?? null)
 /** The repo page waits for the list once; a failed list still shows the repo (the API decides). */
 const repoState = computed<'loading' | 'unknown' | 'ok'>(() => {
@@ -128,6 +131,7 @@ onMounted(async () => {
   window.addEventListener('focus', reloadRepos)
   window.addEventListener('factory-applied', reloadRepos)
   void loadRepos()
+  restoreOpen()
   try {
     health.value = await fetchHealth()
   } catch {
@@ -182,6 +186,19 @@ onBeforeUnmount(() => {
         <OverviewReadiness chip />
         <LibraryChip />
         <LimitsBar :providers="limits.providers.value" :loading="limits.loading.value" :usable="limits.usable.value" @open="harnessDialog = true" />
+        <Tooltip text="AI průvodce: zeptej se na repa, tasky a běhy">
+          <button
+            class="guide-link"
+            :class="{ active: assistant.open }"
+            type="button"
+            aria-label="AI průvodce"
+            :aria-pressed="assistant.open"
+            data-test="assistant-toggle"
+            @click="toggleOpen"
+          >
+            <Sparkles class="theme-icon" aria-hidden="true" />
+          </button>
+        </Tooltip>
         <Tooltip text="Uživatelská a administrační příručka">
           <a class="guide-link" :class="{ active: viewPage === 'guide' }" :href="GUIDE_HREF" aria-label="Příručka" data-test="guide-link">
             <BookOpen class="theme-icon" aria-hidden="true" />
@@ -267,6 +284,7 @@ onBeforeUnmount(() => {
     </main>
   </div>
   <MachineHarnessesDialog :open="harnessDialog" @close="harnessDialog = false" @saved="limits.refresh(); readiness.recheck()" @tested="limits.refresh(); readiness.recheck()" />
+  <AssistantPanel :repos="repoIds" />
   <ConfirmDialog v-bind="leaveDialog" @confirm="confirmLeave" @cancel="cancelLeave" />
 </template>
 
