@@ -1,18 +1,18 @@
 # První běh
 
-Spusť dashboard příkazem `factory obs`. Otevře se `http://127.0.0.1:4700` (jiný port `--port N`); terminál nech otevřený. Běhy jsou samostatné procesy a zastavení serveru přežijí.
+Spusť dashboard příkazem `factory obs`. Otevře se `http://127.0.0.1:4700` (jiný port `--port N`); terminál nech otevřený. Běhy zastavení serveru přežijí.
 
 ## Horní lišta
 
 Zleva doprava:
 
 - **HAIFA:** návrat na Přehled.
-- **Necommitnutý backlog**, **Necommitnutá konfigurace:** červené chipy na stránce repa s necommitnutými změnami; klik otevře soubory a commit.
+- **Necommitnutý backlog**, **Necommitnutá konfigurace:** červené chipy při necommitnutých změnách; klik otevře soubory a commit.
 - **Chip aktualizací:** **Systém je aktuální**, nebo **Je k dispozici aktualizace**.
 - **Chip kontroly:** **Systém v pořádku**, nebo **Nalezeny problémy** (stránka **Problémy a řešení**).
 - **Chip knihovny:** **Knihovna OK**, nebo **Založit knihovnu** (stránka **Knihovna**).
 - **Harnessy:** limity předplatného; klik otevře dialog **Harnessy tohoto počítače**.
-- **AI průvodce** (ikona jiskry): boční panel, ve kterém se ptáš na repa, tasky, běhy, PR, konfiguraci a knihovnu. Průvodce data jen čte. K otázce přiloží aktuální obrazovku (chip nad polem zprávy, křížkem ho odebereš), odpověď se píše průběžně a zmíněné tasky, běhy a PR jsou odkazy. Vlákno zůstane otevřené při přechodu mezi obrazovkami; starší vlákna jsou pod ikonou hodin, nové vlákno pod **+**. V hlavičce je harness a model, který odpovídá (z dialogu **Harnessy tohoto počítače**).
+- **AI průvodce**: panel s otázkami k repům, taskům a během; přiloží aktuální obrazovku jako odebíratelný chip.
 - Příručka, motiv a přepínač rep.
 
 ## Problémy a řešení
@@ -21,7 +21,7 @@ Stránka vypíše zbývající kroky a nálezy kontroly s tlačítky: **Zkontrol
 
 ## Harnessy tohoto počítače
 
-Pro každý harness: zapni ho, vyber **Výchozí model** a **Výchozí thinking level** a spusť **Test**. Jeden označ jako **Výchozí harness** a **Uložit nastavení**. Harness s neúspěšným testem nejde použít jako výchozí. Tohle nastavení má jen dashboard, CLI ho nemá.
+Harness zapni, vyber **Výchozí model** a **Výchozí thinking level** a spusť **Test**. Jeden označ jako **Výchozí harness** a **Uložit nastavení**. Harness s neúspěšným testem nejde použít jako výchozí. Jen v dashboardu.
 
 ## Přidání repa
 
@@ -29,7 +29,7 @@ Pro každý harness: zapni ho, vyber **Výchozí model** a **Výchozí thinking 
 
 ## Přehled a záložky repa
 
-Přehled ukazuje všechna repa; **Běží**, **Čeká na review**, **Čeká na automerge PR**, **Selhalo** a **Problémy** je filtrují. Karta repa má ikony **Spustit továrnu** (připravené tasky do volných slotů), **Pauza** / **Pokračovat** a **Stop** (všechny běhy repa). **Odebrat repozitář** v menu ⋮ repo jen odpojí; `.factory/` a backlog zůstanou.
+Přehled ukazuje všechna repa; **Běží**, **Čeká na review**, **Čeká na automerge PR**, **Selhalo** a **Problémy** je filtrují. Karta repa má ikony **Spustit továrnu** (připravené tasky), **Pauza** / **Pokračovat** a **Stop** (všechny běhy repa). **Odebrat repozitář** v menu ⋮ repo jen odpojí; `.factory/` a backlog zůstanou.
 
 Repo má záložky **Backlog** ([Backlog a tasky](#/guide/backlog)), **Běhy** a **Review** ([Běhy a review](#/guide/behy-a-review)) a **Factory** ([Konfigurace](#/guide/konfigurace)).
 
