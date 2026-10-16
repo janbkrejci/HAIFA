@@ -31,6 +31,7 @@ from typing import TYPE_CHECKING, Any
 from unittest import mock
 
 from aifactory import database
+from aifactory import failure as failures
 from aifactory import harness as harness_mod
 from aifactory.backlog import (
     Backlog,
@@ -738,7 +739,9 @@ def _execute(
                 )
         copy_library_items(worktree, rc.config.library)
     except (RuntimeError, OSError) as exc:
-        store.finish(row.run_id, FAILED, None, str(exc)[:2000])
+        store.finish(
+            row.run_id, FAILED, None, str(exc)[:2000], failures.OTHER, {"cause": "worktree"}
+        )
         raise TaskRunError("worktree_failed", str(exc)) from exc
 
     resolve = job.resolve
@@ -775,6 +778,8 @@ def _execute(
     }
     wf: WorkflowRun | None = None
     error: str | None = None
+    failure_kind: str | None = None  # decided where the failure arose (aifactory.failure)
+    failure_detail: dict[str, Any] = {}
     prev = Path.cwd()
     saved_run_env = os.environ.get(basemoves.RUN_ENV)
 
@@ -818,16 +823,34 @@ def _execute(
                 os.environ[basemoves.RUN_ENV] = saved_run_env
     except Exception as exc:
         error = str(exc)[:2000] or type(exc).__name__
+        failure_kind, failure_detail = failures.classify(exc)
     except BaseException as exc:
         if resolve is not None:
             with contextlib.suppress(Exception):
                 restore(worktree, resolve.before)
-        store.finish(row.run_id, FAILED, gitops.head(worktree), f"interrupted: {exc!r}"[:2000])
+        kind, detail = _interrupt_failure(exc)
+        store.finish(
+            row.run_id,
+            FAILED,
+            gitops.head(worktree),
+            f"interrupted: {exc!r}"[:2000],
+            kind,
+            detail,
+        )
         raise
     if error is None and wf is not None and not (wf.accepted and wf.exit_code == 0):
         error = "accept not met"
+        failure_kind = failures.ACCEPT_NOT_MET
+        failure_detail = {
+            "accept": workflow.accept.source if workflow.accept is not None else None,
+            "accepted": wf.accepted,
+            "exit_code": wf.exit_code,
+        }
     if resolve is not None:
+        before_resolve = error
         error = _finish_resolve(worktree, wf, row.task_id, resolve, error)
+        if before_resolve is None and error is not None:
+            failure_kind, failure_detail = failures.OTHER, {"cause": "resolve"}
     follow: FollowUpOutcome | None = None
     follow_warnings: list[str] = []
     if wf is not None and resolve is None and followups.reported_any(wf):
@@ -835,9 +858,11 @@ def _execute(
         if blockers:
             # a blocked task is neither published nor done: the run fails
             reason = blocked_reason(row.task_id, blockers)
+            if error is None:
+                failure_kind, failure_detail = failures.OTHER, {"cause": "blocked"}
             error = reason if error is None else f"{reason}; {error}"[:2000]
     state = SUCCEEDED if error is None else FAILED
-    store.finish(row.run_id, state, gitops.head(worktree), error)
+    store.finish(row.run_id, state, gitops.head(worktree), error, failure_kind, failure_detail)
     final = store.get(row.run_id)
     assert final is not None
     result = TaskRunResult(
@@ -966,6 +991,15 @@ def _retry_rebase(
         },
         prompt_suffix="\n## Continuation" + job.prompt.partition("\n## Continuation")[2],
     )
+
+
+def _interrupt_failure(exc: BaseException) -> tuple[str, dict[str, Any]]:
+    """The failure kind of a run whose process was interrupted: Ctrl+C or a signal stop it."""
+    if isinstance(exc, KeyboardInterrupt):
+        return failures.STOPPED, {"cause": "keyboard_interrupt"}
+    if isinstance(exc, SystemExit) and isinstance(exc.code, int) and exc.code > 128:
+        return failures.STOPPED, {"cause": "signal", "signal": exc.code - 128}
+    return failures.OTHER, {"cause": "interrupted", "error_type": type(exc).__name__}
 
 
 def _finish_resolve(

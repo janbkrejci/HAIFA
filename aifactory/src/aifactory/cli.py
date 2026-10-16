@@ -1848,6 +1848,16 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     list_.add_argument("--project", metavar="ID", help="only this project (id or directory)")
     list_.add_argument("--step", metavar="ID", help="only this step")
 
+    runs = sub.add_parser(
+        "runs",
+        help="list the runs of a task with their state and failure kind",
+        description="List every run of a task, newest first: state, failure_kind (why a run "
+        "did not succeed: accept_not_met, nothing_to_do, quota, writes_violation, "
+        "invalid_output, process_gone, stopped or other) and the error. --json gives each run "
+        "with failure_kind and failure_detail.",
+    )
+    runs.add_argument("task_id", metavar="ID", help="task id")
+
     run = sub.add_parser(
         "run",
         help="run a task in its own worktree and branch",
@@ -2029,6 +2039,7 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         link,
         show,
         list_,
+        runs,
         run,
         approve,
         return_,
@@ -2128,6 +2139,22 @@ def _task_show(args: argparse.Namespace, root: Path) -> int:
             print(f"  {p.state:<6}  {p.url}  {p.branch}")
     for issue in own_issues:
         print(f"{issue['path']}: {issue['code']}: {issue['message']}", file=sys.stderr)
+    return 0
+
+
+def _task_runs(args: argparse.Namespace, root: Path) -> int:
+    from aifactory.run import task_runs_for
+
+    runs = task_runs_for(root, args.task_id)
+    if args.json:
+        return _emit_ok({"task_id": args.task_id, "runs": [r.to_json() for r in runs]})
+    if not runs:
+        print(f"no runs of {args.task_id}")
+        return 0
+    for r in runs:
+        kind = r.shown_failure_kind or "-"
+        error = (r.error or "").splitlines()[0][:100] if r.error else ""
+        print(f"{r.started_at}  {r.run_id}  {r.shown_state:<9}  {kind:<16}  {error}".rstrip())
     return 0
 
 
@@ -2587,6 +2614,8 @@ def _task(args: argparse.Namespace) -> int:
             return _task_show(args, root)
         if command == "list":
             return _task_list(args, root)
+        if command == "runs":
+            return _task_runs(args, root)
         return _task_write(args, root)
     except (ConfigError, TaskEditError, TaskRunError, ReviewError) as exc:
         return _fail_from_exception(exc, args.json, f"factory task {command}")

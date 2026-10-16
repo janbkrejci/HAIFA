@@ -50,8 +50,9 @@ invalid JSON, a gate that stays red). ``TaskWriteGuard`` looks at two trees:
 Uncommitted work present before the phase is never discarded: if it cannot be
 saved, the agent is not started. Any breach raises
 ``permissions.PermissionBreach`` naming every path, where it was and what
-happened to it, and the backup of that phase is kept; without a breach it is
-removed.
+happened to it (the run's ``failure_kind`` is ``writes_violation``, the problems are
+its ``failure_detail``), and the backup of that phase is kept; without a breach it is
+removed. A backup that cannot be made is a ``PermissionBreach`` of kind ``other``.
 
 Known limit: files ignored by ``.gitignore`` are invisible to git, so a write to
 such a path in either checkout is neither detected nor undone.
@@ -67,6 +68,7 @@ from pathlib import Path
 from typing import Any
 
 from aifactory.engine import permissions
+from aifactory.failure import OTHER
 from aifactory.run import backup, basemoves, gitops, mainwrites
 from aifactory.run.scope import TaskScope
 
@@ -160,7 +162,9 @@ class TaskWriteGuard:
             worktree_backup = backup.capture(self.worktree, where / "worktree")
         except OSError as error:
             raise permissions.PermissionBreach(
-                f"cannot back up the main checkout before {name}: {error}"
+                f"cannot back up the main checkout before {name}: {error}",
+                kind=OTHER,
+                detail={"agent": name, "cause": "backup"},
             ) from error
         return {
             "backup_dir": where,
@@ -286,5 +290,6 @@ class TaskWriteGuard:
         raise permissions.PermissionBreach(
             f"{agent.name} changed paths outside its task run:\n{detail}\n"
             f"task {self.scope.task_id} may only change {list(self.scope.paths)} "
-            "inside its worktree"
+            "inside its worktree",
+            detail={"agent": agent.name, "problems": problems, "writes": list(self.scope.paths)},
         )

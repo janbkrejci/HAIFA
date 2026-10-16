@@ -12,6 +12,13 @@ says who started a run: ``manual`` (``factory task run|return|resolve``, the das
 workflows and skills from (NULL: the seed, or recorded before). Older trace DBs get these
 columns added when the store opens them, and ``task_runs.archived`` too.
 
+``task_runs.failure_kind`` is the typed kind of a run that did not succeed (one of
+``aifactory.failure.FAILURE_KINDS``) and ``task_runs.failure_detail`` its facts as a JSON
+object; ``error`` stays the free text. ``finish`` records them, ``mark_stopped`` sets
+``stopped``, the reaping of a dead run ``process_gone``, ``reclaim`` clears them. A
+failed, stopped or aborted run recorded before the columns existed reads as ``other``
+(``TaskRunRow.shown_failure_kind``).
+
 ``task_chains`` has one row per auto-continue chain (``queue.run_chain``): its runs
 in start order, the tasks the last selection skipped and why, the tasks that ran
 alone (wide writes), and the chain's state (``running``, ``finished`` with its
@@ -75,7 +82,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-from aifactory import database, oscompat
+from aifactory import database, failure, oscompat
 from aifactory.engine.tracer import BUSY_TIMEOUT
 from aifactory.engine.utils import now_iso
 from aifactory.providers.base import PullRequest
@@ -111,7 +118,9 @@ CREATE TABLE IF NOT EXISTS task_runs (
   library_commit TEXT,
   pr_body TEXT,
   retries TEXT,
-  stacked_on TEXT
+  stacked_on TEXT,
+  failure_kind TEXT,
+  failure_detail TEXT
 );
 CREATE INDEX IF NOT EXISTS task_runs_task ON task_runs(task_id);
 CREATE TABLE IF NOT EXISTS task_prs (
@@ -247,6 +256,8 @@ _COLUMNS = (
     "library_commit",
     "retries",
     "stacked_on",
+    "failure_kind",
+    "failure_detail",
 )
 # columns added to task_runs after its first release; older DBs get them on open
 # (``pr_body``: the PR body a succeeded run could not send; not part of ``TaskRunRow``)
@@ -259,6 +270,8 @@ _RUN_ADDED_COLUMNS = {
     "library_commit": "TEXT",
     "retries": "TEXT",
     "stacked_on": "TEXT",
+    "failure_kind": "TEXT",
+    "failure_detail": "TEXT",
 }
 # who started a run (``task_runs.started_by``)
 STARTED_MANUAL, STARTED_AUTO_CONTINUE, STARTED_AUTO_RESOLVE = (
@@ -303,6 +316,9 @@ class TaskRunRow:
     retries: str | None = None  # JSON list of the run's retries (``retry_list``); None: none
     # the branch of the dependency's open PR the run forked from (``stacked_prs``); None: base
     stacked_on: str | None = None
+    # of a run that did not succeed: one of ``failure.FAILURE_KINDS``; None: older run
+    failure_kind: str | None = None
+    failure_detail: str | None = None  # JSON object with the failure's facts
 
     def retry_list(self) -> list[dict[str, Any]]:
         """One item per retry, oldest first (see the module docstring)."""
@@ -318,10 +334,29 @@ class TaskRunRow:
         """The state to show: ``paused`` for a running run that waits, else ``state``."""
         return PAUSED if self.state == RUNNING and self.pause == PAUSED else self.state
 
+    @property
+    def shown_failure_kind(self) -> str | None:
+        """The failure kind; ``other`` for an ended unsuccessful run recorded without one."""
+        if self.state in (RUNNING, SUCCEEDED):
+            return None
+        return self.failure_kind or failure.OTHER
+
+    def failure_detail_dict(self) -> dict[str, Any] | None:
+        """The failure's facts; ``{}`` when the run has none, None when it did not fail."""
+        if self.shown_failure_kind is None:
+            return None
+        try:
+            loaded = json.loads(self.failure_detail or "{}")
+        except ValueError:
+            return {}
+        return loaded if isinstance(loaded, dict) else {}
+
     def to_json(self) -> dict[str, object]:
         data: dict[str, object] = dict(asdict(self))
         data["retries"] = self.retry_list()
         data["attempt"] = self.attempt
+        data["failure_kind"] = self.shown_failure_kind
+        data["failure_detail"] = self.failure_detail_dict()
         return data
 
 
@@ -429,6 +464,11 @@ def _json_list(text: str | None) -> list[Any]:
     except ValueError:
         return []
     return loaded if isinstance(loaded, list) else []
+
+
+def _detail_json(detail: dict[str, Any]) -> str:
+    """A failure detail as stored in ``task_runs.failure_detail``."""
+    return json.dumps(detail, ensure_ascii=False, default=str)
 
 
 def _now() -> str:
@@ -610,9 +650,16 @@ class TaskRunStore:
         for row in self._select(where, args):
             if self.owned_here(row.run_id) and not _alive(row.pid):
                 self.conn.execute(
-                    "UPDATE task_runs SET state = ?, ended_at = ?, error = ?, pause = NULL "
-                    "WHERE run_id = ?",
-                    (ABORTED, _now(), f"process {row.pid} is gone", row.run_id),
+                    "UPDATE task_runs SET state = ?, ended_at = ?, error = ?, pause = NULL, "
+                    "failure_kind = ?, failure_detail = ? WHERE run_id = ?",
+                    (
+                        ABORTED,
+                        _now(),
+                        f"process {row.pid} is gone",
+                        failure.PROCESS_GONE,
+                        _detail_json({"pid": row.pid}),
+                        row.run_id,
+                    ),
                 )
 
     @contextlib.contextmanager
@@ -683,7 +730,8 @@ class TaskRunStore:
             self._own(run_id)
             self.conn.execute(
                 "UPDATE task_runs SET state = ?, pid = ?, ended_at = NULL, error = NULL, "
-                "pause = NULL, pr_error = NULL, pr_body = NULL, retries = ? WHERE run_id = ?",
+                "pause = NULL, pr_error = NULL, pr_body = NULL, retries = ?, "
+                "failure_kind = NULL, failure_detail = NULL WHERE run_id = ?",
                 (RUNNING, pid, retries, run_id),
             )
         final = self.get(run_id)
@@ -713,12 +761,29 @@ class TaskRunStore:
         busy = self._select("state = ? AND task_id = ?", (RUNNING, task_id))
         return busy[0] if busy else None
 
-    def finish(self, run_id: str, state: str, head_sha: str | None, error: str | None) -> None:
-        """Record the end of a run; a `stopped` run keeps its state (the user stopped it)."""
+    def finish(
+        self,
+        run_id: str,
+        state: str,
+        head_sha: str | None,
+        error: str | None,
+        failure_kind: str | None = None,
+        failure_detail: dict[str, Any] | None = None,
+    ) -> None:
+        """Record the end of a run; a `stopped` run keeps its state (the user stopped it).
+
+        A run that did not succeed gets `failure_kind` (``other`` when None) and
+        `failure_detail`; a succeeded run gets neither.
+        """
+        kind: str | None = None
+        detail: str | None = None
+        if state != SUCCEEDED:
+            kind = failure_kind or failure.OTHER
+            detail = _detail_json(failure_detail or {})
         self.conn.execute(
-            "UPDATE task_runs SET state = ?, head_sha = ?, error = ?, ended_at = ?, pause = NULL "
-            "WHERE run_id = ? AND state != ?",
-            (state, head_sha, error, _now(), run_id, STOPPED),
+            "UPDATE task_runs SET state = ?, head_sha = ?, error = ?, ended_at = ?, pause = NULL, "
+            "failure_kind = ?, failure_detail = ? WHERE run_id = ? AND state != ?",
+            (state, head_sha, error, _now(), kind, detail, run_id, STOPPED),
         )
 
     def set_pr_error(self, run_id: str, error: str | None, body: str | None = None) -> None:
@@ -749,9 +814,17 @@ class TaskRunStore:
         """Set a `running` run to `stopped`; False when it is not running (any more)."""
         with self._txn():
             cursor = self.conn.execute(
-                "UPDATE task_runs SET state = ?, ended_at = ?, error = ?, pause = NULL "
-                "WHERE run_id = ? AND state = ?",
-                (STOPPED, _now(), note, run_id, RUNNING),
+                "UPDATE task_runs SET state = ?, ended_at = ?, error = ?, pause = NULL, "
+                "failure_kind = ?, failure_detail = ? WHERE run_id = ? AND state = ?",
+                (
+                    STOPPED,
+                    _now(),
+                    note,
+                    failure.STOPPED,
+                    _detail_json({"note": note}),
+                    run_id,
+                    RUNNING,
+                ),
             )
             return cursor.rowcount == 1
 

@@ -16,6 +16,8 @@ from typing import Optional
 import yaml
 
 from aifactory import yamlload  # aifactory 3.1: libyaml parser when available
+# aifactory 3.4: failures that carry the run's failure_kind
+from aifactory.failure import AgentReportedFail, InvalidOutput
 
 from . import agent_cc, agent_pi, permissions, prompts
 from .data_types import (AgentCall, AgentConfig, AgentRequest, AgentResult,
@@ -42,7 +44,7 @@ def interface(agent: AgentConfig):
                          f"{sorted(INTERFACES)}") from None
 
 
-class GateFailure(RuntimeError):
+class GateFailure(InvalidOutput):  # aifactory 3.4: was RuntimeError, now invalid_output
     pass
 
 
@@ -270,7 +272,8 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
                                           "context_window": context.context_window}))
     run.console.agent_finished(agent.name, spent.total_tokens, spent.total_cost)
     if envelope.status != "success":
-        raise RuntimeError(f"{agent.name} reported status={envelope.status!r}: {envelope.summary}")
+        # aifactory 3.4: typed, so the run records nothing_to_do or other
+        raise AgentReportedFail(agent.name, envelope.summary, envelope.fail_kind)
     return envelope
 
 
@@ -321,7 +324,10 @@ def _send_and_check(run, phase: Phase, call: AgentCall, agent: AgentConfig,
             break
         if gate_attempt > phase.params.retries:
             raise GateFailure(f"{agent.name} failed gates after {gate_attempt} attempt(s):\n- "
-                              + "\n- ".join(violations))
+                              + "\n- ".join(violations),
+                              # aifactory 3.4: the facts of the run's invalid_output
+                              detail={"agent": agent.name, "cause": "gates",
+                                      "violations": violations})
         phase.attempt = gate_attempt
         run.console.retry(agent.name, gate_attempt, phase.params.retries,
                           f"{len(violations)} gate violation(s)")
@@ -407,9 +413,13 @@ def _parse_with_retries(run, phase: Phase, call: AgentCall, result, send):
             _persist_envelope(run, phase, phase.params.owner, call, None, attempt,
                               valid=False, raw=result.text)
             if attempt > JSON_FIX_ATTEMPTS:
-                raise RuntimeError(
+                # aifactory 3.4: typed, the run records invalid_output
+                raise InvalidOutput(
                     f"{phase.params.owner} never produced valid "
-                    f"{call.output_type.__name__} JSON: {error}") from error
+                    f"{call.output_type.__name__} JSON: {error}",
+                    detail={"agent": phase.params.owner, "cause": "json",
+                            "output_type": call.output_type.__name__,
+                            "error": str(error)[:500]}) from error
             run.console.retry(phase.params.owner, attempt, JSON_FIX_ATTEMPTS,
                               f"invalid {call.output_type.__name__} JSON: {error}")
             fields = ", ".join(call.output_type.model_fields.keys())

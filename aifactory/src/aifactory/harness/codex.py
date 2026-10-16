@@ -64,8 +64,26 @@ from typing import Any
 
 from aifactory.engine.data_types import AgentRequest, AgentResult
 from aifactory.engine.utils import env_flag, now_iso, operator_env, send_stdin
+from aifactory.failure import QuotaExhausted
 
 Event = dict[str, Any]
+
+# How Codex says the account's usage limit or the API key's quota is used up.
+QUOTA_MARKERS = (
+    "usage limit",
+    "insufficient_quota",
+    "exceeded your current quota",
+    "quota exceeded",
+    "out of credits",
+    "credit balance",
+)
+
+
+def quota_exhausted(text: str) -> bool:
+    """True when Codex's error text reports an exhausted quota or credit."""
+    lowered = text.lower()
+    return any(marker in lowered for marker in QUOTA_MARKERS)
+
 
 CODEX_PATH = os.environ.get("CODEX_PATH", "codex")
 # "" -> --dangerously-bypass-approvals-and-sandbox. Otherwise one of
@@ -490,6 +508,8 @@ def run(
         result.tokens += billed
         result.usage.add_turn(spent, billed)
 
+    if (result.returncode != 0 or last_error) and quota_exhausted(f"{last_error}\n{stderr}"):
+        raise QuotaExhausted("codex", last_error or stderr)
     if result.returncode != 0 and not result.text:
         detail = (last_error or stderr).strip()[-800:]
         raise RuntimeError(f"codex exited {result.returncode}: {detail}")

@@ -114,6 +114,9 @@ class EnvelopeBase(BaseModel):
     follow_ups: list[FollowUp] = Field(default_factory=list)
     blocked_by: list[str] = Field(default_factory=list)
     pr_summary: Optional[PrSummary] = None
+    # aifactory 3.4: why an agent reports status=fail; "nothing_to_do" (the work is done
+    # already or the task asks for no change) becomes the run's failure_kind.
+    fail_kind: Optional[str] = None
 
 
 class GenericOutput(EnvelopeBase):

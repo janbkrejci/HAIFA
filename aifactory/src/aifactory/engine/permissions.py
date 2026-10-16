@@ -39,11 +39,15 @@ import re
 import subprocess
 from pathlib import Path
 
+from aifactory.failure import WRITES_VIOLATION, RunFailure
+
 from .data_types import AgentConfig, SSSFConfig
 
 
-class PermissionBreach(RuntimeError):
+class PermissionBreach(RunFailure):  # aifactory 3.4: a RuntimeError with failure_kind
     """An agent modified a path it was not permitted to modify."""
+
+    failure_kind = WRITES_VIOLATION
 
 
 class PermissionsUnavailable(RuntimeError):
@@ -247,4 +251,6 @@ def enforce(run, phase, agent: AgentConfig, before: dict[str, str]) -> list[str]
              else f"barred from {run.cfg.defaults.protected_files}")
     detail = "\n".join(f"  - {p} — {outcome}" for p, outcome in outcomes.items())
     raise PermissionBreach(
-        f"{agent.name} is {scope} but modified {len(breaches)} path(s):\n{detail}")
+        f"{agent.name} is {scope} but modified {len(breaches)} path(s):\n{detail}",
+        # aifactory 3.4: the facts of the run's writes_violation
+        detail={"agent": agent.name, "paths": breaches, "writes": agent.writes})

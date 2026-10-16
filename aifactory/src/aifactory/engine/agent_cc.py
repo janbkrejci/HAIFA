@@ -52,6 +52,8 @@ import uuid
 from pathlib import Path
 from typing import Callable, Optional
 
+from aifactory.failure import QuotaExhausted  # aifactory 3.4
+
 from .data_types import AgentRequest, AgentResult
 from .utils import env_flag, now_iso, operator_env, prompt_file, send_stdin
 
@@ -70,6 +72,19 @@ MCP_CONFIG = os.environ.get("CLAUDE_MCP_CONFIG", "")
 # `--disallowedTools "Bash(<command>)" ...`. Deny rules hold even under
 # `bypassPermissions`, so the agent cannot run them at all.
 SUPPORTS_DISALLOWED_COMMANDS = True
+
+# aifactory 3.4: how claude says the account's quota or credit is used up. The error
+# field of an assistant event is typed; the texts cover a turn that only says so.
+QUOTA_ERRORS = ("billing_error", "rate_limit")
+QUOTA_MARKERS = ("usage limit", "hit your limit", "credit balance is too low",
+                 "out of extra usage", "quota exceeded", "exceeded your current quota")
+
+
+def quota_exhausted(text: str) -> bool:
+    """aifactory 3.4: True when claude's error text reports an exhausted quota or credit."""
+    lowered = text.lower()
+    return any(marker in lowered for marker in QUOTA_MARKERS)
+
 
 # A factory agent is defined by ITS system.md and ITS tool list, not by whatever
 # the operator's own Claude Code happens to load: measured here, an unisolated
@@ -423,6 +438,7 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
     # failed spawn as started would make every later turn `--resume` an id
     # that does not exist.
     created = False
+    api_error, error_text, failed = "", "", False   # aifactory 3.4: what a failed turn said
     # aifactory 3.1: stdin is a pipe that carries the prompt and is then closed,
     # so the child sees EOF; an inherited stdin would let it wait forever for
     # input that is never coming.
@@ -457,6 +473,8 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
                 text = _text_of(message)
                 if text:
                     result.text = text       # last assistant message wins
+                if event.get("error"):       # aifactory 3.4: an API error, typed
+                    api_error, error_text = str(event["error"]), text or error_text
                 occupancy = _occupancy(message.get("usage", {}) or {})
                 if occupancy:
                     result.context_tokens = occupancy
@@ -464,6 +482,8 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
                 totals, window = _model_totals(event)
                 if event.get("is_error"):
                     result.text = result.text or str(event.get("result") or "")
+                    failed = True            # aifactory 3.4
+                    error_text = str(event.get("result") or "") or error_text
                 elif event.get("result"):
                     result.text = str(event.get("result"))
             if on_event:
@@ -507,6 +527,10 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
         state.save(state.totals())
         return run(request, on_event=on_event, on_spawn=on_spawn, on_exit=on_exit,
                    on_wait=on_wait, _rejoined=True)
+    # aifactory 3.4: an exhausted quota is a fact of the harness, not invalid JSON
+    if (result.returncode != 0 or failed) and (
+            api_error in QUOTA_ERRORS or quota_exhausted(f"{error_text}\n{stderr}")):
+        raise QuotaExhausted("claude", error_text or stderr or api_error)
     if result.returncode != 0 and not result.text:
         raise RuntimeError(f"claude exited {result.returncode}: {stderr.strip()[-800:]}")
     return result

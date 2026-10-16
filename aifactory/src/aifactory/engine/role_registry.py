@@ -49,6 +49,7 @@ _ENVELOPE_FIELDS: frozenset[str] = frozenset(
         "follow_ups",
         "blocked_by",
         "pr_summary",
+        "fail_kind",  # aifactory 3.4: why an agent reports status=fail
     }
 )
 # Fields of ``aifactory.workflow.rebase.RebaseOutput`` (spelled out: workflow imports this module).
