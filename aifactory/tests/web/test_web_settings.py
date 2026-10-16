@@ -248,6 +248,13 @@ def test_save_max_parallel_runs(client: TestClient, root: Path) -> None:
     assert yaml.safe_load((root / CONFIG).read_text())["max_parallel_runs"] == 3
 
 
+def test_save_stacked_prs(client: TestClient, root: Path) -> None:
+    assert _get(client, "/api/settings")["data"]["shared"]["stacked_prs"] is False
+    body = _post(client, {"shared": {"stacked_prs": True}})
+    assert body["data"]["shared"]["stacked_prs"] is True
+    assert yaml.safe_load((root / CONFIG).read_text())["stacked_prs"] is True
+
+
 def test_saving_docs_root_drops_old_folder_keys(client: TestClient, root: Path) -> None:
     config = root / CONFIG
     config.write_text(

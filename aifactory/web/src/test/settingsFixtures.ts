@@ -12,6 +12,7 @@ export const SETTINGS: SettingsData = {
     base_pr_merge: 'manual',
     protected_files: ['.factory/'],
     max_parallel_runs: 1,
+    stacked_prs: false,
   },
   local: { trace_db: '.factory/trace.db' },
   files: { shared: '.factory/config.yaml', local: '.factory/local.yaml' },

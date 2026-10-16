@@ -151,6 +151,10 @@ const checks = () => (Array.isArray(props.detail.checks) ? props.detail.checks :
       :open="open.diff"
       @toggle="open.diff = !open.diff"
     >
+      <p v-if="detail.stacked_on" class="faint" data-test="stacked-on">
+        Navazuje na PR <a :href="detail.stacked_on.url" target="_blank" rel="noopener">{{ detail.stacked_on.url }}</a>
+        ({{ detail.stacked_on.task_id }}), který ještě není mergnutý. Diff ukazuje jen změny tohoto tasku.
+      </p>
       <DiffView v-if="detail.diff" :key="detail.task_id" :diff="detail.diff" />
     </DetailSection>
   </article>

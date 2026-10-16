@@ -45,6 +45,7 @@ from aifactory.review.errors import ReviewError
 from aifactory.review.prbody import branch_cost, run_checks, run_cost
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
+from aifactory.run.stack import open_stack
 from aifactory.run.store import SUCCEEDED, TaskPrRow, TaskRunRow, TaskRunStore
 from aifactory.run.task import existing_store
 from aifactory.web.backlog import UsageError, waits_for_automerge
@@ -333,7 +334,11 @@ def _empty_diff(base: str, merge_base: str | None) -> JsonDict:
 
 
 def _diff(main: Path, base: str, branch: str, warnings: list[str]) -> JsonDict:
-    """The PR's changes: ``merge-base(base, branch)..branch``, per file."""
+    """The PR's changes: ``merge-base(base, branch)..branch``, per file.
+
+    For a PR stacked on a dependency's open PR (``run/stack.py``) `base` is that PR's
+    branch: the diff holds only this task's changes, not the dependency's.
+    """
     tip = f"refs/heads/{branch}"
     try:
         merge_base = _git(main, "merge-base", f"refs/heads/{base}", tip).strip()
@@ -477,6 +482,7 @@ def review_detail(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
         summary.pop("runs")
         runs = store.runs_on_branch(row.branch)  # newest first
         trace_db = store.db_path
+        stack = open_stack(store, row.branch)
         state, running = summary["provider_state"], summary["running_run"]
         can_act = state == OPEN and running is None
         data: JsonDict = {
@@ -484,7 +490,8 @@ def review_detail(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
             "pr": row.to_json(),
             "levels": list(ctx.rc.config.settings.levels),
             "runs": [_run_json(trace_db, r) for r in runs],
-            "diff": _diff(ctx.main, row.base, row.branch, ctx.warnings),
+            "diff": _diff(ctx.main, stack.branch if stack else row.base, row.branch, ctx.warnings),
+            "stacked_on": stack.to_json() if stack else None,
             "checks": _checks(trace_db, runs),
             "review": _review_verdict(trace_db, [r.run_id for r in runs]),
             "actions": {

@@ -157,7 +157,10 @@ export interface ReviewActions {
 /** GET /api/review/<task_id>. */
 export interface ReviewDetail extends ReviewBase {
   runs: ReviewRun[]
+  /** Against the dependency's PR branch when the PR is stacked on it (`stacked_on`). */
   diff: ReviewDiff
+  /** The dependency's still open PR this PR builds on (`stacked_prs`); null: none. */
+  stacked_on?: TaskPr | null
   checks: CheckResult[]
   review: ReviewVerdict | null
   actions: ReviewActions

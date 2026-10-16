@@ -943,3 +943,32 @@ def test_member_rejected_resolution_keeps_the_pr_open(
     assert row is not None and row.state == "open"
     assert (row.auto_merge_error or "").startswith("resolve_failed: ")
     assert git(repo, "show", "main:src/app/one.py") == "NAME = 'main'"
+
+
+# ── stacked PRs (stacked_prs: true) ──────────────────────────────────────────
+
+
+def test_stacked_pr_waits_for_its_dependency_then_merges(repo: Path, script: Script) -> None:
+    setup(repo)
+    write(repo, ".factory/config.yaml", "base: main\ndocs_root: .\nstacked_prs: true\n")
+    commit_all(repo, "stacked PRs")
+    build(script, "one")
+    review(script)
+    first = run_task(repo, T01)  # no chain: its PR stays open for the operator
+    build(script, "two")
+    review(script)
+    second = run_task(repo, T02)
+    assert second.ok and second.run.stacked_on == first.run.branch
+
+    waits = try_auto_merge(repo, second, base_task(repo, T02))
+    assert (waits.merged, waits.code) == (False, "waits_for_stack")
+    pr = pr_row(repo, T02)
+    assert pr is not None and pr.state == "open" and pr.auto_merge_error is None
+
+    scripted_plan(script)  # the restack's resolve run tests the rebased branch
+    merged = approve_task(repo, T01)
+    assert merged.warnings == []
+    pr = pr_row(repo, T02)
+    assert pr is not None and pr.state == "merged" and pr.merged_by == MERGED_BY_AUTO
+    assert on_main(repo, "src/app/one.py") and on_main(repo, "src/app/two.py")
+    assert status_on_main(repo, T02) == "done"

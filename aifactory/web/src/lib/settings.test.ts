@@ -34,6 +34,13 @@ describe('settingsDiff', () => {
     })
   })
 
+  it('sends stacked_prs only when it changed', () => {
+    const values = formValues(SETTINGS)
+    expect(values.stacked_prs).toBe(false)
+    expect(settingsDiff(values, { ...values })).toEqual({})
+    expect(settingsDiff(values, { ...values, stacked_prs: true })).toEqual({ shared: { stacked_prs: true } })
+  })
+
   it('splits protected files into trimmed lines', () => {
     const values = formValues(SETTINGS)
     const input = settingsDiff(values, { ...values, protected_files: ' .factory/\n\njustfile \n' })

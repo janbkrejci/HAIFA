@@ -65,6 +65,7 @@ SHARED_FIELDS = (
     "base_pr_merge",
     "protected_files",
     "max_parallel_runs",
+    "stacked_prs",
 )
 LOCAL_FIELDS = ("trace_db",)
 _SECTIONS: dict[str, tuple[str, tuple[str, ...]]] = {

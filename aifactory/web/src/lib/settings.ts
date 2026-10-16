@@ -15,6 +15,7 @@ export interface SharedSettings {
   base_pr_merge: string
   protected_files: string[]
   max_parallel_runs: number | string
+  stacked_prs: boolean
 }
 
 /** .factory/local.yaml; the dashboard port is in the registry (dashboard.yaml), not here. */
@@ -59,6 +60,7 @@ export interface SettingsFormValues {
   base_pr_merge: string
   protected_files: string
   max_parallel_runs: string
+  stacked_prs: boolean
   trace_db: string
 }
 
@@ -104,6 +106,7 @@ export function formValues(data: SettingsData): SettingsFormValues {
     base_pr_merge: s.base_pr_merge ?? 'manual',
     protected_files: s.protected_files.join('\n'),
     max_parallel_runs: String(s.max_parallel_runs ?? 1),
+    stacked_prs: s.stacked_prs ?? false,
     trace_db: data.local.trace_db,
   }
 }
@@ -140,6 +143,7 @@ export function settingsDiff(
   if (current.max_parallel_runs.trim() !== initial.max_parallel_runs.trim()) {
     shared.max_parallel_runs = intValue(current.max_parallel_runs)
   }
+  if (current.stacked_prs !== initial.stacked_prs) shared.stacked_prs = current.stacked_prs
 
   const local: Partial<LocalSettings> = {}
   if (current.trace_db !== initial.trace_db) local.trace_db = current.trace_db

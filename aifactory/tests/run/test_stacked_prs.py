@@ -23,6 +23,7 @@ from run_repo import (
 from aifactory.review import ReviewError, approve_task, resolve_task
 from aifactory.run import TaskRunStore, run_task
 from aifactory.run.errors import TaskRunError
+from aifactory.web.review import review_detail
 
 
 @pytest.fixture(name="repo")
@@ -54,6 +55,12 @@ def test_dependent_stacks_on_the_open_pr_and_lands_after_it(repo: Path, script: 
     assert second.run.stacked_on == first.run.branch
     assert git(repo, "show", f"{second.run.branch}:src/app/a.py") == "# src/app/a.py"
     assert second.pr is not None and "Navazuje na" in second.pr.body
+    # the review screen shows only T02's own changes while it is stacked
+    detail, _ = review_detail(repo, T02)
+    assert detail["stacked_on"]["task_id"] == T01
+    assert detail["diff"]["base"] == first.run.branch
+    assert "src/app/a.py" not in {f["path"] for f in detail["diff"]["files"]}
+    assert "src/app/b.py" in {f["path"] for f in detail["diff"]["files"]}
 
     with pytest.raises(ReviewError) as caught:
         approve_task(repo, T02)

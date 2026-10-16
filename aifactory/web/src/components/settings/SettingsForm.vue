@@ -178,6 +178,18 @@ function onReset(): void {
       </label>
 
       <label>
+        <span class="check-row">
+          <input v-model="values.stacked_prs" type="checkbox" data-test="stacked_prs" />
+          Stacked pull requesty
+        </span>
+        <span class="hint">
+          Task, jehož závislosti čekají jen v otevřených PR, se spustí z větve PR závislosti a nečeká
+          na její merge. Jeho PR se mergne až po závislosti, předtím ho factory přebázuje na base.
+        </span>
+        <span v-for="msg in fieldError('stacked_prs')" :key="msg" class="field-error" data-test="error-stacked_prs">{{ msg }}</span>
+      </label>
+
+      <label>
         Chráněné soubory
         <textarea
           v-model="values.protected_files"
@@ -271,6 +283,12 @@ textarea {
 textarea {
   font-family: var(--mono);
   font-size: 14px;
+}
+
+.check-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .invalid {
