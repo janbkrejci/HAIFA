@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T07
 title: Record the install-time library refresh in docs/decisions.md
-status: todo
+status: done
 depends_on: [HAIFA-TODO-T12]
 related: [HAIFA-REFINEMENT-T35]
 writes: [docs/decisions.md]
@@ -19,3 +19,4 @@ Důvod: HAIFA-REFINEMENT-T35 changes the seed semantics. Install and upgrade now
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/58 · náklady $0.56
