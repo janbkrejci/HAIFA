@@ -35,7 +35,7 @@ Každý nález má kód, závažnost a radu `fix`, co udělat. `error` blokuje p
 
 **Harness chybí nebo není přihlášený.** Nainstaluj a přihlas ho (`claude`, `codex login`, `pi auth login`), pak v dialogu **Harnessy tohoto počítače** spusť **Test**. Nebo přepni agenty repa na jiný harness (`factory config roster set`).
 
-**Běh selhal nebo se zasekl.** V detailu běhu sleduj události fáze; běh můžeš zastavit a pak **Navázat** (`factory task retry ID`).
+**Běh selhal nebo se zasekl.** Karta selhání v detailu běhu říká, co se stalo; u zaseklého běhu sleduj události fáze. Běh můžeš zastavit a pak **Pokračovat** (`factory task retry ID`).
 
 **PR zůstal po schválení otevřený.** Detail PR ukáže důvod: červená nebo nedoběhnutá CI (`checks_failing`, `checks_pending`, `ci_fix_failed`), konflikt, nebo nesplněná závislost. Oprav a schval znovu.
 

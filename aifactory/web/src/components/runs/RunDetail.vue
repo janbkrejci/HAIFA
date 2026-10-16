@@ -16,9 +16,11 @@ import {
   type TraceEvent,
 } from '@/lib/runs'
 import { isLive } from '@/lib/waterfall'
+import { failureCard } from '@/lib/failure'
 import { useConfirm } from '@/lib/confirm'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
+import FailureCard from './FailureCard.vue'
 import PhaseDetail from './PhaseDetail.vue'
 import RetryRunButton from './RetryRunButton.vue'
 import RunWaterfall from './RunWaterfall.vue'
@@ -38,9 +40,11 @@ const props = defineProps<{
   publishing?: boolean
 }>()
 
-const emit = defineEmits<{ stop: []; pause: []; resume: []; publish: []; retried: [] }>()
+const emit = defineEmits<{ stop: []; pause: []; resume: []; publish: []; retried: []; cancelled: [] }>()
 
 const run = computed(() => props.detail.run)
+// a run that did not succeed opens with its failure card (kind, sentence, facts, actions)
+const card = computed(() => failureCard(run.value))
 const phases = computed(() => [...(props.detail.phases ?? [])].sort(bySeq))
 // Running blocks and durations grow every second without reloading anything.
 const live = computed(() => isLive(props.detail))
@@ -125,8 +129,9 @@ async function onStop() {
           <Spinner v-if="stopping" />
           <CircleStop v-else :size="16" /> Zastavit
         </button>
-        <RetryRunButton v-if="canRetry(run)" :run-id="run.run_id" @started="emit('retried')" />
+        <RetryRunButton v-if="canRetry(run) && !card" :run-id="run.run_id" @started="emit('retried')" />
       </div>
+      <FailureCard v-if="card" :run="run" :phases="phases" @retried="emit('retried')" @cancelled="emit('cancelled')" />
       <dl class="meta">
         <div><dt>Běh</dt><dd class="mono">{{ run.run_id }}</dd></div>
         <div><dt>Workflow</dt><dd>{{ run.workflow ?? '—' }}</dd></div>
@@ -201,7 +206,7 @@ async function onStop() {
         <StatChip kind="read" :value="detail.usage?.read" />
         <StatChip kind="written" :value="detail.usage?.written" />
       </div>
-      <p v-if="run.error" class="error-bar" data-test="run-error">{{ run.error }}</p>
+      <p v-if="!card && run.error" class="error-bar" data-test="run-error">{{ run.error }}</p>
     </header>
 
     <h3>Fáze</h3>

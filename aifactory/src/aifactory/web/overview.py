@@ -11,7 +11,8 @@ the task has an effective ``auto_merge`` and the PR no ``auto_merge_error``,
 ``done`` nor ``cancelled`` in the backlog and whose ``## Běhy`` does not have the PR yet: a
 merge outside factory that ``factory backlog sync`` would mark done), ``sync_pr`` (the newest
 open sync PR ``{url, branch, tasks}`` or ``null``), ``failed`` (tasks whose newest run ended
-``failed`` or ``aborted`` and that are neither ``done`` nor ``cancelled`` in the backlog),
+``failed`` or ``aborted`` and that are neither ``done`` nor ``cancelled`` in the backlog, with
+``failure_kind``),
 ``config`` (whether the factory is installed, an invalid configuration in base and uncommitted
 shared configuration, D4),
 ``last_activity`` and ``warnings``; ``totals`` sums them up. Every item of ``running`` has
@@ -64,7 +65,7 @@ from pathlib import Path
 from typing import Any, TypeVar
 from urllib.parse import quote
 
-from aifactory import database, oscompat
+from aifactory import database, failure, oscompat
 from aifactory.backlog import Backlog, Task, TaskEditError, iter_tasks, load_for_edit
 from aifactory.backlog.taskfile import has_entry
 from aifactory.config import ConfigError
@@ -228,10 +229,12 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
     excluded: frozenset[str] = frozenset()
     sync_prs: list[sqlite3.Row] = []
     if _has_table(conn, "task_runs"):
-        pause = "pause" if "pause" in _columns(conn, "task_runs") else "NULL AS pause"
+        run_columns = _columns(conn, "task_runs")
+        pause = "pause" if "pause" in run_columns else "NULL AS pause"
+        kind = "failure_kind" if "failure_kind" in run_columns else "NULL AS failure_kind"
         runs = conn.execute(
             "SELECT rowid, run_id, task_id, state, started_at, ended_at, pid, workflow, error, "
-            f"{pause} FROM task_runs ORDER BY started_at DESC, rowid DESC"
+            f"{pause}, {kind} FROM task_runs ORDER BY started_at DESC, rowid DESC"
         ).fetchall()
     if _has_table(conn, "task_queue"):
         excluded = frozenset(
@@ -442,6 +445,8 @@ def _lists(
                 "workflow": row["workflow"],
                 "ended_at": row["ended_at"],
                 "error": row["error"],
+                # the typed kind (``aifactory.failure``); a run recorded before it: other
+                "failure_kind": row["failure_kind"] or failure.OTHER,
             }
         )
 

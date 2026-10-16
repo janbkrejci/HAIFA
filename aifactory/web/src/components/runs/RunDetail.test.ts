@@ -234,6 +234,35 @@ describe('RunDetail', () => {
     }
   })
 
+  it('opens a failed run with its failure card under the title, its actions only there', () => {
+    const wrapper = mount(RunDetail, {
+      props: {
+        detail: detail({
+          state: 'failed',
+          error: 'claude: quota exhausted',
+          failure_kind: 'quota',
+          failure_detail: { harness: 'claude', model: 'sonnet', message: 'limit' },
+        }),
+        events: [],
+      },
+    })
+    const card = wrapper.get('[data-test="failure-card"]')
+    expect(card.get('[data-test="failure-kind"]').text()).toBe('Vyčerpaná kvóta')
+    expect(card.text()).toContain('sonnet')
+    // the card is the first thing after the title, before the run's metadata
+    const head = wrapper.get('header.head').element
+    expect(head.children[1]?.getAttribute('data-test')).toBe('failure-card')
+    expect(wrapper.findAll('[data-test="retry-run"]')).toHaveLength(1)
+    expect(card.find('[data-test="retry-run"]').exists()).toBe(true)
+    expect(wrapper.find('p.error-bar').exists()).toBe(false)
+  })
+
+  it('keeps the error bar for a succeeded run with an error and shows no card', () => {
+    const wrapper = mount(RunDetail, { props: { detail: detail({ error: 'odd' }), events: [] } })
+    expect(wrapper.find('[data-test="failure-card"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="run-error"]').text()).toBe('odd')
+  })
+
   it('offers to continue a failed or stopped run, with a note, and shows its attempts', async () => {
     expect(mount(RunDetail, { props: { detail: detail({ state: 'succeeded' }), events: [] } })
       .find('[data-test="retry-run"]').exists()).toBe(false)

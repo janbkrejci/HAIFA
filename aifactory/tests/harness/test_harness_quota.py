@@ -72,6 +72,9 @@ def test_quota_fails_the_phase_with_kind_quota(
     assert kind == failure.QUOTA
     assert detail["harness"] == name
     assert detail["message"]
+    # the engine adds who ran out: the failure card shows the harness and the model
+    assert detail["agent"] == "builder"
+    assert detail["model"]
     # no JSON correction rounds: one spawn, the quota is not the model's fault
     assert len(spawner.calls) == 1
 

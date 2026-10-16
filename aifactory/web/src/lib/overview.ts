@@ -13,6 +13,7 @@ import {
 import { BOARD_STATES, STATE_LABELS, type BoardState } from './backlog'
 import { repoHref } from './router'
 import { errorText, plural } from './format'
+import { failureLabel } from './failure'
 
 export const OVERVIEW_POLL_MS = 2000
 
@@ -41,7 +42,7 @@ export interface FailedRow {
   task_id: string
   task_title: string | null
   error: string | null
-  /** "proces skončil" for a running row without its process. */
+  /** "proces skončil" for a running row without its process, else the failure kind in Czech. */
   label: string | null
 }
 
@@ -96,7 +97,7 @@ export function failedRows(repo: OverviewRepo): FailedRow[] {
     task_id: f.task_id,
     task_title: f.task_title,
     error: f.error,
-    label: null,
+    label: failureLabel(f.failure_kind) || null,
   }))
   return [...ended, ...failed]
 }

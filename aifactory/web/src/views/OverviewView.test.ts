@@ -30,7 +30,7 @@ const DATA = overview([
   repo('waiting', { review: [review()] }),
   repo('merging', { automerge: [review({ task_id: 'M01-S01-T09', pr_id: '9' })] }),
   repo('broken', {
-    failed: [failed()],
+    failed: [failed({ failure_kind: 'writes_violation' })],
     running: [running({ run_id: 'run-dead', process: 'ended', status_label: 'proces skončil' })],
   }),
   repo('dirty', { state: 'uncommitted', config: config({ uncommitted: [{ path: '.factory/a' }], clean: false }) }),
@@ -165,7 +165,8 @@ describe('OverviewView', () => {
     const fails = wrapper.get('[data-repo="broken"]').findAll('[data-test="row-failed"]')
     expect(fails.map((f) => f.attributes('href'))).toEqual(['#/r/broken/runs/run-dead', '#/r/broken/runs/run-f'])
     expect(fails[0].get('[data-test="row-error"]').text()).toBe('proces skončil')
-    expect(fails[1].get('[data-test="row-error"]').text()).toBe('tests failed')
+    // the failure kind, not the start of the error text
+    expect(fails[1].get('[data-test="row-error"]').text()).toBe('Zápis mimo writes')
 
     const cfg = wrapper.get('[data-repo="dirty"] [data-test="row-config"]')
     expect(cfg.attributes('href')).toBe('#/r/dirty/factory/config_commit')

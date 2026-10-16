@@ -74,7 +74,12 @@ def test_quota_from_the_harness(repo: Path, script: Script) -> None:
     script.add("planner", ok())
     data = _failed(repo)
     assert data["failure_kind"] == failure.QUOTA
-    assert data["failure_detail"] == {"harness": "claude", "message": "You've hit your limit"}
+    detail = data["failure_detail"]
+    assert isinstance(detail, dict)
+    assert (detail["harness"], detail["message"]) == ("claude", "You've hit your limit")
+    # the engine adds the agent and its model (the failure card shows them)
+    assert detail["agent"] == "planner"
+    assert detail["model"]
 
 
 def test_invalid_envelope(repo: Path, script: Script) -> None:

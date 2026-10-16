@@ -25,6 +25,8 @@ export interface ChainRun {
   state: string | null
   workflow?: string | null
   error?: string | null
+  /** The typed kind of a run that did not succeed (`aifactory.failure`). */
+  failure_kind?: string | null
   /** A running run's pause: 'pausing' (asked for) or 'paused' (waits before its next phase). */
   pause?: RunPause | null
   /** The run's pull request and what auto-merge did with it. */

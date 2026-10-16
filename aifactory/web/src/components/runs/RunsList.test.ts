@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import RunsList from './RunsList.vue'
-import { runsResponse } from '@/test/runsFixtures'
+import { runsResponse, summary } from '@/test/runsFixtures'
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -31,6 +31,20 @@ describe('RunsList', () => {
     expect(running.find('[data-col="started-by"]').text()).toBe('auto-continue')
     expect(running.text()).toContain('běží')
     expect(running.find('a[data-col="pr"]').exists()).toBe(false)
+  })
+
+  it('shows the failure kind of a failed run, not the start of its error', () => {
+    const failed = summary({
+      run_id: 'r-fail',
+      state: 'failed',
+      error: 'builder is task-scoped but modified 1 path(s): x',
+      failure_kind: 'writes_violation',
+    })
+    const wrapper = mount(RunsList, { props: { runs: [failed, summary()] } })
+    const row = wrapper.find('tr[data-run="r-fail"]')
+    expect(row.find('[data-col="failure-kind"]').text()).toBe('Zápis mimo writes')
+    expect(row.text()).not.toContain('task-scoped')
+    expect(wrapper.find('tr[data-run="r-ok"] [data-col="failure-kind"]').exists()).toBe(false)
   })
 
   it('has no state or task filter', () => {

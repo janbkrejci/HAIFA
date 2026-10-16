@@ -237,6 +237,8 @@ export interface OverviewFailed {
   workflow: string | null
   ended_at: string | null
   error: string | null
+  /** The typed kind of the failure (`aifactory.failure`; absent from an older server). */
+  failure_kind?: string | null
 }
 
 export interface OverviewConfig {

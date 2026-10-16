@@ -87,8 +87,15 @@ def _row(run_id: str, task_id: str, day: int, pid: int | None) -> TaskRunRow:
     )
 
 
-def _ended(store: TaskRunStore, run_id: str, state: str, error: str | None, day: int) -> None:
-    store.finish(run_id, state, None, error)
+def _ended(
+    store: TaskRunStore,
+    run_id: str,
+    state: str,
+    error: str | None,
+    day: int,
+    kind: str | None = None,
+) -> None:
+    store.finish(run_id, state, None, error, kind)
     store.conn.execute(
         "UPDATE task_runs SET ended_at = ? WHERE run_id = ?",
         (f"2026-01-{day:02d}T11:00:00+00:00", run_id),
@@ -122,7 +129,7 @@ def make_overview_repo(path: Path, *, live_pid: int, dead_pid: int, prefix: str 
     store.claim(_row(f"{p}r-fail-old", T_FAIL, 2, live_pid))
     _ended(store, f"{p}r-fail-old", "succeeded", None, 2)
     store.claim(_row(f"{p}r-fail", T_FAIL, 3, live_pid))
-    _ended(store, f"{p}r-fail", "failed", "accept not met", 3)
+    _ended(store, f"{p}r-fail", "failed", "accept not met", 3, "accept_not_met")
     store.claim(_row(f"{p}r-done", T_DONE, 4, live_pid))
     _ended(store, f"{p}r-done", "failed", "boom", 4)
     store.claim(_row(f"{p}r-canc", T_CANC, 5, live_pid))
