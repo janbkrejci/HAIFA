@@ -3,3 +3,6 @@ base: main
 git_provider: github
 docs_root: factory
 stacked_prs: true
+generated:
+  - path: aifactory/src/aifactory/web/static
+    command: just web-build
