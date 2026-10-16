@@ -79,6 +79,20 @@ describe('RunDialog', () => {
     expect(wrapper.emitted('start')).toEqual([[{ note: 'přesto', force: true }]])
   })
 
+  it('starts a task stacked on its dependency\'s open PR without --force', async () => {
+    const wrapper = dialog(
+      runCheck({
+        unmet: [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }],
+        stack: { branch: 'factory/M01-S01-T01-1', prs: [{ task_id: 'M01-S01-T01', url: 'https://x/pull/7' }] },
+      }),
+    )
+    expect(wrapper.find('[data-test="unmet-warning"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="run-stacked"]').text()).toContain('factory/M01-S01-T01-1')
+    expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
+    await wrapper.find('[data-test="run-start"]').trigger('click')
+    expect(wrapper.emitted('start')).toEqual([[{ force: false }]])
+  })
+
   it('offers --force after an unmet_dependencies error', () => {
     const wrapper = dialog(runCheck(), {
       error: { message: 'depends on work not done', issues: [], code: 'unmet_dependencies' },

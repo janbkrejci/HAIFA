@@ -446,6 +446,8 @@ export interface RunCheck {
   config: ConfigStatus | null
   in_base: boolean
   unmet: Unmet[]
+  /** `stacked_prs`: the dependencies' open PRs the run forks from; it starts without force. */
+  stack?: { branch: string; prs: { task_id: string; url: string }[] } | null
   running: TaskRun | null
   launcher_busy: boolean
   /** Effective workflow and writes of the task in base (newer servers). */

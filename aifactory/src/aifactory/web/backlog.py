@@ -37,6 +37,7 @@ from aifactory.harness.override import THINKING_LEVELS
 from aifactory.run import gitops, task_prs_for, task_runs_for
 from aifactory.run.errors import TaskRunError
 from aifactory.run.scope import effective_task_writes, output_paths
+from aifactory.run.stack import stack_point
 from aifactory.run.store import QueuePrefs, TaskRunStore, is_db_busy
 from aifactory.run.task import existing_store
 from aifactory.web.launcher import Launcher
@@ -652,7 +653,11 @@ def commit(repo: Path, body: JsonDict) -> tuple[JsonDict, list[str]]:
 def run_check(
     repo: Path, task_id: str, *, launcher_busy: bool = False
 ) -> tuple[JsonDict, list[str]]:
-    """What the operator should know before ``factory task run``: D4, unmet deps, a live run."""
+    """What the operator should know before ``factory task run``: D4, unmet deps, a live run.
+
+    ``stack``: with ``stacked_prs``, the open PRs of the unmet dependencies the run would
+    fork from (``run/stack.py``); such a task starts without ``force``.
+    """
     backlog = core.load_for_edit(repo)
     issues = core.check_backlog(backlog)
     task = core.find_task(backlog, task_id, issues)
@@ -684,11 +689,20 @@ def run_check(
                 "writes": list(effective_task_writes(base_task)),
             }
     running: JsonDict | None = None
+    stack: JsonDict | None = None
     try:
         store = existing_store(repo)
         if store is not None:
             try:
                 row = store.running(task.id)
+                if unmet and rc.config.settings.stacked_prs and isinstance(base_task, Task):
+                    found = stack_point(main, base, base_task, store)
+                    if found is not None:
+                        point, prs = found
+                        stack = {
+                            "branch": point.branch,
+                            "prs": [prs[dep].to_json() for dep in point.dependencies],
+                        }
             finally:
                 store.close()
             running = None if row is None else row.to_json()
@@ -704,6 +718,7 @@ def run_check(
         "config": config,
         "in_base": in_base,
         "unmet": unmet,
+        "stack": stack,
         "running": running,
         "launcher_busy": launcher_busy,
         **effective_values,

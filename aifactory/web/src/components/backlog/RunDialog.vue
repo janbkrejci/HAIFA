@@ -59,13 +59,17 @@ const taskNoun = computed(() => levelNoun(level.task.value))
 const taskLabel = computed(() => levelLabel(level.task.value))
 
 const unmet = computed(() => (Array.isArray(props.check?.unmet) ? props.check.unmet : []))
+/** The dependencies wait only in open PRs: the run starts from their branch (stacked PRs). */
+const stack = computed(() => props.check?.stack ?? null)
+/** Unmet dependencies that stop a normal start (none when the run stacks on their PRs). */
+const blocking = computed(() => (stack.value ? [] : unmet.value))
 const config = computed(() => props.check?.config ?? null)
 const dirtyConfig = computed(() => config.value !== null && !config.value.clean)
 const running = computed(() => props.check?.running ?? null)
 const launcherBusy = computed(() => props.check?.launcher_busy === true)
 const notInBase = computed(() => !!props.check && props.check.in_base === false)
 const showForce = computed(
-  () => unmet.value.length > 0 || props.error?.code === 'unmet_dependencies',
+  () => blocking.value.length > 0 || props.error?.code === 'unmet_dependencies',
 )
 const blocked = computed(
   () =>
@@ -182,7 +186,18 @@ function start(force: boolean) {
           Commitnout backlog do base
         </button>
       </div>
-      <div v-if="unmet.length" class="warning" data-test="unmet-warning">
+      <div v-if="stack" class="info" data-test="run-stacked">
+        Závislosti čekají v otevřených PR, běh naváže na větev
+        <span class="mono">{{ stack.branch }}</span>:
+        <ul>
+          <li v-for="pr in stack.prs" :key="pr.task_id" :data-stack="pr.task_id">
+            <span class="mono">{{ pr.task_id }}</span> —
+            <a :href="pr.url" target="_blank" rel="noopener">{{ pr.url }}</a>
+          </li>
+        </ul>
+        PR tohoto tasku se mergne až po nich.
+      </div>
+      <div v-else-if="unmet.length" class="warning" data-test="unmet-warning">
         <p>Nesplněné závislosti v base:</p>
         <ul>
           <li v-for="u in unmet" :key="u.id" :data-unmet="u.id">
@@ -260,7 +275,7 @@ function start(force: boolean) {
         type="button"
         class="primary"
         data-test="run-start"
-        :disabled="blocked || unmet.length > 0"
+        :disabled="blocked || blocking.length > 0"
         :aria-busy="action === 'start' || undefined"
         @click="start(false)"
       >

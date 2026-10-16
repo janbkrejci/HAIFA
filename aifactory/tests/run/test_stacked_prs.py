@@ -23,6 +23,7 @@ from run_repo import (
 from aifactory.review import ReviewError, approve_task, resolve_task
 from aifactory.run import TaskRunStore, run_task
 from aifactory.run.errors import TaskRunError
+from aifactory.web.backlog import run_check
 from aifactory.web.review import review_detail
 
 
@@ -48,6 +49,11 @@ def test_dependent_stacks_on_the_open_pr_and_lands_after_it(repo: Path, script: 
     builds(script, "src/app/a.py")
     first = run_task(repo, T01)
     assert first.ok and first.pr is not None
+
+    # the dashboard's Run dialog starts it without force, stacked on T01's PR
+    check, _ = run_check(repo, T02)
+    assert check["unmet"] and check["stack"]["branch"] == first.run.branch
+    assert [pr["task_id"] for pr in check["stack"]["prs"]] == [T01]
 
     builds(script, "src/app/b.py")
     second = run_task(repo, T02)
@@ -87,6 +93,7 @@ def test_without_stacked_prs_the_dependent_waits(repo: Path, script: Script) -> 
     commit_all(repo, "no stacking")
     builds(script, "src/app/a.py")
     assert run_task(repo, T01).ok
+    assert run_check(repo, T02)[0]["stack"] is None
     with pytest.raises(TaskRunError) as caught:
         run_task(repo, T02)
     assert caught.value.code == "unmet_dependencies"
