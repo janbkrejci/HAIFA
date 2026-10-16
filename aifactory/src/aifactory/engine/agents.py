@@ -357,7 +357,9 @@ def _as_report(result) -> GateReport:
 
 def _agent_session_id(run, agent: AgentConfig) -> str:
     entry = run.agent_map.get(agent.name)
-    if entry and entry.get("model") == agent.model:
+    # aifactory 3.5: a session belongs to its harness too (a quota fallback switches it)
+    if (entry and entry.get("model") == agent.model
+            and entry.get("coding_agent", agent.coding_agent) == agent.coding_agent):
         return entry["session_id"]           # rejoin the existing context window
     return f"sssf-{run.adw_id}-{agent.name}-{new_id(4)}"
 

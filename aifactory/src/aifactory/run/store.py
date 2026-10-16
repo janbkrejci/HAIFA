@@ -704,12 +704,15 @@ class TaskRunStore:
                 tuple(getattr(row, c) for c in _COLUMNS),
             )
 
-    def reclaim(self, run_id: str, pid: int, retry: dict[str, Any]) -> TaskRunRow:
+    def reclaim(
+        self, run_id: str, pid: int, retry: dict[str, Any], note: str | None = None
+    ) -> TaskRunRow:
         """Turn the ended run `run_id` back into ``running`` for a retry, atomically.
 
         Like ``claim``: fails with ``already_running`` while a run of the task is running.
         Only a ``failed``, ``stopped`` or ``aborted`` run can be retried
-        (``run_not_retryable``). `retry` is appended to ``retries``.
+        (``run_not_retryable``). `retry` is appended to ``retries``. `note` (a retry on
+        another harness: the new roster override) replaces the run's note.
         """
         with self.serialized(), self._txn():
             row = self.get(run_id)
@@ -731,8 +734,9 @@ class TaskRunStore:
             self.conn.execute(
                 "UPDATE task_runs SET state = ?, pid = ?, ended_at = NULL, error = NULL, "
                 "pause = NULL, pr_error = NULL, pr_body = NULL, retries = ?, "
-                "failure_kind = NULL, failure_detail = NULL WHERE run_id = ?",
-                (RUNNING, pid, retries, run_id),
+                "failure_kind = NULL, failure_detail = NULL, note = COALESCE(?, note) "
+                "WHERE run_id = ?",
+                (RUNNING, pid, retries, note, run_id),
             )
         final = self.get(run_id)
         assert final is not None

@@ -328,8 +328,12 @@ def pr_body(
     follow_ups: Sequence[CreatedFollowUp] = (),
     previous_body: str | None = None,
     reuse_summary: bool = False,
+    switches: Sequence[str] = (),
 ) -> str:
     """Markdown body: the agents' summary first, then the technical details.
+
+    `switches` are the harness switches of the runs (``run.fallback.harness_switches``),
+    one line each: from which harness or model to which and why.
 
     The summary (goal, done, not done, notes for approval) comes from the run's agents.
     `reuse_summary` (a resolve run) or a run without one keeps the summary of
@@ -348,6 +352,9 @@ def pr_body(
     if notes:
         out += ["", "### Poznámky k běhům", ""]
         out += [f"- běh {run_id}: {_short(note, 300)}" for run_id, note in notes]
+    if switches:
+        out += ["", "### Přepnutí harnessu", ""]
+        out += [f"- {line}" for line in switches]
     out += ["", "### Agenti", ""]
     out += (_agents(wf) if wf else []) or ["- žádný agent neběžel"]
     checks = (_gates(trace_db, wf.adw_id) if wf else []) + (_tests(wf) if wf else [])

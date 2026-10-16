@@ -380,16 +380,46 @@ def publish_run(repo: Path, run_id: str) -> tuple[JsonDict, list[str]]:
     )
 
 
-RETRY_KEYS = ("note", "from")
+RETRY_KEYS = ("note", "from", "harness")
+
+
+def harness_choices(repo: Path, run_id: str, home: Path | None = None) -> JsonDict:
+    """The harnesses „Pokračovat s jiným harnessem“ offers for the run.
+
+    Only harnesses this computer enabled, with a model whose test passed
+    (``harnesses.json``, ``harness-tests.json``), and never the one whose quota ran out
+    (``failure_detail.harness``). Each comes with the model and thinking it would run.
+    """
+    from aifactory.harness import settings as harness_settings
+
+    store, row = _open_run(repo, run_id)
+    store.close()
+    detail = row.failure_detail_dict() or {}
+    exhausted = detail.get("harness") if isinstance(detail.get("harness"), str) else None
+    settings = harness_settings.read(home)
+    tests = harness_settings.read_tests(home)
+    choices: list[JsonDict] = []
+    for name, choice in settings.harnesses.items() if settings else ():
+        tested = tests.get(name, {}).get(choice.model, {}) if choice.model else {}
+        if not choice.enabled or name == exhausted or tested.get("ok") is not True:
+            continue
+        choices.append({"harness": name, "model": choice.model, "thinking": choice.thinking})
+    return {
+        "run_id": run_id,
+        "exhausted": {"harness": exhausted, "model": detail.get("model")},
+        "choices": choices,
+    }
 
 
 def start_retry(
-    repo: Path, run_id: str, body: JsonDict, launcher: Any
+    repo: Path, run_id: str, body: JsonDict, launcher: Any, home: Path | None = None
 ) -> tuple[JsonDict, list[str]]:
     """``factory task retry --run`` as a separate process; ``{task_id, action, run, pending}``.
 
     ``note`` goes to the agents of the continuing phases, ``from`` names the phase to
-    continue from (default: the one that failed or was stopped).
+    continue from (default: the one that failed or was stopped). ``harness`` continues
+    with every agent on that harness (``--harness`` with its model and thinking); it must
+    be one of ``harness_choices`` (``invalid_value`` otherwise).
     """
     from aifactory.run.store import RETRYABLE
 
@@ -412,8 +442,21 @@ def start_retry(
             f"run {run_id} of task {row.task_id} is {row.state}; only a failed, stopped or "
             "aborted run can be retried",
         )
+    switch: dict[str, Any] = {}
+    if values["harness"]:
+        offered = harness_choices(repo, run_id, home)["choices"]
+        choice = next((c for c in offered if c["harness"] == values["harness"]), None)
+        if choice is None:
+            names = ", ".join(c["harness"] for c in offered) or "none"
+            raise TaskRunError(
+                "invalid_value",
+                f"harness {values['harness']!r} is not enabled and tested on this computer "
+                f"or ran out of quota; choose one of: {names}",
+            )
+        override = {k: str(choice[k]) for k in ("harness", "model", "thinking") if choice[k]}
+        switch["agents_override"] = override
     started = launcher.start_retry(
-        repo, row.task_id, run_id, note=values["note"], from_phase=values["from"]
+        repo, row.task_id, run_id, note=values["note"], from_phase=values["from"], **switch
     )
     data: JsonDict = {
         "task_id": row.task_id,

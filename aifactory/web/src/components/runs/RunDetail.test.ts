@@ -280,6 +280,12 @@ describe('RunDetail', () => {
           rebased_onto: 'abcdef0123456789',
           previous_state: 'failed',
           previous_error: 'accept not met',
+          harness_switch: {
+            from: { harness: 'codex', model: 'gpt-6.1-sol' },
+            to: { harness: 'claude', model: 'claude-opus-5-5' },
+            reason: 'quota',
+            auto: true,
+          },
         },
       ],
     })
@@ -291,6 +297,7 @@ describe('RunDetail', () => {
       const line = wrapper.get('[data-test="run-retry"]').text()
       expect(line).toContain('od fáze review_1')
       expect(line).toContain('po rebase na abcdef0')
+      expect(line).toContain('přepnuto codex/gpt-6.1-sol → claude/claude-opus-5-5 (kvóta, automaticky)')
       expect(line).toContain('tests are out of scope')
       await wrapper.get('[data-test="retry-run"]').trigger('click')
       await wrapper.get('[data-test="retry-note"]').setValue('  keep going ')

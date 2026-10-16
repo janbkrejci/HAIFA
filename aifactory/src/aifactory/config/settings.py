@@ -19,6 +19,7 @@ from pydantic import (
 from aifactory import yamlload
 from aifactory.config.errors import ConfigError, ConfigIssue
 from aifactory.config.source import LOCAL_FILE
+from aifactory.harness.fallback import Fallback
 
 CONFIG_FILE = ".factory/config.yaml"
 # keys that belong to local.yaml; named explicitly when they show up in config.yaml
@@ -378,6 +379,8 @@ class LocalSettings(BaseModel):
 
     trace_db: str = ".factory/trace.db"
     database_url: str | None = None
+    # this computer's harness after a quota failure; wins over agents.yaml (harness/fallback.py)
+    fallback: Fallback | None = None
 
     @field_validator("trace_db")
     @classmethod

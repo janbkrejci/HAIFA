@@ -769,13 +769,32 @@ async def retry_run(request: Request) -> JSONResponse:
     try:
         body = await _json_body(request)
         data, warnings = await run_in_threadpool(
-            runs.start_retry, repo, request.path_params["run_id"], body, launcher
+            runs.start_retry,
+            repo,
+            request.path_params["run_id"],
+            body,
+            launcher,
+            request.app.state.home,
         )
     except backlog.UsageError as exc:
         return _usage_error(exc.message)
     except (ReviewError, TaskRunError, ConfigError) as exc:
         return _review_error(exc)
     return JSONResponse(envelope_ok(data, warnings), status_code=202)
+
+
+async def harness_choices(request: Request) -> JSONResponse:
+    """The harnesses „Pokračovat s jiným harnessem“ offers: enabled, tested, not exhausted."""
+    repo: Path = _repo(request)
+    try:
+        data = await run_in_threadpool(
+            runs.harness_choices, repo, request.path_params["run_id"], request.app.state.home
+        )
+    except (TaskRunError, ConfigError) as exc:
+        return _review_error(exc)
+    except ValueError as exc:  # an invalid harnesses.json
+        return _usage_error(str(exc))
+    return JSONResponse(envelope_ok(data))
 
 
 async def allow_writes_plan(request: Request) -> JSONResponse:
@@ -1613,6 +1632,7 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/runs/{run_id}/pause", pause_run, methods=["POST"]),
         Route("/runs/{run_id}/resume", resume_run, methods=["POST"]),
         Route("/runs/{run_id}/retry", retry_run, methods=["POST"]),
+        Route("/runs/{run_id}/harness-choices", harness_choices, methods=["GET"]),
         Route("/runs/{run_id}/allow-writes", allow_writes_plan, methods=["GET"]),
         Route("/runs/{run_id}/allow-writes", allow_writes_run, methods=["POST"]),
         Route("/runs/{run_id}/done", nothing_to_do_done, methods=["POST"]),

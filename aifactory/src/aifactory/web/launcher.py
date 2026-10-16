@@ -103,6 +103,7 @@ class Launcher(Protocol):
         note: str | None = None,
         from_phase: str | None = None,
         timeout: float = 30.0,
+        agents_override: dict[str, str] | None = None,
     ) -> TaskRunRow | None: ...
 
     def busy(self) -> bool: ...
@@ -255,13 +256,20 @@ class RunLauncher:
         note: str | None = None,
         from_phase: str | None = None,
         timeout: float = 30.0,
+        agents_override: dict[str, str] | None = None,
     ) -> TaskRunRow | None:
-        """``factory task retry --run``; like ``start``, claimed when a new attempt starts."""
+        """``factory task retry --run``; like ``start``, claimed when a new attempt starts.
+
+        ``agents_override`` (``harness``, ``model``, ``thinking``) continues on another
+        harness (``--harness``, ``--model``, ``--thinking``)."""
         args = ["task", "retry", task_id, "--run", run_id, "--repo", str(repo), "--json"]
         if note:
             args.append(f"--note={note}")
         if from_phase:
             args.append(f"--from={from_phase}")
+        for key, value in (agents_override or {}).items():
+            if value:
+                args.append(f"--{key}={value}")
         claimed = retried_row(repo, run_id)
         return self._launch(repo, task_id, "retry", args, timeout, claimed)
 
