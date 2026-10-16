@@ -27,6 +27,13 @@ describe('MarkdownView', () => {
     expect(wrapper.find('[data-test="md-preview"]').exists()).toBe(true)
   })
 
+  it('shows only the preview, without tabs, when previewOnly', () => {
+    const wrapper = mount(MarkdownView, { props: { source: SOURCE, previewOnly: true } })
+    expect(wrapper.find('[data-test="md-preview"] h2').text()).toBe('Zadání')
+    expect(wrapper.find('.md-tabs').exists()).toBe(false)
+    expect(wrapper.find('[data-test="md-source"]').exists()).toBe(false)
+  })
+
   it('shows a dash for empty source', () => {
     const wrapper = mount(MarkdownView, { props: { source: '  ' } })
     expect(wrapper.find('[data-test="md-empty"]').text()).toBe('—')

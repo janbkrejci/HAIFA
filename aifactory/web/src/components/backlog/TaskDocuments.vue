@@ -1,20 +1,22 @@
 <script setup lang="ts">
-// Read-only viewer of a task's markdown documents: backlog item, spec and doc.
-// The server finds them by the task id; a missing one is listed but cannot be opened.
+// Task card with tabs: the rendered task body (Zadání, shown first) and the read-only
+// markdown documents (backlog item, spec and doc). The server finds the documents by the
+// task id; a missing one is listed but cannot be opened.
 import { computed, ref, watch } from 'vue'
-import { BookOpen } from 'lucide-vue-next'
+import { FileText } from 'lucide-vue-next'
 import { documentMarkdown, fetchTaskDocuments, type TaskDocument } from '@/lib/backlog'
 import { errorText } from '@/lib/format'
 import MarkdownView from '@/components/ui/MarkdownView.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 
-const props = defineProps<{ taskId: string }>()
+const props = defineProps<{ taskId: string; body: string }>()
 
 const documents = ref<TaskDocument[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
-const selected = ref<TaskDocument['kind'] | null>(null)
+/** The open tab: `body` is the task body, otherwise a document kind. */
+const selected = ref<TaskDocument['kind'] | 'body'>('body')
 
 let token = 0
 
@@ -22,7 +24,7 @@ async function load(taskId: string) {
   const mine = ++token
   loading.value = true
   error.value = null
-  selected.value = null
+  selected.value = 'body'
   try {
     const data = await fetchTaskDocuments(taskId)
     if (mine !== token) return
@@ -41,9 +43,8 @@ watch(() => props.taskId, (id) => void load(id), { immediate: true })
 const current = computed(() => documents.value.find((d) => d.kind === selected.value) ?? null)
 const source = computed(() => (current.value?.content == null ? '' : documentMarkdown(current.value.content)))
 
-function toggle(doc: TaskDocument) {
-  if (!doc.exists) return
-  selected.value = selected.value === doc.kind ? null : doc.kind
+function open(doc: TaskDocument) {
+  if (doc.exists) selected.value = doc.kind
 }
 
 function tip(doc: TaskDocument): string {
@@ -55,11 +56,20 @@ function tip(doc: TaskDocument): string {
 <template>
   <section class="card task-docs" data-test="task-documents">
     <h3>
-      <BookOpen :size="16" /> Dokumenty
+      <FileText :size="16" /> Zadání
       <Spinner v-if="loading" />
     </h3>
-    <p v-if="error" class="error" data-test="docs-error">{{ error }}</p>
-    <div v-else-if="documents.length" class="doc-tabs" role="tablist">
+    <div class="doc-tabs" role="tablist">
+      <button
+        type="button"
+        role="tab"
+        data-test="doc-task"
+        :class="{ active: selected === 'body' }"
+        :aria-selected="selected === 'body'"
+        @click="selected = 'body'"
+      >
+        Zadání
+      </button>
       <Tooltip v-for="doc in documents" :key="doc.kind" :text="tip(doc)">
         <button
           type="button"
@@ -69,14 +79,18 @@ function tip(doc: TaskDocument): string {
           :data-exists="doc.exists"
           :aria-selected="selected === doc.kind"
           :disabled="!doc.exists"
-          @click="toggle(doc)"
+          @click="open(doc)"
         >
           {{ doc.label }}
           <span v-if="!doc.exists" class="tag" data-test="doc-missing">chybí</span>
         </button>
       </Tooltip>
     </div>
-    <div v-if="current" class="doc-body" :data-doc="current.kind">
+    <p v-if="error" class="error" data-test="docs-error">{{ error }}</p>
+    <div v-if="selected === 'body'" class="doc-body">
+      <MarkdownView :source="body" empty="Zadání je prázdné." preview-only data-test="body" />
+    </div>
+    <div v-else-if="current" class="doc-body" :data-doc="current.kind">
       <div class="doc-path mono" data-test="doc-path">{{ current.path }}</div>
       <p v-if="current.content == null" class="faint" data-test="doc-problem">
         Obsah nejde zobrazit{{ current.problem ? `: ${current.problem}` : '' }}.
