@@ -101,6 +101,22 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "task retry: the run is not failed, stopped or aborted, or it is a resolve run",
     ),
     ("task_done", "2", "task retry: the task's PR is merged or the task is done in base"),
+    (
+        "not_writes_violation",
+        "2",
+        "task retry --allow-writes: the run did not fail with writes_violation",
+    ),
+    (
+        "nothing_to_allow",
+        "2",
+        "task retry --allow-writes: no path writes can allow (protected, backlog, main "
+        "checkout, or allowed already)",
+    ),
+    (
+        "writes_in_pr",
+        "2",
+        "task retry --allow-writes: the writes change waits in an unmerged backlog PR",
+    ),
     ("unknown_chain", "2", "no auto-continue chain with this id in the trace database"),
     ("chain_running", "2", "the chain is still running and cannot be dismissed"),
     # Review, PR and provider.

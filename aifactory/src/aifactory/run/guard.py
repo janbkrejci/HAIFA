@@ -50,9 +50,11 @@ invalid JSON, a gate that stays red). ``TaskWriteGuard`` looks at two trees:
 Uncommitted work present before the phase is never discarded: if it cannot be
 saved, the agent is not started. Any breach raises
 ``permissions.PermissionBreach`` naming every path, where it was and what
-happened to it (the run's ``failure_kind`` is ``writes_violation``, the problems are
-its ``failure_detail``), and the backup of that phase is kept; without a breach it is
-removed. A backup that cannot be made is a ``PermissionBreach`` of kind ``other``.
+happened to it (the run's ``failure_kind`` is ``writes_violation``; its ``failure_detail``
+holds the problems, the worktree paths rolled back as ``paths`` and the main checkout
+paths as ``main_paths``, read by ``allow_writes.py``), and the backup of that phase is
+kept; without a breach it is removed. A backup that cannot be made is a
+``PermissionBreach`` of kind ``other``.
 
 Known limit: files ignored by ``.gitignore`` are invisible to git, so a write to
 such a path in either checkout is neither detected nor undone.
@@ -182,6 +184,8 @@ class TaskWriteGuard:
     def enforce(self, run: Any, phase: Any, agent: Any, before: dict[str, Any]) -> list[str]:
         """Undo and raise ``PermissionBreach`` on any breach; else the worktree paths changed."""
         problems: list[str] = []
+        outside: list[str] = []  # worktree paths rolled back (``failure_detail.paths``)
+        main_paths: list[str] = []  # main checkout paths the agent changed
 
         head_before = before["worktree_head"]
         head_now = gitops.head(self.worktree)
@@ -212,6 +216,7 @@ class TaskWriteGuard:
                 outcome = backup.restore(wt_backup, (), [path], index=False)[path]
             else:
                 outcome = roll_back(self.worktree, path, after)
+            outside.append(path)
             problems.append(f"{WORKTREE}: {path} — {outcome}")
 
         main_backup: backup.CheckoutBackup = before["main_backup"]
@@ -267,9 +272,11 @@ class TaskWriteGuard:
                 outcome = outcomes.get(path, "unchanged")
                 if path in accepted.states and outcome.startswith("restored"):
                     outcome = "restored to the factory write"
+                main_paths.append(path)
                 problems.append(f"{MAIN}: {path} — {outcome}")
         for path in accepted.agent_first:
             if path not in off:
+                main_paths.append(path)
                 problems.append(
                     f"{MAIN}: {path} — changed by the agent before a factory write; "
                     "factory content kept"
@@ -291,5 +298,11 @@ class TaskWriteGuard:
             f"{agent.name} changed paths outside its task run:\n{detail}\n"
             f"task {self.scope.task_id} may only change {list(self.scope.paths)} "
             "inside its worktree",
-            detail={"agent": agent.name, "problems": problems, "writes": list(self.scope.paths)},
+            detail={
+                "agent": agent.name,
+                "problems": problems,
+                "writes": list(self.scope.paths),
+                "paths": outside,
+                "main_paths": main_paths,
+            },
         )

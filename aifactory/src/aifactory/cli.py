@@ -1759,6 +1759,11 @@ task retry: continues the task's newest failed, stopped or aborted run (or --run
   past the branch, the branch is rebased onto it, a conflict resolved like 'task resolve',
   and the tests run again before any review. Refused: a task merged or done (task_done), a
   run that cannot be retried (run_not_retryable), a running task (already_running).
+  --allow-writes after a writes_violation first adds the paths written outside writes to
+  the task's writes and commits the backlog to base (by base_changes). Paths in
+  protected_files, in the backlog or in the main checkout are never added; refused: a run
+  of another kind (not_writes_violation), no path to add (nothing_to_allow), a change
+  waiting in an unmerged backlog PR (writes_in_pr).
 """
 
 
@@ -2031,6 +2036,13 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="after a successful retry (PR opened) start the next ready task whatever its "
         "auto_continue, like factory task run --auto. Without it the retry goes on like "
         "task run: auto_merge merges the PR and auto_continue starts the next ready task",
+    )
+    retry.add_argument(
+        "--allow-writes",
+        action="store_true",
+        help="after a writes_violation: add the paths written outside writes to the task's "
+        "writes (committed to base by base_changes), then retry. Paths in protected_files, "
+        "in the backlog or in the main checkout are never added",
     )
 
     for child in (
@@ -2425,7 +2437,11 @@ def _task_run(args: argparse.Namespace, root: Path) -> int:
     return _chain_output(args, start)
 
 
-def _chain_output(args: argparse.Namespace, start: Callable[[], ChainResult]) -> int:
+def _chain_output(
+    args: argparse.Namespace,
+    start: Callable[[], ChainResult],
+    extra: dict[str, Any] | None = None,
+) -> int:
     """Start a chain with `start` and print it (``task run``, ``task retry``)."""
     from aifactory.run import STOP_EXHAUSTED, STOP_NOT_MERGED
 
@@ -2436,6 +2452,7 @@ def _chain_output(args: argparse.Namespace, start: Callable[[], ChainResult]) ->
         data = _run_json(chain.runs[0])
         keys = ("runs", "stop", "waiting", "max_parallel_runs", "exclusive", "chain_id")
         data["chain"] = {k: chain_json[k] for k in keys}
+        data.update(extra or {})
         return _emit_runs(data, chain.runs, chain.runs[0].warnings)
     chain = start()
     for warning in chain.runs[0].warnings:
@@ -2470,16 +2487,31 @@ def _task_resolve(args: argparse.Namespace, root: Path) -> int:
 def _task_retry(args: argparse.Namespace, root: Path) -> int:
     from aifactory.run import retry_chain
 
+    run_id: str | None = args.run
+    extra: dict[str, Any] = {}
+    if args.allow_writes:
+        from aifactory.run.allow_writes import allow_writes
+
+        allowed = allow_writes(root, args.task_id, run_id)
+        run_id = allowed.plan.run_id
+        extra["allow_writes"] = allowed.to_json()
+        if not args.json:
+            print(f"writes of {args.task_id} += {', '.join(allowed.plan.allow)}")
+            for refused in allowed.plan.refused:
+                print(f"not allowed: {refused.path}: {refused.to_json()['message']}")
+            if allowed.commit.commit:
+                print(f"backlog committed to {allowed.commit.base} ({allowed.commit.commit[:7]})")
     return _chain_output(
         args,
         lambda: retry_chain(
             root,
             args.task_id,
-            run_id=args.run,
+            run_id=run_id,
             note=args.note,
             from_phase=args.from_phase,
             auto=args.auto,
         ),
+        extra,
     )
 
 

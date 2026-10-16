@@ -424,6 +424,49 @@ def start_retry(
     return data, []
 
 
+def allow_writes_plan(repo: Path, run_id: str) -> JsonDict:
+    """What „Povolit tyto cesty a pokračovat“ adds to the task's writes and what it refuses."""
+    from aifactory.run.allow_writes import plan_allow_writes
+
+    store, row = _open_run(repo, run_id)
+    store.close()
+    return plan_allow_writes(repo, row.task_id, run_id).to_json()
+
+
+ALLOW_WRITES_KEYS = ("note",)
+
+
+def start_allow_writes(
+    repo: Path, run_id: str, body: JsonDict, launcher: Any
+) -> tuple[JsonDict, list[str]]:
+    """``factory task retry --allow-writes``: extend the task's writes in base, then start
+    the retry as a separate process; ``{allow_writes, task_id, action, run, pending}``."""
+    from aifactory.run.allow_writes import allow_writes
+
+    for key in body:
+        if key not in ALLOW_WRITES_KEYS:
+            raise TaskRunError(
+                "invalid_value", f"unknown field '{key}', allowed: {', '.join(ALLOW_WRITES_KEYS)}"
+            )
+    note = body.get("note")
+    if note is not None and not isinstance(note, str):
+        raise TaskRunError("invalid_value", "'note' must be a string")
+    store, row = _open_run(repo, run_id)
+    store.close()
+    result = allow_writes(repo, row.task_id, run_id)
+    started = launcher.start_retry(
+        repo, row.task_id, run_id, note=note.strip() if note and note.strip() else None
+    )
+    data: JsonDict = {
+        "allow_writes": result.to_json(),
+        "task_id": row.task_id,
+        "action": "retry",
+        "run": None if started is None else run_summary(repo, run_id),
+        "pending": started is None,
+    }
+    return data, list(result.commit.warnings)
+
+
 def _agent_sessions(conn: sqlite3.Connection, run_id: str) -> list[JsonDict]:
     if not _has_table(conn, "agent_sessions"):
         return []

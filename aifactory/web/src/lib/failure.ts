@@ -13,8 +13,11 @@ export type FailureKind =
   | 'stopped'
   | 'other'
 
-/** An action of the card: `continue` is `factory task retry`, `cancel_task` cancels the task. */
-export type FailureAction = 'continue' | 'cancel_task'
+/**
+ * An action of the card: `continue` is `factory task retry`, `cancel_task` cancels the task,
+ * `allow_writes` is `factory task retry --allow-writes` (add the paths to writes, continue).
+ */
+export type FailureAction = 'continue' | 'cancel_task' | 'allow_writes'
 
 const LABELS: Record<FailureKind, string> = {
   accept_not_met: 'Nesplněná podmínka accept',
@@ -27,12 +30,12 @@ const LABELS: Record<FailureKind, string> = {
   other: 'Jiná chyba',
 }
 
-// S02 adds more (extend writes, mark the task done, continue on a fallback harness).
+// S02 adds more (mark the task done, continue on a fallback harness).
 const ACTIONS: Record<FailureKind, readonly FailureAction[]> = {
   accept_not_met: ['continue', 'cancel_task'],
   nothing_to_do: ['cancel_task'],
   quota: ['continue', 'cancel_task'],
-  writes_violation: ['continue', 'cancel_task'],
+  writes_violation: ['allow_writes', 'continue', 'cancel_task'],
   invalid_output: ['continue', 'cancel_task'],
   process_gone: ['continue', 'cancel_task'],
   stopped: ['continue', 'cancel_task'],
@@ -148,9 +151,21 @@ function acceptCard(run: FailedRun, d: Detail): [string, FailureFact[]] {
   return [text, facts]
 }
 
+const ALLOW_REASONS: Record<string, string> = {
+  protected: 'chráněná cesta (protected_files), writes ji nepovolí',
+  backlog: 'cesta v backlogu, backlog zapisuje jen factory',
+  main_checkout: 'zápis do hlavního checkoutu mimo worktree běhu, writes ho nepovolí',
+  already_allowed: 'writes tasku ji už povolují, zápis zakázaly writes agenta (agents.yaml)',
+}
+
+/** Why „Povolit tyto cesty a pokračovat“ does not add a path, in Czech. */
+export function allowWritesReason(reason: string, message = ''): string {
+  return ALLOW_REASONS[reason] ?? (message || reason)
+}
+
 function writesCard(d: Detail): [string, FailureFact[]] {
   const agent = str(d.agent) ?? 'agent'
-  const paths = strings(d.paths)
+  const paths = [...strings(d.paths), ...strings(d.main_paths).map((p) => `hlavní checkout: ${p}`)]
   const problems = strings(d.problems)
   const outside = paths.length ? paths : problems
   const n = outside.length

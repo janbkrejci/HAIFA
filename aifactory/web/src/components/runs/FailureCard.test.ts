@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import FailureCard from './FailureCard.vue'
 import { failureCard, failureLabel } from '@/lib/failure'
@@ -7,6 +7,11 @@ import { okResponse, summary } from '@/test/runsFixtures'
 import { answerDialog, openDialog } from '@/test/modal'
 
 enableAutoUnmount(afterEach)
+
+// no request leaves the test: a test that expects one stubs fetch itself
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })))
+})
 
 afterEach(() => {
   vi.unstubAllGlobals()
@@ -213,6 +218,66 @@ describe('FailureCard', () => {
     expect(wrapper.emitted('cancelled')).toHaveLength(1)
     expect(wrapper.get('[data-test="cancel-done"]').text()).toBe('Task M01-S01-T01 je zrušený.')
     expect(wrapper.get('[data-test="cancel-task"]').attributes('disabled')).toBeDefined()
+  })
+
+  it('writes_violation: Povolit tyto cesty a pokračovat adds the paths and retries', async () => {
+    const plan = {
+      run_id: 'r-fail',
+      task_id: 'M01-S01-T01',
+      writes: ['src/app/'],
+      allow: ['README.md'],
+      refused: [
+        { path: '.factory/config.yaml', reason: 'protected', message: 'a protected path' },
+        { path: 'notes.md', reason: 'main_checkout', message: 'main checkout' },
+      ],
+    }
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? okResponse({ task_id: 'M01-S01-T01', action: 'retry', run: null, pending: true, allow_writes: { ...plan, new_writes: ['src/app/', 'README.md'] } })
+        : okResponse(plan),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = card({
+      error: 'builder changed paths outside its task run',
+      failure_kind: 'writes_violation',
+      failure_detail: { agent: 'builder', paths: ['README.md', '.factory/config.yaml'], main_paths: ['notes.md'], writes: ['src/app/'] },
+    })
+    await flushPromises()
+    expect(String(fetchMock.mock.calls[0]?.[0])).toMatch(/\/runs\/r-fail\/allow-writes$/)
+    expect(fact(wrapper, 'paths')).toEqual(['README.md', '.factory/config.yaml', 'hlavní checkout: notes.md'])
+    expect(actions(wrapper)).toEqual(['Povolit tyto cesty a pokračovat', 'Pokračovat', 'Zrušit task'])
+    expect(fact(wrapper, 'allow')).toEqual(['README.md'])
+    expect(fact(wrapper, 'refused')).toEqual([
+      '.factory/config.yaml — chráněná cesta (protected_files), writes ji nepovolí',
+      'notes.md — zápis do hlavního checkoutu mimo worktree běhu, writes ho nepovolí',
+    ])
+    await wrapper.get('[data-test="allow-writes"]').trigger('click')
+    expect(openDialog()?.textContent).toContain('Do writes tasku přibude README.md')
+    await answerDialog(true)
+    const [url, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/runs\/r-fail\/allow-writes$/)
+    expect(init.method).toBe('POST')
+    expect(wrapper.emitted('retried')).toHaveLength(1)
+    expect(wrapper.get('[data-test="allow-done"]').text()).toContain('Writes tasku M01-S01-T01 rozšířené')
+  })
+
+  it('writes_violation with nothing writes can allow: no action, the reasons', async () => {
+    const plan = {
+      run_id: 'r-fail',
+      task_id: 'M01-S01-T01',
+      writes: ['src/app/'],
+      allow: [],
+      refused: [{ path: 'backlog/x.md', reason: 'backlog', message: 'a backlog path' }],
+    }
+    vi.stubGlobal('fetch', vi.fn(async () => okResponse(plan)))
+    const wrapper = card({
+      error: 'builder changed paths outside its task run',
+      failure_kind: 'writes_violation',
+      failure_detail: { agent: 'builder', paths: ['backlog/x.md'], writes: ['src/app/'] },
+    })
+    await flushPromises()
+    expect(actions(wrapper)).toEqual(['Pokračovat', 'Zrušit task'])
+    expect(fact(wrapper, 'refused')).toEqual(['backlog/x.md — cesta v backlogu, backlog zapisuje jen factory'])
   })
 
   it('says why the task could not be cancelled', async () => {
