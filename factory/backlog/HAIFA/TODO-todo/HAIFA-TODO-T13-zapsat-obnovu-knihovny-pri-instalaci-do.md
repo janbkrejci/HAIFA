@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T13
 title: Zapsat obnovu knihovny při instalaci do docs/decisions.md
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [HAIFA-TODO-T08]
@@ -21,3 +21,4 @@ Task `HAIFA-TODO-T08` na tomto tasku závisí a do jeho dokončení zůstává b
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/56 · náklady $0.32
