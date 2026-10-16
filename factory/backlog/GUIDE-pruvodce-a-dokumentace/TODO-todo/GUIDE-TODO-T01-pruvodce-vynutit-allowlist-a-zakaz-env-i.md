@@ -1,7 +1,7 @@
 ---
 id: GUIDE-TODO-T01
 title: "Průvodce: vynutit allowlist a zákaz .env i pro harness codex a pi"
-status: todo
+status: done
 depends_on: []
 related: [GUIDE-S02-T01]
 ---
@@ -18,3 +18,4 @@ Důvod: Review of GUIDE-S02-T01: only claude is limited to the ./guide command (
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/76 · náklady $1.12
