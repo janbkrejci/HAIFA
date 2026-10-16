@@ -88,7 +88,7 @@ import sqlite3
 import sys
 import tempfile
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from aifactory.backlog import (
@@ -111,7 +111,7 @@ from aifactory.run.errors import TaskRunError
 from aifactory.run.followups import follow_up_marker
 from aifactory.run.members import ChainRunner, ProcessRunner
 from aifactory.run.scope import effective_task_writes, is_wide, overlaps
-from aifactory.run.stack import stack_tip, unmet_ids
+from aifactory.run.stack import stack_tip, stacked_on, unmet_ids
 from aifactory.run.store import (
     ABORTED,
     CHAIN_FINISHED,
@@ -171,7 +171,9 @@ class Slots:
 
     ``running``: tasks with a live run (or a started chain member). ``in_review``: tasks
     with an open, unmerged PR and no live run. A task counts once, also when it has a
-    live run (a resolve, a retry) and an open PR at the same time.
+    live run (a resolve, a retry) and an open PR at the same time. A PR that a live run or
+    another open PR is stacked on (``stacked_prs``) holds no slot of its own: the stack
+    takes one, and the first task stacked on a PR takes over that PR's slot (``yields_to``).
     """
 
     running: tuple[str, ...] = ()
@@ -186,8 +188,16 @@ class Slots:
     @classmethod
     def of(cls, store: TaskRunStore, members: Iterable[str] = ()) -> Slots:
         """The slots taken in `store`'s repository, plus the started `members` of a chain."""
-        live = [*members, *(row.task_id for row in store.live_runs())]
-        return cls.count(live, (pr.task_id for pr in store.open_prs()))
+        runs = store.live_runs()
+        prs = store.open_prs()
+        live = [*members, *(row.task_id for row in runs)]
+        bases = {row.stacked_on for row in runs if row.stacked_on}
+        bases |= {base for pr in prs if (base := stacked_on(store, pr.branch))}
+        return cls.count(live, (pr.task_id for pr in prs if pr.branch not in bases))
+
+    def yields_to(self, dependencies: Iterable[str]) -> bool:
+        """A task stacked on one of these PRs takes over its slot (nobody stacks on it yet)."""
+        return any(dep in self.in_review for dep in dependencies)
 
     @property
     def taken(self) -> int:
@@ -805,6 +815,7 @@ def start_factory(
         full = len(result.started) >= result.free_slots
         if full and not slots.in_review:
             break
+        deps: list[str] = []
         with _fresh_backlog(repo) as backlog:
             if db.is_file():
                 store = TaskRunStore(db)
@@ -819,6 +830,8 @@ def start_factory(
                         prefs=store.queue_prefs(),
                         stack=stacker(main),
                     )
+                    if selection.next is not None:
+                        deps = unmet_ids(backlog, selection.next) or []
                 finally:
                     store.close()
             else:
@@ -833,9 +846,12 @@ def start_factory(
         nxt = selection.next
         if nxt is None:
             break
-        if full:  # PRs waiting for review hold the slot this task would take
+        if full and not slots.yields_to(deps):
+            # PRs waiting for review hold the slot this task would take
             last_skips = [*last_skips, slots.skip(nxt.id)]
             break
+        if full:  # stacked on a PR: it takes that PR's slot, once
+            slots = replace(slots, in_review=tuple(t for t in slots.in_review if t not in deps))
         exclude.add(nxt.id)
         try:
             row = start(nxt.id)
@@ -1228,6 +1244,7 @@ def _run_parallel(
                         prefer=prefer,
                         stack=stacker(main),
                     )
+                    deps = unmet_ids(backlog, selection.next) or [] if selection.next else []
                 finally:
                     store.close()
             last_skips = selection.skipped
@@ -1235,7 +1252,8 @@ def _run_parallel(
             if nxt is None:
                 save()
                 return
-            if full:  # PRs waiting for review hold the slot this task would take
+            if full and not slots.yields_to(deps):
+                # PRs waiting for review hold the slot this task would take
                 last_skips = [*last_skips, slots.skip(nxt.id)]
                 save()
                 return

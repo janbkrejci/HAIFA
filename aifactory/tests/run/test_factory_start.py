@@ -10,7 +10,7 @@ import os
 from pathlib import Path
 
 import pytest
-from run_repo import commit_all, make_run_repo, write
+from run_repo import commit_all, git, make_run_repo, write
 from test_parallel_chain import CORE, STEP, T01, T02, T03, T04, _db, _pr, no_files, setup_tasks
 
 from aifactory.engine.utils import now_iso
@@ -239,3 +239,27 @@ def test_without_a_trace_db_none_is_created(repo: Path) -> None:
     assert start.calls == [T01, T02]
     assert result.started == [T01, T02]
     assert not _db(repo).exists()
+
+
+def test_task_stacked_on_a_review_pr_takes_over_its_slot_once(repo: Path) -> None:
+    """max 1 slot, held by T01's PR: T02 stacks on it and takes the slot, T03 waits."""
+    setup_tasks(
+        repo,
+        [(T01, "src/a/")],
+        config="base: main\ndocs_root: .\nstacked_prs: true\n",
+    )
+    for task_id, writes in ((T02, "src/b/"), (T03, "src/c/")):
+        write(
+            repo,
+            f"{CORE}/{STEP}/{task_id}.md",
+            f"---\nid: {task_id}\ntitle: Task {task_id}\nstatus: todo\nwrites: [{writes}]\n"
+            f"depends_on: [{T01}]\n---\n\nDo {task_id}.\n",
+        )
+    commit_all(repo, "stacked tasks")
+    git(repo, "branch", f"factory/{T01}-1")
+    open_pr(repo, T01)
+    start = FakeStart(repo)
+    result = start_factory(repo, start, max_parallel=1, pr_files=no_files)
+    # T02 took T01's slot; no slot is left for T03, which stacks on the same PR
+    assert start.calls == [T02]
+    assert result.free_slots == 0

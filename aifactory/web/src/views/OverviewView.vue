@@ -206,9 +206,11 @@ h1 {
   animation: spin 1s linear infinite;
 }
 
+/* Every total in one row, however many there are. */
 .totals {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
   gap: 12px;
   margin-bottom: 20px;
 }
