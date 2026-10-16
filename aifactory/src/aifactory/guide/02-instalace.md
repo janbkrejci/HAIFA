@@ -103,7 +103,7 @@ Instalátor (`install.sh` i `install.bat`) na počítači, který ještě knihov
 
 Když se klon nepovede (bez sítě, bez přístupu), instalátor založí lokální knihovnu ze semínka a vypíše varování. Týmovou knihovnu pak naklonuješ později: lokální knihovnu smaž (nebo přesuň) a spusť `factory library clone`. Pak instalátor (nová i existující knihovna) spustí `factory library seed --all`: každou položku semínka v knihovně (agenty, workflow, rozšíření pi a skill `factory`) nahradí verzí z instalované HAIFA, i když ji tým upravil. Položky, které semínko nemá (týmové importy), zůstanou, a repa se nemění: vlastní úpravy patří do `.factory/` repa. Když obnovení selže, instalace doběhne s varováním a obnovíš ji sám přes `factory library seed --all`.
 
-Změny knihovny se do HAIFA-LIBRARY dostávají jen pull requestem (kapitola [Knihovna](#/guide/knihovna)).
+Změny knihovny se do HAIFA-LIBRARY dostávají jen pull requestem (kapitola [Knihovna a tým](#/guide/knihovna-a-tym)).
 
 ## Ověření instalace
 
@@ -112,29 +112,11 @@ factory --version
 factory check
 ```
 
-`factory --version` vypíše nainstalovanou verzi. `factory check` jen čte a nic nemění: mimo repo zkontroluje počítač a knihovnu, v repu navíc repo. Každé zjištění má kód, závažnost (`error`, `warning`, `info`) a radu, co udělat. Dokud kontrola hlásí `error`, tasky nespouštěj. Kódy a jejich opravy jsou v kapitole [Řešení problémů](#/guide/reseni-problemu). Dotazy na hosting a přihlášení harnessů vynecháš přes `factory check --offline`.
+`factory --version` vypíše nainstalovanou verzi. `factory check` jen čte a nic nemění: mimo repo zkontroluje počítač a knihovnu, v repu navíc repo. Každé zjištění má kód, závažnost (`error`, `warning`, `info`) a radu, co udělat. Dokud kontrola hlásí `error`, tasky nespouštěj. Co dělat, když kontrola hlásí chybu, najdeš v kapitole [Řešení problémů](#/guide/aktualizace-a-reseni-problemu/reseni-problemu). Dotazy na hosting a přihlášení harnessů vynecháš přes `factory check --offline`.
 
 Když shell `factory` nenajde, spusť `uv tool update-shell` a otevři nový terminál.
 
-## Spuštění dashboardu
-
-```bash
-factory obs
-```
-
-Otevře dashboard na `http://127.0.0.1:4700` (jiný port: `factory obs --port 4710`). Terminál nech otevřený, `Ctrl+C` server zastaví. Konkrétní repo rovnou zaregistruješ přes `factory obs --repo ~/cesta/k/repu`.
-
-Další kroky (knihovna, harnessy, první repo a první task) popisuje kapitola [První spuštění](#/guide/prvni-spusteni).
-
-## Aktualizace
-
-Chip v horní liště dashboardu ukáže, že je k dispozici novější vydání; kliknutím ho dashboard stáhne, ověří, nainstaluje a restartuje se. Ručně z balíčku nebo `https` URL:
-
-```bash
-factory upgrade haifa-<verze>.zip
-```
-
-Podrobnosti v kapitole [Aktualizace a vydání](#/guide/aktualizace).
+Dashboard spustíš příkazem `factory obs` (kapitola [První běh](#/guide/prvni-beh)), novější verzi nainstaluješ přes `factory upgrade haifa-<verze>.zip` (kapitola [Aktualizace a řešení problémů](#/guide/aktualizace-a-reseni-problemu)).
 
 ## Odinstalace
 
