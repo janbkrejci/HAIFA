@@ -2,7 +2,7 @@
 id: HAIFA-TODO-T08
 title: Zapsat obnovu knihovny při instalaci do docs/decisions.md
 status: todo
-depends_on: []
+depends_on: [HAIFA-TODO-T13, HAIFA-TODO-T14]
 related: [HAIFA-REFINEMENT-T35]
 ---
 
