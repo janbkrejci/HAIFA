@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T01
 title: Update docs/decisions.md for CI-gated approve and auto-merge
-status: todo
+status: done
 depends_on: [HAIFA-TODO-T05]
 related: [HAIFA-REFINEMENT-T28]
 ---
@@ -18,3 +18,4 @@ Důvod: T28 changes the decision that auto-merge only checks the CI and leaves r
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · bez změn: rozhodnutí je v docs/decisions.md z HAIFA-TODO-T05 (6a6cb2a)
