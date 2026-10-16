@@ -1,7 +1,7 @@
 ---
 id: HEAL-TODO-T01
 title: Doplnit rozhodnutí „Prázdný commit“ v docs/decisions.md o already_done a Hotovo u nothing_to_do
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [HEAL-S02-T02]
@@ -20,3 +20,4 @@ Důvod: HEAL-S02-T02 rozšířilo chování popsané rozhodnutím „Prázdný c
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/79 · náklady $0.32
