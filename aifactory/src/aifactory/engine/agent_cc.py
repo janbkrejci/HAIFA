@@ -396,7 +396,8 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
         CLAUDE_PATH, "-p", "--output-format", "stream-json", "--verbose",
         "--model", model_id,
         "--effort", EFFORT_MAP.get(request.thinking, "medium"),
-        "--permission-mode", PERMISSION_MODE,
+        # aifactory 3.5: a read-only agent runs only its allowed commands, nothing else.
+        "--permission-mode", "dontAsk" if request.allowed_commands else PERMISSION_MODE,
         "--permission-prompts", "none",   # nobody is at the keyboard; never wait for one
         # aifactory 3.1: both prompts stay off the command line (WinError 206).
         "--system-prompt-file", prompt_file(request.session_dir,
@@ -409,6 +410,9 @@ def run(request: AgentRequest, on_event: Optional[Callable[[dict], None]] = None
     tools = _tools_for(request.tools)
     if tools:
         cmd += ["--tools", ",".join(tools)]
+    if request.allowed_commands:
+        # aifactory 3.5: allow rules for exactly these commands; dontAsk denies the rest.
+        cmd += ["--allowedTools", *disallowed_tools(request.allowed_commands)]
     denied = disallowed_tools(request.disallowed_commands)
     if denied:
         # One argv item per rule (a rule may contain spaces). The flag is

@@ -374,7 +374,10 @@ def state_path(request: AgentRequest) -> Path:
     return Path(request.session_dir) / f"{_safe(request.session_id)}.codex.json"
 
 
-def _sandbox_args() -> list[str]:
+def _sandbox_args(read_only: bool = False) -> list[str]:
+    if read_only:
+        # A read-only agent (``allowed_commands``) never gets more than the read-only sandbox.
+        return ["-c", 'sandbox_mode="read-only"', "-c", 'approval_policy="never"']
     if not CODEX_SANDBOX:
         return ["--dangerously-bypass-approvals-and-sandbox"]
     return [
@@ -399,7 +402,7 @@ def build_command(request: AgentRequest, thread_id: str = "") -> list[str]:
         f"developer_instructions={json.dumps(request.system_prompt)}",
         "--skip-git-repo-check",
         "--ignore-user-config",  # never the operator's config.toml, in either mode
-        *_sandbox_args(),
+        *_sandbox_args(bool(request.allowed_commands)),
     ]
     if safe_mode():
         common += ["-c", "project_doc_max_bytes=0"]

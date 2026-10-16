@@ -290,6 +290,17 @@ def test_harness_codex_sandbox_setting(monkeypatch: pytest.MonkeyPatch, tmp_path
         assert "-s" not in cmd
 
 
+def test_harness_codex_read_only_agent(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    request = _request(tmp_path, "gpt-5.5")
+    request.allowed_commands = ["./guide *"]
+    for setting in ("", "danger-full-access"):
+        monkeypatch.setattr(codex, "CODEX_SANDBOX", setting)
+        for thread in ("", THREAD_ID):
+            cmd = codex.build_command(request, thread)
+            assert 'sandbox_mode="read-only"' in cmd
+            assert "--dangerously-bypass-approvals-and-sandbox" not in cmd
+
+
 @pytest.mark.parametrize("thinking", ["low", "medium", "high", "xhigh", "max"])
 def test_codex_sol_effort_and_context(tmp_path: Path, thinking: str) -> None:
     request = _request(tmp_path, "openai/gpt-6.1-sol")

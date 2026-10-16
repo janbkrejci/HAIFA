@@ -93,7 +93,7 @@ SSSF_WORKFLOWS = {
 
 
 def test_seed_follows_sssf() -> None:
-    assert SSSF_AGENTS | {"tester", "test-reviewer"} == set(seed_agent_names())
+    assert SSSF_AGENTS | {"tester", "test-reviewer", "guide"} == set(seed_agent_names())
     assert SSSF_WORKFLOWS <= set(seed_workflow_names())
     assert seed_extension_names() == ["subagents"]
 

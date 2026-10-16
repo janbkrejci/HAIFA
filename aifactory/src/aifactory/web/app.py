@@ -168,6 +168,13 @@ tasks into the free ``max_parallel_runs`` slots, HTTP 200 also when nothing star
 ``.../control/pause`` and ``.../control/resume`` (every running run) and
 ``.../control/stop`` (every running run, in the background; HTTP 202, the progress is in
 the overview's ``factory.control``).
+The guide (``assistant.py``, multi-repository app only) reads, never writes:
+``GET /api/assistant/threads`` (newest first), ``POST /api/assistant/threads``
+(``{title?}``, HTTP 201), ``GET /api/assistant/threads/{id}`` (with messages),
+``POST /api/assistant/threads/{id}/messages`` (``{text, screen?: {repo, task, run}}``,
+HTTP 202, HTTP 409 ``busy`` while an answer runs) and
+``GET /api/assistant/threads/{id}/stream?after=SEQ`` (Server-Sent Events ``start``,
+``text``, ``tool``, ``done`` or ``error``, then ``idle``).
 Each repository's endpoints above are under
 ``/api/repos/{id}/`` with the same relative paths (``/health`` excepted) and their own
 ``/live`` hub; an unknown id gives HTTP 404 ``unknown_repo``, a missing folder HTTP 404
@@ -220,6 +227,7 @@ from aifactory.run.store import is_db_busy
 from aifactory.skill.envelope import envelope_fail, envelope_ok
 from aifactory.web import backlog, chains, factory, library, machine, review, runs, settings
 from aifactory.web import server as web_server
+from aifactory.web.assistant import AssistantError, AssistantManager
 from aifactory.web.config_cache import ConfigCache
 from aifactory.web.control import FactoryControl
 from aifactory.web.fs import FolderPicker, list_dirs
@@ -2119,6 +2127,95 @@ async def library_sync(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data))
 
 
+# ── the guide (assistant.py) ─────────────────────────────────────────────────────────
+
+
+def _assistant(request: Request) -> AssistantManager:
+    manager: AssistantManager = request.app.state.assistant
+    return manager
+
+
+def _assistant_error(exc: AssistantError) -> JSONResponse:
+    return JSONResponse(envelope_fail(exc.code, exc.message), status_code=exc.status)
+
+
+async def assistant_threads(request: Request) -> JSONResponse:
+    """The guide's threads, newest first."""
+    data = await run_in_threadpool(_assistant(request).summaries)
+    return JSONResponse(envelope_ok({"threads": data}))
+
+
+async def assistant_create(request: Request) -> JSONResponse:
+    """A new thread (``{title?}``) with the computer's harness and model."""
+    try:
+        body = await _json_body(request) if await request.body() else {}
+        data = await run_in_threadpool(_assistant(request).create, body)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except AssistantError as exc:
+        return _assistant_error(exc)
+    return JSONResponse(envelope_ok(data), status_code=201)
+
+
+async def assistant_thread(request: Request) -> JSONResponse:
+    """One thread with its messages."""
+    try:
+        data = await run_in_threadpool(_assistant(request).get, request.path_params["thread_id"])
+    except AssistantError as exc:
+        return _assistant_error(exc)
+    return JSONResponse(envelope_ok(data))
+
+
+async def assistant_send(request: Request) -> JSONResponse:
+    """Send ``{text, screen?: {repo, task, run}}``; the answer streams on ``/stream``."""
+    try:
+        body = await _json_body(request)
+        data = await run_in_threadpool(
+            _assistant(request).send, request.path_params["thread_id"], body
+        )
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except AssistantError as exc:
+        return _assistant_error(exc)
+    return JSONResponse(envelope_ok(data), status_code=202)
+
+
+async def assistant_stream(request: Request) -> Response:
+    """Server-Sent Events of the current answer after ``?after=SEQ``: ``start``, ``text``,
+    ``tool``, then ``done`` or ``error``; the stream ends when the thread is idle."""
+    manager = _assistant(request)
+    thread_id: str = request.path_params["thread_id"]
+    try:
+        after = int(request.query_params.get("after") or 0)
+        await run_in_threadpool(manager.get, thread_id)
+    except ValueError:
+        return _usage_error("after must be an integer")
+    except AssistantError as exc:
+        return _assistant_error(exc)
+
+    async def stream() -> AsyncIterator[str]:
+        nonlocal after
+        yield "retry: 2000\n\n"
+        while True:
+            events, busy = await run_in_threadpool(manager.wait, thread_id, after, _PING_S)
+            for event in events:
+                after = event["seq"]
+                yield f"id: {after}\n" + _sse(event["type"], {"seq": after, **event["data"]})
+            if not busy and not events:
+                yield _sse("idle", {"seq": after})
+                return
+            if not events:
+                if await request.is_disconnected():
+                    return
+                yield ": ping\n\n"
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
 def create_multi_app(
     *,
     home: Path | None = None,
@@ -2181,6 +2278,11 @@ def create_multi_app(
             Route("/fs/pick", fs_pick_status, methods=["GET"]),
             Route("/fs/pick", fs_pick, methods=["POST"]),
             Route("/overview", overview_get, methods=["GET"]),
+            Route("/assistant/threads", assistant_threads, methods=["GET"]),
+            Route("/assistant/threads", assistant_create, methods=["POST"]),
+            Route("/assistant/threads/{thread_id}", assistant_thread, methods=["GET"]),
+            Route("/assistant/threads/{thread_id}/messages", assistant_send, methods=["POST"]),
+            Route("/assistant/threads/{thread_id}/stream", assistant_stream, methods=["GET"]),
             Mount("/repos/{repo_id}", app=RepoScope(Router(routes=_repo_routes()), resolve)),
         ],
     )
@@ -2228,6 +2330,7 @@ def create_multi_app(
             await asyncio.gather(*checks, return_exceptions=True)
             await run_in_threadpool(app.state.workflow_advice.close)
             await run_in_threadpool(app.state.task_advice.close)
+            await run_in_threadpool(app.state.assistant.close)
             await contexts.aclose()
 
     app = _starlette(api, static_dir, lifespan, allowed_hosts)
@@ -2237,6 +2340,9 @@ def create_multi_app(
     app.state.home = home_dir
     app.state.served_port = port
     app.state.registry = registry
+    app.state.assistant = AssistantManager(
+        home_dir, lambda: [(e.id, Path(e.path)) for e in registry.snapshot()[0].repos]
+    )
     app.state.overview = Overview(registry)
     app.state.repo_status_cache = ConfigCache()
     app.state.repos = contexts

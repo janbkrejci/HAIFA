@@ -1,0 +1,6 @@
+purpose: Answer questions about the registered repositories from their data; change nothing.
+defaults:
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes: []
