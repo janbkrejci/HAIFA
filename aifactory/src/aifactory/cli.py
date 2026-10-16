@@ -1376,7 +1376,28 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
         metavar="KEY",
         help=f"remove keys (inherit them again): {', '.join(CONTAINER_KEYS)}",
     )
-    for child in (check, list_, sync, auto, merge, commit, add, edit):
+    propose = sub.add_parser(
+        "propose",
+        help="let a read-only agent propose a step with tasks, or tasks of a step, from an intent",
+        description="Run the read-only agent 'proposer' (prompts overridable in "
+        ".factory/prompts/proposer/) in an isolated checkout of the base commit. It explores "
+        "the repo and the backlog and proposes a new step of --project with its tasks, or new "
+        "tasks of the existing --step: per task the title, the assignment with a 'Hotovo "
+        "znamená' section, depends_on (also on existing tasks), writes and a workflow of the "
+        "catalog. The proposal is validated like 'factory task add' (ids, dependencies, no "
+        "cycles or self references, existing workflows); an invalid one goes back to the agent "
+        "once, a second invalid one fails with proposal_invalid and writes nothing. Without "
+        "--apply only the preview step -> tasks is shown; --apply writes the files and "
+        "commits nothing (factory backlog commit).",
+    )
+    propose.add_argument("intent", metavar="INTENT", help="what the new tasks should achieve")
+    target = propose.add_mutually_exclusive_group(required=True)
+    target.add_argument("--project", metavar="ID", help="propose a new step of this project")
+    target.add_argument("--step", metavar="ID", help="propose new tasks of this existing step")
+    propose.add_argument(
+        "--apply", action="store_true", help="write the proposal to the backlog (no commit)"
+    )
+    for child in (check, list_, sync, auto, merge, commit, add, edit, propose):
         child.add_argument("--json", action="store_true", help="print machine-readable JSON")
         child.add_argument(
             "--repo",
@@ -1580,6 +1601,33 @@ def _backlog_commit(args: argparse.Namespace) -> int:
     return 0
 
 
+def _backlog_propose(args: argparse.Namespace) -> int:
+    from aifactory.backlog import TaskEditError
+    from aifactory.config import ConfigError
+    from aifactory.workflow.propose import Target, format_preview, propose
+
+    try:
+        # the agent's progress goes to stderr; stdout carries only the preview or JSON
+        with contextlib.redirect_stdout(sys.stderr):
+            data = propose(
+                _backlog_root(args.repo),
+                args.intent,
+                Target(project=args.project, step=args.step),
+                apply=args.apply,
+            )
+    except (ConfigError, TaskEditError) as exc:
+        return _fail_from_exception(exc, args.json, "factory backlog propose")
+    if args.json:
+        return _emit_ok(data)
+    print(format_preview(data))
+    print()
+    if data["applied"]:
+        print(f"written {len(data['files'])} file(s); commit with 'factory backlog commit'")
+    else:
+        print("preview only; write it with --apply")
+    return 0
+
+
 def _backlog_container_write(args: argparse.Namespace) -> int:
     from aifactory.backlog import (
         TaskEditError,
@@ -1659,6 +1707,8 @@ def _backlog(args: argparse.Namespace) -> int:
         return _backlog_auto_merge(args)
     if command == "commit":
         return _backlog_commit(args)
+    if command == "propose":
+        return _backlog_propose(args)
     try:
         backlog = load_backlog(_backlog_root(args.repo))
     except ConfigError as exc:

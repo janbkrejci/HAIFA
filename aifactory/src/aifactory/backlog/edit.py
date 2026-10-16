@@ -185,6 +185,24 @@ def _atomic_write(path: Path, text: str, rel: str) -> None:
         raise TaskEditError("write_failed", f"cannot write '{rel}': {exc}", path=rel) from exc
 
 
+def _new_issues(backlog: Backlog, baseline: list[Issue], pending: dict[str, str]) -> list[Issue]:
+    """The problems ``pending`` would add to the backlog, checked on a staged copy."""
+    root = backlog.root
+    settings = backlog.settings
+    with tempfile.TemporaryDirectory() as tmp:
+        stage = Path(tmp)
+        for backlog_dir in backlog_roots(root, settings):
+            if (root / backlog_dir).is_dir():
+                shutil.copytree(root / backlog_dir, stage / backlog_dir)
+        for rel, text in pending.items():
+            staged = stage / rel
+            staged.parent.mkdir(parents=True, exist_ok=True)
+            staged.write_text(text, encoding="utf-8", newline="\n")
+        candidate = check_backlog(load_backlog(stage, settings))
+    known = {_issue_key(i) for i in baseline}
+    return [i for i in candidate if _issue_key(i) not in known]
+
+
 def _write_checked(
     backlog: Backlog, baseline: list[Issue], changes: dict[str, str], command: str
 ) -> bool:
@@ -193,7 +211,6 @@ def _write_checked(
     `command` names the factory command in the journal of factory writes.
     """
     root = backlog.root
-    settings = backlog.settings
     targets = {rel: _guard(root, backlog, rel) for rel in changes}
     pending = {
         rel: text
@@ -201,18 +218,7 @@ def _write_checked(
         if not targets[rel].is_file() or targets[rel].read_text(encoding="utf-8") != text
     }
     if pending:
-        with tempfile.TemporaryDirectory() as tmp:
-            stage = Path(tmp)
-            for backlog_dir in backlog_roots(root, settings):
-                if (root / backlog_dir).is_dir():
-                    shutil.copytree(root / backlog_dir, stage / backlog_dir)
-            for rel, text in pending.items():
-                staged = stage / rel
-                staged.parent.mkdir(parents=True, exist_ok=True)
-                staged.write_text(text, encoding="utf-8", newline="\n")
-            candidate = check_backlog(load_backlog(stage, settings))
-        known = {_issue_key(i) for i in baseline}
-        new = [i for i in candidate if _issue_key(i) not in known]
+        new = _new_issues(backlog, baseline, pending)
         if new:
             raise TaskEditError(
                 "backlog_invalid",
@@ -808,3 +814,176 @@ def _validate_parameters(parameters: dict[str, object]) -> None:
         TaskParameters.model_validate(parameters)
     except ValidationError as exc:
         raise TaskEditError("invalid_value", "invalid task parameters") from exc
+
+
+@dataclass
+class NewTask:
+    """One task of a batch (``add_batch``); ``depends_on`` may name codes of the batch."""
+
+    code: str
+    title: str
+    body: str = ""
+    workflow: str | None = None
+    writes: list[str] | None = None
+    depends_on: list[str] = field(default_factory=list)
+
+
+@dataclass
+class BatchTask:
+    id: str
+    title: str
+    body: str
+    workflow: str | None
+    writes: list[str] | None
+    depends_on: list[str]
+    path: str
+
+
+@dataclass
+class BatchResult:
+    """A planned (``written`` False) or written batch of one step and its new tasks."""
+
+    step_id: str
+    step_title: str
+    step_body: str
+    step_path: str
+    new_step: bool
+    tasks: list[BatchTask]
+    files: list[str]
+    written: bool
+
+
+def add_batch(
+    root: Path,
+    tasks: list[NewTask],
+    *,
+    step: str | None = None,
+    project: str | None = None,
+    step_code: str | None = None,
+    step_title: str | None = None,
+    step_body: str = "",
+    write: bool = False,
+) -> BatchResult:
+    """Add ``tasks`` to the existing ``step``, or to a new step ``step_code`` of ``project``.
+
+    Every problem is collected first and raised together as ``backlog_invalid`` (codes as
+    in ``factory backlog check`` plus ``invalid_id``, ``invalid_value``, ``self_ref``,
+    ``duplicate_id``, ``file_exists``); then the whole batch is validated on a copy of the
+    backlog like ``add_task``. Without ``write`` nothing is written; nothing is committed.
+    """
+    if (step is None) == (project is None):
+        raise TaskEditError("conflicting_options", "give either a step or a project")
+    backlog = load_for_edit(root)
+    baseline = check_backlog(backlog)
+    levels = backlog.settings.levels
+    problems: list[Issue] = []
+    new_step = project is not None
+    if step is not None:
+        container = _find_step(backlog, step)
+        step_id = container.id or step
+        title = container.title or ""
+        body = container.body
+        rel_dir = container.path
+        existing = {t.id for t in container.tasks}
+    else:
+        assert project is not None
+        parent = find_container(backlog, project, baseline)
+        if _container_depth(backlog, parent) != len(levels) - 3:
+            raise TaskEditError(
+                "invalid_value", f"'{project}' does not hold {levels[-2]}s", id=project
+            )
+        step_id = compose_id(parent.id, step_code or "")
+        title = (step_title or "").strip()
+        body = step_body
+        if not title:
+            problems.append(Issue("invalid_value", f"{levels[-2]} title must not be empty", ""))
+        if step_id in backlog.by_id:
+            where = node_file(backlog.by_id[step_id])
+            problems.append(
+                Issue("duplicate_id", f"id '{step_id}' exists already ({where})", where, step_id)
+            )
+        slug = slugify(title)
+        code = _local_code(step_id, parent)
+        rel_dir = f"{parent.path}/{code}-{slug}" if slug else f"{parent.path}/{code}"
+        if (root / rel_dir).exists():
+            problems.append(
+                Issue("file_exists", f"directory '{rel_dir}' exists already", rel_dir, step_id)
+            )
+        existing = set()
+    ids: dict[str, str] = {}
+    for task in tasks:
+        try:
+            task_id = compose_id(step_id, task.code)
+        except TaskEditError as exc:
+            problems.append(Issue(exc.code, exc.message, "", task.code))
+            continue
+        if task_id in ids.values() or task_id in backlog.by_id or task_id in existing:
+            problems.append(
+                Issue("duplicate_id", f"task id '{task_id}' is not unique", "", task_id)
+            )
+        ids[task.code] = task_id
+        ids.setdefault(task_id, task_id)
+    planned: list[BatchTask] = []
+    changes: dict[str, str] = {}
+    if new_step:
+        changes[f"{rel_dir}/{INDEX_FILE}"] = new_index_text(step_id, title, body)
+    for task in tasks:
+        if task.code not in ids:
+            continue
+        task_id = ids[task.code]
+        task_title = task.title.strip()
+        if not task_title:
+            problems.append(Issue("invalid_value", "title must not be empty", "", task_id))
+        if task.workflow is not None and not task.workflow.strip():
+            problems.append(Issue("invalid_value", "workflow must not be empty", "", task_id))
+        depends = _dedupe([ids.get(ref, ref) for ref in task.depends_on])
+        if task_id in depends:
+            problems.append(
+                Issue("self_ref", f"task '{task_id}' cannot depend on itself", "", task_id)
+            )
+        slug = slugify(task_title)
+        rel = f"{rel_dir}/{task_id}-{slug}.md" if slug else f"{rel_dir}/{task_id}.md"
+        if (root / rel).exists():
+            problems.append(Issue("file_exists", f"file '{rel}' exists already", rel, task_id))
+        writes = _dedupe(task.writes) if task.writes is not None else None
+        fields: dict[str, object] = {
+            "id": task_id,
+            "title": task_title,
+            "status": "todo",
+            "workflow": task.workflow,
+            "depends_on": depends,
+            "writes": writes,
+        }
+        changes[rel] = new_task_text(fields, task.body)
+        planned.append(
+            BatchTask(task_id, task_title, task.body.strip(), task.workflow, writes, depends, rel)
+        )
+    if not tasks:
+        problems.append(Issue("invalid_value", "the batch has no task", "", step_id))
+    if not problems:
+        for rel in changes:
+            try:
+                _guard(root, backlog, rel)
+            except TaskEditError as exc:
+                problems.append(Issue(exc.code, exc.message, rel))
+    if not problems:
+        problems = _new_issues(backlog, baseline, changes)
+    if problems:
+        raise TaskEditError(
+            "backlog_invalid",
+            f"change rejected: {len(problems)} problem(s)",
+            exit_code=1,
+            issues=problems,
+        )
+    if write:
+        _write_checked(backlog, baseline, changes, "backlog propose")
+    return BatchResult(
+        step_id=step_id,
+        step_title=title,
+        step_body=body.strip(),
+        step_path=rel_dir,
+        new_step=new_step,
+        tasks=planned,
+        files=list(changes),
+        written=write,
+    )

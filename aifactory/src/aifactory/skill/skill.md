@@ -682,6 +682,20 @@ factory backlog commit --json
 Put common settings at project level, narrower defaults on the step and only
 exceptions on the task; the nearest value wins.
 
+### Intent -> step with tasks
+
+`factory backlog propose "INTENT" (--project ID | --step ID) [--apply] --json` lets the
+read-only agent `proposer` turn a short intent into a proposal: a new step of the project
+with its tasks, or new tasks of an existing step. It works in an isolated checkout of the
+base commit and writes nothing. Every task has a title, an assignment ending with
+`Hotovo znamená:`, `depends_on` (also on existing tasks), `writes` and a workflow of the
+catalog. The proposal is validated like `factory task add`; an invalid one goes back to
+the agent once, and a second invalid one fails with `proposal_invalid` (`error.issues`)
+without writing. Without `--apply` the command only shows the proposal (`data.step`,
+`data.tasks`, `data.applied: false`); show it to the user before applying. `--apply`
+writes the step and task files and commits nothing: check and commit as in Plan -> backlog.
+The agent's prompts are overridden in `.factory/prompts/proposer/`.
+
 ### Run
 
 1. `factory task list --status ready --json` lists the tasks that can start.

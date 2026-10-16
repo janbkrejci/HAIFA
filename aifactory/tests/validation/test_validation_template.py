@@ -141,6 +141,7 @@ def test_config_is_rendered_and_loads(
         "reviewer",
         "documenter",
         "guide",  # inherited from the seed
+        "proposer",  # inherited from the seed
         "scout",  # inherited from the seed
     ]
     assert data["data"]["settings"]["git_provider"] == "local"
