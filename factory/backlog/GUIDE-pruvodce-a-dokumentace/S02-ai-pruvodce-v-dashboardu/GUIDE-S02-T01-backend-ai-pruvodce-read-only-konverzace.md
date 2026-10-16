@@ -1,7 +1,7 @@
 ---
 id: GUIDE-S02-T01
 title: "Backend AI průvodce: read-only konverzace nad všemi repy"
-status: todo
+status: done
 depends_on: []
 related: [GUIDE-S02-T02, GUIDE-S02-T03, GUIDE-S01-T01]
 writes: [aifactory/src/aifactory/web/, aifactory/src/aifactory/harness/, aifactory/src/aifactory/engine/, aifactory/src/aifactory/seed/, aifactory/src/aifactory/library/, aifactory/tests/]
@@ -28,3 +28,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/69 · náklady $6.34
