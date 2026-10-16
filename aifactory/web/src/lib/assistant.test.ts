@@ -1,5 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { contextLabel, describeScreen, linkify, suggestions } from './assistant'
+import {
+  actionOutcome,
+  actionPreview,
+  actionRequest,
+  actionTitle,
+  contextLabel,
+  describeScreen,
+  linkify,
+  outcomeText,
+  suggestions,
+  type ProposedAction,
+} from './assistant'
 
 describe('describeScreen', () => {
   it('reads the run, the task and the PR of a repo screen', () => {
@@ -71,5 +82,52 @@ describe('linkify', () => {
 
   it('changes nothing without a repository', () => {
     expect(linkify('P01-S01-T01', null)).toBe('P01-S01-T01')
+  })
+})
+
+describe('proposed actions', () => {
+  const edit: ProposedAction = {
+    id: 'a1',
+    kind: 'edit_task',
+    repo: 'haifa',
+    task: 'P01-S01-T01',
+    writes: ['src/', 'docs/'],
+    status: 'proposed',
+  }
+
+  it('maps every kind to the dashboard write API of the manual action', () => {
+    expect(actionRequest(edit)).toEqual({
+      path: '/repos/haifa/backlog/tasks/P01-S01-T01/edit',
+      body: { writes: ['src/', 'docs/'] },
+    })
+    const base = { id: 'x', repo: 'haifa', status: 'proposed' as const }
+    expect(actionRequest({ ...base, kind: 'cancel_task', task: 'T1' })).toEqual({
+      path: '/repos/haifa/backlog/tasks/T1/edit',
+      body: { status: 'cancelled' },
+    })
+    expect(actionRequest({ ...base, kind: 'run_task', task: 'T1', note: 'n' }).path).toBe('/repos/haifa/backlog/tasks/T1/run')
+    expect(actionRequest({ ...base, kind: 'retry_run', run: 'abcd1234' }).path).toBe('/repos/haifa/runs/abcd1234/retry')
+    expect(actionRequest({ ...base, kind: 'approve_pr', task: 'T1' })).toEqual({ path: '/repos/haifa/review/T1/approve' })
+    expect(actionRequest({ ...base, kind: 'create_task', step: 'P01-S01', title: 'Nový' })).toEqual({
+      path: '/repos/haifa/backlog/tasks',
+      body: { step: 'P01-S01', title: 'Nový' },
+    })
+  })
+
+  it('previews an edit against the current task', () => {
+    const now = { title: 'First', body: 'Body', writes: ['src/'], workflow: null, status: 'todo' }
+    expect(actionTitle(edit)).toBe('Upravit task P01-S01-T01')
+    expect(actionPreview(edit, now)).toContainEqual({ label: 'Writes', before: 'src/', after: 'src/, docs/' })
+    expect(actionPreview(edit)).toContainEqual({ label: 'Writes', before: null, after: 'src/, docs/' })
+  })
+
+  it('words the outcome', () => {
+    expect(actionOutcome(edit, { changed: true })).toBe('Task upraven.')
+    const run = { ...edit, kind: 'run_task' as const }
+    expect(actionOutcome(run, { run: { run_id: 'abcd1234' } })).toBe('Běh abcd1234 spuštěn.')
+    const done = { ...edit, status: 'done' as const, outcome: { message: 'Task upraven.', at: '' } }
+    const messages = [{ id: 'm', role: 'assistant' as const, text: '', actions: [done] }]
+    const note = { id: 'n', role: 'action' as const, text: 'raw', action_id: 'a1', status: 'done' as const }
+    expect(outcomeText(note, messages)).toBe('Upravit task P01-S01-T01: provedeno — Task upraven.')
   })
 })

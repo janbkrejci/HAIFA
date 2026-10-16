@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import socket
 import threading
@@ -123,4 +124,61 @@ def test_assistant_conversation_browser(tmp_path: Path, monkeypatch: pytest.Monk
             expect(panel.locator('[data-test="assistant-answer"]')).to_contain_text("selhal")
         finally:
             release.set()
+            browser.close()
+
+
+def test_assistant_proposed_action_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A proposal is a card; the task changes only after Provést, and the outcome is shown."""
+    repo = make_repo(tmp_path / "repo")
+    task_file = repo / "backlog/P01/S01/P01-S01-T01-first.md"
+    before = task_file.read_text(encoding="utf-8")
+    seen: list[Any] = []
+    repo_id: list[str] = []
+
+    def run(request: Any, **kwargs: Any) -> AgentResult:
+        seen.append(request)
+        proposal = json.dumps(
+            {
+                "kind": "edit_task",
+                "repo": repo_id[0],
+                "task": "P01-S01-T01",
+                "writes": ["src/", "docs/"],
+                "reason": "Task mění i dokumentaci.",
+            }
+        )
+        text = f"Navrhuji rozšířit writes.\n\n```haifa-action\n{proposal}\n```\n"
+        return AgentResult(text=text, returncode=0, tokens=10, cost=0.01)
+
+    monkeypatch.setattr(agent_cc, "run", run)
+    with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
+        browser = _launch(p)
+        page = browser.new_page()
+        page.set_default_timeout(15000)
+        try:
+            repo_id.append(identifier)
+            page.goto(f"{url}/#/r/{identifier}/backlog/P01-S01-T01")
+            page.locator('[data-test="assistant-toggle"]').click()
+            panel = page.locator('[data-test="assistant-panel"]')
+            panel.locator('[data-test="assistant-input"]').fill("Přidej docs do writes")
+            panel.locator('[data-test="assistant-send"]').click()
+
+            card = panel.locator('[data-test="assistant-action"]')
+            expect(card.locator('[data-test="assistant-action-title"]')).to_have_text(
+                "Upravit task P01-S01-T01"
+            )
+            preview = card.locator('[data-test="assistant-action-preview"]')
+            expect(preview).to_contain_text("src/, docs/")
+            # the current value of the task is in the preview
+            expect(preview.locator(".before")).to_have_text("src/")
+            assert task_file.read_text(encoding="utf-8") == before
+            page.screenshot(path=str(tmp_path / "assistant-action.png"))
+
+            card.locator('[data-test="assistant-action-run"]').click()
+            expect(card.locator('[data-test="assistant-action-state"]')).to_have_text(
+                "Provedeno: Task upraven."
+            )
+            expect(panel.locator('[data-test="assistant-outcome"]')).to_contain_text("provedeno")
+            assert "docs/" in task_file.read_text(encoding="utf-8")
+            assert len(seen) == 1
+        finally:
             browser.close()

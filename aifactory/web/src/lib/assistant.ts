@@ -18,14 +18,40 @@ export interface ScreenContext {
   run?: string
 }
 
+export type ActionKind = 'create_task' | 'edit_task' | 'run_task' | 'retry_run' | 'approve_pr' | 'cancel_task'
+export type ActionStatus = 'proposed' | 'done' | 'failed' | 'dismissed'
+
+/** An action the guide proposed; nothing happens until the user executes it in the panel. */
+export interface ProposedAction {
+  id: string
+  kind: ActionKind
+  repo: string
+  task?: string
+  run?: string
+  step?: string
+  title?: string
+  body?: string
+  writes?: string[]
+  workflow?: string
+  depends_on?: string[]
+  note?: string
+  reason?: string
+  status: ActionStatus
+  outcome?: { message: string; at: string }
+}
+
 export interface AssistantMessage {
   id: string
-  role: 'user' | 'assistant'
+  /** `action`: the outcome of a proposed action, recorded by the panel. */
+  role: 'user' | 'assistant' | 'action'
   text: string
   screen?: ScreenContext
   at?: string
   error?: string
   usage?: { tokens: number; cost_usd: number }
+  actions?: ProposedAction[]
+  action_id?: string
+  status?: ActionStatus
 }
 
 export interface ThreadSummary {
@@ -73,6 +99,238 @@ export function sendMessage(id: string, text: string, screen: ScreenContext | nu
 
 export function streamUrl(id: string, after: number): string {
   return `/api${THREADS}/${encodeURIComponent(id)}/stream?after=${after}`
+}
+
+// ── proposed actions ─────────────────────────────────────────────────────────────────────
+
+const ACTION_TITLES: Record<ActionKind, string> = {
+  create_task: 'Založit task',
+  edit_task: 'Upravit task',
+  run_task: 'Spustit task',
+  retry_run: 'Zopakovat běh',
+  approve_pr: 'Schválit PR',
+  cancel_task: 'Zrušit task',
+}
+
+/** `Upravit task P01-S01-T01`: the card's heading. */
+export function actionTitle(action: ProposedAction): string {
+  const target = action.task ?? action.run ?? action.title ?? ''
+  return `${ACTION_TITLES[action.kind] ?? action.kind} ${target}`.trim()
+}
+
+/** The dashboard screen of the action's object. */
+export function actionHref(action: ProposedAction): string | null {
+  const repo = encodeURIComponent(action.repo)
+  if (action.kind === 'retry_run' && action.run) return `#/r/${repo}/runs/${encodeURIComponent(action.run)}`
+  if (action.kind === 'approve_pr' && action.task) return `#/r/${repo}/review/${encodeURIComponent(action.task)}`
+  if (action.task) return `#/r/${repo}/backlog/${encodeURIComponent(action.task)}`
+  if (action.step) return `#/r/${repo}/backlog`
+  return null
+}
+
+/** What the task looks like now, for the preview of an edit. */
+export interface TaskNow {
+  title: string
+  body: string
+  writes: string[]
+  workflow: string | null
+  status: string
+}
+
+/** One line of the preview: a field, its value now (when known) and after the action. */
+export interface PreviewRow {
+  label: string
+  before: string | null
+  after: string
+}
+
+function list(values: readonly string[] | undefined): string {
+  return values && values.length ? values.join(', ') : '—'
+}
+
+/** The preview of the change: field by field, with the current value of an edited task. */
+export function actionPreview(action: ProposedAction, now: TaskNow | null = null): PreviewRow[] {
+  const rows: PreviewRow[] = [{ label: 'Repo', before: null, after: action.repo }]
+  const field = (label: string, after: string | undefined, before: string | null = null) => {
+    if (after !== undefined) rows.push({ label, before, after })
+  }
+  switch (action.kind) {
+    case 'create_task':
+      field('Krok', action.step)
+      field('Název', action.title)
+      field('Writes', action.writes ? list(action.writes) : undefined)
+      field('Workflow', action.workflow)
+      field('Závisí na', action.depends_on ? list(action.depends_on) : undefined)
+      field('Zadání', action.body)
+      break
+    case 'edit_task':
+      field('Task', action.task)
+      field('Název', action.title, now ? now.title : null)
+      field('Writes', action.writes ? list(action.writes) : undefined, now ? list(now.writes) : null)
+      field('Workflow', action.workflow, now ? (now.workflow ?? '—') : null)
+      field('Zadání', action.body, now ? now.body : null)
+      break
+    case 'run_task':
+    case 'approve_pr':
+      field('Task', action.task)
+      field('Poznámka', action.note)
+      break
+    case 'retry_run':
+      field('Běh', action.run)
+      field('Poznámka', action.note)
+      break
+    case 'cancel_task':
+      field('Task', action.task)
+      field('Stav', 'cancelled', now ? now.status : null)
+      break
+  }
+  return rows
+}
+
+/** The dashboard write API call of an action: the same endpoint as the manual action. */
+export function actionRequest(action: ProposedAction): { path: string; body?: Record<string, unknown> } {
+  const repo = `/repos/${encodeURIComponent(action.repo)}`
+  const task = `${repo}/backlog/tasks/${encodeURIComponent(action.task ?? '')}`
+  const pick = (...keys: (keyof ProposedAction)[]) => {
+    const body: Record<string, unknown> = {}
+    for (const key of keys) if (action[key] !== undefined) body[key] = action[key]
+    return body
+  }
+  switch (action.kind) {
+    case 'create_task':
+      return { path: `${repo}/backlog/tasks`, body: pick('step', 'title', 'body', 'writes', 'workflow', 'depends_on') }
+    case 'edit_task':
+      return { path: `${task}/edit`, body: pick('title', 'body', 'writes', 'workflow') }
+    case 'run_task':
+      return { path: `${task}/run`, body: pick('note') }
+    case 'retry_run':
+      return { path: `${repo}/runs/${encodeURIComponent(action.run ?? '')}/retry`, body: pick('note') }
+    case 'approve_pr':
+      return { path: `${repo}/review/${encodeURIComponent(action.task ?? '')}/approve` }
+    case 'cancel_task':
+      return { path: `${task}/edit`, body: { status: 'cancelled' } }
+  }
+}
+
+function runIdOf(data: Record<string, unknown>): string | null {
+  const run = data.run as { run_id?: unknown } | null | undefined
+  return run && typeof run.run_id === 'string' ? run.run_id : null
+}
+
+/** One sentence on what the executed action did, from the API's data. */
+export function actionOutcome(action: ProposedAction, data: unknown): string {
+  const result = (data ?? {}) as Record<string, unknown>
+  switch (action.kind) {
+    case 'create_task': {
+      const task = result.task as { id?: unknown } | undefined
+      return typeof task?.id === 'string' ? `Task ${task.id} založen.` : 'Task založen.'
+    }
+    case 'edit_task':
+      return result.changed === false ? 'Task se nezměnil.' : 'Task upraven.'
+    case 'cancel_task':
+      return result.changed === false ? 'Task už byl zrušený.' : 'Task zrušen.'
+    case 'run_task':
+    case 'retry_run': {
+      const run = runIdOf(result)
+      return run ? `Běh ${run} spuštěn.` : 'Běh se spouští.'
+    }
+    case 'approve_pr':
+      if (result.started) return 'Schválení běží na pozadí (čeká na CI).'
+      return typeof result.merge_sha === 'string' ? `PR sloučen (${result.merge_sha.slice(0, 8)}).` : 'PR schválen.'
+  }
+}
+
+export const ACTION_STATES: Record<Exclude<ActionStatus, 'proposed'>, string> = {
+  done: 'provedeno',
+  failed: 'selhalo',
+  dismissed: 'zahozeno',
+}
+
+/** The line of an outcome message (`role: action`) in the thread, in the dashboard's words. */
+export function outcomeText(message: AssistantMessage, messages: readonly AssistantMessage[]): string {
+  const action = messages.flatMap((m) => m.actions ?? []).find((a) => a.id === message.action_id)
+  if (!action || !message.status || message.status === 'proposed') return message.text
+  const detail = action.outcome?.message
+  return `${actionTitle(action)}: ${ACTION_STATES[message.status]}${detail ? ` — ${detail}` : ''}`
+}
+
+function recordOutcome(threadId: string, actionId: string, status: Exclude<ActionStatus, 'proposed'>, message: string) {
+  return postGlobal<{ action: ProposedAction; message: AssistantMessage }>(
+    `${THREADS}/${encodeURIComponent(threadId)}/actions/${encodeURIComponent(actionId)}`,
+    { status, message },
+  )
+}
+
+function applyRecord(threadId: string, recorded: { action: ProposedAction; message: AssistantMessage }): void {
+  const thread = assistant.thread
+  if (!thread || thread.id !== threadId) return
+  for (const message of thread.messages) {
+    const action = message.actions?.find((a) => a.id === recorded.action.id)
+    if (action) Object.assign(action, recorded.action)
+  }
+  if (!thread.messages.some((m) => m.id === recorded.message.id)) thread.messages.push(recorded.message)
+}
+
+/** Ids of the actions being executed (their button shows the spinner). */
+export const running = reactive(new Set<string>())
+
+/**
+ * Execute a proposed action after the user's click: the dashboard's own write API (same
+ * endpoint, same guards as the manual action), then its outcome is recorded in the thread.
+ */
+export async function executeAction(threadId: string, action: ProposedAction): Promise<void> {
+  if (action.status !== 'proposed' || running.has(action.id)) return
+  running.add(action.id)
+  try {
+    const call = actionRequest(action)
+    let status: 'done' | 'failed'
+    let message: string
+    try {
+      const data = await postGlobal<unknown>(call.path, call.body)
+      status = 'done'
+      message = actionOutcome(action, data)
+    } catch (err) {
+      status = 'failed'
+      message = errorText(err)
+    }
+    applyRecord(threadId, await recordOutcome(threadId, action.id, status, message))
+  } catch (err) {
+    assistant.error = errorText(err)
+  } finally {
+    running.delete(action.id)
+  }
+}
+
+/** The user does not want the proposal; the guide learns it with the next message. */
+export async function dismissAction(threadId: string, action: ProposedAction): Promise<void> {
+  if (action.status !== 'proposed' || running.has(action.id)) return
+  running.add(action.id)
+  try {
+    applyRecord(threadId, await recordOutcome(threadId, action.id, 'dismissed', ''))
+  } catch (err) {
+    assistant.error = errorText(err)
+  } finally {
+    running.delete(action.id)
+  }
+}
+
+/** The task as it is now (for the preview of an edit or cancel); null when unknown. */
+export async function taskNow(repo: string, task: string): Promise<TaskNow | null> {
+  try {
+    const detail = await getGlobal<{ task?: Partial<TaskNow> & { writes?: string[] }; body?: string }>(
+      `/repos/${encodeURIComponent(repo)}/backlog/tasks/${encodeURIComponent(task)}`,
+    )
+    const node = detail.task ?? {}
+    return {
+      title: node.title ?? '',
+      body: detail.body ?? '',
+      writes: Array.isArray(node.writes) ? node.writes : [],
+      workflow: node.workflow ?? null,
+      status: node.status ?? '',
+    }
+  } catch {
+    return null
+  }
 }
 
 // ── the screen ───────────────────────────────────────────────────────────────────────────
@@ -494,6 +752,7 @@ export function resetAssistantForTests(): void {
     streaming: null,
     error: null,
   })
+  running.clear()
   storage()?.removeItem(STORE_THREAD)
   storage()?.removeItem(STORE_OPEN)
 }

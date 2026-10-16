@@ -175,7 +175,11 @@ without an enabled claude), ``GET /api/assistant/threads/{id}`` (with messages),
 ``POST /api/assistant/threads/{id}/messages`` (``{text, screen?: {repo, task, run}}``,
 HTTP 202, HTTP 409 ``busy`` while an answer runs) and
 ``GET /api/assistant/threads/{id}/stream?after=SEQ`` (Server-Sent Events ``start``,
-``text``, ``tool``, ``done`` or ``error``, then ``idle``).
+``text``, ``tool``, ``done`` or ``error``, then ``idle``). An answer may carry proposed
+``actions``; the panel executes a confirmed one through the endpoints below (with their
+guards) and reports it with ``POST /api/assistant/threads/{id}/actions/{action_id}``
+(``{status: done|failed|dismissed, message?}``; HTTP 409 ``action_decided`` the second time),
+which only records the outcome in the thread.
 Each repository's endpoints above are under
 ``/api/repos/{id}/`` with the same relative paths (``/health`` excepted) and their own
 ``/live`` hub; an unknown id gives HTTP 404 ``unknown_repo``, a missing folder HTTP 404
@@ -2248,6 +2252,23 @@ async def assistant_send(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data), status_code=202)
 
 
+async def assistant_action(request: Request) -> JSONResponse:
+    """Record the outcome of a proposed action (``{status, message?}``); writes nothing else."""
+    try:
+        body = await _json_body(request)
+        data = await run_in_threadpool(
+            _assistant(request).record_action,
+            request.path_params["thread_id"],
+            request.path_params["action_id"],
+            body,
+        )
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except AssistantError as exc:
+        return _assistant_error(exc)
+    return JSONResponse(envelope_ok(data))
+
+
 async def assistant_stream(request: Request) -> Response:
     """Server-Sent Events of the current answer after ``?after=SEQ``: ``start``, ``text``,
     ``tool``, then ``done`` or ``error``; the stream ends when the thread is idle."""
@@ -2351,6 +2372,11 @@ def create_multi_app(
             Route("/assistant/threads/{thread_id}", assistant_thread, methods=["GET"]),
             Route("/assistant/threads/{thread_id}/messages", assistant_send, methods=["POST"]),
             Route("/assistant/threads/{thread_id}/stream", assistant_stream, methods=["GET"]),
+            Route(
+                "/assistant/threads/{thread_id}/actions/{action_id}",
+                assistant_action,
+                methods=["POST"],
+            ),
             Mount("/repos/{repo_id}", app=RepoScope(Router(routes=_repo_routes()), resolve)),
         ],
     )
