@@ -138,6 +138,8 @@ class TaskRunResult:
     follow_ups: FollowUpOutcome | None = None
     # the run changed nothing, so the task was marked done without a PR (run/unchanged.py)
     done_without_pr: bool = False
+    # a chain closed its ``nothing_to_do`` failure: the task is done without changes (heal.py)
+    closed_by_heal: bool = False
 
     @property
     def ok(self) -> bool:
@@ -668,8 +670,11 @@ def run_task(
     if resolve_onto is not None or workflow_name is not None:
         return result  # a resolve or ci-fix run is not retried
     from aifactory.run.fallback import continue_on_fallback
+    from aifactory.run.heal import auto_heal_enabled
 
-    return continue_on_fallback(main, result, code=code, provider=provider)
+    return continue_on_fallback(
+        main, result, code=code, provider=provider, enabled=auto_heal_enabled(task)
+    )
 
 
 @dataclass

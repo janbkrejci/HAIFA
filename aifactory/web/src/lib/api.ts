@@ -241,6 +241,21 @@ export interface OverviewFailed {
   failure_kind?: string | null
 }
 
+/** An automatic action of an auto-continue chain after a failure (run.heal, `task_chains.events`). */
+export interface OverviewAutoAction {
+  at: string
+  /** `fallback` (quota: another harness), `retry` (process gone) or `close` (nothing to do). */
+  action: string
+  failure_kind: string
+  task_id: string
+  task_title?: string | null
+  run_id: string
+  ok: boolean
+  /** E.g. „Factory pokračovala na Claude Code po vyčerpání kvóty Codexu“. */
+  text: string
+  chain_id?: string
+}
+
 export interface OverviewConfig {
   factory_state: string
   installed: boolean
@@ -337,6 +352,8 @@ export interface OverviewRepo {
   /** Open task PRs the factory merges by itself (effective auto_merge, no auto-merge error). */
   automerge?: OverviewReview[]
   failed: OverviewFailed[]
+  /** The newest automatic actions of the repo's chains, newest first (absent from an older server). */
+  auto_actions?: OverviewAutoAction[]
   /** Tasks merged outside factory that `factory backlog sync` would mark done. */
   merged_outside?: OverviewMergedOutside[]
   sync_pr?: OverviewSyncPr | null
@@ -364,6 +381,7 @@ export async function fetchOverview(): Promise<OverviewData> {
       review: r.review ?? [],
       automerge: r.automerge ?? [],
       failed: r.failed ?? [],
+      auto_actions: r.auto_actions ?? [],
       merged_outside: r.merged_outside ?? [],
       sync_pr: r.sync_pr ?? null,
       warnings: r.warnings ?? [],

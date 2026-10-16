@@ -704,6 +704,14 @@ exceptions on the task; the nearest value wins.
    Tasks it skips carry a reason ({{skip_reasons}}); the chain stops with
    {{stop_reasons}} (`data.chain.stop`, `data.chain.waiting`). The chain approves and
    merges nothing except through `auto_merge` (next point).
+   Self-healing (`auto_heal`, inherited like `auto_continue`, default `true`; switch it off
+   with `auto_heal: false` or `factory backlog edit ID --auto-heal off`): a chain that goes
+   on acts on a failed run by its `failure_kind`. `quota` continues once on the configured
+   fallback harness (with `auto_heal: false` not even a single run switches),
+   `process_gone` is retried once, `nothing_to_do` with the agent's reason marks the task
+   done without changes and the chain goes on; every other kind stops the chain as before.
+   Each action is in `data.chain.events` (`action`: `fallback`, `retry` or `close`, `ok`,
+   `text`), in `task_chains.events` and on the dashboard's Overview.
 6. Auto-merge (`auto_merge: true`, inherited project -> step -> task; set it with
    `factory backlog auto-merge ID --on|--off|--inherit` or on a task with
    `factory task edit ID --auto-merge on|off|inherit`, e.g. off for a task that changes

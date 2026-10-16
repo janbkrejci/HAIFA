@@ -154,3 +154,42 @@ describe('RepoCard merged outside factory', () => {
     expect(wrapper.find('[data-test="sync-pr-link"]').attributes('href')).toBe('https://example.test/pr/40')
   })
 })
+
+describe('RepoCard automatic actions', () => {
+  it('lists what the factory did by itself after a failure, each row a link to the run', () => {
+    const card = mountWith(
+      repo('a', {
+        auto_actions: [
+          {
+            at: '2026-10-06T09:58:00Z',
+            action: 'fallback',
+            failure_kind: 'quota',
+            task_id: 'M01-S01-T02',
+            run_id: 'r-quota',
+            ok: true,
+            text: 'Factory pokračovala na Claude Code po vyčerpání kvóty Codexu',
+          },
+          {
+            at: '2026-10-06T09:50:00Z',
+            action: 'retry',
+            failure_kind: 'process_gone',
+            task_id: 'M01-S01-T03',
+            run_id: 'r-gone',
+            ok: false,
+            text: 'Factory zopakovala běh r-gone po pádu procesu; opakování selhalo',
+          },
+        ],
+      }),
+    )
+    expect(card.findAll('section.group h3').map((h) => h.text())).toContain('Factory zasáhla sama')
+    const rows = card.findAll('[data-test="row-auto-action"]')
+    expect(rows.map((r) => r.attributes('data-action'))).toEqual(['fallback', 'retry'])
+    expect(rows[0].text()).toContain('Factory pokračovala na Claude Code po vyčerpání kvóty Codexu')
+    expect(rows[0].attributes('href')).toBe('#/r/a/runs/r-quota')
+    expect(rows[1].classes()).toContain('failed')
+  })
+
+  it('has no section without automatic actions', () => {
+    expect(mountWith(repo('a')).text()).not.toContain('Factory zasáhla sama')
+  })
+})

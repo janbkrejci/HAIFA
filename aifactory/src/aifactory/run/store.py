@@ -21,7 +21,8 @@ failed, stopped or aborted run recorded before the columns existed reads as ``ot
 
 ``task_chains`` has one row per auto-continue chain (``queue.run_chain``): its runs
 in start order, the tasks the last selection skipped and why, the tasks that ran
-alone (wide writes), and the chain's state (``running``, ``finished`` with its
+alone (wide writes), its automatic actions after a failure (``events``, ``run.heal``),
+and the chain's state (``running``, ``finished`` with its
 ``stop``, or ``aborted`` when the chain's process is gone). ``dismiss_chain`` erases an
 ended chain (its runs stay).
 
@@ -170,7 +171,8 @@ CREATE TABLE IF NOT EXISTS task_chains (
   ended_at TEXT,
   run_ids TEXT NOT NULL DEFAULT '[]',
   skipped TEXT NOT NULL DEFAULT '[]',
-  exclusive TEXT NOT NULL DEFAULT '[]'
+  exclusive TEXT NOT NULL DEFAULT '[]',
+  events TEXT NOT NULL DEFAULT '[]'
 );
 CREATE TABLE IF NOT EXISTS task_queue (
   task_id TEXT PRIMARY KEY,
@@ -230,7 +232,10 @@ _CHAIN_COLUMNS = (
     "run_ids",
     "skipped",
     "exclusive",
+    "events",
 )
+# columns added to task_chains after its first release; older DBs get them on open
+_CHAIN_ADDED_COLUMNS = {"events": "TEXT NOT NULL DEFAULT '[]'"}
 CHAIN_FINISHED = "finished"
 # the stop of a chain whose finished task has auto-continue off (``queue.STOP_DISABLED``)
 _CHAIN_DISABLED = "disabled"
@@ -424,8 +429,9 @@ class SyncPrRow:
 class TaskChainRow:
     """One auto-continue chain (``state``: running, finished, aborted).
 
-    ``run_ids`` (in start order), ``skipped`` (``Skip.to_json()`` of the last selection)
-    and ``exclusive`` (task ids that ran alone: wide writes) are JSON lists.
+    ``run_ids`` (in start order), ``skipped`` (``Skip.to_json()`` of the last selection),
+    ``exclusive`` (task ids that ran alone: wide writes) and ``events`` (the chain's
+    automatic actions after a failure, ``heal.HealEvent.to_json()``) are JSON lists.
     """
 
     chain_id: str
@@ -440,6 +446,7 @@ class TaskChainRow:
     run_ids: str = "[]"
     skipped: str = "[]"
     exclusive: str = "[]"
+    events: str = "[]"
 
     def run_id_list(self) -> list[str]:
         return [str(r) for r in _json_list(self.run_ids)]
@@ -450,11 +457,15 @@ class TaskChainRow:
     def exclusive_list(self) -> list[str]:
         return [str(t) for t in _json_list(self.exclusive)]
 
+    def event_list(self) -> list[dict[str, Any]]:
+        return [e for e in _json_list(self.events) if isinstance(e, dict)]
+
     def to_json(self) -> dict[str, object]:
         data: dict[str, object] = dict(asdict(self))
         data["run_ids"] = self.run_id_list()
         data["skipped"] = self.skipped_list()
         data["exclusive"] = self.exclusive_list()
+        data["events"] = self.event_list()
         return data
 
 
@@ -613,6 +624,7 @@ class TaskRunStore:
         self.conn.executescript(_SCHEMA)
         _add_columns(self.conn, "task_prs", _PR_ADDED_COLUMNS)
         _add_columns(self.conn, "task_runs", _RUN_ADDED_COLUMNS)
+        _add_columns(self.conn, "task_chains", _CHAIN_ADDED_COLUMNS)
         if database.is_remote(db_path):
             self.conn.execute(
                 "CREATE TABLE IF NOT EXISTS haifa_owners "
@@ -1130,6 +1142,7 @@ class TaskRunStore:
         run_ids: list[str] | None = None,
         skipped: list[dict[str, Any]] | None = None,
         exclusive: list[str] | None = None,
+        events: list[dict[str, Any]] | None = None,
         state: str | None = None,
         stop: str | None = None,
     ) -> None:
@@ -1142,6 +1155,8 @@ class TaskRunStore:
             fields["skipped"] = json.dumps(skipped, ensure_ascii=False)
         if exclusive is not None:
             fields["exclusive"] = json.dumps(exclusive)
+        if events is not None:
+            fields["events"] = json.dumps(events, ensure_ascii=False)
         if state is not None:
             fields["state"] = state
             if state != RUNNING:

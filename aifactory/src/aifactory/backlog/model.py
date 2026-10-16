@@ -20,13 +20,14 @@ INHERITED_KEYS: tuple[str, ...] = (
     "writes",
     "auto_continue",
     "auto_merge",
+    "auto_heal",
     "assignee",
 )
 # who does a task: an agent run (the default) or a person; a person's task never runs
 ASSIGNEES: tuple[str, ...] = ("agent", "human")
 HUMAN = "human"
 # inherited keys whose value must be ``true`` or ``false``
-FLAG_KEYS: tuple[str, ...] = ("auto_continue", "auto_merge")
+FLAG_KEYS: tuple[str, ...] = ("auto_continue", "auto_merge", "auto_heal")
 LIST_FIELDS: tuple[str, ...] = ("depends_on", "related", "writes")
 INDEX_FILE = "index.md"
 

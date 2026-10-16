@@ -518,7 +518,11 @@ def retry_run(
         store.close()
     if record is not None:
         return result  # a switch is never followed by another one
-    return continue_on_fallback(main, result, code=code, provider=provider)
+    from aifactory.run.heal import auto_heal_enabled
+
+    return continue_on_fallback(
+        main, result, code=code, provider=provider, enabled=auto_heal_enabled(task)
+    )
 
 
 def rebase_for_retry(

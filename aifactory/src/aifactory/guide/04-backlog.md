@@ -22,7 +22,7 @@ Formulář: **Titulek**, **Kód**, **Zadání** (cíl, kontext, kdy je hotovo) a
 
 ## Dědičnost
 
-Prázdná hodnota se dědí od stepu, pak projektu: `workflow`, `writes`, `harness`, `model`, `thinking`, `test_timeout`, `auto_continue`, `auto_merge`, `assignee`. Explicitní `null` dědění zastaví. Projekt a step upravíš v kartě **Nastavení** nebo `factory backlog edit`.
+Prázdná hodnota se dědí od stepu, pak projektu: `workflow`, `writes`, `harness`, `model`, `thinking`, `test_timeout`, `auto_continue`, `auto_merge`, `auto_heal`, `assignee`. Explicitní `null` dědění zastaví. Projekt a step upravíš kartou **Nastavení** nebo `factory backlog edit`.
 
 `depends_on` odkazuje na task, step nebo projekt (splněný, když jsou hotové všechny nezrušené tasky).
 

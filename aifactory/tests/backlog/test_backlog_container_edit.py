@@ -246,6 +246,25 @@ def test_effective_sources_name_the_origin(tmp_path: Path) -> None:
         assert key not in sources
 
 
+def test_auto_heal_is_on_by_default_and_set_per_container(tmp_path: Path, capsys: Capsys) -> None:
+    root = sample_repo(tmp_path)
+    backlog = load_backlog(root)
+    sources = effective_sources(backlog.by_id["M01-S01"], backlog.settings)
+    assert sources["auto_heal"] == {"value": True, "origin": {"source": "default"}}
+    assert main(["backlog", "edit", "M01-S01", "--auto-heal", "off", "--repo", str(root)]) == 0
+    capsys.readouterr()
+    assert _header(root, S01_INDEX)["auto_heal"] is False
+    backlog = load_backlog(root)
+    assert effective_sources(backlog.by_id["M01-S01"], backlog.settings)["auto_heal"] == {
+        "value": False,
+        "origin": {"source": "own", "level": "step", "id": "M01-S01", "path": S01_INDEX},
+    }
+    with pytest.raises(TaskEditError):
+        edit_container(root, "M01", values={"auto_heal": "yes"})
+    edit_container(root, "M01-S01", clear=["auto_heal"])
+    assert "auto_heal" not in _header(root, S01_INDEX)
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 

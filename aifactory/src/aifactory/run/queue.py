@@ -77,11 +77,20 @@ then (``--auto``, or ``auto_continue: true`` on its first task in base), otherwi
 the moment it does go on (auto-continue committed to base during the run). A run that
 never goes on is a single run, it gets no row. The dashboard shows the rows
 (``/api/chains``). A failure to write a row never affects the chain.
+
+A failed run of a chain that goes on is healed by its kind before the chain stops
+(``heal.py``, switched off by ``auto_heal: false``): a ``process_gone`` run is retried
+once, a ``nothing_to_do`` run with the agent's reason closes its task without changes
+and the chain goes on as after a run that changed nothing; a ``quota`` run has already
+continued on the fallback harness inside the run. Every such action is an event of the
+chain (``task_chains.events``, ``ChainResult.events``). Any other failure stops the chain
+as described above.
 """
 
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import secrets
 import sqlite3
@@ -90,6 +99,7 @@ import tempfile
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import Any
 
 from aifactory.backlog import (
     Backlog,
@@ -106,6 +116,7 @@ from aifactory.config import ConfigError
 from aifactory.engine.utils import now_iso
 from aifactory.providers import GitProvider
 from aifactory.run import gitops
+from aifactory.run import heal as heal_mod
 from aifactory.run import task as task_mod
 from aifactory.run.errors import TaskRunError
 from aifactory.run.followups import follow_up_marker
@@ -537,10 +548,12 @@ class ChainResult:
     max_parallel: int = 1
     exclusive: list[str] = field(default_factory=list)  # tasks that ran alone (wide writes)
     chain_id: str | None = None
+    # the chain's automatic actions after a failure (``heal.HealEvent.to_json()``)
+    events: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def ok(self) -> bool:
-        return all(r.ok for r in self.runs)
+        return all(r.ok or r.closed_by_heal for r in self.runs)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -561,6 +574,7 @@ class ChainResult:
             "max_parallel_runs": self.max_parallel,
             "exclusive": list(self.exclusive),
             "chain_id": self.chain_id,
+            "events": list(self.events),
         }
 
 
@@ -596,6 +610,7 @@ class _ChainRecord:
         self.enabled = enabled
         self.chain_id = secrets.token_hex(4)
         self.started = False
+        self.events: list[dict[str, Any]] = []
 
     def _write(self, action: Callable[[TaskRunStore], None]) -> None:
         if self.db is None:
@@ -628,6 +643,7 @@ class _ChainRecord:
             state=RUNNING,
             started_at=now,
             updated_at=now,
+            events=json.dumps(self.events, ensure_ascii=False),
         )
         self._write(lambda store: store.start_chain(row))
         self.started = self.db is not None
@@ -635,6 +651,15 @@ class _ChainRecord:
     def update(self, **fields: object) -> None:
         if self.started:
             self._write(lambda store: store.update_chain(self.chain_id, **fields))  # type: ignore[arg-type]
+
+    def event(self, event: heal_mod.HealEvent) -> None:
+        """Record an automatic action (once per run, action and time)."""
+        data = event.to_json()
+        key = (data["run_id"], data["action"], data["at"])
+        if any((e["run_id"], e["action"], e["at"]) == key for e in self.events):
+            return
+        self.events.append(data)
+        self.update(events=list(self.events))
 
     def finish(self, stop: str, runs: list[str], skipped: list[Skip], exclusive: list[str]) -> None:
         self.update(
@@ -867,6 +892,53 @@ def start_factory(
     return result
 
 
+def _failed(result: task_mod.TaskRunResult) -> bool:
+    """Whether the chain cannot go on after `result` as after a success."""
+    if result.closed_by_heal:
+        return False
+    return not result.ok or (result.pr is None and not result.done_without_pr)
+
+
+def _note_switch(record: _ChainRecord, result: task_mod.TaskRunResult, since: str) -> None:
+    """Record the automatic quota fallback of `result` (started during the chain)."""
+    event = heal_mod.switch_event(result, since)
+    if event is not None:
+        record.event(event)
+
+
+def _heal_in_chain(
+    repo: Path,
+    result: task_mod.TaskRunResult,
+    *,
+    auto: bool,
+    record: _ChainRecord,
+    healed: set[str],
+    since: str,
+    code: CodeRunner | None,
+    provider: GitProvider | None,
+) -> tuple[task_mod.TaskRunResult, bool]:
+    """The newest result of the failed `result` after healing it, and whether to go on.
+
+    Only a chain that would go on after the task heals it, each run once.
+    """
+    if result.run.run_id in healed:
+        return result, False
+    with _fresh_backlog(repo) as backlog:
+        task = backlog.by_id.get(result.run.task_id)
+    if not isinstance(task, Task) or not (auto or auto_continue_enabled(task)):
+        return result, False
+    healed.add(result.run.run_id)
+    healing = heal_mod.heal(repo, result, task, code=code, provider=provider)
+    if healing is None:
+        return result, False
+    if not record.started:
+        record.go_on(result.trace_db)
+    record.event(healing.event)
+    newest = healing.result if healing.result is not None else result
+    _note_switch(record, newest, since)
+    return newest, healing.goes_on
+
+
 def run_chain(
     repo: Path,
     task_id: str,
@@ -1050,6 +1122,7 @@ def _run_sequential(
         record.update(state=ABORTED)
         raise
     chain.chain_id = record.chain_id if record.started else None
+    chain.events = list(record.events)
     record.finish(chain.stop, [r.run.run_id for r in chain.runs], chain.waiting, [])
     return chain
 
@@ -1067,6 +1140,7 @@ def _sequential(
     agents_override: dict[str, str] | None = None,
     first_run: Callable[[], task_mod.TaskRunResult] | None = None,
 ) -> ChainResult:
+    since = str(now_iso())
     if first_run is not None:
         first = first_run()
     else:
@@ -1083,15 +1157,32 @@ def _sequential(
     runs = [first]
     record.start(first.trace_db)
     record.update(run_ids=[first.run.run_id])
+    _note_switch(record, first, since)
     exclude = {task_id}
     start_skips: list[Skip] = []
+    healed: set[str] = set()
     last = first
     while True:
         blocked: list[str] | None = None
-        if not last.ok or (last.pr is None and not last.done_without_pr):
+        if _failed(last):
             blocked = task_mod.run_blockers(last.run)
             if blocked is None:
-                return ChainResult(runs, STOP_FAILED)
+                fixed, goes_on = _heal_in_chain(
+                    repo,
+                    last,
+                    auto=auto,
+                    record=record,
+                    healed=healed,
+                    since=since,
+                    code=code,
+                    provider=provider,
+                )
+                runs[runs.index(last)] = fixed
+                if not goes_on:
+                    return ChainResult(runs, STOP_FAILED)
+                record.update(run_ids=[r.run.run_id for r in runs])
+                last = fixed
+                continue
         prefer: list[str] = []
         with tempfile.TemporaryDirectory(prefix="factory-chain-") as tmp:
             backlog = _base_backlog(repo, Path(tmp))
@@ -1109,7 +1200,12 @@ def _sequential(
                 record.go_on(last.trace_db)
                 record.update(run_ids=[r.run.run_id for r in runs])
             merged = False
-            if blocked is None and last.auto_merge is None and auto_merge_enabled(after):
+            if (
+                blocked is None
+                and not last.closed_by_heal
+                and last.auto_merge is None
+                and auto_merge_enabled(after)
+            ):
                 # Local import: aifactory.review imports aifactory.run.
                 from aifactory.review.automerge import try_auto_merge
 
@@ -1165,6 +1261,7 @@ def _sequential(
             continue
         runs.append(result)
         record.update(run_ids=[r.run.run_id for r in runs])
+        _note_switch(record, result, since)
         last = result
 
 
@@ -1202,6 +1299,8 @@ def _run_parallel(
     exclusive: list[str] = []
     halt: str | None = None
     last_cont = True
+    healed: set[str] = set()
+    since = str(now_iso())
 
     def save(**extra: object) -> None:
         record.update(
@@ -1281,13 +1380,31 @@ def _run_parallel(
                 order.insert(order.index(result.run.run_id) + 1, resolved.run.run_id)
             results[resolved.run.run_id] = resolved
         save()
+        _note_switch(record, result, since)
         if halt is not None:
             return
         blocked: list[str] | None = None
-        if not result.ok or (result.pr is None and not result.done_without_pr):
+        if _failed(result):
             blocked = task_mod.run_blockers(result.run)
             if blocked is None:
-                halt = STOP_FAILED
+                # a retry runs in this process, like the first run of a retry chain
+                fixed, goes_on = _heal_in_chain(
+                    repo,
+                    result,
+                    auto=auto,
+                    record=record,
+                    healed=healed,
+                    since=since,
+                    code=code,
+                    provider=None,
+                )
+                results[fixed.run.run_id] = fixed
+                if not goes_on:
+                    halt = STOP_FAILED
+                    return
+                if not fixed.closed_by_heal:
+                    fixed = member_auto_merge(repo, fixed, code=code)
+                finished(fixed)
                 return
         prefer: list[str] = []
         with _fresh_backlog(repo) as backlog:
@@ -1319,7 +1436,8 @@ def _run_parallel(
             record.go_on()
             save()
         merge = result.auto_merge
-        if auto_merge_enabled(after) and (merge is None or not merge.merged):
+        closed = result.closed_by_heal
+        if not closed and auto_merge_enabled(after) and (merge is None or not merge.merged):
             if merge is None or not _waits_for_stack(merge):
                 halt = STOP_NOT_MERGED if cont else STOP_DISABLED
                 return
@@ -1367,4 +1485,5 @@ def _run_parallel(
         max_parallel=max_parallel,
         exclusive=exclusive,
         chain_id=record.chain_id if record.started else None,
+        events=list(record.events),
     )
