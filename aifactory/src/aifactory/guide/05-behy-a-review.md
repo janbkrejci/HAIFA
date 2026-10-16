@@ -1,0 +1,33 @@
+# Běhy a review
+
+Běh provede workflow tasku ve vlastním worktree a větvi `factory/<id-tasku>-<n>`.
+
+## Spuštění a sledování
+
+**Spustit** v detailu tasku (`factory task run ID`) otevře dialog s workflow, zápisy, varováním na necommitnutý backlog či konfiguraci, volbou **Harness pro tento běh**, **Po úspěchu pokračovat dalšími tasky (auto continue)** a poznámkou pro agenty. Blokovaný task spustí **Spustit přesto (ignorovat nesplněné závislosti)**.
+
+Záložka **Běhy** má **Aktivní** a **Archivované** běhy, panel **Náklady** a **Řetěz**. Detail běhu ukazuje fáze; klik na fázi otevře prompty, výstup a živé události. **Pauza** dokončí fázi a čeká, **Pokračovat** pustí další, **Zastavit** běh ukončí (worktree zůstane).
+
+## Navázání
+
+Selhaný, zastavený nebo přerušený běh nech pokračovat tlačítkem **Navázat** (s volitelnou poznámkou), v CLI `factory task retry ID`. Pokračuje ve stejné větvi: hotové fáze se neopakují, base se nejdřív stáhne a větev přebázuje. **Spustit** naopak začne nový běh od začátku. Staré worktree uklidí `factory task clean`.
+
+## Follow-upy
+
+Agenti nenechávají v repu TODO. Práci mimo rozsah ohlásí a HAIFA ji založí jako task ve stepu **TODO** projektu; writes a workflow mu zvolí agent. Práci jen pro člověka založí jako task **Pro člověka**. Když task nejde dokončit před jinou prací, dostane na ni `depends_on` a běh skončí chybou `blocked: …` bez PR.
+
+## Schválení a CI
+
+Úspěšný běh otevře PR a task je **Čeká na review**. Detail PR na záložce **Review** ukazuje popis, testy, verdikt revieweru a diff.
+
+**Schválit** (`factory task approve ID`) přidá commit se `status: done`, počká na CI tohoto commitu a mergne PR. Červenou CI opraví nejvýš dvěma běhy workflow `ci-fix` do téhož PR; zůstane-li červená nebo nedoběhne do 30 minut, PR zůstane otevřený s důvodem. Azure DevOps dostane hlas approve, GitHub approve review jen s `github_approver`.
+
+**Vrátit s poznámkou** (`factory task return ID --note "…"`) spustí nový běh na stejné větvi. **Vyřešit konflikt s base**, nebo **Dorovnat s base** (`factory task resolve ID`) přebázuje PR workflow `resolve`.
+
+## Auto-merge
+
+S `auto_merge` se PR mergne sám, když review schválilo, PR jde mergovat a CI je zelená (s opravami `ci-fix`). Konflikt zkusí jednou `resolve-reviewed`. Když se nepovede, PR přejde do **Čeká na review**. Zapneš ho přepínačem nebo `factory backlog auto-merge ID --on`.
+
+## Souběh a stacked PR
+
+`max_parallel_runs` je počet slotů repa; slot drží běh i otevřený PR. Souběžně se spustí jen task, jehož writes se nepřekrývají. Se `stacked_prs: true` task čekající na PR závislosti začne z jeho větve a mergne se až po něm.

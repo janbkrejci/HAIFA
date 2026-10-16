@@ -438,24 +438,15 @@ def _unknown_commands(text: str) -> list[str]:
     return unknown
 
 
-def _check_codes(*files: str) -> set[str]:
-    codes: set[str] = set()
-    for name in files:
-        for call in _calls(SRC / "check" / name):
-            if _name(call) == "Finding":
-                codes.add(str(call.args[0].value))  # type: ignore[attr-defined]
-    return codes
-
-
 def _guide() -> str:
     return "\n".join(chapter.markdown for chapter in guide.chapters())
 
 
-def test_guide_lists_every_check_code() -> None:
+def test_guide_leaves_check_fixes_to_factory_check() -> None:
+    """The guide does not repeat the ``fix`` of every ``factory check`` code in tables."""
     text = _guide()
-    codes = _check_codes("machine_rules.py", "library_rules.py", "repo_rules.py")
-    assert codes and codes <= set(ISSUE_CODES["check"])
-    assert sorted(c for c in codes if f"`{c}`" not in text) == []
+    assert "| Kód |" not in text
+    assert "`fix`" in text
 
 
 def test_guide_covers_setup_library_repos_and_upgrades() -> None:
