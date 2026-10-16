@@ -52,7 +52,7 @@ factory config roster set codex
 factory config commit
 ```
 
-Jednotlivému agentovi nastavíš harness, model a přemýšlení i v dashboardu: záložka **Factory**, sekce **Vybavení továrny**, tlačítka **Upravit** a **Vrátit na zděděné**.
+Jednotlivému agentovi nastavíš harness, model a přemýšlení i v dashboardu: záložka **Factory**, sekce **Nastavení agentů**, tlačítka **Upravit** a **Vrátit na zděděné**.
 
 Změna je nejdřív jen v pracovním stromu. Běhy ji uvidí až po `factory config commit`, který ji commitne do base a odešle. Kdo nemá daný harness, uvidí v `factory check` chybu `harness_missing`.
 

@@ -4,9 +4,9 @@
 // groups: fix in the repo and commit, or fix on this machine for this repo. Machine findings
 // the machine check (#/setup) shows too and the library findings live only there; one line
 // links to them; "Vyřešit vybrané nálezy" opens its panel right under that button, next to the
-// findings. Below: the repo settings (#/r/<id>/factory/settings) and "Vybavení továrny" (the
-// agents with their harness, model and thinking, workflows, skills and extensions). The config
-// commit (#/r/<id>/factory/config_commit) is opened by the red config chip in the topbar.
+// findings. Below: the repo settings (#/r/<id>/factory/settings) and "Nastavení agentů" (the
+// repo-level harness, model and thinking of each agent). Every section collapses by its heading;
+// a jump to a section (Co dál, #/r/<id>/factory/settings) opens it first. The config commit (#/r/<id>/factory/config_commit) is opened by the red config chip in the topbar.
 // Writes use a reviewed and confirmed server plan.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
@@ -21,6 +21,7 @@ import type { FactoryAction } from '@/lib/api'
 import Spinner from '@/components/ui/Spinner.vue'
 import RepoItems from '@/components/factory/RepoItems.vue'
 import RepoSettings from '@/components/factory/RepoSettings.vue'
+import CollapsibleSection from '@/components/ui/CollapsibleSection.vue'
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = { error: 0, warning: 1, info: 2 }
 const SEVERITY_TEXT: Record<CheckSeverity, string> = { error: 'chyba', warning: 'varování', info: 'info' }
@@ -33,7 +34,17 @@ const operationSerial = ref(0)
 const installed = computed(() => completed.value !== null && lastFactoryResult.value?.action === 'init')
 const rosterSection = ref<HTMLElement | null>(null)
 const repairSection = ref<HTMLElement | null>(null)
-function showRoster() { rosterSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' }) }
+/** Which sections are expanded; a finding group by its id. */
+const nextOpen = ref(true)
+const summaryOpen = ref(true)
+const settingsOpen = ref(true)
+const agentsOpen = ref(true)
+const groupOpen = ref<Record<string, boolean>>({})
+async function showRoster() {
+  agentsOpen.value = true
+  await nextTick()
+  rosterSection.value?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+}
 function openOperation(action: FactoryAction) {
   if (operationBusy.value || itemsBusy.value || repair.value) return
   operation.value = action
@@ -49,6 +60,7 @@ const settingsSection = ref<HTMLElement | null>(null)
 /** `#/r/<id>/factory/settings` scrolls to the repo settings once they are shown. */
 let scrollToSettings = false
 async function showSettings() {
+  settingsOpen.value = true
   await nextTick()
   if (!settingsSection.value) return
   scrollToSettings = false
@@ -155,20 +167,20 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
       <template v-if="completed.pr"><a :href="completed.pr.url" target="_blank" rel="noopener">Otevřít PR</a><p>Běhy počkají na merge. Po merge použij Stáhnout konfiguraci z base.</p></template>
       <a :href="repoHref(repoId,'backlog')">Otevřít backlog</a>
     </div>
-    <section v-if="installed" class="next-steps" data-test="factory-next-steps">
-      <h2>Co dál</h2>
+    <CollapsibleSection v-if="installed" v-model:open="nextOpen" heading="Co dál" class="next-steps" data-test="factory-next-steps">
       <ol>
-        <li>Zkontroluj harnessy a modely agentů. <button type="button" class="btn" data-test="next-roster" @click="showRoster">Vybavení továrny</button></li>
+        <li>Zkontroluj harnessy a modely agentů. <button type="button" class="btn" data-test="next-roster" @click="showRoster">Nastavení agentů</button></li>
         <li data-test="next-commit-hint">Commitni konfiguraci červeným čipem „Necommitnutá konfigurace“ v horní liště, běhy čtou jen commitnutou base.</li>
         <li>Založ první projekt v backlogu. <a :href="repoHref(repoId, 'backlog', NEW_CONTAINER)" class="btn" data-test="next-project">Založit projekt</a></li>
       </ol>
-    </section>
+    </CollapsibleSection>
     <template v-if="report">
       <div class="actions" :inert="repair || itemsBusy ? true : undefined">
         <button v-if="report.state === 'none'" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-init" @click="openOperation('init')">Nainstalovat factory</button>
         <button v-if="completed?.pr || (report.behind ?? 0) > 0 || report.findings.some(f => f.code === 'base_behind')" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-pull" @click="openOperation('pull')">Stáhnout konfiguraci z base</button>
       </div>
-      <div class="summary" data-test="factory-summary">
+      <CollapsibleSection v-model:open="summaryOpen" heading="Souhrn kontroly" data-test="factory-summary">
+        <div class="summary">
         <p class="verdict" :class="verdictOk ? 'is-ok' : 'is-bad'" data-test="factory-verdict">
           <template v-if="verdictOk">Factory je v pořádku</template>
           <template v-else>{{ counts.error }} chyb, {{ counts.warning }} varování</template>
@@ -192,7 +204,8 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
             {{ fmtTime(report.checked_at) }}<template v-if="report.cached"> (z mezipaměti)</template>
           </dd>
         </dl>
-      </div>
+        </div>
+      </CollapsibleSection>
 
       <div v-if="findings.length" class="repair-actions">
         <span data-test="factory-selected-count">Vybráno: {{ selected.length }}</span>
@@ -202,8 +215,8 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
       <div v-if="repair" ref="repairSection" class="repair-section">
         <FactoryFindingRepair :findings="repair" @close="repair = null" />
       </div>
-      <section v-for="group in groups" :key="group.id" class="group" :data-test="`findings-${group.id}`">
-        <h2>{{ group.title }}</h2>
+      <CollapsibleSection v-for="group in groups" :key="group.id" :open="groupOpen[group.id] ?? true" :heading="group.title"
+        class="group" :data-test="`findings-${group.id}`" @update:open="groupOpen[group.id] = $event">
         <ul class="findings">
           <li
             v-for="(f, i) in group.items"
@@ -221,17 +234,17 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
             <span v-if="f.fix" class="fix">Oprava: {{ f.fix }}</span>
           </li>
         </ul>
-      </section>
+      </CollapsibleSection>
       <p v-if="hidden.length" class="elsewhere" data-test="factory-machine-link">
         Další nálezy tohoto počítače a knihovny: {{ hidden.length }}<template v-if="hidden.some(f => f.severity === 'error')"> (s chybami)</template>
         · <a :href="SETUP_HREF">Otevřít stránku Knihovna</a>
       </p>
     </template>
     <section v-if="report && report.state !== 'none'" ref="settingsSection" data-test="factory-settings">
-      <RepoSettings @saved="load(true)" />
+      <RepoSettings v-model:open="settingsOpen" @saved="load(true)" />
     </section>
     <div v-if="report && report.state !== 'none'" ref="rosterSection">
-      <RepoItems ref="itemManager" :repo-id="repoId" :disabled="operationBusy || !!repair" @busy="itemsBusy = $event; if ($event) operation = null" @success="load(true)" />
+      <RepoItems ref="itemManager" v-model:open="agentsOpen" :repo-id="repoId" :disabled="operationBusy || !!repair" @busy="itemsBusy = $event; if ($event) operation = null" @success="load(true)" />
     </div>
   </section>
 </template>
@@ -255,15 +268,6 @@ h1 {
   font-size: 24px;
   font-weight: 700;
   letter-spacing: 0.02em;
-}
-
-h2 {
-  margin: 0 0 8px;
-  color: var(--dim);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .btn {

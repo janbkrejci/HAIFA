@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T36
 title: "Factory: z „Vybavení továrny“ udělat „Nastavení agentů“, sjednotit a sbalovat sekce stránky"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-TODO-T09]
 related: [HAIFA-REFINEMENT-T27, HAIFA-REFINEMENT-T24, HAIFA-REFINEMENT-T35, HAIFA-REFINEMENT-T03]
@@ -41,3 +41,4 @@ Sekce stránky Factory půjdou sbalit a rozbalit kliknutím na nadpis. Rozbalen�
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/59 · náklady $2.71

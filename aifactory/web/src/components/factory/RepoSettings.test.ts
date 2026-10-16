@@ -41,6 +41,21 @@ describe('RepoSettings', () => {
     )
   })
 
+  it('collapses and expands by its heading and keeps the form while collapsed', async () => {
+    stub(() => ok(SETTINGS))
+    const wrapper = mount(RepoSettings, { attachTo: document.body })
+    await flushPromises()
+    const toggle = wrapper.get('h2 [data-test="section-toggle"]')
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('false')
+    expect(wrapper.get('form').isVisible()).toBe(false)
+    expect(wrapper.emitted('update:open')).toEqual([[false]])
+    await toggle.trigger('click')
+    expect(toggle.attributes('aria-expanded')).toBe('true')
+    expect(wrapper.get('form').isVisible()).toBe(true)
+    wrapper.unmount()
+  })
+
   it('shows an API error', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => fail('invalid_config', [], 500)))
     const wrapper = mount(RepoSettings)

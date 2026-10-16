@@ -122,9 +122,9 @@ describe('FactoryView', () => {
     const wrapper = mount(FactoryView)
     await flushPromises()
     expect(wrapper.get('[data-test="factory-open-pull"]').text()).toBe('Stáhnout konfiguraci z base')
-    // the roster is the agents of "Vybavení továrny", shown once
+    // the roster is the agents of "Nastavení agentů", shown once
     expect(wrapper.findAll('[data-test="roster-editor"]')).toHaveLength(1)
-    expect(wrapper.get('[data-test="repo-items"] h2').text()).toBe('Vybavení továrny')
+    expect(wrapper.get('[data-test="repo-items"] h2').text()).toBe('Nastavení agentů')
     expect(wrapper.get('[data-test="repo-items"]').find('[data-test="roster-editor"]').exists()).toBe(true)
   })
 
@@ -151,8 +151,80 @@ describe('FactoryView', () => {
     const next = wrapper.get('[data-test="factory-next-steps"]')
     expect(next.text()).toContain('Co dál')
     expect(next.get('[data-test="next-project"]').attributes('href')).toBe('#/r/haifa/backlog/new-container')
-    expect(next.get('[data-test="next-roster"]').text()).toBe('Vybavení továrny')
+    expect(next.get('[data-test="next-roster"]').text()).toBe('Nastavení agentů')
     lastFactoryResult.value = null
+  })
+
+  it('has no library items or move to the library and no old section name', async () => {
+    lastFactoryResult.value = { repoId: 'haifa', result: { commit: 'abc' }, action: 'init' }
+    stub(ok(report({ findings: [finding('agent_unknown', 'repo')] })))
+    const wrapper = mount(FactoryView)
+    await flushPromises()
+    expect(wrapper.text()).not.toContain('Vybavení továrny')
+    expect(wrapper.text()).not.toContain('Přesunout do knihovny')
+    expect(wrapper.find('[data-test^="item-move"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test^="items-workflow"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test^="items-skill"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test^="items-extension"]').exists()).toBe(false)
+    lastFactoryResult.value = null
+  })
+
+  it('gives every section the same heading that collapses and expands it', async () => {
+    lastFactoryResult.value = { repoId: 'haifa', result: { commit: 'abc' }, action: 'init' }
+    stub(ok(report({ findings: [finding('agent_unknown', 'repo'), finding('gh_missing', 'machine')] })))
+    const wrapper = mount(FactoryView, { attachTo: document.body })
+    await flushPromises()
+    const sections = ['factory-next-steps', 'factory-summary', 'findings-repo', 'findings-local', 'factory-settings', 'repo-items']
+    const headings = wrapper.findAll('h2')
+    expect(headings.map((h) => h.text())).toEqual(['Co dál', 'Souhrn kontroly', 'Repozitář: opravit a commitnout',
+      'Počítač: potřebné pro toto repo', 'Nastavení repozitáře', 'Nastavení agentů'])
+    expect(new Set(headings.map((h) => h.classes().join(' ')))).toEqual(new Set(['section-title']))
+    for (const name of sections) {
+      const section = wrapper.get(`[data-test="${name}"]`)
+      const toggle = section.get('[data-test="section-toggle"]')
+      const body = section.get('[data-test="section-body"]')
+      expect(toggle.element.tagName).toBe('BUTTON')
+      expect(toggle.attributes('aria-controls')).toBe(body.attributes('id'))
+      expect(toggle.attributes('aria-expanded')).toBe('true')
+      expect(body.isVisible()).toBe(true)
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-expanded')).toBe('false')
+      expect(body.isVisible()).toBe(false)
+      await toggle.trigger('click')
+      expect(toggle.attributes('aria-expanded')).toBe('true')
+      expect(body.isVisible()).toBe(true)
+    }
+    lastFactoryResult.value = null
+  })
+
+  it('opens a collapsed section it jumps to', async () => {
+    const scroll = vi.fn()
+    const original = HTMLElement.prototype.scrollIntoView
+    HTMLElement.prototype.scrollIntoView = scroll
+    lastFactoryResult.value = { repoId: 'haifa', result: { commit: 'abc' }, action: 'init' }
+    try {
+      stub(ok(report()))
+      const wrapper = mount(FactoryView, { attachTo: document.body })
+      await flushPromises()
+      const agents = wrapper.get('[data-test="repo-items"]')
+      await agents.get('[data-test="section-toggle"]').trigger('click')
+      expect(agents.get('[data-test="section-body"]').isVisible()).toBe(false)
+      await wrapper.get('[data-test="next-roster"]').trigger('click')
+      await flushPromises()
+      expect(agents.get('[data-test="section-toggle"]').attributes('aria-expanded')).toBe('true')
+      expect(agents.get('[data-test="section-body"]').isVisible()).toBe(true)
+      expect(scroll).toHaveBeenCalled()
+      const settings = wrapper.get('[data-test="factory-settings"]')
+      await settings.get('[data-test="section-toggle"]').trigger('click')
+      expect(settings.get('[data-test="section-body"]').isVisible()).toBe(false)
+      useRouteParams().value = ['settings']
+      await flushPromises()
+      expect(settings.get('[data-test="section-body"]').isVisible()).toBe(true)
+    } finally {
+      HTMLElement.prototype.scrollIntoView = original
+      useRouteParams().value = []
+      lastFactoryResult.value = null
+    }
   })
 
   it('marks a cached check', async () => {

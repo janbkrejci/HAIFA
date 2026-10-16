@@ -75,17 +75,17 @@ describe('RosterEditor', () => {
     await reviewer.get('[data-test="roster-overridden-model"]').trigger('focusout')
     expect(reviewer.find('[data-test="roster-overridden-thinking"]').exists()).toBe(true)
     expect(reviewer.get('[data-test="roster-origin"]').text()).toBe('z knihovny')
-    // the repo's own copy has no inherited values: no labels, no reset, but the move
+    // the repo's own copy has no inherited values: no labels, no reset, and no move to the library
     const builder = w.get('[data-test="roster-agent-builder"]')
     expect(builder.find('[data-test^="roster-overridden-"]').exists()).toBe(false)
     expect(builder.find('[data-test^="roster-inherited-"]').exists()).toBe(false)
     expect(builder.find('[data-test="roster-reset"]').exists()).toBe(false)
-    expect(builder.find('[data-test="item-move-agent-builder"]').exists()).toBe(true)
+    expect(builder.find('[data-test^="item-move-"]').exists()).toBe(false)
+    expect(w.text()).not.toContain('Přesunout do knihovny')
     expect(builder.get('[data-test="roster-own"]').text()).toBe('vlastní kopie')
     // nothing overridden: nothing to reset
     expect(w.find('[data-test="roster-agent-planner"] [data-test="roster-reset"]').exists()).toBe(false)
     expect(reviewer.find('[data-test="roster-reset"]').exists()).toBe(true)
-    expect(reviewer.find('[data-test="item-move-agent-reviewer"]').exists()).toBe(false)
     expect(w.find('[data-test^="roster-preset-"]').exists()).toBe(false)
     expect(w.find('h2').exists()).toBe(false)
     expect(w.get('[data-test="roster-overrides"]').text()).toContain('simple-sdlc')
@@ -137,13 +137,6 @@ describe('RosterEditor', () => {
     await flushPromises()
     expect(api.save).toHaveBeenLastCalledWith({ agent: 'reviewer', reset: ['model', 'thinking'], dry_run: false }, 'a')
     expect(api.roster).toHaveBeenCalledTimes(2)
-  })
-
-  it('emits the move of an own copy', async () => {
-    const w = setup()
-    await flushPromises()
-    await w.get('[data-test="item-move-agent-builder"]').trigger('click')
-    expect(w.emitted('move')).toEqual([['builder']])
   })
 
   it('refuses to preview a cleared value and shows a rejected change', async () => {

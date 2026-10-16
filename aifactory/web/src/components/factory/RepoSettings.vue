@@ -8,8 +8,10 @@ import { useConfigStatus } from '@/lib/configStatus'
 import { errorText } from '@/lib/format'
 import { fetchSettings, fieldErrors, saveSettings, type SettingsData, type SettingsSaveInput } from '@/lib/settings'
 import SettingsForm from '@/components/settings/SettingsForm.vue'
+import CollapsibleSection from '@/components/ui/CollapsibleSection.vue'
 
 const emit = defineEmits<{ saved: [] }>()
+const open = defineModel<boolean>('open', { default: true })
 
 const configStatus = useConfigStatus()
 
@@ -64,11 +66,8 @@ onMounted(load)
 </script>
 
 <template>
-  <section class="repo-settings" data-test="repo-settings">
-    <div class="section-head">
-      <h2>Nastavení repozitáře</h2>
-      <span v-if="saved" class="saved" data-test="saved">Uloženo</span>
-    </div>
+  <CollapsibleSection v-model:open="open" heading="Nastavení repozitáře" class="repo-settings" data-test="repo-settings">
+    <template #aside><span v-if="saved" class="saved" data-test="saved">Uloženo</span></template>
     <p class="intro">
       Sdílené hodnoty se ukládají do pracovního stromu a běhy je použijí až po commitu do
       <code>{{ settings?.shared?.base ?? 'base' }}</code> (červený čip „Necommitnutá konfigurace“ v horní liště). Lokální hodnoty zůstávají jen na tomto stroji.
@@ -84,28 +83,12 @@ onMounted(load)
       @reset="onReset"
     />
     <p v-else-if="loading" class="faint">Načítám…</p>
-  </section>
+  </CollapsibleSection>
 </template>
 
 <style scoped>
 .repo-settings {
   margin-top: 28px;
-}
-
-.section-head {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  margin-bottom: 8px;
-}
-
-h2 {
-  margin: 0;
-  color: var(--dim);
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .intro {

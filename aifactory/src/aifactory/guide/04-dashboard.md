@@ -52,7 +52,7 @@ Po otevření repa jsou nahoře záložky:
 - **Backlog:** projekty, stepy a tasky ve stromu nebo kanbanu, detail tasku, spouštění běhů. Kapitola [Backlog a tasky](#/guide/backlog).
 - **Běhy:** běžící a dokončené běhy, řetězy auto-continue, náklady a detail běhu s fázemi. Kapitola [Běhy](#/guide/behy).
 - **Review:** pull requesty ke schválení. Kapitola [Review a merge](#/guide/review).
-- **Factory:** vše o factory repa: stav instalace, nálezy kontroly, **Nastavení repozitáře** (sdílené `config.yaml` a lokální `local.yaml`) a **Vybavení továrny** (agenti s harnessem, modelem a přemýšlením, workflow, skilly a rozšíření). Kapitola [Konfigurace repa](#/guide/konfigurace-repa). Dřívější záložka Nastavení (`#/r/<repo>/settings`) vede na sekci Nastavení repozitáře (`#/r/<repo>/factory/settings`).
+- **Factory:** vše o factory repa: stav instalace, nálezy kontroly, **Nastavení repozitáře** (sdílené `config.yaml` a lokální `local.yaml`) a **Nastavení agentů** (harness, model a přemýšlení agentů na úrovni repa). Každou sekci sbalíš a rozbalíš kliknutím na její nadpis nebo klávesou Enter či mezerníkem. Workflow, skilly a rozšíření a přesun vlastní kopie do knihovny jsou na stránce Knihovna. Kapitola [Konfigurace repa](#/guide/konfigurace-repa). Dřívější záložka Nastavení (`#/r/<repo>/settings`) vede na sekci Nastavení repozitáře (`#/r/<repo>/factory/settings`).
 
 Adresa v prohlížeči vždy odpovídá obrazovce (například `#/r/<repo>/runs/<běh>`), takže odkazy na task, běh nebo pull request můžeš sdílet nebo si je uložit.
 
