@@ -391,6 +391,7 @@ watch(
         @publish="onPublish"
         @retried="reload"
         @cancelled="reload"
+        @done="reload"
       />
       <p v-else-if="loading" class="faint" data-test="detail-loading">
         Načítám běh <span class="run-id">{{ runId }}</span>…

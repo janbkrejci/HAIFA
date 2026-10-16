@@ -140,7 +140,12 @@ What to do with the common ones:
   of the fields it reads, the `rounds` of each `repeat`, the latest review `objections`
   and the test's `failed_checks`; `error` names the first of them in one sentence. The worktree and branch are kept. Continue the run
   where it ended with `factory task retry ID --note TEXT --json` (see Procedures, Retry), or
-  start over with `factory task run ID --note TEXT --json`.
+  start over with `factory task run ID --note TEXT --json`. A `nothing_to_do` run (the
+  task asks only for a change of the backlog) is not retried: make that change with
+  `factory task edit`, then the dashboard's Hotovo (`POST /api/runs/{id}/done`) marks the
+  task done without changes (refused: `not_nothing_to_do`), or cancel the task. A builder
+  that finds the work done already reports `already_done` with evidence; that run
+  succeeds and the task is done without changes, with no PR.
 - `run_not_retryable`, `task_done`: see Procedures, Retry.
 - `invalid_config`: read `error.issues[].path` and `message`, fix `.factory/`, commit.
 - `usage_error`: the arguments are wrong; see the command reference above.

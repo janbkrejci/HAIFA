@@ -51,6 +51,11 @@ the run is paused (``factory task pause``). A phase that started always runs to 
 phase. A retry (``factory task retry``) passes the journal of the failed attempt with a
 replay limit: phases up to it take their stored result instead of running, so the run
 continues where it stopped with the same results, loops and inputs.
+
+A run's first ``BuildOutput`` with ``already_done`` (the work is in the repo already,
+with evidence) ends the workflow at once: it is accepted without its ``accept``, since
+nothing was built to verify or commit. ``WorkflowRun.already_done`` carries the
+evidence; a task run without commits then marks the task done without changes.
 """
 
 from __future__ import annotations
@@ -226,6 +231,16 @@ class WorkflowRun:
     warnings: list[str] = field(default_factory=list)
     history: list[tuple[str, Any]] = field(default_factory=list)  # (key, envelope), oldest first
     rounds: dict[str, int] = field(default_factory=dict)  # Repeat.path -> iterations that ran
+    # the first build reported the work done already: the workflow ended there, accepted
+    already_done: dt.AlreadyDone | None = None
+
+
+class _AlreadyDone(Exception):
+    """The first build of the run found nothing to build; ends the workflow (accepted)."""
+
+    def __init__(self, done: dt.AlreadyDone) -> None:
+        super().__init__(f"already done: {', '.join(done.evidence)}")
+        self.done = done
 
 
 def unenforced_restrictions(workflow: Workflow, cfg: dt.SSSFConfig) -> list[str]:
@@ -521,7 +536,19 @@ class _Interpreter:
             self.store(step.key, envelope)
             if isinstance(envelope, dt.TestPlanOutput):
                 self.review_plan(suffix)
+            if isinstance(envelope, dt.BuildOutput) and envelope.already_done is not None:
+                self.stop_if_first_build(envelope.already_done)
         return envelope
+
+    def stop_if_first_build(self, done: dt.AlreadyDone) -> None:
+        """End the workflow when the run's first build reported the work done already.
+
+        A later build (fix, revise) that finds nothing to change does not end the run:
+        the steps after it still verify the earlier work.
+        """
+        builds = [e for _, e in self.history if isinstance(e, dt.BuildOutput)]
+        if len(builds) == 1:
+            raise _AlreadyDone(done)
 
     def call_agent(self, step: RoleStep, name: str, keep: bool) -> Any:
         """The live agent phase `name` of `step`; its envelope goes into the journal."""
@@ -858,9 +885,18 @@ def run_workflow(
         for warning in warnings:
             # The harness cannot forbid these commands: say so before any agent runs.
             ph.log(warning=warning)
-    interp.execute(workflow.steps)
-    accepted = truthy(workflow.accept, interp.results)
-    reason = f"accept `{workflow.accept.source}` was not met" if workflow.accept else ""
+    already_done: dt.AlreadyDone | None = None
+    try:
+        interp.execute(workflow.steps)
+    except _AlreadyDone as stop:
+        already_done = stop.done
+        run.console.note(f"already done ({', '.join(stop.done.evidence)}): workflow ends here")
+    if already_done is not None:
+        # nothing was built, so nothing is left to verify or commit
+        accepted, reason = True, ""
+    else:
+        accepted = truthy(workflow.accept, interp.results)
+        reason = f"accept `{workflow.accept.source}` was not met" if workflow.accept else ""
     exit_code = int(run.finish(accepted=accepted, reason=reason))
     return WorkflowRun(
         exit_code=exit_code,
@@ -873,4 +909,5 @@ def run_workflow(
         warnings=warnings,
         history=list(interp.history),
         rounds=dict(interp.rounds),
+        already_done=already_done,
     )

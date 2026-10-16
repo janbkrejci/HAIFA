@@ -40,7 +40,7 @@ const props = defineProps<{
   publishing?: boolean
 }>()
 
-const emit = defineEmits<{ stop: []; pause: []; resume: []; publish: []; retried: []; cancelled: [] }>()
+const emit = defineEmits<{ stop: []; pause: []; resume: []; publish: []; retried: []; cancelled: []; done: [] }>()
 
 const run = computed(() => props.detail.run)
 // a run that did not succeed opens with its failure card (kind, sentence, facts, actions)
@@ -131,7 +131,7 @@ async function onStop() {
         </button>
         <RetryRunButton v-if="canRetry(run) && !card" :run-id="run.run_id" @started="emit('retried')" />
       </div>
-      <FailureCard v-if="card" :run="run" :phases="phases" @retried="emit('retried')" @cancelled="emit('cancelled')" />
+      <FailureCard v-if="card" :run="run" :phases="phases" @retried="emit('retried')" @cancelled="emit('cancelled')" @done="emit('done')" />
       <dl class="meta">
         <div><dt>Běh</dt><dd class="mono">{{ run.run_id }}</dd></div>
         <div><dt>Workflow</dt><dd>{{ run.workflow ?? '—' }}</dd></div>

@@ -475,6 +475,7 @@ _RUN_ERROR_STATUS = {
     "not_writes_violation": 409,
     "nothing_to_allow": 409,
     "writes_in_pr": 409,
+    "not_nothing_to_do": 409,
     "task_done": 409,
     "unknown_branch": 404,
     "base_diverged": 409,
@@ -803,6 +804,18 @@ async def allow_writes_run(request: Request) -> JSONResponse:
     except ReviewError as exc:
         return _review_error(exc)
     return JSONResponse(envelope_ok(data, warnings), status_code=202)
+
+
+async def nothing_to_do_done(request: Request) -> JSONResponse:
+    """„Hotovo“ of a ``nothing_to_do`` run: the task is done in base without changes."""
+    repo: Path = _repo(request)
+    try:
+        data, warnings = await run_in_threadpool(
+            runs.finish_nothing_to_do, repo, request.path_params["run_id"]
+        )
+    except (TaskEditError, TaskRunError, ConfigError) as exc:
+        return _edit_error(exc)
+    return JSONResponse(envelope_ok(data, warnings))
 
 
 def _run_action(request: Request, action: Any) -> JSONResponse:
@@ -1602,6 +1615,7 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/runs/{run_id}/retry", retry_run, methods=["POST"]),
         Route("/runs/{run_id}/allow-writes", allow_writes_plan, methods=["GET"]),
         Route("/runs/{run_id}/allow-writes", allow_writes_run, methods=["POST"]),
+        Route("/runs/{run_id}/done", nothing_to_do_done, methods=["POST"]),
         Route("/runs/{run_id}/publish", publish_run, methods=["POST"]),
         Route("/runs/{run_id}/archive", archive_run, methods=["POST"]),
         Route("/runs/{run_id}/unarchive", unarchive_run, methods=["POST"]),

@@ -587,6 +587,18 @@ export function allowWritesAndRetry(runId: string): Promise<AllowWritesResponse>
   return postApi<AllowWritesResponse>(runPath(runId, 'allow-writes'), {})
 }
 
+/** What „Hotovo“ of a `nothing_to_do` run returns. */
+export interface RunDoneResponse {
+  task_id: string
+  commit: Record<string, unknown>
+  run: RunSummary
+}
+
+/** „Hotovo“ of a `nothing_to_do` run: the task is done in base without changes. */
+export function markRunDone(runId: string): Promise<RunDoneResponse> {
+  return postApi<RunDoneResponse>(runPath(runId, 'done'), {})
+}
+
 /** Where a retry continued, for the run detail: `od fáze review_1, po rebase na abc1234`. */
 export function retryLabel(retry: RunRetry): string {
   const parts = [retry.from_phase ? `od fáze ${retry.from_phase}` : 'od první fáze']

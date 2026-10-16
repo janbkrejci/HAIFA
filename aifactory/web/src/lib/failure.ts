@@ -15,9 +15,10 @@ export type FailureKind =
 
 /**
  * An action of the card: `continue` is `factory task retry`, `cancel_task` cancels the task,
- * `allow_writes` is `factory task retry --allow-writes` (add the paths to writes, continue).
+ * `allow_writes` is `factory task retry --allow-writes` (add the paths to writes, continue),
+ * `mark_done` marks the task of a `nothing_to_do` run done without changes (`POST /api/runs/{id}/done`).
  */
-export type FailureAction = 'continue' | 'cancel_task' | 'allow_writes'
+export type FailureAction = 'continue' | 'cancel_task' | 'allow_writes' | 'mark_done'
 
 const LABELS: Record<FailureKind, string> = {
   accept_not_met: 'Nesplněná podmínka accept',
@@ -30,10 +31,10 @@ const LABELS: Record<FailureKind, string> = {
   other: 'Jiná chyba',
 }
 
-// S02 adds more (mark the task done, continue on a fallback harness).
+// S02 adds more (continue on a fallback harness).
 const ACTIONS: Record<FailureKind, readonly FailureAction[]> = {
   accept_not_met: ['continue', 'cancel_task'],
-  nothing_to_do: ['cancel_task'],
+  nothing_to_do: ['mark_done', 'cancel_task'],
   quota: ['continue', 'cancel_task'],
   writes_violation: ['allow_writes', 'continue', 'cancel_task'],
   invalid_output: ['continue', 'cancel_task'],
