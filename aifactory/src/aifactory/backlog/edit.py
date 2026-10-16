@@ -600,6 +600,7 @@ CONTAINER_KEYS: tuple[str, ...] = (
     "workflow",
     "writes",
     "auto_continue",
+    "auto_heal",
 )
 _STR_KEYS = (
     "workflow",
@@ -734,9 +735,9 @@ def _check_container_value(key: str, value: object) -> str | list[str] | bool:
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             raise TaskEditError("invalid_value", "'writes' must be a list of strings")
         return _dedupe([str(v) for v in value])
-    if key == "auto_continue":
+    if key in ("auto_continue", "auto_heal"):
         if not isinstance(value, bool):
-            raise TaskEditError("invalid_value", "'auto_continue' must be true or false")
+            raise TaskEditError("invalid_value", f"'{key}' must be true or false")
         return value
     raise TaskEditError(  # pragma: no cover - keys are checked by the caller
         "invalid_value", f"unknown key '{key}'"

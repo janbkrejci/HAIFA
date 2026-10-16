@@ -111,6 +111,7 @@ FIELD_ORDER: tuple[str, ...] = (
     "test_timeout",
     "auto_continue",
     "auto_merge",
+    "auto_heal",
 )
 RUNS_PLACEHOLDER = "<!-- doplňuje HAIFA při schválení PR -->"
 _UNSAFE_CHARS = set(":#,[]{}&*!|>'\"%@`\n\r\t")

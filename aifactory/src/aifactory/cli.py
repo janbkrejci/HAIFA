@@ -1363,6 +1363,11 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     edit.add_argument("--writes", nargs="*", metavar="PATH", help="set writes (none = [])")
     edit.add_argument("--auto-continue", choices=("on", "off"), help="set auto_continue")
     edit.add_argument(
+        "--auto-heal",
+        choices=("on", "off"),
+        help="set auto_heal: the chain's automatic actions after a failure (default on)",
+    )
+    edit.add_argument(
         "--clear",
         nargs="+",
         action="extend",
@@ -1602,6 +1607,8 @@ def _backlog_container_write(args: argparse.Namespace) -> int:
                     values[key] = value
             if args.auto_continue is not None:
                 values["auto_continue"] = args.auto_continue == "on"
+            if args.auto_heal is not None:
+                values["auto_heal"] = args.auto_heal == "on"
             result = edit_container(
                 _backlog_root(args.repo), args.id, title=args.title, values=values, clear=args.clear
             )

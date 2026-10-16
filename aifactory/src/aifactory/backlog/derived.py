@@ -170,6 +170,7 @@ _SKIP_NULL_KEYS: tuple[str, ...] = (
     "test_timeout",
     "auto_continue",
     "auto_merge",
+    "auto_heal",
 )
 # inherited keys with a fallback in ``.factory/config.yaml`` (key -> setting)
 CONFIG_FALLBACK: dict[str, str] = {
@@ -177,6 +178,9 @@ CONFIG_FALLBACK: dict[str, str] = {
 }
 # inherited flags that are ``false`` when no level sets them
 _FLAG_DEFAULTS: tuple[str, ...] = ("auto_continue", "auto_merge")
+# inherited flags that are ``true`` when no level sets them (``auto_heal``: the chain's
+# automatic actions after a failure, ``run.heal``)
+_TRUE_FLAG_DEFAULTS: tuple[str, ...] = ("auto_heal",)
 
 
 def own_values(node: Node) -> dict[str, object]:
@@ -224,5 +228,7 @@ def effective_sources(node: Node, settings: ProjectSettings) -> dict[str, dict[s
                 }
         if entry is None and key in _FLAG_DEFAULTS:
             entry = {"value": False, "origin": {"source": "default"}}
+        if entry is None and key in _TRUE_FLAG_DEFAULTS:
+            entry = {"value": True, "origin": {"source": "default"}}
         result[key] = entry or {"value": None, "origin": None}
     return result

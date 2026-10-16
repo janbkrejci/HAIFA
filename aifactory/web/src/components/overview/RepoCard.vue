@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // A repo card of the overview: the name (its path in a tooltip) with the factory buttons and the
-// menu in the top right corner, what runs, waits for review, waits for auto-merge and failed, its configuration
+// menu in the top right corner, what runs, waits for review, waits for auto-merge and failed, what the factory did by
+// itself after a failure (auto_actions), its configuration
 // problems, the factory state with the task summary and, always last, the newest activity. Every row is a link to the run, the review or the settings.
 // Tasks whose PR was merged outside factory get "Otevřít sync PR" (`factory backlog sync`), or a
 // link to the sync PR that is already open; the sync PR is never opened automatically.
@@ -23,6 +24,7 @@ const emit = defineEmits<{ remove: [repo: OverviewRepo]; changed: [] }>()
 
 const running = computed(() => activeRuns(props.repo))
 const failed = computed(() => failedRows(props.repo))
+const autoActions = computed(() => props.repo.auto_actions ?? [])
 const configProblems = computed(() => problems(props.repo).filter((p) => p.href !== null))
 const stateProblems = computed(() => problems(props.repo).filter((p) => p.href === null))
 
@@ -180,6 +182,24 @@ function reviewAge(opened: string | null, ageS: number | null): string {
         <span class="task mono">{{ row.task_id }}</span>
         <span class="title">{{ row.task_title ?? '' }}</span>
         <span class="error" data-test="row-error">{{ row.label ?? row.error ?? 'bez chyby' }}</span>
+      </a>
+    </section>
+
+    <section v-if="autoActions.length" class="group">
+      <h3>Factory zasáhla sama</h3>
+      <a
+        v-for="action in autoActions"
+        :key="`${action.run_id}-${action.action}-${action.at}`"
+        :href="runLink(repo, action.run_id)"
+        class="row"
+        :class="{ failed: !action.ok }"
+        data-test="row-auto-action"
+        :data-action="action.action"
+        :data-run="action.run_id"
+      >
+        <span class="task mono">{{ action.task_id }}</span>
+        <span class="title" data-test="row-auto-text">{{ action.text }}</span>
+        <span class="meta" data-test="row-auto-age">{{ fmtAge(since(action.at)) }}</span>
       </a>
     </section>
 

@@ -12,6 +12,8 @@ or the operator's from the dashboard) never switches again, and a fallback on th
 that ran out is not tried. When the fallback fails too, the run ends failed with the kind
 of that failure (``quota`` when the fallback ran out as well).
 
+A task with ``auto_heal: false`` (``heal.py``) is never switched automatically.
+
 The switch is recorded as ``harness_switch`` in the retry's entry of ``task_runs.retries``
 and logged in the ``request`` phase of the attempt (the run's events); the PR body lists it.
 """
@@ -132,18 +134,23 @@ def continue_on_fallback(
     *,
     code: CodeRunner | None = None,
     provider: GitProvider | None = None,
+    enabled: bool = True,
 ) -> TaskRunResult:
     """`result`, or the result of its retry on the fallback harness after a quota failure.
 
     Nothing happens unless the run failed with ``quota``, a fallback is configured and it
     is another harness than the one that ran out. A retry that cannot start leaves the run
-    failed with ``quota`` and adds a warning.
+    failed with ``quota`` and adds a warning. ``enabled=False`` (the task's ``auto_heal:
+    false``, ``heal.py``) never switches.
     """
     from aifactory.run import task as run_mod
     from aifactory.run.retry import retry_run
 
     run = result.run
     if run.state != FAILED or run.failure_kind != failures.QUOTA:
+        return result
+    if not enabled:
+        result.warnings = (*result.warnings, "quota fallback skipped: auto_heal is off")
         return result
     detail = run.failure_detail_dict() or {}
     try:

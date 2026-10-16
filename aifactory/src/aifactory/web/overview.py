@@ -12,7 +12,9 @@ the task has an effective ``auto_merge`` and the PR no ``auto_merge_error``,
 merge outside factory that ``factory backlog sync`` would mark done), ``sync_pr`` (the newest
 open sync PR ``{url, branch, tasks}`` or ``null``), ``failed`` (tasks whose newest run ended
 ``failed`` or ``aborted`` and that are neither ``done`` nor ``cancelled`` in the backlog, with
-``failure_kind``),
+``failure_kind``), ``auto_actions`` (the newest ``AUTO_ACTIONS_LIMIT`` automatic actions of
+the repository's auto-continue chains after a failure, newest first: ``task_chains.events``,
+``run.heal.HealEvent.to_json()`` with the ``chain_id``),
 ``config`` (whether the factory is installed, an invalid configuration in base and uncommitted
 shared configuration, D4),
 ``last_activity`` and ``warnings``; ``totals`` sums them up. Every item of ``running`` has
@@ -93,6 +95,9 @@ if sys.platform == "win32":  # a cold repository runs ~8 git processes, each 0.1
 DB_TIMEOUT = 0.5  # s, sqlite busy wait of the read-only connection
 CLOSED_STATUSES = frozenset({"done", "cancelled"})
 FAILED_STATES = frozenset({"failed", "aborted"})
+AUTO_ACTIONS_LIMIT = 5
+# the chains whose events the overview reads, newest first
+_CHAINS_READ = 20
 PROCESS_ENDED = "proces skončil"
 MAX_ISSUES = 20
 WORKERS = 8  # threads computing repositories
@@ -214,6 +219,7 @@ class _Trace:
     costs: dict[str, tuple[float, int]]
     excluded: frozenset[str] = frozenset()
     sync_prs: list[sqlite3.Row] = field(default_factory=list)
+    auto_actions: list[JsonDict] = field(default_factory=list)
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -253,6 +259,7 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
             "SELECT branch, url, state, tasks, created_at FROM sync_prs "
             "WHERE state = 'open' ORDER BY created_at DESC, rowid DESC"
         ).fetchall()
+    auto_actions = _auto_actions(conn)
     running_ids = [r["run_id"] for r in runs if r["state"] == "running"]
     if running_ids and _has_table(conn, "phases"):
         marks = ", ".join("?" for _ in running_ids)
@@ -273,7 +280,27 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
             running_ids,
         ):
             costs[row["adw_id"]] = (float(row["total_cost"] or 0.0), int(row["total_tokens"] or 0))
-    return _Trace(runs, prs, phases, costs, excluded, sync_prs)
+    return _Trace(runs, prs, phases, costs, excluded, sync_prs, auto_actions)
+
+
+def _auto_actions(conn: sqlite3.Connection) -> list[JsonDict]:
+    """The newest automatic actions of the chains (``task_chains.events``), newest first."""
+    if not _has_table(conn, "task_chains") or "events" not in _columns(conn, "task_chains"):
+        return []
+    actions: list[JsonDict] = []
+    for row in conn.execute(
+        f"SELECT chain_id, events FROM task_chains ORDER BY started_at DESC, rowid DESC "
+        f"LIMIT {_CHAINS_READ}"
+    ):
+        try:
+            events = json.loads(row["events"] or "[]")
+        except ValueError:
+            continue
+        if not isinstance(events, list):
+            continue
+        actions += [{**e, "chain_id": row["chain_id"]} for e in events if isinstance(e, dict)]
+    actions.sort(key=lambda e: str(e.get("at") or ""), reverse=True)
+    return actions[:AUTO_ACTIONS_LIMIT]
 
 
 def _trace_view(db: Path) -> tuple[_Trace | None, list[str]]:
@@ -462,6 +489,10 @@ def _lists(
         "review": review,
         "automerge": automerge,
         "failed": failed,
+        "auto_actions": [
+            {**action, "task_title": title(str(action.get("task_id") or ""))}
+            for action in trace.auto_actions
+        ],
         "merged_outside": _merged_outside(trace, tasks, active, root),
         "sync_pr": _sync_pr(trace),
     }
@@ -597,6 +628,7 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         "review": [],
         "automerge": [],
         "failed": [],
+        "auto_actions": [],
         "merged_outside": [],
         "sync_pr": None,
         "config": None,

@@ -682,3 +682,40 @@ def test_new_keys_in_stub_and_totals(repo_a: Path, tmp_path: Path) -> None:
     assert (g["merged_outside"], g["sync_pr"]) == ([], None)
     assert g["automerge"] == []
     assert data["totals"]["merged_outside"] == 1
+
+
+def test_overview_lists_the_automatic_actions_of_chains(repo_a: Path, tmp_path: Path) -> None:
+    from aifactory.run.store import TaskChainRow
+
+    store = TaskRunStore(_db(repo_a))
+    try:
+        for chain_id, at, text in (
+            (
+                "c-old",
+                "2026-10-01T10:00:00.000+00:00",
+                "Factory zopakovala běh r-1 po pádu procesu",
+            ),
+            (
+                "c-new",
+                "2026-10-02T10:00:00.000+00:00",
+                "Factory pokračovala na Claude Code po vyčerpání kvóty Codexu",
+            ),
+        ):
+            store.start_chain(
+                TaskChainRow(chain_id, T_FAIL, None, 1, "finished", at, at, stop="exhausted")
+            )
+            event = {"at": at, "action": "fallback", "task_id": T_FAIL, "run_id": "r-1"}
+            store.update_chain(chain_id, events=[{**event, "ok": True, "text": text}])
+    finally:
+        store.close()
+    home = tmp_path / "home"
+    register(home, repo_a)
+    with _client(home, tmp_path) as client:
+        a = _get(client)["repos"][0]
+    actions = a["auto_actions"]
+    assert [x["text"] for x in actions] == [
+        "Factory pokračovala na Claude Code po vyčerpání kvóty Codexu",
+        "Factory zopakovala běh r-1 po pádu procesu",
+    ]
+    assert [x["chain_id"] for x in actions] == ["c-new", "c-old"]
+    assert actions[0]["task_title"] is not None
