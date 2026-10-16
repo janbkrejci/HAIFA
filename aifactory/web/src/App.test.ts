@@ -350,7 +350,7 @@ describe('App', () => {
     })
     const wrapper = mount(App)
     await flushPromises()
-    expect(wrapper.get('[data-test="backlog-change"]').text()).toBe('modified backlog/HAIFA/index.md')
+    expect(wrapper.get('[data-test="backlog-summary"]').text()).toBe('Commitne se 1 změna.')
     await wrapper.get('[data-test="backlog-commit"]').trigger('click')
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/commit', expect.objectContaining({ method: 'POST' }))

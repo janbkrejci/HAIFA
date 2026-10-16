@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T43
 title: dropdown/popover chipu Commit Backlog
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -10,3 +10,4 @@ na užší obrazovce dropdown/popover chipu informujícího o necommitnutém bac
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/62 · náklady $1.10

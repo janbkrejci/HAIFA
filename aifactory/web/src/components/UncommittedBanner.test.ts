@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import UncommittedBanner from './UncommittedBanner.vue'
 import type { CommitStatus } from '@/lib/commitStatus'
@@ -111,7 +112,7 @@ describe('UncommittedBanner', () => {
     )
   })
 
-  it('shows the backlog as a chip whose panel lists the files', async () => {
+  it('shows the backlog as a chip whose panel says how many changes it commits', async () => {
     const wrapper = backlog()
     const banner = wrapper.get('[data-test="backlog-banner"]')
     expect(banner.attributes('role')).toBe('status')
@@ -121,11 +122,8 @@ describe('UncommittedBanner', () => {
     await chip.trigger('click')
     expect(chip.attributes('aria-expanded')).toBe('true')
     expect(wrapper.get('[data-test="backlog-panel"]').attributes('style') ?? '').not.toContain('display: none')
-    expect(banner.text()).toContain('Backlog má necommitnuté změny. Běhy používají main (0123456)')
-    expect(wrapper.findAll('[data-test="backlog-change"]').map((c) => c.text())).toEqual([
-      'modified backlog/HAIFA/index.md',
-      'untracked backlog/HAIFA/S03/HAIFA-S03-T17-x.md',
-    ])
+    expect(wrapper.get('[data-test="backlog-summary"]').text()).toBe('Commitne se 2 změny.')
+    expect(wrapper.find('[data-test="backlog-change"]').exists()).toBe(false)
     await wrapper.get('[data-test="backlog-commit"]').trigger('click')
     expect(wrapper.emitted('commit')).toEqual([[]])
   })
@@ -140,6 +138,22 @@ describe('UncommittedBanner', () => {
     )
     // a failed commit opens the panel with its reason
     expect(wrapper.get('[data-test="backlog-panel"]').attributes('style') ?? '').not.toContain('display: none')
+  })
+
+  it('keeps the open panel inside a narrow window', async () => {
+    const wrapper = backlog()
+    const root = wrapper.get('[data-test="backlog-banner"]').element as HTMLElement
+    const panel = wrapper.get('[data-test="backlog-panel"]').element as HTMLElement
+    const rect = (left: number, top: number, width: number, height: number) =>
+      ({ left, top, width, height, right: left + width, bottom: top + height, x: left, y: top, toJSON: () => ({}) }) as DOMRect
+    root.getBoundingClientRect = () => rect(100, 10, 180, 28)
+    panel.getBoundingClientRect = () => rect(0, 0, 400, 120)
+    await wrapper.get('[data-test="backlog-chip"]').trigger('click')
+    await nextTick()
+    const style = panel.getAttribute('style') ?? ''
+    expect(style).toContain('left: 8px')
+    expect(style).toContain('top: 46px')
+    wrapper.unmount()
   })
 
   it('shows no status error as a chip', () => {
