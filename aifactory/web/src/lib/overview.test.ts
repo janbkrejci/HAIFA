@@ -54,6 +54,13 @@ describe('overview urgency', () => {
     expect(countsById(overview([ENDED])).ended).toEqual({ running: 0, review: 0, automerge: 0, failed: 1 })
   })
 
+  it('labels a failed task with its failure kind, an older server with its error', () => {
+    const rows = (f: Parameters<typeof failed>[0]) => failedRows(repo('f', { failed: [failed(f)] }))
+    expect(rows({ failure_kind: 'quota' })[0].label).toBe('Vyčerpaná kvóta')
+    expect(rows({ failure_kind: 'quota' })[0].error).toBe('tests failed')
+    expect(rows({})[0].label).toBeNull()
+  })
+
   it('treats warnings and a missing folder as problems', () => {
     expect(urgency(repo('w', { warnings: ['slow'] }))).toBe('problems')
     expect(urgency(MISSING)).toBe('problems')

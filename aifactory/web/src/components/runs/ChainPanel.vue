@@ -1,9 +1,10 @@
 <script setup lang="ts">
 // Auto-continue chains above the list of runs: every run with its result (state, PR, what
-// auto-merge did, error), slots, tasks run alone, skipped tasks. An ended chain can be hidden.
+// auto-merge did, failure kind with the error in a tooltip), slots, tasks run alone, skipped tasks. An ended chain can be hidden.
 import { reviewHref, runHref, taskHref } from '@/lib/router'
 import { prStateLabel, shownState } from '@/lib/runs'
 import { chainStateLabel, firstLine, skipReasonLabel, type Chain } from '@/lib/chains'
+import { failureLabel } from '@/lib/failure'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import StatusChip from './StatusChip.vue'
 
@@ -58,8 +59,10 @@ const emit = defineEmits<{ dismiss: [chainId: string] }>()
           >
             auto-merge nesloučil: {{ run.pr.auto_merge_error }}
           </span>
-          <Tooltip v-if="run.error" :text="run.error">
-            <span class="run-error" data-test="chain-run-error" tabindex="0">{{ firstLine(run.error) }}</span>
+          <Tooltip v-if="run.error || run.failure_kind" :text="run.error ?? ''">
+            <span class="run-error" data-test="chain-run-error" tabindex="0">{{
+              failureLabel(run.failure_kind) || firstLine(run.error ?? '')
+            }}</span>
           </Tooltip>
         </li>
       </ul>

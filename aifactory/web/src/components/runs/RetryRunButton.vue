@@ -7,7 +7,8 @@ import { errorText } from '@/lib/format'
 import { retryRun, type RetryResponse } from '@/lib/runs'
 import Spinner from '@/components/ui/Spinner.vue'
 
-const props = defineProps<{ runId: string }>()
+// `label`: the text of the button (the failure card says Pokračovat)
+const props = withDefaults(defineProps<{ runId: string; label?: string }>(), { label: 'Navázat' })
 const emit = defineEmits<{ started: [result: RetryResponse] }>()
 
 const open = ref(false)
@@ -41,7 +42,7 @@ async function submit() {
       :aria-expanded="open"
       @click="open = !open"
     >
-      <RotateCcw :size="14" /> Navázat
+      <RotateCcw :size="14" /> {{ label }}
     </button>
     <form v-if="open" class="retry-form" data-test="retry-form" @submit.prevent="submit">
       <label>
@@ -54,7 +55,7 @@ async function submit() {
       </p>
       <div class="actions">
         <button type="submit" class="primary" data-test="retry-submit" :disabled="busy" :aria-busy="busy || undefined">
-          <Spinner v-if="busy" /> Navázat
+          <Spinner v-if="busy" /> {{ label }}
         </button>
         <button type="button" data-test="retry-cancel" :disabled="busy" @click="open = false">Zrušit</button>
       </div>

@@ -89,6 +89,10 @@ export interface RunSummary {
   tokens: number
   cost: number
   error: string | null
+  /** The typed kind of a run that did not succeed (`aifactory.failure`); null otherwise. */
+  failure_kind?: string | null
+  /** The facts of the failure (review objections, paths, harness and model, …). */
+  failure_detail?: Record<string, unknown> | null
   note: string | null
   /** Archived: listed only in the archived view (absent from an older server). */
   archived?: boolean

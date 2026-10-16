@@ -3,6 +3,7 @@ import { Archive, ArchiveRestore, Trash2 } from 'lucide-vue-next'
 import { fmtCost, fmtDuration, fmtTime, fmtTokens } from '@/lib/format'
 import { runHref } from '@/lib/router'
 import { isFinished, shownState, startedByLabel, startedByTip, type RunSummary } from '@/lib/runs'
+import { failureLabel } from '@/lib/failure'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import PhaseDots from './PhaseDots.vue'
 import StatusChip from './StatusChip.vue'
@@ -120,7 +121,12 @@ function openRun(event: MouseEvent, run: RunSummary) {
             >
           </td>
           <td>{{ run.workflow ?? '—' }}</td>
-          <td><StatusChip :status="shownState(run)" /></td>
+          <td>
+            <StatusChip :status="shownState(run)" />
+            <Tooltip v-if="run.failure_kind" :text="run.error ?? ''">
+              <span class="failure-kind" data-col="failure-kind" tabindex="0">{{ failureLabel(run.failure_kind) }}</span>
+            </Tooltip>
+          </td>
           <td class="nowrap">{{ fmtTime(run.started_at) }}</td>
           <td class="nowrap">
             <Tooltip :text="startedByTip(run.started_by)">
@@ -186,6 +192,14 @@ function openRun(event: MouseEvent, run: RunSummary) {
 </template>
 
 <style scoped>
+.failure-kind {
+  display: block;
+  margin-top: 4px;
+  color: var(--red);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .filters {
   display: flex;
   align-items: center;

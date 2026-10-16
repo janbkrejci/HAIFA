@@ -93,9 +93,10 @@ describe('ChainPanel', () => {
         pr: { ...pr, pr_id: '8', state: 'open', merged_by: null, auto_merge_error: 'conflict: base moved' },
       },
       { run_id: 'r3', task_id: 'M01-S01-T02', state: 'failed', workflow: 'resolve-reviewed', error: 'tests failed\nlog' },
+      { run_id: 'r4', task_id: 'M01-S01-T03', state: 'failed', workflow: 'build-test-review', error: 'Review neschválilo: x', failure_kind: 'accept_not_met' },
     ]
     const wrapper = mount(ChainPanel, { props: { chains: [chain({ state: 'finished', stop: 'failed', runs })] } })
-    const [merged, open, failed] = wrapper.findAll('[data-test="chain-run"]')
+    const [merged, open, failed, kind] = wrapper.findAll('[data-test="chain-run"]')
     expect(merged!.get('[data-test="chain-run-pr"]').attributes('href')).toBe('https://example.test/pr/7')
     expect(merged!.get('[data-test="chain-run-pr"]').text()).toBe('PR #7 (sloučený)')
     expect(merged!.get('[data-test="chain-run-pr"]').attributes('target')).toBe('_blank')
@@ -106,6 +107,8 @@ describe('ChainPanel', () => {
     expect(failed!.get('[data-test="chain-run-workflow"]').text()).toBe('resolve-reviewed')
     expect(failed!.find('[data-test="chain-run-pr"]').exists()).toBe(false)
     expect(failed!.get('[data-test="chain-run-error"]').text()).toBe('tests failed')
+    // the failure kind instead of the start of the error
+    expect(kind!.get('[data-test="chain-run-error"]').text()).toBe('Nesplněná podmínka accept')
   })
 
   it('hides only an ended chain', async () => {

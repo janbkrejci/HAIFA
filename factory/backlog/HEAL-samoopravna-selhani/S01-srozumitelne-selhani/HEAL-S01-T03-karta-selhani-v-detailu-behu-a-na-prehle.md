@@ -1,7 +1,7 @@
 ---
 id: HEAL-S01-T03
 title: Karta selhání v detailu běhu a na Přehledu
-status: todo
+status: done
 depends_on: [HEAL-S01-T01, HEAL-S01-T02]
 ---
 
@@ -17,3 +17,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/70 · náklady $5.57

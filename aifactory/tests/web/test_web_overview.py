@@ -133,6 +133,7 @@ def test_overview_of_repos_with_and_without_trace_and_a_missing_folder(
 
     assert [f["task_id"] for f in a["failed"]] == [T_FAIL]
     assert a["failed"][0]["error"] == "accept not met"
+    assert a["failed"][0]["failure_kind"] == "accept_not_met"
     assert a["failed"][0]["run_id"] == "r-fail"
     listed = {x["task_id"] for key in ("running", "review", "failed") for x in a[key]}
     assert not listed & {T_DONE, T_CANC}
@@ -475,6 +476,17 @@ def test_trace_db_without_the_pause_column(repo_a: Path, tmp_path: Path) -> None
     assert a["warnings"] == []
     assert {r["task_id"]: r["pause"] for r in a["running"]} == {T_RUN: None, T_DEAD: None}
     assert a["factory"]["running"] == 1
+
+
+def test_trace_db_without_the_failure_kind_column(repo_a: Path, tmp_path: Path) -> None:
+    conn = sqlite3.connect(str(_db(repo_a)), isolation_level=None)
+    try:
+        conn.execute("ALTER TABLE task_runs DROP COLUMN failure_kind")
+    finally:
+        conn.close()
+    a = _repo_item(repo_a, tmp_path)
+    assert a["warnings"] == []
+    assert [f["failure_kind"] for f in a["failed"]] == ["other"]
 
 
 def test_missing_repo_has_no_tasks_nor_factory(tmp_path: Path) -> None:

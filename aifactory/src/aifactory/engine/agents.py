@@ -17,7 +17,7 @@ import yaml
 
 from aifactory import yamlload  # aifactory 3.1: libyaml parser when available
 # aifactory 3.4: failures that carry the run's failure_kind
-from aifactory.failure import AgentReportedFail, InvalidOutput
+from aifactory.failure import AgentReportedFail, InvalidOutput, QuotaExhausted
 
 from . import agent_cc, agent_pi, permissions, prompts
 from .data_types import (AgentCall, AgentConfig, AgentRequest, AgentResult,
@@ -186,14 +186,20 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
         # aifactory 2.15: a worker can tag its child commands without mutating os.environ.
         with agent_environment(getattr(run, "agent_environment", {})):
             def invoke():
-                response = harness.run(
-                    request,
-                    on_event=_event_forwarder(run, phase, agent.name, harness),
-                    on_wait=waiting,
-                    on_spawn=lambda pid: run.tracer.process_start(
-                        run.adw_id, "agent", agent.name, pid,
-                        f"{agent.coding_agent} {agent.name} {agent.model}"),
-                    on_exit=lambda pid: run.tracer.process_end(run.adw_id, pid))
+                try:
+                    response = harness.run(
+                        request,
+                        on_event=_event_forwarder(run, phase, agent.name, harness),
+                        on_wait=waiting,
+                        on_spawn=lambda pid: run.tracer.process_start(
+                            run.adw_id, "agent", agent.name, pid,
+                            f"{agent.coding_agent} {agent.name} {agent.model}"),
+                        on_exit=lambda pid: run.tracer.process_end(run.adw_id, pid))
+                except QuotaExhausted as exc:
+                    # aifactory 3.4: the run's quota detail names the agent and its model
+                    exc.failure_detail.setdefault("agent", agent.name)
+                    exc.failure_detail.setdefault("model", agent.model)
+                    raise
                 if response.returncode != 0 and _missing_session(response.text):
                     raise RuntimeError(response.text)
                 return response

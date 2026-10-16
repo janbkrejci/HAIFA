@@ -10,7 +10,7 @@ Záložka **Běhy** má **Aktivní** a **Archivované** běhy, panel **Náklady*
 
 ## Navázání
 
-Selhaný, zastavený nebo přerušený běh nech pokračovat tlačítkem **Navázat** (s volitelnou poznámkou), v CLI `factory task retry ID`. Pokračuje ve stejné větvi: hotové fáze se neopakují, base se nejdřív stáhne a větev přebázuje. **Spustit** naopak začne nový běh od začátku. Staré worktree uklidí `factory task clean`.
+Detail selhaného, zastaveného nebo přerušeného běhu začíná kartou selhání: druh selhání, věta z dat běhu a podrobnosti (výtky review, cesty mimo writes, harness a model u vyčerpané kvóty). Přehled a Běhy ukazují u selhaného běhu jeho druh. Z karty běh nech pokračovat tlačítkem **Pokračovat** (v detailu tasku **Navázat**, obojí s volitelnou poznámkou), v CLI `factory task retry ID`, nebo task **Zrušit task**. Pokračuje ve stejné větvi: hotové fáze se neopakují, base se nejdřív stáhne a větev přebázuje. **Spustit** naopak začne nový běh od začátku. Staré worktree uklidí `factory task clean`.
 
 ## Follow-upy
 
