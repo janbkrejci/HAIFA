@@ -14,6 +14,12 @@
 
 {{required_coverage}}
 
+### review_mode
+
+`task`, or `resolve` for a rebase onto base, where only both sides' coverage counts:
+
+{{review_mode}}
+
 ### previous_envelope
 
 The test plan to judge:

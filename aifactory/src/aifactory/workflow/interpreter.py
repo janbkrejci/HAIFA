@@ -29,6 +29,15 @@ the builder gets the review (phase ``test_fix``, registry role ``fix``), then th
 tester plans again (``plan_revision`` from the builder's result) and the new plan is
 reviewed. At most ``MAX_TEST_FIXES`` such rounds per run, then the run stops.
 
+A resolve run (a workflow with a ``rebase`` step) may change only the conflicted
+files, so it never sends missing tests to the builder: the test reviewer gets
+``{{review_mode}}`` ``resolve`` and judges only whether the plan covers both sides of
+the rebase; a test still reported missing becomes a follow-up of the task (filed in
+the project's TODO step) and the revised plan runs. When the write guard allows no
+file (``allows_writes()`` is false: the conflicts were only in generated outputs),
+a ``fix`` or ``test_fix`` step does not run: the run stops with that reason instead
+of an agent writing a file the guard would roll back.
+
 Inputs of a role step: ``{{previous_envelope}}`` is the latest result of the
 steps in ``input:`` (any step without it). An ``input:`` mapping adds further
 ``{{name}}`` variables, each the latest result of its own steps. Every role step
@@ -73,6 +82,7 @@ from aifactory.engine import data_types as dt
 from aifactory.engine import git_helper, session
 from aifactory.engine import quality as engine_quality
 from aifactory.engine.role_registry import RAN_FIELD, Issue
+from aifactory.failure import RunFailure
 from aifactory.harness.override import effective_agent, step_override
 from aifactory.workflow.check import check_agents
 from aifactory.workflow.conditions import truthy
@@ -112,6 +122,13 @@ MAX_PLAN_REVIEWS = 3  # a review, and up to two more after revisions
 TEST_FIX_PHASE = "test_fix"
 TEST_FIX_DESCRIPTION = "Write the tests the test reviewer requires and the repo does not have"
 MAX_TEST_FIXES = 2  # builder rounds for tests a plan review finds missing
+REVIEW_MODE_VARIABLE = "review_mode"
+REVIEW_MODE_TASK = "task"
+REVIEW_MODE_RESOLVE = "resolve"  # judge only that the plan covers both sides of a rebase
+FIX_STEP = "fix"
+# agent steps that only repair; they do not run when the write guard allows no file
+REPAIR_STEPS = frozenset({FIX_STEP, TEST_FIX_PHASE})
+NOTHING_WRITABLE = "nothing_writable"
 NO_INPUT = "(none)"
 # the envelope a code step stores, by action (a commit stores a plain result)
 _CODE_OUTPUTS: dict[str, Any] = {
@@ -328,6 +345,10 @@ class _Interpreter:
         self.plan_repairs = 0
         self.test_fixes = 0
         self.reviewing_plan = False
+        # a resolve run: may change only the conflicted files, never writes missing tests
+        self.resolving = any(
+            isinstance(leaf, CodeStep) and leaf.action == "rebase" for leaf in walk(workflow.steps)
+        )
         self.rounds: dict[str, int] = {}  # Repeat.path -> the latest iteration that started
 
     # -- helpers --
@@ -393,6 +414,7 @@ class _Interpreter:
             PREVIOUS_PLAN_VARIABLE: self.latest_plan_json(),
             FAILED_TEST_VARIABLE: self.failed_test or NO_INPUT,
             REQUIRED_COVERAGE_VARIABLE: step.coverage or "any",
+            REVIEW_MODE_VARIABLE: REVIEW_MODE_RESOLVE if self.resolving else REVIEW_MODE_TASK,
             TEST_TIMEOUT_VARIABLE: str(
                 getattr(self.run, "test_timeout", None) or engine_quality.DEFAULT_TEST_TIMEOUT
             ),
@@ -524,6 +546,8 @@ class _Interpreter:
             PLAN_REVISION_PHASE,
         ):
             self.plan_step = step
+        if step.name in REPAIR_STEPS and self.writes_nothing():
+            self.stop_nothing_writable(step)
         name = self.phase_name(step.phase_id, suffix)
         role = step.role
         entry = self.replayed(name, step.key)
@@ -539,6 +563,24 @@ class _Interpreter:
             if isinstance(envelope, dt.BuildOutput) and envelope.already_done is not None:
                 self.stop_if_first_build(envelope.already_done)
         return envelope
+
+    def writes_nothing(self) -> bool:
+        """Whether the run's write guard allows no file at all (a resolve without one)."""
+        allows = getattr(getattr(self.run, "write_guard", None), "allows_writes", None)
+        return callable(allows) and not allows()
+
+    def stop_nothing_writable(self, step: RoleStep) -> None:
+        """Stop the run instead of a repair step that could write no file."""
+        index = self.latest(self.test_keys)
+        report = self.reports.get(index, {}) if index is not None else {}
+        failed = [str(check.get("name")) for check in report.get("failed_checks", [])]
+        what = f"the checks failed ({', '.join(failed)})" if failed else "the checks failed"
+        raise RunFailure(
+            f"{what} and the run may change no file (the conflicts were only in generated "
+            f"outputs, which code rebuilds), so step `{step.name}` cannot repair them; "
+            "fix the failure on the branch or in base, then resolve again",
+            detail={"cause": NOTHING_WRITABLE, "step": step.name, "failed_checks": failed},
+        )
 
     def stop_if_first_build(self, done: dt.AlreadyDone) -> None:
         """End the workflow when the run's first build reported the work done already.
@@ -639,11 +681,42 @@ class _Interpreter:
                     )
                     return
                 revised = self.role(revision, suffix)
+                if revised.missing_tests and self.resolving:
+                    self.report_missing_tests(revision, revised)
+                    return
                 if revised.missing_tests:
                     self.write_missing_tests(revision, revised, suffix)
                     attempt = 0  # a new plan for changed code: its reviews count anew
         finally:
             self.reviewing_plan = False
+
+    def report_missing_tests(self, revision: RoleStep, revised: Any) -> None:
+        """A resolve run files the missing tests as follow-ups; the revised plan runs.
+
+        The follow-ups go on the revised plan's envelope, where the task run collects
+        every follow-up of the run (``run.followups``).
+        """
+        reason = (
+            "Revize testovacího plánu v běhu resolve (rebase na base) požaduje test, "
+            "který repo nemá. Resolve smí měnit jen konfliktní soubory, proto ho nezapsal."
+        )
+        for missing in revised.missing_tests:
+            text = " ".join(str(missing).split())
+            title = f"Doplnit chybějící test: {text}"
+            if len(title) > 120:
+                title = title[:119].rstrip() + "…"
+            revised.follow_ups.append(
+                dt.FollowUp(
+                    title=title,
+                    reason=reason,
+                    details=f"Napiš test, který revize testů při resolve požadovala: {text}",
+                )
+            )
+        self.results[revision.key] = {**revised.model_dump(), RAN_FIELD: True}
+        self.run.console.note(
+            "resolve: the test review requires tests the repo does not have; filed as "
+            f"follow-ups, the plan runs as it is: {'; '.join(revised.missing_tests)}"
+        )
 
     def write_missing_tests(
         self, revision: RoleStep, revised: Any, suffix: tuple[int, ...]
