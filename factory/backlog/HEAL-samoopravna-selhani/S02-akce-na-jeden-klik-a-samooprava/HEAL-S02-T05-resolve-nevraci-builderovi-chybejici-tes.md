@@ -1,7 +1,7 @@
 ---
 id: HEAL-S02-T05
 title: "Resolve nevrací builderovi chybějící testy, které nesmí zapsat"
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -18,3 +18,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/78 · náklady $3.22
