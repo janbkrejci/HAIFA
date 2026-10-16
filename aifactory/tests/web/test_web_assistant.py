@@ -317,3 +317,84 @@ def test_guide_script_runs_the_gate(
     done = subprocess.run(["./guide", "repos"], cwd=work, capture_output=True, text=True)
     assert done.returncode == 0
     assert repo_id in done.stdout
+
+
+def default_harness_settings(
+    monkeypatch: pytest.MonkeyPatch, harness: str, claude_enabled: bool = True
+) -> None:
+    from aifactory.harness import settings
+
+    monkeypatch.setattr("aifactory.harness.settings.shutil.which", lambda name: f"/bin/{name}")
+    value = settings.HarnessSettings(
+        default_harness=harness,
+        harnesses={
+            "claude": settings.HarnessChoice(enabled=claude_enabled, model="sonnet"),
+            "codex": settings.HarnessChoice(model="gpt-5.5"),
+            "pi": settings.HarnessChoice(model="pi-model"),
+        },
+    )
+    home = haifa_home()
+    home.mkdir(parents=True, exist_ok=True)
+    (home / settings.FILE).write_text(value.model_dump_json())
+
+
+def fake_unlimited(monkeypatch: pytest.MonkeyPatch, harness: str) -> list[Any]:
+    """The codex or pi adapter replaced: records every request it would run."""
+    from aifactory.harness import load
+
+    seen: list[Any] = []
+
+    def run(request: Any, **_kwargs: Any) -> AgentResult:
+        seen.append(request)
+        return AgentResult(text="unlimited", returncode=0, tokens=1, cost=0.0)
+
+    monkeypatch.setattr(load(harness), "run", run)
+    return seen
+
+
+@pytest.mark.parametrize("harness", ["codex", "pi"])
+def test_harness_without_command_limit_falls_back_to_claude(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, harness: str
+) -> None:
+    client, _repo, _repo_id = setup
+    default_harness_settings(monkeypatch, harness)
+    claude = fake_harness(monkeypatch)
+    unlimited = fake_unlimited(monkeypatch, harness)
+    thread_id = new_thread(client)
+    data = ask(client, thread_id, "Ahoj")
+    assert data["harness"] == "claude"
+    assert data["messages"][1]["text"] == "answer 1"
+    assert not unlimited
+    assert claude[0].model == "sonnet"
+    assert claude[0].allowed_commands == ["./guide", "./guide *"]
+
+
+@pytest.mark.parametrize("harness", ["codex", "pi"])
+def test_harness_without_command_limit_is_refused_without_claude(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, harness: str
+) -> None:
+    client, _repo, _repo_id = setup
+    default_harness_settings(monkeypatch, harness, claude_enabled=False)
+    unlimited = fake_unlimited(monkeypatch, harness)
+    response = client.post("/api/assistant/threads", json={})
+    assert response.status_code == 409, response.text
+    error = response.json()["error"]
+    assert error["code"] == "harness_unavailable"
+    assert harness in error["message"] and "claude" in error["message"]
+    assert not unlimited
+
+
+@pytest.mark.parametrize("harness", ["codex", "pi"])
+def test_thread_stored_on_unlimited_harness_is_refused(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, harness: str
+) -> None:
+    client, _repo, _repo_id = setup
+    machine_settings(monkeypatch)
+    fake_harness(monkeypatch)
+    unlimited = fake_unlimited(monkeypatch, harness)
+    thread_id = new_thread(client)
+    # A thread created before the guide refused codex and pi.
+    client.app.state.assistant.threads[thread_id].harness = harness  # type: ignore[attr-defined]
+    answer = ask(client, thread_id, "Ahoj")["messages"][1]
+    assert "cannot run on " + harness in answer["error"]
+    assert not unlimited

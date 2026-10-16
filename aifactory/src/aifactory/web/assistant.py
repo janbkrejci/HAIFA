@@ -12,8 +12,12 @@ was created with, so every message continues the same harness session (``claude 
 
 The agent may run one command only, ``./guide`` in ``work/`` (``assistant_gate.py``): the
 allowlisted read-only ``factory`` commands with ``--json`` and read-only SQL on the trace
-DBs. claude runs with ``--permission-mode dontAsk`` and allow rules for that command, codex
-in its read-only sandbox (``AgentRequest.allowed_commands``). Whatever the harness, every
+DBs. claude runs with ``--permission-mode dontAsk`` and allow rules for that command
+(``AgentRequest.allowed_commands``). codex (its read-only sandbox still reads any file, e.g. a
+repository's ``.env``) and pi (no command limit at all) cannot enforce that limit, so the guide
+runs on claude only: a codex or pi selection falls back to claude, and without an enabled
+claude (or for a thread created on codex or pi) the guide refuses with ``harness_unavailable``.
+Whatever the harness, every
 registered repository's main checkout is guarded like a task run's main checkout
 (``run.guard.TaskWriteGuard`` with ``writes: []``): a write is undone and the answer fails.
 
@@ -53,6 +57,8 @@ SCREEN_KEYS = ("repo", "task", "run")
 MAX_TEXT = 20_000
 MAX_SCREEN = 200
 MAX_TURNS = 2
+# Harnesses that enforce the ``./guide`` command limit (claude's dontAsk allow rules).
+GUIDE_HARNESSES = ("claude",)
 
 ReposSource = Callable[[], list[tuple[str, Path]]]
 
@@ -149,6 +155,28 @@ def guide_defaults() -> dict[str, str]:
         "model": (defaults.model if defaults and defaults.model else ""),
         "thinking": (defaults.thinking if defaults and defaults.thinking else "medium"),
     }
+
+
+def unlimited_message(harness: str) -> str:
+    return (
+        f"the guide cannot run on {harness}: it cannot limit the agent to the {GUIDE_COMMAND} "
+        f"command (it could read .env files of the repositories); the guide needs claude"
+    )
+
+
+def claude_fallback(selected: str) -> dict[str, str]:
+    """The claude selection replacing a harness without the guide's command limit."""
+    try:
+        selection = harness_settings.effective_override({}, {"harness": "claude"})
+    except ValueError as exc:
+        raise AssistantError(
+            "harness_unavailable", f"{unlimited_message(selected)}: {exc}", 409
+        ) from exc
+    if not harness_settings.read():
+        defaults = guide_defaults()
+        if defaults["harness"] == "claude":
+            return defaults
+    return selection
 
 
 def repos_text(repos: list[tuple[str, Path]]) -> str:
@@ -449,6 +477,8 @@ class AssistantManager:
             raise AssistantError("harness_unavailable", str(exc), 409) from exc
         if not selection.get("harness"):
             selection = guide_defaults()
+        if canonical(selection["harness"]) not in GUIDE_HARNESSES:
+            selection = claude_fallback(selection["harness"])
         harness = canonical(selection["harness"])
         thread_id = uuid.uuid4().hex[:12]
         now = _now()
@@ -540,6 +570,8 @@ class AssistantManager:
         from aifactory.engine.data_types import AgentRequest
         from aifactory.engine.utils import agent_environment
 
+        if thread.harness not in GUIDE_HARNESSES:
+            raise AssistantError("harness_unavailable", unlimited_message(thread.harness), 409)
         try:
             harness_settings.ensure_enabled(thread.harness)
         except ValueError as exc:

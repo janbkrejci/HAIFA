@@ -170,7 +170,8 @@ tasks into the free ``max_parallel_runs`` slots, HTTP 200 also when nothing star
 the overview's ``factory.control``).
 The guide (``assistant.py``, multi-repository app only) reads, never writes:
 ``GET /api/assistant/threads`` (newest first), ``POST /api/assistant/threads``
-(``{title?}``, HTTP 201), ``GET /api/assistant/threads/{id}`` (with messages),
+(``{title?}``, HTTP 201; the guide runs on claude only, HTTP 409 ``harness_unavailable``
+without an enabled claude), ``GET /api/assistant/threads/{id}`` (with messages),
 ``POST /api/assistant/threads/{id}/messages`` (``{text, screen?: {repo, task, run}}``,
 HTTP 202, HTTP 409 ``busy`` while an answer runs) and
 ``GET /api/assistant/threads/{id}/stream?after=SEQ`` (Server-Sent Events ``start``,
