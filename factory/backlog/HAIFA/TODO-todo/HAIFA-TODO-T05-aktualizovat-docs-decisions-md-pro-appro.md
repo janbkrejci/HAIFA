@@ -4,6 +4,7 @@ title: Aktualizovat docs/decisions.md pro approve a auto-merge čekající na CI
 status: todo
 depends_on: [HAIFA-TODO-T06]
 related: [HAIFA-TODO-T01]
+writes: [docs/decisions.md]
 ---
 
 ## Zadání

@@ -63,7 +63,7 @@ Po úspěšném workflow HAIFA odešle větev a otevře pull request; task je ve
 
 ## Nedodělky a blokace
 
-Agenti nenechávají nedodělky v repu (žádné TODO soubory, seznamy otevřených bodů ani komentáře „dodělat později“). Práci, která se do tasku nevejde, ohlásí ve své odpovědi (`follow_ups`) a HAIFA ji založí jako nový task ve stepu **TODO** projektu (step založí, když chybí). Task uvádí, z jakého běhu a tasku vznikl a proč. Změny backlogu HAIFA commitne do base.
+Agenti nenechávají nedodělky v repu (žádné TODO soubory, seznamy otevřených bodů ani komentáře „dodělat později“). Práci, která se do tasku nevejde, ohlásí ve své odpovědi (`follow_ups`) a HAIFA ji založí jako nový task ve stepu **TODO** projektu (step založí, když chybí). Task uvádí, z jakého běhu a tasku vznikl a proč. Když nová práce potřebuje měnit cesty mimo povolené cesty tasku, agent je uvede ve follow-upu (`writes`) a nový task je dostane jako vlastní `writes`. Změny backlogu HAIFA commitne do base.
 
 Když agent ohlásí, že task nejde dokončit, dokud není hotová jiná práce (nový TODO task s `blocks_task` nebo existující task v `blocked_by`), dostane task `depends_on` na blokující task a běh skončí jako **chyba** s důvodem `blocked: …`. Pull request se neotevře, task se neoznačí za hotový a nemerguje se. Až bude blokující task hotový, spusť task znovu.
 

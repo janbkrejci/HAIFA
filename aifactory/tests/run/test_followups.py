@@ -92,6 +92,16 @@ def test_record_creates_todo_step_and_task(repo: Path) -> None:
     assert git(repo, "status", "--porcelain") == ""
 
 
+def test_record_gives_follow_up_its_writes(repo: Path) -> None:
+    item = follow_up().model_copy(update={"writes": [" docs/decisions.md ", "docs/decisions.md"]})
+    outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[item, follow_up("Jiný")]))
+
+    with_writes, inherited = (task_of(repo, c.id) for c in outcome.created)
+    assert with_writes.writes == ["docs/decisions.md"]
+    assert inherited.writes == []
+    assert check_backlog(backlog_of(repo)) == []
+
+
 def test_record_is_idempotent(repo: Path) -> None:
     wf = workflow_run(follow_ups=[follow_up(blocks=True)])
     first = record(repo, T01, "run-1", wf)

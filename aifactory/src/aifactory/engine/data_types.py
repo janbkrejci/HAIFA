@@ -75,11 +75,14 @@ class Phase(BaseModel):
 # aifactory 3.2: work a run found but does not finish; the factory files it as a task in
 # the project's TODO step (run/followups.py). `blocks_task`: this task cannot be done
 # before the new one, so the run fails as blocked and the task gets `depends_on` on it.
+# aifactory 3.3: `writes` becomes the new task's own `writes` (it replaces the inherited
+# value), for work outside this task's allowed paths; None inherits.
 class FollowUp(BaseModel):
     title: str = Field(min_length=1)
     reason: str = Field(min_length=1)   # what was found, where, and why it is not done here
     details: str = ""                   # what the new task must do (its task text)
     blocks_task: bool = False
+    writes: Optional[list[str]] = None
 
 
 # aifactory 3.2: the summary of the whole PR for the person who approves it, written by

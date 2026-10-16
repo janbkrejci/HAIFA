@@ -6,6 +6,8 @@ in the project's ``TODO`` step (the step is created when it is missing) and says
 and why it came from. A follow-up with ``blocks_task`` and every not-done id in
 ``blocked_by`` become ``depends_on`` of the task: the run then fails as blocked
 (``run/task.py``), so the task is neither done nor merged until its blockers are done.
+A follow-up with ``writes`` gets them as its own ``writes`` (they replace the inherited
+value), for work outside the paths this task may change.
 
 The backlog is written in the main checkout through ``aifactory.backlog.edit`` and
 committed to ``base``. A follow-up task carries the marker
@@ -59,6 +61,7 @@ class Reported:
     reason: str
     details: str
     blocks_task: bool
+    writes: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -124,7 +127,13 @@ def collect(wf: WorkflowRun) -> tuple[list[Reported], list[str]]:
             if known is not None:
                 if blocks and not known.blocks_task:
                     reported[_norm(title)] = Reported(
-                        known.step, known.owner, known.title, known.reason, known.details, True
+                        known.step,
+                        known.owner,
+                        known.title,
+                        known.reason,
+                        known.details,
+                        True,
+                        known.writes,
                     )
                 continue
             reported[_norm(title)] = Reported(
@@ -134,12 +143,20 @@ def collect(wf: WorkflowRun) -> tuple[list[Reported], list[str]]:
                 reason=str(getattr(item, "reason", "") or "").strip(),
                 details=str(getattr(item, "details", "") or "").strip(),
                 blocks_task=blocks,
+                writes=_writes(getattr(item, "writes", None)),
             )
         for raw in getattr(envelope, "blocked_by", None) or []:
             value = str(raw).strip()
             if value and value not in blocked:
                 blocked.append(value)
     return list(reported.values()), blocked
+
+
+def _writes(value: object) -> tuple[str, ...] | None:
+    if not isinstance(value, list):
+        return None
+    paths = [str(v).strip() for v in value if str(v).strip()]
+    return tuple(dict.fromkeys(paths)) or None
 
 
 def reported_any(wf: WorkflowRun) -> bool:
@@ -240,6 +257,7 @@ def record(main: Path, task_id: str, run_id: str, wf: WorkflowRun) -> FollowUpOu
                             step.id,
                             item.title,
                             related=[task_id],
+                            writes=list(item.writes) if item.writes else None,
                             body=_task_body(item, task, run_id),
                         )
                     except TaskEditError as exc:
