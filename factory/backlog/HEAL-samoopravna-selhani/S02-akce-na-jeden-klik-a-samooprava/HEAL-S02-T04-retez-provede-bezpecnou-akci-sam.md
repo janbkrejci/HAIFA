@@ -1,7 +1,7 @@
 ---
 id: HEAL-S02-T04
 title: Řetěz provede bezpečnou akci sám
-status: todo
+status: done
 depends_on: [HEAL-S02-T01, HEAL-S02-T02, HEAL-S02-T03]
 ---
 
@@ -17,3 +17,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-16 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/75 · náklady $7.16
