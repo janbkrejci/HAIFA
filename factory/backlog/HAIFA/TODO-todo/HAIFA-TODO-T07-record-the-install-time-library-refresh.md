@@ -4,6 +4,7 @@ title: Record the install-time library refresh in docs/decisions.md
 status: todo
 depends_on: [HAIFA-TODO-T12]
 related: [HAIFA-REFINEMENT-T35]
+writes: [docs/decisions.md]
 ---
 
 ## Zadání
