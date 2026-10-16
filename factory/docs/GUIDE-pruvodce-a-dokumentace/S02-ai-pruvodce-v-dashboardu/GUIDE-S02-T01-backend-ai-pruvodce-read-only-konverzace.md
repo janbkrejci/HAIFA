@@ -1,7 +1,8 @@
 # AI průvodce: backend
 
 Dashboard má API pro konverzaci s průvodcem, agentem, který odpovídá na otázky o všech
-registrovaných repech z jejich dat. Panel v dashboardu zatím chybí (GUIDE-S02-T02).
+registrovaných repech z jejich dat. Ovládá ho panel AI průvodce v horní liště, viz
+[AI průvodce: panel v dashboardu](GUIDE-S02-T02-panel-ai-pruvodce-na-kazde-obrazovce.md).
 
 ## Jak to funguje
 
