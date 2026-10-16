@@ -24,6 +24,24 @@ const THREAD = {
   seq: 0,
 }
 
+const PROPOSAL = {
+  id: 'p1',
+  kind: 'edit_task',
+  repo: 'haifa',
+  task: 'P01-S01-T01',
+  writes: ['src/', 'docs/'],
+  reason: 'Task píše i do docs.',
+  status: 'proposed',
+}
+
+const WITH_PROPOSAL = {
+  ...THREAD,
+  messages: [
+    { id: 'm1', role: 'user', text: 'Uprav writes', screen: {} },
+    { id: 'm2', role: 'assistant', text: 'Navrhuji změnu.', actions: [PROPOSAL] },
+  ],
+}
+
 interface Sent {
   url: string
   body: unknown
@@ -34,6 +52,15 @@ function stubApi(options: { runState?: string; threads?: unknown[]; detail?: unk
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     if (init?.method === 'POST') sent.push({ url, body })
+    if (url === '/api/repos/haifa/backlog/tasks/P01-S01-T01') {
+      return envelope({ task: { title: 'First', writes: ['src/'], workflow: null, status: 'todo' }, body: 'Body' })
+    }
+    if (url === '/api/repos/haifa/backlog/tasks/P01-S01-T01/edit') return envelope({ changed: true, task: {} })
+    if (url.includes('/actions/')) {
+      const action = { ...PROPOSAL, status: body.status, outcome: { message: body.message, at: '' } }
+      const message = { id: 'n1', role: 'action', text: 'x', action_id: PROPOSAL.id, status: body.status }
+      return envelope({ action, message })
+    }
     if (url.startsWith('/api/repos/haifa/runs/')) return envelope({ run: { state: options.runState ?? 'failed' } })
     if (url === '/api/assistant/threads' && init?.method === 'POST') return envelope(THREAD, 201)
     if (url === '/api/assistant/threads') return envelope({ threads: options.threads ?? [] })
@@ -194,5 +221,40 @@ describe('AssistantPanel', () => {
     FakeEventSource.latest().emit('error', { seq: 4, message: { id: 'e', role: 'assistant', text: '', error: 'agent exited 1' } })
     await flushPromises()
     expect(wrapper.get('[data-test="assistant-answer-error"]').text()).toBe('agent exited 1')
+  })
+
+  it('shows a proposed action as a card and writes only after Provést', async () => {
+    window.sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
+    const { sent } = stubApi({ detail: structuredClone(WITH_PROPOSAL) })
+    go('#/r/haifa/backlog')
+    const wrapper = await openPanel()
+    const card = wrapper.get('[data-test="assistant-action"]')
+    expect(card.get('[data-test="assistant-action-title"]').text()).toBe('Upravit task P01-S01-T01')
+    expect(card.get('[data-test="assistant-action-preview"]').text()).toContain('src/, docs/')
+    expect(card.text()).toContain('Task píše i do docs.')
+    expect(sent).toEqual([])
+
+    await card.get('[data-test="assistant-action-run"]').trigger('click')
+    await flushPromises()
+    expect(sent.map((s) => s.url)).toEqual([
+      '/api/repos/haifa/backlog/tasks/P01-S01-T01/edit',
+      `/api/assistant/threads/${THREAD.id}/actions/p1`,
+    ])
+    expect(sent[0]?.body).toEqual({ writes: ['src/', 'docs/'] })
+    expect(sent[1]?.body).toEqual({ status: 'done', message: 'Task upraven.' })
+    expect(wrapper.find('[data-test="assistant-action-run"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="assistant-action-state"]').text()).toBe('Provedeno: Task upraven.')
+    expect(wrapper.get('[data-test="assistant-outcome"]').text()).toContain('provedeno')
+  })
+
+  it('dismisses a proposal without calling the write API', async () => {
+    window.sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
+    const { sent } = stubApi({ detail: structuredClone(WITH_PROPOSAL) })
+    go('#/r/haifa/backlog')
+    const wrapper = await openPanel()
+    await wrapper.get('[data-test="assistant-action-dismiss"]').trigger('click')
+    await flushPromises()
+    expect(sent.map((s) => s.url)).toEqual([`/api/assistant/threads/${THREAD.id}/actions/p1`])
+    expect(wrapper.get('[data-test="assistant-action-state"]').text()).toBe('Zahozeno')
   })
 })

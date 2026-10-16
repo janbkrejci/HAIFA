@@ -398,3 +398,114 @@ def test_thread_stored_on_unlimited_harness_is_refused(
     answer = ask(client, thread_id, "Ahoj")["messages"][1]
     assert "cannot run on " + harness in answer["error"]
     assert not unlimited
+
+
+TASK_FILE = "backlog/P01/S01/P01-S01-T01-first.md"
+
+
+def with_task(repo: Path) -> None:
+    write(repo, "backlog/P01/index.md", "---\nid: P01\ntitle: Project\n---\n")
+    write(repo, "backlog/P01/S01/index.md", "---\nid: P01-S01\ntitle: Step\n---\n")
+    write(repo, TASK_FILE, "---\nid: P01-S01-T01\ntitle: First\nstatus: todo\n---\nBody\n")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "backlog")
+
+
+def proposal(**fields: Any) -> str:
+    return "```haifa-action\n" + json.dumps(fields) + "\n```"
+
+
+def test_proposed_actions_write_nothing_until_confirmed(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, repo, repo_id = setup
+    with_task(repo)
+    status_before = git(repo, "status", "--porcelain")
+    head_before = git(repo, "rev-parse", "HEAD")
+    task_before = (repo / TASK_FILE).read_text(encoding="utf-8")
+
+    def act(request: Any) -> str:
+        return "\n\n".join(
+            [
+                "Navrhuji:",
+                proposal(
+                    kind="edit_task",
+                    repo=repo_id,
+                    task="P01-S01-T01",
+                    writes=["src/"],
+                    reason="Task píše do src.",
+                ),
+                proposal(kind="cancel_task", repo=repo_id, task="P01-S01-T01"),
+                proposal(kind="delete_repo", repo=repo_id),
+                proposal(kind="run_task", repo="nope", task="P01-S01-T01"),
+                "Potvrď kartu.",
+            ]
+        )
+
+    seen = fake_harness(monkeypatch, act)
+    thread_id = new_thread(client)
+    data = ask(client, thread_id, "Uprav writes")
+    answer = data["messages"][-1]
+    edit, cancel = answer["actions"]
+    assert edit["kind"] == "edit_task" and edit["writes"] == ["src/"]
+    assert edit["reason"] == "Task píše do src."
+    assert {edit["status"], cancel["status"]} == {"proposed"}
+    assert "haifa-action" not in answer["text"]
+    assert "Navrhuji:" in answer["text"] and "Potvrď kartu." in answer["text"]
+    assert "unknown kind 'delete_repo'" in answer["text"]
+    assert "'nope' is not a registered repository" in answer["text"]
+    # Nothing is written without the user's confirmation.
+    assert (repo / TASK_FILE).read_text(encoding="utf-8") == task_before
+    assert git(repo, "status", "--porcelain") == status_before
+    assert git(repo, "rev-parse", "HEAD") == head_before
+
+    # The panel executes a confirmed action through the dashboard's write API...
+    url = f"/api/repos/{repo_id}/backlog/tasks/P01-S01-T01/edit"
+    response = client.post(url, json={"writes": edit["writes"]})
+    assert response.status_code == 200, response.text
+    assert "src/" in (repo / TASK_FILE).read_text(encoding="utf-8")
+    # ... and records the outcome, which writes nothing to the repository.
+    after_edit = (repo / TASK_FILE).read_text(encoding="utf-8")
+    actions = f"/api/assistant/threads/{thread_id}/actions"
+    recorded = client.post(f"{actions}/{edit['id']}", json={"status": "done", "message": "ok"})
+    assert recorded.status_code == 200, recorded.text
+    assert recorded.json()["data"]["action"]["status"] == "done"
+    dismissed = client.post(f"{actions}/{cancel['id']}", json={"status": "dismissed"})
+    assert dismissed.status_code == 200, dismissed.text
+    assert (repo / TASK_FILE).read_text(encoding="utf-8") == after_edit
+    again = client.post(f"{actions}/{edit['id']}", json={"status": "done"})
+    assert again.status_code == 409 and again.json()["error"]["code"] == "action_decided"
+    assert client.post(f"{actions}/000000000000", json={"status": "done"}).status_code == 404
+    bad = client.post(f"{actions}/{edit['id']}", json={"status": "proposed"})
+    assert bad.status_code == 400
+
+    thread = client.get(f"/api/assistant/threads/{thread_id}").json()["data"]
+    roles = [m["role"] for m in thread["messages"]]
+    assert roles == ["user", "assistant", "action", "action"]
+    assert [a["status"] for a in thread["messages"][1]["actions"]] == ["done", "dismissed"]
+    # The outcomes go to the agent with the next message, once.
+    ask(client, thread_id, "Díky")
+    assert "Outcome of your proposed actions" in seen[1].prompt
+    assert "edit_task P01-S01-T01 in " + repo_id + ": executed: ok" in seen[1].prompt
+    assert "cancel_task P01-S01-T01 in " + repo_id + ": dismissed" in seen[1].prompt
+    ask(client, thread_id, "A dál?")
+    assert "Outcome of your proposed actions" not in seen[2].prompt
+
+
+def test_parse_actions_validates_fields() -> None:
+    from aifactory.web.assistant import parse_actions
+
+    text, actions = parse_actions(
+        "a\n" + proposal(kind="create_task", repo="r", step="P01-S01", title="T", writes=["x/"]),
+        {"r"},
+    )
+    assert text == "a" and actions[0]["kind"] == "create_task"
+    for bad in (
+        proposal(kind="edit_task", repo="r", task="T1"),
+        proposal(kind="run_task", repo="r"),
+        proposal(kind="approve_pr", repo="r", task="T1", extra=1),
+        proposal(kind="create_task", repo="r", step="S", title="T", writes="src/"),
+        "```haifa-action\nnot json\n```",
+    ):
+        text, actions = parse_actions(bad, {"r"})
+        assert actions == [] and text.startswith("> Návrh akce nejde nabídnout")

@@ -25,6 +25,15 @@ The first message of a session carries the context: ``factory --skill``, the gui
 and the registered repositories. Every message may carry the screen the user is looking at
 (``screen: {repo, task, run}``). Values of ``.env`` files and secret-looking environment
 variables are redacted from everything sent to the agent (``assistant_gate.redact``).
+
+Instead of a change the guide may propose one: a fenced ``haifa-action`` block with a JSON
+object of one of ``ACTION_FIELDS`` (create or edit a task, run a task, retry a run, approve a
+PR, cancel a task). The answer keeps the validated proposals in ``actions`` (``status:
+proposed``) and drops the blocks from its text. The guide never executes a proposal: the
+panel shows it as a card and, when the user confirms it, calls the dashboard's own write API
+(the same endpoints and guards as the manual action), then reports the outcome with
+``record_action``. The outcome is a message of the thread (``role: action``) and goes to the
+agent with the next message.
 """
 
 from __future__ import annotations
@@ -57,6 +66,32 @@ SCREEN_KEYS = ("repo", "task", "run")
 MAX_TEXT = 20_000
 MAX_SCREEN = 200
 MAX_TURNS = 2
+MAX_ACTIONS = 5
+ACTION_FENCE = re.compile(r"^```haifa-action[ \t]*\r?\n(.*?)^```[ \t]*$", re.S | re.M)
+ACTION_STATES = ("done", "failed", "dismissed")
+# The fields of each proposal kind: name -> (type, required). ``repo`` is always required.
+ACTION_FIELDS: dict[str, dict[str, tuple[type, bool]]] = {
+    "create_task": {
+        "step": (str, True),
+        "title": (str, True),
+        "body": (str, False),
+        "writes": (list, False),
+        "workflow": (str, False),
+        "depends_on": (list, False),
+    },
+    "edit_task": {
+        "task": (str, True),
+        "title": (str, False),
+        "body": (str, False),
+        "writes": (list, False),
+        "workflow": (str, False),
+    },
+    "run_task": {"task": (str, True), "note": (str, False)},
+    "retry_run": {"run": (str, True), "note": (str, False)},
+    "approve_pr": {"task": (str, True)},
+    "cancel_task": {"task": (str, True)},
+}
+ACTION_LONG = ("body", "note")
 # Harnesses that enforce the ``./guide`` command limit (claude's dontAsk allow rules).
 GUIDE_HARNESSES = ("claude",)
 
@@ -230,13 +265,29 @@ def screen_text(screen: dict[str, str], repos: list[tuple[str, Path]]) -> str:
     return "\n".join(lines)
 
 
+def results_text(results: list[str]) -> str:
+    if not results:
+        return ""
+    lines = ["## Outcome of your proposed actions (the user decided)"]
+    lines += [f"- {item}" for item in results]
+    return "\n".join(lines)
+
+
 def user_prompt(
-    text: str, screen: dict[str, str], repos: list[tuple[str, Path]], *, context: bool
+    text: str,
+    screen: dict[str, str],
+    repos: list[tuple[str, Path]],
+    *,
+    context: bool,
+    results: list[str] | None = None,
 ) -> str:
     parts = [context_text(repos)] if context else []
     shown = screen_text(screen, repos)
     if shown:
         parts.append(shown)
+    outcome = results_text(results or [])
+    if outcome:
+        parts.append(outcome)
     parts.append(f"## Message\n\n{text}")
     return "\n\n".join(parts)
 
@@ -266,6 +317,99 @@ def parse_message(body: dict[str, Any]) -> tuple[str, dict[str, str]]:
             raise AssistantError("usage_error", f"screen.{key} must be a short one-line string")
         screen[key] = value.strip()
     return text.strip(), screen
+
+
+# ── proposed actions ─────────────────────────────────────────────────────────────────────
+
+
+def _action(raw: Any, repo_ids: set[str]) -> dict[str, Any]:
+    """One validated proposal; ``ValueError`` with the reason when it is not valid."""
+    if not isinstance(raw, dict):
+        raise ValueError("the block is not a JSON object")
+    kind = raw.get("kind")
+    if kind not in ACTION_FIELDS:
+        raise ValueError(f"unknown kind {kind!r}")
+    fields = ACTION_FIELDS[kind]
+    unknown = sorted(set(raw) - set(fields) - {"kind", "repo", "reason"})
+    if unknown:
+        raise ValueError(f"{kind}: unknown fields {', '.join(unknown)}")
+    repo = raw.get("repo")
+    if not isinstance(repo, str) or repo not in repo_ids:
+        raise ValueError(f"{kind}: repo {repo!r} is not a registered repository id")
+    action: dict[str, Any] = {"id": uuid.uuid4().hex[:12], "kind": kind, "repo": repo}
+    for name, (expected, required) in fields.items():
+        value = raw.get(name)
+        if value is None:
+            if required:
+                raise ValueError(f"{kind}: {name} is required")
+            continue
+        if expected is list:
+            if not isinstance(value, list) or not all(
+                isinstance(item, str) and item.strip() and len(item) <= MAX_SCREEN for item in value
+            ):
+                raise ValueError(f"{kind}: {name} must be a list of strings")
+            action[name] = [item.strip() for item in value]
+            continue
+        limit = MAX_TEXT if name in ACTION_LONG else MAX_SCREEN
+        one_line = name not in ACTION_LONG
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+            or len(value) > limit
+            or (one_line and "\n" in value)
+        ):
+            raise ValueError(f"{kind}: {name} must be a non-empty string")
+        action[name] = value if name == "body" else value.strip()
+    if kind == "edit_task" and not any(
+        k in action for k in ("title", "body", "writes", "workflow")
+    ):
+        raise ValueError("edit_task: nothing to change (title, body, writes or workflow)")
+    reason = raw.get("reason")
+    if isinstance(reason, str) and reason.strip():
+        action["reason"] = reason.strip()[: MAX_SCREEN * 5]
+    action["status"] = "proposed"
+    return action
+
+
+def parse_actions(text: str, repo_ids: set[str]) -> tuple[str, list[dict[str, Any]]]:
+    """The answer without its ``haifa-action`` blocks and the valid proposals in them.
+
+    A block that is not a valid proposal is replaced by a note with the reason, so the user
+    sees that the guide proposed something the dashboard cannot offer.
+    """
+    actions: list[dict[str, Any]] = []
+
+    def replace(match: re.Match[str]) -> str:
+        try:
+            if len(actions) >= MAX_ACTIONS:
+                raise ValueError(f"more than {MAX_ACTIONS} proposals in one answer")
+            actions.append(_action(json.loads(match.group(1)), repo_ids))
+            return ""
+        except ValueError as exc:  # json.JSONDecodeError is a ValueError
+            return f"> Návrh akce nejde nabídnout: {str(exc)[:300]}\n"
+
+    cleaned = ACTION_FENCE.sub(replace, text)
+    return re.sub(r"\n{3,}", "\n\n", cleaned).strip(), actions
+
+
+def action_label(action: dict[str, Any]) -> str:
+    """``edit_task P01-S01-T01 in alpha``: what a proposal does, for the agent."""
+    target = action.get("task") or action.get("run") or action.get("title") or ""
+    return f"{action['kind']} {target} in {action['repo']}".replace("  ", " ")
+
+
+def parse_outcome(body: dict[str, Any]) -> tuple[str, str]:
+    """``(status, message)`` of a reported outcome; ``AssistantError`` when malformed."""
+    unknown = sorted(set(body) - {"status", "message"})
+    if unknown:
+        raise AssistantError("usage_error", f"unknown keys: {', '.join(unknown)}")
+    status = body.get("status")
+    if status not in ACTION_STATES:
+        raise AssistantError("usage_error", f"status must be one of {', '.join(ACTION_STATES)}")
+    message = body.get("message") or ""
+    if not isinstance(message, str) or len(message) > MAX_TEXT:
+        raise AssistantError("usage_error", "message must be a string")
+    return status, message.strip()
 
 
 # ── the working directory and the write guard ────────────────────────────────────────────
@@ -508,6 +652,7 @@ class AssistantManager:
                 raise AssistantError("busy", "the guide is still answering in this thread", 409)
             if sum(t.busy for t in self.threads.values()) >= MAX_TURNS:
                 raise AssistantError("busy", "the guide is busy; try again shortly", 409)
+            results = self._unsent_results(thread)
             message: dict[str, Any] = {
                 "id": uuid.uuid4().hex[:12],
                 "role": "user",
@@ -522,8 +667,56 @@ class AssistantManager:
             thread.events = []
             self._save(thread)
             self._emit(thread, "start", {"message_id": message["id"]})
-            self.pool.submit(self._answer, thread, text, screen)
+            self.pool.submit(self._answer, thread, text, screen, results)
             return {"thread": thread.summary(), "message": message, "seq": thread.seq}
+
+    def _unsent_results(self, thread: Thread) -> list[str]:
+        """The action outcomes since the last user message (the agent has not seen them)."""
+        results: list[str] = []
+        for message in reversed(thread.messages):
+            if message.get("role") == "user":
+                break
+            if message.get("role") == "action":
+                results.append(str(message.get("text") or ""))
+        return list(reversed(results))
+
+    def record_action(self, thread_id: str, action_id: str, body: dict[str, Any]) -> dict[str, Any]:
+        """The outcome of a proposal the user executed (or dismissed) in the panel.
+
+        Records only: the write itself went through the dashboard's own API. The outcome is
+        a message of the thread and goes to the agent with the next message.
+        """
+        status, text = parse_outcome(body)
+        with self.lock:
+            thread = self._thread(thread_id)
+            found = None
+            for message in thread.messages:
+                for action in message.get("actions") or []:
+                    if action.get("id") == action_id:
+                        found = action
+            if found is None:
+                raise AssistantError("unknown_action", f"unknown action {action_id!r}", 404)
+            if found.get("status") != "proposed":
+                raise AssistantError(
+                    "action_decided", f"the action is already {found.get('status')}", 409
+                )
+            now = _now()
+            found["status"] = status
+            found["outcome"] = {"message": text, "at": now}
+            verdict = {"done": "executed", "failed": "failed", "dismissed": "dismissed"}[status]
+            note: dict[str, Any] = {
+                "id": uuid.uuid4().hex[:12],
+                "role": "action",
+                "action_id": action_id,
+                "kind": found["kind"],
+                "status": status,
+                "text": f"{action_label(found)}: {verdict}" + (f": {text}" if text else ""),
+                "at": now,
+            }
+            thread.messages.append(note)
+            thread.updated_at = now
+            self._save(thread)
+            return {"action": dict(found), "message": note}
 
     def wait(self, thread_id: str, after: int, timeout: float) -> tuple[list[dict[str, Any]], bool]:
         """Events after ``after`` (waiting up to ``timeout`` for one) and whether it is busy."""
@@ -546,10 +739,12 @@ class AssistantManager:
 
     # one answer
 
-    def _answer(self, thread: Thread, text: str, screen: dict[str, str]) -> None:
+    def _answer(
+        self, thread: Thread, text: str, screen: dict[str, str], results: list[str]
+    ) -> None:
         reply: dict[str, Any] = {"id": uuid.uuid4().hex[:12], "role": "assistant", "text": ""}
         try:
-            reply.update(self._turn(thread, text, screen))
+            reply.update(self._turn(thread, text, screen, results))
         except AssistantError as exc:
             reply["error"] = exc.message
         except Exception as exc:  # noqa: BLE001 - every failure is the answer's error
@@ -565,7 +760,9 @@ class AssistantManager:
             else:
                 self._emit(thread, "done", {"message": reply})
 
-    def _turn(self, thread: Thread, text: str, screen: dict[str, str]) -> dict[str, Any]:
+    def _turn(
+        self, thread: Thread, text: str, screen: dict[str, str], results: list[str]
+    ) -> dict[str, Any]:
         from aifactory.engine.agents import _missing_session
         from aifactory.engine.data_types import AgentRequest
         from aifactory.engine.utils import agent_environment
@@ -597,7 +794,7 @@ class AssistantManager:
                 self._emit(thread, "tool", {"label": gate.redact(str(record["label"]), hidden)})
 
         def request(session_id: str, context: bool) -> Any:
-            prompt = user_prompt(text, screen, repos, context=context)
+            prompt = user_prompt(text, screen, repos, context=context, results=results)
             return AgentRequest(
                 prompt=gate.redact(prompt, hidden),
                 system_prompt=system,
@@ -656,7 +853,13 @@ class AssistantManager:
         if result.returncode != 0 and not result.text:
             raise AssistantError("agent_failed", f"agent exited {result.returncode}")
         thread.context_sent = True
-        return {
-            "text": gate.redact(result.text, hidden),
+        answer, actions = parse_actions(
+            gate.redact(result.text, hidden), {repo_id for repo_id, _ in repos}
+        )
+        reply: dict[str, Any] = {
+            "text": answer,
             "usage": {"tokens": result.tokens, "cost_usd": result.cost},
         }
+        if actions:
+            reply["actions"] = actions
+        return reply

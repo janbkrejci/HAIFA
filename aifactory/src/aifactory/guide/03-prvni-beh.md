@@ -12,7 +12,7 @@ Zleva doprava:
 - **Chip kontroly:** **Systém v pořádku**, nebo **Nalezeny problémy** (stránka **Problémy a řešení**).
 - **Chip knihovny:** **Knihovna OK**, nebo **Založit knihovnu** (stránka **Knihovna**).
 - **Harnessy:** limity předplatného; klik otevře dialog **Harnessy tohoto počítače**.
-- **AI průvodce**: panel s otázkami k repům, taskům a během; přiloží aktuální obrazovku jako odebíratelný chip.
+- **AI průvodce**: panel s otázkami k repům, taskům a během; přiloží obrazovku, změny navrhne k potvrzení.
 - Příručka, motiv a přepínač rep.
 
 ## Problémy a řešení

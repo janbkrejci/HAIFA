@@ -2,6 +2,7 @@
 // The AI guide: a side panel over every screen. It keeps the open thread across screens
 // (lib/assistant.ts), attaches the screen as a removable chip, streams the answer as markdown
 // with dashboard links, lists older threads and offers three questions in an empty thread.
+// Actions the guide proposes show as cards (ActionCard) the user executes or dismisses.
 import { computed, nextTick, ref, watch } from 'vue'
 import { History, Plus, Sparkles, X } from 'lucide-vue-next'
 import {
@@ -11,6 +12,7 @@ import {
   linkify,
   newThread,
   openThread,
+  outcomeText,
   runState,
   sameContext,
   send,
@@ -23,6 +25,7 @@ import {
 import { fmtDayTime } from '@/lib/format'
 import { renderMarkdown } from '@/lib/markdown'
 import { usePage, useRepoId, useRoute, useRouteParams } from '@/lib/router'
+import ActionCard from './ActionCard.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 
@@ -182,7 +185,7 @@ watch(
       <div ref="log" class="log" data-test="assistant-log">
         <p v-if="assistant.loading" class="faint"><Spinner /> Načítám vlákno…</p>
         <div v-if="empty" class="empty" data-test="assistant-empty">
-          <p class="faint">Zeptej se na repa, tasky, běhy, PR, konfiguraci nebo knihovnu. Průvodce jen čte, nic nemění.</p>
+          <p class="faint">Zeptej se na repa, tasky, běhy, PR, konfiguraci nebo knihovnu. Průvodce jen čte; změnu navrhne a provede se, až ji potvrdíš.</p>
           <button
             v-for="question in offered"
             :key="question"
@@ -201,9 +204,13 @@ watch(
               {{ contextLabel(message.screen) }}
             </span>
           </div>
+          <p v-else-if="message.role === 'action'" class="msg outcome faint" :class="message.status" data-test="assistant-outcome">
+            {{ outcomeText(message, messages) }}
+          </p>
           <div v-else class="msg answer" data-test="assistant-answer">
             <div v-if="message.text" class="md" v-html="html(message.text, repoOf(index))" />
             <p v-if="message.error" class="error" data-test="assistant-answer-error">{{ message.error }}</p>
+            <ActionCard v-for="action in message.actions ?? []" :key="action.id" :action="action" :thread-id="thread!.id" />
           </div>
         </template>
         <div v-if="busy" class="msg answer streaming" data-test="assistant-streaming">
@@ -386,6 +393,21 @@ watch(
 
 .answer :deep(.md code) {
   font-size: 14px;
+}
+
+.outcome {
+  margin: 0;
+  padding-left: 10px;
+  border-left: 2px solid var(--border);
+  font-size: 13px;
+}
+
+.outcome.done {
+  border-left-color: var(--green);
+}
+
+.outcome.failed {
+  border-left-color: var(--red);
 }
 
 .tool {
