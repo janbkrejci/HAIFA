@@ -1,4 +1,7 @@
-"""Moving the repo's own workflow to the library is a reviewed plan, without live services."""
+"""Moving a repo's own copy of a library workflow to the library from the Library page.
+
+The move is a reviewed plan, without live services.
+"""
 
 from __future__ import annotations
 
@@ -13,8 +16,6 @@ from test_f3_browser import _launch
 
 from aifactory.library.install import init_repo
 from aifactory.library.store import init_library
-
-MINE = "name: mine\ndescription: Our own workflow.\nsteps:\n  - plan\n"
 
 pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
 
@@ -31,6 +32,8 @@ def test_factory_move_to_library_browser(tmp_path: Path, monkeypatch: pytest.Mon
     init_library("test", {"HAIFA_HOME": str(home)})
     lib = home / "library"
     library_head = git(lib, "rev-parse", "HEAD")
+    # The repo's own copy of a library workflow, so the Library page lists it as an override.
+    mine = "# Our own copy.\n" + git(lib, "show", "HEAD:workflows/simple-sdlc.yaml") + "\n"
     repo = tmp_path / "repo"
     repo.mkdir()
     git(repo, "init", "-qb", "main")
@@ -41,7 +44,7 @@ def test_factory_move_to_library_browser(tmp_path: Path, monkeypatch: pytest.Mon
     git(repo, "commit", "-qm", "Initial")
     init_repo(repo)
     (repo / ".factory/workflows").mkdir(parents=True)
-    (repo / ".factory/workflows/mine.yaml").write_text(MINE)
+    (repo / ".factory/workflows/simple-sdlc.yaml").write_text(mine)
     git(repo, "add", "-A")
     git(repo, "commit", "-qm", "Install factory with an own workflow")
     before = git(repo, "rev-parse", "HEAD")
@@ -69,30 +72,39 @@ def test_factory_move_to_library_browser(tmp_path: Path, monkeypatch: pytest.Mon
             context.route("**/*", local_only)
             page = context.new_page()
             try:
-                page.goto(f"/#/r/{server.repo_id}/factory")
-                expect(page.locator('[data-test="item-workflow-simple-sdlc"]')).to_contain_text(
-                    "z knihovny"
-                )
-                expect(page.locator('[data-test="item-workflow-mine"]')).to_contain_text(
-                    "vlastní kopie"
-                )
-                page.locator('[data-test="item-move-workflow-mine"]').click()
-                plan = page.locator('[data-test="item-move-plan"]')
-                expect(plan).to_contain_text("workflows/mine.yaml")
-                expect(page.locator('[data-test="item-move-apply"]')).to_be_enabled()
+                page.goto("/#/setup/library")
+                page.locator('[data-test="tab-workflow"]').click()
+                expect(page.locator('[data-test="override-count-simple-sdlc"]')).to_have_text("1")
+                page.locator(
+                    '[data-test="library-item"] button:has(.item-name:text-is("simple-sdlc"))'
+                ).click()
+                row = page.locator(f'[data-test="override-{server.repo_id}"]')
+                expect(row).to_contain_text("liší se")
+                row.locator('[data-test="override-move"]').click()
+                modal = page.locator('[data-test="confirm-dialog"]')
+                expect(modal).to_contain_text("workflow/simple-sdlc")
+                modal.locator('[data-test="confirm-cancel"]').click()
+                plan = page.locator('[data-test="override-plan"]')
+                expect(plan).to_contain_text("workflows/simple-sdlc.yaml")
+                apply = page.locator('[data-test="override-move-apply"]')
+                expect(apply).to_be_enabled()
                 assert git(repo, "rev-parse", "HEAD") == before
                 assert git(lib, "rev-parse", "HEAD") == library_head
-                page.locator('[data-test="item-move-apply"]').click()
-                page.locator('[data-test="confirm-ok"]').click()
-                expect(page.locator('[data-test="item-workflow-mine"]')).to_contain_text(
-                    "z knihovny"
-                )
-                assert git(lib, "show", "HEAD:workflows/mine.yaml") + "\n" == MINE
+                apply.click()
+                modal.locator('[data-test="confirm-ok"]').click()
+                expect(page.locator('[data-test="item-no-overrides"]')).to_be_visible()
+                expect(page.locator('[data-test="override-count-simple-sdlc"]')).to_have_text("—")
+                assert git(lib, "show", "HEAD:workflows/simple-sdlc.yaml") + "\n" == mine
+                assert git(lib, "rev-parse", "HEAD") != library_head
                 assert git(repo, "rev-parse", "HEAD") != before
-                assert not (repo / ".factory/workflows/mine.yaml").exists()
+                assert not (repo / ".factory/workflows/simple-sdlc.yaml").exists()
                 assert git(repo, "status", "--porcelain") == ""
                 items = api_get(server.url, f"/api/repos/{server.repo_id}/factory/items")
-                assert {"type": "workflow", "name": "mine", "origin": "library"} in items["items"]
+                assert {
+                    "type": "workflow",
+                    "name": "simple-sdlc",
+                    "origin": "library",
+                } in items["items"]
                 assert not marker.exists() and external == []
             finally:
                 context.close()
