@@ -21,6 +21,10 @@ a computed mergeability up to ``merge_attempts`` times (``MERGE_WAIT_ATTEMPTS`` 
 rejection of an open PR that is not ``CONFLICTING`` within the same bound; only
 then it gives up with ``merge_failed``.
 
+Reads (``gh pr view``, ``gh pr checks``) that fail on the network ("connection reset by
+peer", a timeout, a 502/503/504) are asked again after the same pause, at most
+``retry_attempts`` times; a write is never retried this way.
+
 ``checks`` reads ``gh pr checks ID --json name,bucket``; a PR without checks
 (``no checks reported``) has ``none``. ``check_logs`` reads the failed-step log of each
 red check's job (``gh run view --job ID --log-failed``). ``find_open_pr`` reads
@@ -83,6 +87,27 @@ TRANSIENT_MERGE_ERRORS = (
 def _transient(detail: str) -> bool:
     lowered = detail.lower()
     return any(marker in lowered for marker in TRANSIENT_MERGE_ERRORS)
+
+
+# A network blip of a read (``gh pr view``, ``gh pr checks``): the read is asked again.
+NETWORK_ERRORS = (
+    "connection reset",
+    "connection refused",
+    "i/o timeout",
+    "timeout awaiting",
+    "tls handshake timeout",
+    "unexpected eof",
+    "could not resolve host",
+    "no such host",
+    "502 bad gateway",
+    "503 service unavailable",
+    "504 gateway timeout",
+)
+
+
+def _network(detail: str) -> bool:
+    lowered = detail.lower()
+    return any(marker in lowered for marker in NETWORK_ERRORS)
 
 
 class GhError(ProviderError):
@@ -167,6 +192,18 @@ class GitHubProvider(GitProvider):
         self.delay = delay
         self.sleep = sleep
 
+    def _read(self, *args: str) -> Any:
+        """``gh ... --json`` of a read; a network error is retried ``retry_attempts`` times."""
+        attempt = 0
+        while True:
+            try:
+                return self.gh.json(*args)
+            except GhError as exc:
+                if not _network(exc.stderr) or attempt >= self.retry_attempts:
+                    raise
+                attempt += 1
+                self.sleep(self.delay)
+
     def create_pr(self, branch: str, title: str, body: str) -> PullRequest:
         out = self.gh.run(
             "pr",
@@ -217,7 +254,7 @@ class GitHubProvider(GitProvider):
         return None
 
     def _status_once(self, pr: PullRequest) -> PrStatus:
-        data = self.gh.json("pr", "view", pr.id, "--json", _STATUS_FIELDS)
+        data = self._read("pr", "view", pr.id, "--json", _STATUS_FIELDS)
         if not isinstance(data, dict):
             raise ProviderError("gh_failed", "gh pr view: expected a JSON object")
         state = str(data.get("state", "")).upper()
@@ -298,7 +335,7 @@ class GitHubProvider(GitProvider):
     def checks(self, pr: PullRequest) -> ChecksStatus:
         """``failing`` when any check failed or was cancelled, else ``pending`` / ``passing``."""
         try:
-            data = self.gh.json("pr", "checks", pr.id, "--json", "name,bucket")
+            data = self._read("pr", "checks", pr.id, "--json", "name,bucket")
         except GhError as exc:
             if "no checks reported" in exc.stderr.lower():
                 return ChecksStatus(CHECKS_NONE)
@@ -328,7 +365,7 @@ class GitHubProvider(GitProvider):
         """
         if not failing:
             return {}
-        data = self.gh.json("pr", "checks", pr.id, "--json", "name,bucket,link")
+        data = self._read("pr", "checks", pr.id, "--json", "name,bucket,link")
         if not isinstance(data, list):
             raise ProviderError("gh_failed", "gh pr checks: expected a JSON list")
         links = {

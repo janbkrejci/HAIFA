@@ -607,3 +607,42 @@ def test_check_logs_without_red_checks_asks_nothing(
     log = install_fake_gh(tmp_path, monkeypatch, {})
     assert _provider(tmp_path, []).check_logs(PR, ()) == {}
     assert log.argvs() == []
+
+
+# ── network errors of reads ──────────────────────────────────────────────────
+
+RESET = (
+    'Post "https://api.github.com/graphql": read tcp 1.2.3.4:1->5.6.7.8:443: '
+    "read: connection reset by peer\n"
+)
+
+
+def test_checks_are_read_again_after_a_network_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    log = install_fake_gh(
+        tmp_path,
+        monkeypatch,
+        {"pr checks": [reply(exit=1, stderr=RESET), reply([{"name": "ci", "bucket": "pass"}])]},
+    )
+    sleeps: list[float] = []
+    status = _provider(tmp_path, sleeps).checks(PR)
+    assert status.state == "passing"
+    assert len(_pr_calls(log, "pr checks")) == 2 and sleeps == [DELAY]
+
+
+def test_status_gives_up_after_the_retries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    install_fake_gh(tmp_path, monkeypatch, {"pr view": [reply(exit=1, stderr=RESET)] * 3})
+    sleeps: list[float] = []
+    with pytest.raises(ProviderError) as info:
+        _provider(tmp_path, sleeps, attempts=2).status(PR)
+    assert "connection reset" in info.value.message and sleeps == [DELAY, DELAY]
+
+
+def test_other_gh_errors_are_not_retried(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = install_fake_gh(
+        tmp_path, monkeypatch, {"pr checks": [reply(exit=1, stderr="HTTP 404: Not Found\n")]}
+    )
+    with pytest.raises(ProviderError):
+        _provider(tmp_path, []).checks(PR)
+    assert len(_pr_calls(log, "pr checks")) == 1
