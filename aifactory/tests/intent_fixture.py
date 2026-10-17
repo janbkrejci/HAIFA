@@ -43,6 +43,12 @@ def export_step(*extra: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def placed(answer: dict[str, Any], reason: str, **placement: Any) -> dict[str, Any]:
+    """``answer`` as an automatic placement: ``placement`` (``existing_project``,
+    ``existing_step`` or ``project``) and the one-sentence ``reason``."""
+    return {**answer, "placement_reason": reason, **placement}
+
+
 def install_fake(monkeypatch: pytest.MonkeyPatch, answers: list[Answer]) -> list[Any]:
     """Make the claude harness answer ``answers`` in order (the last one repeats); return
     the requests it saw."""

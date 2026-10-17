@@ -1,10 +1,17 @@
 // The Nový záměr dialog of the Backlog (`/backlog/intent`): a proposer agent turns an intent
-// into a new step with tasks (or new tasks of a step); the person refines, edits and applies it.
+// into tasks and places them itself (an existing or new project, an existing or new step); the
+// person refines, edits and applies it.
 import { getApi, postApi, type ApiIssue } from './api'
 
 export interface IntentTarget {
   project?: string | null
   step?: string | null
+}
+
+/** Where a job's latest proposal goes; null ids until there is one. */
+export interface IntentPlacement extends IntentTarget {
+  new_project?: boolean
+  new_step?: boolean
 }
 
 export interface ProposalFinding {
@@ -28,6 +35,11 @@ export interface ProposalTask {
 export interface Proposal {
   summary: string
   applied: boolean
+  /** The project of the step; null when the step is top level. */
+  project?: { id: string; title: string; body: string; path: string; new: boolean } | null
+  /** Why the agent placed the tasks there (empty for a requested target). */
+  placement_reason?: string
+  target?: IntentTarget
   step: { id: string; title: string; body: string; path: string; new: boolean }
   tasks: ProposalTask[]
   files: string[]
@@ -49,7 +61,8 @@ export interface IntentJob {
   state: IntentState
   round: number
   intent: string
-  target: IntentTarget
+  target: IntentPlacement
+  requested?: IntentTarget
   proposal: Proposal | null
   error: string | null
   issues: ApiIssue[]
@@ -69,7 +82,8 @@ export function isWorking(state: IntentState | undefined): boolean {
   return state === 'queued' || state === 'running'
 }
 
-export function startIntent(intent: string, target: IntentTarget): Promise<IntentJob> {
+/** Without a target the agent chooses the place. */
+export function startIntent(intent: string, target: IntentTarget = {}): Promise<IntentJob> {
   return postApi<IntentJob>('/backlog/intent', { intent, ...target })
 }
 
@@ -87,14 +101,4 @@ export function applyIntent(job: string, tasks: TaskEdit[]): Promise<Proposal> {
 
 export function discardIntent(job: string): Promise<unknown> {
   return postApi(`/backlog/intent/${encodeURIComponent(job)}/discard`)
-}
-
-/** The value of the target menu, `project:<id>` or `step:<id>`, as a target. */
-export function parseTarget(value: string): IntentTarget | null {
-  const [kind, ...rest] = value.split(':')
-  const id = rest.join(':')
-  if (!id) return null
-  if (kind === 'project') return { project: id }
-  if (kind === 'step') return { step: id }
-  return null
 }

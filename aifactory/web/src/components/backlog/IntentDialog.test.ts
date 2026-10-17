@@ -1,7 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import IntentDialog from './IntentDialog.vue'
-import { chooseOption, selectLabels } from '@/test/select'
 import type { IntentJob, Proposal } from '@/lib/intent'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
@@ -13,6 +12,9 @@ function proposal(extra: Partial<Proposal> = {}): Proposal {
   return {
     summary: 'Dva tasky exportu.',
     applied: false,
+    project: { id: 'P01', title: 'Projekt', body: 'Cíl projektu.', path: 'backlog/P01', new: false },
+    placement_reason: 'Export patří k datům projektu.',
+    target: { project: 'P01', step: 'P01-S02' },
     step: { id: 'P01-S02', title: 'Export', body: 'Export dat do CSV.', path: 'backlog/P01/S02-export', new: true },
     tasks: [
       { id: 'P01-S02-T01', code: 'T01', title: 'Model exportu', body: `Udělej model.${DONE}`, workflow: 'plan', writes: ['src/t01/'], depends_on: [], path: 'a.md' },
@@ -26,16 +28,14 @@ function proposal(extra: Partial<Proposal> = {}): Proposal {
 
 function job(extra: Partial<IntentJob> = {}): IntentJob {
   return {
-    job_id: 'intent-1', state: 'ready', round: 1, intent: 'Export do CSV', target: { project: 'P01' },
+    job_id: 'intent-1', state: 'ready', round: 1, intent: 'Export do CSV', target: { project: 'P01', step: 'P01-S02', new_project: false, new_step: true },
     proposal: proposal(), error: null, issues: [], notes: [], progress: [], applied: null, ...extra,
   }
 }
 
-const props = {
-  projects: [{ id: 'P01', title: 'Projekt' }],
-  steps: [{ id: 'P01-S01', title: 'Step', path: 'backlog/P01/S01', project: 'P01' }],
-  pollMs: 1,
-}
+const props = { pollMs: 1 }
+
+const NEW_PROJECT = { id: 'P02', title: 'Reporty', body: 'Reporty a **exporty**.', path: 'backlog/P02', new: true }
 
 async function settle(): Promise<void> {
   for (let i = 0; i < 5; i++) {
@@ -46,7 +46,6 @@ async function settle(): Promise<void> {
 
 async function proposed(wrapper: VueWrapper): Promise<void> {
   await wrapper.get('[data-test="intent-text"]').setValue('Export do CSV')
-  await chooseOption(wrapper, '[data-test="intent-target"]', 'project:P01')
   await wrapper.get('[data-test="intent-propose"]').trigger('click')
   await settle()
 }
@@ -67,16 +66,71 @@ afterEach(() => {
 })
 
 describe('IntentDialog', () => {
-  it('offers projects for a new step and steps for new tasks, preselecting the initial one', async () => {
-    const wrapper = mount(IntentDialog, { props: { ...props, initial: 'P01-S01' } })
-    expect(await selectLabels(wrapper, '[data-test="intent-target"]')).toEqual([
-      'P01 – Projekt · nový step',
-      'P01-S01 – Step · nové tasky',
-    ])
-    expect(wrapper.get('[data-test="intent-target"]').text()).toContain('P01-S01')
+  it('has no Kam choice; Navrhnout needs only the intent and sends only it', async () => {
+    const wrapper = mount(IntentDialog, { props })
+    expect(wrapper.find('[data-test="intent-target"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Kam')
+    expect(wrapper.get('[data-test="intent-text"]').attributes('placeholder')).toContain('Upřesni')
     expect(wrapper.get('[data-test="intent-propose"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-test="intent-text"]').setValue('Něco')
     expect(wrapper.get('[data-test="intent-propose"]').attributes('disabled')).toBeUndefined()
+    api.getApi.mockResolvedValue(job())
+    await wrapper.get('[data-test="intent-propose"]').trigger('click')
+    await settle()
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/intent', { intent: 'Něco' })
+    wrapper.unmount()
+  })
+
+  it('shows an existing project, the step and the placement reason', async () => {
+    api.getApi.mockResolvedValueOnce(job())
+    const wrapper = mount(IntentDialog, { props })
+    await proposed(wrapper)
+    const project = wrapper.get('[data-test="intent-project"]')
+    expect(project.text()).toContain('P01')
+    expect(project.text()).toContain('Projekt')
+    expect(project.text()).toContain('existující')
+    expect(wrapper.text()).not.toContain('Cíl projektu.')
+    const step = wrapper.get('[data-test="intent-step"]')
+    expect(step.text()).toContain('P01-S02')
+    expect(step.text()).toContain('nový')
+    expect(wrapper.text()).toContain('Export dat do CSV.')
+    expect(wrapper.get('[data-test="intent-reason"]').text()).toContain('Export patří k datům projektu.')
+    wrapper.unmount()
+  })
+
+  it('shows a new project with its description and names it after applying', async () => {
+    const tasks = proposal().tasks.map((t) => ({ ...t, id: t.id.replace('P01', 'P02') }))
+    const placed = proposal({
+      project: NEW_PROJECT,
+      placement_reason: 'Reporty jsou samostatný projekt.',
+      target: { project: 'P02', step: 'P02-S02' },
+      step: { ...proposal().step, id: 'P02-S02' },
+      tasks,
+      findings: [],
+    })
+    api.getApi.mockResolvedValueOnce(job({ proposal: placed }))
+    api.postApi.mockImplementation(async (path: string) => {
+      if (path === '/backlog/intent') return job({ state: 'running', proposal: null })
+      if (path.endsWith('/apply')) return { ...placed, applied: true, commit: { committed: true, commit: 'abc', base: 'main' }, warnings: [] }
+      return {}
+    })
+    const wrapper = mount(IntentDialog, { props })
+    await proposed(wrapper)
+    const project = wrapper.get('[data-test="intent-project"]')
+    expect(project.text()).toContain('P02')
+    expect(project.text()).toContain('Reporty')
+    expect(project.text()).toContain('nový')
+    expect(wrapper.get('[data-test="intent-result"] strong').text()).toBe('Reporty')
+    expect(wrapper.html()).toContain('<strong>exporty</strong>')
+    expect(wrapper.get('[data-test="intent-step"]').text()).toContain('P02-S02')
+    expect(wrapper.get('[data-test="intent-reason"]').text()).toContain('Reporty jsou samostatný projekt.')
+    await wrapper.get('[data-test="intent-apply"]').trigger('click')
+    await settle()
+    const applied = wrapper.get('[data-test="intent-applied"]').text()
+    expect(applied).toContain('Zapsáno: 2')
+    expect(applied).toContain('P02-S02')
+    expect(applied).toContain('Nový projekt: P02')
+    expect(applied).toContain('commitnutý do main')
     wrapper.unmount()
   })
 
@@ -89,7 +143,7 @@ describe('IntentDialog', () => {
     api.getApi.mockImplementationOnce(() => new Promise((done) => { resolve = done }))
     const wrapper = mount(IntentDialog, { props })
     await proposed(wrapper)
-    expect(api.postApi).toHaveBeenCalledWith('/backlog/intent', { intent: 'Export do CSV', project: 'P01' })
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/intent', { intent: 'Export do CSV' })
     const progress = wrapper.get('[data-test="intent-progress"]')
     expect(progress.text()).toContain('Agent navrhuje')
     expect(progress.text()).toContain('Read src/app.py')
@@ -140,7 +194,10 @@ describe('IntentDialog', () => {
     })
     const applied = wrapper.emitted('applied')?.[0]?.[0] as Proposal
     expect(applied.applied).toBe(true)
-    expect(wrapper.get('[data-test="intent-applied"]').text()).toContain('commitnutý do main')
+    const applied2 = wrapper.get('[data-test="intent-applied"]').text()
+    expect(applied2).toContain('P01-S02')
+    expect(applied2).toContain('commitnutý do main')
+    expect(applied2).not.toContain('Nový projekt')
     wrapper.unmount()
     expect(api.postApi).not.toHaveBeenCalledWith('/backlog/intent/intent-1/discard')
   })

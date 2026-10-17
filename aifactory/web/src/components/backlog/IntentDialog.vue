@@ -1,17 +1,16 @@
 <script setup lang="ts">
-// Nový záměr: the person writes an intent and chooses a project (a new step) or a step (new
-// tasks); the proposer agent proposes the tasks (`web.intent`). Its progress is shown while
+// Nový záměr: the person writes an intent; the proposer agent places it (an existing or new
+// project, an existing or new step) and proposes the tasks (`web.intent`). Its progress is shown while
 // it works; the result is a tree of the new tasks with expandable texts and the findings of
-// the quality check. A task can be removed or its text edited, Upřesni sends a note to the
+// the quality check, under the proposed project and step and why they were chosen. A task can be removed or its text edited, Upřesni sends a note to the
 // same agent session, Použít writes the proposal and commits the backlog.
-import { computed, onBeforeUnmount, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref } from 'vue'
 import { Lightbulb, Pencil, Undo2, X } from 'lucide-vue-next'
 import {
   applyIntent,
   discardIntent,
   fetchIntent,
   isWorking,
-  parseTarget,
   refineIntent,
   startIntent,
   type IntentJob,
@@ -19,33 +18,24 @@ import {
   type ProposalFinding,
   type TaskEdit,
 } from '@/lib/intent'
-import { flattenIssues, levelLabel, levelNoun, type ScopeOption, type StepRef, type WriteError } from '@/lib/backlog'
+import { flattenIssues, levelLabel, levelNoun, type WriteError } from '@/lib/backlog'
 import { useLevels } from '@/lib/names'
 import { currentRepoId } from '@/lib/router'
-import type { SelectOption } from '@/lib/select'
 import MarkdownView from '@/components/ui/MarkdownView.vue'
-import SelectMenu from '@/components/ui/SelectMenu.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import IssueList from './IssueList.vue'
 
 const props = withDefaults(
   defineProps<{
-    projects: ScopeOption[]
-    steps: StepRef[]
-    /** Projects get a new step (false when the top level holds tasks only). */
-    allowProjects?: boolean
-    /** A project or step id to preselect. */
-    initial?: string | null
     /** Milliseconds between two reads of a running proposal. */
     pollMs?: number
   }>(),
-  { allowProjects: true, initial: null, pollMs: 700 },
+  { pollMs: 700 },
 )
 const emit = defineEmits<{ applied: [proposal: Proposal]; cancel: [] }>()
 
 const level = useLevels()
 const intent = ref('')
-const target = ref('')
 const job = ref<IntentJob | null>(null)
 const error = ref<WriteError | null>(null)
 const note = ref('')
@@ -56,36 +46,11 @@ const edits = ref<Record<string, { title: string; body: string }>>({})
 const removed = ref<Set<string>>(new Set())
 const editing = ref<Set<string>>(new Set())
 
-const targetOptions = computed<SelectOption[]>(() => [
-  ...(props.allowProjects
-    ? props.projects.map((p) => ({
-        value: `project:${p.id}`,
-        label: `${p.id}${p.title ? ` – ${p.title}` : ''} · nový ${levelNoun(level.step.value)}`,
-      }))
-    : []),
-  ...props.steps.map((s) => ({
-    value: `step:${s.id}`,
-    label: `${s.id}${s.title ? ` – ${s.title}` : ''} · nové ${levelNoun(level.task.value)}y`,
-  })),
-])
-
-watch(
-  () => [props.initial, targetOptions.value.length] as const,
-  () => {
-    if (target.value || !props.initial) return
-    const value = [`step:${props.initial}`, `project:${props.initial}`].find((v) =>
-      targetOptions.value.some((o) => o.value === v),
-    )
-    if (value) target.value = value
-  },
-  { immediate: true },
-)
-
 const working = computed(() => isWorking(job.value?.state))
 const proposal = computed(() => job.value?.proposal ?? null)
 const ready = computed(() => job.value?.state === 'ready' && proposal.value !== null)
 const busy = computed(() => working.value || applying.value || sending.value)
-const canPropose = computed(() => !busy.value && intent.value.trim() !== '' && parseTarget(target.value) !== null)
+const canPropose = computed(() => !busy.value && intent.value.trim() !== '')
 const kept = computed<TaskEdit[]>(() =>
   (proposal.value?.tasks ?? [])
     .filter((t) => !removed.value.has(t.code))
@@ -139,8 +104,7 @@ function poll(id: string) {
 }
 
 async function propose() {
-  const where = parseTarget(target.value)
-  if (!canPropose.value || !where) return
+  if (!canPropose.value) return
   stopPolling()
   error.value = null
   const previous = job.value
@@ -149,7 +113,7 @@ async function propose() {
     if (previous && previous.state !== 'applied') void discardIntent(previous.job_id).catch(() => undefined)
     job.value = null
     resetEdits(null)
-    const started = await startIntent(intent.value.trim(), where)
+    const started = await startIntent(intent.value.trim())
     show(started)
     poll(started.job_id)
   } catch (e) {
@@ -222,6 +186,8 @@ function onEdit(code: string) {
 }
 
 const stepLabel = computed(() => levelLabel(level.step.value))
+const projectLabel = computed(() => levelLabel(level.top.value))
+const projectNoun = computed(() => levelNoun(level.top.value))
 const taskNounPlural = computed(() => `${levelNoun(level.task.value)}y`)
 const stateText = computed(() => {
   const j = job.value
@@ -251,17 +217,7 @@ const jobError = computed<WriteError | null>(() =>
           v-model="intent"
           data-test="intent-text"
           rows="3"
-          placeholder="Co má nový kus práce přinést, jednou nebo pár větami."
-        />
-      </label>
-      <label>
-        Kam
-        <SelectMenu
-          v-model="target"
-          data-test="intent-target"
-          label="Kam"
-          :options="targetOptions"
-          :placeholder="`Vyber ${levelNoun(level.top.value)} nebo ${levelNoun(level.step.value)}`"
+          placeholder="Co má nový kus práce přinést, jednou nebo pár větami. Umístění navrhne agent; změníš ho v poli Upřesni (např. „dej to do HAIFA-S03“)."
         />
       </label>
     </fieldset>
@@ -292,6 +248,9 @@ const jobError = computed<WriteError | null>(() =>
       <p>
         Zapsáno: {{ appliedProposal.tasks.length }} {{ taskNounPlural }} v
         <span class="mono">{{ appliedProposal.step.id }}</span>.
+        <template v-if="appliedProposal.project?.new">
+          Nový {{ projectNoun }}: <span class="mono">{{ appliedProposal.project.id }}</span>.
+        </template>
         <template v-if="appliedProposal.commit?.committed">
           Backlog je commitnutý do {{ appliedProposal.commit.base }}.
         </template>
@@ -301,13 +260,27 @@ const jobError = computed<WriteError | null>(() =>
 
     <div v-else-if="proposal && !working" class="result" data-test="intent-result">
       <p v-if="proposal.summary" class="summary">{{ proposal.summary }}</p>
-      <div class="step" data-test="intent-step">
+      <div v-if="proposal.project" class="step" data-test="intent-project">
+        <span class="level">{{ projectLabel }}</span>
+        <span class="mono">{{ proposal.project.id }}</span>
+        <strong>{{ proposal.project.title }}</strong>
+        <span class="faint">{{ proposal.project.new ? 'nový' : 'existující' }}</span>
+      </div>
+      <MarkdownView
+        v-if="proposal.project?.new && proposal.project.body"
+        :source="proposal.project.body"
+        preview-only
+      />
+      <div class="step" :class="{ nested: !!proposal.project }" data-test="intent-step">
         <span class="level">{{ stepLabel }}</span>
         <span class="mono">{{ proposal.step.id }}</span>
         <strong>{{ proposal.step.title }}</strong>
         <span class="faint">{{ proposal.step.new ? 'nový' : 'existující' }}</span>
       </div>
       <MarkdownView v-if="proposal.step.new && proposal.step.body" :source="proposal.step.body" preview-only />
+      <p v-if="proposal.placement_reason" class="reason faint" data-test="intent-reason">
+        Proč sem: {{ proposal.placement_reason }}
+      </p>
 
       <ul class="tasks">
         <li
@@ -552,6 +525,14 @@ button:disabled {
   display: flex;
   align-items: center;
   gap: 10px;
+}
+
+.step.nested {
+  padding-left: 18px;
+}
+
+.reason {
+  margin: 0;
 }
 
 .level {

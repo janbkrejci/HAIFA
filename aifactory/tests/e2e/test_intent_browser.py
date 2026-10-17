@@ -1,4 +1,5 @@
-"""Nový záměr in the built dashboard: propose, progress, edit, Upřesni, Použít; fake harness."""
+"""Nový záměr in the built dashboard: propose without a target (the agent places it, also in a
+new project), progress, edit, Upřesni, Použít; fake harness."""
 
 from __future__ import annotations
 
@@ -13,7 +14,7 @@ from test_f3_browser import _launch
 from advice_fixture import git, make_repo
 from advice_server import dashboard
 from aifactory.backlog import check_backlog, load_backlog
-from intent_fixture import export_step, install_fake, task
+from intent_fixture import export_step, install_fake, placed, task
 
 pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
 
@@ -26,16 +27,26 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     head = git(repo, "rev-parse", "HEAD").strip()
     release = threading.Event()
 
+    reason = "Export patří k datům projektu P01."
+
     def first(request: Any) -> dict[str, Any]:
         assert release.wait(20), "the test did not see the progress"
-        return export_step()
+        assert '"kind": "auto"' in request.prompt
+        return placed(export_step(), reason, existing_project="P01")
 
     def revised(request: Any) -> dict[str, Any]:
         assert "## Continuation" in request.prompt
         assert "Přidej dokumentaci." in request.prompt
-        return export_step(task("T03", "Dokumentace exportu", depends_on=["T02"]))
+        extra = task("T03", "Dokumentace exportu", depends_on=["T02"])
+        return placed(export_step(extra), reason, existing_project="P01")
 
-    seen = install_fake(monkeypatch, [first, revised])
+    def new_project(request: Any) -> dict[str, Any]:
+        answer = export_step()
+        answer["step"] = {"code": "S01", "title": "Reporty CSV", "body": "Reporty do CSV."}
+        project = {"code": "P02", "title": "Reporty", "body": "Reporty a exporty dat."}
+        return placed(answer, "Reporty jsou samostatný projekt.", project=project)
+
+    seen = install_fake(monkeypatch, [first, revised, new_project])
     with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
         page = browser.new_page()
@@ -44,11 +55,8 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
             page.goto(f"{url}/#/r/{identifier}/backlog")
             page.locator('[data-test="new-intent"]').click()
             dialog = page.locator('[data-test="intent-dialog"]')
+            expect(dialog.locator('[data-test="intent-target"]')).to_have_count(0)
             dialog.locator('[data-test="intent-text"]').fill("Export dat do CSV")
-            dialog.locator('[data-test="intent-target"]').click()
-            page.locator('[data-test="select-list"] [role="option"]', has_text="P01").filter(
-                has_text="nový"
-            ).click()
             dialog.locator('[data-test="intent-propose"]').click()
 
             progress = dialog.locator('[data-test="intent-progress"]')
@@ -58,7 +66,11 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
 
             tasks = dialog.locator('[data-test="intent-task"]')
             expect(tasks).to_have_count(2)
+            project = dialog.locator('[data-test="intent-project"]')
+            expect(project).to_contain_text("P01")
+            expect(project).to_contain_text("existující")
             expect(dialog.locator('[data-test="intent-step"]')).to_contain_text("P01-S02")
+            expect(dialog.locator('[data-test="intent-reason"]')).to_contain_text(reason)
             first_task = dialog.locator('[data-task="P01-S02-T01"]')
             first_task.locator("summary").click()
             expect(first_task).to_contain_text("Hotovo znamená")
@@ -83,6 +95,25 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
             apply.click()
             page.wait_for_url("**/backlog/graph/P01-S02")
             expect(page.locator('[data-test="graph-title"]')).to_contain_text("Export")
+
+            # a second intent the agent places in a new project
+            page.locator('[data-test="new-intent"]').click()
+            dialog = page.locator('[data-test="intent-dialog"]')
+            dialog.locator('[data-test="intent-text"]').fill("Reporty do CSV")
+            dialog.locator('[data-test="intent-propose"]').click()
+            project = dialog.locator('[data-test="intent-project"]')
+            expect(project).to_contain_text("P02")
+            expect(project).to_contain_text("nový")
+            expect(dialog.locator('[data-test="intent-result"]')).to_contain_text(
+                "Reporty a exporty dat."
+            )
+            expect(dialog.locator('[data-test="intent-step"]')).to_contain_text("P02-S01")
+            expect(dialog.locator('[data-test="intent-reason"]')).to_contain_text(
+                "Reporty jsou samostatný projekt."
+            )
+            dialog.locator('[data-test="intent-apply"]').click()
+            page.wait_for_url("**/backlog/graph/P02-S01")
+            expect(page.locator('[data-test="graph-title"]')).to_contain_text("Reporty CSV")
         finally:
             browser.close()
 
@@ -92,3 +123,6 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     assert check_backlog(backlog) == []
     assert backlog.by_id["P01-S02-T02"].title == "CLI pro export"
     assert "P01-S02-T03" not in backlog.by_id
+    assert backlog.by_id["P02"].title == "Reporty"
+    assert backlog.by_id["P02-S01-T02"].parent.id == "P02-S01"  # type: ignore[union-attr]
+    assert len(seen) == 3
