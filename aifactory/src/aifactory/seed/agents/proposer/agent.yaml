@@ -1,0 +1,6 @@
+purpose: Propose a backlog step with tasks from an intent; read-only, writes nothing.
+defaults:
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes: []

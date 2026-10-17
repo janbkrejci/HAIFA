@@ -59,6 +59,14 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "the backlog has problems (backlog check) or the write would break it (nothing "
         "written); see error.issues",
     ),
+    (
+        "proposal_invalid",
+        "1",
+        "backlog propose: the proposal stayed invalid after one correction (nothing "
+        "written); see error.issues",
+    ),
+    ("proposal_failed", "1", "backlog propose: the agent reported that it cannot propose"),
+    ("agent_unavailable", "2", "the agent is missing from the roster or its harness is off"),
     # Runs.
     ("already_running", "2", "a run of this task is in progress"),
     ("task_not_in_base", "2", "the task is not committed in base"),
@@ -440,6 +448,16 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "missing_key",
         "missing_file",
         "invalid_yaml",
+    ),
+    # error.issues of `factory backlog propose` besides the backlog codes
+    "proposal": (
+        "invalid_value",
+        "invalid_id",
+        "duplicate_id",
+        "self_ref",
+        "file_exists",
+        "unknown_workflow",
+        "missing_done",
     ),
     "config": ("invalid_config",),
     # data.items[].origin of the dashboard's factory items and roster

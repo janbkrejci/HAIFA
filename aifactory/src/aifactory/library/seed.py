@@ -28,6 +28,7 @@ SEED_AGENTS: tuple[str, ...] = (
     "documenter",
     "scout",
     "guide",
+    "proposer",
 )
 SKILL_NAME = "factory"
 SKILL_FILE = "SKILL.md"
