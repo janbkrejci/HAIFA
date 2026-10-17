@@ -708,10 +708,16 @@ test triage of failed checks, revise phases) and lets the read-only agent `learn
 similar ones into lessons. Each of `data.lessons` has an `id`, a short `rule`, a `target`
 (`CLAUDE.md`, `AGENTS.md`, `skill` or `prompt`, with `target_detail` naming the skill or
 role), `occurrences` (the distinct runs), `runs` and `complaints` (snippets with their run).
-A lesson seen in one run only is never proposed. Show the lessons to the user; adopting one
-is an ordinary change of the named file, e.g. a backlog task.
-`factory learn reject ID [--reason TEXT] --json` rejects a lesson in the trace DB, and no
-later scan offers it or its objections again. The agent's prompts are overridden in
+A lesson seen in one run only is never proposed. Show the lessons to the user and let them
+decide; never write a rule into the repo yourself.
+`factory learn accept ID [--project ID] --json` files the lesson as a task in the step
+`LEARN` of the repo's project (created when missing) with workflow `build-review`, `writes`
+on the lesson's target only and the rule with the objections as evidence, and commits it to
+`base`; `data.task` names it. Run it like any task (it ends in a pull request). The project
+is `--project`, else the one of the tasks whose runs objected, else the only project
+(`project_required` otherwise). Accepting again shows the same task (`data.existed`).
+`factory learn dismiss ID [--reason TEXT] --json` rejects a lesson in the trace DB. No later
+scan offers an accepted or dismissed lesson or its objections again. The agent's prompts are overridden in
 `.factory/prompts/learner/`.
 
 ### Run

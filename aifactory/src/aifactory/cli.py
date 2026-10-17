@@ -58,7 +58,10 @@ SUBCOMMANDS: tuple[tuple[str, str], ...] = (
         "the HAIFA library in the home directory: init, list, show, import, clone, status, "
         "pull, push, seed",
     ),
-    ("learn", "collect objections that keep coming back in task runs into lessons"),
+    (
+        "learn",
+        "collect objections that keep coming back in task runs into lessons: scan, accept, dismiss",
+    ),
     ("upgrade", "install a newer HAIFA from a haifa-<version>.zip bundle"),
     ("obs", "serve the local dashboard (127.0.0.1 unless --host) and open it"),
 )
@@ -3181,23 +3184,38 @@ def _add_learn_commands(parser: argparse.ArgumentParser) -> None:
         "isolated checkout of the base commit. A lesson has a short rule, where it belongs "
         "(CLAUDE.md, AGENTS.md, a skill of the repo or the prompt of a role), its occurrences "
         "(the distinct runs), the runs and snippets of the objections. A lesson seen in one "
-        "run only is not proposed, nor one a person rejected (factory learn reject). Proposed "
-        "lessons are saved in the trace DB; nothing in the repo is written.",
+        "run only is not proposed, nor one a person accepted (factory learn accept) or "
+        "rejected (factory learn dismiss). Proposed lessons are saved in the trace DB; nothing "
+        "in the repo is written.",
     )
     scan.add_argument(
         "--since",
         metavar="DATE",
         help="only objections from this date (YYYY-MM-DD) or ISO timestamp on",
     )
-    reject = sub.add_parser(
-        "reject",
+    accept = sub.add_parser(
+        "accept",
+        help="turn a lesson into a backlog task that changes the repo's rules",
+        description="File a lesson of 'factory learn scan' as a task in the step LEARN of the "
+        "repo's project (the step is created when it is missing): workflow build-review, "
+        "writes on the lesson's target only (CLAUDE.md, AGENTS.md, .claude/skills/<name>/ and "
+        ".agents/skills/<name>/, or .factory/prompts/<role>/) and the rule with the objections "
+        "of the runs as evidence. The backlog change is committed to base; the task then runs "
+        "the ordinary way up to a pull request. The factory writes no rule itself. The project "
+        "is --project, else the one of the tasks whose runs objected, else the only project. "
+        "Accepting the lesson again shows its task and files nothing new.",
+    )
+    accept.add_argument("lesson", metavar="LESSON", help="lesson id from 'factory learn scan'")
+    accept.add_argument("--project", metavar="ID", help="project whose LEARN step gets the task")
+    dismiss = sub.add_parser(
+        "dismiss",
         help="reject a lesson so that no scan offers it again",
         description="Mark a lesson of 'factory learn scan' rejected in the trace DB; later "
         "scans do not offer it (nor its objections) again.",
     )
-    reject.add_argument("lesson", metavar="LESSON", help="lesson id from 'factory learn scan'")
-    reject.add_argument("--reason", metavar="TEXT", help="why the lesson is rejected")
-    for child in (scan, reject):
+    dismiss.add_argument("lesson", metavar="LESSON", help="lesson id from 'factory learn scan'")
+    dismiss.add_argument("--reason", metavar="TEXT", help="why the lesson is rejected")
+    for child in (scan, accept, dismiss):
         child.add_argument("--json", action="store_true", help="print machine-readable JSON")
         child.add_argument(
             "--repo",
@@ -3209,13 +3227,22 @@ def _add_learn_commands(parser: argparse.ArgumentParser) -> None:
 def _learn(args: argparse.Namespace) -> int:
     from aifactory.backlog import TaskEditError
     from aifactory.config import ConfigError
-    from aifactory.learn.scan import format_scan, reject, scan
+    from aifactory.learn.accept import accept, format_accepted
+    from aifactory.learn.scan import dismiss, format_scan, scan
 
     label = f"factory learn {args.learn_command}"
     root = _backlog_root(args.repo)
     try:
-        if args.learn_command == "reject":
-            data = reject(root, args.lesson, args.reason)
+        if args.learn_command == "accept":
+            outcome = accept(root, args.lesson, args.project)
+            if args.json:
+                return _emit_ok(outcome.to_json(), outcome.warnings)
+            print(format_accepted(outcome))
+            for warning in outcome.warnings:
+                print(f"warning: {warning}", file=sys.stderr)
+            return 0
+        if args.learn_command == "dismiss":
+            data = dismiss(root, args.lesson, args.reason)
         else:
             # the agent's progress goes to stderr; stdout carries only the lessons or JSON
             with contextlib.redirect_stdout(sys.stderr):
@@ -3224,8 +3251,8 @@ def _learn(args: argparse.Namespace) -> int:
         return _fail_from_exception(exc, args.json, label)
     if args.json:
         return _emit_ok(data)
-    if args.learn_command == "reject":
-        print(f"rejected {data['id']}: {data['rule']}")
+    if args.learn_command == "dismiss":
+        print(f"dismissed {data['id']}: {data['rule']}")
     else:
         print(format_scan(data))
     return 0
