@@ -700,6 +700,20 @@ preview. Without `--apply` the command only shows the proposal (`data.step`,
 writes the step and task files and commits nothing: check and commit as in Plan -> backlog.
 The agent's prompts are overridden in `.factory/prompts/proposer/`.
 
+### Lessons from runs
+
+`factory learn scan [--since DATE] --json` reads the objections of every task run of the
+repo from the trace DB (blocking items and unmet findings of the review and test review,
+test triage of failed checks, revise phases) and lets the read-only agent `learner` group
+similar ones into lessons. Each of `data.lessons` has an `id`, a short `rule`, a `target`
+(`CLAUDE.md`, `AGENTS.md`, `skill` or `prompt`, with `target_detail` naming the skill or
+role), `occurrences` (the distinct runs), `runs` and `complaints` (snippets with their run).
+A lesson seen in one run only is never proposed. Show the lessons to the user; adopting one
+is an ordinary change of the named file, e.g. a backlog task.
+`factory learn reject ID [--reason TEXT] --json` rejects a lesson in the trace DB, and no
+later scan offers it or its objections again. The agent's prompts are overridden in
+`.factory/prompts/learner/`.
+
 ### Run
 
 1. `factory task list --status ready --json` lists the tasks that can start.
