@@ -374,20 +374,27 @@ describe('BacklogView', () => {
     wrapper.unmount()
   })
 
-  it('opens Nový záměr from the graph with its container, and shows the step once applied', async () => {
+  it('opens Nový záměr from the graph without a target, and shows the step of a new project once applied', async () => {
     go('#/r/haifa/backlog/graph/M01-S01')
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/containers/M01-S01/graph')) return ok(containerGraph())
       if (url.endsWith('/containers/M01-S01')) return ok(containerDetail())
       if (url.endsWith('/backlog/intent') && init?.method === 'POST') {
-        return ok({ job_id: 'j', state: 'ready', round: 1, intent: 'x', target: { step: 'M01-S01' }, notes: [], progress: [],
+        expect(JSON.parse(String(init.body))).toEqual({ intent: 'Další task' })
+        return ok({ job_id: 'j', state: 'ready', round: 1, intent: 'x', notes: [], progress: [],
+          target: { project: 'M03', step: 'M03-S01', new_project: true, new_step: true },
           error: null, issues: [], applied: null, proposal: { summary: '', applied: false, files: [], findings: [],
-            step: { id: 'M01-S01', title: 'Model', body: '', path: 'p', new: false },
-            tasks: [{ id: 'M01-S01-T09', code: 'T09', title: 'Nový', body: 'b', workflow: 'plan', writes: [], depends_on: [], path: 'p' }] } })
+            project: { id: 'M03', title: 'Reporty', body: 'Reporty a exporty.', path: 'p', new: true },
+            placement_reason: 'Reporty jsou samostatný projekt.',
+            target: { project: 'M03', step: 'M03-S01' },
+            step: { id: 'M03-S01', title: 'Export', body: '', path: 'p', new: true },
+            tasks: [{ id: 'M03-S01-T01', code: 'T01', title: 'Nový', body: 'b', workflow: 'plan', writes: [], depends_on: [], path: 'p' }] } })
       }
       if (url.endsWith('/backlog/intent/j/apply')) {
         return ok({ summary: '', applied: true, files: [], findings: [], commit: { committed: true, commit: 'c', base: 'main' },
-          step: { id: 'M01-S01', title: 'Model', body: '', path: 'p', new: false }, tasks: [] })
+          project: { id: 'M03', title: 'Reporty', body: 'Reporty a exporty.', path: 'p', new: true },
+          target: { project: 'M03', step: 'M03-S01' },
+          step: { id: 'M03-S01', title: 'Export', body: '', path: 'p', new: true }, tasks: [] })
       }
       return ok(backlogData())
     })
@@ -398,14 +405,16 @@ describe('BacklogView', () => {
     go('#/r/haifa/backlog/intent/M01-S01')
     await flushPromises()
     expect(wrapper.find('[data-test="new-intent"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="intent-target"]').text()).toContain('M01-S01')
+    expect(wrapper.find('[data-test="intent-target"]').exists()).toBe(false)
     await wrapper.get('[data-test="intent-text"]').setValue('Další task')
     await wrapper.get('[data-test="intent-propose"]').trigger('click')
     await flushPromises()
+    expect(wrapper.get('[data-test="intent-project"]').text()).toContain('M03')
+    expect(wrapper.get('[data-test="intent-step"]').text()).toContain('M03-S01')
     expect(wrapper.findAll('[data-test="intent-task"]')).toHaveLength(1)
     await wrapper.get('[data-test="intent-apply"]').trigger('click')
     await flushPromises()
-    expect(window.location.hash).toBe('#/r/haifa/backlog/graph/M01-S01')
+    expect(window.location.hash).toBe('#/r/haifa/backlog/graph/M03-S01')
     expect(fetchMock.mock.calls.map((c) => c[0])).toContain('/api/repos/haifa/backlog/status')
     wrapper.unmount()
   })

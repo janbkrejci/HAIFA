@@ -3,8 +3,8 @@
 // (form, the step preselected), …/backlog/<task id>, …/backlog/graph/<project or step id> (dependency graph and
 // a link to its Nastavení panel in the tree), …/backlog/new-container[/<project id>] (form for a new project or step).
 // …/backlog/new-step selects the parent project before creating a step.
-// …/backlog/intent[/<project or step id>] opens the Nový záměr dialog (a proposal from an intent);
-// the task detail does not offer it.
+// …/backlog/intent[/<id>] opens the Nový záměr dialog (a proposal from an intent, placed by the agent;
+// the id is ignored); the task detail does not offer it.
 import { computed, ref, watch } from 'vue'
 import { Lightbulb, Plus, RefreshCw } from 'lucide-vue-next'
 import BackLink from '@/components/ui/BackLink.vue'
@@ -110,8 +110,6 @@ const isGraph = computed(() => target.value === GRAPH)
 const graphId = computed(() => (isGraph.value ? (params.value[1] ?? null) : null))
 const isNewStep = computed(() => target.value === NEW_STEP)
 const isIntent = computed(() => target.value === NEW_INTENT)
-/** `…/backlog/intent/<id>`: the project or step the dialog preselects. */
-const intentInitial = computed(() => (isIntent.value ? (params.value[1] ?? null) : null))
 const isNewContainer = computed(() => target.value === NEW_CONTAINER || isNewStep.value)
 const selectedProject = ref('')
 /** The project of a new step; null for a new project. */
@@ -598,11 +596,11 @@ function cancelNew() {
   window.location.hash = here('backlog')
 }
 
-/** Nový záměr wrote and committed the proposal: show its step. */
+/** Nový záměr wrote and committed the proposal: show its step (also in a new project). */
 async function onIntentApplied(result: Proposal) {
   void backlogStatus.refresh()
   await loadList()
-  window.location.hash = graphHref(result.step.id)
+  window.location.hash = graphHref(result.target?.step ?? result.step.id)
 }
 
 /** A follow-up task was created (and maybe committed and started): show its detail. */
@@ -685,10 +683,6 @@ watch(
     <template v-if="isIntent">
       <IntentDialog
         v-if="data"
-        :projects="projects"
-        :steps="steps"
-        :allow-projects="!!listChildLevel"
-        :initial="intentInitial"
         @applied="onIntentApplied"
         @cancel="cancelNew"
       />
