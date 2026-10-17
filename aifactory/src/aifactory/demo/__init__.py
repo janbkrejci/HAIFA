@@ -9,6 +9,10 @@ in the dashboard registry.
 
 A folder that exists and is not empty is left as it is: nothing is written, the path is
 returned (``created`` false) and a git repository there is registered.
+
+The dashboard creates the sample in the default folder (``POST /api/demo``) and removes it
+there with ``remove_demo`` (``DELETE /api/demo``): the registry entry and the whole folder.
+Only the default folder is ever deleted, never a folder the user named.
 """
 
 from __future__ import annotations
@@ -146,3 +150,66 @@ def create_demo(directory: Path | None = None, *, home: Path | None = None) -> D
     return DemoResult(
         target, created=created, registered=repo_id is not None, repo_id=repo_id, warnings=warnings
     )
+
+
+def is_demo(path: Path | str, home: Path | None = None) -> bool:
+    """``path`` is the sample's default folder (the one the dashboard creates and removes)."""
+    from aifactory.web.registry import same_repo
+
+    return same_repo(path, default_dir(home))
+
+
+def _live_runs(root: Path) -> list[str]:
+    from aifactory.run.task import existing_store
+
+    try:
+        store = existing_store(root)
+    except Exception:  # noqa: BLE001 - an unreadable trace DB holds no live run to protect
+        return []
+    if store is None:
+        return []
+    try:
+        return [row.run_id for row in store.live_runs()]
+    finally:
+        store.close()
+
+
+@dataclass(frozen=True)
+class DemoRemoval:
+    path: Path
+    repo_id: str | None
+    deleted: bool
+
+    def to_json(self) -> dict[str, Any]:
+        return {"path": str(self.path), "repo_id": self.repo_id, "deleted": self.deleted}
+
+
+def remove_demo(home: Path | None = None) -> DemoRemoval:
+    """Unregister the sample of the default folder and delete that folder.
+
+    ``run_in_progress`` (``RepoError``) while a run of the sample is alive; nothing changes
+    then. A sample that is not registered or whose folder is gone is removed as far as it is.
+    """
+    from aifactory.home import haifa_home
+    from aifactory.web.registry import Registry, RepoError, same_repo
+
+    target = default_dir(home).absolute()
+    registry = Registry(home if home is not None else haifa_home())
+    state, _warnings = registry.snapshot()
+    entry = next((e for e in state.repos if same_repo(e.path, target)), None)
+    if target.is_dir():
+        live = _live_runs(target)
+        if live:
+            raise RepoError(
+                "run_in_progress",
+                f"the sample has a run in progress ({', '.join(live)}); stop it first",
+            )
+    if entry is not None:
+        registry.remove(entry.id)
+    deleted = False
+    if target.is_dir():
+        from aifactory.workflow.adaptive import remove_tree
+
+        remove_tree(target)
+        deleted = True
+    return DemoRemoval(target, entry.id if entry is not None else None, deleted)

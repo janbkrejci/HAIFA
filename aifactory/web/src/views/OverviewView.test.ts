@@ -325,5 +325,13 @@ describe('OverviewView', () => {
     const wrapper = mount(OverviewView, { props: { repos: [] }, global })
     await flushPromises()
     expect(wrapper.get('[data-test="add-repo-link"]').attributes('href')).toBe('#/repos/add')
+    expect(wrapper.get('[data-test="no-repos"] [data-test="try-demo"]').text()).toBe('Vyzkoušet na ukázce')
+  })
+
+  it('has no sample button once a repo is registered', async () => {
+    stubOverview()
+    const wrapper = mount(OverviewView, { props: { repos: REGISTERED }, global })
+    await flushPromises()
+    expect(wrapper.find('[data-test="try-demo"]').exists()).toBe(false)
   })
 })

@@ -164,6 +164,8 @@ export interface RepoItem {
   added_at: string
   status: RepoStatus
   factory: Record<string, unknown> | null
+  /** The sample repository of `factory try` in its default folder (absent from an older server). */
+  demo?: boolean
 }
 
 export interface RepoList {

@@ -4,6 +4,7 @@
 // (the name with the path in a tooltip, the factory buttons and the menu, the newest activity last).
 // Reloads every 2 s while the tab is visible, on a return to the window and by Obnovit; reads only.
 // Readiness reports its progress and actionable findings above the overview.
+// With no repo at all it offers adding one or trying the sample (TryDemoButton).
 import { computed, ref } from 'vue'
 import { Plus, RefreshCw } from 'lucide-vue-next'
 import type { RepoItem } from '@/lib/api'
@@ -22,6 +23,7 @@ import {
 import { REPOS_ADD_HREF, repoHref } from '@/lib/router'
 import { ADD_REPO_HINT, useRemoveRepo } from '@/lib/repos'
 import EmptyScreen from '@/components/EmptyScreen.vue'
+import TryDemoButton from '@/components/demo/TryDemoButton.vue'
 import RepoActions from '@/components/overview/RepoActions.vue'
 import RepoCard from '@/components/overview/RepoCard.vue'
 import RepoControls from '@/components/overview/RepoControls.vue'
@@ -72,6 +74,7 @@ function activity(iso: string | null): string {
   <div v-if="empty">
     <EmptyScreen heading="Žádné repozitáře" :hint="ADD_REPO_HINT" data-test="no-repos">
       <a :href="REPOS_ADD_HREF" class="add-link" data-test="add-repo-link"><Plus :size="14" aria-hidden="true" /> Přidat repozitář</a>
+      <TryDemoButton @started="emit('changed')" />
     </EmptyScreen>
   </div>
   <section v-else class="overview-view" data-test="repo-page">

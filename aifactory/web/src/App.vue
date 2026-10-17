@@ -265,7 +265,7 @@ onBeforeUnmount(() => {
         </EmptyScreen>
         <RemoveRepoDialog :removal="missingRemoval" />
       </main>
-      <RepoScreen v-else :key="repoId ?? ''" />
+      <RepoScreen v-else :key="repoId ?? ''" :demo="currentRepo?.demo === true" :path="currentRepo?.path ?? null" />
     </template>
     <main v-else-if="viewPage === 'repos-add'">
       <ReposAddView @added="onAdded" />

@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { nextTick } from 'vue'
+import { nextTick, ref } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RunDetail from './RunDetail.vue'
 import { detail, events, okResponse, prompts } from '@/test/runsFixtures'
 import { answerDialog, openDialog } from '@/test/modal'
+import { DEMO_REPO } from '@/lib/demo'
 
 // Unmount every wrapper so no late render runs after the environment is torn down.
 enableAutoUnmount(afterEach)
@@ -13,6 +14,17 @@ afterEach(() => {
 })
 
 describe('RunDetail', () => {
+  it('explains the steps only in the run of the sample repository', () => {
+    const plain = mount(RunDetail, { props: { detail: detail(), events: events() } })
+    expect(plain.find('[data-test="demo-steps"]').exists()).toBe(false)
+    const demo = mount(RunDetail, {
+      props: { detail: detail({ state: 'running', pr: null }), events: events() },
+      global: { provide: { [DEMO_REPO as symbol]: ref('/h/demo') } },
+    })
+    expect(demo.get('[data-test="demo-steps"]').text()).toContain('Worktree')
+    expect(demo.findAll('[data-test="demo-steps"] li').map((li) => li.attributes('data-step'))).toEqual(['worktree', 'build', 'test', 'review', 'pr', 'merge'])
+  })
+
   it('draws the phases as a waterfall instead of a table', () => {
     const wrapper = mount(RunDetail, { props: { detail: detail(), events: events() } })
     expect(wrapper.find('table.phases').exists()).toBe(false)

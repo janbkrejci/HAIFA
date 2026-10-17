@@ -18,6 +18,8 @@ import {
 import { isLive } from '@/lib/waterfall'
 import { failureCard } from '@/lib/failure'
 import { useConfirm } from '@/lib/confirm'
+import { useDemoRepo } from '@/lib/demo'
+import DemoSteps from '@/components/demo/DemoSteps.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import FailureCard from './FailureCard.vue'
@@ -43,6 +45,8 @@ const props = defineProps<{
 const emit = defineEmits<{ stop: []; pause: []; resume: []; publish: []; retried: []; cancelled: []; done: [] }>()
 
 const run = computed(() => props.detail.run)
+// the sample repository explains each step of its run (DemoSteps)
+const demo = useDemoRepo()
 // a run that did not succeed opens with its failure card (kind, sentence, facts, actions)
 const card = computed(() => failureCard(run.value))
 const phases = computed(() => [...(props.detail.phases ?? [])].sort(bySeq))
@@ -131,6 +135,7 @@ async function onStop() {
         </button>
         <RetryRunButton v-if="canRetry(run) && !card" :run-id="run.run_id" @started="emit('retried')" />
       </div>
+      <DemoSteps v-if="demo !== null" :run="run" :phases="phases" />
       <FailureCard v-if="card" :run="run" :phases="phases" @retried="emit('retried')" @cancelled="emit('cancelled')" @done="emit('done')" />
       <dl class="meta">
         <div><dt>Běh</dt><dd class="mono">{{ run.run_id }}</dd></div>
