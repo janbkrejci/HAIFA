@@ -20,6 +20,9 @@ pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
 
 def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     repo = make_repo(tmp_path / "repo")
+    # CI has no global git identity; the backlog commit of Použít needs one
+    git(repo, "config", "user.name", "Test")
+    git(repo, "config", "user.email", "test@example.com")
     head = git(repo, "rev-parse", "HEAD").strip()
     release = threading.Event()
 

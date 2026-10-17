@@ -18,7 +18,11 @@ from intent_fixture import export_step, install_fake, task
 
 @pytest.fixture
 def repo(tmp_path: Path) -> Path:
-    return make_repo(tmp_path / "repo")
+    root = make_repo(tmp_path / "repo")
+    # CI has no global git identity; the backlog commit of Použít needs one
+    git(root, "config", "user.name", "Test")
+    git(root, "config", "user.email", "test@example.com")
+    return root
 
 
 @pytest.fixture
@@ -87,6 +91,7 @@ def test_propose_refine_in_same_session_and_apply(
     response = client.post(f"/api/backlog/intent/{job}/apply", json={"tasks": tasks})
     assert response.status_code == 200, response.text
     applied = response.json()["data"]
+    assert applied["commit"] is not None, applied["warnings"]
     assert applied["commit"]["committed"] is True
     assert sorted(applied["files"]) == [
         "backlog/P01/S02-export/P01-S02-T01-model.md",

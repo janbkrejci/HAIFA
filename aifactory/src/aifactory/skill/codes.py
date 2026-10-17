@@ -32,6 +32,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "(otherwise it is created silently; 1 for backlog list/check, 2 for task commands)",
     ),
     ("unknown_workflow_advice", "2", "dashboard API: workflow advice expired or not found"),
+    ("unknown_intent", "2", "dashboard API: the intent proposal expired or was closed"),
     ("unknown_task", "2", "no task with this id"),
     ("unknown_step", "2", "no step with this id"),
     ("unknown_project", "2", "no project with this id or directory"),
