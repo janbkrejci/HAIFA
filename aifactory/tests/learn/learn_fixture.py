@@ -8,7 +8,7 @@ from typing import Any
 
 import pytest
 
-from advice_fixture import make_repo
+from advice_fixture import git, make_repo
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentResult
 from aifactory.engine.tracer import Tracer
@@ -64,6 +64,9 @@ def _review(*blocking: str, approved: bool = False) -> dict[str, Any]:
 
 def make_learn_repo(tmp_path: Path) -> Path:
     root = make_repo(tmp_path / "repo")
+    # `factory learn accept` commits the backlog with the repo's own identity; CI has none.
+    git(root, "config", "user.name", "test")
+    git(root, "config", "user.email", "test@test")
     db_path = root / ".factory/trace.db"
     TaskRunStore(db_path).close()
     tracer = Tracer(db_path, tmp_path / "events.jsonl")
