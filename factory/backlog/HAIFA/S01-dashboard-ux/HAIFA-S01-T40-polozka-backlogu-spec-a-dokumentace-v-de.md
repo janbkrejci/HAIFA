@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T40
 title: "Položka backlogu, spec a dokumentace v detailu tasku nepotřebují záložky Zdroj"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T42, HAIFA-REFINEMENT-T45, HAIFA-S01-T04, HAIFA-REFINEMENT-T25]
@@ -32,3 +32,4 @@ V detailu tasku (karta se záložkami Zadání / Položka backlogu / Spec / Doku
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/96 · náklady $0.74
