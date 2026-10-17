@@ -73,7 +73,12 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "1",
         "learn scan: the lessons stayed invalid after one correction (nothing saved)",
     ),
-    ("unknown_lesson", "2", "learn reject: no lesson with this id"),
+    ("unknown_lesson", "2", "learn accept/dismiss: no lesson with this id"),
+    (
+        "project_required",
+        "2",
+        "learn accept: the project cannot be told from the lesson's runs; give --project",
+    ),
     ("agent_unavailable", "2", "the agent is missing from the roster or its harness is off"),
     # Runs.
     ("already_running", "2", "a run of this task is in progress"),

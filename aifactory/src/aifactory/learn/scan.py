@@ -9,10 +9,12 @@ commit, with no writes, its own trace under ``.factory/data/learn/<job>/``. It a
 objections it groups. A lesson naming an unknown objection goes back to the agent once.
 
 The code then counts the occurrences (the distinct runs of the objections) and drops a
-lesson seen in one run only, one whose rule a person rejected, and one whose objections
-all belong to a rejected lesson. The rest is saved as ``proposed`` in ``learn_lessons``
-(``store``); ``factory learn reject`` rejects one for good. With objections from fewer
-than two runs no agent runs at all.
+lesson seen in one run only, one whose rule a person settled (accepted or rejected; the
+agent gets them as ``rejected_lessons``), and one whose objections all belong to a settled
+lesson. The rest is saved as ``proposed`` in ``learn_lessons`` (``store``);
+``factory learn dismiss`` rejects one for good and ``factory learn accept`` (``accept``)
+turns one into a backlog task. With objections from fewer than two runs no agent runs at
+all.
 """
 
 from __future__ import annotations
@@ -231,7 +233,7 @@ def _snippet(o: Objection) -> dict[str, str]:
 
 
 def _blocked(rule: str, keys: set[str], rejected: list[StoredLesson]) -> bool:
-    """A rejected rule, or objections that all belong to a rejected lesson."""
+    """A settled rule, or objections that all belong to a settled lesson."""
     return any(
         normalize(r.rule) == normalize(rule) or (r.complaints and keys <= set(r.complaints))
         for r in rejected
@@ -292,7 +294,7 @@ def scan(repo: Path, since: str | None = None) -> dict[str, Any]:
     if len(runs) >= MIN_RUNS:
         store = LessonStore(db)
         try:
-            rejected = store.rejected()
+            rejected = store.settled()
             by_id = {f"c{n}": o for n, o in enumerate(objections, 1)}
             output = _ask_learner(repo, context(objections, rejected), set(by_id))
             lessons = lessons_of(output, by_id, rejected)
@@ -319,7 +321,7 @@ def scan(repo: Path, since: str | None = None) -> dict[str, Any]:
     }
 
 
-def reject(repo: Path, lesson: str, reason: str | None = None) -> dict[str, Any]:
+def dismiss(repo: Path, lesson: str, reason: str | None = None) -> dict[str, Any]:
     store = LessonStore(trace_db(repo))
     try:
         stored = store.reject(lesson.strip(), reason)
@@ -349,5 +351,9 @@ def format_scan(data: dict[str, Any]) -> str:
             "  runs: " + ", ".join(f"{r['run_id']} ({r['task_id']})" for r in lesson["runs"]),
         ]
         lines += [f"  - [{c['source']} {c['run_id']}] {c['text']}" for c in lesson["complaints"]]
-    lines += ["", "reject a lesson for good with 'factory learn reject ID'"]
+    lines += [
+        "",
+        "adopt a lesson with 'factory learn accept ID' (a backlog task), "
+        "reject one for good with 'factory learn dismiss ID'",
+    ]
     return "\n".join(lines)
