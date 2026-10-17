@@ -6,9 +6,12 @@ isolated clone checked out at the base commit, with no writes. It returns a type
 ``BacklogProposalOutput``: a new step of the project ``--project`` with its tasks, or new
 tasks of the existing step ``--step``. The proposal is validated against the backlog of the
 working tree like ``factory task add`` (``backlog.add_batch``) plus the workflow catalog and
-the ``Hotovo znamená`` section of every task. An invalid proposal goes back to the agent once
-(a gate correction in the same session); a second invalid one fails with
-``proposal_invalid`` and nothing is written. Only ``apply=True`` writes, and never commits.
+the blocking rules of ``propose_check`` (``Hotovo znamená``, no dependency cycle). An invalid
+proposal goes back to the agent once (a gate correction in the same session); a second
+invalid one fails with ``proposal_invalid`` and nothing is written. The other findings of
+``propose_check`` (writes) go back to the agent in the same single correction; those left
+after it are returned in ``findings`` and shown in the preview. Only ``apply=True`` writes,
+and never commits.
 """
 
 from __future__ import annotations
@@ -37,13 +40,13 @@ from aifactory.providers.git import PARALLEL_CHECKOUT
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.scope import TaskScope
 from aifactory.run.task import _main_ignored, prepare_cfg
-from aifactory.workflow import DEFAULT_WORKFLOWS_DIR
+from aifactory.workflow import DEFAULT_WORKFLOWS_DIR, propose_check
 from aifactory.workflow.adaptive import advice_dir
+from aifactory.workflow.propose_check import DONE_HEADING, Candidate, Finding
 
 install()
 
 PROPOSER_AGENT = "proposer"
-DONE_HEADING = "Hotovo znamená"
 # One correction: the agent gets an invalid proposal back once.
 CORRECTIONS = 1
 _BODY_LIMIT = 4000
@@ -222,15 +225,9 @@ def plan(
                     task.code,
                 )
             )
-        if DONE_HEADING.lower() not in task.body.lower():
-            problems.append(
-                Issue(
-                    "missing_done",
-                    f"task '{task.code}': the body needs a section '{DONE_HEADING}:'",
-                    "",
-                    task.code,
-                )
-            )
+    blocking = [f for f in review(repo, proposal, target) if f.blocking]
+    problems.extend(Issue(f.rule, f.message, "", f.task) for f in blocking)
+    cycles = any(f.rule == propose_check.CYCLE for f in blocking)
     step = proposal.step
     try:
         result = core.add_batch(
@@ -244,7 +241,9 @@ def plan(
             write=write and not problems,
         )
     except TaskEditError as exc:
-        problems.extend(exc.issues or [Issue(exc.code, exc.message, exc.path or "", exc.id)])
+        issues = exc.issues or [Issue(exc.code, exc.message, exc.path or "", exc.id)]
+        # a cycle among the proposed tasks is already reported by the check
+        problems.extend(i for i in issues if not (cycles and i.code == propose_check.CYCLE))
         result = None
     if problems or result is None:
         raise TaskEditError(
@@ -254,6 +253,54 @@ def plan(
             issues=problems,
         )
     return result
+
+
+def _step_id(proposal: BacklogProposalOutput, target: Target) -> str | None:
+    if target.step is not None:
+        return target.step
+    if proposal.step is None or target.project is None:
+        return None
+    return f"{target.project}-{proposal.step.code.strip()}"
+
+
+def candidates(proposal: BacklogProposalOutput, target: Target) -> list[Candidate]:
+    """The proposed tasks for ``propose_check``: dependencies on tasks of the proposal (by
+    code or full id) by their code, the rest as given."""
+    step_id = _step_id(proposal, target)
+    codes = {t.code.strip() for t in proposal.tasks}
+    aliases = {code: code for code in codes}
+    if step_id:
+        aliases.update({f"{step_id}-{code}": code for code in codes})
+
+    def ref(dep: str) -> str:
+        return aliases.get(dep.strip(), dep.strip())
+
+    return [
+        Candidate(
+            key=t.code.strip(),
+            body=t.body,
+            writes=tuple(w for w in t.writes if w.strip()),
+            depends_on=tuple(ref(d) for d in t.depends_on),
+        )
+        for t in proposal.tasks
+    ]
+
+
+def closed_paths(repo: Path) -> list[str]:
+    """What no run may change: ``protected_files`` (config and roster) and the backlog."""
+    config = load_run_config(repo).config
+    settings = config.settings
+    paths = [
+        *config.agents.defaults.protected_files,
+        *settings.protected_files,
+        *settings.backlog_patterns,
+    ]
+    return list(dict.fromkeys(paths))
+
+
+def review(repo: Path, proposal: BacklogProposalOutput, target: Target) -> list[Finding]:
+    """Every finding of ``propose_check`` on the proposal, blocking ones first."""
+    return propose_check.check(candidates(proposal, target), repo, closed_paths(repo))
 
 
 def _message(issue: Issue) -> str:
@@ -320,17 +367,25 @@ def propose(
         tracer = Tracer(cfg.observability.db, runtime / "events.jsonl")
         accepted: list[core.BatchResult] = []
         last: list[Issue] = []
+        remaining: list[Finding] = []
+        attempts = [0]
 
         def proposal_valid(envelope: EnvelopeBase, run: Any) -> list[str]:
             if envelope.status != "success":
                 return []
             assert isinstance(envelope, BacklogProposalOutput)
+            attempts[0] += 1
             try:
                 result = plan(repo, envelope, target, catalog)
             except TaskEditError as exc:
                 last[:] = exc.issues
                 return [_message(i) for i in exc.issues]
+            findings = [f for f in review(repo, envelope, target) if not f.blocking]
+            if findings and attempts[0] <= CORRECTIONS:
+                # the one correction also covers the quality findings
+                return [f"{f.rule}: {f.message}" for f in findings]
             accepted[:] = [result]
+            remaining[:] = findings
             return []
 
         ok = False
@@ -381,7 +436,7 @@ def propose(
             proposal = BacklogProposalOutput.model_validate(envelope.model_dump())
             result = plan(repo, proposal, target, catalog, write=True) if apply else accepted[0]
             ok = True
-            return to_json(proposal, result, target)
+            return to_json(proposal, result, target, remaining)
         finally:
             try:
                 tracer.session_finish(job_id, ok=ok)
@@ -390,8 +445,16 @@ def propose(
 
 
 def to_json(
-    proposal: BacklogProposalOutput, result: core.BatchResult, target: Target
+    proposal: BacklogProposalOutput,
+    result: core.BatchResult,
+    target: Target,
+    findings: list[Finding] | None = None,
 ) -> dict[str, Any]:
+    step_id = _step_id(proposal, target)
+
+    def task_id(code: str) -> str:
+        return f"{step_id}-{code}" if step_id else code
+
     return {
         "summary": proposal.summary,
         "applied": result.written,
@@ -416,6 +479,7 @@ def to_json(
             for t in result.tasks
         ],
         "files": result.files,
+        "findings": [{**f.to_json(), "task": task_id(f.task)} for f in (findings or [])],
     }
 
 
@@ -438,4 +502,8 @@ def format_preview(data: dict[str, Any]) -> str:
         lines.append(f"    depends_on: {', '.join(task['depends_on']) or '-'}")
         lines.append("")
         lines += _indent(task["body"], "    ")
+    findings = data.get("findings") or []
+    if findings:
+        lines += ["", f"findings of the quality check ({len(findings)}):"]
+        lines += [f"  - [{f['rule']}] {f['task']}: {f['message']}" for f in findings]
     return "\n".join(lines)

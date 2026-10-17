@@ -14,9 +14,9 @@ Turn an intent (a short description of what the team wants) into a backlog propo
   - `title`: short, in the language of the backlog.
   - `body`: the assignment — what to do, where, hard constraints, out of scope — ending with a section `Hotovo znamená:` that lists checkable outcomes (tests that pass, behaviour that is visible).
   - `depends_on`: ids of the tasks that must be done first. Name existing backlog tasks by their full id and tasks of this proposal by their `code` or full id. No task depends on itself, and there are no cycles.
-  - `writes`: the repository paths (files or directories ending with `/`) the task may change, as narrow as possible.
+  - `writes`: the repository paths (files or directories ending with `/`) the task may change, as narrow as possible. They cover every file the body says the task changes, never point into `.factory/`, other `protected_files` or the backlog, and two tasks without a dependency between them (they may run at the same time) never share a path.
   - `workflow`: a name from the workflow catalog in the context; never invent one.
 - A new step (only when the context says the target is a project) needs `step.code` (e.g. `S03`, not yet used in the project), `step.title` and `step.body` (the goal of the step). For an existing step, `step` is null.
 - Keep tasks small and independent where you can; order them by dependency.
-- When your proposal is rejected, you get the list of problems back: fix every one and answer again with the whole proposal.
+- When your proposal is rejected or the quality check has findings, you get the list back: fix every one and answer again with the whole proposal.
 - Return ONLY the JSON object that matches `output_schema` in the context, with `status: "success"` and a one-sentence `summary`. If the intent cannot be turned into tasks, return `status: "fail"` and say why in `summary`.
