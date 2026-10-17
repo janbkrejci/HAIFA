@@ -3,7 +3,8 @@
 // (form, the step preselected), …/backlog/<task id>, …/backlog/graph/<project or step id> (dependency graph and
 // the Nastavení panel), …/backlog/new-container[/<project id>] (form for a new project or step).
 // …/backlog/new-step selects the parent project before creating a step.
-// …/backlog/intent[/<project or step id>] opens the Nový záměr dialog (a proposal from an intent).
+// …/backlog/intent[/<project or step id>] opens the Nový záměr dialog (a proposal from an intent);
+// the task detail does not offer it.
 import { computed, ref, watch } from 'vue'
 import { Lightbulb, Plus, RefreshCw } from 'lucide-vue-next'
 import BackLink from '@/components/ui/BackLink.vue'
@@ -686,7 +687,7 @@ watch(
       <BackLink v-if="target" :href="here('backlog')" label="backlog" />
       <div class="head-actions">
         <a
-          v-if="!isIntent"
+          v-if="!isIntent && !taskId"
           :href="intentHref(isGraph ? graphId : null)"
           class="button"
           data-test="new-intent"

@@ -328,7 +328,7 @@ describe('BacklogView', () => {
     expect(window.location.hash).toBe('#/r/haifa/backlog/new')
     wrapper.unmount()
   })
-  it('puts Nový záměr first among the head buttons, in the list and in the graph', async () => {
+  it('puts Nový záměr first among the head buttons in the list and the graph, and hides it in a task detail', async () => {
     const order = (wrapper: ReturnType<typeof mount>) =>
       wrapper.findAll('.head-actions > [data-test]').map((el) => el.attributes('data-test'))
     go('#/r/haifa/backlog')
@@ -343,6 +343,9 @@ describe('BacklogView', () => {
     go('#/r/haifa/backlog/graph/M01-S01')
     await flushPromises()
     expect(order(wrapper)).toEqual(['new-intent', 'new-task', 'refresh'])
+    go('#/r/haifa/backlog/M01-S01-T02')
+    await flushPromises()
+    expect(wrapper.find('[data-test="new-intent"]').exists()).toBe(false)
     wrapper.unmount()
   })
 
