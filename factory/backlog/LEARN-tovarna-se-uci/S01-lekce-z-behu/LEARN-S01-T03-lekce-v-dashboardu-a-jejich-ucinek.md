@@ -1,7 +1,7 @@
 ---
 id: LEARN-S01-T03
 title: Lekce v dashboardu a jejich účinek
-status: todo
+status: done
 depends_on: [LEARN-S01-T02]
 ---
 
@@ -16,3 +16,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/89 · náklady $4.72

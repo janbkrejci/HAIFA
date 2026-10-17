@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from learn_fixture import fake_learner, make_learn_repo
 
 from aifactory.cli import main
 from aifactory.learn.collect import collect
 from aifactory.learn.store import REJECTED, LessonStore
+from learn_fixture import fake_learner, make_learn_repo
 
 TESTS_RULE = "Add a test for every new CLI command."
 
@@ -130,7 +130,13 @@ def test_since_leaves_one_run_and_no_agent(
 ) -> None:
     seen, _ = fake
     data = _scan(capsys, repo, "--since", "2026-10-03")
-    assert data == {"since": "2026-10-03", "objections": 2, "runs": 1, "lessons": []}
+    assert data == {
+        "since": "2026-10-03",
+        "objections": 2,
+        "runs": 1,
+        "lessons": [],
+        "repeats": [],
+    }
     assert seen == []
     assert main(["learn", "scan", "--repo", str(repo), "--since", "2026-10-03"]) == 0
     assert "no lesson to propose" in capsys.readouterr().out

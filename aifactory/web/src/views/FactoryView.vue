@@ -5,7 +5,8 @@
 // the machine check (#/setup) shows too and the library findings live only there; one line
 // links to them; "Vyřešit vybrané nálezy" opens its panel right under that button, next to the
 // findings. Below: the repo settings (#/r/<id>/factory/settings) and "Nastavení agentů" (the
-// repo-level harness, model and thinking of each agent). Every section collapses by its heading;
+// repo-level harness, model and thinking of each agent) and "Lekce" (the lessons of `factory
+// learn`, LessonsSection). Every section collapses by its heading;
 // a jump to a section (Co dál, #/r/<id>/factory/settings) opens it first. The config commit (#/r/<id>/factory/config_commit) is opened by the red config chip in the topbar.
 // Writes use a reviewed and confirmed server plan.
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
@@ -21,6 +22,7 @@ import type { FactoryAction } from '@/lib/api'
 import Spinner from '@/components/ui/Spinner.vue'
 import RepoItems from '@/components/factory/RepoItems.vue'
 import RepoSettings from '@/components/factory/RepoSettings.vue'
+import LessonsSection from '@/components/factory/LessonsSection.vue'
 import CollapsibleSection from '@/components/ui/CollapsibleSection.vue'
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = { error: 0, warning: 1, info: 2 }
@@ -39,6 +41,7 @@ const nextOpen = ref(true)
 const summaryOpen = ref(true)
 const settingsOpen = ref(true)
 const agentsOpen = ref(true)
+const lessonsOpen = ref(true)
 const groupOpen = ref<Record<string, boolean>>({})
 async function showRoster() {
   agentsOpen.value = true
@@ -246,6 +249,7 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
     <div v-if="report && report.state !== 'none'" ref="rosterSection">
       <RepoItems ref="itemManager" v-model:open="agentsOpen" :repo-id="repoId" :disabled="operationBusy || !!repair" @busy="itemsBusy = $event; if ($event) operation = null" @success="load(true)" />
     </div>
+    <LessonsSection v-if="report && report.state !== 'none'" v-model:open="lessonsOpen" :disabled="operationBusy || !!repair || itemsBusy" />
   </section>
 </template>
 

@@ -10,11 +10,18 @@ objections it groups. A lesson naming an unknown objection goes back to the agen
 
 The code then counts the occurrences (the distinct runs of the objections) and drops a
 lesson seen in one run only, one whose rule a person settled (accepted or rejected; the
-agent gets them as ``rejected_lessons``), and one whose objections all belong to a settled
-lesson. The rest is saved as ``proposed`` in ``learn_lessons`` (``store``);
+agent gets them as ``rejected_lessons`` and ``accepted_lessons``), and one whose
+objections all belong to a settled lesson. The rest is saved as ``proposed`` in
+``learn_lessons`` (``store``);
 ``factory learn dismiss`` rejects one for good and ``factory learn accept`` (``accept``)
 turns one into a backlog task. With objections from fewer than two runs no agent runs at
 all.
+
+The agent also gets the accepted lessons (``accepted_lessons``): objections that repeat one
+of them go into a lesson with its id in ``accepted`` (or its rule, or some of its
+objections). Such a lesson is never proposed; its objections are added to the accepted
+lesson (``repeats``), so the dashboard can count how often the mistake came back after
+the lesson's pull request was merged (``view``).
 """
 
 from __future__ import annotations
@@ -37,7 +44,14 @@ from aifactory.failure import AgentReportedFail, InvalidOutput
 from aifactory.harness import canonical, install
 from aifactory.harness.check import check_harness
 from aifactory.learn.collect import Objection, collect
-from aifactory.learn.store import LessonStore, StoredLesson, lesson_id, normalize
+from aifactory.learn.store import (
+    ACCEPTED,
+    REJECTED,
+    LessonStore,
+    StoredLesson,
+    lesson_id,
+    normalize,
+)
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.scope import TaskScope
 from aifactory.run.task import _main_ignored, prepare_cfg
@@ -66,6 +80,11 @@ class ProposedLesson(BaseModel):
     )
     complaints: list[str] = Field(
         min_length=1, description="ids of the objections (c1, c2, ...) this lesson groups"
+    )
+    accepted: str = Field(
+        default="",
+        max_length=40,
+        description="the id of the accepted lesson these objections repeat, else ''",
     )
 
 
@@ -98,8 +117,8 @@ def trace_db(repo: Path) -> Path:
     return load_local(repo).trace_db_path(repo)
 
 
-def context(objections: list[Objection], rejected: list[StoredLesson]) -> dict[str, Any]:
-    """What the agent gets: the objections by short id, the rejected rules, the schema."""
+def context(objections: list[Objection], settled: list[StoredLesson]) -> dict[str, Any]:
+    """What the agent gets: the objections by short id, the settled rules, the schema."""
     return {
         "objections": [
             {
@@ -112,7 +131,12 @@ def context(objections: list[Objection], rejected: list[StoredLesson]) -> dict[s
             }
             for n, o in enumerate(objections, 1)
         ],
-        "rejected_lessons": [{"id": r.lesson_id, "rule": r.rule} for r in rejected],
+        "rejected_lessons": [
+            {"id": r.lesson_id, "rule": r.rule} for r in settled if r.state == REJECTED
+        ],
+        "accepted_lessons": [
+            {"id": r.lesson_id, "rule": r.rule} for r in settled if r.state == ACCEPTED
+        ],
         "targets": {
             "CLAUDE.md": "instructions for Claude Code in the repo root",
             "AGENTS.md": "instructions for every coding agent in the repo root",
@@ -240,6 +264,36 @@ def _blocked(rule: str, keys: set[str], rejected: list[StoredLesson]) -> bool:
     )
 
 
+def _repeated(
+    lesson: ProposedLesson, keys: set[str], settled: list[StoredLesson]
+) -> StoredLesson | None:
+    """The accepted lesson ``lesson`` repeats: by its id, its rule or shared objections."""
+    accepted = [s for s in settled if s.state == ACCEPTED]
+    for match in (
+        lambda a: a.lesson_id == lesson.accepted.strip(),
+        lambda a: normalize(a.rule) == normalize(lesson.rule),
+        lambda a: bool(keys & set(a.complaints)),
+    ):
+        found = next((a for a in accepted if match(a)), None)
+        if found is not None:
+            return found
+    return None
+
+
+def repeats_of(
+    output: LessonsOutput, by_id: dict[str, Objection], settled: list[StoredLesson]
+) -> dict[str, list[Objection]]:
+    """The objections of each accepted lesson the agent found again, by lesson id."""
+    result: dict[str, list[Objection]] = {}
+    for lesson in output.lessons:
+        found = [by_id[c] for c in dict.fromkeys(lesson.complaints) if c in by_id]
+        accepted = _repeated(lesson, {o.key for o in found}, settled) if found else None
+        if accepted is not None:
+            known = {o.key for o in result.setdefault(accepted.lesson_id, [])}
+            result[accepted.lesson_id] += [o for o in found if o.key not in known]
+    return result
+
+
 def lessons_of(
     output: LessonsOutput, by_id: dict[str, Objection], rejected: list[StoredLesson]
 ) -> list[dict[str, Any]]:
@@ -249,6 +303,8 @@ def lessons_of(
         found = [by_id[c] for c in dict.fromkeys(lesson.complaints) if c in by_id]
         keys = {o.key for o in found}
         if not found or _blocked(lesson.rule, keys, rejected):
+            continue
+        if _repeated(lesson, keys, rejected) is not None:
             continue
         lid = lesson_id(lesson.rule)
         entry = merged.setdefault(
@@ -291,6 +347,7 @@ def scan(repo: Path, since: str | None = None) -> dict[str, Any]:
     objections = collect(db, since_iso)[-_MAX_OBJECTIONS:]
     runs = {o.run_id for o in objections}
     lessons: list[dict[str, Any]] = []
+    repeats: list[dict[str, Any]] = []
     if len(runs) >= MIN_RUNS:
         store = LessonStore(db)
         try:
@@ -309,6 +366,9 @@ def scan(repo: Path, since: str | None = None) -> dict[str, Any]:
                         runs=[r["run_id"] for r in lesson["runs"]],
                     )
                 )
+            for lid, found in repeats_of(output, by_id, rejected).items():
+                added = store.add_repeats(lid, [o.key for o in found], [o.run_id for o in found])
+                repeats.append({"id": lid, "added": added})
         finally:
             store.close()
     for lesson in lessons:
@@ -318,6 +378,7 @@ def scan(repo: Path, since: str | None = None) -> dict[str, Any]:
         "objections": len(objections),
         "runs": len(runs),
         "lessons": lessons,
+        "repeats": repeats,
     }
 
 

@@ -717,7 +717,11 @@ on the lesson's target only and the rule with the objections as evidence, and co
 is `--project`, else the one of the tasks whose runs objected, else the only project
 (`project_required` otherwise). Accepting again shows the same task (`data.existed`).
 `factory learn dismiss ID [--reason TEXT] --json` rejects a lesson in the trace DB. No later
-scan offers an accepted or dismissed lesson or its objections again. The agent's prompts are overridden in
+scan offers an accepted or dismissed lesson or its objections again. Objections that repeat
+an accepted lesson are added to it instead (`data.repeats`: lesson `id` and the number
+`added`); the dashboard's Factory screen (section Lekce) shows the lessons, scans, accepts
+and dismisses them, and counts for an accepted lesson the runs with its objections before
+and after its pull request was merged. The agent's prompts are overridden in
 `.factory/prompts/learner/`.
 
 ### Run

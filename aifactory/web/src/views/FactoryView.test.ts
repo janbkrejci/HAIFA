@@ -41,6 +41,7 @@ function stub(...answers: Response[]) {
   const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
     if (url.endsWith('/factory/plan') && JSON.parse(String(_init?.body)).action === 'config_commit') return ok({ action: 'config_commit', base: 'main', base_sha: 'abc', digest: 'cfg', files: [], blockers: [] })
     if (url.endsWith('/factory/items')) return ok({ library: null, items: [] })
+    if (url.endsWith('/learn')) return ok({ lessons: [], scan: null })
     if (url.endsWith('/settings') && _init?.method === 'POST') return ok(SETTINGS)
     if (url.endsWith('/settings')) return ok(SETTINGS)
     if (url.endsWith('/config/status')) return ok(DIRTY_STATUS)
@@ -174,10 +175,10 @@ describe('FactoryView', () => {
     stub(ok(report({ findings: [finding('agent_unknown', 'repo'), finding('gh_missing', 'machine')] })))
     const wrapper = mount(FactoryView, { attachTo: document.body })
     await flushPromises()
-    const sections = ['factory-next-steps', 'factory-summary', 'findings-repo', 'findings-local', 'factory-settings', 'repo-items']
+    const sections = ['factory-next-steps', 'factory-summary', 'findings-repo', 'findings-local', 'factory-settings', 'repo-items', 'lessons']
     const headings = wrapper.findAll('h2')
     expect(headings.map((h) => h.text())).toEqual(['Co dál', 'Souhrn kontroly', 'Repozitář: opravit a commitnout',
-      'Počítač: potřebné pro toto repo', 'Nastavení repozitáře', 'Nastavení agentů'])
+      'Počítač: potřebné pro toto repo', 'Nastavení repozitáře', 'Nastavení agentů', 'Lekce'])
     expect(new Set(headings.map((h) => h.classes().join(' ')))).toEqual(new Set(['section-title']))
     for (const name of sections) {
       const section = wrapper.get(`[data-test="${name}"]`)

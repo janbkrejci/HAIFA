@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from learn_fixture import fake_learner, make_learn_repo
 from test_learn_scan import TESTS_LESSON, TESTS_RULE, _lessons, _scan
 
 from advice_fixture import git
@@ -15,6 +14,7 @@ from aifactory.backlog import Task, check_backlog, load_backlog
 from aifactory.cli import main
 from aifactory.learn.accept import WORKFLOW, lesson_marker, target_writes
 from aifactory.learn.store import ACCEPTED, REJECTED, LessonStore, StoredLesson
+from learn_fixture import fake_learner, make_learn_repo
 
 
 @pytest.fixture

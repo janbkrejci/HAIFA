@@ -70,6 +70,13 @@ returns its state, the progress of the current turn and the proposal;
 the edited proposal; ``POST .../apply`` (``{tasks?}``) writes it and commits the backlog;
 ``POST .../discard`` closes it.
 
+Lekce (``web.learn``): ``GET /api/learn`` lists the lessons of ``factory learn`` (rule,
+occurrences with their runs, state, the task and its PR, and for an accepted lesson with a
+merged PR the runs before and after the merge) and the repo's scan job;
+``POST /api/learn/scan`` (``{since?}``, HTTP 202) starts ``factory learn scan`` in a thread
+(one per repo, HTTP 409 ``busy``); ``POST /api/learn/lessons/{id}/accept`` (``{project?}``)
+and ``.../dismiss`` (``{reason?}``) are ``factory learn accept`` and ``dismiss``.
+
 Review: ``GET /api/review`` (open task PRs with mergeability and costs; ``?done=1``
 adds the merged and closed task PRs in ``done``),
 ``GET /api/review/{task_id}`` (PR body, diff per file, gates and tests, the
@@ -251,6 +258,7 @@ from aifactory.web.fs import FolderPicker, list_dirs
 from aifactory.web.guard import StaleCodeMiddleware, WriteGuardMiddleware, is_api_path
 from aifactory.web.intent import IntentManager
 from aifactory.web.launcher import Launcher, RunLauncher
+from aifactory.web.learn import LearnManager
 from aifactory.web.limits import LimitsSource
 from aifactory.web.live import LiveHub
 from aifactory.web.overview import Overview
@@ -900,6 +908,10 @@ def delete_archived(request: Request) -> JSONResponse:
 _EDIT_ERROR_STATUS = {
     "unknown_workflow_advice": 404,
     "unknown_intent": 404,
+    "unknown_lesson": 404,
+    "project_required": 409,
+    "learn_failed": 422,
+    "lessons_invalid": 422,
     "agent_unavailable": 409,
     "proposal_failed": 422,
     "proposal_invalid": 422,
@@ -1076,6 +1088,56 @@ async def intent_discard(request: Request) -> JSONResponse:
     """Close the proposal without writing anything."""
     return await _intent_call(
         request, request.app.state.intent.discard, request.path_params["job_id"]
+    )
+
+
+async def _learn_call(
+    request: Request, call: Callable[..., dict[str, Any]], *args: Any, status: int = 200
+) -> JSONResponse:
+    """One request of the Lekce section (``web.learn``)."""
+    try:
+        data = await run_in_threadpool(call, _repo(request), *args)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except (TaskEditError, ConfigError, TaskRunError) as exc:
+        return _edit_error(exc)
+    warnings = data.pop("warnings", None) if isinstance(data.get("warnings"), list) else None
+    return JSONResponse(envelope_ok(data, list(warnings or [])), status_code=status)
+
+
+async def learn_state(request: Request) -> JSONResponse:
+    """The lessons and the repo's scan job."""
+    return await _learn_call(request, request.app.state.learn.state)
+
+
+async def learn_scan(request: Request) -> JSONResponse:
+    """``{since?}``: start ``factory learn scan`` in the background."""
+    try:
+        body = await _json_body(request)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    return await _learn_call(request, request.app.state.learn.start, body, status=202)
+
+
+async def learn_accept(request: Request) -> JSONResponse:
+    """``{project?}``: the lesson becomes a backlog task (``factory learn accept``)."""
+    try:
+        body = await _json_body(request)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    return await _learn_call(
+        request, request.app.state.learn.accept, request.path_params["lesson_id"], body
+    )
+
+
+async def learn_dismiss(request: Request) -> JSONResponse:
+    """``{reason?}``: reject the lesson for good (``factory learn dismiss``)."""
+    try:
+        body = await _json_body(request)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    return await _learn_call(
+        request, request.app.state.learn.dismiss, request.path_params["lesson_id"], body
     )
 
 
@@ -1779,6 +1841,10 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/factory/roster", factory_roster_set, methods=["POST"]),
         Route("/factory/plan", factory_plan, methods=["POST"]),
         Route("/factory/apply", factory_apply, methods=["POST"]),
+        Route("/learn", learn_state, methods=["GET"]),
+        Route("/learn/scan", learn_scan, methods=["POST"]),
+        Route("/learn/lessons/{lesson_id}/accept", learn_accept, methods=["POST"]),
+        Route("/learn/lessons/{lesson_id}/dismiss", learn_dismiss, methods=["POST"]),
     ]
 
 
@@ -1906,12 +1972,14 @@ def create_app(
             await run_in_threadpool(app.state.workflow_advice.close)
             await run_in_threadpool(app.state.task_advice.close)
             await run_in_threadpool(app.state.intent.close)
+            await run_in_threadpool(app.state.learn.close)
             await app.state.live.aclose()
 
     app = _starlette(api, static_dir, lifespan, allowed_hosts)
     app.state.workflow_advice = AdviceManager()
     app.state.task_advice = AdviceManager(task_parameters=True)
     app.state.intent = IntentManager()
+    app.state.learn = LearnManager()
     app.state.home = haifa_home()
     app.state.library = machine.GlobalState()
     app.state.repo = root
@@ -2561,6 +2629,7 @@ def create_multi_app(
             await run_in_threadpool(app.state.workflow_advice.close)
             await run_in_threadpool(app.state.task_advice.close)
             await run_in_threadpool(app.state.intent.close)
+            await run_in_threadpool(app.state.learn.close)
             await run_in_threadpool(app.state.assistant.close)
             await contexts.aclose()
 
@@ -2568,6 +2637,7 @@ def create_multi_app(
     app.state.workflow_advice = AdviceManager()
     app.state.task_advice = AdviceManager(task_parameters=True)
     app.state.intent = IntentManager()
+    app.state.learn = LearnManager()
     app.state.library = machine.GlobalState()
     app.state.home = home_dir
     app.state.served_port = port
