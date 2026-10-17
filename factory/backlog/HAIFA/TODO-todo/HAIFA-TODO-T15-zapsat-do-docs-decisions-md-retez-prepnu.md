@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T15
 title: Zapsat do docs/decisions.md řetěz přepnutí harnessu projektu (quota_switch) a jeho přednost
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [HAIFA-S08-T04]
@@ -20,3 +20,4 @@ Důvod: HAIFA-S08-T04 replaces the decision 'Záložní harness při vyčerpané
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/98 · náklady $0.44
