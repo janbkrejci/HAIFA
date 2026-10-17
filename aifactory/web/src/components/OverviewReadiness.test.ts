@@ -88,6 +88,16 @@ describe('overview readiness', () => {
     expect(warning.text()).not.toContain('První projekt')
   })
 
+  it('offers the sample next to adding a repository when there is none', async () => {
+    stub({ repos: [] })
+    const wrapper = mount(OverviewReadiness)
+    await flushPromises()
+    const item = wrapper.findAll('[data-test="readiness-warning"] li').find((li) => li.text().includes('Repozitář'))
+    expect(item?.get('a').attributes('href')).toBe('#/repos/add')
+    expect(item?.get('[data-test="try-demo"]').text()).toBe('Vyzkoušet na ukázce')
+    expect(wrapper.findAll('[data-test="try-demo"]')).toHaveLength(1)
+  })
+
   it('offers a retry after a failed request', async () => {
     const options = { fail: true }
     stub(options)

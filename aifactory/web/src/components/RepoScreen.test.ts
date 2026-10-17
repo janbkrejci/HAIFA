@@ -45,3 +45,18 @@ it('opens the reviewed config commit on its route and refreshes status only afte
   expect(useConfigStatus('haifa').status.value?.clean).toBe(true)
   expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/factory/check?fresh=1'))).toBe(true)
 })
+
+it('shows the sample banner only for the sample repository', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    let data: unknown = { items: [], levels: [], tasks: [] }
+    if (url.endsWith('/config/status')) data = CLEAN_STATUS
+    if (url === '/api/repos') data = { repos: [] }
+    return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] }))
+  }))
+  window.location.hash = '#/r/haifa/backlog'; window.dispatchEvent(new HashChangeEvent('hashchange'))
+  const plain = mount(RepoScreen); await flushPromises()
+  expect(plain.find('[data-test="demo-banner"]').exists()).toBe(false)
+  const demo = mount(RepoScreen, { props: { demo: true, path: '/h/demo' } }); await flushPromises()
+  expect(demo.get('[data-test="demo-banner"]').text()).toContain('Ukázkové repo')
+  expect(demo.find('[data-test="remove-demo"]').exists()).toBe(true)
+})

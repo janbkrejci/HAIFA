@@ -142,13 +142,17 @@ More repositories: ``create_multi_app`` serves every repository in ``dashboard.y
 the HAIFA home (``registry.py``). ``GET /api/health`` (``app: haifa-dashboard``, ``version``,
 ``home``), ``GET /api/code`` and ``POST /api/restart`` (as above, no repository needed;
 not served per repository), ``GET /api/limits`` (the machine's subscriptions),
-``GET /api/repos`` (the repositories with ``status`` and the ``factory`` state),
+``GET /api/repos`` (the repositories with ``status``, the ``factory`` state and ``demo``, true
+for the sample in its default folder),
 ``POST /api/repos`` (``{path}``, idempotent; HTTP 201 when added; registers the repository
 and, when its base has no ``.factory/config.yaml`` yet, commits it and the ``.gitignore``
 lines it lacks; a repository with factory is only registered, without a commit),
 ``POST /api/repos/inspect`` (``{path}``, reads only), ``GET /api/repos/{id}/removal`` (what
 removing commits), ``DELETE /api/repos/{id}`` (drops the registry entry and leaves the
-repository as it is; ``{uninstall: true}`` also commits the removal of ``.factory/``) and
+repository as it is; ``{uninstall: true}`` also commits the removal of ``.factory/``),
+``POST /api/demo`` (creates and registers the sample repository of ``factory try`` in its
+default folder; HTTP 201 when created, 200 when it was there), ``DELETE /api/demo`` (drops the
+sample's registry entry and deletes its default folder; ``run_in_progress`` while it runs) and
 ``GET``/``POST /api/dashboard/settings``
 (``port``, ``home``, ``restart_required``). Choosing the folder to add (``fs.py``):
 ``GET /api/fs/dirs?path=`` lists the visible subdirectories of a directory under the user's
@@ -220,6 +224,7 @@ from aifactory import __version__, guide
 from aifactory.backlog import TaskEditError
 from aifactory.codeprint import CodeWatch
 from aifactory.config import ConfigError
+from aifactory.demo import is_demo
 from aifactory.harness import settings as harness_settings
 from aifactory.home import haifa_home
 from aifactory.review import sync as review_sync
@@ -1864,6 +1869,7 @@ async def repos_list(request: Request) -> JSONResponse:
                     (entry.id, entry.path), Path(entry.path), functools.partial(repo_status, entry)
                 ),
                 **entry.to_json(),
+                "demo": is_demo(entry.path, request.app.state.home),
             }
             for entry in state.repos
         ], warnings
@@ -1987,6 +1993,56 @@ async def repos_remove(request: Request) -> JSONResponse:
     except RepoError as exc:
         return _repo_error(exc)
     return JSONResponse(envelope_ok({"removed": entry.to_json(), "uninstall": done}))
+
+
+_DEMO_ERROR_STATUS = {"invalid_value": 422, "git_identity_missing": 409}
+
+
+async def demo_create(request: Request) -> JSONResponse:
+    """Create the sample repository in the default folder and register it (``factory try``).
+    HTTP 201 when the folder was created, 200 when it was there already."""
+    from aifactory.demo import create_demo
+    from aifactory.library.store import LibraryStoreError
+
+    try:
+        body = await _json_body(request) if await request.body() else {}
+        if body:
+            raise backlog.UsageError("the sample takes no options")
+        result = await run_in_threadpool(create_demo, home=request.app.state.home)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except LibraryStoreError as exc:
+        return JSONResponse(
+            envelope_fail(exc.code, exc.message),
+            status_code=_DEMO_ERROR_STATUS.get(exc.code, 500),
+        )
+    if not result.registered:
+        git_repo = (result.path / ".git").exists()
+        return JSONResponse(
+            envelope_fail(
+                "registry_invalid" if git_repo else "not_git",
+                "; ".join(result.warnings) or str(result.path),
+            ),
+            status_code=409 if git_repo else 422,
+        )
+    return JSONResponse(
+        envelope_ok(result.to_json(), result.warnings),
+        status_code=201 if result.created else 200,
+    )
+
+
+async def demo_remove(request: Request) -> JSONResponse:
+    """Remove the sample: its registry entry and its whole default folder."""
+    from aifactory.demo import remove_demo
+
+    contexts: RepoContexts = request.app.state.repos
+    try:
+        result = await run_in_threadpool(remove_demo, request.app.state.home)
+    except RepoError as exc:
+        return _repo_error(exc)
+    if result.repo_id is not None:
+        await contexts.drop(result.repo_id)
+    return JSONResponse(envelope_ok(result.to_json()))
 
 
 async def fs_dirs(request: Request) -> JSONResponse:
@@ -2360,6 +2416,8 @@ def create_multi_app(
             Route("/repos", repos_add, methods=["POST"]),
             Route("/repos/inspect", repos_inspect, methods=["POST"]),
             Route("/repos/{repo_id}", repos_remove, methods=["DELETE"]),
+            Route("/demo", demo_create, methods=["POST"]),
+            Route("/demo", demo_remove, methods=["DELETE"]),
             Route("/repos/{repo_id}/removal", repos_removal, methods=["GET"]),
             Route("/dashboard/settings", dashboard_settings_get, methods=["GET"]),
             Route("/dashboard/settings", dashboard_settings_save, methods=["POST"]),

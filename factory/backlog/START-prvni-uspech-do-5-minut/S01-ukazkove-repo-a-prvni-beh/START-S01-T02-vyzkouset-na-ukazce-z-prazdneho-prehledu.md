@@ -1,7 +1,7 @@
 ---
 id: START-S01-T02
 title: Vyzkoušet na ukázce z prázdného Přehledu
-status: todo
+status: done
 depends_on: [START-S01-T01]
 ---
 
@@ -18,3 +18,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/85 · náklady $6.16

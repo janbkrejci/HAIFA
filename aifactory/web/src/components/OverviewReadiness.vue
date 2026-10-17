@@ -5,6 +5,7 @@ import { useRemoveRepo } from '@/lib/repos'
 import Spinner from '@/components/ui/Spinner.vue'
 import RemoveRepoDialog from '@/components/repos/RemoveRepoDialog.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
+import TryDemoButton from '@/components/demo/TryDemoButton.vue'
 
 withDefaults(defineProps<{ chip?: boolean }>(), { chip: false })
 const emit = defineEmits<{ changed: [] }>()
@@ -32,7 +33,10 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
           <span>{{ issue.hint }}</span>
           <button v-if="issue.repo" type="button" class="action" :disabled="removing !== null" @click="remove(issue.repo)">{{ issue.action }}</button>
           <button v-else-if="issue.href === '#harness-settings'" type="button" class="action" @click="openHarnesses">{{ issue.action }}</button>
-          <a v-else :href="issue.href" class="action">{{ issue.action }}</a>
+          <span v-else class="actions">
+            <a :href="issue.href" class="action">{{ issue.action }}</a>
+            <TryDemoButton v-if="issue.id === 'repo'" @started="emit('changed')" />
+          </span>
         </li>
       </ul>
       <p v-if="removeError" role="alert">{{ removeError }}</p>
@@ -54,5 +58,6 @@ button.status-chip, a.status-chip { cursor: pointer; }
 ul { display: flex; flex-direction: column; gap: 14px; padding: 0; list-style: none; color: var(--text); }
 li { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 li span { color: var(--dim); }
+.actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .action { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--text); background: var(--surface); font: inherit; cursor: pointer; }
 </style>

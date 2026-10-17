@@ -2,7 +2,7 @@
 // Everything of one repo page: the config and backlog statuses (their chips are in the topbar), the live updates and the screen.
 // App.vue keys it by the repo id, so a switch of the repo drops all of it (view data, run
 // cursors, subscriptions, banners) and the new repo starts clean.
-import { computed, onBeforeUnmount, onMounted, watch, type Component } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, watch, type Component } from 'vue'
 import { Activity, Factory, GitPullRequest, ListTodo } from 'lucide-vue-next'
 import { useConfigStatus } from '@/lib/configStatus'
 import { resetBacklogStatus, useBacklogStatus } from '@/lib/backlogStatus'
@@ -13,6 +13,12 @@ import BacklogView from '@/views/BacklogView.vue'
 import RunsView from '@/views/RunsView.vue'
 import ReviewView from '@/views/ReviewView.vue'
 import FactoryView from '@/views/FactoryView.vue'
+import DemoBanner from '@/components/demo/DemoBanner.vue'
+import { DEMO_REPO } from '@/lib/demo'
+
+// `demo`: the repo is the sample of `factory try` (its banner and the run explanations show).
+const props = withDefaults(defineProps<{ demo?: boolean; path?: string | null }>(), { demo: false, path: null })
+provide(DEMO_REPO, computed(() => (props.demo ? props.path ?? '' : null)))
 
 const VIEWS: Record<Screen, Component> = {
   backlog: BacklogView,
@@ -88,6 +94,7 @@ onBeforeUnmount(() => {
         <span>{{ screen.label }}</span>
       </a>
     </nav>
+    <DemoBanner v-if="demo" :repo-id="currentRepoId() ?? ''" :path="path" />
     <component :is="view" />
   </main>
 </template>
