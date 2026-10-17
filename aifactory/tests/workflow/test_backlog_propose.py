@@ -14,7 +14,13 @@ from aifactory.cli import main
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentResult
 from aifactory.harness.check import HarnessStatus
-from aifactory.workflow.propose import BacklogProposalOutput, Target, plan, workflow_catalog
+from aifactory.workflow.propose import (
+    BacklogProposalOutput,
+    Target,
+    plan,
+    review,
+    workflow_catalog,
+)
 
 DONE = "\n\nHotovo znamená:\n- testy projdou"
 
@@ -238,3 +244,58 @@ def test_plan_rejects_wrong_target(repo: Path) -> None:
     with pytest.raises(TaskEditError) as caught:
         plan(repo, existing, Target(project="P01"), workflow_catalog(repo))
     assert "duplicate_id" in {i.code for i in caught.value.issues}
+
+
+def test_quality_findings_go_to_the_agent_once(
+    repo: Path, fake: tuple[list[Any], list[dict[str, Any]]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen, answers = fake
+    parallel = new_step()
+    parallel["tasks"][1]["depends_on"] = []
+    answers += [parallel, new_step()]
+    args = ["backlog", "propose", "Export", "--project", "P01", "--json", "--repo", str(repo)]
+    assert main(args) == 0
+    data = json.loads(capsys.readouterr().out)["data"]
+    assert len(seen) == 2
+    assert "writes_overlap" in seen[1].prompt
+    assert data["findings"] == []
+
+
+def test_findings_left_after_the_correction_are_shown(
+    repo: Path, fake: tuple[list[Any], list[dict[str, Any]]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen, answers = fake
+    closed = new_step(writes=["src/", ".factory/workflows/"])
+    answers += [closed, closed]
+    args = ["backlog", "propose", "Export", "--project", "P01", "--repo", str(repo)]
+    assert main([*args, "--json"]) == 0
+    data = json.loads(capsys.readouterr().out)["data"]
+    assert len(seen) == 2
+    assert "writes_closed" in seen[1].prompt
+    assert data["findings"] == [
+        {
+            "rule": "writes_closed",
+            "task": "P01-S02-T01",
+            "message": data["findings"][0]["message"],
+            "blocking": False,
+        }
+    ]
+    assert ".factory/workflows/" in data["findings"][0]["message"]
+    assert [t["id"] for t in data["tasks"]] == ["P01-S02-T01", "P01-S02-T02"]
+    assert _status(repo) == ""
+
+    answers[:] = [closed]
+    assert main(args) == 0
+    out = capsys.readouterr().out
+    assert "findings of the quality check (1):" in out
+    assert "[writes_closed] P01-S02-T01" in out
+
+
+def test_review_maps_dependencies_by_full_id(repo: Path) -> None:
+    value = new_step()
+    value["tasks"][1]["depends_on"] = ["P01-S02-T01"]
+    proposal = BacklogProposalOutput.model_validate(value)
+    assert review(repo, proposal, Target(project="P01")) == []
+    value["tasks"][1]["depends_on"] = []
+    proposal = BacklogProposalOutput.model_validate(value)
+    assert [f.rule for f in review(repo, proposal, Target(project="P01"))] == ["writes_overlap"]

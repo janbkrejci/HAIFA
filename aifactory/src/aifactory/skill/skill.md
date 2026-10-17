@@ -691,7 +691,11 @@ base commit and writes nothing. Every task has a title, an assignment ending wit
 `Hotovo znamená:`, `depends_on` (also on existing tasks), `writes` and a workflow of the
 catalog. The proposal is validated like `factory task add`; an invalid one goes back to
 the agent once, and a second invalid one fails with `proposal_invalid` (`error.issues`)
-without writing. Without `--apply` the command only shows the proposal (`data.step`,
+without writing. A quality check also looks at `writes`: they cover the files the
+assignment names, stay out of `protected_files` and the backlog, and tasks that can run
+at the same time do not overlap. Its findings go to the agent in the same single
+correction; those left are in `data.findings` (`rule`, `task`, `message`) and in the
+preview. Without `--apply` the command only shows the proposal (`data.step`,
 `data.tasks`, `data.applied: false`); show it to the user before applying. `--apply`
 writes the step and task files and commits nothing: check and commit as in Plan -> backlog.
 The agent's prompts are overridden in `.factory/prompts/proposer/`.

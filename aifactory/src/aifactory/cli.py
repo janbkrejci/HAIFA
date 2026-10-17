@@ -1434,7 +1434,10 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
         "znamená' section, depends_on (also on existing tasks), writes and a workflow of the "
         "catalog. The proposal is validated like 'factory task add' (ids, dependencies, no "
         "cycles or self references, existing workflows); an invalid one goes back to the agent "
-        "once, a second invalid one fails with proposal_invalid and writes nothing. Without "
+        "once, a second invalid one fails with proposal_invalid and writes nothing. Findings of "
+        "the quality check of writes (files the assignment names, protected_files and the "
+        "backlog, overlap of tasks that can run at the same time) go back in the same "
+        "correction; the rest are shown in the preview. Without "
         "--apply only the preview step -> tasks is shown; --apply writes the files and "
         "commits nothing (factory backlog commit).",
     )
