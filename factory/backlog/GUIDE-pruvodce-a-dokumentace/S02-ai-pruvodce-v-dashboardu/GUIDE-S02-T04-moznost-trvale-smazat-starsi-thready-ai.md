@@ -1,7 +1,7 @@
 ---
 id: GUIDE-S02-T04
 title: Možnost trvale smazat starší thready AI asistenta
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [GUIDE-S02-T02]
 related: [GUIDE-S02-T01]
@@ -34,3 +34,4 @@ Dnes jde v panelu AI průvodce mezi staršími vlákny jen přepínat. Uživatel
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/95 · náklady $2.12
