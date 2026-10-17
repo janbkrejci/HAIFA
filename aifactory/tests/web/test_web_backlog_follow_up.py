@@ -5,11 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 from backlog_fixture import A1, A2, git, make_backlog_repo
 from starlette.testclient import TestClient
 
 from aifactory.skill import envelope_problems
 from aifactory.web import create_app
+from cli_json import run_json
 
 BASE = "http://127.0.0.1:4700"
 
@@ -119,3 +121,59 @@ def test_follow_up_run_commits_and_starts(tmp_path: Path) -> None:
     assert launcher.started == [new_id]
     assert git(root, "status", "--porcelain").strip() == ""
     assert f"follows {A1}" in git(root, "log", "-1", "--format=%s")
+
+
+def _same_original(root: Path) -> None:
+    [original] = list((root / "backlog").rglob(f"{A1}-*.md"))
+    text = original.read_text(encoding="utf-8")
+    original.write_text(
+        text.replace("status: done\n", "status: done\nworkflow: custom\nwrites: [src/x/]\n", 1),
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+@pytest.mark.parametrize("title", [None, "Vlastní titulek"])
+def test_cli_and_endpoint_give_the_same_follow_up(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], title: str | None
+) -> None:
+    cli_root = make_backlog_repo(tmp_path / "cli")
+    web_root = make_backlog_repo(tmp_path / "web")
+    for root in (cli_root, web_root):
+        _same_original(root)
+    argv = ["task", "follow-up", A1, "--body", "Rozšířit.", "--json", "--repo", str(cli_root)]
+    if title is not None:
+        argv += ["--title", title]
+    rc, envelope = run_json(capsys, argv)
+    assert rc == 0
+    cli = envelope["data"]
+    payload: dict[str, Any] = {"body": "Rozšířit."}
+    if title is not None:
+        payload["title"] = title
+    client = _client(web_root, tmp_path, RecordingLauncher())
+    web = _check(client.post(f"/api/backlog/tasks/{A1}/follow-up", json=payload), 200)["data"]
+
+    for key in ("action", "changed", "path", "issues"):
+        assert web[key] == cli[key], key
+    # the dashboard's task carries the CLI's keys plus its board fields
+    assert {k: web["task"][k] for k in cli["task"]} == cli["task"]
+    assert cli["task"]["follows"] == A1
+    assert cli["task"]["own_writes"] == ["src/x/"] and cli["task"]["workflow"] == "custom"
+    assert (web_root / web["path"]).read_text(encoding="utf-8") == (
+        cli_root / cli["path"]
+    ).read_text(encoding="utf-8")
+
+
+def test_cli_and_endpoint_refuse_a_task_that_is_not_done(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    before = git(root, "status", "--porcelain")
+    argv = ["task", "follow-up", A2, "--body", "x", "--json", "--repo", str(root)]
+    rc, envelope = run_json(capsys, argv)
+    assert rc != 0 and envelope["error"]["code"] == "not_done"
+    client = _client(root, tmp_path, RecordingLauncher())
+    body = _check(client.post(f"/api/backlog/tasks/{A2}/follow-up", json={"body": "x"}), 400)
+    assert body["error"]["code"] == "not_done"
+    assert body["error"]["message"] == envelope["error"]["message"]
+    assert git(root, "status", "--porcelain") == before

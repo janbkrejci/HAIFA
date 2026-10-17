@@ -424,7 +424,7 @@ describe('TaskDetail', () => {
     expect(reasons[0].text()).toContain('M01-S01 – step má nehotové tasky: M01-S01-T01')
   })
 
-  it('a done task offers Otevřít navazující task instead of Spustit, Upravit and Vylepšit agentem', () => {
+  it('a done task offers Navázat follow-upem instead of Spustit, Upravit and Vylepšit agentem', () => {
     const detail = taskDetail()
     detail.task = { ...detail.task, board_state: 'done' }
     const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
@@ -432,7 +432,7 @@ describe('TaskDetail', () => {
     expect(wrapper.find('[data-test="edit"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="improve"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="auto-queue"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="follow-up"]').text()).toContain('Otevřít navazující task')
+    expect(wrapper.get('[data-test="follow-up"]').text()).toContain('Navázat follow-upem')
     wrapper.unmount()
   })
 

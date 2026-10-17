@@ -19,7 +19,7 @@ from aifactory.cli import build_parser
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_SRC = ROOT / "web" / "src"
-MAX_WORDS = 4000
+MAX_WORDS = 4100
 
 # Bold text in the guide that is not a dashboard label (terms, list lead-ins, headings of
 # troubleshooting items, labels composed at runtime). Anything else must be in web/src.

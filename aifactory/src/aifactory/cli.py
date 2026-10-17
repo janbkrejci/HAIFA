@@ -2487,7 +2487,13 @@ def _task_write(args: argparse.Namespace, root: Path) -> int:
 
 
 def _task_follow_up(args: argparse.Namespace, root: Path) -> int:
-    from aifactory.backlog import blocks, commit_backlog, follow_up_task, task_to_json
+    from aifactory.backlog import (
+        blocks,
+        commit_backlog,
+        follow_up_commit_message,
+        follow_up_task,
+        task_to_json,
+    )
 
     result = follow_up_task(root, args.task_id, args.body, title=args.title)
     data: dict[str, Any] = {
@@ -2510,7 +2516,7 @@ def _task_follow_up(args: argparse.Namespace, root: Path) -> int:
     new_id = result.task.id
     if not args.json:
         print(f"added {new_id} {result.path} (follows {args.task_id})")
-    committed = commit_backlog(root, f"backlog: {new_id} follows {args.task_id}")
+    committed = commit_backlog(root, follow_up_commit_message(new_id, args.task_id))
     data["commit"] = committed.to_json()
     if not args.json and committed.commit:
         print(f"backlog committed to {committed.base} ({committed.commit[:7]})")

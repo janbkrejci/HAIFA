@@ -18,6 +18,8 @@ V souboru je jen `status` (`todo`, `done`, `cancelled`). Hotovo nastavuje schvá
 
 Detail tasku má tlačítka **Spustit**, **Upravit**, **Zrušit**, **Vylepšit agentem** (a **Hotovo** u tasku pro člověka) a karty **Zadání** (záložky se zadáním a dokumenty tasku jen ke čtení), **Běhy**, **PR**, **Nastavení** (workflow, auto continue, auto-merge, writes) a **Vazby**.
 
+Hotový task se znovu nespouští: **Navázat follow-upem** (`factory task follow-up ID --body TEXT --run`) založí ve stejném stepu task s `follows: ID`, vlastními writes a workflow původního; **Commitnout a spustit** ho hned spustí. Detail ukáže, na co task navazuje a co navazuje na něj.
+
 Formulář: **Titulek**, **Kód**, **Zadání** (cíl, kontext, kdy je hotovo) a **Workflow** s tlačítkem **Navrhnout workflow**. **Další nastavení** skrývá **Status**, **Auto-merge**, **Writes** (cesty, které smí agent měnit), **Závisí na**, **Související** a harness, model a přemýšlení tasku. **Vylepšit agentem** nechá agenta doplnit zadání, writes, vazby a workflow do formuláře.
 
 ## Dědičnost

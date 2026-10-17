@@ -119,10 +119,57 @@ describe('proposed actions', () => {
   })
 
   it('previews an edit against the current task', () => {
-    const now = { title: 'First', body: 'Body', writes: ['src/'], workflow: null, status: 'todo' }
+    const now = {
+      title: 'First',
+      body: 'Body',
+      writes: ['src/'],
+      workflow: null,
+      status: 'todo',
+      own_writes: ['src/'],
+      own_workflow: null,
+    }
     expect(actionTitle(edit)).toBe('Upravit task P01-S01-T01')
     expect(actionPreview(edit, now)).toContainEqual({ label: 'Writes', before: 'src/', after: 'src/, docs/' })
     expect(actionPreview(edit)).toContainEqual({ label: 'Writes', before: null, after: 'src/, docs/' })
+  })
+
+  it('follows up a done task through the follow-up endpoint with what it takes over', () => {
+    const follow: ProposedAction = {
+      id: 'f1',
+      kind: 'follow_up',
+      repo: 'haifa',
+      task: 'P01-S01-T01',
+      body: 'Dodělat docs.',
+      run: true,
+      status: 'proposed',
+    }
+    expect(actionTitle(follow)).toBe('Navázat follow-upem na P01-S01-T01')
+    expect(actionRequest(follow)).toEqual({
+      path: '/repos/haifa/backlog/tasks/P01-S01-T01/follow-up',
+      body: { body: 'Dodělat docs.', run: true },
+    })
+    const now = {
+      title: 'First',
+      body: '',
+      writes: ['src/', 'docs/'],
+      workflow: 'plan-build',
+      status: 'done',
+      own_writes: ['src/'],
+      own_workflow: null,
+    }
+    const rows = actionPreview(follow, now)
+    expect(rows).toContainEqual({ label: 'Název', before: null, after: 'Navazuje na P01-S01-T01: First' })
+    expect(rows).toContainEqual({ label: 'Writes', before: null, after: 'src/' })
+    expect(rows).toContainEqual({ label: 'Workflow', before: null, after: 'zdědí z kroku' })
+    expect(rows).toContainEqual({ label: 'Po založení', before: null, after: 'commitnout backlog a spustit' })
+    expect(rows.some((r) => r.label === 'Stav')).toBe(false)
+    const todo = actionPreview({ ...follow, title: 'Vlastní', run: false }, { ...now, status: 'todo' })
+    expect(todo).toContainEqual({ label: 'Název', before: null, after: 'Vlastní' })
+    expect(todo.find((r) => r.label === 'Stav')?.after).toContain('jen hotový task')
+    expect(actionOutcome(follow, { task: { id: 'P01-S01-T02' }, run: { run_id: 'abcd1234' } })).toBe(
+      'Task P01-S01-T02 založen. Běh abcd1234 spuštěn.',
+    )
+    expect(actionOutcome({ ...follow, run: false }, { task: { id: 'P01-S01-T02' } })).toBe('Task P01-S01-T02 založen.')
   })
 
   it('words the outcome', () => {

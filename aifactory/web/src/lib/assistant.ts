@@ -18,7 +18,14 @@ export interface ScreenContext {
   run?: string
 }
 
-export type ActionKind = 'create_task' | 'edit_task' | 'run_task' | 'retry_run' | 'approve_pr' | 'cancel_task'
+export type ActionKind =
+  | 'create_task'
+  | 'edit_task'
+  | 'run_task'
+  | 'retry_run'
+  | 'approve_pr'
+  | 'cancel_task'
+  | 'follow_up'
 export type ActionStatus = 'proposed' | 'done' | 'failed' | 'dismissed'
 
 /** An action the guide proposed; nothing happens until the user executes it in the panel. */
@@ -27,7 +34,8 @@ export interface ProposedAction {
   kind: ActionKind
   repo: string
   task?: string
-  run?: string
+  /** `retry_run`: the run id; `follow_up`: commit the backlog and start the new task at once. */
+  run?: string | boolean
   step?: string
   title?: string
   body?: string
@@ -115,18 +123,25 @@ const ACTION_TITLES: Record<ActionKind, string> = {
   retry_run: 'Zopakovat běh',
   approve_pr: 'Schválit PR',
   cancel_task: 'Zrušit task',
+  follow_up: 'Navázat follow-upem na',
+}
+
+/** The run id of a `retry_run` (`run` of a `follow_up` is a flag). */
+function runOf(action: ProposedAction): string | undefined {
+  return typeof action.run === 'string' ? action.run : undefined
 }
 
 /** `Upravit task P01-S01-T01`: the card's heading. */
 export function actionTitle(action: ProposedAction): string {
-  const target = action.task ?? action.run ?? action.title ?? ''
+  const target = action.task ?? runOf(action) ?? action.title ?? ''
   return `${ACTION_TITLES[action.kind] ?? action.kind} ${target}`.trim()
 }
 
 /** The dashboard screen of the action's object. */
 export function actionHref(action: ProposedAction): string | null {
   const repo = encodeURIComponent(action.repo)
-  if (action.kind === 'retry_run' && action.run) return `#/r/${repo}/runs/${encodeURIComponent(action.run)}`
+  const run = runOf(action)
+  if (action.kind === 'retry_run' && run) return `#/r/${repo}/runs/${encodeURIComponent(run)}`
   if (action.kind === 'approve_pr' && action.task) return `#/r/${repo}/review/${encodeURIComponent(action.task)}`
   if (action.task) return `#/r/${repo}/backlog/${encodeURIComponent(action.task)}`
   if (action.step) return `#/r/${repo}/backlog`
@@ -140,6 +155,9 @@ export interface TaskNow {
   writes: string[]
   workflow: string | null
   status: string
+  /** The task's own writes and workflow: a follow-up takes these over. */
+  own_writes: string[]
+  own_workflow: string | null
 }
 
 /** One line of the preview: a field, its value now (when known) and after the action. */
@@ -181,13 +199,24 @@ export function actionPreview(action: ProposedAction, now: TaskNow | null = null
       field('Poznámka', action.note)
       break
     case 'retry_run':
-      field('Běh', action.run)
+      field('Běh', runOf(action))
       field('Poznámka', action.note)
       break
     case 'cancel_task':
       field('Task', action.task)
       field('Stav', 'cancelled', now ? now.status : null)
       break
+    case 'follow_up': {
+      const inherited = 'zdědí z kroku'
+      field('Navazuje na', action.task)
+      if (now && now.status !== 'done') field('Stav', `${now.status || 'bez stavu'} (jen hotový task jde navázat)`)
+      field('Název', action.title ?? (now ? `Navazuje na ${action.task}: ${now.title}` : `Navazuje na ${action.task}: …`))
+      field('Writes', now ? (now.own_writes.length ? list(now.own_writes) : inherited) : `převezme z ${action.task}`)
+      field('Workflow', now ? (now.own_workflow ?? inherited) : `převezme z ${action.task}`)
+      field('Zadání', action.body)
+      field('Po založení', action.run === true ? 'commitnout backlog a spustit' : 'jen založit (backlog necommitovaný)')
+      break
+    }
   }
   return rows
 }
@@ -209,11 +238,13 @@ export function actionRequest(action: ProposedAction): { path: string; body?: Re
     case 'run_task':
       return { path: `${task}/run`, body: pick('note') }
     case 'retry_run':
-      return { path: `${repo}/runs/${encodeURIComponent(action.run ?? '')}/retry`, body: pick('note') }
+      return { path: `${repo}/runs/${encodeURIComponent(runOf(action) ?? '')}/retry`, body: pick('note') }
     case 'approve_pr':
       return { path: `${repo}/review/${encodeURIComponent(action.task ?? '')}/approve` }
     case 'cancel_task':
       return { path: `${task}/edit`, body: { status: 'cancelled' } }
+    case 'follow_up':
+      return { path: `${task}/follow-up`, body: pick('body', 'title', 'run') }
   }
 }
 
@@ -242,6 +273,13 @@ export function actionOutcome(action: ProposedAction, data: unknown): string {
     case 'approve_pr':
       if (result.started) return 'Schválení běží na pozadí (čeká na CI).'
       return typeof result.merge_sha === 'string' ? `PR sloučen (${result.merge_sha.slice(0, 8)}).` : 'PR schválen.'
+    case 'follow_up': {
+      const task = result.task as { id?: unknown } | undefined
+      const created = typeof task?.id === 'string' ? `Task ${task.id} založen.` : 'Task založen.'
+      if (action.run !== true) return created
+      const run = runIdOf(result)
+      return `${created} ${run ? `Běh ${run} spuštěn.` : 'Běh se spouští.'}`
+    }
   }
 }
 
@@ -322,7 +360,7 @@ export async function dismissAction(threadId: string, action: ProposedAction): P
 /** The task as it is now (for the preview of an edit or cancel); null when unknown. */
 export async function taskNow(repo: string, task: string): Promise<TaskNow | null> {
   try {
-    const detail = await getGlobal<{ task?: Partial<TaskNow> & { writes?: string[] }; body?: string }>(
+    const detail = await getGlobal<{ task?: Partial<TaskNow>; body?: string }>(
       `/repos/${encodeURIComponent(repo)}/backlog/tasks/${encodeURIComponent(task)}`,
     )
     const node = detail.task ?? {}
@@ -332,6 +370,8 @@ export async function taskNow(repo: string, task: string): Promise<TaskNow | nul
       writes: Array.isArray(node.writes) ? node.writes : [],
       workflow: node.workflow ?? null,
       status: node.status ?? '',
+      own_writes: Array.isArray(node.own_writes) ? node.own_writes : [],
+      own_workflow: node.own_workflow ?? null,
     }
   } catch {
     return null
