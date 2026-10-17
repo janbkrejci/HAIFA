@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T45
 title: "Dialog Nový záměr bez otázky Kam, s navrženým umístěním"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-S01-T44]
 writes: [aifactory/web/src/components/backlog/IntentDialog.vue, aifactory/web/src/components/backlog/IntentDialog.test.ts, aifactory/web/src/lib/intent.ts, aifactory/web/src/views/BacklogView.vue, aifactory/web/src/views/BacklogView.test.ts, aifactory/tests/e2e/test_intent_browser.py, aifactory/tests/intent_fixture.py, aifactory/src/aifactory/web/static/]
@@ -37,3 +37,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/104 · náklady $1.80
