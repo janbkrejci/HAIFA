@@ -174,7 +174,12 @@ def test_demo_from_empty_overview_to_merge(tmp_path: Path, monkeypatch: pytest.M
 
                 def finished() -> dict[str, Any] | None:
                     state = run_state(api["base"], run_id)
-                    return state if state["state"] != "running" else None
+                    if state["state"] == "running":
+                        return None
+                    # a run is recorded succeeded before its PR is published
+                    if state["state"] == "succeeded" and not (state["pr"] or state["pr_error"]):
+                        return None
+                    return state
 
                 done = wait_for(finished, RUN_TIMEOUT_S, "sample run finished", report)
                 assert done["state"] == "succeeded", report()

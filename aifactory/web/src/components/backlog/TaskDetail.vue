@@ -4,6 +4,8 @@ import {
   AlertTriangle,
   Ban,
   CheckCircle2,
+  CornerDownRight,
+  GitBranchPlus,
   GitPullRequest,
   History,
   Info,
@@ -24,6 +26,7 @@ import {
   DEFERRABLE_STATES,
   STATE_LABELS,
   type EditTaskInput,
+  type FollowUpResult,
   type RunInput,
   type LinkInput,
   type RunPanel,
@@ -35,6 +38,7 @@ import { reviewHref, runHref, taskHref } from '@/lib/router'
 import { canRetry, prStateLabel, shownState } from '@/lib/runs'
 import RetryRunButton from '@/components/runs/RetryRunButton.vue'
 import StatusChip from '@/components/runs/StatusChip.vue'
+import FollowUpDialog from './FollowUpDialog.vue'
 import IssueList from './IssueList.vue'
 import RunDialog from './RunDialog.vue'
 import StateChip from './StateChip.vue'
@@ -72,6 +76,8 @@ const emit = defineEmits<{
   exclude: [id: string, excluded: boolean]
   /** A failed or stopped run was continued (`factory task retry`). */
   retried: []
+  /** A task that follows this done task was created (and maybe started). */
+  'follow-up': [result: FollowUpResult]
 }>()
 
 const editing = ref(false)
@@ -93,6 +99,15 @@ const forHuman = computed(() => task.value.assignee === 'human')
 const HUMAN_HINT = 'Task udělá člověk, factory ho nespustí. Až bude hotový, označ ho jako hotový.'
 /** A done or cancelled task never runs again. */
 const finished = computed(() => ['done', 'cancelled'].includes(task.value.board_state))
+/** A done task is not run, edited or improved again: a follow-up task continues it. */
+const done = computed(() => task.value.board_state === 'done')
+const followUpOpen = ref(false)
+const followers = computed(() => props.detail.followed_by ?? [])
+
+function onFollowUpCreated(result: FollowUpResult) {
+  followUpOpen.value = false
+  emit('follow-up', result)
+}
 const runTooltip = computed(() => {
   if (finished.value) {
     const noun = levelLabel(level.task.value)
@@ -173,6 +188,7 @@ watch(
       closeEdit()
       saving = false
     }
+    if (!sameTask) followUpOpen.value = false
   },
 )
 
@@ -205,7 +221,17 @@ function onEdit(input: EditTaskInput) {
         <h2 data-test="task-title">{{ task.title }}</h2>
         <StateChip :state="task.board_state" :blocked-by="task.blocked_by" :waits-for-human="task.waits_for_human" />
         <div class="head-buttons">
-          <Tooltip :text="runTooltip">
+          <button
+            v-if="done"
+            type="button"
+            class="run"
+            data-test="follow-up"
+            :disabled="busy || followUpOpen"
+            @click="followUpOpen = true"
+          >
+            <GitBranchPlus :size="14" /> Otevřít navazující task
+          </button>
+          <Tooltip v-if="!done" :text="runTooltip">
             <button
               type="button"
               class="run"
@@ -220,7 +246,7 @@ function onEdit(input: EditTaskInput) {
             </button>
           </Tooltip>
           <button
-            v-if="!editing"
+            v-if="!editing && !done"
             type="button"
             data-test="edit"
             :disabled="busy"
@@ -249,7 +275,7 @@ function onEdit(input: EditTaskInput) {
             <Spinner v-if="action === 'cancel'" />
             <Ban v-else :size="14" /> Zrušit
           </button>
-          <Tooltip v-if="!editing" :text="improveTooltip">
+          <Tooltip v-if="!editing && !done" :text="improveTooltip">
             <button
               type="button"
               class="btn-improve"
@@ -263,6 +289,13 @@ function onEdit(input: EditTaskInput) {
         </div>
       </div>
       <div class="path mono" data-test="path">{{ task.path }}</div>
+      <div v-if="detail.follows" class="follows" data-test="follows">
+        <CornerDownRight :size="14" aria-hidden="true" />
+        Navazuje na
+        <a v-if="detail.follows.kind === 'task'" :href="taskHref(detail.follows.id)" class="mono">{{ detail.follows.id }}</a>
+        <span v-else class="mono">{{ detail.follows.id }}</span>
+        <span v-if="detail.follows.title" class="ellipsis">{{ detail.follows.title }}</span>
+      </div>
       <div v-if="detail.issues.length" class="task-issues" data-test="task-issues">
         <AlertTriangle :size="16" class="issues-icon" />
         <ul>
@@ -288,6 +321,14 @@ function onEdit(input: EditTaskInput) {
     </div>
 
     <ConfirmDialog v-bind="dialog" @confirm="onDialogConfirm" @cancel="onDialogCancel" />
+
+    <FollowUpDialog
+      v-if="followUpOpen && done"
+      :task-id="task.id"
+      :task-title="task.title"
+      @created="onFollowUpCreated"
+      @cancel="followUpOpen = false"
+    />
 
     <RunDialog
       v-if="run?.open"
@@ -457,6 +498,17 @@ function onEdit(input: EditTaskInput) {
             <p v-else class="faint">Nic</p>
           </div>
 
+          <div v-if="followers.length" class="link-group" data-test="followed-by">
+            <h4>Navazují na něj <span class="count">{{ followers.length }}</span></h4>
+            <ul>
+              <li v-for="f in followers" :key="f.id" :data-follower="f.id">
+                <a :href="taskHref(f.id)" class="mono">{{ f.id }}</a>
+                <span class="ellipsis">{{ f.title }}</span>
+                <span class="push"><StateChip :state="f.board_state" /></span>
+              </li>
+            </ul>
+          </div>
+
           <div class="link-group" data-test="related">
             <h4>Související <span class="count">{{ task.related.length }}</span></h4>
             <ul v-if="task.related.length">
@@ -531,6 +583,15 @@ h2 {
   align-items: center;
   gap: 8px;
   margin-left: auto;
+}
+
+.follows {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  min-width: 0;
+  color: var(--dim);
 }
 
 .task-issues {

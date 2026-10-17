@@ -1,7 +1,7 @@
 ---
 id: INTENT-S02-T03
 title: "Detail hotového tasku: Otevřít navazující task"
-status: todo
+status: done
 depends_on: [INTENT-S02-T01]
 ---
 
@@ -17,3 +17,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/94 · náklady $3.28

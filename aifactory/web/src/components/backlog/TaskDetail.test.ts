@@ -50,7 +50,7 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['done', 'cancelled', 'running', 'in review', 'awaiting merge'] as const)('disables Vylepšit agentem for %s tasks', (state) => {
+  it.each(['cancelled', 'running', 'in review', 'awaiting merge'] as const)('disables Vylepšit agentem for %s tasks', (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
@@ -213,7 +213,6 @@ describe('TaskDetail', () => {
   })
 
   it.each([
-    ['done', 'Task je hotový, znovu se nespouští.'],
     ['cancelled', 'Task je zrušený, nespouští se.'],
   ] as const)('disables Spustit for a %s task and says why', async (state, tip) => {
     const detail = taskDetail()
@@ -423,6 +422,64 @@ describe('TaskDetail', () => {
     const reasons = banner.findAll('[data-test="readiness-reason"]')
     expect(reasons).toHaveLength(2)
     expect(reasons[0].text()).toContain('M01-S01 – step má nehotové tasky: M01-S01-T01')
+  })
+
+  it('a done task offers Otevřít navazující task instead of Spustit, Upravit and Vylepšit agentem', () => {
+    const detail = taskDetail()
+    detail.task = { ...detail.task, board_state: 'done' }
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.find('[data-test="run"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="edit"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="improve"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="auto-queue"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="follow-up"]').text()).toContain('Otevřít navazující task')
+    wrapper.unmount()
+  })
+
+  it('a task that is not done has no follow-up button', () => {
+    const wrapper = detailWrapper()
+    expect(wrapper.find('[data-test="follow-up"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="run"]').exists()).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('creates a follow-up task from the dialog and forwards the result', async () => {
+    const detail = taskDetail()
+    detail.task = { ...detail.task, board_state: 'done' }
+    const result = { action: 'follow-up', changed: true, path: 'x.md', task: { ...detail.task, id: 'M01-S01-T09' }, issues: [], commit: null, run: null, pending: true }
+    api.postApi.mockReset().mockResolvedValue(result)
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.find('[data-test="follow-up-dialog"]').exists()).toBe(false)
+    await wrapper.get('[data-test="follow-up"]').trigger('click')
+    expect(wrapper.find('[data-test="follow-up-dialog"]').exists()).toBe(true)
+    await wrapper.get('[data-test="follow-up-body"]').setValue('Přidat export.')
+    await wrapper.get('[data-test="follow-up-submit"]').trigger('click')
+    await flushPromises()
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/tasks/M01-S01-T02/follow-up', { body: 'Přidat export.', run: true })
+    expect(wrapper.emitted('follow-up')).toEqual([[result]])
+    expect(wrapper.find('[data-test="follow-up-dialog"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('links the followed task and lists the tasks that follow this one', () => {
+    const detail = taskDetail()
+    detail.follows = { id: 'M01-S01-T01', kind: 'task', title: 'Původní', state: 'done' }
+    detail.followed_by = [{ id: 'M01-S01-T07', title: 'Dál', board_state: 'todo' }]
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    const follows = wrapper.get('[data-test="follows"]')
+    expect(follows.text()).toContain('Navazuje na M01-S01-T01')
+    expect(follows.get('a').attributes('href')).toContain('M01-S01-T01')
+    const followers = wrapper.get('[data-test="followed-by"]')
+    expect(followers.text()).toContain('M01-S01-T07')
+    expect(followers.get('a').attributes('href')).toContain('M01-S01-T07')
+    wrapper.unmount()
+  })
+
+  it('shows no follow links without them', () => {
+    const wrapper = detailWrapper()
+    expect(wrapper.find('[data-test="follows"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="followed-by"]').exists()).toBe(false)
+    wrapper.unmount()
   })
 
   it('mutes the banner for a done task', () => {
