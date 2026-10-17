@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T42
 title: "Backlog: dávka tasků i s novým projektem"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/backlog/edit.py, aifactory/src/aifactory/backlog/__init__.py, aifactory/tests/backlog/test_backlog_batch.py]
@@ -32,3 +32,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/101 · náklady $1.32
