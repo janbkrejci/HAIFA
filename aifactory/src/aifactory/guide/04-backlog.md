@@ -4,7 +4,7 @@ Backlog je strom markdown souborů pod `<docs_root>/backlog/`: **projekt**, **st
 
 ## Strom a kanban
 
-**Strom** ukazuje projekty a stepy s počty tasků, přepínači auto-continue a auto-merge (Zděděno, Zapnuto, Vypnuto), grafem závislostí a kartou **Nastavení**.
+**Strom** ukazuje projekty a stepy s počty tasků, grafem závislostí a panelem **Nastavení** (posuvníky na řádku): auto-continue, auto-merge a klíče `index.md`.
 
 **Kanban** má sloupec pro každý stav. **Připraveno** je fronta auto-continue shora dolů: pořadí měníš přetažením nebo šipkami. Přetažením do **Odloženo** (nebo **Vyloučit z auto continue**) task z fronty vyřadíš; ručně spustit jde. Pořadí a odložení se necommitují.
 
@@ -22,7 +22,7 @@ Formulář: **Titulek**, **Kód**, **Zadání** (cíl, kontext, kdy je hotovo) a
 
 ## Dědičnost
 
-Prázdná hodnota se dědí od stepu, pak projektu: `workflow`, `writes`, `harness`, `model`, `thinking`, `test_timeout`, `auto_continue`, `auto_merge`, `auto_heal`, `assignee`. Explicitní `null` dědění zastaví. Projekt a step upravíš kartou **Nastavení** nebo `factory backlog edit`.
+Prázdná hodnota se dědí od stepu, pak projektu: `workflow`, `writes`, `harness`, `model`, `thinking`, `test_timeout`, `auto_continue`, `auto_merge`, `auto_heal`, `assignee`. Explicitní `null` dědění zastaví. Projekt a step upravíš panelem **Nastavení** nebo `factory backlog edit`.
 
 `depends_on` odkazuje na task, step nebo projekt (splněný, když jsou hotové všechny nezrušené tasky).
 

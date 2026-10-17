@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import BacklogTree from './BacklogTree.vue'
-import { backlogData, expandTree } from '@/test/backlogFixtures'
+import { backlogData, containerDetail, expandTree } from '@/test/backlogFixtures'
 import { mergeNames, resetNamesForTests } from '@/lib/names'
-import { TREE_EXPANDED_KEY, pruneDone, resetTreeForTests } from '@/lib/backlog'
+import { TREE_EXPANDED_KEY, pruneDone, resetTreeForTests, revealSettings } from '@/lib/backlog'
 
 beforeEach(() => {
   localStorage.clear()
@@ -221,50 +221,139 @@ describe('BacklogTree', () => {
       wrapper.findAll('[data-node="M01-S01"] > .row [data-test="state-counts"] [data-state]').map((c) => c.text()),
     ).toEqual(['Připraveno 1', 'Blokováno 1', 'Hotovo 1'])
   })
-  it('opens the auto-continue and auto-merge switches of a project or step under its row', async () => {
+  it('opens the Nastavení panel of a project or step under its row, with the switches and the form', async () => {
     expandTree(['M01'])
+    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) => envelope(containerDetail()))
+    vi.stubGlobal('fetch', fetchMock)
     const data = backlogData()
-    const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
+    const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels, workflows: ['plan'] } })
     const step = () => wrapper.find('[data-node="M01-S01"] > .row')
-    expect(wrapper.find('[data-test="switches-panel"]').exists()).toBe(false)
-    await step().get('[data-test="switches"]').trigger('click')
+    expect(wrapper.find('[data-test="settings-panel"]').exists()).toBe(false)
+    await step().get('[data-test="settings"]').trigger('click')
+    await flushPromises()
     // the button neither folds the row nor opens the graph
     expect(wrapper.find('[data-task="M01-S01-T01"]').exists()).toBe(false)
-    const panel = wrapper.get('[data-node="M01-S01"] > [data-test="switches-panel"]')
+    expect(fetchMock.mock.calls[0]![0]).toBe('/api/repos/haifa/backlog/containers/M01-S01')
+    const panel = wrapper.get('[data-node="M01-S01"] > [data-test="settings-panel"]')
     expect(panel.get('[data-test="auto-on"]').attributes('aria-pressed')).toBe('true')
     expect(panel.get('[data-test="auto-effective"]').text()).toContain('zapnuto')
     expect(panel.get('[data-test="merge-inherit"]').attributes('aria-pressed')).toBe('true')
     expect(panel.get('[data-test="merge-effective"]').text()).toContain('vypnuto')
-    expect(step().get('[data-test="switches"]').attributes('aria-expanded')).toBe('true')
+    expect(step().get('[data-test="settings"]').attributes('aria-expanded')).toBe('true')
+    // the whole form with inherited values; auto-continue only once, in its switch
+    const form = panel.get('[data-test="container-settings"]')
+    expect(form.get('[data-test="value-workflow"]').text()).toContain('plan')
+    expect(form.get('[data-setting="writes"] [data-test="origin"]').text()).toContain('Modul M01')
+    expect(form.find('[data-setting="auto_continue"]').exists()).toBe(false)
+    expect(panel.findAll('[data-test="auto-toggle"]')).toHaveLength(1)
+    await step().get('[data-test="settings"]').trigger('click')
+    expect(wrapper.find('[data-test="settings-panel"]').exists()).toBe(false)
+  })
+
+  it('saves the settings through the API and asks for the tree again', async () => {
+    expandTree(['M01'])
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') {
+        const detail = containerDetail({ own: { workflow: 'plan', writes: ['docs/'] } }).container
+        detail.effective.writes = { value: ['docs/'], origin: detail.effective.workflow!.origin }
+        return envelope({ action: 'edit', changed: true, path: 'x', container: detail, issues: [] })
+      }
+      return envelope(url.endsWith('/M01-S01') ? containerDetail() : null)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const data = backlogData()
+    const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
+    await wrapper.get('[data-node="M01-S01"] > .row [data-test="settings"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="inherit-writes"]').setValue(false)
+    await wrapper.get('[data-test="edit-writes"]').setValue('docs/')
+    await wrapper.get('[data-test="container-settings"]').trigger('submit')
+    await flushPromises()
+    const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST')!
+    expect(post[0]).toBe('/api/repos/haifa/backlog/containers/M01-S01/edit')
+    expect(post[1]?.body).toBe('{"writes":["docs/"]}')
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+    expect(wrapper.get('[data-test="value-writes"]').text()).toContain('docs/')
+    expect(wrapper.get('[data-setting="writes"]').attributes('data-source')).toBe('own')
+  })
+
+  it('shows a save that failed and a spinner while it runs', async () => {
+    expandTree(['M01'])
+    let answer: (r: Response) => void = () => {}
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return new Promise<Response>((resolve) => (answer = resolve))
+      return envelope(containerDetail())
+    }))
+    const data = backlogData()
+    const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
+    await wrapper.get('[data-node="M01-S01"] > .row [data-test="settings"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="settings-title"]').setValue('Jiný')
+    await wrapper.get('[data-test="container-settings"]').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[data-test="settings-save"]').attributes('aria-busy')).toBe('true')
+    answer(envelope(null, false))
+    await flushPromises()
+    expect(wrapper.get('[data-test="settings-save"]').attributes('aria-busy')).toBeUndefined()
+    expect(wrapper.get('[data-test="container-settings"]').text()).toContain('disk full')
+    expect(wrapper.emitted('changed')).toBeUndefined()
+  })
+
+  it('reports settings that could not be loaded', async () => {
+    expandTree(['M01'])
+    vi.stubGlobal('fetch', vi.fn(async () => envelope(null, false)))
+    const data = backlogData()
+    const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
+    await wrapper.get('[data-node="M01"] > .row [data-test="settings"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-node="M01"] > [data-test="settings-panel"] [data-test="settings-error"]').text()).toContain(
+      'disk full',
+    )
   })
 
   it('writes a switch and asks for the tree again', async () => {
     expandTree(['M01'])
-    const fetchMock = vi.fn(async (_url: string, _init?: RequestInit) =>
-      envelope({ changed: true, id: 'M01-S01', level: 'step', path: 'x', mode: 'on' }),
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
+      url.endsWith('/auto-merge')
+        ? envelope({ changed: true, id: 'M01-S01', level: 'step', path: 'x', mode: 'on' })
+        : envelope(containerDetail()),
     )
     vi.stubGlobal('fetch', fetchMock)
     const data = backlogData()
     const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
-    await wrapper.get('[data-node="M01-S01"] > .row [data-test="switches"]').trigger('click')
-    await wrapper.get('[data-node="M01-S01"] > [data-test="switches-panel"] [data-test="merge-on"]').trigger('click')
+    await wrapper.get('[data-node="M01-S01"] > .row [data-test="settings"]').trigger('click')
     await flushPromises()
-    const [url, init] = fetchMock.mock.calls[0]!
+    await wrapper.get('[data-node="M01-S01"] > [data-test="settings-panel"] [data-test="merge-on"]').trigger('click')
+    await flushPromises()
+    const [url, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
     expect(url).toBe('/api/repos/haifa/backlog/containers/M01-S01/auto-merge')
-    expect(init?.method).toBe('POST')
     expect(JSON.parse(String(init?.body))).toEqual({ mode: 'on' })
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })
 
   it('reports a switch that could not be written', async () => {
     expandTree(['M01'])
-    vi.stubGlobal('fetch', vi.fn(async () => envelope(null, false)))
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST' ? envelope(null, false) : envelope(containerDetail({ id: 'M01', parent: null })),
+    ))
     const data = backlogData()
     const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
-    await wrapper.get('[data-node="M01"] > .row [data-test="switches"]').trigger('click')
-    await wrapper.get('[data-node="M01"] > [data-test="switches-panel"] [data-test="auto-off"]').trigger('click')
+    await wrapper.get('[data-node="M01"] > .row [data-test="settings"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-node="M01"] > [data-test="settings-panel"] [data-test="auto-off"]').trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="switches-error"]').text()).toBe('disk full')
     expect(wrapper.emitted('changed')).toBeUndefined()
+  })
+
+  it('unfolds the tree to a container revealed from the graph page and opens its settings', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => envelope(containerDetail())))
+    revealSettings('M01-S01')
+    const data = backlogData()
+    const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
+    await flushPromises()
+    expect(wrapper.find('[data-node="M01-S01"] > [data-test="settings-panel"]').exists()).toBe(true)
+    expect(wrapper.find('[data-task="M01-S01-T01"]').exists()).toBe(false)
+    expect(JSON.parse(localStorage.getItem(TREE_EXPANDED_KEY) ?? '[]')).toEqual(['M01'])
   })
 })
