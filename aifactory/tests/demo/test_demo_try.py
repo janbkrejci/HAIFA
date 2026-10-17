@@ -17,6 +17,14 @@ from aifactory.web.registry import Registry
 from cli_json import run_json
 
 
+@pytest.fixture(autouse=True)
+def _git_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A git identity, so the sample commit works on machines without one (CI)."""
+    for kind in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{kind}_NAME", "Ada Tester")
+        monkeypatch.setenv(f"GIT_{kind}_EMAIL", "ada@example.com")
+
+
 def _git(root: Path, *args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=root, capture_output=True, text=True, check=True
@@ -129,6 +137,21 @@ def test_cli_refuses_a_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) 
     assert obj["error"]["code"] == "invalid_value"
 
 
+def test_env_identity_without_git_config_is_enough(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """CI has no git config identity, only GIT_AUTHOR_*/GIT_COMMITTER_* in the environment."""
+    empty = tmp_path / "gitconfig"
+    empty.write_text("", encoding="utf-8")
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+
+    result = create_demo(tmp_path / "sample")
+
+    assert result.created
+    assert _git(result.path, "log", "--format=%an <%ae>") == "Ada Tester <ada@example.com>"
+
+
 def test_missing_git_identity_leaves_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -136,7 +159,13 @@ def test_missing_git_identity_leaves_nothing(
     empty.write_text("", encoding="utf-8")
     monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(empty))
     monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
-    for name in ("GIT_AUTHOR_NAME", "GIT_AUTHOR_EMAIL", "GIT_COMMITTER_NAME", "EMAIL"):
+    for name in (
+        "GIT_AUTHOR_NAME",
+        "GIT_AUTHOR_EMAIL",
+        "GIT_COMMITTER_NAME",
+        "GIT_COMMITTER_EMAIL",
+        "EMAIL",
+    ):
         monkeypatch.delenv(name, raising=False)
     target = tmp_path / "sample"
 

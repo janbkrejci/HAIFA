@@ -20,7 +20,7 @@ from typing import Any
 
 from aifactory.config.settings import CONFIG_FILE
 from aifactory.library.install import GITIGNORE_LINES, project_settings, render_config
-from aifactory.library.store import LibraryStoreError
+from aifactory.library.store import LibraryStoreError, check_identity
 from aifactory.providers import git
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "repo"
@@ -70,18 +70,14 @@ def _copy_template(target: Path) -> None:
             shutil.copyfile(source, dest)
 
 
-def _identity_missing(root: Path) -> bool:
-    return not all(git.git_ok(root, "config", key) for key in ("user.name", "user.email"))
-
-
 def _write_repo(target: Path) -> None:
     target.mkdir(parents=True, exist_ok=True)
-    if _identity_missing(target):
+    try:
+        check_identity(target)
+    except LibraryStoreError as exc:
         raise LibraryStoreError(
-            "git_identity_missing",
-            "git has no user.name or user.email; set them with git config --global "
-            "user.name/user.email and run factory try again",
-        )
+            exc.code, f"{exc.message} (user.name/user.email) and run factory try again"
+        ) from exc
     _copy_template(target)
     settings = project_settings(base=BASE, provider="local")
     config = target / CONFIG_FILE
