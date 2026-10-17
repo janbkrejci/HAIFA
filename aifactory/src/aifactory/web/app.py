@@ -63,6 +63,13 @@ Projects and steps: ``GET /api/backlog/containers/{id}`` (title, description, ow
 target?, auto_continue?, clear?}``; ``null`` or ``clear`` removes a
 key) call ``add_container`` and ``edit_container`` like ``factory backlog add|edit``.
 
+Nový záměr (``web.intent``): ``POST /api/backlog/intent`` (``{intent, project | step}``)
+starts the proposer agent like ``factory backlog propose``; ``GET /api/backlog/intent/{id}``
+returns its state, the progress of the current turn and the proposal;
+``POST .../refine`` (``{note, tasks?}``) continues the same agent session with a note and
+the edited proposal; ``POST .../apply`` (``{tasks?}``) writes it and commits the backlog;
+``POST .../discard`` closes it.
+
 Review: ``GET /api/review`` (open task PRs with mergeability and costs; ``?done=1``
 adds the merged and closed task PRs in ``done``),
 ``GET /api/review/{task_id}`` (PR body, diff per file, gates and tests, the
@@ -242,6 +249,7 @@ from aifactory.web.config_cache import ConfigCache
 from aifactory.web.control import FactoryControl
 from aifactory.web.fs import FolderPicker, list_dirs
 from aifactory.web.guard import StaleCodeMiddleware, WriteGuardMiddleware, is_api_path
+from aifactory.web.intent import IntentManager
 from aifactory.web.launcher import Launcher, RunLauncher
 from aifactory.web.limits import LimitsSource
 from aifactory.web.live import LiveHub
@@ -891,6 +899,10 @@ def delete_archived(request: Request) -> JSONResponse:
 
 _EDIT_ERROR_STATUS = {
     "unknown_workflow_advice": 404,
+    "unknown_intent": 404,
+    "agent_unavailable": 409,
+    "proposal_failed": 422,
+    "proposal_invalid": 422,
     "busy": 409,
     "backlog_invalid": 422,
     "unknown_task": 404,
@@ -1006,6 +1018,65 @@ async def workflow_advice_get(request: Request) -> JSONResponse:
     except TaskEditError as exc:
         return JSONResponse(envelope_fail(exc.code, exc.message), status_code=404)
     return JSONResponse(envelope_ok(data))
+
+
+async def _intent_call(
+    request: Request, call: Callable[..., dict[str, Any]], *args: Any, status: int = 200
+) -> JSONResponse:
+    """One request of the Nový záměr dialog (``web.intent``)."""
+    try:
+        data = await run_in_threadpool(call, _repo(request), *args)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except (TaskEditError, ConfigError, TaskRunError) as exc:
+        return _edit_error(exc)
+    return JSONResponse(envelope_ok(data, list(data.get("warnings") or [])), status_code=status)
+
+
+async def intent_start(request: Request) -> JSONResponse:
+    """Start a proposal from an intent: ``{intent, project | step}`` -> the job."""
+    try:
+        body = await _json_body(request)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    return await _intent_call(request, request.app.state.intent.start, body, status=202)
+
+
+async def intent_get(request: Request) -> JSONResponse:
+    """The proposal job: state, progress of the current turn, the proposal."""
+    manager = request.app.state.intent
+    return await _intent_call(
+        request, lambda repo, job: manager.get(repo, job).json(), request.path_params["job_id"]
+    )
+
+
+async def intent_refine(request: Request) -> JSONResponse:
+    """``{note, tasks?}``: the agent revises the proposal in the same session."""
+    try:
+        body = await _json_body(request)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    return await _intent_call(
+        request, request.app.state.intent.refine, request.path_params["job_id"], body, status=202
+    )
+
+
+async def intent_apply(request: Request) -> JSONResponse:
+    """``{tasks?}``: write the edited proposal to the backlog and commit it."""
+    try:
+        body = await _json_body(request)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    return await _intent_call(
+        request, request.app.state.intent.apply, request.path_params["job_id"], body
+    )
+
+
+async def intent_discard(request: Request) -> JSONResponse:
+    """Close the proposal without writing anything."""
+    return await _intent_call(
+        request, request.app.state.intent.discard, request.path_params["job_id"]
+    )
 
 
 async def task_advice_options(request: Request) -> JSONResponse:
@@ -1657,6 +1728,11 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/backlog/task-advice/{job_id}", task_advice_get, methods=["GET"]),
         Route("/backlog/workflow-advice", workflow_advice_start, methods=["POST"]),
         Route("/backlog/workflow-advice/{job_id}", workflow_advice_get, methods=["GET"]),
+        Route("/backlog/intent", intent_start, methods=["POST"]),
+        Route("/backlog/intent/{job_id}", intent_get, methods=["GET"]),
+        Route("/backlog/intent/{job_id}/refine", intent_refine, methods=["POST"]),
+        Route("/backlog/intent/{job_id}/apply", intent_apply, methods=["POST"]),
+        Route("/backlog/intent/{job_id}/discard", intent_discard, methods=["POST"]),
         Route("/backlog/tasks", backlog_add, methods=["POST"]),
         Route("/backlog/status", backlog_status, methods=["GET"]),
         Route("/backlog/commit", backlog_commit, methods=["POST"]),
@@ -1829,11 +1905,13 @@ def create_app(
         finally:
             await run_in_threadpool(app.state.workflow_advice.close)
             await run_in_threadpool(app.state.task_advice.close)
+            await run_in_threadpool(app.state.intent.close)
             await app.state.live.aclose()
 
     app = _starlette(api, static_dir, lifespan, allowed_hosts)
     app.state.workflow_advice = AdviceManager()
     app.state.task_advice = AdviceManager(task_parameters=True)
+    app.state.intent = IntentManager()
     app.state.home = haifa_home()
     app.state.library = machine.GlobalState()
     app.state.repo = root
@@ -2482,12 +2560,14 @@ def create_multi_app(
             await asyncio.gather(*checks, return_exceptions=True)
             await run_in_threadpool(app.state.workflow_advice.close)
             await run_in_threadpool(app.state.task_advice.close)
+            await run_in_threadpool(app.state.intent.close)
             await run_in_threadpool(app.state.assistant.close)
             await contexts.aclose()
 
     app = _starlette(api, static_dir, lifespan, allowed_hosts)
     app.state.workflow_advice = AdviceManager()
     app.state.task_advice = AdviceManager(task_parameters=True)
+    app.state.intent = IntentManager()
     app.state.library = machine.GlobalState()
     app.state.home = home_dir
     app.state.served_port = port

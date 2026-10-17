@@ -181,6 +181,13 @@ export function reviewHref(taskId: string): string {
 /** `#/r/<id>/backlog/new-container[/<parent id>]`: the form for a new project or step. */
 export const NEW_CONTAINER = 'new-container'
 
+/** `#/r/<id>/backlog/intent[/<project or step id>]`: the Nový záměr dialog. */
+export const NEW_INTENT = 'intent'
+
+export function intentHref(containerId?: string | null): string {
+  return containerId ? here('backlog', NEW_INTENT, containerId) : here('backlog', NEW_INTENT)
+}
+
 /** `#/r/<id>/backlog/new-step`: choose a project and create its step. */
 export const NEW_STEP = 'new-step'
 
