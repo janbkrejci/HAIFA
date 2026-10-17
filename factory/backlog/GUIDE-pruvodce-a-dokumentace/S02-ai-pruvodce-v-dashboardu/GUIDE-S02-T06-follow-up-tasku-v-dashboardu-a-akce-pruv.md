@@ -1,7 +1,7 @@
 ---
 id: GUIDE-S02-T06
 title: Follow-up tasku v dashboardu a akce průvodce follow_up
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [GUIDE-S02-T03]
 ---
@@ -24,3 +24,4 @@ Mimo rozsah: změny chování CLI kromě přepojení na sdílenou funkci.
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/106 · náklady $3.43
