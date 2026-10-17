@@ -797,9 +797,76 @@ export function toggleExpanded(key: string): void {
   saveExpanded(next)
 }
 
+/** Unfold the given containers (the ancestors of a revealed one), keeping the others. */
+export function expandKeys(keys: string[]): void {
+  const next = new Set(expandedKeys())
+  for (const key of keys) next.add(key)
+  expanded.value = next
+  saveExpanded(next)
+}
+
+/** Keys of the containers above the container `id` in the tree, top first; null when absent. */
+export function ancestorKeys(items: BacklogNode[], id: string): string[] | null {
+  for (const node of items) {
+    if (node.kind !== 'container') continue
+    if (node.id === id) return []
+    const below = ancestorKeys(node.children, id)
+    if (below) return [nodeKey(node), ...below]
+  }
+  return null
+}
+
+// ── The Nastavení panel of a project or step in the tree ─────────────────────
+
+/** Containers whose Nastavení panel is open in the tree (for this visit). */
+const settingsOpen = ref<Set<string>>(new Set())
+/** A container the tree should unfold to and open (the link from the graph page). */
+const revealing = ref<string | null>(null)
+/** A revealed container whose panel scrolls into view once its settings are loaded. */
+let scrolling: string | null = null
+
+export function isSettingsOpen(key: string): boolean {
+  return settingsOpen.value.has(key)
+}
+
+export function toggleSettings(key: string): void {
+  const next = new Set(settingsOpen.value)
+  if (next.has(key)) next.delete(key)
+  else next.add(key)
+  settingsOpen.value = next
+}
+
+/** Open the Nastavení panel of `id` in the tree and unfold the tree to it once it is shown. */
+export function revealSettings(id: string): void {
+  settingsOpen.value = new Set([...settingsOpen.value, id])
+  revealing.value = id
+  scrolling = id
+}
+
+/** Should the panel of `id` scroll into view (once, after a reveal)? */
+export function takeScroll(id: string): boolean {
+  if (scrolling !== id) return false
+  scrolling = null
+  return true
+}
+
+/** The container waiting to be unfolded to; the tree takes it once. */
+export function takeReveal(items: BacklogNode[]): string | null {
+  const id = revealing.value
+  if (!id) return null
+  const above = ancestorKeys(items, id)
+  if (!above) return null
+  revealing.value = null
+  expandKeys(above)
+  return id
+}
+
 /** Test helper: forget the folding state and read localStorage again on next use. */
 export function resetTreeForTests(): void {
   expanded.value = null
+  settingsOpen.value = new Set()
+  revealing.value = null
+  scrolling = null
   resetHideDoneForTests()
 }
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The Backlog screen of repo <id> (#/r/<id>/backlog…): …/backlog (tree or kanban), …/backlog/new[/<step id>]
 // (form, the step preselected), …/backlog/<task id>, …/backlog/graph/<project or step id> (dependency graph and
-// the Nastavení panel), …/backlog/new-container[/<project id>] (form for a new project or step).
+// a link to its Nastavení panel in the tree), …/backlog/new-container[/<project id>] (form for a new project or step).
 // …/backlog/new-step selects the parent project before creating a step.
 // …/backlog/intent[/<project or step id>] opens the Nový záměr dialog (a proposal from an intent);
 // the task detail does not offer it.
@@ -17,15 +17,11 @@ import KanbanBoard from '@/components/backlog/KanbanBoard.vue'
 import TaskDetail from '@/components/backlog/TaskDetail.vue'
 import TaskForm from '@/components/backlog/TaskForm.vue'
 import ContainerForm from '@/components/backlog/ContainerForm.vue'
-import ContainerSettings from '@/components/backlog/ContainerSettings.vue'
 import {
   BOARD_STATES,
   addContainer,
   addTask,
   childLevel,
-  editContainer,
-  fetchContainer,
-  isContainerDetail,
   childContainerIds,
   commitBacklog,
   editTask,
@@ -48,6 +44,7 @@ import {
   presentStates,
   projectOptions,
   pruneDone,
+  revealSettings,
   setHideDone,
   stateCounts,
   kanbanColumn,
@@ -57,8 +54,6 @@ import {
   startRun,
   type AddContainerInput,
   type AddTaskInput,
-  type ContainerDetailData,
-  type EditContainerInput,
   type BacklogData,
   type BacklogFilters as Filters,
   type BacklogMode,
@@ -156,15 +151,6 @@ const busy = computed(() => busyAction.value !== null)
 const graph = ref<ContainerGraph | null>(null)
 /** A kanban queue write (order, exclusion) is running. */
 const queueBusy = ref(false)
-/** The project or step of the graph page (Nastavení panel). */
-const container = ref<ContainerDetailData | null>(null)
-const containerError = ref<string | null>(null)
-/** Key of the settings panel: a saved or reloaded change resets the form. */
-const settingsKey = computed(() => {
-  const c = container.value?.container
-  return c ? JSON.stringify([c.id, c.title, c.own, c.effective]) : ''
-})
-
 function closedRun(): RunPanel {
   return {
     open: false,
@@ -309,38 +295,20 @@ async function loadDetail(id: string) {
   }
 }
 
-function setContainer(next: unknown) {
-  container.value = isContainerDetail(next) ? next : null
-}
-
-async function loadContainer(id: string, seq: number) {
-  try {
-    // the panel offers the workflows of the backlog list; load it when it is not loaded yet
-    const [next, list] = await Promise.all([
-      fetchContainer(id),
-      data.value ? Promise.resolve(null) : fetchBacklog().catch(() => null),
-    ])
-    if (seq === loadSeq) {
-      if (list) data.value = list
-      setContainer(next)
-      containerError.value = null
-    }
-  } catch (e) {
-    if (seq !== loadSeq) return
-    container.value = null
-    containerError.value = `Nastavení ${id} se nepodařilo načíst: ${message(e)}`
-  }
-}
-
 async function loadGraph(id: string) {
   const seq = ++loadSeq
   loading.value = true
   error.value = null
-  const settings = loadContainer(id, seq)
   try {
-    const next = await fetchGraph(id)
-    await settings
-    if (seq === loadSeq) graph.value = next
+    // the levels (Nový step) and the forms read the backlog list; load it when it is not loaded yet
+    const [next, list] = await Promise.all([
+      fetchGraph(id),
+      data.value ? Promise.resolve(null) : fetchBacklog().catch(() => null),
+    ])
+    if (seq === loadSeq) {
+      if (list) data.value = list
+      graph.value = next
+    }
   } catch (e) {
     if (seq !== loadSeq) return
     graph.value = null
@@ -357,19 +325,6 @@ function reload() {
     else error.value = `Chybí id ${levelsText(level.containers.value, 'gen')}.`
   } else if (taskId.value) void loadDetail(taskId.value)
   else void loadList()
-}
-
-async function onSaveSettings(input: EditContainerInput) {
-  const id = graphId.value
-  if (!id) return
-  const result = await write('settings', () => editContainer(id, input))
-  if (!result) return
-  setContainer({ ...(container.value ?? {}), container: result.container })
-  try {
-    graph.value = await fetchGraph(id)
-  } catch (e) {
-    error.value = `Graf ${id} se nepodařilo načíst: ${message(e)}`
-  }
 }
 
 async function onAddContainer(input: AddContainerInput) {
@@ -593,17 +548,13 @@ async function liveRefresh(change: LiveChange) {
           touchesContainer(change.paths, id) ||
           change.taskIds.some((t) => t.startsWith(`${id}-`)))
       // the list too: the forms (steps of a new task) read it after the graph is left
-      const [list, next, settings] = await Promise.all([
+      const [list, next] = await Promise.all([
         fetchBacklog(),
         id && hit ? fetchGraph(id) : Promise.resolve(null),
-        id && hit ? fetchContainer(id).catch(() => undefined) : Promise.resolve(undefined),
       ])
       if (routeKey.value !== key) return
       data.value = list
-      if (next !== null) {
-        graph.value = next
-        if (settings !== undefined) setContainer(settings)
-      }
+      if (next !== null) graph.value = next
       return
     }
     const id = taskId.value
@@ -670,8 +621,6 @@ watch(
       selectedProject.value = ''
       setDetail(taskId.value ?? '', null)
       graph.value = null
-      container.value = null
-      containerError.value = null
       run.value = closedRun()
       reload()
     }
@@ -847,18 +796,14 @@ watch(
           </label>
         </div>
         <DependencyGraph :graph="shownGraph ?? graph" />
-        <ContainerSettings
-          v-if="container"
-          :key="settingsKey"
-          :container="container.container"
-          :editable-keys="container.editable_keys"
-          :workflows="workflows"
-          :busy="busy"
-          :pending="busyAction === 'settings'"
-          :error="writeError"
-          @save="onSaveSettings"
-        />
-        <p v-else-if="containerError" class="error-bar" data-test="settings-error">{{ containerError }}</p>
+        <p class="settings-link-row">
+          <a
+            :href="here('backlog')"
+            class="settings-link"
+            data-test="settings-link"
+            @click="revealSettings(graph.container.id)"
+          >Nastavení {{ levelNoun(graph.container.level, 'gen') }} ve stromu backlogu</a>
+        </p>
       </section>
       <p v-else-if="loading" class="faint">Načítám…</p>
     </template>
@@ -891,6 +836,7 @@ watch(
           :items="treeItems"
           :levels="levels"
           :filtered="treeFiltered"
+          :workflows="workflows"
           @changed="reloadTree"
           @clear-filter="onHideDone(false)"
         />
@@ -974,6 +920,14 @@ h1 {
   gap: 6px;
   color: var(--dim);
   cursor: pointer;
+}
+
+.settings-link-row {
+  margin: 0;
+}
+
+.settings-link {
+  color: var(--dim);
 }
 
 .graph-hide-done {

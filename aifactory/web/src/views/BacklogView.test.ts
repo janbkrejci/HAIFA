@@ -363,10 +363,13 @@ describe('BacklogView', () => {
     expect(fetchMock).not.toHaveBeenCalledWith('/api/repos/haifa/backlog/tasks/graph')
     expect(wrapper.find('[data-test="graph-title"]').text()).toBe('Model')
     expect(wrapper.find('a[data-node="M01-S01-T02"]').attributes('href')).toBe('#/r/haifa/backlog/M01-S01-T02')
-    // the switches live in the Nastavení panel (and the tree), not twice on the page
+    // the settings live in the tree; the graph page only links there
     expect(wrapper.find('[data-test="auto-toggle"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="merge-toggle"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="container-settings"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="container-settings"]').exists()).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/repos/haifa/backlog/containers/M01-S01')
+    expect(wrapper.get('[data-test="settings-link"]').attributes('href')).toBe('#/r/haifa/backlog')
+    expect(wrapper.get('[data-test="settings-link"]').text()).toBe('Nastavení stepu ve stromu backlogu')
     expect(wrapper.get('[data-test="new-task"]').attributes('href')).toBe('#/r/haifa/backlog/new/M01-S01')
     wrapper.unmount()
   })
@@ -700,7 +703,7 @@ describe('BacklogView', () => {
     wrapper.unmount()
   })
 
-  it('shows the settings of a step and saves a change through the API', async () => {
+  it('opens the settings of a step in the tree from the graph and saves a change through the API', async () => {
     go('#/r/haifa/backlog/graph/M01-S01')
     let workflow = 'plan'
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -719,8 +722,14 @@ describe('BacklogView', () => {
     await flushPromises()
     // a step holds tasks only: no Nový step
     expect(wrapper.find('[data-test="new-step"]').exists()).toBe(false)
-    const settings = wrapper.get('[data-test="container-settings"]')
+    const link = wrapper.get('[data-test="settings-link"]')
+    await link.trigger('click')
+    go(link.attributes('href')!)
+    await flushPromises()
+    expect(wrapper.find('[data-test="tree"]').exists()).toBe(true)
+    const settings = wrapper.get('[data-node="M01-S01"] > [data-test="settings-panel"] [data-test="container-settings"]')
     expect(settings.get('[data-test="value-workflow"]').text()).toContain('plan')
+    const lists = fetchMock.mock.calls.filter(([url]) => url === '/api/repos/haifa/backlog').length
     await chooseOption(wrapper, '[data-test="edit-workflow"]', 'custom-flow')
     await wrapper.get('[data-test="container-settings"]').trigger('submit')
     await flushPromises()
@@ -729,6 +738,8 @@ describe('BacklogView', () => {
     expect(post?.[1]?.body).toBe('{"workflow":"custom-flow"}')
     expect(wrapper.get('[data-test="value-workflow"]').text()).toContain('custom-flow')
     expect(wrapper.get('[data-test="settings-save"]').attributes('disabled')).toBeDefined()
+    // the tree loads again
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos/haifa/backlog').length).toBe(lists + 1)
     wrapper.unmount()
   })
 

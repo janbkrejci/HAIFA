@@ -1,30 +1,28 @@
 <script setup lang="ts">
 // A row of the backlog tree. A click anywhere on a project or step row folds it (the arrow
-// as well), only its Graf link opens the dependency graph and its switch button opens the
-// auto-continue and auto-merge switches under the row (written to the working tree, the
-// tree reloads). A click on a task row opens the task detail.
-import { computed, ref } from 'vue'
+// as well), only its Graf link opens the dependency graph and its Nastavení button opens the
+// settings under the row: the auto-continue and auto-merge switches and the keys of its
+// `index.md` (written to the working tree, the tree reloads). A click on a task row opens
+// the task detail.
+import { computed } from 'vue'
 import { ChevronRight, SlidersHorizontal } from 'lucide-vue-next'
 import {
   BOARD_STATES,
-  autoMode,
-  flattenIssues,
   isExpanded,
+  isSettingsOpen,
   levelLabel,
   nodeKey,
-  setAutoContinue,
-  setAutoMerge,
   toggleExpanded,
-  type AutoMode,
+  toggleSettings,
   type BacklogNode,
 } from '@/lib/backlog'
 import { graphHref, taskHref } from '@/lib/router'
-import AutoContinueToggle from './AutoContinueToggle.vue'
+import TreeSettings from './TreeSettings.vue'
 import StateChip from './StateChip.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import CodeTip from '@/components/ui/CodeTip.vue'
 
-const props = defineProps<{ node: BacklogNode; levels: string[]; depth: number }>()
+const props = defineProps<{ node: BacklogNode; levels: string[]; depth: number; workflows?: string[] }>()
 const emit = defineEmits<{ changed: [] }>()
 
 const key = computed(() => (props.node.kind === 'container' ? nodeKey(props.node) : props.node.path))
@@ -39,26 +37,12 @@ function toggle() {
   toggleExpanded(key.value)
 }
 
-type SwitchKey = 'auto' | 'merge'
-const switchesOpen = ref(false)
-const pending = ref<{ key: SwitchKey; mode: AutoMode } | null>(null)
-const switchError = ref<string | null>(null)
-const canSwitch = computed(() => props.node.kind === 'container' && !!props.node.id && props.node.can_toggle === true)
-
-async function setSwitch(key: SwitchKey, mode: AutoMode) {
-  if (props.node.kind !== 'container' || !props.node.id) return
-  pending.value = { key, mode }
-  switchError.value = null
-  try {
-    if (key === 'auto') await setAutoContinue(props.node.id, mode)
-    else await setAutoMerge(props.node.id, mode)
-    emit('changed')
-  } catch (e) {
-    switchError.value = flattenIssues(e).message
-  } finally {
-    pending.value = null
-  }
-}
+/** The container has an id and an index.md: its settings can be written. */
+const canEdit = computed(() => props.node.kind === 'container' && !!props.node.id && props.node.can_toggle === true)
+const settingsOpen = computed(() => canEdit.value && isSettingsOpen(key.value))
+const editable = computed(() =>
+  props.node.kind === 'container' && props.node.id ? { ...props.node, id: props.node.id } : null,
+)
 
 function openTask(event: MouseEvent) {
   if (props.node.kind !== 'task' || (event.target as Element | null)?.closest('a')) return
@@ -104,42 +88,24 @@ function openTask(event: MouseEvent) {
         @click.stop
       >Graf</a>
       <button
-        v-if="canSwitch"
+        v-if="canEdit"
         type="button"
         class="switch-button"
-        data-test="switches"
-        :aria-expanded="switchesOpen ? 'true' : 'false'"
-        aria-label="Auto-continue a auto-merge"
-        @click.stop="switchesOpen = !switchesOpen"
+        data-test="settings"
+        :aria-expanded="settingsOpen ? 'true' : 'false'"
+        aria-label="Nastavení"
+        @click.stop="toggleSettings(key)"
       >
         <SlidersHorizontal :size="15" />
       </button>
     </div>
-    <div
-      v-if="switchesOpen && canSwitch"
-      class="switches"
+    <TreeSettings
+      v-if="settingsOpen && editable"
+      :node="editable"
+      :workflows="workflows ?? []"
       :style="{ paddingLeft: `${depth * 20 + 28}px` }"
-      data-test="switches-panel"
-    >
-      <AutoContinueToggle
-        :mode="autoMode(node.auto_continue)"
-        :effective="node.effective_auto_continue ?? false"
-        :busy="!!pending"
-        :pending="pending?.key === 'auto' ? pending.mode : null"
-        @change="setSwitch('auto', $event)"
-      />
-      <AutoContinueToggle
-        label="Auto-merge"
-        test-prefix="merge"
-        hint="workflow bez review se automaticky nemerguje"
-        :mode="autoMode(node.auto_merge)"
-        :effective="node.effective_auto_merge ?? false"
-        :busy="!!pending"
-        :pending="pending?.key === 'merge' ? pending.mode : null"
-        @change="setSwitch('merge', $event)"
-      />
-      <p v-if="switchError" class="warn" data-test="switches-error">{{ switchError }}</p>
-    </div>
+      @changed="emit('changed')"
+    />
     <ul v-if="open" data-test="children">
       <TreeNode
         v-for="child in node.children"
@@ -147,6 +113,7 @@ function openTask(event: MouseEvent) {
         :node="child"
         :levels="levels"
         :depth="depth + 1"
+        :workflows="workflows"
         @changed="emit('changed')"
       />
     </ul>
@@ -285,21 +252,6 @@ ul {
 .switch-button[aria-expanded='true'] {
   background: var(--panel-3);
   color: var(--text);
-}
-
-.switches {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 28px;
-  padding-top: 8px;
-  padding-bottom: 8px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--panel-2);
-}
-
-.switches .warn {
-  margin: 0;
 }
 
 .graph-link {

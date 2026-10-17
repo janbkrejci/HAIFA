@@ -500,7 +500,7 @@ def _index(repo: Path, container_id: str) -> Path:
 
 def test_project_and_step_from_dashboard(page: Page, server: Server, net: Net) -> None:
     """A project and a step are created on the Backlog screen, the step's workflow is set in
-    its Nastavení panel and a task is created in it; nothing is committed."""
+    its Nastavení panel in the backlog tree and a task is created in it; nothing is committed."""
     repo = server.repo
     page.goto(f"/#/r/{server.repo_id}/backlog")
     expect(page.locator("h1")).to_have_text("Backlog")
@@ -515,20 +515,15 @@ def test_project_and_step_from_dashboard(page: Page, server: Server, net: Net) -
     expect(form.locator('[data-issue="duplicate_id"]')).to_be_visible(timeout=SERVER_TIMEOUT_MS)
     assert git(repo, "status", "--porcelain") == ""
 
-    # the project: its graph opens with the description in Náhled and Zdroj
+    # the project: its graph opens with a link to the settings in the tree, not the form
     form.locator('[data-test="container-id"]').fill("M02")
     form.locator('[data-test="container-title"]').fill("Export")
     form.locator('[data-test="container-body-input"]').fill("Export **dat**.")
     form.locator('[data-test="container-save"]').click()
     page.wait_for_url(re.compile(r"#/r/[^/]+/backlog/graph/M02$"), timeout=SERVER_TIMEOUT_MS)
     expect(page.locator('[data-test="graph-title"]')).to_have_text("Export")
-    settings = page.locator('[data-test="container-settings"]')
-    expect(settings.locator('[data-test="commit-note"]')).to_contain_text("až po commitu backlogu")
-    body = settings.locator('[data-test="container-body"]')
-    expect(body.locator('[data-test="md-preview"] strong')).to_have_text("dat")
-    body.locator('[data-test="md-tab-source"]').click()
-    expect(body.locator('[data-test="md-source"]')).to_contain_text("Export **dat**.")
-    _no_native_tooltips(page)
+    expect(page.locator('[data-test="container-settings"]')).to_have_count(0)
+    expect(page.locator('[data-test="settings-link"]')).to_be_visible()
 
     # the step
     page.locator('[data-test="new-step"]').click()
@@ -540,6 +535,15 @@ def test_project_and_step_from_dashboard(page: Page, server: Server, net: Net) -
     expect(page.locator('[data-test="graph-title"]')).to_have_text("Formats")
     expect(page.locator('[data-test="new-step"]')).to_have_count(0)
 
+    # the step's settings open in the backlog tree, the tree unfolded to it
+    page.locator('[data-test="settings-link"]').click()
+    page.wait_for_url(re.compile(r"#/r/[^/]+/backlog$"))
+    panel = page.locator('[data-node="M02-S01"] > [data-test="settings-panel"]')
+    settings = panel.locator('[data-test="container-settings"]')
+    expect(settings.locator('[data-test="commit-note"]')).to_contain_text("až po commitu backlogu")
+    expect(panel.locator('[data-test="auto-toggle"]')).to_be_visible()
+    expect(panel.locator('[data-test="merge-toggle"]')).to_be_visible()
+
     # the step's workflow: inherited (none), then its own
     row = settings.locator('[data-setting="workflow"]')
     expect(row).to_have_attribute("data-source", "none")
@@ -550,6 +554,21 @@ def test_project_and_step_from_dashboard(page: Page, server: Server, net: Net) -
     expect(row.locator('[data-test="value-workflow"]')).to_contain_text("plan-commit")
     step_index = _index(repo, "M02-S01")
     assert _frontmatter(step_index.read_text(encoding="utf-8"))["workflow"] == "plan-commit"
+
+    # auto-merge of the step from the same panel; the tree row shows its badge
+    panel.locator('[data-test="merge-on"]').click()
+    step_row = page.locator('[data-node="M02-S01"] > .row')
+    expect(step_row.locator('[data-test="merge-badge"]')).to_be_visible(timeout=SERVER_TIMEOUT_MS)
+    assert _frontmatter(step_index.read_text(encoding="utf-8"))["auto_merge"] is True
+
+    # the project's settings in the tree: its description in Náhled and Zdroj
+    page.locator('[data-node="M02"] > .row [data-test="settings"]').click()
+    project = page.locator('[data-node="M02"] > [data-test="settings-panel"]')
+    body = project.locator('[data-test="container-body"]')
+    expect(body.locator('[data-test="md-preview"] strong')).to_have_text("dat")
+    body.locator('[data-test="md-tab-source"]').click()
+    expect(body.locator('[data-test="md-source"]')).to_contain_text("Export **dat**.")
+    _no_native_tooltips(page)
 
     # a task in the new step inherits the workflow
     page.locator('[data-test="new-task"]').click()

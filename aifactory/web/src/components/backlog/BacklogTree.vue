@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, watch } from 'vue'
 import { Plus } from 'lucide-vue-next'
-import { DEFAULT_LEVELS, levelNoun, type BacklogNode } from '@/lib/backlog'
+import { DEFAULT_LEVELS, levelNoun, takeReveal, type BacklogNode } from '@/lib/backlog'
 import { newContainerHref } from '@/lib/router'
 import TreeNode from './TreeNode.vue'
 
@@ -10,9 +10,20 @@ const props = defineProps<{
   levels: string[]
   /** A filter hides every item of a non-empty backlog. */
   filtered?: boolean
+  /** Workflows the Nastavení panel of a project or step offers. */
+  workflows?: string[]
 }>()
-/** A switch of a project or step was written: the tree should be loaded again. */
+/** A setting of a project or step was written: the tree should be loaded again. */
 const emit = defineEmits<{ changed: []; 'clear-filter': [] }>()
+
+// the link from the graph page: unfold the tree to the container whose settings it opened
+watch(
+  () => props.items,
+  (items) => {
+    takeReveal(items)
+  },
+  { immediate: true },
+)
 
 const topNoun = computed(() => levelNoun(props.levels[0] ?? DEFAULT_LEVELS[0] ?? 'project'))
 </script>
@@ -35,6 +46,7 @@ const topNoun = computed(() => levelNoun(props.levels[0] ?? DEFAULT_LEVELS[0] ??
       :node="node"
       :levels="levels"
       :depth="0"
+      :workflows="workflows"
       @changed="emit('changed')"
     />
   </ul>
