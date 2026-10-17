@@ -5,7 +5,8 @@ A lesson's id is a hash of its normalized rule, so the same rule found again kee
 id. ``state`` is ``proposed``, ``accepted`` (``factory learn accept`` made it a backlog
 task, ``task_id``) or ``rejected`` (``factory learn dismiss``); a scan updates a proposed
 lesson and never touches a settled one. ``complaints`` are the keys of the objections the
-lesson was made of (``collect.Objection.key``).
+lesson was made of (``collect.Objection.key``); a later scan adds the objections that
+repeat an accepted lesson (``add_repeats``).
 """
 
 from __future__ import annotations
@@ -110,6 +111,23 @@ class LessonStore:
             (ACCEPTED, task_id, now_iso(), lesson_id),
         )
         return self.get(lesson_id)
+
+    def add_repeats(self, lesson_id: str, keys: list[str], runs: list[str]) -> int:
+        """Add objections a later scan found again to a lesson; how many were new."""
+        lesson = self.get(lesson_id)
+        complaints = list(dict.fromkeys([*lesson.complaints, *keys]))
+        added = len(complaints) - len(lesson.complaints)
+        if added:
+            self.conn.execute(
+                "UPDATE learn_lessons SET complaints=?, runs=?, updated_at=? WHERE lesson_id=?",
+                (
+                    json.dumps(complaints),
+                    json.dumps(list(dict.fromkeys([*lesson.runs, *runs]))),
+                    now_iso(),
+                    lesson_id,
+                ),
+            )
+        return added
 
     def save_proposed(self, lesson: StoredLesson) -> None:
         """Insert or update a proposed lesson; a rejected one stays as it is."""

@@ -150,3 +150,42 @@ def fake_learner(monkeypatch: pytest.MonkeyPatch) -> tuple[list[Any], list[dict[
 
     monkeypatch.setattr(agents.INTERFACES["claude"], "run", run)
     return seen, answers
+
+
+def add_objection(repo: Path, run_id: str, task_id: str, text: str, created_at: str) -> None:
+    """A new run of ``task_id`` whose review objects ``text``."""
+    tracer = Tracer(repo / ".factory/trace.db", repo.parent / "events-more.jsonl")
+    try:
+        _run(tracer.conn, run_id, task_id)
+        _envelope(
+            tracer.conn, run_id, "review", "reviewer", "ReviewOutput", _review(text), created_at
+        )
+    finally:
+        tracer.conn.close()
+
+
+def merge_pr(repo: Path, task_id: str, merged_at: str) -> None:
+    """A merged pull request of ``task_id`` in the trace DB."""
+    store = TaskRunStore(repo / ".factory/trace.db")
+    try:
+        store.conn.execute(
+            "INSERT INTO task_prs (branch, task_id, provider, pr_id, url, base, base_sha, title, "
+            "body, state, created_at, updated_at, merged_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                f"factory/{task_id}",
+                task_id,
+                "local",
+                "1",
+                f"https://example.test/pr/{task_id}",
+                "main",
+                "0" * 40,
+                task_id,
+                "",
+                "merged",
+                merged_at,
+                merged_at,
+                merged_at,
+            ),
+        )
+    finally:
+        store.close()

@@ -130,7 +130,13 @@ def test_since_leaves_one_run_and_no_agent(
 ) -> None:
     seen, _ = fake
     data = _scan(capsys, repo, "--since", "2026-10-03")
-    assert data == {"since": "2026-10-03", "objections": 2, "runs": 1, "lessons": []}
+    assert data == {
+        "since": "2026-10-03",
+        "objections": 2,
+        "runs": 1,
+        "lessons": [],
+        "repeats": [],
+    }
     assert seen == []
     assert main(["learn", "scan", "--repo", str(repo), "--since", "2026-10-03"]) == 0
     assert "no lesson to propose" in capsys.readouterr().out

@@ -11,6 +11,7 @@ Find what the factory's agents keep getting wrong. You get the objections that r
 - Group objections that point at the same underlying mistake, even when they are worded differently or concern different tasks. Ignore objections that are specific to one task and would not recur.
 - A lesson is worth proposing only when its objections come from at least `min_runs` different runs. Do not propose a lesson whose objections all come from one run.
 - Never propose a lesson from `rejected_lessons` again, not even reworded.
+- `accepted_lessons` are rules a person already adopted. Group the objections that repeat one of them into a lesson with exactly its `rule` and its `id` in `accepted`, even when they come from one run only: they show whether the rule works. Leave `accepted` empty for every other lesson.
 - Every lesson has:
   - `rule`: one short, imperative sentence a coding agent can follow, in the language of the objections (e.g. "Run the tests of the changed package before reporting success.").
   - `target`: where the rule belongs. `AGENTS.md` for a rule every coding agent in the repo should follow, `CLAUDE.md` for one specific to Claude Code, `skill` for a procedure of a skill of the repo, `prompt` for the prompt of one role or agent of the factory. Read the repository's `AGENTS.md`, `CLAUDE.md`, skills and `.factory/prompts/` as far as you need to choose, and do not propose a rule that is already written there.
