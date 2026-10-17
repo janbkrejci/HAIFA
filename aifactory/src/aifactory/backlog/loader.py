@@ -257,6 +257,15 @@ class _Loader:
                 own.pop(key, None)
                 items = []
             lists[key] = items
+        follows = data.get("follows")
+        if follows is not None and (not isinstance(follows, str) or not follows.strip()):
+            self.issue(
+                "invalid_field",
+                f"field 'follows' must be a task id, got {follows!r}",
+                path,
+                task_id,
+            )
+            follows = None
         if task_id is None:
             return None
         return Task(
@@ -270,6 +279,7 @@ class _Loader:
             depends_on=lists["depends_on"],
             related=lists["related"],
             writes=lists["writes"],
+            follows=follows,
             body=body,
         )
 

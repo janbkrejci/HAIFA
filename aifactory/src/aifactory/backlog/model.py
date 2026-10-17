@@ -76,6 +76,8 @@ class Task:
     depends_on: list[str] = field(default_factory=list)
     related: list[str] = field(default_factory=list)
     writes: list[str] = field(default_factory=list)
+    # the done task this one continues (``follows: <task-id>``), never inherited
+    follows: str | None = None
     body: str = ""
 
 

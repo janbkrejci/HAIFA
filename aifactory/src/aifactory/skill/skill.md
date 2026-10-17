@@ -188,6 +188,10 @@ YAML front matter; HAIFA writes the keys in this order: `{{field_order}}`.
 - `{{list_fields}}` are lists of strings.
 - `depends_on` may reference tasks or steps (a step is done when all its tasks are done).
   Store only `depends_on`; "blocks" is computed. `related` is informational.
+- `follows` is the id of the done task this one continues (a task, never inherited).
+  `factory task follow-up ID --body TEXT [--title TEXT] [--run] --json` creates it in the
+  step of ID with ID's own `writes` and `workflow`; a task that is not done is refused
+  (`not_done`). `task show` lists the tasks that follow a task (`followed_by`).
 - `writes` is the list of paths or globs the agents may change; anything else is rolled back.
   Own or inherited; when no level sets it, the whole repo (`**`), protected files excepted.
   An explicit empty list `[]` cannot run (`no_writes`).

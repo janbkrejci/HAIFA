@@ -448,7 +448,14 @@ def retry_run(
             failure_kind=row.failure_kind,
         )
         warnings += plan.warnings
-        prompt = run_mod.task_prompt(task, scope, outputs, worktree, run_note)
+        prompt = run_mod.task_prompt(
+            task,
+            scope,
+            outputs,
+            worktree,
+            run_note,
+            run_mod.followed_task(backlog, task, settings),
+        )
         if workdir != ".":
             prompt += (
                 f"\nAgent working directory: {worktree / workdir}. "

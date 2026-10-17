@@ -158,6 +158,11 @@ def blocks(backlog: Backlog) -> dict[str, list[str]]:
     return {k: sorted(v) for k, v in sorted(result.items())}
 
 
+def followed_by(backlog: Backlog, task_id: str) -> list[str]:
+    """Ids of the tasks whose ``follows`` is `task_id`, in backlog order."""
+    return [t.id for t in iter_tasks(backlog) if t.follows == task_id]
+
+
 def progress(container: Container) -> tuple[int, int]:
     """(done, total) over descendant tasks, cancelled tasks excluded."""
     active = active_tasks(container)

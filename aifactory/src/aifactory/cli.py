@@ -1949,6 +1949,26 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="human: the task is for a person and no run starts it; inherit removes it",
     )
 
+    follow_up = sub.add_parser(
+        "follow-up",
+        help="create a task that follows a done task",
+        description="Create a new todo task in the step of the done task ID with follows: ID, "
+        "the own writes and workflow of ID (inherited values stay inherited) and TEXT as its "
+        "'## Zadání'. The title defaults to 'Navazuje na ID: <title of ID>'. A task that is "
+        "not done is refused (not_done). With --run the backlog is committed to base "
+        "(factory backlog commit) and the new task is run (factory task run).",
+    )
+    follow_up.add_argument("task_id", metavar="ID", help="id of the done task to follow")
+    follow_up.add_argument(
+        "--body", required=True, metavar="TEXT", help="text of '## Zadání' of the new task"
+    )
+    follow_up.add_argument("--title", metavar="TEXT", help="title of the new task")
+    follow_up.add_argument(
+        "--run",
+        action="store_true",
+        help="commit the backlog to base and run the new task right away",
+    )
+
     link = sub.add_parser(
         "link",
         help="add or remove depends_on / related references",
@@ -2184,6 +2204,7 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     for child in (
         add,
         edit,
+        follow_up,
         link,
         show,
         list_,
@@ -2229,6 +2250,7 @@ def _task_show(args: argparse.Namespace, root: Path) -> int:
         effective_workflow,
         effective_writes,
         find_task,
+        followed_by,
         load_for_edit,
         task_to_json,
         waits_for,
@@ -2242,9 +2264,11 @@ def _task_show(args: argparse.Namespace, root: Path) -> int:
     own_issues = [i.to_dict() for i in issues if i.path == task.path]
     runs = task_runs_for(root, task.id)
     prs = task_prs_for(root, task.id)
+    followers = followed_by(backlog, task.id)
     if args.json:
         data = {
             "task": task_to_json(backlog, task, reverse),
+            "followed_by": followers,
             "body": task.body,
             "issues": own_issues,
             "runs": [r.to_json() for r in runs],
@@ -2268,6 +2292,8 @@ def _task_show(args: argparse.Namespace, root: Path) -> int:
         ("related", joined(task.related)),
         ("writes", joined(effective_writes(task))),
         ("blocks", joined(reverse.get(task.id, []))),
+        ("follows", task.follows or "-"),
+        ("followed", joined(followers)),
     ]
     for name, value in rows:
         print(f"{name:<9} {value}")
@@ -2430,6 +2456,41 @@ def _task_write(args: argparse.Namespace, root: Path) -> int:
     if result.issues:
         print(f"{len(result.issues)} problem(s), run 'factory backlog check'", file=sys.stderr)
     return 0
+
+
+def _task_follow_up(args: argparse.Namespace, root: Path) -> int:
+    from aifactory.backlog import blocks, commit_backlog, follow_up_task, task_to_json
+
+    result = follow_up_task(root, args.task_id, args.body, title=args.title)
+    data: dict[str, Any] = {
+        "action": result.action,
+        "changed": result.changed,
+        "path": result.path,
+        "task": task_to_json(result.backlog, result.task, blocks(result.backlog)),
+        "issues": [i.to_dict() for i in result.issues],
+    }
+    warnings = _problem_warnings(len(result.issues))
+    if not args.run:
+        if args.json:
+            return _emit_ok(data, warnings)
+        print(f"added {result.task.id} {result.path} (follows {args.task_id})")
+        if result.issues:
+            print(f"{len(result.issues)} problem(s), run 'factory backlog check'", file=sys.stderr)
+        return 0
+    from aifactory.run import run_chain
+
+    new_id = result.task.id
+    if not args.json:
+        print(f"added {new_id} {result.path} (follows {args.task_id})")
+    committed = commit_backlog(root, f"backlog: {new_id} follows {args.task_id}")
+    data["commit"] = committed.to_json()
+    if not args.json and committed.commit:
+        print(f"backlog committed to {committed.base} ({committed.commit[:7]})")
+    args.task_id = new_id
+    args.task_command = "run"
+    return _chain_output(
+        args, lambda: run_chain(root, new_id, note=None, force=False, auto=False), data
+    )
 
 
 def _run_json(result: TaskRunResult) -> dict[str, Any]:
@@ -2785,6 +2846,8 @@ def _task(args: argparse.Namespace) -> int:
             return _task_list(args, root)
         if command == "runs":
             return _task_runs(args, root)
+        if command == "follow-up":
+            return _task_follow_up(args, root)
         return _task_write(args, root)
     except (ConfigError, TaskEditError, TaskRunError, ReviewError) as exc:
         return _fail_from_exception(exc, args.json, f"factory task {command}")

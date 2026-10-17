@@ -34,7 +34,11 @@ step and task id, the tooltips of codes),
 ``GET /api/backlog/tasks/{task_id}/documents`` (read-only: the task's backlog item, spec and
 doc markdown, located by the task ID) and
 ``POST /api/backlog/tasks``, ``/api/backlog/tasks/{task_id}/edit`` and ``.../link``, which call
-the same core functions as ``factory task add|edit|link``. A write that would break the
+the same core functions as ``factory task add|edit|link``.
+``POST /api/backlog/tasks/{task_id}/follow-up`` (``{body, title?, run?}``) creates a task
+that follows a done task like ``factory task follow-up`` (with ``run`` it commits
+the backlog and starts the run, HTTP 202); the task detail returns ``follows`` and
+``followed_by``. A write that would break the
 backlog is rejected with ``backlog_invalid`` (HTTP 422) and ``error.issues``. Writes stay in
 the working tree: ``GET /api/backlog/status`` lists the backlog files not committed to base
 (``{base, commit, clean, changes}``, shown on every screen) and ``POST /api/backlog/commit``
@@ -1208,6 +1212,24 @@ async def backlog_edit(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data, warnings))
 
 
+async def backlog_follow_up(request: Request) -> JSONResponse:
+    """A task that follows a done task, as ``factory task follow-up`` creates it.
+
+    With ``run`` the backlog is committed and the run started (HTTP 202)."""
+    repo: Path = _repo(request)
+    launcher: Launcher = request.app.state.launcher
+    task_id: str = request.path_params["task_id"]
+    try:
+        body = await _json_body(request)
+        data, warnings = await run_in_threadpool(backlog.follow_up, repo, task_id, body, launcher)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except (TaskEditError, ConfigError, TaskRunError) as exc:
+        return _edit_error(exc)
+    status = 202 if body.get("run") is True else 200
+    return JSONResponse(envelope_ok(data, warnings), status_code=status)
+
+
 async def backlog_link(request: Request) -> JSONResponse:
     """Add or remove links of a task with ``aifactory.backlog.link_task``."""
     repo: Path = _repo(request)
@@ -1803,6 +1825,7 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/backlog/tasks/{task_id}/documents", backlog_task_documents, methods=["GET"]),
         Route("/backlog/tasks/{task_id}/edit", backlog_edit, methods=["POST"]),
         Route("/backlog/tasks/{task_id}/link", backlog_link, methods=["POST"]),
+        Route("/backlog/tasks/{task_id}/follow-up", backlog_follow_up, methods=["POST"]),
         Route("/backlog/tasks/{task_id}/run-check", backlog_run_check, methods=["GET"]),
         Route("/backlog/tasks/{task_id}/run", backlog_run, methods=["POST"]),
         Route("/backlog/tasks/{task_id}/auto-exclude", backlog_auto_exclude, methods=["POST"]),

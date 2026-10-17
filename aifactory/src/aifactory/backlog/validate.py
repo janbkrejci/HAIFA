@@ -42,6 +42,20 @@ def _check_refs(backlog: Backlog) -> list[Issue]:
                             task.id,
                         )
                     )
+        if task.follows == task.id:
+            issues.append(
+                Issue("self_ref", f"task '{task.id}' cannot follow itself", task.path, task.id)
+            )
+        elif task.follows is not None and not isinstance(backlog.by_id.get(task.follows), Task):
+            what = "unknown id" if task.follows not in backlog.by_id else "a non-task"
+            issues.append(
+                Issue(
+                    "unknown_ref",
+                    f"task '{task.id}' follows refers to {what} '{task.follows}'",
+                    task.path,
+                    task.id,
+                )
+            )
     return issues
 
 
