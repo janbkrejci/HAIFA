@@ -1,7 +1,7 @@
 ---
 id: GUIDE-S01-T04
 title: Nastavení projektu a stepu - reorganizace
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 ---
@@ -27,3 +27,4 @@ Vytáhnout nastavení na úroveň stromu backlogu: z řádku projektu/stepu ve s
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/100 · náklady $3.36
