@@ -1,9 +1,8 @@
 <script setup lang="ts">
 // Task card with tabs: the rendered task body (Zadání, shown first) and the read-only
-// markdown documents (backlog item, spec and doc). The server finds the documents by the
+// markdown documents (backlog item, spec and doc). The tabs are the card's only label. The server finds the documents by the
 // task id; a missing one is listed but cannot be opened.
 import { computed, ref, watch } from 'vue'
-import { FileText } from 'lucide-vue-next'
 import { documentMarkdown, fetchTaskDocuments, type TaskDocument } from '@/lib/backlog'
 import { errorText } from '@/lib/format'
 import MarkdownView from '@/components/ui/MarkdownView.vue'
@@ -55,11 +54,7 @@ function tip(doc: TaskDocument): string {
 
 <template>
   <section class="card task-docs" data-test="task-documents">
-    <h3>
-      <FileText :size="16" /> Zadání
-      <Spinner v-if="loading" />
-    </h3>
-    <div class="doc-tabs" role="tablist">
+    <div class="doc-tabs" role="tablist" aria-label="Dokumenty tasku">
       <button
         type="button"
         role="tab"
@@ -85,6 +80,7 @@ function tip(doc: TaskDocument): string {
           <span v-if="!doc.exists" class="tag" data-test="doc-missing">chybí</span>
         </button>
       </Tooltip>
+      <Spinner v-if="loading" />
     </div>
     <p v-if="error" class="error" data-test="docs-error">{{ error }}</p>
     <div v-if="selected === 'body'" class="doc-body">
@@ -108,23 +104,10 @@ function tip(doc: TaskDocument): string {
   background: var(--surface);
 }
 
-.card > h3 {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 0 0 10px;
-  font-size: 15px;
-  letter-spacing: 0.04em;
-  color: var(--dim);
-}
-
-.card > h3 svg {
-  color: var(--faint);
-}
-
 .doc-tabs {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
 }
 

@@ -33,6 +33,8 @@ describe('TaskDocuments', () => {
     await flushPromises()
     const tabs = wrapper.findAll('[role="tab"]')
     expect(tabs.map((t) => t.text())).toEqual(['Zadání', 'Spec'])
+    expect(wrapper.find('h3').exists()).toBe(false)
+    expect(wrapper.get('[data-test="task-documents"]').element.firstElementChild?.getAttribute('role')).toBe('tablist')
     expect(wrapper.get('[data-test="doc-task"]').attributes('aria-selected')).toBe('true')
     const body = wrapper.get('.mdview[data-test="body"]')
     expect(body.find('h2').text()).toBe('Cíl')

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T45
 title: "Detail tasku: odstranit nadpis Zadání nad kartou se záložkami"
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -16,3 +16,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/92 · náklady $1.07
