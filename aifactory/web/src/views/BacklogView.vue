@@ -66,6 +66,7 @@ import {
   type LinkInput,
   type RunInput,
   type RunPanel,
+  type FollowUpResult,
   type TaskDetail as TaskDetailData,
   type WriteError,
   type WriteResult,
@@ -652,6 +653,13 @@ async function onIntentApplied(result: Proposal) {
   window.location.hash = graphHref(result.step.id)
 }
 
+/** A follow-up task was created (and maybe committed and started): show its detail. */
+async function onFollowUp(result: FollowUpResult) {
+  void backlogStatus.refresh()
+  await loadList()
+  window.location.hash = taskHref(result.task.id)
+}
+
 watch(
   routeKey,
   (next, previous) => {
@@ -813,6 +821,7 @@ watch(
         @run-cancel="closeRun"
         @run-commit="onRunCommit"
         @retried="loadDetail(taskId)"
+        @follow-up="onFollowUp"
       />
       <p v-else-if="loading" class="faint" data-test="detail-loading">
         <span class="mono" data-test="loading-id">{{ taskId }}</span> · Načítám…

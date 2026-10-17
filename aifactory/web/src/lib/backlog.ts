@@ -256,6 +256,8 @@ export interface TaskNode {
   /** `auto_merge` inherited from task, step or project. */
   effective_auto_merge?: boolean
   invalid: boolean
+  /** The done task this one follows (`follows`), null when none. */
+  follows?: string | null
   last_run: string | null
   /** Place in the kanban's manual queue (0 first); null without a manual place. */
   queue_rank?: number | null
@@ -379,6 +381,10 @@ export interface TaskDetail {
   prs: TaskPr[]
   depends: DependsRef[]
   blocks: BlocksRef[]
+  /** The done task this one follows (`follows: <id>`), null when it follows none. */
+  follows?: DependsRef | null
+  /** Tasks that follow this one. */
+  followed_by?: BlocksRef[]
 }
 
 export interface WriteResult {
@@ -597,6 +603,28 @@ export function addTask(input: AddTaskInput): Promise<WriteResult> {
 
 export function editTask(taskId: string, input: EditTaskInput): Promise<WriteResult> {
   return postApi<WriteResult>(`${taskPath(taskId)}/edit`, input)
+}
+
+/** `factory task follow-up ID --body TEXT [--title TEXT] [--run]`. */
+export interface FollowUpInput {
+  body: string
+  title?: string
+  /** Commit the backlog to base and start the new task at once. */
+  run?: boolean
+}
+
+export interface FollowUpResult extends Omit<WriteResult, 'action'> {
+  action: string
+  /** The backlog commit made for `run`, null without it. */
+  commit: BacklogCommitResult | null
+  /** The started run; null without `run` or while it is still starting (`pending`). */
+  run: TaskRun | null
+  pending: boolean
+}
+
+/** A new task that follows the done task `taskId` (POST /backlog/tasks/<id>/follow-up). */
+export function followUpTask(taskId: string, input: FollowUpInput): Promise<FollowUpResult> {
+  return postApi<FollowUpResult>(`${taskPath(taskId)}/follow-up`, input)
 }
 
 export function linkTask(taskId: string, input: LinkInput): Promise<WriteResult> {
