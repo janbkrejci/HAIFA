@@ -1,7 +1,7 @@
 ---
 id: LEARN-S01-T02
 title: "Lekce se stane taskem, který upraví pravidla repa"
-status: todo
+status: done
 depends_on: [LEARN-S01-T01]
 ---
 
@@ -17,3 +17,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/88 · náklady $2.97
