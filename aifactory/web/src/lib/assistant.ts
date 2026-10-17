@@ -487,6 +487,42 @@ export function linkify(markdown: string, repo: string | null): string {
     .join('\n')
 }
 
+const ACTION_OPEN = '```haifa-action'
+
+export interface StreamedAnswer {
+  /** The streamed text without its `haifa-action` blocks. */
+  text: string
+  /** How many proposals the text holds so far; each shows as a placeholder card. */
+  pending: number
+}
+
+/**
+ * A streamed answer split for rendering: the `haifa-action` blocks, closed or still being
+ * written, leave the text and count as pending proposals. Their cards come with the finished
+ * message. A last line that may still grow into the block's opening fence is held back too.
+ */
+export function streamedAnswer(text: string): StreamedAnswer {
+  const kept: string[] = []
+  let pending = 0
+  let inAction = false
+  const lines = text.split('\n')
+  lines.forEach((row, index) => {
+    if (inAction) {
+      if (/^```[ \t]*\r?$/.test(row)) inAction = false
+      return
+    }
+    if (/^```haifa-action[ \t]*\r?$/.test(row)) {
+      inAction = true
+      pending += 1
+      return
+    }
+    // a bare fence stays: it opens or closes any other code block
+    if (index === lines.length - 1 && row.length > 3 && ACTION_OPEN.startsWith(row)) return
+    kept.push(row)
+  })
+  return { text: kept.join('\n'), pending }
+}
+
 // ── the conversation state ───────────────────────────────────────────────────────────────
 
 const STORE_THREAD = 'haifa.assistant.thread'

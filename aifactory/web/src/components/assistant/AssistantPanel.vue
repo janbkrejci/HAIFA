@@ -2,7 +2,8 @@
 // The AI guide: a side panel over every screen. It keeps the open thread across screens
 // (lib/assistant.ts), attaches the screen as a removable chip, streams the answer as markdown
 // with dashboard links, lists older threads and offers three questions in an empty thread.
-// Actions the guide proposes show as cards (ActionCard) the user executes or dismisses.
+// Actions the guide proposes show as cards (ActionCard) the user executes or dismisses;
+// while one is still streaming, a placeholder card stands in for its raw block.
 // An older thread can be deleted for good after a confirmation in a modal dialog.
 import { computed, nextTick, ref, watch } from 'vue'
 import { History, Plus, Sparkles, Trash2, X } from 'lucide-vue-next'
@@ -20,6 +21,7 @@ import {
   send,
   setOpen,
   showThreads,
+  streamedAnswer,
   suggestions,
   type AssistantMessage,
   type ScreenContext,
@@ -103,6 +105,8 @@ function html(text: string, repo: string | null): string {
 }
 
 const streamRepo = computed(() => repoOf(messages.value.length - 1))
+// A proposal being written shows as a placeholder card, never as its raw JSON.
+const streamed = computed(() => streamedAnswer(assistant.streaming?.text ?? ''))
 
 const { dialog, ask, confirm, cancel } = useConfirm()
 
@@ -246,7 +250,10 @@ watch(
         </template>
         <div v-if="busy" class="msg answer streaming" data-test="assistant-streaming">
           <p v-for="(tool, i) in assistant.streaming?.tools ?? []" :key="i" class="tool faint">{{ tool }}</p>
-          <div v-if="assistant.streaming?.text" class="md" v-html="html(assistant.streaming.text, streamRepo)" />
+          <div v-if="streamed.text.trim()" class="md" v-html="html(streamed.text, streamRepo)" />
+          <div v-for="n in streamed.pending" :key="`pending-${n}`" class="pending-action faint" data-test="assistant-action-pending">
+            <Spinner /> Připravuji návrh akce…
+          </div>
           <p class="faint"><Spinner /> Průvodce odpovídá…</p>
         </div>
       </div>
@@ -452,6 +459,15 @@ watch(
 
 .outcome.failed {
   border-left-color: var(--red);
+}
+
+.pending-action {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px dashed var(--purple);
+  border-radius: 10px;
+  background: var(--panel-2);
+  font-size: 13px;
 }
 
 .tool {
