@@ -148,6 +148,43 @@ describe('AssistantPanel', () => {
     expect(links).toEqual(['#/r/haifa/backlog/P01-S01-T01', '#/r/haifa/review'])
   })
 
+  it('shows a placeholder card instead of a haifa-action block still streaming', async () => {
+    stubApi()
+    go('#/r/haifa/runs/740183f7')
+    const wrapper = await openPanel()
+    await wrapper.findAll('[data-test="assistant-suggestion"]')[0]!.trigger('click')
+    await flushPromises()
+    const stream = FakeEventSource.latest()
+
+    stream.emit('text', { seq: 2, text: 'Navrhuji změnu.\n\n```haifa-action\n{"kind": "edit_task", "writes": ["src/"' })
+    await flushPromises()
+    const streaming = wrapper.get('[data-test="assistant-streaming"]')
+    expect(streaming.text()).toContain('Navrhuji změnu.')
+    expect(streaming.text()).not.toContain('haifa-action')
+    expect(streaming.text()).not.toContain('"kind"')
+    expect(streaming.find('pre').exists()).toBe(false)
+    expect(streaming.get('[data-test="assistant-action-pending"]').text()).toContain('Připravuji návrh akce…')
+
+    stream.emit('done', { seq: 3, message: { id: 'm2', role: 'assistant', text: 'Navrhuji změnu.', actions: [PROPOSAL] } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="assistant-action-pending"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="assistant-action"]').exists()).toBe(true)
+  })
+
+  it('streams other code blocks as code', async () => {
+    stubApi()
+    go('#/r/haifa/runs/740183f7')
+    const wrapper = await openPanel()
+    await wrapper.findAll('[data-test="assistant-suggestion"]')[0]!.trigger('click')
+    await flushPromises()
+
+    FakeEventSource.latest().emit('text', { seq: 2, text: 'Dotaz:\n\n```sql\nSELECT 1' })
+    await flushPromises()
+    const streaming = wrapper.get('[data-test="assistant-streaming"]')
+    expect(streaming.get('pre').text()).toContain('SELECT 1')
+    expect(streaming.find('[data-test="assistant-action-pending"]').exists()).toBe(false)
+  })
+
   it('keeps the open thread when the screen changes', async () => {
     stubApi()
     go('#/r/haifa/runs/740183f7')

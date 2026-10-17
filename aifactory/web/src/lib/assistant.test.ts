@@ -11,6 +11,7 @@ import {
   linkify,
   outcomeText,
   resetAssistantForTests,
+  streamedAnswer,
   suggestions,
   type ProposedAction,
 } from './assistant'
@@ -176,5 +177,28 @@ describe('deleteThread', () => {
     expect(assistant.threads).toHaveLength(1)
     expect(assistant.thread?.id).toBe('aaaaaaaaaaaa')
     expect(assistant.threadsError).toContain('still answering')
+  })
+})
+
+describe('streamedAnswer', () => {
+  it('hides an unclosed haifa-action block and counts it as pending', () => {
+    const text = 'Navrhuji změnu.\n\n```haifa-action\n{"kind": "edit_task", "wri'
+    expect(streamedAnswer(text)).toEqual({ text: 'Navrhuji změnu.\n', pending: 1 })
+  })
+
+  it('hides a closed block and keeps the text after it', () => {
+    const text = 'A\n```haifa-action\n{"kind": "run_task"}\n```\nB'
+    expect(streamedAnswer(text)).toEqual({ text: 'A\nB', pending: 1 })
+  })
+
+  it('holds back a last line that may become the opening fence', () => {
+    expect(streamedAnswer('A\n```haifa-ac')).toEqual({ text: 'A', pending: 0 })
+    expect(streamedAnswer('A\n```haifa-action')).toEqual({ text: 'A', pending: 1 })
+  })
+
+  it('leaves other code blocks as they are', () => {
+    const text = 'SQL:\n```sql\nSELECT 1\n```\n```'
+    expect(streamedAnswer(text)).toEqual({ text, pending: 0 })
+    expect(streamedAnswer('```py\nx = 1')).toEqual({ text: '```py\nx = 1', pending: 0 })
   })
 })
