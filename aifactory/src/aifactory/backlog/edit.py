@@ -368,6 +368,11 @@ def follow_up_title(task: Task) -> str:
     return f"Navazuje na {task.id}: {task.title}"
 
 
+def follow_up_commit_message(new_id: str, task_id: str) -> str:
+    """The backlog commit of a follow-up that is run at once (CLI and dashboard)."""
+    return f"backlog: {new_id} follows {task_id}"
+
+
 def follow_up_task(root: Path, task_id: str, body: str, *, title: str | None = None) -> WriteResult:
     """A new ``todo`` task that follows the done task `task_id` (``factory task follow-up``).
 

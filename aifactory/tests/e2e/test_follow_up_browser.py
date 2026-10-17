@@ -1,4 +1,4 @@
-"""Otevřít navazující task from the detail of a done task, run at once on a fake harness."""
+"""Navázat follow-upem from the detail of a done task, run at once on a fake harness."""
 
 from __future__ import annotations
 

@@ -23,7 +23,7 @@ afterEach(() => {
 })
 
 describe('FollowUpDialog', () => {
-  it('has the body, an optional title and Spustit hned checked by default', () => {
+  it('has the body, an optional title and Commitnout a spustit checked by default', () => {
     const wrapper = dialog()
     expect(wrapper.text()).toContain('Co změnit, předělat nebo dodělat')
     expect((wrapper.get('[data-test="follow-up-run"]').element as HTMLInputElement).checked).toBe(true)
@@ -31,7 +31,7 @@ describe('FollowUpDialog', () => {
     expect(wrapper.get('[data-test="follow-up-submit"]').attributes('disabled')).toBeDefined()
   })
 
-  it('with Spustit hned leaves the commit to the server', async () => {
+  it('with Commitnout a spustit leaves the commit to the server', async () => {
     api.postApi.mockReset().mockResolvedValue({ ...RESULT, commit: COMMIT, pending: true })
     const wrapper = dialog()
     await wrapper.get('[data-test="follow-up-body"]').setValue('x')
@@ -51,7 +51,7 @@ describe('FollowUpDialog', () => {
     expect(wrapper.emitted('created')?.[0]?.[0]).toMatchObject({ task: { id: 'P-T02' } })
   })
 
-  it('creates without a run when Spustit hned is unchecked', async () => {
+  it('creates without a run when Commitnout a spustit is unchecked', async () => {
     const wrapper = dialog()
     await wrapper.get('[data-test="follow-up-body"]').setValue('x')
     await wrapper.get('[data-test="follow-up-run"]').setValue(false)

@@ -492,6 +492,47 @@ def test_proposed_actions_write_nothing_until_confirmed(
     assert "Outcome of your proposed actions" not in seen[2].prompt
 
 
+def test_follow_up_proposal_writes_nothing_until_confirmed(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, repo, repo_id = setup
+    with_task(repo)
+    done = (repo / TASK_FILE).read_text(encoding="utf-8").replace("status: todo", "status: done")
+    write(repo, TASK_FILE, done)
+    git(repo, "commit", "-qam", "done")
+    status_before = git(repo, "status", "--porcelain")
+    head_before = git(repo, "rev-parse", "HEAD")
+    files_before = sorted(p.name for p in (repo / "backlog").rglob("*.md"))
+
+    def act(request: Any) -> str:
+        block = proposal(
+            kind="follow_up", repo=repo_id, task="P01-S01-T01", body="Dodělat.", run=False
+        )
+        return "Navrhuji navázat:\n\n" + block
+
+    fake_harness(monkeypatch, act)
+    thread_id = new_thread(client)
+    [action] = ask(client, thread_id, "Naváž")["messages"][-1]["actions"]
+    assert action["kind"] == "follow_up" and action["status"] == "proposed"
+    assert action["task"] == "P01-S01-T01" and action["body"] == "Dodělat."
+    assert action["run"] is False and "title" not in action
+    # Nothing is written without the user's confirmation.
+    assert sorted(p.name for p in (repo / "backlog").rglob("*.md")) == files_before
+    assert git(repo, "status", "--porcelain") == status_before
+    assert git(repo, "rev-parse", "HEAD") == head_before
+
+    # Confirmed, the panel calls the dashboard's follow-up endpoint.
+    url = f"/api/repos/{repo_id}/backlog/tasks/P01-S01-T01/follow-up"
+    response = client.post(url, json={"body": action["body"], "run": action["run"]})
+    assert response.status_code == 200, response.text
+    created = response.json()["data"]["task"]
+    assert created["follows"] == "P01-S01-T01"
+    assert created["title"] == "Navazuje na P01-S01-T01: First"
+    actions = f"/api/assistant/threads/{thread_id}/actions"
+    recorded = client.post(f"{actions}/{action['id']}", json={"status": "done", "message": "ok"})
+    assert recorded.status_code == 200, recorded.text
+
+
 def test_parse_actions_validates_fields() -> None:
     from aifactory.web.assistant import parse_actions
 
@@ -505,6 +546,9 @@ def test_parse_actions_validates_fields() -> None:
         proposal(kind="run_task", repo="r"),
         proposal(kind="approve_pr", repo="r", task="T1", extra=1),
         proposal(kind="create_task", repo="r", step="S", title="T", writes="src/"),
+        proposal(kind="follow_up", repo="r", task="T1"),
+        proposal(kind="follow_up", repo="r", task="T1", body="x", run="yes"),
+        proposal(kind="follow_up", repo="r", task="T1", body="x", writes=["src/"]),
         "```haifa-action\nnot json\n```",
     ):
         text, actions = parse_actions(bad, {"r"})

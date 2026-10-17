@@ -17,7 +17,7 @@ import uvicorn
 from playwright.sync_api import expect, sync_playwright
 from test_f3_browser import _launch
 
-from advice_fixture import make_repo
+from advice_fixture import git, make_repo
 from aifactory.codeprint import CodeWatch
 from aifactory.engine import agent_cc
 from aifactory.engine.data_types import AgentResult
@@ -180,5 +180,67 @@ def test_assistant_proposed_action_browser(tmp_path: Path, monkeypatch: pytest.M
             expect(panel.locator('[data-test="assistant-outcome"]')).to_contain_text("provedeno")
             assert "docs/" in task_file.read_text(encoding="utf-8")
             assert len(seen) == 1
+        finally:
+            browser.close()
+
+
+def test_assistant_follow_up_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A follow_up proposal previews what it takes over; the task appears only after Provést."""
+    repo = make_repo(tmp_path / "repo")
+    task_file = repo / "backlog/P01/S01/P01-S01-T01-first.md"
+    task_file.write_text(
+        "---\nid: P01-S01-T01\ntitle: First\nstatus: done\nworkflow: plan\n"
+        "writes: [src/x/]\n---\nFull task body\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    git(repo, "commit", "-qam", "done")
+    step = task_file.parent
+    before = sorted(p.name for p in step.glob("*.md"))
+    repo_id: list[str] = []
+
+    def run(request: Any, **kwargs: Any) -> AgentResult:
+        proposal = json.dumps(
+            {
+                "kind": "follow_up",
+                "repo": repo_id[0],
+                "task": "P01-S01-T01",
+                "body": "Doplnit dokumentaci.",
+                "reason": "Task je hotový, chybí docs.",
+            }
+        )
+        text = f"Navrhuji navázat.\n\n```haifa-action\n{proposal}\n```\n"
+        return AgentResult(text=text, returncode=0, tokens=10, cost=0.01)
+
+    monkeypatch.setattr(agent_cc, "run", run)
+    with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
+        browser = _launch(p)
+        page = browser.new_page()
+        page.set_default_timeout(15000)
+        try:
+            repo_id.append(identifier)
+            page.goto(f"{url}/#/r/{identifier}/backlog/P01-S01-T01")
+            page.locator('[data-test="assistant-toggle"]').click()
+            panel = page.locator('[data-test="assistant-panel"]')
+            panel.locator('[data-test="assistant-input"]').fill("Naváž dokumentací")
+            panel.locator('[data-test="assistant-send"]').click()
+
+            card = panel.locator('[data-test="assistant-action"]')
+            expect(card.locator('[data-test="assistant-action-title"]')).to_have_text(
+                "Navázat follow-upem na P01-S01-T01"
+            )
+            preview = card.locator('[data-test="assistant-action-preview"]')
+            expect(preview).to_contain_text("Navazuje na P01-S01-T01: First")
+            expect(preview).to_contain_text("src/x/")
+            expect(preview).to_contain_text("plan")
+            assert sorted(p.name for p in step.glob("*.md")) == before
+
+            card.locator('[data-test="assistant-action-run"]').click()
+            expect(card.locator('[data-test="assistant-action-state"]')).to_have_text(
+                "Provedeno: Task P01-S01-T02 založen."
+            )
+            [new] = list(step.glob("P01-S01-T02-*.md"))
+            text = new.read_text(encoding="utf-8")
+            assert "follows: P01-S01-T01\n" in text and "Doplnit dokumentaci." in text
         finally:
             browser.close()

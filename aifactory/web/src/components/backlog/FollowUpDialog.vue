@@ -1,8 +1,8 @@
 <script setup lang="ts">
-// Otevřít navazující task: a done task is never reopened; a new task follows it
+// Navázat follow-upem: a done task is never reopened; a new task follows it
 // (`factory task follow-up`). The person says what to change, redo or finish, optionally a
-// title, and whether the new task runs at once (default). Confirm creates the task and
-// commits the backlog; with „Spustit hned“ the server commits it and starts the run, without
+// title, and whether the backlog is committed and the new task run at once (default). Confirm creates the task and
+// commits the backlog; with „Commitnout a spustit“ the server commits it and starts the run, without
 // it the dialog commits it (`factory backlog commit`).
 import { computed, ref } from 'vue'
 import { GitBranchPlus, X } from 'lucide-vue-next'
@@ -73,7 +73,7 @@ async function submit() {
       </label>
       <label class="check">
         <input v-model="runNow" type="checkbox" data-test="follow-up-run" />
-        Spustit hned
+        Commitnout a spustit
       </label>
     </fieldset>
     <IssueList v-if="error" :message="error.message" :issues="error.issues" />

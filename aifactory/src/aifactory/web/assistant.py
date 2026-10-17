@@ -28,12 +28,12 @@ variables are redacted from everything sent to the agent (``assistant_gate.redac
 
 Instead of a change the guide may propose one: a fenced ``haifa-action`` block with a JSON
 object of one of ``ACTION_FIELDS`` (create or edit a task, run a task, retry a run, approve a
-PR, cancel a task). The answer keeps the validated proposals in ``actions`` (``status:
-proposed``) and drops the blocks from its text. The guide never executes a proposal: the
-panel shows it as a card and, when the user confirms it, calls the dashboard's own write API
-(the same endpoints and guards as the manual action), then reports the outcome with
-``record_action``. The outcome is a message of the thread (``role: action``) and goes to the
-agent with the next message.
+PR, cancel a task, follow up a done task). The answer keeps the validated proposals in
+``actions`` (``status: proposed``) and drops the blocks from its text. The guide never
+executes a proposal: the panel shows it as a card and, when the user confirms it, calls the
+dashboard's own write API (the same endpoints and guards as the manual action), then
+reports the outcome with ``record_action``. The outcome is a message of the thread
+(``role: action``) and goes to the agent with the next message.
 
 ``delete`` removes a thread for good: from memory and its whole folder on disk. A thread the
 guide is answering in is refused (``busy``) so the running answer cannot write it back.
@@ -94,6 +94,12 @@ ACTION_FIELDS: dict[str, dict[str, tuple[type, bool]]] = {
     "retry_run": {"run": (str, True), "note": (str, False)},
     "approve_pr": {"task": (str, True)},
     "cancel_task": {"task": (str, True)},
+    "follow_up": {
+        "task": (str, True),
+        "body": (str, True),
+        "title": (str, False),
+        "run": (bool, False),
+    },
 }
 ACTION_LONG = ("body", "note")
 # Harnesses that enforce the ``./guide`` command limit (claude's dontAsk allow rules).
@@ -346,6 +352,11 @@ def _action(raw: Any, repo_ids: set[str]) -> dict[str, Any]:
         if value is None:
             if required:
                 raise ValueError(f"{kind}: {name} is required")
+            continue
+        if expected is bool:
+            if not isinstance(value, bool):
+                raise ValueError(f"{kind}: {name} must be true or false")
+            action[name] = value
             continue
         if expected is list:
             if not isinstance(value, list) or not all(

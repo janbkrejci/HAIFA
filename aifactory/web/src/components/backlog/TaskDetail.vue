@@ -229,7 +229,7 @@ function onEdit(input: EditTaskInput) {
             :disabled="busy || followUpOpen"
             @click="followUpOpen = true"
           >
-            <GitBranchPlus :size="14" /> Otevřít navazující task
+            <GitBranchPlus :size="14" /> Navázat follow-upem
           </button>
           <Tooltip v-if="!done" :text="runTooltip">
             <button

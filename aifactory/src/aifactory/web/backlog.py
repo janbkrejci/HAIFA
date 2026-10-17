@@ -634,7 +634,7 @@ def follow_up(
     data["pending"] = False
     if run:
         new_id = result.task.id
-        committed = core.commit_backlog(repo, f"backlog: {new_id} follows {task_id}")
+        committed = core.commit_backlog(repo, core.follow_up_commit_message(new_id, task_id))
         data["commit"] = committed.to_json()
         warnings = warnings + list(committed.warnings)
         row = launcher.start(repo, new_id, note=None, force=False)

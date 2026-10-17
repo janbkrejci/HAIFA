@@ -45,6 +45,11 @@ proposal is correct (the task id, the step, the current writes). Kinds and field
 - `run_task`: `task`, optional `note`. `retry_run`: `run` (run id), optional `note`.
 - `approve_pr`: `task` (approves and merges its pull request).
 - `cancel_task`: `task`.
+- `follow_up`: `task` (a done task; a task that is not done is refused), `body` (what the new
+  task changes, redoes or finishes), optional `title` (default `Navazuje na ID: <title>`) and
+  `run` (`true` commits the backlog and starts the new task). The new task goes into the
+  same step with `follows: ID` and takes over the task's own `writes` and `workflow`. Propose
+  it instead of `edit_task` or `run_task` for a done task.
 
 ```haifa-action
 {"kind": "edit_task", "repo": "REPO", "task": "P01-S01-T01", "writes": ["src/"], "reason": "..."}

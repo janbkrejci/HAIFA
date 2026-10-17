@@ -22,7 +22,7 @@ const props = defineProps<{ action: ProposedAction; threadId: string }>()
 const now = ref<TaskNow | null>(null)
 onMounted(async () => {
   const { action } = props
-  if (action.status === 'proposed' && action.task && (action.kind === 'edit_task' || action.kind === 'cancel_task')) {
+  if (action.status === 'proposed' && action.task && ['edit_task', 'cancel_task', 'follow_up'].includes(action.kind)) {
     now.value = await taskNow(action.repo, action.task)
   }
 })
