@@ -688,9 +688,12 @@ exceptions on the task; the nearest value wins.
 
 ### Intent -> step with tasks
 
-`factory backlog propose "INTENT" (--project ID | --step ID) [--apply] --json` lets the
+`factory backlog propose "INTENT" [--project ID | --step ID] [--apply] --json` lets the
 read-only agent `proposer` turn a short intent into a proposal: a new step of the project
-with its tasks, or new tasks of an existing step. It works in an isolated checkout of the
+with its tasks, or new tasks of an existing step. Without `--project` and `--step` the
+agent places the tasks itself: in an existing step whose goal covers the intent, in a new
+step of the project the intent belongs to, or, when it belongs to no project, in a new
+project with a new step (not in a backlog without a project level). It works in an isolated checkout of the
 base commit and writes nothing. Every task has a title, an assignment ending with
 `Hotovo znamená:`, `depends_on` (also on existing tasks), `writes` and a workflow of the
 catalog. The proposal is validated like `factory task add`; an invalid one goes back to
@@ -699,8 +702,11 @@ without writing. A quality check also looks at `writes`: they cover the files th
 assignment names, stay out of `protected_files` and the backlog, and tasks that can run
 at the same time do not overlap. Its findings go to the agent in the same single
 correction; those left are in `data.findings` (`rule`, `task`, `message`) and in the
-preview. Without `--apply` the command only shows the proposal (`data.step`,
-`data.tasks`, `data.applied: false`); show it to the user before applying. `--apply`
+preview. Without `--apply` the command only shows the proposal (`data.project`: `id`,
+`title`, `body`, `path`, `new`, or null without a project level; `data.step`;
+`data.tasks`; `data.target`: the resolved `{project, step}`; `data.placement_reason`: why
+the agent put it there, empty with `--project` or `--step`; `data.applied: false`); show
+it to the user, with the placement, before applying. `--apply`
 writes the step and task files and commits nothing: check and commit as in Plan -> backlog.
 The agent's prompts are overridden in `.factory/prompts/proposer/`.
 
