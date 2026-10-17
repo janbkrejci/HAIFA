@@ -509,3 +509,77 @@ def test_parse_actions_validates_fields() -> None:
     ):
         text, actions = parse_actions(bad, {"r"})
         assert actions == [] and text.startswith("> Návrh akce nejde nabídnout")
+
+
+def test_delete_removes_the_thread_for_good(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    client, _repo, _repo_id = setup
+    fake_harness(monkeypatch)
+    kept = new_thread(client)
+    gone = new_thread(client)
+    ask(client, gone, "Ahoj")
+    folder = haifa_home() / "assistant" / "threads" / gone
+    assert (folder / "thread.json").is_file()
+
+    # The write guard applies to DELETE as to every other write.
+    refused = client.delete(
+        f"/api/assistant/threads/{gone}", headers={"Origin": "http://evil.example"}
+    )
+    assert refused.status_code == 403
+    assert folder.is_dir()
+
+    response = client.delete(f"/api/assistant/threads/{gone}")
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {"deleted": gone}
+    assert not folder.exists()
+    listed = client.get("/api/assistant/threads").json()["data"]["threads"]
+    assert [t["id"] for t in listed] == [kept]
+    missing = client.get(f"/api/assistant/threads/{gone}")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["code"] == "unknown_thread"
+    # A restarted dashboard reads the threads from disk: the deleted one stays gone.
+    restarted = multi_client(haifa_home(), tmp_path)
+    listed = restarted.get("/api/assistant/threads").json()["data"]["threads"]
+    assert [t["id"] for t in listed] == [kept]
+    assert restarted.get(f"/api/assistant/threads/{gone}").status_code == 404
+
+    for unknown in (gone, "nothread", "NOT-a-thread"):
+        again = client.delete(f"/api/assistant/threads/{unknown}")
+        assert again.status_code == 404
+        assert again.json()["error"]["code"] == "unknown_thread"
+
+
+def test_delete_refuses_a_thread_that_answers(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    client, _repo, _repo_id = setup
+    started = threading.Event()
+    release = threading.Event()
+
+    def act(_request: Any) -> str:
+        started.set()
+        release.wait(30)
+        return "hotovo"
+
+    fake_harness(monkeypatch, act)
+    thread_id = new_thread(client)
+    sent = client.post(f"/api/assistant/threads/{thread_id}/messages", json={"text": "Ahoj"})
+    assert sent.status_code == 202, sent.text
+    assert started.wait(30)
+    try:
+        response = client.delete(f"/api/assistant/threads/{thread_id}")
+        assert response.status_code == 409
+        assert response.json()["error"]["code"] == "busy"
+    finally:
+        release.set()
+    folder = haifa_home() / "assistant" / "threads" / thread_id
+    assert (folder / "thread.json").is_file()
+    deadline = time.monotonic() + 60
+    while client.get(f"/api/assistant/threads/{thread_id}").json()["data"]["busy"]:
+        assert time.monotonic() < deadline, "the guide did not answer"
+        time.sleep(0.05)
+    assert client.delete(f"/api/assistant/threads/{thread_id}").status_code == 200
+    assert not folder.exists()

@@ -1,13 +1,16 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   actionOutcome,
   actionPreview,
   actionRequest,
   actionTitle,
+  assistant,
   contextLabel,
+  deleteThread,
   describeScreen,
   linkify,
   outcomeText,
+  resetAssistantForTests,
   suggestions,
   type ProposedAction,
 } from './assistant'
@@ -129,5 +132,49 @@ describe('proposed actions', () => {
     const messages = [{ id: 'm', role: 'assistant' as const, text: '', actions: [done] }]
     const note = { id: 'n', role: 'action' as const, text: 'raw', action_id: 'a1', status: 'done' as const }
     expect(outcomeText(note, messages)).toBe('Upravit task P01-S01-T01: provedeno — Task upraven.')
+  })
+})
+
+describe('deleteThread', () => {
+  const summary = (id: string) => ({
+    id,
+    title: id,
+    harness: 'claude',
+    model: '',
+    created_at: '',
+    updated_at: '',
+    busy: false,
+    messages: 0,
+  })
+  const respond = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status })
+
+  afterEach(() => {
+    resetAssistantForTests()
+    vi.unstubAllGlobals()
+  })
+
+  it('sends DELETE and drops the thread from the list and the open thread', async () => {
+    const fetchMock = vi.fn(async () => respond({ ok: true, data: { deleted: 'aaaaaaaaaaaa' }, error: null, warnings: [] }))
+    vi.stubGlobal('fetch', fetchMock)
+    assistant.threads = [summary('aaaaaaaaaaaa'), summary('bbbbbbbbbbbb')]
+    assistant.thread = { ...summary('aaaaaaaaaaaa'), messages: [], seq: 0 }
+    expect(await deleteThread('aaaaaaaaaaaa')).toBe(true)
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toBe('/api/assistant/threads/aaaaaaaaaaaa')
+    expect(init.method).toBe('DELETE')
+    expect(assistant.threads.map((t) => t.id)).toEqual(['bbbbbbbbbbbb'])
+    expect(assistant.thread).toBeNull()
+    expect(assistant.deleting).toBeNull()
+  })
+
+  it('keeps the thread and reports a refusal', async () => {
+    const error = { code: 'busy', message: 'the guide is still answering in this thread' }
+    vi.stubGlobal('fetch', vi.fn(async () => respond({ ok: false, data: null, error, warnings: [] }, 409)))
+    assistant.threads = [summary('aaaaaaaaaaaa')]
+    assistant.thread = { ...summary('aaaaaaaaaaaa'), messages: [], seq: 0 }
+    expect(await deleteThread('aaaaaaaaaaaa')).toBe(false)
+    expect(assistant.threads).toHaveLength(1)
+    expect(assistant.thread?.id).toBe('aaaaaaaaaaaa')
+    expect(assistant.threadsError).toContain('still answering')
   })
 })

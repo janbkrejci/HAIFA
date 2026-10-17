@@ -47,8 +47,11 @@ interface Sent {
   body: unknown
 }
 
-function stubApi(options: { runState?: string; threads?: unknown[]; detail?: unknown; busy?: boolean } = {}) {
+function stubApi(
+  options: { runState?: string; threads?: unknown[]; detail?: unknown; busy?: boolean; deleteBusy?: boolean } = {},
+) {
   const sent: Sent[] = []
+  const deleted: string[] = []
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined
     if (init?.method === 'POST') sent.push({ url, body })
@@ -69,11 +72,16 @@ function stubApi(options: { runState?: string; threads?: unknown[]; detail?: unk
       const message = { id: 'm1', role: 'user', text: body.text, screen: body.screen ?? {}, at: THREAD.created_at }
       return envelope({ thread: { ...THREAD, title: body.text, busy: true, messages: 1 }, message, seq: 1 }, 202)
     }
+    if (url.startsWith('/api/assistant/threads/') && init?.method === 'DELETE') {
+      if (options.deleteBusy) return failure('busy', 'the guide is still answering in this thread', 409)
+      deleted.push(url)
+      return envelope({ deleted: url.split('/').pop() })
+    }
     if (url.startsWith('/api/assistant/threads/')) return envelope(options.detail ?? THREAD)
     return envelope({})
   })
   vi.stubGlobal('fetch', fetchMock)
-  return { fetchMock, sent }
+  return { fetchMock, sent, deleted }
 }
 
 function go(hash: string) {
@@ -256,5 +264,68 @@ describe('AssistantPanel', () => {
     await flushPromises()
     expect(sent.map((s) => s.url)).toEqual([`/api/assistant/threads/${THREAD.id}/actions/p1`])
     expect(wrapper.get('[data-test="assistant-action-state"]').text()).toBe('Zahozeno')
+  })
+
+  it('deletes an older thread only after the confirmation', async () => {
+    const older = { ...THREAD, id: 'ffffffffffff', title: 'Co běží?', messages: 2 }
+    const { deleted } = stubApi({ threads: [older] })
+    go('#/overview')
+    const wrapper = await openPanel()
+    await wrapper.get('[data-test="assistant-threads"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.get('[data-test="assistant-thread-delete"]').trigger('click')
+    await flushPromises()
+    expect(document.body.querySelector('[data-test="confirm-message"]')?.textContent).toContain('Co běží?')
+    ;(document.body.querySelector('[data-test="confirm-cancel"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(deleted).toEqual([])
+    expect(wrapper.findAll('[data-test="assistant-thread-item"]')).toHaveLength(1)
+
+    await wrapper.get('[data-test="assistant-thread-delete"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelector('[data-test="confirm-ok"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(deleted).toEqual(['/api/assistant/threads/ffffffffffff'])
+    expect(wrapper.find('[data-test="assistant-thread-item"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="assistant-no-threads"]').exists()).toBe(true)
+  })
+
+  it('leaves a deleted open thread for an empty one', async () => {
+    window.sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
+    const detail = { ...THREAD, title: 'Otevřené', messages: [{ id: 'u', role: 'user', text: 'Ahoj', screen: {} }] }
+    const { deleted } = stubApi({ threads: [{ ...THREAD, title: 'Otevřené', messages: 1 }], detail })
+    go('#/overview')
+    const wrapper = await openPanel()
+    expect(assistant.thread?.id).toBe(THREAD.id)
+    await wrapper.get('[data-test="assistant-threads"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="assistant-thread-delete"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelector('[data-test="confirm-ok"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(deleted).toEqual([`/api/assistant/threads/${THREAD.id}`])
+    expect(assistant.thread).toBeNull()
+    expect(window.sessionStorage.getItem('haifa.assistant.thread')).toBeNull()
+
+    await wrapper.get('[data-test="assistant-threads"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="assistant-user"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="assistant-suggestion"]')).toHaveLength(3)
+  })
+
+  it('shows why a thread could not be deleted and keeps it', async () => {
+    const older = { ...THREAD, id: 'ffffffffffff', title: 'Co běží?', busy: true, messages: 1 }
+    stubApi({ threads: [older], deleteBusy: true })
+    go('#/overview')
+    const wrapper = await openPanel()
+    await wrapper.get('[data-test="assistant-threads"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="assistant-thread-delete"]').trigger('click')
+    await flushPromises()
+    ;(document.body.querySelector('[data-test="confirm-ok"]') as HTMLButtonElement).click()
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-threads-error"]').text()).toContain('still answering')
+    expect(wrapper.findAll('[data-test="assistant-thread-item"]')).toHaveLength(1)
   })
 })

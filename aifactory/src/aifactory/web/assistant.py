@@ -34,12 +34,16 @@ panel shows it as a card and, when the user confirms it, calls the dashboard's o
 (the same endpoints and guards as the manual action), then reports the outcome with
 ``record_action``. The outcome is a message of the thread (``role: action``) and goes to the
 agent with the next message.
+
+``delete`` removes a thread for good: from memory and its whole folder on disk. A thread the
+guide is answering in is refused (``busy``) so the running answer cannot write it back.
 """
 
 from __future__ import annotations
 
 import json
 import re
+import shutil
 import subprocess
 import threading
 import time
@@ -669,6 +673,24 @@ class AssistantManager:
             self._emit(thread, "start", {"message_id": message["id"]})
             self.pool.submit(self._answer, thread, text, screen, results)
             return {"thread": thread.summary(), "message": message, "seq": thread.seq}
+
+    def delete(self, thread_id: str) -> dict[str, Any]:
+        """Remove the thread from memory and its folder from disk; refused while it answers."""
+        with self.lock:
+            thread = self._thread(thread_id)
+            if thread.busy:
+                raise AssistantError("busy", "the guide is still answering in this thread", 409)
+            folder = self.root / thread.id
+            if folder.exists():
+                try:
+                    shutil.rmtree(folder)
+                except OSError as exc:
+                    raise AssistantError(
+                        "delete_failed", f"cannot delete the thread: {exc}", 500
+                    ) from exc
+            del self.threads[thread.id]
+            self.changed.notify_all()
+            return {"deleted": thread.id}
 
     def _unsent_results(self, thread: Thread) -> list[str]:
         """The action outcomes since the last user message (the agent has not seen them)."""

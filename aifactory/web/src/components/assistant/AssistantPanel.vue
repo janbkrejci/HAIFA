@@ -3,11 +3,13 @@
 // (lib/assistant.ts), attaches the screen as a removable chip, streams the answer as markdown
 // with dashboard links, lists older threads and offers three questions in an empty thread.
 // Actions the guide proposes show as cards (ActionCard) the user executes or dismisses.
+// An older thread can be deleted for good after a confirmation in a modal dialog.
 import { computed, nextTick, ref, watch } from 'vue'
-import { History, Plus, Sparkles, X } from 'lucide-vue-next'
+import { History, Plus, Sparkles, Trash2, X } from 'lucide-vue-next'
 import {
   assistant,
   contextLabel,
+  deleteThread,
   describeScreen,
   linkify,
   newThread,
@@ -21,11 +23,14 @@ import {
   suggestions,
   type AssistantMessage,
   type ScreenContext,
+  type ThreadSummary,
 } from '@/lib/assistant'
+import { useConfirm } from '@/lib/confirm'
 import { fmtDayTime } from '@/lib/format'
 import { renderMarkdown } from '@/lib/markdown'
 import { usePage, useRepoId, useRoute, useRouteParams } from '@/lib/router'
 import ActionCard from './ActionCard.vue'
+import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 
@@ -99,6 +104,18 @@ function html(text: string, repo: string | null): string {
 
 const streamRepo = computed(() => repoOf(messages.value.length - 1))
 
+const { dialog, ask, confirm, cancel } = useConfirm()
+
+async function remove(item: ThreadSummary): Promise<void> {
+  const ok = await ask({
+    title: 'Smazat vlákno?',
+    message: `Vlákno „${item.title || 'Bez názvu'}“ se smaže natrvalo i se všemi zprávami. Tuto akci nelze vrátit.`,
+    confirmLabel: 'Smazat vlákno',
+    tone: 'danger',
+  })
+  if (ok) await deleteThread(item.id)
+}
+
 const draft = ref('')
 const log = ref<HTMLElement | null>(null)
 
@@ -159,11 +176,11 @@ watch(
     </header>
 
     <section v-if="assistant.listing" class="threads" data-test="assistant-thread-list">
-      <p v-if="assistant.threadsError" class="error">{{ assistant.threadsError }}</p>
-      <p v-else-if="assistant.threads === null" class="faint"><Spinner /> Načítám vlákna…</p>
-      <p v-else-if="!assistant.threads.length" class="faint" data-test="assistant-no-threads">Zatím žádné vlákno.</p>
-      <ul v-else>
-        <li v-for="item in assistant.threads" :key="item.id">
+      <p v-if="assistant.threadsError" class="error" role="alert" data-test="assistant-threads-error">{{ assistant.threadsError }}</p>
+      <p v-if="assistant.threads === null && !assistant.threadsError" class="faint"><Spinner /> Načítám vlákna…</p>
+      <p v-else-if="assistant.threads && !assistant.threads.length" class="faint" data-test="assistant-no-threads">Zatím žádné vlákno.</p>
+      <ul v-else-if="assistant.threads">
+        <li v-for="item in assistant.threads" :key="item.id" class="thread-row">
           <button
             type="button"
             class="thread-item"
@@ -177,6 +194,20 @@ watch(
               <template v-if="item.busy"> · odpovídá</template>
             </span>
           </button>
+          <Tooltip text="Smazat vlákno">
+            <button
+              type="button"
+              class="icon thread-delete"
+              aria-label="Smazat vlákno"
+              data-test="assistant-thread-delete"
+              :disabled="!!assistant.deleting"
+              :aria-busy="assistant.deleting === item.id || undefined"
+              @click="remove(item)"
+            >
+              <Spinner v-if="assistant.deleting === item.id" />
+              <Trash2 v-else :size="16" aria-hidden="true" />
+            </button>
+          </Tooltip>
         </li>
       </ul>
     </section>
@@ -240,6 +271,7 @@ watch(
         <button type="submit" class="send" :disabled="busy || !draft.trim()" data-test="assistant-send">Odeslat</button>
       </form>
     </template>
+    <ConfirmDialog v-bind="dialog" @confirm="confirm" @cancel="cancel" />
   </aside>
 </template>
 
@@ -322,12 +354,24 @@ watch(
   list-style: none;
 }
 
+.thread-row {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+
 .thread-item {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   text-align: left;
+}
+
+.thread-delete {
+  align-self: center;
+  flex: none;
 }
 
 .thread-item.current {
