@@ -67,6 +67,8 @@ extend-exclude = [
     # the validation sandbox's own code (foreign to aifactory) and run results
     "validation/template",
     "validation/results",
+    # the sample repository of `factory try` is data, not aifactory code
+    "src/aifactory/demo/repo",
     "src/aifactory/engine/__init__.py",
     "src/aifactory/engine/agent_cc.py",
     "src/aifactory/engine/agent_pi.py",
@@ -96,7 +98,7 @@ select = ["E", "F", "I", "UP", "B"]
 python_version = "3.11"
 strict = true
 files = ["src", "tests", "validation", "bundle"]
-exclude = ["^validation/template/", "^validation/results/"]
+exclude = ["^validation/template/", "^validation/results/", "^src/aifactory/demo/repo/"]
 # Calling the sssf engine (untyped) from typed code is allowed.
 untyped_calls_exclude = ["aifactory.engine"]
 
