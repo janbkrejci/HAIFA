@@ -67,9 +67,10 @@ Projects and steps: ``GET /api/backlog/containers/{id}`` (title, description, ow
 target?, auto_continue?, clear?}``; ``null`` or ``clear`` removes a
 key) call ``add_container`` and ``edit_container`` like ``factory backlog add|edit``.
 
-Nový záměr (``web.intent``): ``POST /api/backlog/intent`` (``{intent, project | step}``)
-starts the proposer agent like ``factory backlog propose``; ``GET /api/backlog/intent/{id}``
-returns its state, the progress of the current turn and the proposal;
+Nový záměr (``web.intent``): ``POST /api/backlog/intent`` (``{intent}``, optionally with
+``project`` or ``step``; without them the agent chooses the place) starts the proposer agent
+like ``factory backlog propose``; ``GET /api/backlog/intent/{id}`` returns its state, the
+progress of the current turn, the proposal and its resolved placement (``target``);
 ``POST .../refine`` (``{note, tasks?}``) continues the same agent session with a note and
 the edited proposal; ``POST .../apply`` (``{tasks?}``) writes it and commits the backlog;
 ``POST .../discard`` closes it.
@@ -1052,7 +1053,8 @@ async def _intent_call(
 
 
 async def intent_start(request: Request) -> JSONResponse:
-    """Start a proposal from an intent: ``{intent, project | step}`` -> the job."""
+    """Start a proposal from an intent: ``{intent}`` (the agent places it), or with
+    ``project`` (a new step) or ``step`` (new tasks) -> the job."""
     try:
         body = await _json_body(request)
     except backlog.UsageError as exc:
