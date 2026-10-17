@@ -98,7 +98,7 @@ Vrací se jen na začátku nového běhu (`factory task run`, auto-continue), ni
 běhu ani při ručním pokračování (`factory task retry`). Agent na jiném harnessu přijde
 o svou session agenta a pokračuje jen ze shrnutí a z `context_handoff/`. Přepnout uprostřed
 běhu proto má smysl jen tehdy, když aktuální harness pokračovat nemůže. Běh startu
-`resolve` a `ci-fix` řetěz nepoužívá.
+`resolve` a `ci-fix` ani běh s explicitním přepisem harnessu řetěz při startu nepoužívá.
 
 ## Kde je přepnutí vidět
 
@@ -109,3 +109,36 @@ běhu proto má smysl jen tehdy, když aktuální harness pokračovat nemůže. 
   v řetězu) nebo `quota_return` (návrat, v textu „návrat (limit obnoven)“). V popisu PR
   je řádek `běh <id>, start: …` před pokusy toho běhu. Poznámka běhu nese
   `[přepis rosteru: harness=…]`, takže ruční pokračování zůstane na stejném harnessu.
+
+## Kde je to v kódu
+
+- Klíče backlogu: `backlog/model.py` (`HARNESS_KEYS`, `INHERITED_KEYS`, `FLAG_KEYS`),
+  `backlog/edit.py` (`CONTAINER_KEYS`, kontrola `_check_chain`), `backlog/loader.py`
+  (`invalid_field`), `backlog/derived.py` (výchozí hodnoty), `cli.py`
+  (`--quota-switch`, `--quota-switch-back`), `web/backlog.py` (`editable_keys`).
+- Řetěz: `run/quota_chain.py` (`project_chain`, `start_harness`, `next_harness`),
+  `run/fallback.py` (`continue_on_fallback`, `mark_quota`, přednost před `fallback`),
+  `run/retry.py` (přepnutí řetězem smí pokračovat dalším přepnutím), `run/task.py`
+  (`_chain_start`, `clear_quota_on_success`), `harness/quota.py` (`retry_at`).
+- Stav: `run/store.py` (tabulky `harness_quota`, `project_harness`, sloupec
+  `harness_start`), `web/runs.py` (`harness_start` v detailu běhu).
+- Dashboard: `web/src/components/backlog/ContainerSettings.vue`, `web/src/lib/backlog.ts`
+  (`HARNESS_KEYS`, popisky, `settingText`), `web/src/lib/runs.ts` (`switchLabel`),
+  `web/src/components/runs/RunDetail.vue`; přegenerovaný `web/static`.
+- Dokumentace: `guide/05-behy-a-review.md`, `skill/skill.md`.
+
+## Ověření
+
+```sh
+cd aifactory
+uv run pytest tests/run/test_quota_chain.py tests/harness/test_quota_reset.py \
+  tests/backlog/test_backlog_container_edit.py tests/web/test_web_backlog_containers.py \
+  tests/web/test_web_runs.py -n0
+uv run pytest tests -k "quota_fallback or harness_quota" -n0   # stávající testy zálohy
+cd .. && just web-test
+```
+
+`test_quota_chain.py` pokrývá s falešnými harnessy přepnutí A → B → C v pořadí, vyčerpaný
+řetěz (`quota`), návrat o krok výš, čekání na obnovení limitu, setrvání bez návratu,
+přednost před `fallback` z `agents.yaml` a pořadí řádků v popisu PR. Ručně: v Nastavení
+projektu zapni přepínač, přidej dva harnessy, prohoď je šipkami, ulož a obnov stránku.
