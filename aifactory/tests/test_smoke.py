@@ -31,7 +31,16 @@ def test_factory_help_subprocess() -> None:
 
 def test_subcommands_not_implemented(capsys: pytest.CaptureFixture[str]) -> None:
     for name in NAMES:
-        implemented = ("check", "harness", "config", "backlog", "task", "workflow", "skills")
+        implemented = (
+            "check",
+            "harness",
+            "config",
+            "backlog",
+            "task",
+            "workflow",
+            "skills",
+            "learn",
+        )
         setup = ("init", "try", "update", "library", "obs", "upgrade")
         if name in (*implemented, *setup):
             continue

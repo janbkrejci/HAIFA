@@ -67,6 +67,13 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "written); see error.issues",
     ),
     ("proposal_failed", "1", "backlog propose: the agent reported that it cannot propose"),
+    ("learn_failed", "1", "learn scan: the agent reported that it cannot judge the objections"),
+    (
+        "lessons_invalid",
+        "1",
+        "learn scan: the lessons stayed invalid after one correction (nothing saved)",
+    ),
+    ("unknown_lesson", "2", "learn reject: no lesson with this id"),
     ("agent_unavailable", "2", "the agent is missing from the roster or its harness is off"),
     # Runs.
     ("already_running", "2", "a run of this task is in progress"),
