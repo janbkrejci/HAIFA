@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from learn_fixture import add_objection, fake_learner, make_learn_repo, merge_pr
 from test_learn_accept import _accept
 from test_learn_scan import TESTS_LESSON, TESTS_RULE, _context, _lessons, _scan
 
 from aifactory.learn.store import ACCEPTED, PROPOSED, LessonStore
 from aifactory.learn.view import lessons
+from learn_fixture import add_objection, fake_learner, make_learn_repo, merge_pr
 
 
 @pytest.fixture

@@ -7,11 +7,11 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from learn_fixture import fake_learner, make_learn_repo
 
 from aifactory.cli import main
 from aifactory.learn.collect import collect
 from aifactory.learn.store import REJECTED, LessonStore
+from learn_fixture import fake_learner, make_learn_repo
 
 TESTS_RULE = "Add a test for every new CLI command."
 
