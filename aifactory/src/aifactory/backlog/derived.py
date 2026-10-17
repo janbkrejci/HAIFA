@@ -176,13 +176,17 @@ _SKIP_NULL_KEYS: tuple[str, ...] = (
     "auto_continue",
     "auto_merge",
     "auto_heal",
+    "quota_switch",
+    "quota_switch_back",
 )
 # inherited keys with a fallback in ``.factory/config.yaml`` (key -> setting)
 CONFIG_FALLBACK: dict[str, str] = {
     "test_timeout": "test_timeout",
 }
 # inherited flags that are ``false`` when no level sets them
-_FLAG_DEFAULTS: tuple[str, ...] = ("auto_continue", "auto_merge")
+_FLAG_DEFAULTS: tuple[str, ...] = ("auto_continue", "auto_merge", "quota_switch_back")
+# inherited lists that are ``[]`` when no level sets them (``quota_switch``: no chain)
+_LIST_DEFAULTS: tuple[str, ...] = ("quota_switch",)
 # inherited flags that are ``true`` when no level sets them (``auto_heal``: the chain's
 # automatic actions after a failure, ``run.heal``)
 _TRUE_FLAG_DEFAULTS: tuple[str, ...] = ("auto_heal",)
@@ -199,7 +203,8 @@ def effective_sources(node: Node, settings: ProjectSettings) -> dict[str, dict[s
     ``origin`` is ``{"source": "own"|"inherited", "level", "id", "path"}`` for a value of a
     level (``own``: ``node`` itself), ``{"source": "config", "path": ".factory/config.yaml",
     "key"}`` for a fallback of ``.factory/config.yaml``, ``{"source": "default"}`` for a
-    flag no level sets (``false``), and ``None`` when nothing gives a value.
+    flag no level sets (``false``, ``auto_heal`` ``true``) and for ``quota_switch``
+    (``[]``), and ``None`` when nothing gives a value.
     """
     chain: list[Node] = [node, *ancestors(node)]
     result: dict[str, dict[str, object]] = {}
@@ -235,5 +240,7 @@ def effective_sources(node: Node, settings: ProjectSettings) -> dict[str, dict[s
             entry = {"value": False, "origin": {"source": "default"}}
         if entry is None and key in _TRUE_FLAG_DEFAULTS:
             entry = {"value": True, "origin": {"source": "default"}}
+        if entry is None and key in _LIST_DEFAULTS:
+            entry = {"value": [], "origin": {"source": "default"}}
         result[key] = entry or {"value": None, "origin": None}
     return result

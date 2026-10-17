@@ -1422,6 +1422,19 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
         help="set auto_heal: the chain's automatic actions after a failure (default on)",
     )
     edit.add_argument(
+        "--quota-switch",
+        nargs="*",
+        metavar="HARNESS",
+        help="project only: set quota_switch, the backup harnesses in order a run switches "
+        "to when its harness runs out of quota (none = [], off)",
+    )
+    edit.add_argument(
+        "--quota-switch-back",
+        choices=("on", "off"),
+        help="project only: set quota_switch_back: new runs go back up the chain once a "
+        "harness has its limit back",
+    )
+    edit.add_argument(
         "--clear",
         nargs="+",
         action="extend",
@@ -1714,6 +1727,10 @@ def _backlog_container_write(args: argparse.Namespace) -> int:
                 values["auto_continue"] = args.auto_continue == "on"
             if args.auto_heal is not None:
                 values["auto_heal"] = args.auto_heal == "on"
+            if args.quota_switch is not None:
+                values["quota_switch"] = args.quota_switch
+            if args.quota_switch_back is not None:
+                values["quota_switch_back"] = args.quota_switch_back == "on"
             result = edit_container(
                 _backlog_root(args.repo), args.id, title=args.title, values=values, clear=args.clear
             )

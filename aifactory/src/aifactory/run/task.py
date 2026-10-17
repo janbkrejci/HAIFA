@@ -550,6 +550,11 @@ def run_task(
                 rc = apply_agents_override(rc, binding)
             except ValueError as exc:
                 raise TaskRunError("invalid_override", str(exc)) from exc
+            chain_start: _ChainStart | None = None
+            if agents_override is None and resolve_onto is None and workflow_name is None:
+                chain_start = _chain_start(store, rc, task, binding)
+                if chain_start is not None and chain_start.rc is not None:
+                    rc, binding = chain_start.rc, chain_start.binding
             note = override_note(note, binding)
             busy = store.running(task_id)
             if busy is not None:
@@ -664,8 +669,15 @@ def run_task(
             started_by=started_by,
             library_commit=rc.config.library,
             stacked_on=stacked,
+            harness_start=(
+                json.dumps(chain_start.record, ensure_ascii=False)
+                if chain_start is not None and chain_start.record is not None
+                else None
+            ),
         )
         store.claim(row)
+        if chain_start is not None:
+            chain_start.commit(store)
         result = _execute(
             main,
             rc,
@@ -681,10 +693,14 @@ def run_task(
                 resolve,
                 test_timeout,
                 workdir,
+                request_log=chain_start.request_log() if chain_start is not None else None,
             ),
             code,
             provider,
         )
+        if chain_start is not None and chain_start.warnings:
+            result.warnings = (*chain_start.warnings, *result.warnings)
+        clear_quota_on_success(store, result, binding, rc)
     finally:
         store.close()
     if resolve_onto is not None or workflow_name is not None:
@@ -693,8 +709,92 @@ def run_task(
     from aifactory.run.heal import auto_heal_enabled
 
     return continue_on_fallback(
-        main, result, code=code, provider=provider, enabled=auto_heal_enabled(task)
+        main, result, code=code, provider=provider, enabled=auto_heal_enabled(task), task=task
     )
+
+
+@dataclass
+class _ChainStart:
+    """Where a new run starts in its project's quota chain (``quota_chain.py``)."""
+
+    project_id: str
+    position: str | None  # the project's place in the chain after the start
+    changes: bool  # whether the place changes (written after the run is claimed)
+    rc: RunConfig | None = None  # the configuration on the start harness; None: unchanged
+    binding: dict[str, str] = field(default_factory=dict)
+    record: dict[str, Any] | None = None  # ``harness_start``
+    warnings: tuple[str, ...] = ()
+
+    def commit(self, store: TaskRunStore) -> None:
+        if self.changes:
+            store.set_project_position(self.project_id, self.position)
+
+    def request_log(self) -> dict[str, Any] | None:
+        from aifactory.run.fallback import SWITCH_KEY, switch_text
+
+        if self.record is None:
+            return None
+        return {SWITCH_KEY: switch_text(self.record)}
+
+
+def _chain_start(
+    store: TaskRunStore, rc: RunConfig, task: Task, binding: dict[str, str]
+) -> _ChainStart | None:
+    """The start of a new run on its project's quota chain; None without a chain."""
+    from aifactory.harness.settings import effective_override
+    from aifactory.run.fallback import _side
+    from aifactory.run.quota_chain import QUOTA, project_chain, start_harness, start_record
+
+    primary = binding.get("harness") or rc.config.agents.defaults.harness
+    if not primary and rc.config.agents.agents:
+        primary = rc.config.agents.agents[0].harness
+    pc = project_chain(task, primary)
+    if pc is None:
+        return None
+    stored = store.project_position(pc.project_id)
+    start = start_harness(store, pc)
+    changes = start.position != stored
+    if start.reason is None:
+        return _ChainStart(pc.project_id, None, changes)
+    new_binding = binding
+    new_rc: RunConfig | None = None
+    if start.harness != pc.primary:
+        try:
+            new_binding = effective_override(task_harness_values(task), {"harness": start.harness})
+            new_rc = apply_agents_override(rc, new_binding)
+        except (ValueError, TaskRunError) as exc:
+            message = exc.message if isinstance(exc, TaskRunError) else str(exc)
+            return _ChainStart(
+                pc.project_id,
+                None,
+                stored is not None,
+                warnings=(
+                    f"quota chain: cannot start on {start.harness}: {message}; "
+                    f"the run starts on {pc.primary}",
+                ),
+            )
+
+    def side(harness: str, values: dict[str, str]) -> dict[str, str]:
+        return {"harness": harness, **{k: v for k, v in _side(values).items() if k != "harness"}}
+
+    if start.reason == QUOTA:
+        before = side(pc.primary, binding)
+    else:
+        before = {"harness": start.previous or pc.primary}
+    after = side(start.harness, binding if start.harness == pc.primary else new_binding)
+    record = start_record(before, after, start.reason, pc)
+    return _ChainStart(pc.project_id, start.position, changes, new_rc, new_binding, record)
+
+
+def clear_quota_on_success(
+    store: TaskRunStore, result: TaskRunResult, binding: dict[str, str], rc: RunConfig
+) -> None:
+    """A succeeded run's harness has quota again (``harness_quota``, ``quota_chain.py``)."""
+    if result.run.state != SUCCEEDED:
+        return
+    harness = binding.get("harness") or rc.config.agents.defaults.harness
+    if harness:
+        store.clear_quota(harness_mod.canonical(harness))
 
 
 @dataclass
@@ -723,6 +823,7 @@ class _Job:
     test_timeout: int = DEFAULT_TEST_TIMEOUT
     workdir: str = "."
     retry: RetrySpec | None = None
+    request_log: dict[str, Any] | None = None  # extra lines of a fresh run's request log
 
 
 def _execute(
@@ -843,7 +944,7 @@ def _execute(
                         generated=resolve.generated if resolve is not None else (),
                         journal=journal,
                         baseline=baseline,
-                        request_log=retry.request_log if retry is not None else None,
+                        request_log=retry.request_log if retry is not None else job.request_log,
                         **run_kwargs,
                     )
         finally:

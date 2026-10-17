@@ -61,6 +61,7 @@ from aifactory.backlog.loader import (
 )
 from aifactory.backlog.model import (
     FLAG_KEYS,
+    HARNESS_KEYS,
     INHERITED_KEYS,
     VALID_STATUSES,
     Backlog,
@@ -87,6 +88,7 @@ from aifactory.backlog.validate import check_backlog
 
 __all__ = [
     "FLAG_KEYS",
+    "HARNESS_KEYS",
     "INHERITED_KEYS",
     "STATUS_FILTERS",
     "VALID_STATUSES",

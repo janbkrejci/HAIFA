@@ -994,7 +994,7 @@ def container_detail(repo: Path, container_id: str) -> tuple[JsonDict, list[str]
         "editable_keys": [
             key
             for key in core.CONTAINER_KEYS
-            if key not in ("harness", "model", "thinking") or container.parent is None
+            if key not in core.HARNESS_KEYS or container.parent is None
         ],
         "issues": own_issues,
     }

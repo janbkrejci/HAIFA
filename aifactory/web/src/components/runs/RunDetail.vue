@@ -12,6 +12,7 @@ import {
   retryLabel,
   shownState,
   startedByTip,
+  switchLabel,
   type RunDetail,
   type TraceEvent,
 } from '@/lib/runs'
@@ -144,6 +145,10 @@ async function onStop() {
         <div><dt>Knihovna</dt><dd class="mono" data-test="run-library">{{ run.library_commit ? shortSha(run.library_commit) : 'seed' }}</dd></div>
         <div><dt>Začátek</dt><dd>{{ fmtTime(run.started_at) }}</dd></div>
         <div><dt>Konec</dt><dd>{{ fmtTime(run.ended_at) }}</dd></div>
+        <div v-if="run.harness_start">
+          <dt>Start</dt>
+          <dd data-test="harness-start">{{ switchLabel(run.harness_start) }}</dd>
+        </div>
         <div v-if="run.retries?.length">
           <dt>Pokus</dt>
           <dd data-test="run-attempt">

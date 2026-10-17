@@ -108,6 +108,8 @@ export interface RunSummary {
   attempt?: number
   /** One item per retry (`factory task retry`), oldest first. */
   retries?: RunRetry[]
+  /** The harness switch the run started with (the project's quota chain); null without one. */
+  harness_start?: HarnessSwitch | null
   pr: RunPr | null
   phases: PhaseDot[]
 }
@@ -545,7 +547,10 @@ export interface HarnessBinding {
   thinking?: string
 }
 
-/** A retry on another harness: from where, to where and why (`quota`, ...). */
+/**
+ * A retry on another harness, or the start of a run on the project's quota chain: from where,
+ * to where and why (`quota`, `quota_return` for a return once the limit is back, `operator`).
+ */
 export interface HarnessSwitch {
   from: HarnessBinding
   to: HarnessBinding
@@ -635,7 +640,8 @@ function bindingLabel(side: HarnessBinding): string {
 
 /** „přepnuto codex/gpt → claude/opus (kvóta, automaticky)“ */
 export function switchLabel(sw: HarnessSwitch): string {
-  const why = [sw.reason === 'quota' ? 'kvóta' : sw.reason, sw.auto ? 'automaticky' : 'operátor']
+  const reason = sw.reason === 'quota' ? 'kvóta' : sw.reason === 'quota_return' ? 'návrat (limit obnoven)' : sw.reason
+  const why = [reason, sw.auto ? 'automaticky' : 'operátor']
   return `přepnuto ${bindingLabel(sw.from)} → ${bindingLabel(sw.to)} (${why.join(', ')})`
 }
 

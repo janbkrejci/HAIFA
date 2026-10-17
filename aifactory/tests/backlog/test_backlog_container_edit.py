@@ -265,6 +265,57 @@ def test_auto_heal_is_on_by_default_and_set_per_container(tmp_path: Path, capsys
     assert "auto_heal" not in _header(root, S01_INDEX)
 
 
+def test_quota_switch_is_a_project_setting(tmp_path: Path) -> None:
+    root = sample_repo(tmp_path)
+    backlog = load_backlog(root)
+    sources = effective_sources(backlog.by_id["M01-S01"], backlog.settings)
+    assert sources["quota_switch"] == {"value": [], "origin": {"source": "default"}}
+    assert sources["quota_switch_back"] == {"value": False, "origin": {"source": "default"}}
+    result = edit_container(
+        root, "M01", values={"quota_switch": ["pi", "claude_code"], "quota_switch_back": True}
+    )
+    assert result.changed
+    header = _header(root, M01_INDEX)
+    assert (header["quota_switch"], header["quota_switch_back"]) == (["pi", "claude"], True)
+    backlog = load_backlog(root)
+    sources = effective_sources(backlog.by_id["M01"], backlog.settings)
+    assert sources["quota_switch"] == {
+        "value": ["pi", "claude"],
+        "origin": {"source": "own", "level": "module", "id": "M01", "path": M01_INDEX},
+    }
+    inherited = effective_sources(backlog.by_id["M01-S01"], backlog.settings)
+    assert inherited["quota_switch"]["origin"]["source"] == "inherited"  # type: ignore[index]
+    assert check_backlog(backlog) == []
+    bad: list[dict[str, Any]] = [
+        {"quota_switch": ["pi", "pi"]},
+        {"quota_switch": ["unknown"]},
+        {"quota_switch": "pi"},
+        {"quota_switch_back": "yes"},
+    ]
+    for values in bad:
+        with pytest.raises(TaskEditError) as exc:
+            edit_container(root, "M01", values=values)
+        assert exc.value.code == "invalid_value"
+    with pytest.raises(TaskEditError, match="only allowed on a project"):
+        edit_container(root, "M01-S01", values={"quota_switch": ["pi"]})
+    with pytest.raises(TaskEditError, match="only allowed on a project"):
+        edit_container(root, "M01-S01", values={"quota_switch_back": True})
+    edit_container(root, "M01", clear=["quota_switch"])
+    backlog = load_backlog(root)
+    sources = effective_sources(backlog.by_id["M01"], backlog.settings)
+    assert sources["quota_switch"] == {"value": [], "origin": {"source": "default"}}
+
+
+def test_loader_rejects_a_quota_switch_that_is_not_a_list(tmp_path: Path) -> None:
+    root = sample_repo(tmp_path)
+    write(root, M01_INDEX, "---\nid: M01\ntitle: Core\nquota_switch: codex\n---\n")
+    issues = check_backlog(load_backlog(root))
+    assert any(i.code == "invalid_field" and "quota_switch" in i.message for i in issues)
+    write(root, M01_INDEX, "---\nid: M01\ntitle: Core\nquota_switch_back: maybe\n---\n")
+    issues = check_backlog(load_backlog(root))
+    assert any(i.code == "invalid_field" and "quota_switch_back" in i.message for i in issues)
+
+
 # ── CLI ──────────────────────────────────────────────────────────────────────
 
 
@@ -316,6 +367,26 @@ def test_cli_add_and_edit(tmp_path: Path, capsys: Capsys) -> None:
     rc, env = run_json(capsys, ["backlog", "edit", "M01", "--clear", "workflow", "--json"] + repo)
     assert rc == 0
     assert "workflow" not in _header(root, M01_INDEX)
+
+
+def test_cli_sets_the_quota_chain(tmp_path: Path, capsys: Capsys) -> None:
+    root = sample_repo(tmp_path)
+    repo = ["--repo", str(root)]
+    edit = ["backlog", "edit", "M01", "--quota-switch", "pi", "claude"]
+    rc, env = run_json(capsys, [*edit, "--quota-switch-back", "on", "--json", *repo])
+    assert rc == 0
+    own = env["data"]["container"]["own"]
+    assert (own["quota_switch"], own["quota_switch_back"]) == (["pi", "claude"], True)
+    rc, env = run_json(capsys, ["backlog", "edit", "M01", "--quota-switch", "--json", *repo])
+    assert rc == 0
+    assert _header(root, M01_INDEX)["quota_switch"] == []
+    rc, env = run_json(
+        capsys,
+        ["backlog", "edit", "M01", "--clear", "quota_switch", "quota_switch_back", "--json"] + repo,
+    )
+    assert rc == 0
+    header = _header(root, M01_INDEX)
+    assert "quota_switch" not in header and "quota_switch_back" not in header
 
 
 def test_cli_rejects_invalid_writes(tmp_path: Path, capsys: Capsys) -> None:

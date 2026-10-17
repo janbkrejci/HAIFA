@@ -168,6 +168,9 @@ class _Loader:
                             container.id,
                         )
                         continue
+                    if key == "quota_switch" and value is not None and _string_list(value) is None:
+                        self.issue("invalid_field", _list_message(key, value), index, container.id)
+                        continue
                     if key in FLAG_KEYS and not _flag(value):
                         self.issue("invalid_field", _flag_message(key), index, container.id)
                         continue
@@ -235,6 +238,10 @@ class _Loader:
             if not _flag(own.get(key)):
                 self.issue("invalid_field", _flag_message(key), path, task_id)
                 own.pop(key)
+        chain = own.get("quota_switch")
+        if chain is not None and _string_list(chain) is None:
+            self.issue("invalid_field", _list_message("quota_switch", chain), path, task_id)
+            own.pop("quota_switch")
         if not _assignee(own.get("assignee")):
             self.issue("invalid_field", _ASSIGNEE_MESSAGE, path, task_id)
             own.pop("assignee")
@@ -282,6 +289,10 @@ class _Loader:
             follows=follows,
             body=body,
         )
+
+
+def _list_message(key: str, value: object) -> str:
+    return f"field '{key}' must be a list of strings, got {value!r}"
 
 
 def _flag_message(key: str) -> str:

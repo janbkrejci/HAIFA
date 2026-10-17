@@ -67,6 +67,7 @@ def test_detail_has_own_and_effective_values_with_origin(tmp_path: Path) -> None
     assert container["parent"] == "M01"
     assert container["own"] == {}
     assert "auto_continue" in data["editable_keys"]
+    assert not {"quota_switch", "quota_switch_back", "harness"} & set(data["editable_keys"])
     effective = container["effective"]
     assert effective["workflow"] == {
         "value": "plan-build",
@@ -167,6 +168,24 @@ def test_edit_sets_clears_and_keeps_unknown_keys(tmp_path: Path) -> None:
     assert "workflow" not in header and "model" not in header
     assert header["owner"] == "alice"
     assert _header(root, S01_INDEX)["workflow"] == "plan"
+
+
+def test_edit_sets_the_quota_chain_of_a_project(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    keys = _get(client, "/api/backlog/containers/M01")["data"]["editable_keys"]
+    assert {"quota_switch", "quota_switch_back"} <= set(keys)
+    payload = {"quota_switch": ["pi"], "quota_switch_back": True}
+    data = _post(client, "/api/backlog/containers/M01/edit", payload)["data"]
+    effective = data["container"]["effective"]
+    assert effective["quota_switch"]["value"] == ["pi"]
+    assert effective["quota_switch_back"]["value"] is True
+    header = _header(root, M01_INDEX)
+    assert (header["quota_switch"], header["quota_switch_back"]) == (["pi"], True)
+    body = _post(client, "/api/backlog/containers/M01-S01/edit", {"quota_switch": ["pi"]}, 400)
+    assert body["error"]["code"] == "invalid_value"
+    _post(client, "/api/backlog/containers/M01/edit", {"quota_switch": None})
+    assert "quota_switch" not in _header(root, M01_INDEX)
 
 
 def test_edit_rejects_bad_input(tmp_path: Path) -> None:

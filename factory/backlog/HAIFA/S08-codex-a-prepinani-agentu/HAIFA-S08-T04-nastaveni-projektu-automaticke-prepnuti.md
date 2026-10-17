@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S08-T04
 title: "Nastavení projektu: automatické přepnutí harnessu při vyčerpání kvóty (řetěz a návrat)"
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 related: [HEAL-S02-T03, HAIFA-S08-T01, HAIFA-REFINEMENT-T03]
@@ -43,3 +43,4 @@ Když existují víc než dva harnessy, určí se řetěz, v jakém pořadí se 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/97 · náklady $9.75

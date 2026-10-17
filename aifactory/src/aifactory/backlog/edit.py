@@ -54,6 +54,7 @@ from aifactory.backlog.derived import is_human
 from aifactory.backlog.loader import iter_containers, load_backlog
 from aifactory.backlog.model import (
     ASSIGNEES,
+    HARNESS_KEYS,
     INDEX_FILE,
     Backlog,
     Container,
@@ -655,6 +656,8 @@ CONTAINER_KEYS: tuple[str, ...] = (
     "writes",
     "auto_continue",
     "auto_heal",
+    "quota_switch",
+    "quota_switch_back",
 )
 _STR_KEYS = (
     "workflow",
@@ -773,6 +776,24 @@ def add_container(
     return _container_result(backlog, "add", changed, rel, container_id)
 
 
+def _check_chain(value: object) -> list[str]:
+    """``quota_switch``: the canonical names of known harnesses, each at most once."""
+    from aifactory.harness import canonical
+
+    if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
+        raise TaskEditError("invalid_value", "'quota_switch' must be a list of harness names")
+    chain: list[str] = []
+    for item in value:
+        try:
+            name = canonical(item.strip())
+        except ValueError as exc:
+            raise TaskEditError("invalid_value", str(exc)) from exc
+        if name in chain:
+            raise TaskEditError("invalid_value", f"harness {name} is twice in quota_switch")
+        chain.append(name)
+    return chain
+
+
 def _check_container_value(key: str, value: object) -> str | list[str] | bool:
     if key in ("harness", "model", "thinking"):
         from aifactory.workflow.task_advice import TaskParameters
@@ -789,7 +810,9 @@ def _check_container_value(key: str, value: object) -> str | list[str] | bool:
         if not isinstance(value, list) or not all(isinstance(v, str) for v in value):
             raise TaskEditError("invalid_value", "'writes' must be a list of strings")
         return _dedupe([str(v) for v in value])
-    if key in ("auto_continue", "auto_heal"):
+    if key == "quota_switch":
+        return _check_chain(value)
+    if key in ("auto_continue", "auto_heal", "quota_switch_back"):
         if not isinstance(value, bool):
             raise TaskEditError("invalid_value", f"'{key}' must be true or false")
         return value
@@ -833,7 +856,7 @@ def edit_container(
     backlog = load_for_edit(root)
     baseline = check_backlog(backlog)
     container = find_container(backlog, container_id, baseline)
-    if container.parent is not None and any(k in values for k in ("harness", "model", "thinking")):
+    if container.parent is not None and any(k in values for k in HARNESS_KEYS):
         raise TaskEditError("invalid_value", "harness settings are only allowed on a project")
     rel = container.index_path
     if rel is None:
