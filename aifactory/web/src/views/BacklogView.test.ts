@@ -328,6 +328,24 @@ describe('BacklogView', () => {
     expect(window.location.hash).toBe('#/r/haifa/backlog/new')
     wrapper.unmount()
   })
+  it('puts Nový záměr first among the head buttons, in the list and in the graph', async () => {
+    const order = (wrapper: ReturnType<typeof mount>) =>
+      wrapper.findAll('.head-actions > [data-test]').map((el) => el.attributes('data-test'))
+    go('#/r/haifa/backlog')
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/graph')) return ok(containerGraph())
+      if (url.endsWith('/containers/M01-S01')) return ok(containerDetail())
+      return ok(backlogData())
+    }))
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['new-intent', 'new-project', 'new-step', 'new-task', 'refresh'])
+    go('#/r/haifa/backlog/graph/M01-S01')
+    await flushPromises()
+    expect(order(wrapper)).toEqual(['new-intent', 'new-task', 'refresh'])
+    wrapper.unmount()
+  })
+
   it('shows the graph of a step without its own auto-continue switches, Nový task in the step', async () => {
     go('#/r/haifa/backlog/graph/M01-S01')
     const fetchMock = vi.fn(async (url: string) => {

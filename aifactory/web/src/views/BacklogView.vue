@@ -678,6 +678,14 @@ watch(
       <BackLink v-if="target" :href="here('backlog')" label="backlog" />
       <div class="head-actions">
         <a
+          v-if="!isIntent"
+          :href="intentHref(isGraph ? graphId : null)"
+          class="button"
+          data-test="new-intent"
+        >
+          <Lightbulb :size="16" /> Nový záměr
+        </a>
+        <a
           v-if="!target"
           :href="newContainerHref()"
           class="button"
@@ -700,14 +708,6 @@ watch(
           data-test="new-step"
         >
           <Plus :size="16" /> Nový {{ levelNoun(graphChildLevel) }}
-        </a>
-        <a
-          v-if="!isIntent"
-          :href="intentHref(isGraph ? graphId : null)"
-          class="button"
-          data-test="new-intent"
-        >
-          <Lightbulb :size="16" /> Nový záměr
         </a>
         <a v-if="!isNew" :href="newTaskHref(graphStep)" class="button" data-test="new-task">
           <Plus :size="16" /> Nový {{ levelNoun(level.task.value) }}
