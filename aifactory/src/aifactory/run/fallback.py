@@ -14,6 +14,14 @@ of that failure (``quota`` when the fallback ran out as well).
 
 A task with ``auto_heal: false`` (``heal.py``) is never switched automatically.
 
+Precedence: when the task's project sets a quota chain (``quota_switch`` in its
+``index.md``, ``quota_chain.py``), the chain applies and the ``fallback`` of ``local.yaml``
+and ``agents.yaml`` is ignored for the run. The run then walks the chain: each retry that
+was a chain switch may be followed by the next one, until a harness finishes or the chain
+is used up. Without a project chain the single fallback above applies, tried once.
+Every quota failure is recorded in the trace DB (``harness_quota``), with or without a
+switch, so the chain skips a harness that is still out.
+
 The switch is recorded as ``harness_switch`` in the retry's entry of ``task_runs.retries``
 and logged in the ``request`` phase of the attempt (the run's events); the PR body lists it.
 """
@@ -29,10 +37,11 @@ from aifactory.config import RunConfig
 from aifactory.harness.fallback import Fallback
 from aifactory.providers import GitProvider
 from aifactory.run.errors import TaskRunError
-from aifactory.run.store import FAILED, TaskRunRow
+from aifactory.run.store import FAILED, TaskRunRow, TaskRunStore
 from aifactory.workflow import CodeRunner
 
 if TYPE_CHECKING:
+    from aifactory.backlog import Task
     from aifactory.run.task import TaskRunResult
 
 SWITCH_KEY = "harness_switch"
@@ -46,6 +55,7 @@ __all__ = [
     "continue_on_fallback",
     "harness_switch",
     "harness_switches",
+    "mark_quota",
     "switch_text",
 ]
 
@@ -106,7 +116,8 @@ def _label(side: dict[str, Any]) -> str:
 
 def switch_text(record: dict[str, Any]) -> str:
     """One line about a switch: ``codex/gpt-6.1-sol → claude/claude-opus-5-5 (quota, ...)``."""
-    why = [str(record.get("reason") or "operator")]
+    reason = str(record.get("reason") or "operator")
+    why = ["návrat (limit obnoven)" if reason == "quota_return" else reason]
     why.append("automaticky" if record.get("auto") else "operátor")
     if record.get("source"):
         why.append(f"záloha z {record['source']}")
@@ -118,14 +129,50 @@ def switch_text(record: dict[str, Any]) -> str:
 
 
 def harness_switches(runs: Iterable[TaskRunRow]) -> list[str]:
-    """One line per harness switch of `runs`, oldest first (the PR body lists them)."""
+    """One line per harness switch of `runs`, oldest first (the PR body lists them).
+
+    The switch a run started with (the project's quota chain, ``harness_start``) comes
+    before the switches of its retries.
+    """
     lines: list[str] = []
     for row in runs:
+        start = row.harness_start_dict()
+        if start is not None:
+            lines.append(f"běh {row.run_id}, start: {switch_text(start)}")
         for number, retry in enumerate(row.retry_list(), start=2):
             record = retry.get(SWITCH_KEY)
             if isinstance(record, dict):
                 lines.append(f"běh {row.run_id}, pokus {number}: {switch_text(record)}")
     return lines
+
+
+def _tried(run: TaskRunRow, exhausted: str) -> set[str]:
+    """The harnesses `run` has run on so far, `exhausted` included."""
+    tried = {exhausted}
+    start = run.harness_start_dict()
+    if start is not None and (start.get("to") or {}).get("harness"):
+        tried.add(str(start["to"]["harness"]))
+    for retry in run.retry_list():
+        record = retry.get(SWITCH_KEY)
+        if not isinstance(record, dict):
+            continue
+        for side in ("from", "to"):
+            harness = (record.get(side) or {}).get("harness")
+            if harness:
+                tried.add(str(harness))
+    return tried
+
+
+def mark_quota(store: TaskRunStore, detail: dict[str, Any]) -> None:
+    """Record the harness of a quota failure as out of quota until its reset time."""
+    from aifactory.harness.quota import retry_at
+
+    harness = detail.get("harness")
+    if not isinstance(harness, str) or not harness:
+        return
+    message = str(detail.get("message") or "")
+    when = retry_at(message).isoformat(timespec="milliseconds")
+    store.mark_quota(harness, message, when)
 
 
 def continue_on_fallback(
@@ -135,13 +182,16 @@ def continue_on_fallback(
     code: CodeRunner | None = None,
     provider: GitProvider | None = None,
     enabled: bool = True,
+    task: Task | None = None,
 ) -> TaskRunResult:
-    """`result`, or the result of its retry on the fallback harness after a quota failure.
+    """`result`, or the result of its retry on another harness after a quota failure.
 
-    Nothing happens unless the run failed with ``quota``, a fallback is configured and it
-    is another harness than the one that ran out. A retry that cannot start leaves the run
-    failed with ``quota`` and adds a warning. ``enabled=False`` (the task's ``auto_heal:
-    false``, ``heal.py``) never switches.
+    Nothing happens unless the run failed with ``quota``. With a project chain (`task`'s
+    ``quota_switch``) the run continues on the chain's next harness that it has not used
+    and that has quota; without one, on the configured fallback when it is another harness
+    than the one that ran out. A retry that cannot start leaves the run failed with
+    ``quota`` and adds a warning. ``enabled=False`` (the task's ``auto_heal: false``,
+    ``heal.py``) never switches.
     """
     from aifactory.run import task as run_mod
     from aifactory.run.retry import retry_run
@@ -149,25 +199,42 @@ def continue_on_fallback(
     run = result.run
     if run.state != FAILED or run.failure_kind != failures.QUOTA:
         return result
-    if not enabled:
-        result.warnings = (*result.warnings, "quota fallback skipped: auto_heal is off")
-        return result
     detail = run.failure_detail_dict() or {}
     try:
         rc = run_mod._load(main)
     except TaskRunError:
         return result
-    agent = detail.get("agent")
-    found = configured_fallback(rc, agent if isinstance(agent, str) else None)
-    if found is None:
-        return result
-    fallback, source = found
-    if fallback.harness == detail.get("harness"):
-        result.warnings = (
-            *result.warnings,
-            f"quota fallback skipped: {source} names {fallback.harness}, the harness that ran out",
-        )
-        return result
+    store = TaskRunStore(rc.local.trace_db_path(main))
+    try:
+        mark_quota(store, detail)
+        if not enabled:
+            result.warnings = (*result.warnings, "quota fallback skipped: auto_heal is off")
+            return result
+        chained = _chain_target(store, rc, run, detail, task)
+    finally:
+        store.close()
+    if chained is not None:
+        target, source, warning = chained
+        if target is None:
+            result.warnings = (*result.warnings, warning)
+            return result
+        override: dict[str, str] = {"harness": target}
+        switch: dict[str, Any] = {"auto": True, "source": source, "chain": True}
+    else:
+        agent = detail.get("agent")
+        found = configured_fallback(rc, agent if isinstance(agent, str) else None)
+        if found is None:
+            return result
+        fallback, source = found
+        if fallback.harness == detail.get("harness"):
+            result.warnings = (
+                *result.warnings,
+                f"quota fallback skipped: {source} names {fallback.harness}, "
+                "the harness that ran out",
+            )
+            return result
+        target, override = fallback.harness, fallback.override()
+        switch = {"auto": True, "source": source}
     try:
         retried = retry_run(
             main,
@@ -175,13 +242,13 @@ def continue_on_fallback(
             run_id=run.run_id,
             code=code,
             provider=provider,
-            agents_override=fallback.override(),
-            switch={"auto": True, "source": source},
+            agents_override=override,
+            switch=switch,
         )
     except TaskRunError as exc:
         result.warnings = (
             *result.warnings,
-            f"quota fallback to {fallback.harness} did not start: {exc.code}: {exc.message}",
+            f"quota fallback to {target} did not start: {exc.code}: {exc.message}",
         )
         return result
     retries = retried.run.retry_list()
@@ -189,3 +256,30 @@ def continue_on_fallback(
     switched = (f"quota: switched {switch_text(record)}",) if isinstance(record, dict) else ()
     retried.warnings = (*result.warnings, *switched, *retried.warnings)
     return retried
+
+
+def _chain_target(
+    store: TaskRunStore,
+    rc: RunConfig,
+    run: TaskRunRow,
+    detail: dict[str, Any],
+    task: Task | None,
+) -> tuple[str | None, str, str] | None:
+    """With a project chain: (the next harness or None, the source, the warning when none).
+
+    None without a project chain (the configured fallback applies). The project's place in
+    the chain moves to the next harness here, before its retry starts.
+    """
+    from aifactory.run.quota_chain import next_harness, primary_harness, project_chain
+
+    if task is None:
+        return None
+    pc = project_chain(task, primary_harness(task, rc))
+    if pc is None:
+        return None
+    exhausted = str(detail.get("harness") or "")
+    target = next_harness(store, pc, exhausted, _tried(run, exhausted))
+    if target is None:
+        return None, pc.source, f"quota: chain of project {pc.project_id} exhausted"
+    store.set_project_position(pc.project_id, None if target == pc.primary else target)
+    return target, pc.source, ""

@@ -13,6 +13,7 @@ import {
   isFinished,
   shownState,
   slotWaitLabel,
+  switchLabel,
   unarchiveRun,
   type RunTail,
 } from './runs'
@@ -124,6 +125,17 @@ describe('checksLabel', () => {
         { item: 'b', ok: false, note: '' },
       ]),
     ).toBe('1 z 2 selhalo')
+  })
+})
+
+describe('switchLabel', () => {
+  it('names a quota switch and a return once the limit is back', () => {
+    const base = { from: { harness: 'codex', model: 'gpt-6.1-sol' }, to: { harness: 'pi' }, auto: true }
+    expect(switchLabel({ ...base, reason: 'quota' })).toBe('přepnuto codex/gpt-6.1-sol → pi (kvóta, automaticky)')
+    expect(switchLabel({ ...base, reason: 'quota_return' })).toBe(
+      'přepnuto codex/gpt-6.1-sol → pi (návrat (limit obnoven), automaticky)',
+    )
+    expect(switchLabel({ ...base, reason: 'operator', auto: false })).toBe('přepnuto codex/gpt-6.1-sol → pi (operator, operátor)')
   })
 })
 

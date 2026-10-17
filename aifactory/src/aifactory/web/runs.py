@@ -224,6 +224,7 @@ def _summary(
         # 1 + the retries (``factory task retry``); each says where it continued
         "attempt": row.attempt,
         "retries": row.retry_list(),
+        "harness_start": row.harness_start_dict(),
         # why a succeeded run has no PR; the dashboard offers `task publish` for it
         "pr_error": row.pr_error if pr is None else None,
         "pr": None

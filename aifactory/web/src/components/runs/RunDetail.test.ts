@@ -57,6 +57,22 @@ describe('RunDetail', () => {
     expect(fix.get('[data-test="started-by"]').text()).toBe('Spuštěno automaticky: schválení opravuje červenou CI PR')
   })
 
+  it('shows the harness switch the run started with, nothing without one', () => {
+    const start = {
+      from: { harness: 'pi' },
+      to: { harness: 'claude', model: 'claude-opus-5-5' },
+      reason: 'quota_return',
+      auto: true,
+      source: 'projekt M01 (quota_switch)',
+    }
+    const wrapper = mount(RunDetail, { props: { detail: detail({ harness_start: start }), events: events() } })
+    expect(wrapper.get('[data-test="harness-start"]').text()).toBe(
+      'přepnuto pi → claude/claude-opus-5-5 (návrat (limit obnoven), automaticky)',
+    )
+    const plain = mount(RunDetail, { props: { detail: detail({ harness_start: null }), events: events() } })
+    expect(plain.find('[data-test="harness-start"]').exists()).toBe(false)
+  })
+
   it('names the library commit the run read, seed without one', () => {
     expect(mount(RunDetail, { props: { detail: detail({ library_commit: '0123456789abcdef' }), events: events() } })
       .get('[data-test="run-library"]').text()).toBe('0123456')

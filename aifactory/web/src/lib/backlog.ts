@@ -967,9 +967,20 @@ export const CONTAINER_KEYS = [
   'workflow',
   'writes',
   'auto_continue',
+  'quota_switch',
+  'quota_switch_back',
 ] as const
 
 export type ContainerKey = (typeof CONTAINER_KEYS)[number]
+
+/** Keys only a project sets: its harness and the harness chain for an exhausted quota. */
+export const HARNESS_KEYS: readonly ContainerKey[] = [
+  'harness',
+  'model',
+  'thinking',
+  'quota_switch',
+  'quota_switch_back',
+]
 
 /** Where an effective value comes from: a level, `.factory/config.yaml` or the default. */
 export type SettingOrigin =
@@ -1030,6 +1041,10 @@ export interface EditContainerInput {
   workflow?: string
   writes?: string[]
   auto_continue?: boolean
+  /** Backup harnesses in order for an exhausted quota; `[]` switches it off. */
+  quota_switch?: string[]
+  /** New runs go back up the chain once a harness has its limit again. */
+  quota_switch_back?: boolean
   /** Keys removed from `index.md` (the value is inherited again). */
   clear?: ContainerKey[]
 }
@@ -1064,8 +1079,14 @@ export function editContainer(
   return postApi<ContainerWriteResult>(`${containerPath(containerId)}/edit`, input)
 }
 
-/** A setting value for text: a list joined by commas, a flag as zapnuto/vypnuto. */
-export function settingText(value: unknown): string {
+/**
+ * A setting value for text: a list joined by commas, a flag as zapnuto/vypnuto; the quota
+ * chain (`quota_switch`) as `codex → pi`, empty as vypnuto.
+ */
+export function settingText(value: unknown, key?: string): string {
+  if (key === 'quota_switch' && Array.isArray(value)) {
+    return value.length ? value.map(String).join(' → ') : 'vypnuto'
+  }
   if (value === null || value === undefined) return '—'
   if (typeof value === 'boolean') return value ? 'zapnuto' : 'vypnuto'
   if (Array.isArray(value)) return value.length ? value.map(String).join(', ') : '(prázdné)'
@@ -1103,6 +1124,8 @@ export const SETTING_LABELS: Record<string, string> = {
   test_timeout: 'Limit testů (s)',
   auto_continue: 'Auto continue',
   auto_merge: 'Auto-merge',
+  quota_switch: 'Automaticky přepnout harness při vyčerpání limitu tokenů',
+  quota_switch_back: 'Vrátit zpět při obnovení limitu',
 }
 
 /** Options of an inherited switch, the same labels everywhere. */

@@ -105,6 +105,25 @@ def test_cost_totals_per_task_and_backlog(repo: Path, tmp_path: Path) -> None:
     ]
 
 
+def test_detail_has_the_harness_switch_the_run_started_with(repo: Path, tmp_path: Path) -> None:
+    start = {
+        "from": {"harness": "pi"},
+        "to": {"harness": "claude"},
+        "reason": "quota_return",
+        "auto": True,
+        "source": "projekt M01 (quota_switch)",
+    }
+    conn = sqlite3.connect(str(repo / ".factory" / "trace.db"), isolation_level=None)
+    try:
+        conn.execute(
+            "UPDATE task_runs SET harness_start = ? WHERE run_id = 'r-ok'", (json.dumps(start),)
+        )
+    finally:
+        conn.close()
+    run = _get(_client(repo, tmp_path), "/api/runs/r-ok")["data"]["run"]
+    assert run["harness_start"] == start
+
+
 def test_repo_without_trace_db_is_empty(tmp_path: Path) -> None:
     root = make_repo(tmp_path / "repo")
     data = _get(_client(root, tmp_path), "/api/runs")["data"]
@@ -479,6 +498,7 @@ def test_retry_starts_a_failed_run_and_refuses_others(repo: Path, tmp_path: Path
     assert body["data"]["run"]["run_id"] == "r-fail"
     assert body["data"]["run"]["attempt"] == 1
     assert body["data"]["run"]["retries"] == []
+    assert body["data"]["run"]["harness_start"] is None
     assert launcher.calls == [(T1, "r-fail", "go on", "test")]
 
     done = client.post("/api/runs/r-ok/retry", json={})

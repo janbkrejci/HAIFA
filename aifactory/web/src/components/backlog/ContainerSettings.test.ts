@@ -1,20 +1,35 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { computed, ref } from 'vue'
 import ContainerSettings from './ContainerSettings.vue'
 import { containerDetail } from '@/test/backlogFixtures'
-import { chooseOption } from '@/test/select'
+import { chooseOption, selectLabels } from '@/test/select'
 import type { ContainerDetail, WriteError } from '@/lib/backlog'
+
+// the harnesses enabled and available on this computer
+vi.mock('@/lib/machineHarnesses', () => ({
+  useHarnessChoices: () => ({
+    catalog: ref(null),
+    harnessOptions: computed(() => [
+      { value: '', label: 'Zdědit' },
+      { value: 'claude', label: 'claude' },
+      { value: 'codex', label: 'codex' },
+      { value: 'pi', label: 'pi' },
+    ]),
+    modelOptions: () => [{ value: '', label: 'Zdědit' }],
+  }),
+}))
 
 afterEach(() => {
   document.body.innerHTML = ''
 })
 
-function panel(over: Partial<ContainerDetail> = {}, error: WriteError | null = null) {
+function panel(over: Partial<ContainerDetail> = {}, error: WriteError | null = null, keys?: string[]) {
   const data = containerDetail(over)
   return mount(ContainerSettings, {
     props: {
       container: data.container,
-      editableKeys: data.editable_keys,
+      editableKeys: keys ?? data.editable_keys,
       workflows: ['plan', 'plan-build', 'simple-sdlc'],
       busy: false,
       error,
@@ -122,5 +137,103 @@ describe('ContainerSettings', () => {
     const error = wrapper.get('[data-test="write-error"]')
     expect(error.text()).toContain("'workflow' must be a non-empty string")
     expect(error.find('[data-issue="invalid_value"]').exists()).toBe(true)
+  })
+
+  describe('quota chain of a project', () => {
+    const PROJECT_KEYS = ['harness', 'model', 'workflow', 'quota_switch', 'quota_switch_back']
+    const own = { source: 'own', level: 'module', id: 'M01', path: 'backlog/M01-core/index.md' } as const
+
+    function project(values: Record<string, unknown> = {}) {
+      const effective: ContainerDetail['effective'] = {
+        quota_switch: { value: [], origin: { source: 'default' } },
+        quota_switch_back: { value: false, origin: { source: 'default' } },
+      }
+      for (const [key, value] of Object.entries(values)) effective[key] = { value, origin: own }
+      return panel(
+        {
+          id: 'M01',
+          title: 'Core',
+          level: 'module',
+          parent: null,
+          path: 'backlog/M01-core',
+          index_path: 'backlog/M01-core/index.md',
+          own: values,
+          effective,
+        },
+        null,
+        PROJECT_KEYS,
+      )
+    }
+
+    const items = (wrapper: ReturnType<typeof panel>) =>
+      wrapper.findAll('[data-test="quota-chain-item"]').map((i) => i.attributes('data-harness'))
+
+    it('builds a chain in order with the return and saves it', async () => {
+      const wrapper = project()
+      expect(wrapper.get('[data-setting="quota_switch"] [data-test="setting-label"]').text()).toBe(
+        'Automaticky přepnout harness při vyčerpání limitu tokenů',
+      )
+      await wrapper.get('[data-test="inherit-quota_switch"]').setValue(false)
+      await wrapper.get('[data-test="quota-switch-on"]').setValue(true)
+      await chooseOption(wrapper, '[data-test="chain-add"]', 'pi')
+      await chooseOption(wrapper, '[data-test="chain-add"]', 'claude')
+      expect(items(wrapper)).toEqual(['pi', 'claude'])
+      await wrapper.findAll('[data-test="chain-up"]')[1]!.trigger('click')
+      expect(items(wrapper)).toEqual(['claude', 'pi'])
+      await chooseOption(wrapper, '[data-test="edit-quota_switch_back"]', 'on')
+      await wrapper.get('form').trigger('submit')
+      expect(wrapper.emitted('save')?.[0]).toEqual([{ quota_switch: ['claude', 'pi'], quota_switch_back: true }])
+    })
+
+    it('offers only harnesses not in the chain and not the project harness', async () => {
+      const wrapper = project({ harness: 'codex', quota_switch: ['pi'] })
+      expect(await selectLabels(wrapper, '[data-test="chain-add"]')).toEqual(['claude'])
+      await wrapper.get('[data-test="chain-down"]').trigger('click')
+      await wrapper.get('[data-test="chain-remove"]').trigger('click')
+      expect(items(wrapper)).toEqual([])
+      expect(await selectLabels(wrapper, '[data-test="chain-add"]')).toEqual(['claude', 'pi'])
+    })
+
+    it('shows an own chain in order and an inherited default', () => {
+      const wrapper = project({ quota_switch: ['pi', 'claude'], quota_switch_back: true })
+      expect(items(wrapper)).toEqual(['pi', 'claude'])
+      expect(wrapper.get('[data-test="value-quota_switch"]').text()).toContain('pi → claude')
+      expect((wrapper.get('[data-test="quota-switch-on"]').element as HTMLInputElement).checked).toBe(true)
+      expect(wrapper.get('[data-test="edit-quota_switch_back"]').text()).toContain('Zapnuto')
+      const fresh = project()
+      expect(fresh.get('[data-test="value-quota_switch"]').text()).toContain('vypnuto')
+      expect(fresh.get('[data-test="value-quota_switch"] [data-test="origin"]').text()).toContain('zděděno · výchozí')
+      expect((fresh.get('[data-test="inherit-quota_switch"]').element as HTMLInputElement).checked).toBe(true)
+      expect(fresh.get('[data-test="edit-quota_switch_back"]').text()).toContain('Zděděno (vypnuto)')
+    })
+
+    it('saves the switch off as an empty chain and inheriting as clear', async () => {
+      const off = project({ quota_switch: ['pi'] })
+      await off.get('[data-test="quota-switch-on"]').setValue(false)
+      expect(off.find('[data-test="quota-chain-item"]').exists()).toBe(false)
+      await off.get('form').trigger('submit')
+      expect(off.emitted('save')?.[0]).toEqual([{ quota_switch: [] }])
+      const inherit = project({ quota_switch: ['pi'] })
+      await inherit.get('[data-test="inherit-quota_switch"]').setValue(true)
+      await inherit.get('form').trigger('submit')
+      expect(inherit.emitted('save')?.[0]).toEqual([{ clear: ['quota_switch'] }])
+    })
+
+    it('does not save the switch on without a harness', async () => {
+      const wrapper = project()
+      await wrapper.get('[data-test="inherit-quota_switch"]').setValue(false)
+      await wrapper.get('[data-test="quota-switch-on"]').setValue(true)
+      expect(wrapper.get('[data-test="chain-hint"]').text()).toBe('vyber aspoň jeden harness')
+      await chooseOption(wrapper, '[data-test="edit-quota_switch_back"]', 'on')
+      expect(wrapper.get('[data-test="settings-save"]').attributes('disabled')).toBeDefined()
+      await chooseOption(wrapper, '[data-test="chain-add"]', 'codex')
+      expect(wrapper.get('[data-test="settings-save"]').attributes('disabled')).toBeUndefined()
+    })
+
+    it('is not shown on a step', () => {
+      const wrapper = panel({}, null, ['workflow', 'quota_switch', 'quota_switch_back'])
+      expect(wrapper.find('[data-setting="quota_switch"]').exists()).toBe(false)
+      expect(wrapper.find('[data-setting="quota_switch_back"]').exists()).toBe(false)
+    })
   })
 })

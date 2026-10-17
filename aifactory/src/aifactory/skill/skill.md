@@ -752,8 +752,11 @@ and after its pull request was merged. The agent's prompts are overridden in
    merges nothing except through `auto_merge` (next point).
    Self-healing (`auto_heal`, inherited like `auto_continue`, default `true`; switch it off
    with `auto_heal: false` or `factory backlog edit ID --auto-heal off`): a chain that goes
-   on acts on a failed run by its `failure_kind`. `quota` continues once on the configured
-   fallback harness (with `auto_heal: false` not even a single run switches),
+   on acts on a failed run by its `failure_kind`. `quota` continues on the project's
+   quota chain (`quota_switch: [HARNESS, ...]`, `quota_switch_back`, project-only, set with
+   `factory backlog edit ID --quota-switch ... --quota-switch-back on|off`; it wins over any
+   `fallback`), else once on the configured fallback harness (with `auto_heal: false` not
+   even a single run switches),
    `process_gone` is retried once, `nothing_to_do` with the agent's reason marks the task
    done without changes and the chain goes on; every other kind stops the chain as before.
    Each action is in `data.chain.events` (`action`: `fallback`, `retry` or `close`, `ok`,

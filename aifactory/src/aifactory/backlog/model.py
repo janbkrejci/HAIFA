@@ -21,13 +21,24 @@ INHERITED_KEYS: tuple[str, ...] = (
     "auto_continue",
     "auto_merge",
     "auto_heal",
+    "quota_switch",
+    "quota_switch_back",
     "assignee",
 )
 # who does a task: an agent run (the default) or a person; a person's task never runs
 ASSIGNEES: tuple[str, ...] = ("agent", "human")
 HUMAN = "human"
 # inherited keys whose value must be ``true`` or ``false``
-FLAG_KEYS: tuple[str, ...] = ("auto_continue", "auto_merge", "auto_heal")
+FLAG_KEYS: tuple[str, ...] = ("auto_continue", "auto_merge", "auto_heal", "quota_switch_back")
+# keys only a project (a top-level container) may set: its harness and the harness chain
+# a run walks when a harness runs out of quota (``run/quota_chain.py``)
+HARNESS_KEYS: tuple[str, ...] = (
+    "harness",
+    "model",
+    "thinking",
+    "quota_switch",
+    "quota_switch_back",
+)
 LIST_FIELDS: tuple[str, ...] = ("depends_on", "related", "writes")
 INDEX_FILE = "index.md"
 

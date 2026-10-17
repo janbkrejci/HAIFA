@@ -32,6 +32,11 @@ the tasks auto-continue never starts (``excluded``). They are operating preferen
 not task content, so they live here and need no backlog commit (``queue_prefs``,
 ``set_queue_order``, ``set_excluded``).
 
+``harness_quota`` holds the harnesses that ran out of quota on this computer and when they
+may have it again (``retry_at``); ``project_harness`` the harness of a project's quota chain
+(``quota_switch``) the project's runs are on now (``run/quota_chain.py``). Both are machine
+state, like the queue preferences, and need no backlog commit.
+
 ``task_runs.retries`` is a JSON list, one item per retry of the run (``factory task retry``,
 ``run.retry``): when it started, the phase it continued from, the operator's note and the
 base it was rebased onto. A retry is another attempt of the same run: ``reclaim`` turns the
@@ -80,6 +85,7 @@ import threading
 import time
 from collections.abc import Iterator, Sequence
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -180,6 +186,17 @@ CREATE TABLE IF NOT EXISTS task_queue (
   excluded INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS harness_quota (
+  harness TEXT PRIMARY KEY,
+  exhausted_at TEXT NOT NULL,
+  retry_at TEXT NOT NULL,
+  message TEXT
+);
+CREATE TABLE IF NOT EXISTS project_harness (
+  project_id TEXT PRIMARY KEY,
+  harness TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
 """
 _PR_COLUMNS = (
     "branch",
@@ -263,6 +280,7 @@ _COLUMNS = (
     "stacked_on",
     "failure_kind",
     "failure_detail",
+    "harness_start",
 )
 # columns added to task_runs after its first release; older DBs get them on open
 # (``pr_body``: the PR body a succeeded run could not send; not part of ``TaskRunRow``)
@@ -277,6 +295,7 @@ _RUN_ADDED_COLUMNS = {
     "stacked_on": "TEXT",
     "failure_kind": "TEXT",
     "failure_detail": "TEXT",
+    "harness_start": "TEXT",
 }
 # who started a run (``task_runs.started_by``)
 STARTED_MANUAL, STARTED_AUTO_CONTINUE, STARTED_AUTO_RESOLVE = (
@@ -324,6 +343,8 @@ class TaskRunRow:
     # of a run that did not succeed: one of ``failure.FAILURE_KINDS``; None: older run
     failure_kind: str | None = None
     failure_detail: str | None = None  # JSON object with the failure's facts
+    # JSON object: the harness switch at the start of a run (``run/quota_chain.py``); None: none
+    harness_start: str | None = None
 
     def retry_list(self) -> list[dict[str, Any]]:
         """One item per retry, oldest first (see the module docstring)."""
@@ -355,6 +376,14 @@ class TaskRunRow:
         except ValueError:
             return {}
         return loaded if isinstance(loaded, dict) else {}
+
+    def harness_start_dict(self) -> dict[str, Any] | None:
+        """The switch the run started with (the project's quota chain); None without one."""
+        try:
+            loaded = json.loads(self.harness_start or "null")
+        except ValueError:
+            return None
+        return loaded if isinstance(loaded, dict) else None
 
     def to_json(self) -> dict[str, object]:
         data: dict[str, object] = dict(asdict(self))
@@ -1269,6 +1298,58 @@ class TaskRunStore:
 
     def _prune_queue(self) -> None:
         self.conn.execute("DELETE FROM task_queue WHERE rank IS NULL AND excluded = 0")
+
+    # ── quota state of the harnesses and the projects' place in their chain ──
+
+    def mark_quota(self, harness: str, message: str | None, retry_at: str) -> None:
+        """Record that `harness` ran out of quota on this computer until `retry_at`."""
+        self.conn.execute(
+            "INSERT OR REPLACE INTO harness_quota (harness, exhausted_at, retry_at, message) "
+            "VALUES (?, ?, ?, ?)",
+            (harness, _now(), retry_at, (message or "")[:500] or None),
+        )
+
+    def clear_quota(self, harness: str) -> None:
+        """`harness` has quota again (a run on it succeeded)."""
+        self.conn.execute("DELETE FROM harness_quota WHERE harness = ?", (harness,))
+
+    def quota_retry_at(self, harness: str) -> str | None:
+        """When `harness` may have quota again; None when it is not known to be out."""
+        row = self.conn.execute(
+            "SELECT retry_at FROM harness_quota WHERE harness = ?", (harness,)
+        ).fetchone()
+        return str(row[0]) if row is not None else None
+
+    def quota_available(self, harness: str, now: datetime | None = None) -> bool:
+        """True unless `harness` ran out of quota and its ``retry_at`` is still ahead."""
+        retry_at = self.quota_retry_at(harness)
+        if retry_at is None:
+            return True
+        try:
+            when = datetime.fromisoformat(retry_at)
+        except ValueError:
+            return True
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        return when <= (now or datetime.now(UTC))
+
+    def project_position(self, project_id: str) -> str | None:
+        """The harness of the project's quota chain it is on now; None: its own harness."""
+        row = self.conn.execute(
+            "SELECT harness FROM project_harness WHERE project_id = ?", (project_id,)
+        ).fetchone()
+        return str(row[0]) if row is not None else None
+
+    def set_project_position(self, project_id: str, harness: str | None) -> None:
+        """Put the project on `harness` of its chain; None: back on its own harness."""
+        if harness is None:
+            self.conn.execute("DELETE FROM project_harness WHERE project_id = ?", (project_id,))
+            return
+        self.conn.execute(
+            "INSERT OR REPLACE INTO project_harness (project_id, harness, updated_at) "
+            "VALUES (?, ?, ?)",
+            (project_id, harness, _now()),
+        )
 
     def close(self) -> None:
         self.conn.close()

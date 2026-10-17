@@ -9,6 +9,8 @@ summaries and the ``context_handoff/`` directory, for an agent whose session is 
 the operator's note. A retry on another harness (``--harness``, the dashboard's
 „Pokračovat s jiným harnessem“, the quota fallback of ``fallback.py``) replaces the run's
 roster override and records the switch (``harness_switch`` in ``task_runs.retries``).
+A retry keeps the run's harness: the project's quota chain returns to a harness whose
+limit is back only when a new run starts (``quota_chain.py``).
 
 What the retry does, in order; any refusal before the claim changes nothing:
 
@@ -323,9 +325,12 @@ def retry_run(
     ``agents_override`` (``harness``, ``model``, ``thinking``) continues on another harness:
     it replaces the roster override the run started with (its note says so from now on)
     and the switch is recorded (``fallback.harness_switch``). `switch` says how it came
-    about: ``{"auto": True, "source": ...}`` for the quota fallback (``fallback.py``).
-    A retry without a switch that fails with ``quota`` continues on the configured
-    fallback once (``fallback.continue_on_fallback``).
+    about: ``{"auto": True, "source": ...}`` for the quota fallback (``fallback.py``),
+    with ``"chain": True`` for a switch of the project's quota chain (``quota_chain.py``).
+    A retry without a switch that fails with ``quota`` continues on the project's chain or
+    the configured fallback (``fallback.continue_on_fallback``); a chain switch that fails
+    with ``quota`` goes on to the chain's next harness, any other switch never switches
+    again.
     """
     from aifactory.harness.settings import effective_override
     from aifactory.run import task as run_mod
@@ -522,14 +527,16 @@ def retry_run(
             provider,
         )
         result.warnings = (*result.warnings, *warnings)
+        run_mod.clear_quota_on_success(store, result, binding, rc)
     finally:
         store.close()
-    if record is not None:
-        return result  # a switch is never followed by another one
+    if record is not None and not (switch or {}).get("chain"):
+        return result  # an operator or fallback switch is never followed by another one
     from aifactory.run.heal import auto_heal_enabled
 
+    # a chain switch (the project's quota_switch) may go on to the chain's next harness
     return continue_on_fallback(
-        main, result, code=code, provider=provider, enabled=auto_heal_enabled(task)
+        main, result, code=code, provider=provider, enabled=auto_heal_enabled(task), task=task
     )
 
 
