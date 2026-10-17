@@ -5,7 +5,7 @@
 // The state lives at module level, so the open thread survives every screen change; the id of
 // the open thread and whether the panel is open are kept for the tab (sessionStorage).
 import { reactive } from 'vue'
-import { ApiError, getApi, getGlobal, postGlobal } from './api'
+import { ApiError, deleteGlobal, getApi, getGlobal, postGlobal } from './api'
 import { errorText } from './format'
 import { GRAPH, NEW_CONTAINER, NEW_STEP, NEW_TASK, type Page, type Screen } from './router'
 
@@ -89,6 +89,11 @@ export function fetchThread(id: string): Promise<ThreadDetail> {
 
 export function createThread(): Promise<ThreadDetail> {
   return postGlobal<ThreadDetail>(THREADS, {})
+}
+
+/** Delete a thread for good (HTTP 409 `busy` while the guide answers in it). */
+export function deleteThreadRequest(id: string): Promise<{ deleted: string }> {
+  return deleteGlobal<{ deleted: string }>(`${THREADS}/${encodeURIComponent(id)}`)
 }
 
 export function sendMessage(id: string, text: string, screen: ScreenContext | null): Promise<SendResult> {
@@ -506,6 +511,8 @@ export const assistant = reactive({
   /** The answer being written: its text so far and the commands the guide ran. */
   streaming: null as Streaming | null,
   error: null as string | null,
+  /** The thread being deleted. */
+  deleting: null as string | null,
 })
 
 let source: EventSource | null = null
@@ -666,6 +673,39 @@ export function newThread(): void {
   remember()
 }
 
+/**
+ * Delete thread `id` for good. It leaves the list; when it is the open thread, the panel
+ * shows a new, empty thread. A failure (e.g. 409 busy) shows in the thread list.
+ */
+export async function deleteThread(id: string): Promise<boolean> {
+  if (assistant.deleting) return false
+  assistant.deleting = id
+  assistant.threadsError = null
+  try {
+    try {
+      await deleteThreadRequest(id)
+    } catch (err) {
+      // deleted meanwhile (another tab): it is gone all the same
+      if (!(err instanceof ApiError && err.code === 'unknown_thread')) throw err
+    }
+    if (assistant.threads) assistant.threads = assistant.threads.filter((t) => t.id !== id)
+    if (assistant.thread?.id === id) {
+      generation++
+      closeStream()
+      assistant.thread = null
+      assistant.streaming = null
+      assistant.error = null
+      remember()
+    }
+    return true
+  } catch (err) {
+    assistant.threadsError = errorText(err)
+    return false
+  } finally {
+    assistant.deleting = null
+  }
+}
+
 export function showThreads(show = true): void {
   assistant.listing = show
   if (show) void loadThreads()
@@ -751,6 +791,7 @@ export function resetAssistantForTests(): void {
     sending: false,
     streaming: null,
     error: null,
+    deleting: null,
   })
   running.clear()
   storage()?.removeItem(STORE_THREAD)

@@ -194,6 +194,8 @@ The guide (``assistant.py``, multi-repository app only) reads, never writes:
 ``GET /api/assistant/threads`` (newest first), ``POST /api/assistant/threads``
 (``{title?}``, HTTP 201; the guide runs on claude only, HTTP 409 ``harness_unavailable``
 without an enabled claude), ``GET /api/assistant/threads/{id}`` (with messages),
+``DELETE /api/assistant/threads/{id}`` (the thread and its folder for good; HTTP 409 ``busy``
+while an answer runs),
 ``POST /api/assistant/threads/{id}/messages`` (``{text, screen?: {repo, task, run}}``,
 HTTP 202, HTTP 409 ``busy`` while an answer runs) and
 ``GET /api/assistant/threads/{id}/stream?after=SEQ`` (Server-Sent Events ``start``,
@@ -2463,6 +2465,15 @@ async def assistant_thread(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data))
 
 
+async def assistant_delete(request: Request) -> JSONResponse:
+    """Delete a thread of the guide for good (409 ``busy`` while it answers)."""
+    try:
+        data = await run_in_threadpool(_assistant(request).delete, request.path_params["thread_id"])
+    except AssistantError as exc:
+        return _assistant_error(exc)
+    return JSONResponse(envelope_ok(data))
+
+
 async def assistant_send(request: Request) -> JSONResponse:
     """Send ``{text, screen?: {repo, task, run}}``; the answer streams on ``/stream``."""
     try:
@@ -2597,6 +2608,7 @@ def create_multi_app(
             Route("/assistant/threads", assistant_threads, methods=["GET"]),
             Route("/assistant/threads", assistant_create, methods=["POST"]),
             Route("/assistant/threads/{thread_id}", assistant_thread, methods=["GET"]),
+            Route("/assistant/threads/{thread_id}", assistant_delete, methods=["DELETE"]),
             Route("/assistant/threads/{thread_id}/messages", assistant_send, methods=["POST"]),
             Route("/assistant/threads/{thread_id}/stream", assistant_stream, methods=["GET"]),
             Route(
