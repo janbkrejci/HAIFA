@@ -1,7 +1,7 @@
 ---
 id: INTENT-S02-T01
 title: "Navazující task: založení s vazbou na hotový task"
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/, docs/decisions.md]
 ---
@@ -21,3 +21,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/91 · náklady $3.76
