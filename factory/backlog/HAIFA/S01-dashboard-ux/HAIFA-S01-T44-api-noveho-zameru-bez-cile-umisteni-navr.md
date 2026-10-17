@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T44
 title: "API Nového záměru bez cíle: umístění navrhne agent"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-S01-T43]
 writes: [aifactory/src/aifactory/web/intent.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_intent.py]
@@ -31,3 +31,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/103 · náklady $1.08

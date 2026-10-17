@@ -1,6 +1,9 @@
 """The Backlog's *Nový záměr* dialog: a proposal from an intent, refined and applied.
 
-One job is one open proposal (``workflow.propose``): the proposer agent runs in a thread,
+One job is one open proposal (``workflow.propose``) for a requested target (a project or a
+step) or, without one, for the place the agent chooses (automatic placement); the job keeps
+its requested ``Target`` for every turn and reports where the latest proposal goes.
+The proposer agent runs in a thread,
 in an isolated clone kept for the job (``advice_dir``), so a refinement (*Upřesni*)
 continues the same agent session with the person's note and the proposal as they edited
 it. ``get`` reports the progress of the current turn from the job's ``events.jsonl``.
@@ -93,13 +96,28 @@ class IntentJob:
         items = [item for item in map(_progress_item, lines) if item is not None]
         return items[-PROGRESS_LIMIT:]
 
+    def placement(self) -> dict[str, Any]:
+        """Where the latest proposal goes (the agent's choice without a requested target);
+        ``{project: null, step: null}`` until there is one."""
+        if self.data is None:
+            return {"project": None, "step": None}
+        project = self.data.get("project") or {}
+        step = self.data.get("step") or {}
+        return {
+            "project": self.data["target"]["project"],
+            "step": self.data["target"]["step"],
+            "new_project": bool(project.get("new")),
+            "new_step": bool(step.get("new")),
+        }
+
     def json(self) -> dict[str, Any]:
         return {
             "job_id": self.id,
             "state": self.state,
             "round": self.round,
             "intent": self.intent,
-            "target": {"project": self.target.project, "step": self.target.step},
+            "target": self.placement(),
+            "requested": {"project": self.target.project, "step": self.target.step},
             "proposal": self.data,
             "error": self.error,
             "issues": self.issues,
@@ -148,8 +166,10 @@ def _target(body: dict[str, Any]) -> Target:
         raise UsageError("project and step must be strings")
     project = (project or "").strip() or None
     step = (step or "").strip() or None
-    if (project is None) == (step is None):
-        raise UsageError("choose either a project (a new step) or a step (new tasks)")
+    if project is not None and step is not None:
+        raise UsageError(
+            "choose a project (a new step), a step (new tasks), or neither (the agent places it)"
+        )
     return Target(project=project, step=step)
 
 
@@ -218,7 +238,7 @@ class IntentManager:
     # ── requests ──────────────────────────────────────────────────────────────
     def start(self, repo: Path, body: dict[str, Any]) -> dict[str, Any]:
         if set(body) - {"intent", "project", "step"}:
-            raise UsageError("expected intent and project or step")
+            raise UsageError("expected intent, and optionally project or step")
         intent = _text(body, "intent", _INTENT_LIMIT)
         target = _target(body)
         repo = repo.resolve()
