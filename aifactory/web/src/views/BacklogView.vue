@@ -3,12 +3,14 @@
 // (form, the step preselected), …/backlog/<task id>, …/backlog/graph/<project or step id> (dependency graph and
 // the Nastavení panel), …/backlog/new-container[/<project id>] (form for a new project or step).
 // …/backlog/new-step selects the parent project before creating a step.
+// …/backlog/intent[/<project or step id>] opens the Nový záměr dialog (a proposal from an intent).
 import { computed, ref, watch } from 'vue'
-import { Plus, RefreshCw } from 'lucide-vue-next'
+import { Lightbulb, Plus, RefreshCw } from 'lucide-vue-next'
 import BackLink from '@/components/ui/BackLink.vue'
 import BacklogFilters from '@/components/backlog/BacklogFilters.vue'
 import BacklogTree from '@/components/backlog/BacklogTree.vue'
 import DependencyGraph from '@/components/backlog/DependencyGraph.vue'
+import IntentDialog from '@/components/backlog/IntentDialog.vue'
 import IssueList from '@/components/backlog/IssueList.vue'
 import KanbanBoard from '@/components/backlog/KanbanBoard.vue'
 import TaskDetail from '@/components/backlog/TaskDetail.vue'
@@ -80,10 +82,12 @@ import { isDbBusyText } from '@/lib/api'
 import {
   GRAPH,
   NEW_CONTAINER,
+  NEW_INTENT,
   NEW_STEP,
   NEW_TASK,
   graphHref,
   here,
+  intentHref,
   newContainerHref,
   newStepHref,
   newTaskHref,
@@ -93,6 +97,7 @@ import {
 } from '@/lib/router'
 import { mergeNames, setLevels, useLevels, useNames } from '@/lib/names'
 import { useBacklogStatus } from '@/lib/backlogStatus'
+import type { Proposal } from '@/lib/intent'
 import { useConfigStatus } from '@/lib/configStatus'
 import { plural } from '@/lib/format'
 import CodeTip from '@/components/ui/CodeTip.vue'
@@ -107,6 +112,9 @@ const isNew = computed(() => target.value === NEW_TASK)
 const isGraph = computed(() => target.value === GRAPH)
 const graphId = computed(() => (isGraph.value ? (params.value[1] ?? null) : null))
 const isNewStep = computed(() => target.value === NEW_STEP)
+const isIntent = computed(() => target.value === NEW_INTENT)
+/** `…/backlog/intent/<id>`: the project or step the dialog preselects. */
+const intentInitial = computed(() => (isIntent.value ? (params.value[1] ?? null) : null))
 const isNewContainer = computed(() => target.value === NEW_CONTAINER || isNewStep.value)
 const selectedProject = ref('')
 /** The project of a new step; null for a new project. */
@@ -118,7 +126,9 @@ const newParent = computed(() =>
 /** `…/backlog/new/<step id>`: the step the new task form preselects. */
 const newTaskStep = computed(() => (isNew.value ? (params.value[1] ?? null) : null))
 const taskId = computed(() =>
-  target.value && !isNew.value && !isGraph.value && !isNewContainer.value ? target.value : null,
+  target.value && !isNew.value && !isGraph.value && !isNewContainer.value && !isIntent.value
+    ? target.value
+    : null,
 )
 
 const data = ref<BacklogData | null>(null)
@@ -635,6 +645,13 @@ function cancelNew() {
   window.location.hash = here('backlog')
 }
 
+/** Nový záměr wrote and committed the proposal: show its step. */
+async function onIntentApplied(result: Proposal) {
+  void backlogStatus.refresh()
+  await loadList()
+  window.location.hash = graphHref(result.step.id)
+}
+
 watch(
   routeKey,
   (next, previous) => {
@@ -684,6 +701,14 @@ watch(
         >
           <Plus :size="16" /> Nový {{ levelNoun(graphChildLevel) }}
         </a>
+        <a
+          v-if="!isIntent"
+          :href="intentHref(isGraph ? graphId : null)"
+          class="button"
+          data-test="new-intent"
+        >
+          <Lightbulb :size="16" /> Nový záměr
+        </a>
         <a v-if="!isNew" :href="newTaskHref(graphStep)" class="button" data-test="new-task">
           <Plus :size="16" /> Nový {{ levelNoun(level.task.value) }}
         </a>
@@ -699,7 +724,19 @@ watch(
       </button>
     </p>
 
-    <template v-if="isNew">
+    <template v-if="isIntent">
+      <IntentDialog
+        v-if="data"
+        :projects="projects"
+        :steps="steps"
+        :allow-projects="!!listChildLevel"
+        :initial="intentInitial"
+        @applied="onIntentApplied"
+        @cancel="cancelNew"
+      />
+      <p v-else-if="loading" class="faint" data-test="intent-loading">Načítám…</p>
+    </template>
+    <template v-else-if="isNew">
       <TaskForm
         v-if="newTaskReady"
         mode="add"

@@ -12,6 +12,11 @@ invalid one fails with ``proposal_invalid`` and nothing is written. The other fi
 ``propose_check`` (writes) go back to the agent in the same single correction; those left
 after it are returned in ``findings`` and shown in the preview. Only ``apply=True`` writes,
 and never commits.
+
+The dashboard (``web.intent``) keeps a proposal open: ``run_proposer`` with a ``workdir``
+keeps the isolated clone (the agent's conversation is bound to its directory) and a
+``Refinement`` continues the same agent session with the person's note and the proposal as
+they edited it (``edited``: tasks removed, titles and bodies changed).
 """
 
 from __future__ import annotations
@@ -19,6 +24,8 @@ from __future__ import annotations
 import json
 import secrets
 import subprocess
+from collections.abc import Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -308,16 +315,80 @@ def _message(issue: Issue) -> str:
     return f"{issue.code}: {issue.message}{where}"
 
 
-def propose(
-    repo: Path, intent: str, target: Target, *, apply: bool = False, job_id: str | None = None
-) -> dict[str, Any]:
-    """Run the proposer, validate (one correction), and return the proposal as JSON data."""
-    payload = context(repo, intent, target)
-    catalog = workflow_catalog(repo)
-    job_id = job_id or f"propose-{secrets.token_hex(4)}"
-    rc = load_run_config(repo)
-    with advice_dir() as tmp:
-        isolated = tmp / "repo"
+@dataclass
+class Refinement:
+    """A note of the person on ``proposal`` (the proposal as they have it now)."""
+
+    note: str
+    proposal: BacklogProposalOutput
+
+
+def refinement_prompt(intent: str, target: Target, refinement: Refinement) -> str:
+    """The continuation turn: the note and the current proposal, in the same session."""
+    if not refinement.note.strip():
+        raise TaskEditError("invalid_value", "the note must not be empty")
+    where = (
+        {"kind": "existing_step", "step": target.step}
+        if target.step
+        else {"kind": "new_step", "project": target.project}
+    )
+    current = refinement.proposal.model_dump(mode="json")
+    return "\n".join(
+        [
+            "## Continuation",
+            "",
+            "The person reviewed your proposal and asks for a change. The context of the "
+            "first message (backlog, workflow catalog, output_schema) still applies.",
+            "",
+            f"Intent: {intent.strip()}",
+            f"Target: {json.dumps(where)}",
+            "",
+            "Their note:",
+            "",
+            refinement.note.strip(),
+            "",
+            "The proposal as they have it now. They may have removed tasks or edited titles "
+            "and bodies; keep their edits unless the note asks otherwise:",
+            "",
+            json.dumps(current, ensure_ascii=False, indent=2),
+            "",
+            "Answer with the whole revised proposal: ONLY the JSON object matching "
+            "BacklogProposalOutput.",
+        ]
+    )
+
+
+def edited(
+    proposal: BacklogProposalOutput, target: Target, tasks: Sequence[dict[str, Any]]
+) -> BacklogProposalOutput:
+    """``proposal`` with only the tasks in ``tasks`` (by ``code``, in their order) and their
+    edited ``title`` and ``body``. Dependencies on a removed task of the proposal go too."""
+    by_code = {t.code.strip(): t for t in proposal.tasks}
+    kept: list[ProposedTask] = []
+    for item in tasks:
+        code = item.get("code") if isinstance(item, dict) else None
+        if not isinstance(code, str) or code.strip() not in by_code:
+            raise TaskEditError("invalid_value", f"unknown task code {code!r} of the proposal")
+        changes = {k: item[k] for k in ("title", "body") if isinstance(item.get(k), str)}
+        kept.append(by_code[code.strip()].model_copy(update=changes))
+    if not kept:
+        raise TaskEditError("invalid_value", "the proposal needs at least one task")
+    removed = set(by_code) - {t.code.strip() for t in kept}
+    step_id = _step_id(proposal, target)
+    gone = removed | ({f"{step_id}-{code}" for code in removed} if step_id else set())
+    data = proposal.model_dump()
+    data["tasks"] = [
+        {**t.model_dump(), "depends_on": [d for d in t.depends_on if d.strip() not in gone]}
+        for t in kept
+    ]
+    return BacklogProposalOutput.model_validate(data)
+
+
+@contextmanager
+def _isolated(repo: Path, commit: str, workdir: Path | None) -> Iterator[Path]:
+    """The clone the agent works in: temporary, or kept in ``workdir`` between turns."""
+
+    def clone(isolated: Path) -> None:
         # --shared borrows the objects; the clone lives only for this proposal.
         subprocess.run(
             ["git", "clone", "--quiet", "--no-checkout", "--shared", str(repo), str(isolated)],
@@ -333,11 +404,54 @@ def propose(
                 "checkout",
                 "--quiet",
                 "--detach",
-                rc.commit,
+                commit,
             ],
             check=True,
             capture_output=True,
         )
+
+    if workdir is not None:
+        isolated = workdir / "repo"
+        if not (isolated / ".git").exists():
+            clone(isolated)
+        yield isolated
+        return
+    with advice_dir() as tmp:
+        isolated = tmp / "repo"
+        clone(isolated)
+        yield isolated
+
+
+def propose(
+    repo: Path, intent: str, target: Target, *, apply: bool = False, job_id: str | None = None
+) -> dict[str, Any]:
+    """Run the proposer, validate (one correction), and return the proposal as JSON data."""
+    proposal, result, remaining = run_proposer(repo, intent, target, apply=apply, job_id=job_id)
+    return to_json(proposal, result, target, remaining)
+
+
+def run_proposer(
+    repo: Path,
+    intent: str,
+    target: Target,
+    *,
+    apply: bool = False,
+    job_id: str | None = None,
+    workdir: Path | None = None,
+    refinement: Refinement | None = None,
+) -> tuple[BacklogProposalOutput, core.BatchResult, list[Finding]]:
+    """One turn of the proposer: the first proposal, or a ``refinement`` of it in the same
+    session (``job_id`` and ``workdir`` of the first turn)."""
+    payload = context(repo, intent, target)
+    prompt = (
+        refinement_prompt(intent, target, refinement)
+        if refinement is not None
+        else json.dumps(payload, ensure_ascii=False, indent=2)
+    )
+    catalog = workflow_catalog(repo)
+    job_id = job_id or f"propose-{secrets.token_hex(4)}"
+    rc = load_run_config(repo)
+    with _isolated(repo, rc.commit, workdir) as isolated:
         runtime = repo / ".factory/data/backlog-propose" / job_id
         runtime.mkdir(parents=True, exist_ok=True)
         cfg = prepare_cfg(repo, rc, runtime / "prompts")
@@ -417,7 +531,7 @@ def propose(
                 ) as ph:
                     envelope = ph.call(
                         AgentCall(
-                            prompt=json.dumps(payload, ensure_ascii=False, indent=2),
+                            prompt=prompt,
                             output_type=BacklogProposalOutput,
                             gates=[proposal_valid],
                         )
@@ -436,7 +550,7 @@ def propose(
             proposal = BacklogProposalOutput.model_validate(envelope.model_dump())
             result = plan(repo, proposal, target, catalog, write=True) if apply else accepted[0]
             ok = True
-            return to_json(proposal, result, target, remaining)
+            return proposal, result, list(remaining)
         finally:
             try:
                 tracer.session_finish(job_id, ok=ok)
@@ -469,6 +583,7 @@ def to_json(
         "tasks": [
             {
                 "id": t.id,
+                "code": t.id[len(step_id) + 1 :] if step_id else t.id,
                 "title": t.title,
                 "body": t.body,
                 "workflow": t.workflow,
