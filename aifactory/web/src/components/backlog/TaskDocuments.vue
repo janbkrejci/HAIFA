@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Task card with tabs: the rendered task body (Zadání, shown first) and the read-only
-// markdown documents (backlog item, spec and doc). The tabs are the card's only label. The server finds the documents by the
+// markdown documents (backlog item, spec and doc). The tabs are the card's only label; every
+// tab shows rendered markdown only, without a source view. The server finds the documents by the
 // task id; a missing one is listed but cannot be opened.
 import { computed, ref, watch } from 'vue'
 import { documentMarkdown, fetchTaskDocuments, type TaskDocument } from '@/lib/backlog'
@@ -91,7 +92,7 @@ function tip(doc: TaskDocument): string {
       <p v-if="current.content == null" class="faint" data-test="doc-problem">
         Obsah nejde zobrazit{{ current.problem ? `: ${current.problem}` : '' }}.
       </p>
-      <MarkdownView v-else :source="source" empty="Dokument je prázdný." data-test="doc-content" />
+      <MarkdownView v-else :source="source" empty="Dokument je prázdný." preview-only data-test="doc-content" />
     </div>
   </section>
 </template>

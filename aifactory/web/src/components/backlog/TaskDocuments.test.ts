@@ -83,6 +83,23 @@ describe('TaskDocuments', () => {
     wrapper.unmount()
   })
 
+  it('renders backlog item, spec and doc without preview and source tabs', async () => {
+    api.getApi.mockResolvedValue({
+      task_id: 'T1',
+      documents: [doc('backlog', BACKLOG), doc('spec', '# Plán'), doc('doc', '# Popis')],
+    })
+    const wrapper = mount(TaskDocuments, { props: { taskId: 'T1', body: '## Cíl' } })
+    await flushPromises()
+    for (const kind of ['backlog', 'spec', 'doc']) {
+      await wrapper.get(`[data-test="doc-${kind}"]`).trigger('click')
+      expect(wrapper.find('[data-test="md-preview"]').exists()).toBe(true)
+      expect(wrapper.find('[data-test="md-tab-source"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="md-tab-preview"]').exists()).toBe(false)
+      expect(wrapper.find('[data-test="md-source"]').exists()).toBe(false)
+    }
+    wrapper.unmount()
+  })
+
   it('marks a missing spec and doc and does not open them', async () => {
     api.getApi.mockResolvedValue({
       task_id: 'T1',
