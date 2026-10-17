@@ -65,6 +65,7 @@ from aifactory.providers import git as provider_git
 from aifactory.run import basemoves, followups, gitops
 from aifactory.run.accept import accept_failure
 from aifactory.run.errors import TaskRunError
+from aifactory.run.follows import FollowedTask, followed_section, followed_task
 from aifactory.run.followups import FollowUpOutcome
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.pause import PauseGate
@@ -149,30 +150,19 @@ class TaskRunResult:
 # ── prompt, workflow, config ─────────────────────────────────────────────────
 
 
-def followed_task(
-    backlog: Backlog, task: Task, settings: ProjectSettings
-) -> tuple[Task, OutputPaths] | None:
-    """The task `task` follows (``follows``) with its spec and doc paths, if it exists."""
-    if task.follows is None:
-        return None
-    node = backlog.by_id.get(task.follows)
-    if not isinstance(node, Task):
-        return None
-    return node, output_paths(node, settings)
-
-
 def task_prompt(
     task: Task,
     scope: TaskScope,
     outputs: OutputPaths,
     worktree: Path,
     note: str | None,
-    follows: tuple[Task, OutputPaths] | None = None,
+    follows: FollowedTask | None = None,
 ) -> str:
-    """Task header, then the task text, then the operator's note.
+    """Task header, then the task text, then the original task, then the operator's note.
 
     The only absolute path is the worktree; every other path is relative to it.
-    `follows` is the done task this one continues (``followed_task``).
+    `follows` is the done task this one continues (``followed_task``); its section
+    (``followed_section``) comes after the task text.
     """
     lines = [f"# Task {task.id}: {task.title}", "", f"- id: {task.id}", f"- title: {task.title}"]
     for container in reversed(ancestors(task)):
@@ -188,16 +178,18 @@ def task_prompt(
         "including any file outside the working directory, is reverted and fails the phase.",
     ]
     if follows is not None:
-        origin, origin_outputs = follows
+        origin, origin_outputs = follows.task, follows.outputs
         lines.append(
-            f"- follows: {origin.id} — {origin.title} (done; this task continues it, read its "
-            f"task file {origin.path}, spec {origin_outputs.spec} and documentation "
-            f"{origin_outputs.doc} first)"
+            f"- follows: {origin.id} — {origin.title} (done; this task continues it, see "
+            f"the section about {origin.id} below and read its files first: task file "
+            f"{origin.path}, spec {origin_outputs.spec}, documentation {origin_outputs.doc})"
         )
     text = "\n".join(lines) + "\n"
     body = task.body.strip()
     if body:
         text += f"\n{body}\n"
+    if follows is not None:
+        text += "\n" + followed_section(follows)
     if note and note.strip():
         text += f"\n## Note\n{note.strip()}\n"
     return text
@@ -645,9 +637,10 @@ def run_task(
                 task, worktree, rc.base, resolve_onto, tuple(g.path for g in generated)
             )
         else:
-            prompt = task_prompt(
-                task, scope, outputs, worktree, note, followed_task(backlog, task, settings)
+            followed = followed_task(
+                backlog, task, settings, main=main, commit=rc.commit, store=store
             )
+            prompt = task_prompt(task, scope, outputs, worktree, note, followed)
             if workdir != ".":
                 prompt += (
                     f"\nAgent working directory: {worktree / workdir}. "

@@ -53,6 +53,7 @@ from aifactory.providers import GitProvider, ProviderError, get_provider
 from aifactory.providers import git as provider_git
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
+from aifactory.run.follows import followed_task
 from aifactory.run.resolve import (
     CI_FIX_WORKFLOW,
     INTERNAL_WORKFLOWS,
@@ -454,7 +455,7 @@ def retry_run(
             outputs,
             worktree,
             run_note,
-            run_mod.followed_task(backlog, task, settings),
+            followed_task(backlog, task, settings, main=main, commit=rc.commit, store=store),
         )
         if workdir != ".":
             prompt += (

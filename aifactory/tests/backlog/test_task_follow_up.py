@@ -120,8 +120,9 @@ def test_follows_must_reference_a_task(tmp_path: Path) -> None:
 
 def test_prompt_names_the_followed_task(tmp_path: Path, capsys: Capsys) -> None:
     from aifactory.backlog import Task
+    from aifactory.run.follows import followed_task
     from aifactory.run.scope import output_paths, task_scope
-    from aifactory.run.task import followed_task, task_prompt
+    from aifactory.run.task import task_prompt
 
     root = sample_repo(tmp_path)
     args = ["task", "follow-up", "M01-S01-T01", "--body", "Dál.", "--json", *_repo(root)]
@@ -134,7 +135,7 @@ def test_prompt_names_the_followed_task(tmp_path: Path, capsys: Capsys) -> None:
     origin = followed_task(backlog, task, backlog.settings)
     assert origin is not None
     prompt = task_prompt(task, task_scope(task, outputs), outputs, root, None, origin)
-    spec = output_paths(origin[0], backlog.settings).spec
+    spec = output_paths(origin.task, backlog.settings).spec
     assert "- follows: M01-S01-T01 — Schema (done;" in prompt
     assert T01 in prompt and spec in prompt
     original = backlog.by_id["M01-S01-T01"]
