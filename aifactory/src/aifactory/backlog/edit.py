@@ -691,11 +691,32 @@ def find_container(
     return container
 
 
-def _local_code(container_id: str, parent: Container | None) -> str:
+def _local_code(container_id: str, parent_id: str | None) -> str:
     """The directory code: a step ``M01-S03`` of project ``M01`` lives in ``S03-<slug>``."""
-    if parent is not None and parent.id and container_id.startswith(f"{parent.id}-"):
-        return container_id[len(parent.id) + 1 :]
+    if parent_id and container_id.startswith(f"{parent_id}-"):
+        return container_id[len(parent_id) + 1 :]
     return container_id
+
+
+def _container_dir(
+    backlog: Backlog,
+    container_id: str,
+    title: str,
+    parent_id: str | None = None,
+    parent_path: str | None = None,
+) -> str:
+    """The directory of a new container: ``<parent>/<code>-<slug>``.
+
+    A project (``parent_path`` is ``None``) goes to the first backlog root.
+    """
+    slug = slugify(title)
+    code = _local_code(container_id, parent_id)
+    name = f"{code}-{slug}" if slug else code
+    if parent_path is None:
+        if not backlog.roots:  # pragma: no cover - load_for_edit needs a root
+            raise TaskEditError("missing_backlog_dir", "no backlog directory exists")
+        parent_path = backlog.roots[0]
+    return f"{parent_path}/{name}"
 
 
 def _container_result(
@@ -740,16 +761,11 @@ def add_container(
                 id=parent,
             )
     level = levels[0] if parent_node is None else levels[_container_depth(backlog, parent_node) + 1]
-    slug = slugify(title)
-    code = _local_code(container_id, parent_node)
-    name = f"{code}-{slug}" if slug else code
-    if parent_node is not None:
-        base = parent_node.path
-    else:
-        if not backlog.roots:  # pragma: no cover - load_for_edit needs a root
-            raise TaskEditError("missing_backlog_dir", "no backlog directory exists")
-        base = backlog.roots[0]
-    rel_dir = f"{base}/{name}"
+    rel_dir = (
+        _container_dir(backlog, container_id, title)
+        if parent_node is None
+        else _container_dir(backlog, container_id, title, parent_node.id, parent_node.path)
+    )
     rel = f"{rel_dir}/{INDEX_FILE}"
     if container_id in backlog.by_id:
         other = backlog.by_id[container_id]
@@ -912,7 +928,11 @@ class BatchTask:
 
 @dataclass
 class BatchResult:
-    """A planned (``written`` False) or written batch of one step and its new tasks."""
+    """A planned (``written`` False) or written batch of one step and its new tasks.
+
+    The ``project_*`` fields describe the step's project (new or existing); they are
+    empty in a backlog without a project level.
+    """
 
     step_id: str
     step_title: str
@@ -922,6 +942,32 @@ class BatchResult:
     tasks: list[BatchTask]
     files: list[str]
     written: bool
+    project_id: str = ""
+    project_title: str = ""
+    project_body: str = ""
+    project_path: str = ""
+    new_project: bool = False
+
+
+def _new_container_problems(
+    root: Path, backlog: Backlog, container_id: str, title: str, rel_dir: str, level: str
+) -> list[Issue]:
+    """Problems of a new container of a batch: empty title, taken id, existing directory."""
+    problems: list[Issue] = []
+    if not title:
+        problems.append(Issue("invalid_value", f"{level} title must not be empty", ""))
+    if container_id in backlog.by_id:
+        where = node_file(backlog.by_id[container_id])
+        problems.append(
+            Issue(
+                "duplicate_id", f"id '{container_id}' exists already ({where})", where, container_id
+            )
+        )
+    if (root / rel_dir).exists():
+        problems.append(
+            Issue("file_exists", f"directory '{rel_dir}' exists already", rel_dir, container_id)
+        )
+    return problems
 
 
 def add_batch(
@@ -933,22 +979,33 @@ def add_batch(
     step_code: str | None = None,
     step_title: str | None = None,
     step_body: str = "",
+    project_code: str | None = None,
+    project_title: str | None = None,
+    project_body: str = "",
     write: bool = False,
 ) -> BatchResult:
-    """Add ``tasks`` to the existing ``step``, or to a new step ``step_code`` of ``project``.
+    """Add ``tasks`` to the existing ``step``, to a new step ``step_code`` of ``project``,
+    or to a new step ``step_code`` of a new project ``project_code``.
 
     Every problem is collected first and raised together as ``backlog_invalid`` (codes as
     in ``factory backlog check`` plus ``invalid_id``, ``invalid_value``, ``self_ref``,
     ``duplicate_id``, ``file_exists``); then the whole batch is validated on a copy of the
     backlog like ``add_task``. Without ``write`` nothing is written; nothing is committed.
     """
-    if (step is None) == (project is None):
+    if project_code is not None:
+        if step is not None or project is not None:
+            raise TaskEditError(
+                "conflicting_options", "a new project excludes an existing step or project"
+            )
+    elif (step is None) == (project is None):
         raise TaskEditError("conflicting_options", "give either a step or a project")
     backlog = load_for_edit(root)
     baseline = check_backlog(backlog)
     levels = backlog.settings.levels
     problems: list[Issue] = []
-    new_step = project is not None
+    new_step = step is None
+    new_project = project_code is not None
+    project_id = p_title = p_body = p_dir = ""
     if step is not None:
         container = _find_step(backlog, step)
         step_id = container.id or step
@@ -956,30 +1013,40 @@ def add_batch(
         body = container.body
         rel_dir = container.path
         existing = {t.id for t in container.tasks}
+        holder = container.parent
+        if holder is not None:
+            project_id = holder.id or ""
+            p_title, p_body, p_dir = holder.title or "", holder.body.strip(), holder.path
     else:
-        assert project is not None
-        parent = find_container(backlog, project, baseline)
-        if _container_depth(backlog, parent) != len(levels) - 3:
-            raise TaskEditError(
-                "invalid_value", f"'{project}' does not hold {levels[-2]}s", id=project
+        if project_code is not None:
+            if len(levels) != 3:
+                raise TaskEditError(
+                    "invalid_value",
+                    f"a new {levels[0]} needs the levels project, step, task "
+                    f"(this backlog has {', '.join(levels)})",
+                    id=project_code,
+                )
+            project_id = compose_id(None, project_code)
+            p_title = (project_title or "").strip()
+            p_body = project_body.strip()
+            p_dir = _container_dir(backlog, project_id, p_title)
+            problems += _new_container_problems(
+                root, backlog, project_id, p_title, p_dir, levels[0]
             )
-        step_id = compose_id(parent.id, step_code or "")
+        else:
+            assert project is not None
+            parent = find_container(backlog, project, baseline)
+            if _container_depth(backlog, parent) != len(levels) - 3:
+                raise TaskEditError(
+                    "invalid_value", f"'{project}' does not hold {levels[-2]}s", id=project
+                )
+            project_id = parent.id or ""
+            p_title, p_body, p_dir = parent.title or "", parent.body.strip(), parent.path
+        step_id = compose_id(project_id, step_code or "")
         title = (step_title or "").strip()
         body = step_body
-        if not title:
-            problems.append(Issue("invalid_value", f"{levels[-2]} title must not be empty", ""))
-        if step_id in backlog.by_id:
-            where = node_file(backlog.by_id[step_id])
-            problems.append(
-                Issue("duplicate_id", f"id '{step_id}' exists already ({where})", where, step_id)
-            )
-        slug = slugify(title)
-        code = _local_code(step_id, parent)
-        rel_dir = f"{parent.path}/{code}-{slug}" if slug else f"{parent.path}/{code}"
-        if (root / rel_dir).exists():
-            problems.append(
-                Issue("file_exists", f"directory '{rel_dir}' exists already", rel_dir, step_id)
-            )
+        rel_dir = _container_dir(backlog, step_id, title, project_id, p_dir)
+        problems += _new_container_problems(root, backlog, step_id, title, rel_dir, levels[-2])
         existing = set()
     ids: dict[str, str] = {}
     for task in tasks:
@@ -996,6 +1063,8 @@ def add_batch(
         ids.setdefault(task_id, task_id)
     planned: list[BatchTask] = []
     changes: dict[str, str] = {}
+    if new_project:
+        changes[f"{p_dir}/{INDEX_FILE}"] = new_index_text(project_id, p_title, project_body)
     if new_step:
         changes[f"{rel_dir}/{INDEX_FILE}"] = new_index_text(step_id, title, body)
     for task in tasks:
@@ -1057,4 +1126,9 @@ def add_batch(
         tasks=planned,
         files=list(changes),
         written=write,
+        project_id=project_id,
+        project_title=p_title,
+        project_body=p_body,
+        project_path=p_dir,
+        new_project=new_project,
     )
