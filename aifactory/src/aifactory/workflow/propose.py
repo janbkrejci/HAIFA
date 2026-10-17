@@ -4,14 +4,16 @@ The agent ``proposer`` (library seed; its prompts are overridden in
 ``.factory/prompts/proposer/``) works like workflow advice (``workflow.adaptive``): in an
 isolated clone checked out at the base commit, with no writes. It returns a typed
 ``BacklogProposalOutput``: a new step of the project ``--project`` with its tasks, or new
-tasks of the existing step ``--step``. The proposal is validated against the backlog of the
-working tree like ``factory task add`` (``backlog.add_batch``) plus the workflow catalog and
-the blocking rules of ``propose_check`` (``Hotovo znamená``, no dependency cycle). An invalid
-proposal goes back to the agent once (a gate correction in the same session); a second
-invalid one fails with ``proposal_invalid`` and nothing is written. The other findings of
-``propose_check`` (writes) go back to the agent in the same single correction; those left
-after it are returned in ``findings`` and shown in the preview. Only ``apply=True`` writes,
-and never commits.
+tasks of the existing step ``--step``. Without either (``Target()``, automatic placement)
+the agent also chooses where the tasks go: an existing step, a new step of an existing
+project, or a new project with a new step; ``resolve`` turns its answer into the placement.
+The proposal is validated against the backlog of the working tree like ``factory task add``
+(``backlog.add_batch``) plus the workflow catalog and the blocking rules of ``propose_check``
+(``Hotovo znamená``, no dependency cycle). An invalid proposal goes back to the agent once (a
+gate correction in the same session); a second invalid one fails with ``proposal_invalid``
+and nothing is written. The other findings of ``propose_check`` (writes) go back to the
+agent in the same single correction; those left after it are returned in ``findings`` and
+shown in the preview. Only ``apply=True`` writes, and never commits.
 
 The dashboard (``web.intent``) keeps a proposal open: ``run_proposer`` with a ``workdir``
 keeps the isolated clone (the agent's conversation is bound to its directory) and a
@@ -67,6 +69,13 @@ class ProposedStep(BaseModel):
     body: str = Field(default="", max_length=20_000, description="goal of the step")
 
 
+class ProposedProject(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=1, max_length=40, description="short code, e.g. P02")
+    title: str = Field(min_length=1, max_length=200)
+    body: str = Field(default="", max_length=20_000, description="goal of the project")
+
+
 class ProposedTask(BaseModel):
     model_config = ConfigDict(extra="forbid")
     code: str = Field(min_length=1, max_length=40, description="short code, e.g. T01")
@@ -87,17 +96,87 @@ class ProposedTask(BaseModel):
 class BacklogProposalOutput(EnvelopeBase):
     model_config = ConfigDict(extra="forbid")
     step: ProposedStep | None = Field(
-        default=None, description="the new step (target is a project); null for a step"
+        default=None,
+        description="the new step (target is a project, or auto placement in a new step); "
+        "null for an existing step",
     )
     tasks: list[ProposedTask] = Field(min_length=1, max_length=50)
+    project: ProposedProject | None = Field(
+        default=None,
+        description="auto placement only: the new project of the new step; null otherwise",
+    )
+    existing_project: str | None = Field(
+        default=None,
+        description="auto placement only: id of the existing project of the new step",
+    )
+    existing_step: str | None = Field(
+        default=None,
+        description="auto placement only: id of the existing step the tasks go to",
+    )
+    placement_reason: str = Field(
+        default="",
+        max_length=1000,
+        description="auto placement only: one sentence why the tasks go there",
+    )
 
 
 @dataclass
 class Target:
-    """Where the proposal goes: a new step of ``project``, or the existing ``step``."""
+    """Where the proposal goes: a new step of ``project``, the existing ``step``, or, with
+    neither, wherever the agent places it (``auto``)."""
 
     project: str | None = None
     step: str | None = None
+
+    @property
+    def auto(self) -> bool:
+        return self.project is None and self.step is None
+
+
+@dataclass(frozen=True)
+class Placement:
+    """The real place of a proposal: the existing ``step``, or a new step ``new_step`` of the
+    existing ``project`` or of the new project ``new_project``."""
+
+    step: str | None = None
+    project: str | None = None
+    new_step: ProposedStep | None = None
+    new_project: ProposedProject | None = None
+
+    @property
+    def project_id(self) -> str | None:
+        if self.project is not None:
+            return self.project
+        if self.new_project is not None:
+            return self.new_project.code.strip()
+        return None
+
+    @property
+    def step_id(self) -> str | None:
+        if self.step is not None:
+            return self.step
+        if self.new_step is None:
+            return None
+        code = self.new_step.code.strip()
+        project = self.project_id
+        if project and code.startswith(f"{project}-"):
+            return code
+        return f"{project}-{code}" if project else code
+
+
+def resolve(proposal: BacklogProposalOutput, target: Target) -> Placement:
+    """Where ``proposal`` goes: the target of ``--project``/``--step``, or the agent's choice
+    in automatic placement. An inconsistent choice resolves as far as it can; ``plan``
+    reports it."""
+    if target.step is not None:
+        return Placement(step=target.step)
+    if target.project is not None:
+        return Placement(project=target.project, new_step=proposal.step)
+    if proposal.existing_step is not None:
+        return Placement(step=proposal.existing_step.strip())
+    if proposal.existing_project is not None:
+        return Placement(project=proposal.existing_project.strip(), new_step=proposal.step)
+    return Placement(new_step=proposal.step, new_project=proposal.project)
 
 
 def workflow_catalog(repo: Path) -> dict[str, dict[str, Any]]:
@@ -111,8 +190,10 @@ def workflow_catalog(repo: Path) -> dict[str, dict[str, Any]]:
 
 
 def _check_target(backlog: core.Backlog, target: Target) -> None:
-    if (target.project is None) == (target.step is None):
-        raise TaskEditError("conflicting_options", "give either --project or --step")
+    if target.project is not None and target.step is not None:
+        raise TaskEditError("conflicting_options", "give either --project or --step, not both")
+    if target.auto:
+        return
     levels = backlog.settings.levels
     if target.step is not None:
         node = backlog.by_id.get(target.step)
@@ -126,6 +207,70 @@ def _check_target(backlog: core.Backlog, target: Target) -> None:
             )
 
 
+def _is_step(backlog: core.Backlog, node_id: str) -> bool:
+    node = backlog.by_id.get(node_id)
+    return isinstance(node, core.Container) and node.level == backlog.settings.levels[-2]
+
+
+def _is_project(backlog: core.Backlog, node_id: str) -> bool:
+    levels = backlog.settings.levels
+    node = backlog.by_id.get(node_id)
+    return isinstance(node, core.Container) and levels.index(node.level) == len(levels) - 3
+
+
+def placement_problems(
+    backlog: core.Backlog, proposal: BacklogProposalOutput, target: Target
+) -> list[Issue]:
+    """What is wrong with the placement fields of ``proposal`` for ``target``."""
+    if not target.auto:
+        given = [
+            name
+            for name in ("project", "existing_project", "existing_step")
+            if getattr(proposal, name) is not None
+        ]
+        return [
+            Issue("invalid_value", f"{name} must be null with --project or --step", "")
+            for name in given
+        ]
+    levels = backlog.settings.levels
+    problems: list[Issue] = []
+
+    def bad(code: str, message: str, node_id: str | None = None) -> None:
+        problems.append(Issue(code, message, "", node_id))
+
+    if (proposal.existing_step is None) == (proposal.step is None):
+        bad("invalid_value", "give exactly one of existing_step and step")
+        return problems
+    if proposal.existing_step is not None:
+        step = proposal.existing_step.strip()
+        if not _is_step(backlog, step):
+            bad("unknown_step", f"unknown {levels[-2]} '{step}'", step)
+        if proposal.project is not None or proposal.existing_project is not None:
+            bad("invalid_value", "project and existing_project must be null with existing_step")
+        return problems
+    if len(levels) < 3:
+        bad(
+            "invalid_value",
+            f"this backlog has no {levels[0]} level above its {levels[-2]}s "
+            f"(levels {', '.join(levels)}); choose an existing_step",
+        )
+        return problems
+    if (proposal.existing_project is None) == (proposal.project is None):
+        bad("invalid_value", "a new step needs exactly one of existing_project and project")
+        return problems
+    if proposal.existing_project is not None:
+        project = proposal.existing_project.strip()
+        if not _is_project(backlog, project):
+            bad("unknown_container", f"no container of {levels[-2]}s '{project}'", project)
+    elif len(levels) != 3:
+        bad(
+            "invalid_value",
+            f"a new {levels[0]} needs the levels project, step, task "
+            f"(this backlog has {', '.join(levels)}); choose an existing_project",
+        )
+    return problems
+
+
 def _clip(text: str) -> str:
     return text if len(text) <= _BODY_LIMIT else text[:_BODY_LIMIT] + "\n[truncated]"
 
@@ -136,8 +281,6 @@ def context(repo: Path, intent: str, target: Target) -> dict[str, Any]:
         raise TaskEditError("invalid_value", "the intent must not be empty")
     backlog = core.load_for_edit(repo)
     _check_target(backlog, target)
-    focus = backlog.by_id[target.step or target.project or ""]
-    assert isinstance(focus, core.Container)
     tasks = [
         {
             "id": t.id,
@@ -152,37 +295,56 @@ def context(repo: Path, intent: str, target: Target) -> dict[str, Any]:
         {"id": c.id, "title": c.title, "level": c.level, "path": c.path}
         for c in core.iter_containers(backlog.containers)
     ]
-    focus_tasks = [
-        {"id": t.id, "title": t.title, "path": t.path, "body": _clip(t.body)}
-        for c in [focus, *core.iter_containers(focus.children)]
-        for t in c.tasks
-    ]
     catalog = {
         name: {"description": (data or {}).get("description", "")}
         for name, data in sorted(workflow_catalog(repo).items())
     }
     payload: dict[str, Any] = {
         "intent": intent.strip(),
-        "target": (
-            {"kind": "existing_step", "step": focus.id}
-            if target.step
-            else {"kind": "new_step", "project": focus.id}
-        ),
-        "target_container": {
-            "id": focus.id,
-            "title": focus.title,
-            "path": focus.path,
-            "body": _clip(focus.body),
-            "defaults": focus.defaults,
-            "tasks": focus_tasks,
-        },
+        "target": {"kind": "auto"},
+        "target_container": None,
         "levels": backlog.settings.levels,
         "containers": containers,
         "tasks": tasks,
         "workflows": catalog,
         "output_schema": BacklogProposalOutput.model_json_schema(),
     }
-    if len(json.dumps(payload, ensure_ascii=False).encode()) > _CONTEXT_LIMIT:
+
+    def size() -> int:
+        return len(json.dumps(payload, ensure_ascii=False).encode())
+
+    if target.auto:
+        payload["containers"] = [
+            {**item, "body": _clip(c.body)}
+            for item, c in zip(containers, core.iter_containers(backlog.containers), strict=True)
+        ]
+        if size() > _CONTEXT_LIMIT:
+            payload["containers"] = containers
+            payload["context_notes"] = [
+                "project and step bodies omitted; read their index.md files"
+            ]
+        return payload
+    focus = backlog.by_id[target.step or target.project or ""]
+    assert isinstance(focus, core.Container)
+    focus_tasks = [
+        {"id": t.id, "title": t.title, "path": t.path, "body": _clip(t.body)}
+        for c in [focus, *core.iter_containers(focus.children)]
+        for t in c.tasks
+    ]
+    payload["target"] = (
+        {"kind": "existing_step", "step": focus.id}
+        if target.step
+        else {"kind": "new_step", "project": focus.id}
+    )
+    payload["target_container"] = {
+        "id": focus.id,
+        "title": focus.title,
+        "path": focus.path,
+        "body": _clip(focus.body),
+        "defaults": focus.defaults,
+        "tasks": focus_tasks,
+    }
+    if size() > _CONTEXT_LIMIT:
         payload["target_container"]["tasks"] = [
             {k: v for k, v in t.items() if k != "body"} for t in focus_tasks
         ]
@@ -216,7 +378,15 @@ def plan(
 
     Raises ``TaskEditError`` ``backlog_invalid`` with every problem in ``issues``.
     """
-    problems: list[Issue] = []
+    problems = placement_problems(core.load_for_edit(repo), proposal, target)
+    # an automatic placement that does not resolve leaves add_batch nothing to check
+    unplaced = target.auto and bool(problems)
+    if target.auto and not proposal.placement_reason.strip():
+        problems.append(
+            Issue(
+                "invalid_value", "placement_reason must say in one sentence why it goes there", ""
+            )
+        )
     if target.step is not None and proposal.step is not None:
         problems.append(Issue("invalid_value", "step must be null for an existing step", ""))
     if target.project is not None and proposal.step is None:
@@ -235,18 +405,25 @@ def plan(
     blocking = [f for f in review(repo, proposal, target) if f.blocking]
     problems.extend(Issue(f.rule, f.message, "", f.task) for f in blocking)
     cycles = any(f.rule == propose_check.CYCLE for f in blocking)
-    step = proposal.step
+    place = resolve(proposal, target)
+    step = place.new_step
+    new_project = place.new_project
+    result: core.BatchResult | None = None
     try:
-        result = core.add_batch(
-            repo,
-            _batch(proposal),
-            step=target.step,
-            project=target.project,
-            step_code=step.code if step else None,
-            step_title=step.title if step else None,
-            step_body=step.body if step else "",
-            write=write and not problems,
-        )
+        if not unplaced:
+            result = core.add_batch(
+                repo,
+                _batch(proposal),
+                step=place.step,
+                project=place.project,
+                step_code=step.code if step else None,
+                step_title=step.title if step else None,
+                step_body=step.body if step else "",
+                project_code=new_project.code if new_project else None,
+                project_title=new_project.title if new_project else None,
+                project_body=new_project.body if new_project else "",
+                write=write and not problems,
+            )
     except TaskEditError as exc:
         issues = exc.issues or [Issue(exc.code, exc.message, exc.path or "", exc.id)]
         # a cycle among the proposed tasks is already reported by the check
@@ -263,11 +440,7 @@ def plan(
 
 
 def _step_id(proposal: BacklogProposalOutput, target: Target) -> str | None:
-    if target.step is not None:
-        return target.step
-    if proposal.step is None or target.project is None:
-        return None
-    return f"{target.project}-{proposal.step.code.strip()}"
+    return resolve(proposal, target).step_id
 
 
 def candidates(proposal: BacklogProposalOutput, target: Target) -> list[Candidate]:
@@ -327,11 +500,22 @@ def refinement_prompt(intent: str, target: Target, refinement: Refinement) -> st
     """The continuation turn: the note and the current proposal, in the same session."""
     if not refinement.note.strip():
         raise TaskEditError("invalid_value", "the note must not be empty")
-    where = (
-        {"kind": "existing_step", "step": target.step}
-        if target.step
-        else {"kind": "new_step", "project": target.project}
-    )
+    if target.auto:
+        where: dict[str, Any] = {"kind": "auto"}
+        placement = [
+            "",
+            "The placement is yours (automatic placement). If the note asks for another "
+            "place (e.g. 'put it into HAIFA-S03' or 'make it a new project'), change "
+            "existing_step, step, existing_project and project accordingly and update "
+            "placement_reason; otherwise keep the placement.",
+        ]
+    else:
+        where = (
+            {"kind": "existing_step", "step": target.step}
+            if target.step
+            else {"kind": "new_step", "project": target.project}
+        )
+        placement = []
     current = refinement.proposal.model_dump(mode="json")
     return "\n".join(
         [
@@ -342,6 +526,7 @@ def refinement_prompt(intent: str, target: Target, refinement: Refinement) -> st
             "",
             f"Intent: {intent.strip()}",
             f"Target: {json.dumps(where)}",
+            *placement,
             "",
             "Their note:",
             "",
@@ -569,10 +754,23 @@ def to_json(
     def task_id(code: str) -> str:
         return f"{step_id}-{code}" if step_id else code
 
+    project = (
+        {
+            "id": result.project_id,
+            "title": result.project_title,
+            "body": result.project_body,
+            "path": result.project_path,
+            "new": result.new_project,
+        }
+        if result.project_id
+        else None
+    )
     return {
         "summary": proposal.summary,
         "applied": result.written,
-        "project": target.project,
+        "project": project,
+        "placement_reason": proposal.placement_reason.strip(),
+        "target": {"project": result.project_id or None, "step": result.step_id},
         "step": {
             "id": result.step_id,
             "title": result.step_title,
@@ -603,10 +801,20 @@ def _indent(text: str, prefix: str) -> list[str]:
 
 
 def format_preview(data: dict[str, Any]) -> str:
-    """The tree step -> tasks with their texts, for the terminal."""
+    """The tree (project ->) step -> tasks with their texts and the reason of the placement,
+    for the terminal."""
+    lines: list[str] = []
+    project = data.get("project")
+    if project:
+        state = "new" if project["new"] else "existing"
+        lines.append(f"{project['id']} ({state}) {project['title']}  [{project['path']}]")
+        if project["new"] and project["body"]:
+            lines += _indent(project["body"], "  ")
+    if data.get("placement_reason"):
+        lines.append(f"placement: {data['placement_reason']}")
     step = data["step"]
     state = "new" if step["new"] else "existing"
-    lines = [f"{step['id']} ({state}) {step['title']}  [{step['path']}]"]
+    lines.append(f"{step['id']} ({state}) {step['title']}  [{step['path']}]")
     if step["new"] and step["body"]:
         lines += _indent(step["body"], "  ")
     for task in data["tasks"]:

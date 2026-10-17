@@ -16,8 +16,12 @@ from aifactory.engine.data_types import AgentResult
 from aifactory.harness.check import HarnessStatus
 from aifactory.workflow.propose import (
     BacklogProposalOutput,
+    Refinement,
     Target,
+    context,
     plan,
+    refinement_prompt,
+    resolve,
     review,
     workflow_catalog,
 )
@@ -299,3 +303,229 @@ def test_review_maps_dependencies_by_full_id(repo: Path) -> None:
     value["tasks"][1]["depends_on"] = []
     proposal = BacklogProposalOutput.model_validate(value)
     assert [f.rule for f in review(repo, proposal, Target(project="P01"))] == ["writes_overlap"]
+
+
+def auto(**placement: Any) -> dict[str, Any]:
+    """An answer of automatic placement: one task plus the placement fields."""
+    return {
+        "status": "success",
+        "summary": "One task for the export.",
+        "step": None,
+        "tasks": [_task("T01", "Model exportu")],
+        "placement_reason": "Export patří k datům projektu.",
+        **placement,
+    }
+
+
+EXPORT_STEP = {"code": "S02", "title": "Export", "body": "Export dat do CSV."}
+NEW_PROJECT = {"code": "P02", "title": "Reporty", "body": "Reporty a exporty."}
+
+
+def _propose(repo: Path, *extra: str) -> list[str]:
+    return ["backlog", "propose", "Export do CSV", *extra, "--repo", str(repo)]
+
+
+def test_auto_placement_in_an_existing_step(
+    repo: Path, fake: tuple[list[Any], list[dict[str, Any]]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    seen, answers = fake
+    answers.append(auto(existing_step="P01-S01", tasks=[_task("T02", "Druhý")]))
+    assert main(_propose(repo, "--json")) == 0
+    data = json.loads(capsys.readouterr().out)["data"]
+    assert data["target"] == {"project": "P01", "step": "P01-S01"}
+    assert data["project"]["id"] == "P01" and data["project"]["new"] is False
+    assert data["step"]["id"] == "P01-S01" and data["step"]["new"] is False
+    assert data["placement_reason"] == "Export patří k datům projektu."
+    assert [t["id"] for t in data["tasks"]] == ["P01-S01-T02"]
+    context, _ = json.JSONDecoder().raw_decode(seen[0].prompt[seen[0].prompt.index("{") :])
+    assert context["target"] == {"kind": "auto"}
+    assert context["target_container"] is None
+    bodies = {c["id"]: c["body"] for c in context["containers"]}
+    assert bodies == {"P01": "Parent context\n", "P01-S01": "Step context\n"}
+    assert "context_notes" not in context
+    assert _status(repo) == ""
+
+    assert main(_propose(repo, "--apply", "--json")) == 0
+    data = json.loads(capsys.readouterr().out)["data"]
+    assert data["applied"] is True
+    assert data["files"] == ["backlog/P01/S01/P01-S01-T02-druhy.md"]
+    assert check_backlog(load_backlog(repo)) == []
+
+
+def test_auto_placement_in_a_new_step_of_a_project(
+    repo: Path, fake: tuple[list[Any], list[dict[str, Any]]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, answers = fake
+    answers.append(auto(existing_project="P01", step=EXPORT_STEP))
+    assert main(_propose(repo)) == 0
+    out = capsys.readouterr().out
+    assert "P01 (existing) Project" in out
+    assert "placement: Export patří k datům projektu." in out
+    assert out.index("P01 (existing)") < out.index("P01-S02 (new) Export")
+    assert "P01-S02-T01 Model exportu" in out
+
+    assert main(_propose(repo, "--apply", "--json")) == 0
+    data = json.loads(capsys.readouterr().out)["data"]
+    assert data["target"] == {"project": "P01", "step": "P01-S02"}
+    assert data["project"]["new"] is False and data["step"]["new"] is True
+    assert sorted(data["files"]) == [
+        "backlog/P01/S02-export/P01-S02-T01-model-exportu.md",
+        "backlog/P01/S02-export/index.md",
+    ]
+    backlog = load_backlog(repo)
+    assert check_backlog(backlog) == []
+    assert backlog.by_id["P01-S02"].title == "Export"
+
+
+def test_auto_placement_in_a_new_project(
+    repo: Path, fake: tuple[list[Any], list[dict[str, Any]]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, answers = fake
+    answers.append(auto(project=NEW_PROJECT, step=EXPORT_STEP))
+    head = _head(repo)
+    assert main(_propose(repo, "--json")) == 0
+    data = json.loads(capsys.readouterr().out)["data"]
+    assert data["project"]["id"] == "P02" and data["project"]["new"] is True
+    assert data["project"]["title"] == "Reporty"
+    assert data["step"]["id"] == "P02-S02" and data["step"]["new"] is True
+    assert data["target"] == {"project": "P02", "step": "P02-S02"}
+    assert data["placement_reason"]
+    assert [t["id"] for t in data["tasks"]] == ["P02-S02-T01"]
+    assert _status(repo) == ""
+
+    assert main(_propose(repo)) == 0
+    out = capsys.readouterr().out
+    assert "P02 (new) Reporty" in out and "Reporty a exporty." in out
+
+    assert main(_propose(repo, "--apply")) == 0
+    assert "written 3 file(s)" in capsys.readouterr().out
+    assert _head(repo) == head
+    backlog = load_backlog(repo)
+    assert check_backlog(backlog) == []
+    assert backlog.by_id["P02"].title == "Reporty"
+    assert backlog.by_id["P02-S02-T01"].parent.id == "P02-S02"  # type: ignore[union-attr]
+
+
+def test_auto_placement_omits_bodies_over_the_limit(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.workflow import propose
+
+    assert all("body" in c for c in propose.context(repo, "x", Target())["containers"])
+    monkeypatch.setattr(propose, "_CONTEXT_LIMIT", 10)
+    payload = propose.context(repo, "x", Target())
+    assert all("body" not in c for c in payload["containers"])
+    assert payload["context_notes"]
+
+
+@pytest.mark.parametrize(
+    ("placement", "code"),
+    [
+        ({"existing_step": "P01-S01", "step": EXPORT_STEP}, "invalid_value"),
+        ({}, "invalid_value"),
+        ({"existing_step": "P01-S09"}, "unknown_step"),
+        ({"existing_step": "P01"}, "unknown_step"),
+        ({"existing_project": "P09", "step": EXPORT_STEP}, "unknown_container"),
+        ({"existing_project": "P01-S01", "step": EXPORT_STEP}, "unknown_container"),
+        ({"step": EXPORT_STEP}, "invalid_value"),
+        ({"existing_project": "P01", "project": NEW_PROJECT, "step": EXPORT_STEP}, "invalid_value"),
+        ({"project": {**NEW_PROJECT, "code": "P01"}, "step": EXPORT_STEP}, "duplicate_id"),
+        ({"existing_step": "P01-S01", "placement_reason": " "}, "invalid_value"),
+    ],
+)
+def test_plan_rejects_invalid_auto_placement(
+    repo: Path, placement: dict[str, Any], code: str
+) -> None:
+    proposal = BacklogProposalOutput.model_validate(auto(**placement))
+    with pytest.raises(TaskEditError) as caught:
+        plan(repo, proposal, Target(), workflow_catalog(repo))
+    assert code in {i.code for i in caught.value.issues}
+
+
+def test_plan_rejects_a_new_project_without_a_project_level(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    (repo / ".factory/config.yaml").write_text(
+        "base: main\nlevels: [step, task]\ndocs_root: .\n", encoding="utf-8"
+    )
+    for name in ("backlog/P01/S01/P01-S01-T01-first.md", "backlog/P01/S01/index.md"):
+        (repo / name).unlink()
+    (repo / "backlog/P01/index.md").unlink()
+    (repo / "backlog/S01").mkdir()
+    (repo / "backlog/S01/index.md").write_text(
+        "---\nid: S01\ntitle: Step\n---\nStep context\n", encoding="utf-8"
+    )
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "two levels")
+    catalog = workflow_catalog(repo)
+    for placement in (
+        {"project": NEW_PROJECT, "step": EXPORT_STEP},
+        {"step": EXPORT_STEP},
+    ):
+        proposal = BacklogProposalOutput.model_validate(auto(**placement))
+        with pytest.raises(TaskEditError) as caught:
+            plan(repo, proposal, Target(), catalog)
+        assert "invalid_value" in {i.code for i in caught.value.issues}
+    proposal = BacklogProposalOutput.model_validate(auto(existing_step="S01"))
+    result = plan(repo, proposal, Target(), catalog)
+    assert result.step_id == "S01" and [t.id for t in result.tasks] == ["S01-T01"]
+
+
+@pytest.mark.parametrize(
+    "field",
+    [
+        {"existing_step": "P01-S01"},
+        {"existing_project": "P01"},
+        {"project": NEW_PROJECT},
+    ],
+)
+def test_plan_rejects_placement_fields_with_a_target(repo: Path, field: dict[str, Any]) -> None:
+    catalog = workflow_catalog(repo)
+    on_step = BacklogProposalOutput.model_validate(auto(**field))
+    with pytest.raises(TaskEditError) as caught:
+        plan(repo, on_step, Target(step="P01-S01"), catalog)
+    assert "invalid_value" in {i.code for i in caught.value.issues}
+    on_project = BacklogProposalOutput.model_validate(auto(step=EXPORT_STEP, **field))
+    with pytest.raises(TaskEditError) as caught:
+        plan(repo, on_project, Target(project="P01"), catalog)
+    assert "invalid_value" in {i.code for i in caught.value.issues}
+
+
+def test_targets_keep_working_with_the_new_fields(
+    repo: Path, fake: tuple[list[Any], list[dict[str, Any]]], capsys: pytest.CaptureFixture[str]
+) -> None:
+    _, answers = fake
+    answers.append(new_step())
+    assert main(_propose(repo, "--project", "P01", "--json")) == 0
+    data = json.loads(capsys.readouterr().out)["data"]
+    assert data["target"] == {"project": "P01", "step": "P01-S02"}
+    assert data["project"]["id"] == "P01" and data["project"]["new"] is False
+    assert data["placement_reason"] == ""
+    assert main(_propose(repo, "--project", "P01")) == 0
+    assert "placement:" not in capsys.readouterr().out
+
+
+def test_project_and_step_exclude_each_other(
+    repo: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    with pytest.raises(SystemExit) as caught:
+        main(_propose(repo, "--project", "P01", "--step", "P01-S01"))
+    assert caught.value.code == 2
+    assert "not allowed with" in capsys.readouterr().err
+    with pytest.raises(TaskEditError) as edit:
+        context(repo, "x", Target(project="P01", step="P01-S01"))
+    assert edit.value.code == "conflicting_options"
+
+
+def test_resolve_and_refinement_in_auto_placement() -> None:
+    step = BacklogProposalOutput.model_validate(auto(existing_step="P01-S01"))
+    assert resolve(step, Target()).step_id == "P01-S01"
+    new = BacklogProposalOutput.model_validate(auto(existing_project="P01", step=EXPORT_STEP))
+    assert resolve(new, Target()).step_id == "P01-S02"
+    fresh = BacklogProposalOutput.model_validate(auto(project=NEW_PROJECT, step=EXPORT_STEP))
+    assert resolve(fresh, Target()).project_id == "P02"
+    assert resolve(fresh, Target()).step_id == "P02-S02"
+    assert resolve(fresh, Target(step="P01-S01")).step_id == "P01-S01"
+    text = refinement_prompt("Export", Target(), Refinement("dej to do P01-S01", step))
+    assert '"kind": "auto"' in text and "existing_step" in text
+    text = refinement_prompt("Export", Target(step="P01-S01"), Refinement("kratší", step))
+    assert "automatic placement" not in text

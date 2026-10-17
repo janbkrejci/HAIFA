@@ -1445,25 +1445,36 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     )
     propose = sub.add_parser(
         "propose",
-        help="let a read-only agent propose a step with tasks, or tasks of a step, from an intent",
+        help="let a read-only agent propose tasks from an intent, placed in a step it chooses "
+        "or one you give",
         description="Run the read-only agent 'proposer' (prompts overridable in "
         ".factory/prompts/proposer/) in an isolated checkout of the base commit. It explores "
         "the repo and the backlog and proposes a new step of --project with its tasks, or new "
-        "tasks of the existing --step: per task the title, the assignment with a 'Hotovo "
+        "tasks of the existing --step. Without either it places them itself: in an existing "
+        "step, a new step of an existing project, or a new project with a new step, with a "
+        "one-sentence placement_reason. Per task it gives the title, the assignment with a 'Hotovo "
         "znamená' section, depends_on (also on existing tasks), writes and a workflow of the "
         "catalog. The proposal is validated like 'factory task add' (ids, dependencies, no "
         "cycles or self references, existing workflows); an invalid one goes back to the agent "
         "once, a second invalid one fails with proposal_invalid and writes nothing. Findings of "
         "the quality check of writes (files the assignment names, protected_files and the "
         "backlog, overlap of tasks that can run at the same time) go back in the same "
-        "correction; the rest are shown in the preview. Without "
-        "--apply only the preview step -> tasks is shown; --apply writes the files and "
-        "commits nothing (factory backlog commit).",
+        "correction; the rest are shown in the preview. Without --apply only the preview "
+        "(project ->) step -> tasks is shown; --apply writes the files and commits nothing "
+        "(factory backlog commit).",
     )
     propose.add_argument("intent", metavar="INTENT", help="what the new tasks should achieve")
-    target = propose.add_mutually_exclusive_group(required=True)
-    target.add_argument("--project", metavar="ID", help="propose a new step of this project")
-    target.add_argument("--step", metavar="ID", help="propose new tasks of this existing step")
+    target = propose.add_mutually_exclusive_group()
+    target.add_argument(
+        "--project",
+        metavar="ID",
+        help="propose a new step of this project (default: the agent chooses the place)",
+    )
+    target.add_argument(
+        "--step",
+        metavar="ID",
+        help="propose new tasks of this existing step (default: the agent chooses the place)",
+    )
     propose.add_argument(
         "--apply", action="store_true", help="write the proposal to the backlog (no commit)"
     )

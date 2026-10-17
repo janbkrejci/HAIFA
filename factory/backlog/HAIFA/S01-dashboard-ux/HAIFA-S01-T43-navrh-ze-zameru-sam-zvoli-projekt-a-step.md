@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T43
 title: Návrh ze záměru sám zvolí projekt a step
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-S01-T42]
 writes: [aifactory/src/aifactory/workflow/propose.py, aifactory/src/aifactory/workflow/propose_check.py, aifactory/src/aifactory/seed/agents/proposer/, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/skill/skill.md, aifactory/src/aifactory/skill/codes.py, aifactory/tests/workflow/test_backlog_propose.py, aifactory/tests/workflow/test_propose_check.py, aifactory/tests/intent_fixture.py, aifactory/tests/skill/]
@@ -47,3 +47,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-17 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/102 · náklady $2.49
