@@ -93,6 +93,7 @@ EDIT_KEYS = (
     "related",
 )
 LINK_KEYS = ("depends_on", "related", "remove")
+FOLLOW_UP_KEYS = ("body", "title", "run")
 RUN_KEYS = ("note", "force", "harness", "model", "thinking", "auto")
 QUEUE_ORDER_KEYS = ("order",)
 EXCLUDE_KEYS = ("excluded",)
@@ -397,6 +398,13 @@ def task_detail(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
             blocked.append(
                 {"id": bid, "title": node.title, "board_state": board_state(backlog, node, rt)}
             )
+    followers: list[JsonDict] = []
+    for fid in core.followed_by(backlog, task.id):
+        node = backlog.by_id.get(fid)
+        if isinstance(node, Task):
+            followers.append(
+                {"id": fid, "title": node.title, "board_state": board_state(backlog, node, rt)}
+            )
     data: JsonDict = {
         "task": _task_json(backlog, task, reverse, rt),
         "body": task.body,
@@ -405,6 +413,8 @@ def task_detail(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
         "prs": prs,
         "depends": [_depends_ref(backlog, d, rt) for d in task.depends_on],
         "blocks": blocked,
+        "follows": None if task.follows is None else _depends_ref(backlog, task.follows, rt),
+        "followed_by": followers,
     }
     return data, warnings + _warnings(own_issues)
 
@@ -605,6 +615,32 @@ def edit(
         clear_assignee=_opt_bool(body, "clear_assignee"),
     )
     return _write_json(repo, result)
+
+
+def follow_up(
+    repo: Path, task_id: str, body: JsonDict, launcher: Launcher
+) -> tuple[JsonDict, list[str]]:
+    """``factory task follow-up ID --body TEXT [--title] [--run]``: a task that follows the
+    done task `task_id`. With ``run`` the backlog is committed to base and the new task is
+    started as a separate process (``launcher.py``), like ``start_run``."""
+    _check_keys(body, FOLLOW_UP_KEYS)
+    text = _req_str(body, "body")
+    title = _opt_str(body, "title")
+    run = _opt_bool(body, "run")
+    result = core.follow_up_task(repo, task_id, text, title=title)
+    data, warnings = _write_json(repo, result)
+    data["commit"] = None
+    data["run"] = None
+    data["pending"] = False
+    if run:
+        new_id = result.task.id
+        committed = core.commit_backlog(repo, f"backlog: {new_id} follows {task_id}")
+        data["commit"] = committed.to_json()
+        warnings = warnings + list(committed.warnings)
+        row = launcher.start(repo, new_id, note=None, force=False)
+        data["run"] = None if row is None else row.to_json()
+        data["pending"] = row is None
+    return data, warnings
 
 
 def link(repo: Path, task_id: str, body: JsonDict) -> tuple[JsonDict, list[str]]:

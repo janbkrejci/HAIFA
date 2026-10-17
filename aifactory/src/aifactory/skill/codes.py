@@ -45,6 +45,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("no_changes", "2", "the command was given nothing to change"),
     ("conflicting_options", "2", "two options that exclude each other were given"),
     ("self_ref", "2", "a task cannot reference itself"),
+    ("not_done", "2", "task follow-up: only a done task can be followed up"),
     ("file_exists", "2", "the task file or the project/step directory already exists"),
     ("outside_backlog", "2", "the file is outside backlog_dir"),
     ("write_failed", "2", "the task file could not be written"),

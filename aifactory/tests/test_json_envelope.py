@@ -132,7 +132,7 @@ def test_backlog_and_task_success(tmp_path: Path, capsys: Capsys) -> None:
     assert {"items", "filters", "issues"} <= set(_ok(capsys, ["backlog", "list", "--json", *repo]))
     assert set(_ok(capsys, ["task", "list", "--json", *repo])) == {"filters", "tasks", "issues"}
     shown = _ok(capsys, ["task", "show", "M01-S01-T02", "--json", *repo])
-    assert set(shown) == {"task", "body", "issues", "runs", "prs"}
+    assert set(shown) == {"task", "followed_by", "body", "issues", "runs", "prs"}
     added = _ok(capsys, ["task", "add", "M01-S01", "Nový", "--json", *repo])
     assert set(added) == {"action", "changed", "path", "task", "issues"}
 

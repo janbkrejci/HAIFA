@@ -27,6 +27,7 @@ code                                   exit  when
 ``invalid_status``
 ``no_changes``, ``conflicting_options``, 2   wrong combination of options
 ``self_ref``
+``not_done``                           2     ``follow_up_task`` of a task that is not done
 ``file_exists``                        2     the task file exists already
 ``outside_backlog``, ``write_failed``  2     path guard / I/O error
 ``backlog_invalid``                    1     the write would break the backlog; nothing
@@ -316,8 +317,12 @@ def add_task(
     body: str = "",
     parameters: dict[str, object] | None = None,
     assignee: str | None = None,
+    follows: str | None = None,
 ) -> WriteResult:
-    """Create a new ``todo`` task file in the directory of ``step``."""
+    """Create a new ``todo`` task file in the directory of ``step``.
+
+    `follows` is the id of the done task the new one continues (see ``follow_up_task``).
+    """
     backlog = load_for_edit(root)
     container = _find_step(backlog, step)
     title = title.strip()
@@ -347,6 +352,7 @@ def add_task(
         "workflow": workflow,
         "depends_on": _dedupe(depends_on or []),
         "related": _dedupe(related) if related is not None else None,
+        "follows": follows,
         "writes": _dedupe(writes) if writes is not None else None,
     }
     if parameters:
@@ -354,6 +360,48 @@ def add_task(
         fields.update({k: v for k, v in parameters.items() if v is not None})
     text = new_task_text(fields, body)
     return _commit(backlog, check_backlog(backlog), {rel: text}, "add", rel, task_id)
+
+
+def follow_up_title(task: Task) -> str:
+    """The default title of a task that follows `task`."""
+    return f"Navazuje na {task.id}: {task.title}"
+
+
+def follow_up_task(root: Path, task_id: str, body: str, *, title: str | None = None) -> WriteResult:
+    """A new ``todo`` task that follows the done task `task_id` (``factory task follow-up``).
+
+    It goes into the same step, gets ``follows: <task_id>``, the original's own ``writes``
+    and ``workflow`` (an inherited value stays inherited) and `body` as its ``## Zadání``.
+    The title defaults to ``follow_up_title``. A task that is not done is refused
+    (``not_done``).
+    """
+    backlog = load_for_edit(root)
+    original = find_task(backlog, task_id)
+    if original.status != "done":
+        raise TaskEditError(
+            "not_done",
+            f"task '{task_id}' is {original.status or 'without status'}, only a done task "
+            "can be followed up",
+            id=task_id,
+            path=original.path,
+        )
+    if not body.strip():
+        raise TaskEditError("invalid_value", "body of the follow-up task must not be empty")
+    step = original.parent.id
+    if step is None:
+        raise TaskEditError(
+            "unknown_step", f"the step of task '{task_id}' has no id", path=original.parent.path
+        )
+    workflow = original.own.get("workflow")
+    return add_task(
+        root,
+        step,
+        follow_up_title(original) if title is None or not title.strip() else title,
+        workflow=str(workflow) if workflow is not None else None,
+        writes=list(original.writes) if "writes" in original.own else None,
+        body=body,
+        follows=original.id,
+    )
 
 
 def _check_assignee(assignee: str | None) -> None:

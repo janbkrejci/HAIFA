@@ -149,12 +149,30 @@ class TaskRunResult:
 # ── prompt, workflow, config ─────────────────────────────────────────────────
 
 
+def followed_task(
+    backlog: Backlog, task: Task, settings: ProjectSettings
+) -> tuple[Task, OutputPaths] | None:
+    """The task `task` follows (``follows``) with its spec and doc paths, if it exists."""
+    if task.follows is None:
+        return None
+    node = backlog.by_id.get(task.follows)
+    if not isinstance(node, Task):
+        return None
+    return node, output_paths(node, settings)
+
+
 def task_prompt(
-    task: Task, scope: TaskScope, outputs: OutputPaths, worktree: Path, note: str | None
+    task: Task,
+    scope: TaskScope,
+    outputs: OutputPaths,
+    worktree: Path,
+    note: str | None,
+    follows: tuple[Task, OutputPaths] | None = None,
 ) -> str:
     """Task header, then the task text, then the operator's note.
 
     The only absolute path is the worktree; every other path is relative to it.
+    `follows` is the done task this one continues (``followed_task``).
     """
     lines = [f"# Task {task.id}: {task.title}", "", f"- id: {task.id}", f"- title: {task.title}"]
     for container in reversed(ancestors(task)):
@@ -169,6 +187,13 @@ def task_prompt(
         "- Change only the allowed paths inside the working directory; anything else, "
         "including any file outside the working directory, is reverted and fails the phase.",
     ]
+    if follows is not None:
+        origin, origin_outputs = follows
+        lines.append(
+            f"- follows: {origin.id} — {origin.title} (done; this task continues it, read its "
+            f"task file {origin.path}, spec {origin_outputs.spec} and documentation "
+            f"{origin_outputs.doc} first)"
+        )
     text = "\n".join(lines) + "\n"
     body = task.body.strip()
     if body:
@@ -620,7 +645,9 @@ def run_task(
                 task, worktree, rc.base, resolve_onto, tuple(g.path for g in generated)
             )
         else:
-            prompt = task_prompt(task, scope, outputs, worktree, note)
+            prompt = task_prompt(
+                task, scope, outputs, worktree, note, followed_task(backlog, task, settings)
+            )
             if workdir != ".":
                 prompt += (
                     f"\nAgent working directory: {worktree / workdir}. "

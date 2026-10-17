@@ -90,6 +90,7 @@ def task_to_json(backlog: Backlog, task: Task, reverse: dict[str, list[str]]) ->
         "effective": _jsonable(effective(task)),
         "depends_on": list(task.depends_on),
         "related": list(task.related),
+        "follows": task.follows,
         "writes": effective_writes(task),
         "own_writes": list(task.writes),
         "blocked_by": [u.to_dict() for u in unmet(backlog, task)] if task.status == "todo" else [],
