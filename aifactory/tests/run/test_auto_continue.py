@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 from collections.abc import Iterator
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -28,8 +29,14 @@ from aifactory.run import (
     select_next,
 )
 from aifactory.run import task as task_mod
-from aifactory.run.queue import SKIP_REASONS, blockers_of
-from aifactory.run.store import QueuePrefs
+from aifactory.run.queue import (
+    SKIP_REASONS,
+    blockers_of,
+    priority_map,
+    priority_order,
+    select_ready,
+)
+from aifactory.run.store import Priority, QueuePrefs
 from cli_json import read_envelope
 
 Capsys = pytest.CaptureFixture[str]
@@ -715,3 +722,139 @@ def test_blockers_of_keeps_only_follow_ups_of_the_project(repo: Path) -> None:
     # even preferred, a task of another project is never selected
     sel = select_next(backlog, after, open_pr=_none, running=_none, prefer=[OTHER])
     assert sel.next is not None and sel.next.id != OTHER
+
+
+# ── priority of a blocked task and its blockers (HEAL-S02-T07) ───────────────
+
+
+def blocked_by_build(script: Script, name: str, blockers: list[str]) -> None:
+    """One planner call that writes a file and reports existing tasks blocking the task."""
+    rel = f"src/app/{name}.py"
+    script.on("planner", lambda wt: write(wt, rel, f"NAME = {name!r}\n"))
+    script.add(
+        "planner",
+        ok(artifacts=[], changed_files=[rel], commit_message=f"Add {name}", blocked_by=blockers),
+    )
+
+
+def _set_status(repo: Path, task_id: str, status: str) -> None:
+    path = repo / CORE / "S01-model" / f"{task_id}.md"
+    text = path.read_text(encoding="utf-8").replace("status: todo", f"status: {status}")
+    path.write_text(text, encoding="utf-8")
+
+
+def test_existing_blocker_goes_before_the_kanban_queue(repo: Path, script: Script) -> None:
+    setup_chain(repo, module_auto=True)
+    store = _store(repo)
+    try:
+        store.set_queue_order([T02])
+    finally:
+        store.close()
+    blocked_by_build(script, "one", [T03])  # an existing task from blocked_by
+    build(script, "three")
+    build(script, "two")
+    chain = run_chain(repo, T01)
+    # T03 blocks T01: it goes before T02, the kanban queue's first task
+    assert ids(chain) == [T01, T03, T02]
+    assert chain.stop == STOP_EXHAUSTED
+    # the priority record outlives the chain
+    store = _store(repo)
+    try:
+        prio = store.queue_prefs().priority
+    finally:
+        store.close()
+    assert [(p.task_id, p.blockers) for p in prio] == [(T01, (T03,))]
+    assert prio[0].run_id == chain.runs[0].run.run_id
+
+
+def test_blocked_task_goes_right_after_its_last_blocker(repo: Path) -> None:
+    backlog = _queue_backlog(repo)
+    after = backlog.by_id[T01]
+    assert isinstance(after, Task)
+    record = Priority(T02, (T03,), "run-1", "2026-10-15T15:42:00")
+    prefs = QueuePrefs(order=(S02_T01,), priority=(record,))
+    # the blocker before the kanban's queue
+    sel = select_next(backlog, after, open_pr=_none, running=_none, prefs=prefs)
+    assert sel.next is not None and sel.next.id == T03
+    # the blocker done: the blocked task before the kanban's queue
+    _set_status(repo, T03, "done")
+    _set_status(repo, T01, "done")
+    backlog = load_backlog(repo)
+    after = backlog.by_id[T03]
+    assert isinstance(after, Task)
+    sel = select_next(backlog, after, open_pr=_none, running=_none, prefs=prefs)
+    assert sel.next is not None and sel.next.id == T02
+    # without the record the usual order holds again
+    sel = select_next(
+        backlog, after, open_pr=_none, running=_none, prefs=replace(prefs, priority=())
+    )
+    assert sel.next is not None and sel.next.id == S02_T01
+
+
+def test_blockers_of_blockers_go_first(repo: Path) -> None:
+    shutil.rmtree(repo / CORE / "S01-model")
+    _index(repo, "S01-model", "M01-S01", "writes: [src/app/]\n")
+    _task(repo, "S01-model", T01)
+    _task(repo, "S01-model", T02, depends_on=[T03])
+    _task(repo, "S01-model", T03)
+    _task(repo, "S01-model", "M01-S01-T04")
+    backlog = load_backlog(repo)
+    # T04 blocked on T02, which waits for T03; T01 blocked on a done task
+    records = (Priority("M01-S01-T04", (T02,)), Priority(T01, ("M01-S01-T09",)))
+    assert priority_order(backlog, records) == [T01, T03, T02, "M01-S01-T04"]
+    found = priority_map(backlog, records)
+    assert found[T03] == ["M01-S01-T04"] and found[T01] == [T01]
+    # select_ready (the Overview's start) takes the same order
+    sel = select_ready(backlog, open_pr=_none, running=_none, prefs=QueuePrefs(priority=records))
+    assert sel.next is not None and sel.next.id == T01
+
+
+def test_store_keeps_the_priority_of_a_blocked_run(tmp_path: Path) -> None:
+    store = TaskRunStore(tmp_path / "trace.db")
+    try:
+        for run_id in ("r1", "r2"):
+            store.conn.execute(
+                "INSERT INTO task_runs (run_id, task_id, branch, worktree, base, base_sha, "
+                "state, started_at) VALUES (?, ?, 'b', 'wt', 'main', '0', 'running', 'now')",
+                (run_id, T01),
+            )
+        store.finish("r1", "failed", None, "blocked: x", "blocked", {"blockers": [T02, T03]})
+        assert [(p.task_id, p.blockers) for p in store.priorities()] == [(T01, (T02, T03))]
+        assert store.queue_prefs().priority == store.priorities()
+        # cleared by the operator, then by a succeeded run of the task
+        assert store.clear_priority(T01) is True
+        assert store.clear_priority(T01) is False
+        store.set_priority(T01, [T02], "r1")
+        store.finish("r2", "succeeded", "abc", None)
+        assert store.priorities() == ()
+        # a task no longer todo loses it
+        store.set_priority(T01, [T02], "r1")
+        store.set_priority(T02, [T03], "r1")
+        assert store.prune_priority({T02}) == [T01]
+        assert [p.task_id for p in store.priorities()] == [T02]
+    finally:
+        store.close()
+
+
+def test_blocked_task_runs_again_in_its_chain_after_its_blocker(repo: Path, script: Script) -> None:
+    write(repo, ".factory/config.yaml", "base: main\ndocs_root: .\nstacked_prs: true\n")
+    setup_chain(repo, module_auto=True)
+    store = _store(repo)
+    try:
+        store.set_queue_order([T02])
+    finally:
+        store.close()
+    blocked_by_build(script, "one", [T03])  # T01 now depends_on T03 in base
+    build(script, "three")
+    build(script, "one")  # the second run of T01, stacked on T03's PR
+    build(script, "two")
+    chain = run_chain(repo, T01)
+    assert ids(chain) == [T01, T03, T01, T02]
+    assert [r.ok for r in chain.runs] == [False, True, True, True]
+    assert chain.runs[2].run.stacked_on == runs_of(repo, T03)[0].branch
+    # the succeeded run took the priority away
+    store = _store(repo)
+    try:
+        assert store.priorities() == ()
+    finally:
+        store.close()

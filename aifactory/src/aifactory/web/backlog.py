@@ -36,6 +36,7 @@ from aifactory.harness import canonical
 from aifactory.harness.override import THINKING_LEVELS
 from aifactory.run import gitops, task_prs_for, task_runs_for
 from aifactory.run.errors import TaskRunError
+from aifactory.run.queue import priority_map
 from aifactory.run.scope import effective_task_writes, output_paths
 from aifactory.run.stack import stack_point
 from aifactory.run.store import QueuePrefs, TaskRunStore, is_db_busy
@@ -110,6 +111,20 @@ class _Runtime:
     merge_blocked: set[str] = field(default_factory=set)
     last_run: dict[str, str] = field(default_factory=dict)
     queue: QueuePrefs = field(default_factory=QueuePrefs)
+    # ``queue.priority_map`` of the backlog, computed once (``_priority``)
+    priority: dict[str, list[str]] | None = None
+
+
+def _priority(backlog: Backlog, rt: _Runtime) -> dict[str, list[str]]:
+    """The tasks with priority (blocked tasks and their blockers), in priority order."""
+    if rt.priority is None:
+        rt.priority = priority_map(backlog, rt.queue.priority)
+    return rt.priority
+
+
+def _is_todo(backlog: Backlog, task_id: str) -> bool:
+    node = backlog.by_id.get(task_id)
+    return isinstance(node, Task) and node.status == "todo"
 
 
 def _runs_hidden(exc: Exception) -> str:
@@ -207,14 +222,24 @@ def _task_json(
     rank = rt.queue.order.index(task.id) if task.id in rt.queue.order else None
     data["queue_rank"] = rank
     data["auto_excluded"] = task.id in rt.queue.excluded
+    prio = _priority(backlog, rt)
+    data["priority_rank"] = list(prio).index(task.id) if task.id in prio else None
+    data["priority_of"] = list(prio.get(task.id, []))
+    record = next((p for p in rt.queue.priority if p.task_id == task.id), None)
+    data["priority_blockers"] = list(record.blockers) if record is not None else None
     return data
 
 
-def _queue_sorted(tasks: list[Task], rt: _Runtime) -> list[Task]:
-    """The kanban's manual queue first (by rank), then the rest in backlog order."""
-    rank = {task_id: i for i, task_id in enumerate(rt.queue.order)}
+def _queue_sorted(backlog: Backlog, tasks: list[Task], rt: _Runtime) -> list[Task]:
+    """Tasks with priority first, then the kanban's manual queue (by rank), then the rest
+    in backlog order."""
+    prio = list(_priority(backlog, rt))
+    first = {task_id: i for i, task_id in enumerate(prio)}
+    rank = {task_id: i for i, task_id in enumerate(rt.queue.order) if task_id not in first}
+    top = sorted((t for t in tasks if t.id in first), key=lambda t: first[t.id])
     ranked = sorted((t for t in tasks if t.id in rank), key=lambda t: rank[t.id])
-    return [*ranked, *(t for t in tasks if t.id not in rank)]
+    rest = [t for t in tasks if t.id not in first and t.id not in rank]
+    return [*top, *ranked, *rest]
 
 
 def _container_json(
@@ -336,11 +361,16 @@ def backlog_view(repo: Path, *, status: str | None = None) -> tuple[JsonDict, li
         "steps": steps,
         "items": items,
         "tasks": [
-            _task_json(backlog, t, reverse, rt) for t in _queue_sorted(all_tasks, rt) if keep(t)
+            _task_json(backlog, t, reverse, rt)
+            for t in _queue_sorted(backlog, all_tasks, rt)
+            if keep(t)
         ],
         "issues": [i.to_dict() for i in issues],
         "counts": core.counts(backlog),
         "state_counts": _state_counts(backlog, all_tasks, rt),
+        # the priority records of tasks still todo and the priority order they give
+        "priority": [p.to_json() for p in rt.queue.priority if _is_todo(backlog, p.task_id)],
+        "priority_order": list(_priority(backlog, rt)),
     }
     return data, warnings + _warnings(issues)
 
@@ -482,6 +512,8 @@ def task_documents(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
 
 
 def _write_json(repo: Path, result: core.WriteResult) -> tuple[JsonDict, list[str]]:
+    if result.task.status != "todo":
+        _drop_priority(repo, result.task.id)  # a cancelled task has no priority any more
     rt, warnings = _runtime(repo)
     reverse = core.blocks(result.backlog)
     data: JsonDict = {
@@ -858,6 +890,38 @@ def auto_exclude(repo: Path, task_id: str, body: JsonDict) -> tuple[JsonDict, li
     finally:
         store.close()
     return {"task_id": task_id, "excluded": excluded}, []
+
+
+def _drop_priority(repo: Path, task_id: str) -> bool:
+    """Take the priority away from `task_id`; a trace DB that cannot be written is left."""
+    try:
+        store = existing_store(repo)
+        if store is None:
+            return False
+        try:
+            return store.clear_priority(task_id)
+        finally:
+            store.close()
+    except (TaskRunError, sqlite3.Error):
+        return False
+
+
+def clear_priority(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
+    """The operator takes the priority away: from `task_id`'s own record and from every
+    blocked task whose record gives `task_id` priority (it is one of their blockers)."""
+    backlog = core.load_for_edit(repo)
+    if not isinstance(backlog.by_id.get(task_id), Task):
+        raise core.TaskEditError("unknown_task", f"unknown task '{task_id}'")
+    store = _queue_store(repo)
+    try:
+        records = store.priorities()
+        owners = priority_map(backlog, records).get(task_id, [])
+        cleared = [p.task_id for p in records if p.task_id in {task_id, *owners}]
+        for owner in cleared:
+            store.clear_priority(owner)
+    finally:
+        store.close()
+    return {"task_id": task_id, "cleared": cleared}, []
 
 
 def _find_container(backlog: Backlog, container_id: str) -> Container:

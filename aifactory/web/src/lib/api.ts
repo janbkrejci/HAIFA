@@ -90,6 +90,11 @@ export async function postApi<T>(path: string, body?: unknown, signal?: AbortSig
   return request<T>(apiBase() + path, { ...postInit(body), ...(signal ? { signal } : {}) })
 }
 
+/** DELETE /api/repos/<current repo><path>; same envelope handling as getApi. */
+export async function deleteApi<T>(path: string): Promise<T> {
+  return request<T>(apiBase() + path, { method: 'DELETE' })
+}
+
 /** GET /api<path> of the dashboard itself (health, repos, code), not of a repo. */
 export async function getGlobal<T>(path: string): Promise<T> {
   return request<T>(`/api${path}`)

@@ -49,6 +49,7 @@ import {
   stateCounts,
   kanbanColumn,
   mergeQueueOrder,
+  clearPriority,
   setAutoExcluded,
   setQueueOrder,
   startRun,
@@ -387,6 +388,14 @@ async function onExclude(id: string, excluded: boolean) {
       if (before && detail.value?.task.id === id) detail.value = before
     },
   )
+}
+
+/** Take the priority of a blocked task (or of its blocker) away, from the kanban. */
+async function onClearPriority(id: string) {
+  const undo = optimistic((list) =>
+    list.map((t) => (t.id === id ? { ...t, priority_rank: null, priority_of: [], priority_blockers: null } : t)),
+  )
+  await queueWrite(() => clearPriority(id), undo)
 }
 
 async function openRun() {
@@ -824,6 +833,7 @@ watch(
           :busy="queueBusy"
           @reorder="onReorder"
           @exclude="onExclude"
+          @clear-priority="onClearPriority"
         />
         <BacklogTree
           v-else

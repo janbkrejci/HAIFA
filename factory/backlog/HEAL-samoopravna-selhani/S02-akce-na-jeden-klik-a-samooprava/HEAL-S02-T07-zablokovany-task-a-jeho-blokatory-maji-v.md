@@ -1,7 +1,7 @@
 ---
 id: HEAL-S02-T07
 title: Zablokovaný task a jeho blokátory mají ve frontě přednost
-status: todo
+status: done
 depends_on: [HEAL-S02-T06]
 writes: [aifactory/, docs/decisions.md]
 ---
@@ -25,3 +25,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-18 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/108 · náklady $6.37

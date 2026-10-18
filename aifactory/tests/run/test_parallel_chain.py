@@ -137,8 +137,9 @@ class FakeRunner:
         started_by: str = "manual",
         agents_override: dict[str, str] | None = None,
     ) -> TaskRunRow:
+        again = sum(1 for kind, t in self.events if kind == "start" and t == task_id)
         row = TaskRunRow(
-            run_id=f"r-{task_id}",
+            run_id=f"r-{task_id}" + (f"-{again + 1}" if again else ""),
             task_id=task_id,
             branch=f"factory/{task_id}-1",
             worktree="wt",
@@ -823,6 +824,61 @@ def test_blocked_member_without_startable_blocker_takes_the_next(repo: Path) -> 
     chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
     assert started(runner) == [T01, T02, T03]
     assert chain.stop == STOP_EXHAUSTED
+
+
+class RequeueRunner(BlockingRunner):
+    """`blocked` tasks end blocked once, waiting for the blocker in base (``depends_on``),
+    and the kanban queue becomes `queue_after`; a finished blocker is done in base."""
+
+    def __init__(self, repo: Path, *, queue_after: list[str], **kwargs: object) -> None:
+        super().__init__(repo, **kwargs)  # type: ignore[arg-type]
+        self.queue_after = queue_after
+
+    def wait_any(self) -> TaskRunResult:
+        task_id = next((t for t in self.order if t in self.rows), next(iter(self.rows)))
+        if task_id in self.blocked:
+            rel = f"{CORE}/{STEP}/{task_id}.md"
+            text = (self.repo / rel).read_text(encoding="utf-8")
+            write(
+                self.repo,
+                rel,
+                text.replace("status: todo\n", f"depends_on: [{BLOCKER}]\nstatus: todo\n"),
+            )
+            store = self._store()
+            try:
+                store.set_queue_order(self.queue_after)
+            finally:
+                store.close()
+            result = super().wait_any()
+            self.blocked = tuple(t for t in self.blocked if t != task_id)
+            return result
+        result = super().wait_any()
+        if task_id == BLOCKER:
+            rel = f"{CORE}/TODO/{BLOCKER}.md"
+            text = (self.repo / rel).read_text(encoding="utf-8")
+            write(self.repo, rel, text.replace("status: todo", "status: done"))
+            commit_all(self.repo, "blocker done")
+        return result
+
+
+def test_blocked_member_runs_again_after_its_blocker(repo: Path) -> None:
+    setup_blocking(repo)
+    store = TaskRunStore(_db(repo))
+    try:
+        store.set_queue_order([T02])
+    finally:
+        store.close()
+    runner = RequeueRunner(repo, blocked=(T02,), order=[T02, BLOCKER], queue_after=[T03])
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+    # the blocker and then T02 again go before T03, the kanban queue's first task
+    assert started(runner) == [T01, T02, BLOCKER, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+    assert [r.run.task_id for r in chain.runs if r.ok].count(T02) == 1
+    store = TaskRunStore(_db(repo))
+    try:
+        assert store.priorities() == ()  # the succeeded run of T02 took it away
+    finally:
+        store.close()
 
 
 def test_blocked_member_without_auto_continue_stops(repo: Path) -> None:

@@ -139,4 +139,27 @@ describe('KanbanBoard', () => {
     expect(wrapper.get('[data-item="R-2"] [data-test="exclude-toggle"]').attributes('disabled')).toBeDefined()
     expect(wrapper.get('[data-item="R-2"]').attributes('draggable')).toBe('false')
   })
+
+  it('puts tasks with priority on top with the label přednostně and clears it', async () => {
+    const tasks = [
+      ...readyTasks(),
+      taskNode({ id: 'P-1', path: 'p1.md', priority_rank: 0, priority_of: ['P-2'] }),
+      taskNode({ id: 'P-2', path: 'p2.md', board_state: 'blocked', priority_blockers: ['P-1'] }),
+    ]
+    const wrapper = mount(KanbanBoard, { props: { tasks, states: BOARD_STATES } })
+    expect(cards(wrapper, 'ready')).toEqual(['P-1', 'R-1', 'R-2', 'R-3'])
+    expect(cards(wrapper, 'blocked')).toEqual(['P-2'])
+    expect(wrapper.get('[data-item="P-1"] [data-test="priority"]').text()).toBe('přednostně')
+    expect(wrapper.find('[data-item="P-2"] [data-test="priority"]').exists()).toBe(true)
+    expect(wrapper.find('[data-item="R-1"] [data-test="priority"]').exists()).toBe(false)
+    expect(wrapper.find('[data-item="R-1"] [data-test="priority-clear"]').exists()).toBe(false)
+    // the queue order the ↑/↓ buttons send starts with the task with priority
+    await wrapper.get('[data-item="R-1"] [data-test="move-up"]').trigger('click')
+    expect(wrapper.emitted('reorder')).toEqual([[['R-1', 'P-1', 'R-2', 'R-3']]])
+    const clear = wrapper.get('[data-item="P-2"] [data-test="priority-clear"]')
+    expect(clear.attributes('aria-label')).toBe('Zrušit přednost')
+    await clear.trigger('click')
+    await wrapper.get('[data-item="P-1"] [data-test="priority-clear"]').trigger('click')
+    expect(wrapper.emitted('clearPriority')).toEqual([['P-2'], ['P-1']])
+  })
 })

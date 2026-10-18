@@ -1,7 +1,7 @@
 // The backlog tree, kanban and task writes, as served by /api/backlog (aifactory/web/backlog.py).
 // Writes call the same core functions as `factory task add|edit|link`.
 import { ref } from 'vue'
-import { ApiError, getApi, postApi, type ApiIssue } from './api'
+import { ApiError, deleteApi, getApi, postApi, type ApiIssue } from './api'
 import { toCommitStatus, type CommitStatus } from './commitStatus'
 import { errorText } from './format'
 
@@ -263,6 +263,12 @@ export interface TaskNode {
   queue_rank?: number | null
   /** Excluded from auto continue (kanban column Odloženo); a manual run still works. */
   auto_excluded?: boolean
+  /** Place in the priority order (a blocked task or its blocker, 0 first); null without one. */
+  priority_rank?: number | null
+  /** The blocked tasks whose priority records give this task priority. */
+  priority_of?: string[]
+  /** The blockers of the task's own priority record (it was blocked during a run); null without one. */
+  priority_blockers?: string[] | null
 }
 
 export interface ContainerNode {
@@ -672,6 +678,23 @@ export function setQueueOrder(order: string[]): Promise<{ order: string[] }> {
 /** Exclude a task from auto continue (Odloženo) or return it to the queue. */
 export function setAutoExcluded(taskId: string, excluded: boolean): Promise<{ task_id: string; excluded: boolean }> {
   return postApi<{ task_id: string; excluded: boolean }>(`${taskPath(taskId)}/auto-exclude`, { excluded })
+}
+
+/** Take the priority of a blocked task (or of its blocker) away; returns the cleared records. */
+export function clearPriority(taskId: string): Promise<{ task_id: string; cleared: string[] }> {
+  return deleteApi<{ task_id: string; cleared: string[] }>(`${taskPath(taskId)}/priority`)
+}
+
+/** The task goes before the kanban's queue: blocked during a run, or a blocker of such a task. */
+export function hasPriority(task: Pick<TaskNode, 'priority_rank' | 'priority_blockers'>): boolean {
+  return (task.priority_rank ?? null) !== null || (task.priority_blockers ?? null) !== null
+}
+
+/** `tasks` with the tasks with priority first (by priority rank), the rest in their order. */
+export function prioritySorted<T extends Pick<TaskNode, 'priority_rank' | 'priority_blockers'>>(tasks: T[]): T[] {
+  const rank = (t: T) => t.priority_rank ?? Number.MAX_SAFE_INTEGER
+  const first = tasks.filter(hasPriority).sort((a, b) => rank(a) - rank(b))
+  return [...first, ...tasks.filter((t) => !hasPriority(t))]
 }
 
 function containerPath(containerId: string): string {
