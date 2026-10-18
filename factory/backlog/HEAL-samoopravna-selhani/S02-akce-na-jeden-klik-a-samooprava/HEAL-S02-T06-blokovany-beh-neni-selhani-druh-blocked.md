@@ -1,7 +1,7 @@
 ---
 id: HEAL-S02-T06
 title: "Blokovaný běh není selhání: druh blocked, Přehled a Běhy"
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/, docs/decisions.md]
 ---
@@ -22,3 +22,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-18 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/107 · náklady $3.03

@@ -16,8 +16,8 @@ columns added when the store opens them, and ``task_runs.archived`` too.
 ``aifactory.failure.FAILURE_KINDS``) and ``task_runs.failure_detail`` its facts as a JSON
 object; ``error`` stays the free text. ``finish`` records them, ``mark_stopped`` sets
 ``stopped``, the reaping of a dead run ``process_gone``, ``reclaim`` clears them. A
-failed, stopped or aborted run recorded before the columns existed reads as ``other``
-(``TaskRunRow.shown_failure_kind``).
+failed, stopped or aborted run recorded before the columns existed reads as ``other``,
+or ``blocked`` when its error starts with ``blocked: `` (``TaskRunRow.shown_failure_kind``).
 
 ``task_chains`` has one row per auto-continue chain (``queue.run_chain``): its runs
 in start order, the tasks the last selection skipped and why, the tasks that ran
@@ -362,10 +362,11 @@ class TaskRunRow:
 
     @property
     def shown_failure_kind(self) -> str | None:
-        """The failure kind; ``other`` for an ended unsuccessful run recorded without one."""
+        """The failure kind; for an ended unsuccessful run recorded without one ``other``
+        (``blocked`` when its error says so, ``failure.shown_kind``)."""
         if self.state in (RUNNING, SUCCEEDED):
             return None
-        return self.failure_kind or failure.OTHER
+        return failure.shown_kind(self.failure_kind, self.error)
 
     def failure_detail_dict(self) -> dict[str, Any] | None:
         """The failure's facts; ``{}`` when the run has none, None when it did not fail."""
@@ -374,8 +375,12 @@ class TaskRunRow:
         try:
             loaded = json.loads(self.failure_detail or "{}")
         except ValueError:
-            return {}
-        return loaded if isinstance(loaded, dict) else {}
+            loaded = {}
+        detail: dict[str, Any] = loaded if isinstance(loaded, dict) else {}
+        if self.shown_failure_kind == failure.BLOCKED and "blockers" not in detail:
+            # a run recorded before the kind: the blockers are in its error
+            detail["blockers"] = failure.error_blockers(self.error) or []
+        return detail
 
     def harness_start_dict(self) -> dict[str, Any] | None:
         """The switch the run started with (the project's quota chain); None without one."""

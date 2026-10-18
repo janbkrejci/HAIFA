@@ -47,6 +47,25 @@ describe('RunsList', () => {
     expect(wrapper.find('tr[data-run="r-ok"] [data-col="failure-kind"]').exists()).toBe(false)
   })
 
+  it('shows a blocked run as Blokovaný with links to its blocking tasks', () => {
+    const blocked = summary({
+      run_id: 'r-blocked',
+      state: 'failed',
+      error: 'blocked: task M01-S01-T01 waits for M01-TODO-T01',
+      failure_kind: 'blocked',
+      failure_detail: { blockers: ['M01-TODO-T01'] },
+    })
+    const wrapper = mount(RunsList, { props: { runs: [blocked, summary()] } })
+    const row = wrapper.find('tr[data-run="r-blocked"]')
+    expect(row.get('[data-status]').attributes('data-status')).toBe('blocked')
+    expect(row.get('[data-status]').text()).toBe('blokovaný')
+    expect(row.get('[data-status]').classes()).toContain('blocked')
+    const link = row.get('[data-col="blockers"] [data-test="blocker-link"]')
+    expect(link.text()).toBe('M01-TODO-T01')
+    expect(link.attributes('href')).toContain('/backlog/M01-TODO-T01')
+    expect(row.find('[data-col="failure-kind"]').exists()).toBe(false)
+  })
+
   it('has no state or task filter', () => {
     const data = runsResponse()
     const wrapper = mount(RunsList, { props: { runs: data.runs } })

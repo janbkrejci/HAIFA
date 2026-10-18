@@ -11,6 +11,7 @@ export type FailureKind =
   | 'invalid_output'
   | 'process_gone'
   | 'stopped'
+  | 'blocked'
   | 'other'
 
 /**
@@ -29,6 +30,7 @@ const LABELS: Record<FailureKind, string> = {
   invalid_output: 'Neplatný výstup agenta',
   process_gone: 'Proces běhu skončil',
   stopped: 'Běh zastaven',
+  blocked: 'Blokovaný',
   other: 'Jiná chyba',
 }
 
@@ -40,6 +42,7 @@ const ACTIONS: Record<FailureKind, readonly FailureAction[]> = {
   invalid_output: ['continue', 'cancel_task'],
   process_gone: ['continue', 'cancel_task'],
   stopped: ['continue', 'cancel_task'],
+  blocked: ['continue', 'cancel_task'],
   other: ['continue', 'cancel_task'],
 }
 
@@ -57,6 +60,8 @@ export interface FailureFact {
   items: string[]
   /** Paths, commands and expressions are shown in a monospace font. */
   mono?: boolean
+  /** The items are task ids, shown as links to the tasks. */
+  tasks?: boolean
 }
 
 export interface FailureCard {
@@ -118,6 +123,50 @@ function shown(value: unknown): string {
 
 function fact(id: string, label: string, items: string[], mono = false): FailureFact[] {
   return items.length ? [{ id, label, items, mono }] : []
+}
+
+const BLOCKED_PREFIX = 'blocked: '
+const BLOCKED_WAITS = ' waits for '
+
+/** The blockers named by a blocked run's error (`aifactory.failure.error_blockers`). */
+export function errorBlockers(error: string | null | undefined): string[] {
+  const text = error ?? ''
+  if (!text.startsWith(BLOCKED_PREFIX)) return []
+  const head = text.split(';', 1)[0] ?? ''
+  const at = head.indexOf(BLOCKED_WAITS)
+  if (at < 0) return []
+  return head
+    .slice(at + BLOCKED_WAITS.length)
+    .split(', ')
+    .map((part) => part.trim())
+    .filter(Boolean)
+}
+
+/**
+ * The kind of a run as shown: its `failure_kind`, else (a run recorded before the kinds)
+ * `blocked` for an error starting with `blocked: ` and `other` for any ended unsuccessful run.
+ */
+export function shownFailureKind(run: { state: string | null; error?: string | null; failure_kind?: string | null }): string | null {
+  if (run.state === 'running' || run.state === 'succeeded') return null
+  if (run.failure_kind) return run.failure_kind
+  if (!['failed', 'stopped', 'aborted'].includes(run.state ?? '')) return null
+  return (run.error ?? '').startsWith(BLOCKED_PREFIX) ? 'blocked' : 'other'
+}
+
+/** The tasks a blocked run waits for; empty for any other run. */
+export function runBlockers(run: FailedRun): string[] {
+  if (shownFailureKind(run) !== 'blocked') return []
+  const listed = strings(obj(run.failure_detail)?.blockers)
+  return listed.length ? listed : errorBlockers(run.error)
+}
+
+function blockedCard(run: FailedRun): [string, FailureFact[]] {
+  const blockers = runBlockers(run)
+  const one = blockers.length === 1
+  const text = blockers.length
+    ? `Task čeká na ${one ? 'blokující task' : 'blokující tasky'} ${blockers.join(', ')}; po ${one ? 'jeho' : 'jejich'} dokončení se dá pokračovat`
+    : 'Task čeká na blokující tasky; po jejich dokončení se dá pokračovat'
+  return [text, blockers.length ? [{ id: 'blockers', label: 'Blokující tasky', items: blockers, mono: true, tasks: true }] : []]
 }
 
 function acceptCard(run: FailedRun, d: Detail): [string, FailureFact[]] {
@@ -229,8 +278,8 @@ function stoppedText(run: FailedRun, d: Detail): string {
 
 /** The card of a run that did not succeed; null for a running or succeeded run. */
 export function failureCard(run: FailedRun, phases: readonly FailurePhase[] = []): FailureCard | null {
-  const kind = run.failure_kind ?? (['failed', 'stopped', 'aborted'].includes(run.state ?? '') ? 'other' : null)
-  if (!kind || run.state === 'running' || run.state === 'succeeded') return null
+  const kind = shownFailureKind(run)
+  if (!kind) return null
   const d = obj(run.failure_detail) ?? {}
   let text: string
   let facts: FailureFact[] = []
@@ -259,6 +308,9 @@ export function failureCard(run: FailedRun, phases: readonly FailurePhase[] = []
     }
     case 'stopped':
       text = stoppedText(run, d)
+      break
+    case 'blocked':
+      ;[text, facts] = blockedCard(run)
       break
     default:
       text = firstLine(run.error) ?? 'Běh selhal bez chybové zprávy'

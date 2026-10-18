@@ -44,3 +44,13 @@ def test_agent_reported_fail_kinds() -> None:
 )
 def test_interrupted_run(exc: BaseException, kind: str) -> None:
     assert task_mod._interrupt_failure(exc)[0] == kind
+
+
+def test_shown_kind_reads_an_older_blocked_run_from_its_error() -> None:
+    error = failure.blocked_error("A-T01", ["B-T01", "C-T02"])
+    assert failure.shown_kind(None, error) == failure.BLOCKED
+    assert failure.shown_kind(None, "boom") == failure.OTHER
+    assert failure.shown_kind(failure.QUOTA, error) == failure.QUOTA
+    assert failure.error_blockers(f"{error}; boom") == ["B-T01", "C-T02"]
+    assert failure.error_blockers("boom") is None
+    assert failure.BLOCKED in failure.FAILURE_KINDS

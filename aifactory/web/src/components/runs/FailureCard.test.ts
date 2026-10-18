@@ -226,6 +226,29 @@ describe('FailureCard', () => {
     expect(wrapper.get('[data-test="run-error"]').text()).toBe('worktree add failed\nfatal: branch exists')
   })
 
+  it('blocked: its own colour, the blocking tasks as links, Pokračovat and Zrušit task', () => {
+    const wrapper = card({
+      error: 'blocked: task M01-S01-T01 waits for M01-TODO-T01, M01-TODO-T02',
+      failure_kind: 'blocked',
+      failure_detail: { blockers: ['M01-TODO-T01', 'M01-TODO-T02'] },
+    })
+    expect(wrapper.get('[data-test="failure-card"]').attributes('data-kind')).toBe('blocked')
+    expect(wrapper.get('[data-test="failure-kind"]').text()).toBe('Blokovaný')
+    expect(wrapper.get('[data-test="failure-sentence"]').text()).toBe(
+      'Task čeká na blokující tasky M01-TODO-T01, M01-TODO-T02; po jejich dokončení se dá pokračovat.',
+    )
+    const links = wrapper.findAll('[data-fact="blockers"] [data-test="blocker-link"]')
+    expect(links.map((a) => a.text())).toEqual(['M01-TODO-T01', 'M01-TODO-T02'])
+    expect(links[0]?.attributes('href')).toContain('/backlog/M01-TODO-T01')
+    expect(actions(wrapper)).toEqual(['Pokračovat', 'Zrušit task'])
+  })
+
+  it('blocked of an older run: the kind and the blockers from its error', () => {
+    const run = { state: 'failed', error: 'blocked: task A-T01 waits for B-T01; boom' }
+    expect(failureCard(run)?.kind).toBe('blocked')
+    expect(failureCard(run)?.facts[0]?.items).toEqual(['B-T01'])
+  })
+
   it('shows nothing for a succeeded or running run; an older failed run reads as other', () => {
     expect(card({ state: 'succeeded', error: null }).find('[data-test="failure-card"]').exists()).toBe(false)
     expect(card({ state: 'running', error: null }).find('[data-test="failure-card"]').exists()).toBe(false)

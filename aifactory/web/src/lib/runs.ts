@@ -1,6 +1,7 @@
 // Task runs and their trace, as served by /api/runs (aifactory/web/runs.py).
 // Trace shapes follow the sssf visualizer's shared/types.ts, with JSON columns parsed.
 import { getApi, postApi } from './api'
+import { shownFailureKind } from './failure'
 import { plural } from './format'
 
 export type PhaseKind = 'engineer' | 'agent' | 'code'
@@ -12,10 +13,18 @@ export type RunPause = 'pausing' | 'paused'
 
 /**
  * The state a run is shown in: a running run with a pause shows `pausing` (the current
- * phase still runs) or `paused` (it waits before the next phase); otherwise its state.
+ * phase still runs) or `paused` (it waits before the next phase); a failed run that ended
+ * blocked (failure kind `blocked`, also read from an older run's error) shows `blocked`;
+ * otherwise its state.
  */
-export function shownState(run: { state: string | null; pause?: string | null }): string | null {
+export function shownState(run: {
+  state: string | null
+  pause?: string | null
+  error?: string | null
+  failure_kind?: string | null
+}): string | null {
   if (run.state === 'running' && (run.pause === 'paused' || run.pause === 'pausing')) return run.pause
+  if (run.state === 'failed' && shownFailureKind(run) === 'blocked') return 'blocked'
   return run.state
 }
 

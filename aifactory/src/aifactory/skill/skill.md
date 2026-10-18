@@ -133,10 +133,12 @@ What to do with the common ones:
   remote and the provider CLI (`gh`, `az`), then `factory task publish ID --json` (see
   Publish). A push that failed on the network was already retried a few times.
 - `run_failed`: read `data.run.failure_kind` (`accept_not_met`, `nothing_to_do`, `quota`,
-  `writes_violation`, `invalid_output`, `process_gone`, `stopped`, `other`), its facts in
-  `data.run.failure_detail` and the text in `data.run.error`; `factory task runs ID --json`
-  and `factory task show ID --json` give them for every run (a run recorded before the
-  field reads as `other`). For `accept_not_met` the detail holds `accept`, the `values`
+  `writes_violation`, `invalid_output`, `process_gone`, `stopped`, `blocked`, `other`), its
+  facts in `data.run.failure_detail` and the text in `data.run.error`; `factory task runs ID
+  --json` and `factory task show ID --json` give them for every run (a run recorded before
+  the field reads as `other`, or `blocked` when its error starts with `blocked: `).
+  `blocked` is no failure: an agent reported a blocking follow-up or task, the detail's
+  `blockers` lists them; run them first, then retry. For `accept_not_met` the detail holds `accept`, the `values`
   of the fields it reads, the `rounds` of each `repeat`, the latest review `objections`
   and the test's `failed_checks`; `error` names the first of them in one sentence. The worktree and branch are kept. Continue the run
   where it ended with `factory task retry ID --note TEXT --json` (see Procedures, Retry), or

@@ -6,12 +6,14 @@
 // and says why the others stay forbidden (GET /api/runs/{id}/allow-writes). A nothing_to_do
 // run offers „Hotovo“: the task is done in base without changes (POST /api/runs/{id}/done). A
 // quota run offers „Pokračovat s jiným harnessem“ (SwitchHarnessButton, `task retry --harness`).
+// A blocked run is no failure: its card has its own colour and links to the blocking tasks.
 import { computed, ref, watch } from 'vue'
 import { Ban, CircleCheck, ShieldCheck } from 'lucide-vue-next'
 import { editTask } from '@/lib/backlog'
 import { useConfirm } from '@/lib/confirm'
 import { allowWritesReason, failureCard, type FailurePhase } from '@/lib/failure'
 import { errorText } from '@/lib/format'
+import { taskHref } from '@/lib/router'
 import {
   allowWritesAndRetry,
   allowWritesPlan,
@@ -191,7 +193,10 @@ async function onCancelTask() {
     <div v-for="fact in card.facts" :key="fact.id" class="fact" :data-fact="fact.id">
       <h4>{{ fact.label }}</h4>
       <ul :class="{ mono: fact.mono }">
-        <li v-for="(item, i) in fact.items" :key="i" data-test="failure-item">{{ item }}</li>
+        <li v-for="(item, i) in fact.items" :key="i" data-test="failure-item">
+          <a v-if="fact.tasks" :href="taskHref(item)" data-test="blocker-link">{{ item }}</a>
+          <template v-else>{{ item }}</template>
+        </li>
       </ul>
     </div>
     <div v-if="canAllow" class="fact" data-fact="allow">
@@ -240,6 +245,16 @@ h3 {
   margin: 0;
   font-size: 17px;
   color: var(--red);
+}
+
+/* a blocked run waits for its blockers: not a failure */
+.failure-card[data-kind='blocked'] {
+  border-color: rgba(148, 163, 255, 0.55);
+  background: rgba(148, 163, 255, 0.08);
+}
+
+.failure-card[data-kind='blocked'] h3 {
+  color: var(--violet);
 }
 
 .actions {

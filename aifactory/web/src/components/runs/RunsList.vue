@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { Archive, ArchiveRestore, Trash2 } from 'lucide-vue-next'
 import { fmtCost, fmtDuration, fmtTime, fmtTokens } from '@/lib/format'
-import { runHref } from '@/lib/router'
+import { runHref, taskHref } from '@/lib/router'
 import { isFinished, shownState, startedByLabel, startedByTip, type RunSummary } from '@/lib/runs'
-import { failureLabel } from '@/lib/failure'
+import { failureLabel, runBlockers } from '@/lib/failure'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import PhaseDots from './PhaseDots.vue'
 import StatusChip from './StatusChip.vue'
@@ -123,7 +123,13 @@ function openRun(event: MouseEvent, run: RunSummary) {
           <td>{{ run.workflow ?? '—' }}</td>
           <td>
             <StatusChip :status="shownState(run)" />
-            <Tooltip v-if="run.failure_kind" :text="run.error ?? ''">
+            <span v-if="shownState(run) === 'blocked'" class="blockers" data-col="blockers">
+              čeká na
+              <template v-for="(id, i) in runBlockers(run)" :key="id"
+                >{{ i ? ', ' : ' ' }}<a :href="taskHref(id)" class="mono" data-test="blocker-link">{{ id }}</a></template
+              >
+            </span>
+            <Tooltip v-else-if="run.failure_kind" :text="run.error ?? ''">
               <span class="failure-kind" data-col="failure-kind" tabindex="0">{{ failureLabel(run.failure_kind) }}</span>
             </Tooltip>
           </td>
@@ -192,6 +198,14 @@ function openRun(event: MouseEvent, run: RunSummary) {
 </template>
 
 <style scoped>
+.blockers {
+  display: block;
+  margin-top: 4px;
+  color: var(--violet);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
 .failure-kind {
   display: block;
   margin-top: 4px;

@@ -22,6 +22,7 @@ from overview_fixture import (
     T_FAIL,
     T_REV,
     T_RUN,
+    _row,
     dead_pid,
     make_installed_repo,
     make_overview_repo,
@@ -487,6 +488,35 @@ def test_trace_db_without_the_failure_kind_column(repo_a: Path, tmp_path: Path) 
     a = _repo_item(repo_a, tmp_path)
     assert a["warnings"] == []
     assert [f["failure_kind"] for f in a["failed"]] == ["other"]
+
+
+@pytest.mark.parametrize(
+    ("kind", "detail"),
+    [("blocked", {"blockers": ["M01-TODO-T01"]}), (None, None)],  # None: an older run
+)
+def test_blocked_run_is_not_failed(
+    repo_a: Path, tmp_path: Path, kind: str | None, detail: dict[str, Any] | None
+) -> None:
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.claim(_row("r-blocked", T_FAIL, 8, os.getpid()))
+        error = f"blocked: task {T_FAIL} waits for M01-TODO-T01"
+        store.finish("r-blocked", "failed", None, error, kind, detail)
+        if kind is None:  # recorded before the failure kinds existed
+            store.conn.execute(
+                "UPDATE task_runs SET failure_kind = NULL, failure_detail = NULL "
+                "WHERE run_id = 'r-blocked'"
+            )
+        row = store.get("r-blocked")
+    finally:
+        store.close()
+    assert row is not None and row.shown_failure_kind == "blocked"
+    assert row.failure_detail_dict() == {"blockers": ["M01-TODO-T01"]}
+    home = tmp_path / "home"
+    register(home, repo_a)
+    data = _get(_client(home, tmp_path))
+    assert data["repos"][0]["failed"] == []
+    assert data["totals"]["failed"] == 0
 
 
 def test_missing_repo_has_no_tasks_nor_factory(tmp_path: Path) -> None:
