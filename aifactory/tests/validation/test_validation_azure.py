@@ -139,6 +139,7 @@ def no_side_checks(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     seen: list[str] = []
     monkeypatch.setattr(runner, "_require_just", lambda: seen.append("just"))
     monkeypatch.setattr(runner, "_preflight_harnesses", lambda roster: seen.append("harness"))
+    monkeypatch.setattr(runner, "_preflight_models", lambda roster: seen.append("models"))
     return seen
 
 
@@ -189,7 +190,7 @@ def test_preflight_azure_checks_git_access(
         },
     )
     assert runner.preflight_azure(SANDBOX.web_url) == SANDBOX
-    assert no_side_checks == ["just", "harness"]
+    assert no_side_checks == ["just", "harness", "models"]
 
     missing = tmp_path / "missing.git"
     install_fake_az(

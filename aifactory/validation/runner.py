@@ -15,6 +15,8 @@ import traceback
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from validation import results as results_mod
 from validation.context import SESSIONS_DIR, TRACE_DB, Context
 from validation.hidden import write_hidden
@@ -167,12 +169,16 @@ def _worker_json(argv: list[str]) -> tuple[int, dict[str, Any]]:
     return proc.returncode, data if isinstance(data, dict) else {}
 
 
+def roster_files(roster: Path | None) -> tuple[Path, Path]:
+    """The ``agents.yaml`` and the workflow of `roster`, or of the template without one."""
+    if roster is None:
+        return TEMPLATE_DIR / AGENTS_CONFIG, TEMPLATE_DIR / WORKFLOW
+    return roster / "agents.yaml", roster / "workflows" / "simple-sdlc.yaml"
+
+
 def roster_harnesses(roster: Path | None) -> set[str]:
     """Every harness the roster's agents and its workflow steps use."""
-    if roster is None:
-        agents, workflow = TEMPLATE_DIR / AGENTS_CONFIG, TEMPLATE_DIR / WORKFLOW
-    else:
-        agents, workflow = roster / "agents.yaml", roster / "workflows" / "simple-sdlc.yaml"
+    agents, workflow = roster_files(roster)
     used = set(agent_harnesses(agents).values())
     return used | set(workflow_harnesses(agents, workflow).values())
 
@@ -204,8 +210,37 @@ def _preflight_harnesses(roster: Path | None) -> None:
         )
 
 
+def roster_model_problems(roster: Path | None) -> list[str]:
+    """``path: code: message`` of every roster step whose harness cannot run its model.
+
+    The same check as the workflow preflight of a run (``check_agents``): every
+    agent step with its harness/model/thinking override resolved by the harness.
+    ``factory harness check`` only finds the CLIs and never sees the models.
+    """
+    from aifactory.config import ConfigError
+    from aifactory.config.loader import load_roster_file
+    from aifactory.engine.role_registry import load_roles
+    from aifactory.workflow import WorkflowError, check_agents, parse_workflow
+
+    agents, workflow = roster_files(roster)
+    try:
+        cfg = load_roster_file(agents)
+        data = yaml.safe_load(workflow.read_text(encoding="utf-8"))
+        parsed = parse_workflow(data, load_roles())
+    except (ConfigError, WorkflowError, OSError, yaml.YAMLError) as exc:
+        raise SetupError(f"cannot check the models of {agents}: {exc}") from exc
+    return [f"{i.path}: {i.code}: {i.message}" for i in check_agents(parsed, cfg)]
+
+
+def _preflight_models(roster: Path | None) -> None:
+    """Every harness+model pair of the roster must resolve before the sandbox is touched."""
+    problems = roster_model_problems(roster)
+    if problems:
+        raise SetupError("the roster has models its harness cannot run: " + "; ".join(problems))
+
+
 def preflight_github(sandbox_repo: str | None, roster: Path | None = None) -> str:
-    """``owner/name`` of the sandbox after checking gh, just and the harnesses."""
+    """``owner/name`` of the sandbox after checking gh, just, the harnesses and models."""
     owner_name = normalize_repo(sandbox_repo)  # no subprocess before this check
     _require_just()
     from validation.sandbox import gh_executable
@@ -216,6 +251,7 @@ def preflight_github(sandbox_repo: str | None, roster: Path | None = None) -> st
     if auth.returncode != 0:
         raise SetupError(f"gh auth status failed: {(auth.stderr or auth.stdout).strip()}")
     _preflight_harnesses(roster)
+    _preflight_models(roster)
     return owner_name
 
 
@@ -232,7 +268,7 @@ def _az_ok(*args: str) -> tuple[bool, str]:
 
 
 def preflight_azure(sandbox_repo: str | None, roster: Path | None = None) -> AzureRepo:
-    """The Azure DevOps sandbox after checking just, az, the sandbox, git auth and harnesses."""
+    """The Azure DevOps sandbox after checking just, az, git auth, harnesses and models."""
     target = normalize_azure_repo(sandbox_repo)  # no subprocess before this check
     _require_just()
     ok, detail = _az_ok("--version")
@@ -263,6 +299,7 @@ def preflight_azure(sandbox_repo: str | None, roster: Path | None = None) -> Azu
     if probe.returncode != 0:
         raise SetupError(f"git cannot authenticate to {url}: {probe.stderr.strip()}")
     _preflight_harnesses(roster)
+    _preflight_models(roster)
     return target
 
 
