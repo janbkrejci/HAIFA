@@ -2,8 +2,7 @@
 id: HAIFA-S09-T02
 title: "E2E: Azure repo s povinným schválením, auto approve, auto-continue a úklid"
 status: todo
-assignee: human
-depends_on: []
+depends_on: [HAIFA-S90-T04]
 ---
 
 ## Zadání

@@ -2,7 +2,6 @@
 id: HAIFA-S90-T04
 title: OB4 Azure DevOps proti skutečnému repu
 status: todo
-assignee: human
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S09-T01, HAIFA-S09-T02]
@@ -13,6 +12,8 @@ writes: [aifactory/src/aifactory/providers/azure.py, aifactory/tests/providers/,
 Ověř provider Azure DevOps (D8) proti skutečnému repu. Dnes je ověřený jen proti falešnému `az` (`aifactory/tests/providers/az_fake.py`).
 
 Podmínka: spustit, až bude Azure DevOps k dispozici (sandbox repo na Azure DevOps, přihlášené `az` s rozšířením `azure-devops`).
+
+Prostředí na tomto stroji (macOS): `az` 2.91 s rozšířením azure-devops je přihlášené (`az login --allow-no-subscriptions`, tenant Asseco Solutions). Sandbox: organizace https://asolcz.visualstudio.com, projekt NEO_HEF, repo `HAIFA-Azure-Sandbox`. Produkční repo NEO_HEF se nemění.
 
 Validace (`just validate`, `aifactory/validation/`) dnes umí jen `--remote local|github`. Pro tento úkol přidej režim `--remote azure` po vzoru `github`:
 - sandbox repo se zadá proměnnou prostředí, stejně jako `HAIFA_SANDBOX_REPO` pro GitHub;
