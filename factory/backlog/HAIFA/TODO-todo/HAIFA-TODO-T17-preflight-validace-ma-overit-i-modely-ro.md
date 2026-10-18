@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T17
 title: "Preflight validace má ověřit i modely rosteru, nejen harnessy"
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-S90-T04]
 writes: [aifactory/validation/runner.py, aifactory/tests/validation/]
@@ -19,3 +19,4 @@ Důvod: Na macOS prošel preflight `just validate --remote azure` s výchozím r
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-18 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/112 · náklady $1.72
