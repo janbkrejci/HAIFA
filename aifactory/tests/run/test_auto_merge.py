@@ -224,7 +224,45 @@ def test_merges_a_reviewed_run(repo: Path, script: Script) -> None:
     row = pr_row(repo, T01)
     assert row is not None
     assert (row.state, row.merged_by, row.auto_merge_error) == ("merged", MERGED_BY_AUTO, None)
-    assert chain.to_json()["runs"][0]["auto_merge"]["merged_by"] == "auto-merge"  # type: ignore[index]
+    merged = chain.to_json()["runs"][0]["auto_merge"]  # type: ignore[index]
+    assert merged["merged_by"] == "auto-merge"
+    # the local provider sends no host vote
+    assert merged["reviewed"] is False
+
+
+def test_merge_passes_the_host_vote_on(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import dataclasses
+
+    real = approve_task
+
+    def voted(*args: Any, **kwargs: Any) -> Any:
+        # the merge as approve_task does it, with the vote a hosting such as Azure sends
+        return dataclasses.replace(real(*args, **kwargs), reviewed=True)
+
+    monkeypatch.setattr(automerge, "approve_task", voted)
+    setup(repo)
+    build(script, "one")
+    review(script)
+
+    chain = run_chain(repo, T01)
+
+    merged = chain.runs[0].auto_merge
+    assert merged is not None and merged.merged, merged
+    assert merged.reviewed is True
+    assert merged.to_json()["reviewed"] is True
+
+
+def test_auto_merge_json_carries_the_host_vote() -> None:
+    from aifactory.review.automerge import AutoMergeResult
+
+    sent = AutoMergeResult(True, None, None, "https://x/pr/1", "abc", reviewed=True)
+    data = sent.to_json()
+    assert data["reviewed"] is True
+    back = AutoMergeResult.from_json(data)
+    assert back is not None and back.reviewed is True
+    assert AutoMergeResult(False, "no_pr", "none", None).to_json()["reviewed"] is False
 
 
 def test_failed_run_is_not_merged(repo: Path, script: Script) -> None:

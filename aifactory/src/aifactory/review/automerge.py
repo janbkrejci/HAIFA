@@ -105,6 +105,7 @@ class AutoMergeResult:
     pr_url: str | None
     merge_sha: str | None = None
     approve: ApproveResult | None = None
+    reviewed: bool = False  # the hosting took factory's own approval vote (Azure)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -114,6 +115,7 @@ class AutoMergeResult:
             "pr_url": self.pr_url,
             "merge_sha": self.merge_sha,
             "merged_by": AUTO_MERGE if self.merged else None,
+            "reviewed": self.reviewed,
         }
 
     @classmethod
@@ -132,6 +134,7 @@ class AutoMergeResult:
             reason=text("reason"),
             pr_url=text("pr_url"),
             merge_sha=text("merge_sha"),
+            reviewed=data.get("reviewed") is True,
         )
 
 
@@ -344,7 +347,9 @@ def _hosting_and_merge(
         return blocked(exc.code, exc.message)
     except (OSError, RuntimeError) as exc:
         return blocked("merge_failed", str(exc))
-    return AutoMergeResult(True, None, None, url, approved.merge_sha, approved)
+    return AutoMergeResult(
+        True, None, None, url, approved.merge_sha, approved, reviewed=approved.reviewed
+    )
 
 
 def _record_error(trace_db: Path, branch: str, error: str | None) -> None:
