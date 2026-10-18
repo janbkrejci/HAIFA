@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S90-T04
 title: OB4 Azure DevOps proti skutečnému repu
-status: todo
+status: done
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S09-T01, HAIFA-S09-T02]
@@ -29,3 +29,4 @@ Done means:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-18 · workflow simple-sdlc · PR https://github.com/janbkrejci/HAIFA/pull/111 · náklady $8.67
