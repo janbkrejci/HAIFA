@@ -245,6 +245,12 @@ def test_azure_approve_final_push_before_vote_and_retry(
                         "lastMergeSourceCommit": {"commitId": git(origin, "rev-parse", BRANCH)},
                     }
                 )
+            if command == "repos pr policy":
+                # A green build validation: the CI gate lets the merge go on at once.
+                build = {"id": "0609b952-1397-4640-95ec-e00a01b2c241", "displayName": "Build"}
+                return json.dumps(
+                    [{"status": "approved", "configuration": {"type": build, "settings": {}}}]
+                )
             if command == "repos pr set-vote":
                 # A successful push must already include exactly one done commit.
                 assert done_commits(origin, BRANCH) == 1

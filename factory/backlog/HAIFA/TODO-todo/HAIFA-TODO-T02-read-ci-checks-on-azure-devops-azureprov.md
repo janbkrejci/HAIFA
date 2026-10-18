@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T02
 title: Read CI checks on Azure DevOps (AzureProvider.checks / check_logs)
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T28]
 ---
@@ -18,3 +18,4 @@ Důvod: AzureProvider does not implement checks, so with git_provider azure the 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-18 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/109 · náklady $1.68

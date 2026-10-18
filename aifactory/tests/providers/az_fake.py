@@ -243,3 +243,62 @@ def prepare_shared_az(tmp_dir: Path) -> None:
         capture_output=True,
         check=False,
     )
+
+
+BUILD_POLICY_TYPE = {"id": "0609b952-1397-4640-95ec-e00a01b2c241", "displayName": "Build"}
+STATUS_POLICY_TYPE = {"id": "cbdc66da-9728-4af8-aada-9a5a32e4a226", "displayName": "Status"}
+REVIEWERS_POLICY_TYPE = {
+    "id": "fa4e907d-c16b-4a4c-9dfa-4906e5d171dd",
+    "displayName": "Minimum number of reviewers",
+}
+
+
+def policy_json(
+    status: str,
+    kind: dict[str, Any] | None = None,
+    name: str | None = "CI",
+    build_id: int | None = 41,
+    settings: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """One record of ``az repos pr policy list`` (a PolicyEvaluationRecord)."""
+    kind = kind or BUILD_POLICY_TYPE
+    config_settings: dict[str, Any] = dict(settings or {})
+    if kind is BUILD_POLICY_TYPE:
+        config_settings.setdefault("buildDefinitionId", 12)
+        if name is not None:
+            config_settings.setdefault("displayName", name)
+    context: dict[str, Any] = {}
+    if build_id is not None:
+        context = {"buildId": build_id, "isExpired": False, "buildDefinitionId": 12}
+    return {
+        "evaluationId": "e1",
+        "status": status,
+        "configuration": {
+            "id": 3,
+            "isBlocking": True,
+            "isEnabled": True,
+            "type": kind,
+            "settings": config_settings,
+        },
+        "context": context or None,
+    }
+
+
+def run_json(
+    id: int,
+    name: str,
+    status: str = "completed",
+    result: str | None = "succeeded",
+    head: str = HEAD,
+    definition: int = 12,
+) -> dict[str, Any]:
+    """One record of ``az pipelines runs list`` (a Build)."""
+    return {
+        "id": id,
+        "buildNumber": f"2026.{id}",
+        "status": status,
+        "result": result,
+        "sourceBranch": "refs/heads/factory/T01-1",
+        "sourceVersion": head,
+        "definition": {"id": definition, "name": name},
+    }

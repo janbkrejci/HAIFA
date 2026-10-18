@@ -33,7 +33,18 @@ Commands used (shapes from the ``az repos pr`` / ``az devops invoke`` docs):
   window. Completion can be asynchronous, so the PR is polled afterwards;
 - ``az devops invoke --area git --resource pullRequestThreads`` -- comment
   (``az repos pr`` has no comment command); the body goes in a temporary
-  ``--in-file``.
+  ``--in-file``;
+- ``az repos pr policy list --id`` -- CI checks (``checks``): the evaluations of
+  the PR's build validation (``Build``) and status (``Status``) policies. Other
+  policies (reviewers, work items, comments) are not CI and are left out.
+  ``approved`` is green, ``rejected``/``broken`` red, ``queued``/``running``
+  pending, ``notApplicable`` is skipped. A PR without such a policy falls back to
+  ``az pipelines runs list --branch`` (the latest run of each pipeline at the
+  PR's head commit), so CI triggered by the branch push counts too;
+- ``az devops invoke --area build --resource timeline`` and ``--resource logs``
+  -- ``check_logs``: the issues and the log tail of each failed task of a red
+  build (``az pipelines runs`` has no log command). A red status policy has no
+  build, its entry is a note.
 
 Unit tests use fake ``az`` executors and perform no live hosting writes. The operator
 verifies the installed CLI read-only, then tests the PR lifecycle after merge in
@@ -50,18 +61,24 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
 
 from aifactory.config.settings import AzureSettings, ProjectSettings
 from aifactory.providers.base import (
+    CHECKS_FAILING,
+    CHECKS_NONE,
+    CHECKS_PASSING,
+    CHECKS_PENDING,
     CLOSED,
     CONFLICT,
     MERGEABLE,
     MERGED,
     OPEN,
     UNKNOWN,
+    ChecksStatus,
     GitProvider,
     MergeFailed,
     ProviderError,
@@ -79,6 +96,21 @@ WINDOWS = sys.platform == "win32"
 # Azure DevOps refuses a PR description over 4000 characters; keep room for the note.
 MAX_DESCRIPTION = 4000
 TRUNCATED = "\n\n… (zkráceno na limit popisu PR v Azure DevOps, celé znění je v tasku a v běhu)"
+
+CHECK_LOG_LINES = 150
+"""How many trailing lines of a red check's log ``check_logs`` keeps."""
+# Policy type ids of Azure DevOps (fixed across organizations).
+BUILD_POLICY = "0609b952-1397-4640-95ec-e00a01b2c241"
+STATUS_POLICY = "cbdc66da-9728-4af8-aada-9a5a32e4a226"
+_CI_POLICIES = {BUILD_POLICY: "Build", STATUS_POLICY: "Status"}
+_POLICY_STATES = {
+    "approved": CHECKS_PASSING,
+    "rejected": CHECKS_FAILING,
+    "broken": CHECKS_FAILING,
+    "queued": CHECKS_PENDING,
+    "running": CHECKS_PENDING,
+}
+_RUNS_TOP = 50
 
 _MISSING = "az (Azure CLI) is not installed or not on PATH; install it: https://aka.ms/azure-cli"
 _NO_EXTENSION = (
@@ -173,6 +205,71 @@ def _commit(data: dict[str, Any], key: str) -> str | None:
     return None
 
 
+@dataclass(frozen=True)
+class _Check:
+    name: str
+    state: str  # CHECKS_PASSING | CHECKS_PENDING | CHECKS_FAILING
+    build_id: int | None = None
+    note: str = ""  # where to look when there is no build log
+
+
+def _dict(value: object) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _policy_check(item: dict[str, Any]) -> _Check | None:
+    """A CI check from one ``az repos pr policy list`` record; None for other policies."""
+    config = _dict(item.get("configuration"))
+    kind = _dict(config.get("type"))
+    type_id = str(kind.get("id", "")).lower()
+    kind_name = str(kind.get("displayName", ""))
+    if type_id not in _CI_POLICIES and kind_name not in _CI_POLICIES.values():
+        return None
+    state = _POLICY_STATES.get(str(item.get("status", "")).lower())
+    if state is None:  # notApplicable, or a status this code does not know
+        return None
+    settings = _dict(config.get("settings"))
+    context = _dict(item.get("context"))
+    build = context.get("buildId")
+    build_id = build if isinstance(build, int) and not isinstance(build, bool) else None
+    if kind_name == "Status" or type_id == STATUS_POLICY:
+        genre = str(settings.get("statusGenre") or "")
+        status_name = str(settings.get("statusName") or "")
+        default = "/".join(part for part in (genre, status_name) if part) or "Status"
+        name = str(settings.get("defaultDisplayName") or settings.get("displayName") or default)
+        return _Check(name, state, None, f"status check {default}; see the PR in Azure DevOps")
+    definition = settings.get("buildDefinitionId")
+    default = f"Build {definition}" if definition is not None else "Build"
+    name = str(settings.get("displayName") or context.get("buildDefinitionName") or default)
+    return _Check(name, state, build_id)
+
+
+def _run_check(item: dict[str, Any]) -> _Check:
+    """A CI check from one ``az pipelines runs list`` record."""
+    definition = _dict(item.get("definition"))
+    name = str(definition.get("name") or f"pipeline {definition.get('id', '?')}")
+    run = item.get("id")
+    run_id = run if isinstance(run, int) and not isinstance(run, bool) else None
+    if str(item.get("status", "")).lower() != "completed":
+        return _Check(name, CHECKS_PENDING, run_id)
+    result = str(item.get("result", "")).lower()
+    passed = result in ("succeeded", "partiallysucceeded")
+    return _Check(name, CHECKS_PASSING if passed else CHECKS_FAILING, run_id)
+
+
+def _unique(checks: list[_Check]) -> list[_Check]:
+    """``checks`` with repeated names numbered (``name (2)``), so names are keys."""
+    seen: dict[str, int] = {}
+    out: list[_Check] = []
+    for check in checks:
+        count = seen.get(check.name, 0) + 1
+        seen[check.name] = count
+        if count > 1:
+            check = _Check(f"{check.name} ({count})", check.state, check.build_id, check.note)
+        out.append(check)
+    return out
+
+
 def _fit(body: str) -> str:
     """``body`` cut at a line end so that it and the note fit Azure's limit (with margin)."""
     margin = 100  # the leading spaces _description_lines may add
@@ -198,6 +295,7 @@ def _description_lines(body: str) -> list[str]:
 
 class AzureProvider(GitProvider):
     name = "azure"
+    reports_checks = True
 
     def __init__(
         self,
@@ -420,6 +518,141 @@ class AzureProvider(GitProvider):
                 f"PR {pr.id} approval head changed or PR not open: "
                 f"{current.state}, {current.head_sha} != {head_sha}; merge stopped",
             )
+
+    # -- CI checks ----------------------------------------------------------
+
+    def _ci_checks(self, pr: PullRequest) -> list[_Check]:
+        """The PR's CI checks: build and status policies, else the branch's pipeline runs."""
+        self._ready()
+        data = self.az.json(
+            "repos", "pr", "policy", "list", "--id", pr.id, *self._org(), *self._tail()
+        )
+        if not isinstance(data, list):
+            raise ProviderError("az_failed", "az repos pr policy list: expected a JSON array")
+        policies = [check for item in data if (check := _policy_check(_dict(item))) is not None]
+        if policies:
+            return _unique(policies)
+        return _unique(self._run_checks(pr))
+
+    def _run_checks(self, pr: PullRequest) -> list[_Check]:
+        """The latest pipeline run of each pipeline at the PR's head commit."""
+        head = _commit(self._show(pr), "lastMergeSourceCommit")
+        if head is None:
+            return []
+        data = self.az.json(
+            "pipelines",
+            "runs",
+            "list",
+            "--branch",
+            f"refs/heads/{pr.branch}",
+            "--project",
+            self.azure.project,
+            "--top",
+            str(_RUNS_TOP),
+            "--query-order",
+            "QueueTimeDesc",
+            *self._org(),
+            *self._tail(),
+        )
+        if not isinstance(data, list):
+            raise ProviderError("az_failed", "az pipelines runs list: expected a JSON array")
+        latest: dict[object, _Check] = {}
+        for item in data:
+            run = _dict(item)
+            if run.get("sourceVersion") != head:
+                continue
+            key = _dict(run.get("definition")).get("id", run.get("id"))
+            if key not in latest:  # newest first
+                latest[key] = _run_check(run)
+        return list(latest.values())
+
+    def checks(self, pr: PullRequest) -> ChecksStatus:
+        """``failing`` when any check is red, else ``pending`` / ``passing`` / ``none``."""
+        found = self._ci_checks(pr)
+        if not found:
+            return ChecksStatus(CHECKS_NONE)
+        failing = tuple(check.name for check in found if check.state == CHECKS_FAILING)
+        if failing:
+            return ChecksStatus(CHECKS_FAILING, failing)
+        if any(check.state == CHECKS_PENDING for check in found):
+            return ChecksStatus(CHECKS_PENDING)
+        return ChecksStatus(CHECKS_PASSING)
+
+    def check_logs(self, pr: PullRequest, failing: tuple[str, ...]) -> dict[str, str]:
+        """The issues and log tail of the failed tasks of each red check's build.
+
+        Only the last ``CHECK_LOG_LINES`` lines are kept. A check without a build, or
+        whose log cannot be read, gets ``log unavailable: ...`` instead; only a failure
+        to read the checks themselves raises.
+        """
+        if not failing:
+            return {}
+        by_name = {check.name: check for check in self._ci_checks(pr)}
+        logs: dict[str, str] = {}
+        for name in failing:
+            check = by_name.get(name)
+            if check is None or check.build_id is None:
+                note = check.note if check is not None and check.note else "no build"
+                logs[name] = f"log unavailable: {note}"
+                continue
+            try:
+                text = self._build_log(check.build_id)
+            except ProviderError as exc:
+                detail = (getattr(exc, "stderr", "") or exc.message).strip().splitlines()
+                first = detail[0] if detail else exc.code
+                logs[name] = f"log unavailable: {first} (build {check.build_id})"
+                continue
+            lines = text.splitlines()[-CHECK_LOG_LINES:]
+            logs[name] = "\n".join(lines) if lines else f"log empty (build {check.build_id})"
+        return logs
+
+    def _invoke_build(self, resource: str, *route: str) -> Any:
+        return self.az.json(
+            "devops",
+            "invoke",
+            "--area",
+            "build",
+            "--resource",
+            resource,
+            "--route-parameters",
+            f"project={self.azure.project}",
+            *route,
+            "--api-version",
+            API_VERSION,
+            *self._org(),
+            "--output",
+            "json",
+            "--only-show-errors",
+        )
+
+    def _build_log(self, build_id: int) -> str:
+        """The issues and log lines of the failed tasks of build `build_id`."""
+        timeline = self._invoke_build("timeline", f"buildId={build_id}")
+        records = _dict(timeline).get("records")
+        if not isinstance(records, list):
+            raise ProviderError("az_failed", "build timeline: no records")
+        failed = [
+            record
+            for item in records
+            if (record := _dict(item)).get("type") == "Task"
+            and str(record.get("result", "")).lower() == "failed"
+        ]
+        failed.sort(key=lambda record: int(record.get("order") or 0))
+        out: list[str] = []
+        for record in failed:
+            out.append(f"## {record.get('name', '?')}")
+            for issue in record.get("issues") or []:
+                issue = _dict(issue)
+                if issue.get("message"):
+                    out.append(f"{issue.get('type', 'error')}: {issue['message']}")
+            log_id = _dict(record.get("log")).get("id")
+            if log_id is None:
+                continue
+            lines = self._invoke_build("logs", f"buildId={build_id}", f"logId={log_id}")
+            value = _dict(lines).get("value") if isinstance(lines, dict) else lines
+            if isinstance(value, list):
+                out += [str(line) for line in value[-CHECK_LOG_LINES:]]
+        return "\n".join(out)
 
     def merge(
         self, pr: PullRequest, head_sha: str, subject: str, strategy: str | None = None

@@ -10,19 +10,27 @@ from az_fake import (
     HEAD,
     MERGE_SHA,
     ORG_URL,
+    REVIEWERS_POLICY_TYPE,
+    STATUS_POLICY_TYPE,
     WEB_URL,
     AzLog,
     call_key,
     install_fake_az,
+    policy_json,
     pr_json,
     prepare_shared_az,
     reply,
+    run_json,
     thread_json,
 )
 
 from aifactory.config.errors import ConfigIssue
 from aifactory.config.settings import AzureSettings, ProjectSettings, parse_project_settings
 from aifactory.providers import (
+    CHECKS_FAILING,
+    CHECKS_NONE,
+    CHECKS_PASSING,
+    CHECKS_PENDING,
     CLOSED,
     CONFLICT,
     MERGEABLE,
@@ -33,7 +41,7 @@ from aifactory.providers import (
     ProviderError,
     PullRequest,
 )
-from aifactory.providers.azure import API_VERSION, TRUNCATED, AzCli, AzureProvider
+from aifactory.providers.azure import API_VERSION, CHECK_LOG_LINES, TRUNCATED, AzCli, AzureProvider
 
 PR = PullRequest(
     id="7", url=f"{WEB_URL}/pullrequest/7", branch="factory/T01-1", base="main", title="T01"
@@ -722,3 +730,212 @@ def test_find_open_pr(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, found: bo
     assert argv[argv.index("--source-branch") + 1] == "factory-config/plan-digest"
     assert argv[argv.index("--target-branch") + 1] == "main"
     assert argv[argv.index("--status") + 1] == "active"
+
+
+# -- CI checks --------------------------------------------------------------
+
+
+def test_reports_checks() -> None:
+    assert AzureProvider.reports_checks is True
+
+
+@pytest.mark.parametrize(
+    ("statuses", "state", "failing"),
+    [
+        (["approved", "approved"], CHECKS_PASSING, ()),
+        (["approved", "running"], CHECKS_PENDING, ()),
+        (["queued"], CHECKS_PENDING, ()),
+        (["approved", "rejected"], CHECKS_FAILING, ("CI (2)",)),
+        (["broken", "running"], CHECKS_FAILING, ("CI",)),
+        (["notApplicable"], CHECKS_NONE, ()),
+    ],
+)
+def test_checks_from_build_policies(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    statuses: list[str],
+    state: str,
+    failing: tuple[str, ...],
+) -> None:
+    policies = [policy_json(status) for status in statuses]
+    if state == CHECKS_NONE:
+        log = install_fake_az(
+            tmp_path,
+            monkeypatch,
+            {"repos pr policy list": reply(policies), "repos pr show": show(head=None)},
+        )
+    else:
+        log = install_fake_az(tmp_path, monkeypatch, {"repos pr policy list": reply(policies)})
+    checks = _provider(tmp_path, []).checks(PR)
+    assert (checks.state, checks.failing) == (state, failing)
+    assert _calls(log, "repos pr policy list") == [
+        ["repos", "pr", "policy", "list", "--id", "7", "--org", ORG_URL, *TAIL]
+    ]
+
+
+def test_checks_ignore_non_ci_policies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    policies = [
+        policy_json("running", REVIEWERS_POLICY_TYPE, build_id=None),
+        policy_json("approved"),
+        policy_json(
+            "rejected",
+            STATUS_POLICY_TYPE,
+            build_id=None,
+            settings={"statusGenre": "sonar", "statusName": "quality-gate"},
+        ),
+    ]
+    install_fake_az(tmp_path, monkeypatch, {"repos pr policy list": reply(policies)})
+    provider = _provider(tmp_path, [])
+    checks = provider.checks(PR)
+    assert (checks.state, checks.failing) == (CHECKS_FAILING, ("sonar/quality-gate",))
+    logs = provider.check_logs(PR, checks.failing)
+    assert logs["sonar/quality-gate"].startswith("log unavailable: status check sonar/quality-gate")
+
+
+def test_checks_fall_back_to_pipeline_runs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    runs = [
+        run_json(9, "lint", status="inProgress", result=None, definition=2),
+        run_json(8, "tests", result="failed", definition=1),
+        run_json(7, "tests", definition=1),  # an older run of the same pipeline
+        run_json(6, "build", head="d" * 40, result="failed", definition=3),  # another head
+    ]
+    log = install_fake_az(
+        tmp_path,
+        monkeypatch,
+        {
+            "repos pr policy list": reply([policy_json("running", REVIEWERS_POLICY_TYPE)]),
+            "repos pr show": show(),
+            "pipelines runs list": reply(runs),
+        },
+    )
+    checks = _provider(tmp_path, []).checks(PR)
+    assert (checks.state, checks.failing) == (CHECKS_FAILING, ("tests",))
+    argv = _calls(log, "pipelines runs list")[0]
+    assert argv[argv.index("--branch") + 1] == "refs/heads/factory/T01-1"
+    assert argv[argv.index("--project") + 1] == "Fab Rikam"
+    assert argv[argv.index("--org") + 1] == ORG_URL
+
+
+@pytest.mark.parametrize(
+    ("runs", "state"),
+    [
+        ([], CHECKS_NONE),
+        ([run_json(9, "ci", status="notStarted", result=None)], CHECKS_PENDING),
+        ([run_json(9, "ci", result="partiallySucceeded")], CHECKS_PASSING),
+    ],
+)
+def test_checks_pipeline_run_states(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, runs: list[dict[str, Any]], state: str
+) -> None:
+    install_fake_az(
+        tmp_path,
+        monkeypatch,
+        {
+            "repos pr policy list": reply([]),
+            "repos pr show": show(),
+            "pipelines runs list": reply(runs),
+        },
+    )
+    assert _provider(tmp_path, []).checks(PR).state == state
+
+
+def test_checks_bad_output(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    install_fake_az(tmp_path, monkeypatch, {"repos pr policy list": reply({})})
+    with pytest.raises(ProviderError) as info:
+        _provider(tmp_path, []).checks(PR)
+    assert info.value.code == "az_failed"
+
+
+def _timeline() -> dict[str, Any]:
+    return {
+        "records": [
+            {"type": "Job", "name": "Job", "result": "failed", "log": {"id": 1}, "order": 1},
+            {
+                "type": "Task",
+                "name": "pytest",
+                "result": "failed",
+                "order": 3,
+                "log": {"id": 7},
+                "issues": [{"type": "error", "message": "Bash exited with code '1'."}],
+            },
+            {"type": "Task", "name": "checkout", "result": "succeeded", "log": {"id": 5}},
+        ]
+    }
+
+
+def test_check_logs(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    lines = [f"line {n}" for n in range(200)] + ["FAILED tests/test_x.py::test_y"]
+    log = install_fake_az(
+        tmp_path,
+        monkeypatch,
+        {
+            "repos pr policy list": reply([policy_json("rejected", build_id=41)]),
+            "devops invoke": [reply(_timeline()), reply({"count": len(lines), "value": lines})],
+        },
+    )
+    logs = _provider(tmp_path, []).check_logs(PR, ("CI",))
+    text = logs["CI"]
+    assert text.splitlines()[-1] == "FAILED tests/test_x.py::test_y"
+    assert len(text.splitlines()) == CHECK_LOG_LINES
+    invokes = _calls(log, "devops invoke")
+    assert len(invokes) == 2
+    timeline, lines_call = invokes
+    assert timeline[timeline.index("--resource") + 1] == "timeline"
+    assert "buildId=41" in timeline and "project=Fab Rikam" in timeline
+    assert lines_call[lines_call.index("--resource") + 1] == "logs"
+    assert "logId=7" in lines_call
+    assert lines_call[lines_call.index("--api-version") + 1] == API_VERSION
+
+
+def test_check_logs_keeps_issues(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    install_fake_az(
+        tmp_path,
+        monkeypatch,
+        {
+            "repos pr policy list": reply([policy_json("rejected")]),
+            "devops invoke": [reply(_timeline()), reply({"value": ["boom"]})],
+        },
+    )
+    text = _provider(tmp_path, []).check_logs(PR, ("CI",))["CI"]
+    assert text.splitlines() == ["## pytest", "error: Bash exited with code '1'.", "boom"]
+
+
+def test_check_logs_unavailable(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    install_fake_az(
+        tmp_path,
+        monkeypatch,
+        {
+            "repos pr policy list": reply(
+                [
+                    policy_json("rejected", name="CI"),
+                    policy_json("rejected", name="nobuild", build_id=None),
+                ]
+            ),
+            "devops invoke": reply(exit=1, stderr="TF401177: build not found\nmore"),
+        },
+    )
+    logs = _provider(tmp_path, []).check_logs(PR, ("CI", "nobuild", "gone"))
+    assert logs["CI"] == "log unavailable: TF401177: build not found (build 41)"
+    assert logs["nobuild"] == "log unavailable: no build"
+    assert logs["gone"] == "log unavailable: no build"
+
+
+def test_check_logs_pipeline_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = install_fake_az(
+        tmp_path,
+        monkeypatch,
+        {
+            "repos pr policy list": reply([]),
+            "repos pr show": show(),
+            "pipelines runs list": reply([run_json(88, "tests", result="failed")]),
+            "devops invoke": [reply(_timeline()), reply({"value": ["boom"]})],
+        },
+    )
+    assert _provider(tmp_path, []).check_logs(PR, ("tests",))["tests"].endswith("boom")
+    assert "buildId=88" in _calls(log, "devops invoke")[0]
+
+
+def test_check_logs_nothing_failing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    log = install_fake_az(tmp_path, monkeypatch)
+    assert _provider(tmp_path, []).check_logs(PR, ()) == {}
+    assert log.argvs() == []
