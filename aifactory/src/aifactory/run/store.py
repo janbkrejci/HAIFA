@@ -32,6 +32,14 @@ the tasks auto-continue never starts (``excluded``). They are operating preferen
 not task content, so they live here and need no backlog commit (``queue_prefs``,
 ``set_queue_order``, ``set_excluded``).
 
+``task_priority`` holds the tasks that ended blocked during a run and their blockers
+(``failure_kind`` ``blocked``, including existing tasks from ``blocked_by``): ``finish`` of a
+blocked run writes the row, ``finish`` of a succeeded run of the task deletes it, and so
+does ``clear_priority`` (the operator in the kanban). The selection puts these tasks and
+their blockers before the kanban's queue (``queue.priority_order``); a task no longer
+``todo`` (done, cancelled) has no priority any more (``prune_priority``). ``queue_prefs``
+returns the rows with the queue preferences.
+
 ``harness_quota`` holds the harnesses that ran out of quota on this computer and when they
 may have it again (``retry_at``); ``project_harness`` the harness of a project's quota chain
 (``quota_switch``) the project's runs are on now (``run/quota_chain.py``). Both are machine
@@ -83,7 +91,7 @@ import os
 import sqlite3
 import threading
 import time
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -185,6 +193,12 @@ CREATE TABLE IF NOT EXISTS task_queue (
   rank INTEGER,
   excluded INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS task_priority (
+  task_id TEXT PRIMARY KEY,
+  blockers TEXT NOT NULL DEFAULT '[]',
+  run_id TEXT,
+  created_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS harness_quota (
   harness TEXT PRIMARY KEY,
@@ -639,11 +653,33 @@ def _add_columns(conn: sqlite3.Connection, table: str, columns: dict[str, str]) 
 
 
 @dataclass(frozen=True)
+class Priority:
+    """A task that ended blocked during a run, with the blockers it waits for."""
+
+    task_id: str
+    blockers: tuple[str, ...] = ()
+    run_id: str | None = None
+    created_at: str = ""
+
+    def to_json(self) -> dict[str, Any]:
+        return {
+            "task_id": self.task_id,
+            "blockers": list(self.blockers),
+            "run_id": self.run_id,
+            "created_at": self.created_at,
+        }
+
+
+@dataclass(frozen=True)
 class QueuePrefs:
-    """Kanban preferences for auto-continue: manual order and excluded tasks."""
+    """Kanban preferences for auto-continue: manual order and excluded tasks.
+
+    ``priority``: the blocked tasks with their blockers (``task_priority``), oldest first.
+    """
 
     order: tuple[str, ...] = ()
     excluded: frozenset[str] = frozenset()
+    priority: tuple[Priority, ...] = ()
 
 
 class TaskRunStore:
@@ -830,11 +866,40 @@ class TaskRunStore:
         if state != SUCCEEDED:
             kind = failure_kind or failure.OTHER
             detail = _detail_json(failure_detail or {})
-        self.conn.execute(
+        cursor = self.conn.execute(
             "UPDATE task_runs SET state = ?, head_sha = ?, error = ?, ended_at = ?, pause = NULL, "
             "failure_kind = ?, failure_detail = ? WHERE run_id = ? AND state != ?",
             (state, head_sha, error, _now(), kind, detail, run_id, STOPPED),
         )
+        if cursor.rowcount:
+            self._note_priority(run_id, state, kind, error, failure_detail)
+
+    def _note_priority(
+        self,
+        run_id: str,
+        state: str,
+        kind: str | None,
+        error: str | None,
+        detail: dict[str, Any] | None,
+    ) -> None:
+        """A blocked run gives its task priority; a succeeded run takes it away."""
+        found = self.conn.execute(
+            "SELECT task_id FROM task_runs WHERE run_id = ?", (run_id,)
+        ).fetchone()
+        if found is None:
+            return
+        task_id = str(found[0])
+        if state == SUCCEEDED:
+            self.clear_priority(task_id)
+            return
+        if kind != failure.BLOCKED and failure.error_blockers(error) is None:
+            return  # neither the kind nor the error says blocked
+        raw = (detail or {}).get("blockers")
+        if isinstance(raw, list):
+            blockers = [str(b) for b in raw if str(b).strip()]
+        else:
+            blockers = failure.error_blockers(error) or []
+        self.set_priority(task_id, blockers, run_id)
 
     def set_pr_error(self, run_id: str, error: str | None, body: str | None = None) -> None:
         """Record why the run's push or PR failed (None: it is published now).
@@ -1262,13 +1327,13 @@ class TaskRunStore:
     def queue_prefs(self) -> QueuePrefs:
         """The manual order of tasks for auto-continue and the excluded tasks."""
         if not self._has_table("task_queue"):
-            return QueuePrefs()
+            return QueuePrefs(priority=self.priorities())
         rows = self.conn.execute(
             "SELECT task_id, rank, excluded FROM task_queue ORDER BY rank, task_id"
         ).fetchall()
         order = tuple(str(r[0]) for r in rows if r[1] is not None)
         excluded = frozenset(str(r[0]) for r in rows if r[2])
-        return QueuePrefs(order, excluded)
+        return QueuePrefs(order, excluded, self.priorities())
 
     def set_queue_order(self, task_ids: Sequence[str]) -> None:
         """Rank `task_ids` in this order; every other task loses its manual rank."""
@@ -1303,6 +1368,51 @@ class TaskRunStore:
 
     def _prune_queue(self) -> None:
         self.conn.execute("DELETE FROM task_queue WHERE rank IS NULL AND excluded = 0")
+
+    # -- task_priority --
+
+    def priorities(self) -> tuple[Priority, ...]:
+        """The tasks blocked during a run with their blockers, oldest first."""
+        if not self._has_table("task_priority"):
+            return ()
+        rows = self.conn.execute(
+            "SELECT task_id, blockers, run_id, created_at FROM task_priority "
+            "ORDER BY created_at, task_id"
+        ).fetchall()
+        out: list[Priority] = []
+        for task_id, blockers, run_id, created in rows:
+            try:
+                ids = json.loads(blockers or "[]")
+            except ValueError:
+                ids = []
+            listed = tuple(str(i) for i in ids) if isinstance(ids, list) else ()
+            out.append(Priority(str(task_id), listed, run_id, str(created)))
+        return tuple(out)
+
+    def set_priority(self, task_id: str, blockers: Sequence[str], run_id: str | None) -> None:
+        """Give `task_id` priority with `blockers`; a new block keeps the first time."""
+        ids = list(dict.fromkeys(b for b in blockers if b != task_id))
+        self.conn.execute(
+            "INSERT INTO task_priority (task_id, blockers, run_id, created_at) "
+            "VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(task_id) DO UPDATE SET blockers = excluded.blockers, "
+            "run_id = excluded.run_id",
+            (task_id, json.dumps(ids, ensure_ascii=False), run_id, _now()),
+        )
+
+    def clear_priority(self, task_id: str) -> bool:
+        """Take the priority away from `task_id`; False when it had none."""
+        if not self._has_table("task_priority"):
+            return False
+        cursor = self.conn.execute("DELETE FROM task_priority WHERE task_id = ?", (task_id,))
+        return bool(cursor.rowcount)
+
+    def prune_priority(self, active: Collection[str]) -> list[str]:
+        """Drop the priority of every task not in `active` (no longer ``todo``)."""
+        gone = [p.task_id for p in self.priorities() if p.task_id not in active]
+        for task_id in gone:
+            self.clear_priority(task_id)
+        return gone
 
     # ── quota state of the harnesses and the projects' place in their chain ──
 

@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
-from backlog_fixture import A2, A3, B1, B2, B3, make_backlog_repo
+from backlog_fixture import A2, A3, A4, B1, B2, B3, make_backlog_repo
 from starlette.testclient import TestClient
 
 from aifactory.run.store import TaskRunStore
@@ -92,3 +93,63 @@ def test_writes_from_another_origin_are_refused(tmp_path: Path) -> None:
         headers={"Origin": "http://evil.test"},
     )
     assert response.status_code == 403
+
+
+def _set_priority(root: Path, task_id: str, blockers: list[str]) -> None:
+    store = TaskRunStore(root / ".factory" / "trace.db")
+    try:
+        store.set_priority(task_id, blockers, "run-1")
+    finally:
+        store.close()
+
+
+def test_priority_goes_first_and_can_be_cleared(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    _check(client.post("/api/backlog/queue/order", json={"order": [A2]}), 200)
+    _set_priority(root, B3, [B2])  # B3 blocked during a run on B2
+    _set_priority(root, A4, [B1])  # a cancelled task has no priority
+    data = _check(client.get("/api/backlog"), 200)["data"]
+    tasks = data["tasks"]
+    assert [t["id"] for t in tasks[:3]] == [B2, B3, A2]
+    by_id = {t["id"]: t for t in tasks}
+    assert by_id[B2]["priority_rank"] == 0 and by_id[B2]["priority_of"] == [B3]
+    assert by_id[B3]["priority_blockers"] == [B2] and by_id[B3]["priority_rank"] == 1
+    assert by_id[A2]["priority_rank"] is None and by_id[A2]["priority_of"] == []
+    assert [p["task_id"] for p in data["priority"]] == [B3]
+    assert data["priority_order"] == [B2, B3]
+    # clearing the blocker's priority clears the record that gives it
+    body = _check(client.delete(f"/api/backlog/tasks/{B2}/priority"), 200)
+    assert body["data"] == {"task_id": B2, "cleared": [B3]}
+    data = _check(client.get("/api/backlog"), 200)["data"]
+    assert data["tasks"][0]["id"] == A2 and data["priority_order"] == []
+    body = _check(client.delete("/api/backlog/tasks/M09-S01-T01/priority"), 404)
+    assert body["error"]["code"] == "unknown_task"
+
+
+def test_task_list_prints_the_priority(tmp_path: Path, capsys: Any) -> None:
+    from aifactory.cli import main
+
+    root = make_backlog_repo(tmp_path / "repo")
+    _set_priority(root, B3, [B2])
+    assert main(["task", "list", "--repo", str(root)]) == 0
+    lines = {line.split()[0]: line for line in capsys.readouterr().out.splitlines()}
+    assert "[přednostně #1]" in lines[B2]
+    assert "[přednostně #2]" in lines[B3]
+    assert "přednostně" not in lines[A2]
+    assert main(["task", "list", "--json", "--repo", str(root)]) == 0
+    tasks = {t["id"]: t for t in json.loads(capsys.readouterr().out)["data"]["tasks"]}
+    assert tasks[B2]["priority"] == {"rank": 0, "of": [B3], "blockers": None}
+    assert tasks[B3]["priority"] == {"rank": 1, "of": [B3], "blockers": [B2]}
+    assert tasks[A2]["priority"] is None
+
+
+def test_cancelling_a_task_drops_its_priority(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    _set_priority(root, B3, [B2])
+    _set_priority(root, B2, [B1])
+    url = f"/api/backlog/tasks/{B3}/edit"
+    data = _check(client.post(url, json={"status": "cancelled"}), 200)["data"]
+    assert data["task"]["board_state"] == "cancelled"
+    assert [p.task_id for p in _prefs(root).priority] == [B2]

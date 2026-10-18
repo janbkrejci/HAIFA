@@ -11,7 +11,18 @@ success). The blocked task stays unfinished without a PR and is reported as a
 ``blocked`` skip; the next task is chosen by ``select_next`` with the blockers filed
 during that run (``blockers_of``) first, under the same checks as any candidate; when
 none of them can start, the usual order follows. Any other failure stops the chain
-(``stop == "failed"``), and so does a blocked run that would not go on.
+(``stop == "failed"``), and so does a blocked run that would not go on. A blocked task
+whose blockers are all backlog tasks may start again later in the same chain.
+
+A blocked run leaves a priority record in the trace DB (``task_priority``,
+``store.Priority``): the task and its blockers, existing tasks from ``blocked_by`` too.
+It outlives the chain and holds for every selection (``select_next``, ``select_ready``,
+parallel chains), also of a chain started by hand: first the blocked tasks whose blockers
+are all finished, then the unfinished blockers of the others (a blocker's own blockers
+and unmet dependencies before it), each blocked task right after its blockers, then the
+kanban's queue and the usual order (``priority_order``). The checks of a candidate stay
+the same. The record goes when the task's run succeeds, when the task is no longer
+``todo`` (done, cancelled) or when the operator clears it in the kanban.
 
 ``--auto`` (``auto=True``) holds for the whole chain: it continues after every
 successful run and may start any task. Otherwise ``auto_continue: true`` inherited
@@ -128,6 +139,7 @@ from aifactory.run.store import (
     CHAIN_FINISHED,
     RUNNING,
     STARTED_AUTO_CONTINUE,
+    Priority,
     QueuePrefs,
     TaskChainRow,
     TaskPrRow,
@@ -284,11 +296,13 @@ def select_next(
     ``prefs`` (the kanban's queue, ``TaskRunStore.queue_prefs``) orders the candidates
     and excludes tasks: an excluded task is skipped as ``excluded``, with ``--auto`` too.
     ``prefer`` (the blockers of a blocked `after`, ``blockers_of``) goes before the
-    kanban's queue; like the queue, ids outside `after`'s project are ignored.
+    kanban's queue, after the priority records (``priority_order``); like the queue, ids
+    outside `after`'s project are ignored.
     """
     prefs = prefs or QueuePrefs()
+    first = priority_order(backlog, prefs.priority)
     return _select(
-        candidates(after, [*prefer, *prefs.order]),
+        candidates(after, list(dict.fromkeys([*first, *prefer, *prefs.order]))),
         backlog,
         open_pr=open_pr,
         running=running,
@@ -322,6 +336,86 @@ def blockers_of(backlog: Backlog, blocked: Task, ids: Sequence[str]) -> list[str
     return found
 
 
+def _todo(backlog: Backlog, task_id: str) -> Task | None:
+    node = backlog.by_id.get(task_id)
+    return node if isinstance(node, Task) and node.status == "todo" else None
+
+
+def _waits(backlog: Backlog, task: Task) -> list[str]:
+    """The ids `task` waits for (its unmet dependencies, containers as their tasks)."""
+    ids: list[str] = []
+    for item in unmet(backlog, task):
+        for dep in item.missing or [item.id]:
+            if dep not in ids:
+                ids.append(dep)
+    return ids
+
+
+def priority_order(backlog: Backlog, priority: Sequence[Priority]) -> list[str]:
+    """The task ids the priority records put before the kanban's queue, in this order.
+
+    First every blocked task (``todo``) whose blockers are all finished (no blocker is a
+    ``todo`` task), oldest record first; then the unfinished blockers of the other blocked
+    tasks, each after its own unfinished blockers (its priority record and its unmet
+    dependencies), and each blocked task right after its blockers (the selection's checks
+    keep it waiting until they are done or it can stack on their PRs). Records of tasks no
+    longer ``todo`` count for nothing.
+    """
+    return list(priority_map(backlog, priority))
+
+
+def priority_map(backlog: Backlog, priority: Sequence[Priority]) -> dict[str, list[str]]:
+    """``priority_order`` with, for each id, the blocked tasks whose records give it priority."""
+    records = {p.task_id: p for p in priority if _todo(backlog, p.task_id) is not None}
+    found: dict[str, list[str]] = {}
+    for task_id, rec in records.items():
+        if not any(_todo(backlog, b) is not None for b in rec.blockers):
+            found[task_id] = [task_id]
+    blockers: dict[str, list[str]] = {}
+
+    def visit(task_id: str, owner: str, path: frozenset[str], seen: set[str]) -> None:
+        if task_id in path or task_id in seen:
+            return
+        task = _todo(backlog, task_id)
+        if task is None:
+            return
+        seen.add(task_id)
+        rec = records.get(task_id)
+        inner = path | {task_id}
+        for dep in [*(rec.blockers if rec is not None else ()), *_waits(backlog, task)]:
+            visit(dep, owner, inner, seen)
+        owners = blockers.setdefault(task_id, [])  # after its own blockers
+        if owner not in owners:
+            owners.append(owner)
+
+    for task_id, rec in records.items():
+        if task_id in found:
+            continue
+        seen: set[str] = set()
+        for blocker in rec.blockers:
+            visit(blocker, task_id, frozenset({task_id}), seen)
+        # right after its last blocker: it starts once they are done (or stacks on their PRs)
+        owners = blockers.setdefault(task_id, [])
+        if task_id not in owners:
+            owners.append(task_id)
+    for task_id, owners in blockers.items():
+        if task_id in found:
+            found[task_id].extend(o for o in owners if o not in found[task_id])
+        else:
+            found[task_id] = owners
+    return found
+
+
+def _may_requeue(backlog: Backlog, task: Task, ids: Sequence[str]) -> bool:
+    """A blocked task may start again in its chain: every blocker is a backlog task and the
+    task waits for the unfinished ones in base (its ``depends_on``), so it cannot start
+    before them."""
+    if not ids or not all(isinstance(backlog.by_id.get(i), Task) for i in ids):
+        return False
+    waits = set(_waits(backlog, task))
+    return bool(waits) and all(i in waits for i in ids if _todo(backlog, i) is not None)
+
+
 def _blocked_skip(task: Task, ids: Sequence[str]) -> Skip:
     return Skip(task.id, "blocked", f"během běhu zablokován: {', '.join(ids)}", list(ids))
 
@@ -351,8 +445,9 @@ def select_ready(
     required (a start by hand), a task excluded in the kanban is skipped as ``excluded``.
     """
     prefs = prefs or QueuePrefs()
+    first = priority_order(backlog, prefs.priority)
     return _select(
-        repo_candidates(backlog, prefs.order),
+        repo_candidates(backlog, list(dict.fromkeys([*first, *prefs.order]))),
         backlog,
         open_pr=open_pr,
         running=running,
@@ -1159,6 +1254,7 @@ def _sequential(
     record.update(run_ids=[first.run.run_id])
     _note_switch(record, first, since)
     exclude = {task_id}
+    requeued: set[str] = set()
     start_skips: list[Skip] = []
     healed: set[str] = set()
     last = first
@@ -1196,6 +1292,10 @@ def _sequential(
                     return ChainResult(runs, STOP_FAILED)
                 prefer = blockers_of(backlog, after, blocked)
                 start_skips.append(_blocked_skip(after, blocked))
+                if after.id not in requeued and _may_requeue(backlog, after, blocked):
+                    # it starts again once its blockers are done (priority record)
+                    requeued.add(after.id)
+                    exclude.discard(after.id)
             if cont and not record.started:
                 record.go_on(last.trace_db)
                 record.update(run_ids=[r.run.run_id for r in runs])
@@ -1294,6 +1394,7 @@ def _run_parallel(
     order: list[str] = []  # run ids in start order
     results: dict[str, task_mod.TaskRunResult] = {}
     exclude: set[str] = {task_id}
+    requeued: set[str] = set()
     start_skips: list[Skip] = []
     last_skips: list[Skip] = []
     exclusive: list[str] = []
@@ -1412,6 +1513,10 @@ def _run_parallel(
             after = found if isinstance(found, Task) else None
             if after is not None and blocked is not None:
                 prefer = blockers_of(backlog, after, blocked)
+                if after.id not in requeued and _may_requeue(backlog, after, blocked):
+                    # it starts again once its blockers are done (priority record)
+                    requeued.add(after.id)
+                    exclude.discard(after.id)
         if after is None:
             if blocked is not None:
                 halt = STOP_FAILED

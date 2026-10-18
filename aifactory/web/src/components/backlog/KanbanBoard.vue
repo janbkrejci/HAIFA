@@ -2,16 +2,19 @@
 // The kanban of the Backlog screen. The Připraveno column is the auto-continue queue: its
 // order changes by drag and drop or the ↑/↓ buttons (`reorder` with the whole new order).
 // Odloženo holds tasks excluded from auto continue; a card moves there and back by drag and
-// drop or its switch (`exclude`).
+// drop or its switch (`exclude`). Tasks with priority (blocked during a run, and their
+// blockers) are on top of their column with the label „přednostně“; `clearPriority` takes it away.
 import { computed, ref } from 'vue'
-import { ArrowDown, ArrowUp, PauseCircle, PlayCircle } from 'lucide-vue-next'
+import { ArrowDown, ArrowUp, ChevronsDown, PauseCircle, PlayCircle } from 'lucide-vue-next'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import {
   COLUMN_LABELS,
   DEFERRABLE_STATES,
   STATE_TOOLTIPS,
+  hasPriority,
   kanbanColumn,
   kanbanColumns,
+  prioritySorted,
   type BoardState,
   type KanbanColumn,
   type TaskNode,
@@ -28,6 +31,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   reorder: [ids: string[]]
   exclude: [id: string, excluded: boolean]
+  clearPriority: [id: string]
 }>()
 
 const COLUMN_TOOLTIPS: Partial<Record<KanbanColumn, string>> = {
@@ -38,11 +42,20 @@ const COLUMN_TOOLTIPS: Partial<Record<KanbanColumn, string>> = {
 const columns = computed(() =>
   kanbanColumns(props.states).map((column) => ({
     column,
-    tasks: props.tasks.filter((t) => kanbanColumn(t) === column),
+    tasks: prioritySorted(props.tasks.filter((t) => kanbanColumn(t) === column)),
   })),
 )
 
-const readyIds = computed(() => props.tasks.filter((t) => kanbanColumn(t) === 'ready').map((t) => t.id))
+const readyIds = computed(() =>
+  prioritySorted(props.tasks.filter((t) => kanbanColumn(t) === 'ready')).map((t) => t.id),
+)
+
+function priorityText(task: TaskNode): string {
+  if (task.priority_blockers) {
+    return `Zablokován během běhu na ${task.priority_blockers.join(', ')}: jde hned po nich, před frontou`
+  }
+  return `Blokuje ${(task.priority_of ?? []).join(', ')}: jde před frontou`
+}
 
 function canExclude(task: TaskNode): boolean {
   return DEFERRABLE_STATES.includes(task.board_state)
@@ -170,9 +183,24 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
             <span :class="{ faint: !task.workflow }">{{ task.workflow ?? 'bez workflow' }}</span>
           </span>
           <span v-if="task.invalid" class="warn" data-test="invalid">neplatný status</span>
+          <Tooltip v-if="hasPriority(task)" :text="priorityText(task)">
+            <span class="priority" data-test="priority">přednostně</span>
+          </Tooltip>
         </a>
-        <div v-if="canExclude(task)" class="tools">
-          <template v-if="col.column === 'ready'">
+        <div v-if="canExclude(task) || hasPriority(task)" class="tools">
+          <Tooltip v-if="hasPriority(task)" text="Zrušit přednost">
+            <button
+              type="button"
+              class="icon"
+              data-test="priority-clear"
+              aria-label="Zrušit přednost"
+              :disabled="busy"
+              @click="emit('clearPriority', task.id)"
+            >
+              <ChevronsDown :size="14" />
+            </button>
+          </Tooltip>
+          <template v-if="canExclude(task) && col.column === 'ready'">
             <button
               type="button"
               class="icon"
@@ -194,7 +222,7 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
               <ArrowDown :size="14" />
             </button>
           </template>
-          <Tooltip :text="task.auto_excluded ? 'Vrátit do auto continue' : 'Vyloučit z auto continue'">
+          <Tooltip v-if="canExclude(task)" :text="task.auto_excluded ? 'Vrátit do auto continue' : 'Vyloučit z auto continue'">
             <button
               type="button"
               class="icon"
@@ -313,6 +341,16 @@ h2 {
 .warn {
   color: var(--amber);
   font-size: 13px;
+}
+
+.priority {
+  align-self: flex-start;
+  padding: 0 6px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  color: var(--amber);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .tools {

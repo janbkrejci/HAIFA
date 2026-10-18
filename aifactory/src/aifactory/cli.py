@@ -2376,6 +2376,39 @@ def _task_runs(args: argparse.Namespace, root: Path) -> int:
     return 0
 
 
+def _task_priority(root: Path, backlog: Any) -> dict[str, dict[str, Any]]:
+    """Tasks with priority (blocked during a run, and their blockers) by id: rank and owners.
+
+    Read from the trace DB (``task_priority``); a missing or unreadable DB gives none.
+    """
+    import sqlite3
+
+    from aifactory.run import TaskRunError
+    from aifactory.run.queue import priority_map
+    from aifactory.run.task import existing_store
+
+    try:
+        store = existing_store(root)
+        if store is None:
+            return {}
+        try:
+            records = store.priorities()
+        finally:
+            store.close()
+    except (TaskRunError, sqlite3.Error):
+        return {}
+    own = {p.task_id: list(p.blockers) for p in records}
+    found: dict[str, dict[str, Any]] = {
+        task_id: {"rank": rank, "of": owners, "blockers": own.get(task_id)}
+        for rank, (task_id, owners) in enumerate(priority_map(backlog, records).items())
+    }
+    for task_id, blockers in own.items():  # blocked, its blockers go first
+        node = backlog.by_id.get(task_id)
+        if task_id not in found and getattr(node, "status", None) == "todo":
+            found[task_id] = {"rank": None, "of": [task_id], "blockers": blockers}
+    return found
+
+
 def _task_list(args: argparse.Namespace, root: Path) -> int:
     from aifactory.backlog import (
         STATUS_FILTERS,
@@ -2422,11 +2455,14 @@ def _task_list(args: argparse.Namespace, root: Path) -> int:
         allowed = {t.path for s in steps for t in descendant_tasks(s)}
         tasks = [t for t in tasks if t.path in allowed]
     tasks = [t for t in tasks if task_matches(backlog, t, status)]
+    prio = _task_priority(root, backlog)
     if args.json:
         reverse = blocks(backlog)
         data = {
             "filters": {"status": status, "project": args.project, "step": args.step},
-            "tasks": [task_to_json(backlog, t, reverse) for t in tasks],
+            "tasks": [
+                {**task_to_json(backlog, t, reverse), "priority": prio.get(t.id)} for t in tasks
+            ],
             "issues": [i.to_dict() for i in issues],
         }
         return _emit_ok(data, _problem_warnings(len(issues)))
@@ -2436,6 +2472,11 @@ def _task_list(args: argparse.Namespace, root: Path) -> int:
         line = f"{task.id:<{width}} {state:<9} {task.title}"
         if state == "blocked":
             line += f"  (waits for: {waits_for(backlog, task)})"
+        if task.id in prio:
+            rank = prio[task.id]["rank"]
+            after = ", ".join(prio[task.id]["blockers"] or [])
+            mark = f"#{rank + 1}" if rank is not None else f"po {after}"
+            line += f"  [přednostně {mark}]"
         print(line)
     if issues:
         print(f"{len(issues)} problem(s), run 'factory backlog check'", file=sys.stderr)

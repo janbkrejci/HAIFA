@@ -59,6 +59,10 @@ DB (``task_queue``): ``POST /api/backlog/queue/order`` (``{order: [task ids]}``)
 order of ready tasks and ``POST /api/backlog/tasks/{task_id}/auto-exclude``
 (``{excluded: bool}``) keeps a task out of auto-continue; ``GET /api/backlog`` returns
 ``queue_rank`` and ``auto_excluded`` of each task and lists the tasks in queue order.
+Tasks blocked during a run and their blockers go first (``task_priority``,
+``queue.priority_order``): ``GET /api/backlog`` returns ``priority_rank``, ``priority_of``
+and ``priority_blockers`` of each task and the records (``priority``, ``priority_order``);
+``DELETE /api/backlog/tasks/{task_id}/priority`` takes the priority away.
 
 Projects and steps: ``GET /api/backlog/containers/{id}`` (title, description, own values of
 ``index.md`` and effective values with their origin: a level or ``.factory/config.yaml``),
@@ -1401,6 +1405,17 @@ async def backlog_auto_exclude(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data, warnings))
 
 
+async def backlog_clear_priority(request: Request) -> JSONResponse:
+    """Take the priority of a blocked task (or of a blocker) away (``task_priority``)."""
+    repo: Path = _repo(request)
+    task_id: str = request.path_params["task_id"]
+    try:
+        data, warnings = await run_in_threadpool(backlog.clear_priority, repo, task_id)
+    except (TaskEditError, ConfigError, TaskRunError) as exc:
+        return _edit_error(exc)
+    return JSONResponse(envelope_ok(data, warnings))
+
+
 async def backlog_auto_merge(request: Request) -> JSONResponse:
     """Set auto-merge of a module or step with ``aifactory.backlog.set_auto_merge``."""
     repo: Path = _repo(request)
@@ -1833,6 +1848,7 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/backlog/tasks/{task_id}/run-check", backlog_run_check, methods=["GET"]),
         Route("/backlog/tasks/{task_id}/run", backlog_run, methods=["POST"]),
         Route("/backlog/tasks/{task_id}/auto-exclude", backlog_auto_exclude, methods=["POST"]),
+        Route("/backlog/tasks/{task_id}/priority", backlog_clear_priority, methods=["DELETE"]),
         Route("/backlog/queue/order", backlog_queue_order, methods=["POST"]),
         Route("/backlog/containers", backlog_container_add, methods=["POST"]),
         Route("/backlog/containers/{container_id}", backlog_container, methods=["GET"]),
