@@ -277,7 +277,7 @@ h1 {
 .calm-list {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
   margin: 12px 0 0;
   padding: 0;
   list-style: none;
