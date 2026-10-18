@@ -1,0 +1,620 @@
+{
+  "scenario": "azure-e2e",
+  "outcome": "passed",
+  "organization": "https://asolcz.visualstudio.com",
+  "project": "NEO_HEF",
+  "repository": "HAIFA-E2E-20261018-205746-238e",
+  "web_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e",
+  "started_at": "2026-10-18T18:57:50+00:00",
+  "ended_at": "2026-10-18T19:02:51+00:00",
+  "steps": [
+    {
+      "name": "create_repo",
+      "ok": true,
+      "detail": "HAIFA-E2E-20261018-205746-238e (fa074847-7e3e-4975-9d81-2ade108e04b1), main 01e4eea98671075cc69b93029b49317a5313676a",
+      "repo_id": "fa074847-7e3e-4975-9d81-2ade108e04b1",
+      "web_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e",
+      "main_sha": "01e4eea98671075cc69b93029b49317a5313676a"
+    },
+    {
+      "name": "policy_created",
+      "ok": true,
+      "detail": "policy 1116: minimumApproverCount 1, creatorVoteCounts True",
+      "policy_id": 1116
+    },
+    {
+      "name": "direct_push_refused",
+      "ok": true,
+      "detail": "exit 1:  ! [remote rejected] HEAD -> main (TF402455: Pushes to this branch are not permitted; you must use a pull request to update this branch.)"
+    },
+    {
+      "name": "install_pr_opened",
+      "ok": true,
+      "detail": "branch factory-init/1, url https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30379, merged True, warnings []",
+      "registry_id": "repo",
+      "pr_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30379",
+      "branch": "factory-init/1",
+      "merged": true,
+      "commit": "f3830242bebbb926bac37e0bb308df35893be7c1"
+    },
+    {
+      "name": "install_pr_self_approved_and_merged",
+      "ok": true,
+      "detail": "PR 30379 completed into main, votes [jan.krejci@assecosol.com=10], bypass False, merge e83e5fa64795b0d9b6ffcea74530beee33c24d44",
+      "pr_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30379",
+      "pr_id": 30379,
+      "status": "completed",
+      "source_branch": "factory-init/1",
+      "target_branch": "main",
+      "created_by": "jan.krejci@assecosol.com",
+      "votes": [
+        {
+          "reviewer": "jan.krejci@assecosol.com",
+          "vote": 10,
+          "is_creator": true
+        }
+      ],
+      "creator_approved": true,
+      "bypass_policy": false,
+      "head_sha": "f3830242bebbb926bac37e0bb308df35893be7c1",
+      "merge_sha": "e83e5fa64795b0d9b6ffcea74530beee33c24d44"
+    },
+    {
+      "name": "install_in_local_main",
+      "ok": true,
+      "detail": "main 01e4eea98671 -> e83e5fa64795, config base_changes pr, base_pr_merge auto, git_provider azure",
+      "local_main": "e83e5fa64795b0d9b6ffcea74530beee33c24d44"
+    },
+    {
+      "name": "install_main_matches_remote",
+      "ok": true,
+      "detail": "local e83e5fa64795b0d9b6ffcea74530beee33c24d44, remote e83e5fa64795b0d9b6ffcea74530beee33c24d44",
+      "local_main": "e83e5fa64795b0d9b6ffcea74530beee33c24d44",
+      "remote_main": "e83e5fa64795b0d9b6ffcea74530beee33c24d44"
+    },
+    {
+      "name": "backlog_check",
+      "ok": true,
+      "detail": "exit 0"
+    },
+    {
+      "name": "backlog_pr_opened",
+      "ok": true,
+      "detail": "exit 0; branch factory-backlog/1, merged True",
+      "pr_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30380",
+      "branch": "factory-backlog/1",
+      "merged": true
+    },
+    {
+      "name": "backlog_pr_self_approved_and_merged",
+      "ok": true,
+      "detail": "PR 30380 completed into main, votes [jan.krejci@assecosol.com=10], bypass False, merge 4b9b375be81907f14bcaa3b5815985654531e273",
+      "pr_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30380",
+      "pr_id": 30380,
+      "status": "completed",
+      "source_branch": "factory-backlog/1",
+      "target_branch": "main",
+      "created_by": "jan.krejci@assecosol.com",
+      "votes": [
+        {
+          "reviewer": "jan.krejci@assecosol.com",
+          "vote": 10,
+          "is_creator": true
+        }
+      ],
+      "creator_approved": true,
+      "bypass_policy": false,
+      "head_sha": "d831640291c2e7984e591e03d8a6bc475cd15ce4",
+      "merge_sha": "4b9b375be81907f14bcaa3b5815985654531e273"
+    },
+    {
+      "name": "backlog_in_local_main",
+      "ok": true,
+      "detail": "4 of 4 backlog files in main"
+    },
+    {
+      "name": "backlog_main_matches_remote",
+      "ok": true,
+      "detail": "local 4b9b375be81907f14bcaa3b5815985654531e273, remote 4b9b375be81907f14bcaa3b5815985654531e273",
+      "local_main": "4b9b375be81907f14bcaa3b5815985654531e273",
+      "remote_main": "4b9b375be81907f14bcaa3b5815985654531e273"
+    },
+    {
+      "name": "chain_ran_both_tasks",
+      "ok": true,
+      "detail": "exit 0; tasks ['E2E-S01-T01', 'E2E-S01-T02']; stop exhausted; waiting []",
+      "chain_id": "a7ddea7e"
+    },
+    {
+      "name": "run_E2E-S01-T01",
+      "ok": true,
+      "detail": "run fa2cbcba succeeded, PR https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30381",
+      "run_id": "fa2cbcba",
+      "pr_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30381",
+      "branch": "factory/E2E-S01-T01-1",
+      "started_by": "manual"
+    },
+    {
+      "name": "auto_merge_E2E-S01-T01",
+      "ok": true,
+      "detail": "merged True, reviewed True, code None: None",
+      "merge_sha": "d3aeb41077001d9101525bdf241cd31a97c37d2e",
+      "reviewed": true
+    },
+    {
+      "name": "pr_E2E-S01-T01_merged_under_policy",
+      "ok": true,
+      "detail": "PR 30381 completed into main, votes [jan.krejci@assecosol.com=10], bypass False, merge d3aeb41077001d9101525bdf241cd31a97c37d2e",
+      "pr_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30381",
+      "pr_id": 30381,
+      "status": "completed",
+      "source_branch": "factory/E2E-S01-T01-1",
+      "target_branch": "main",
+      "created_by": "jan.krejci@assecosol.com",
+      "votes": [
+        {
+          "reviewer": "jan.krejci@assecosol.com",
+          "vote": 10,
+          "is_creator": true
+        }
+      ],
+      "creator_approved": true,
+      "bypass_policy": false,
+      "head_sha": "86d78ddd4fdae96fbbdb8250f5a35b07e36159c0",
+      "merge_sha": "d3aeb41077001d9101525bdf241cd31a97c37d2e"
+    },
+    {
+      "name": "run_E2E-S01-T02",
+      "ok": true,
+      "detail": "run 9af5540a succeeded, PR https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30382",
+      "run_id": "9af5540a",
+      "pr_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30382",
+      "branch": "factory/E2E-S01-T02-1",
+      "started_by": "auto-continue"
+    },
+    {
+      "name": "auto_merge_E2E-S01-T02",
+      "ok": true,
+      "detail": "merged True, reviewed True, code None: None",
+      "merge_sha": "547550cbd668c701a6b147734d768521f883f522",
+      "reviewed": true
+    },
+    {
+      "name": "pr_E2E-S01-T02_merged_under_policy",
+      "ok": true,
+      "detail": "PR 30382 completed into main, votes [jan.krejci@assecosol.com=10], bypass False, merge 547550cbd668c701a6b147734d768521f883f522",
+      "pr_url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30382",
+      "pr_id": 30382,
+      "status": "completed",
+      "source_branch": "factory/E2E-S01-T02-1",
+      "target_branch": "main",
+      "created_by": "jan.krejci@assecosol.com",
+      "votes": [
+        {
+          "reviewer": "jan.krejci@assecosol.com",
+          "vote": 10,
+          "is_creator": true
+        }
+      ],
+      "creator_approved": true,
+      "bypass_policy": false,
+      "head_sha": "81f47e6be06190046afaa2e4a90f925c592a795c",
+      "merge_sha": "547550cbd668c701a6b147734d768521f883f522"
+    },
+    {
+      "name": "second_task_started_by_itself",
+      "ok": true,
+      "detail": "run 9af5540a started_by auto-continue"
+    },
+    {
+      "name": "final_main_matches_remote",
+      "ok": true,
+      "detail": "local 547550cbd668c701a6b147734d768521f883f522, remote 547550cbd668c701a6b147734d768521f883f522",
+      "local_main": "547550cbd668c701a6b147734d768521f883f522",
+      "remote_main": "547550cbd668c701a6b147734d768521f883f522"
+    },
+    {
+      "name": "backlog_E2E-S01-T01_done",
+      "ok": true,
+      "detail": "status done, PR https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30381 under '## Běhy' True, succeeded runs 1, task_prs merged"
+    },
+    {
+      "name": "backlog_E2E-S01-T02_done",
+      "ok": true,
+      "detail": "status done, PR https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-E2E-20261018-205746-238e/pullrequest/30382 under '## Běhy' True, succeeded runs 1, task_prs merged"
+    },
+    {
+      "name": "main_checkout_clean",
+      "ok": true,
+      "detail": "0 changed paths: []"
+    }
+  ],
+  "cleanup": {
+    "ok": true,
+    "steps": [
+      {
+        "name": "unregister",
+        "ok": true,
+        "detail": "dashboard entry repo removed"
+      },
+      {
+        "name": "delete_policy_1116",
+        "ok": true,
+        "detail": "deleted"
+      },
+      {
+        "name": "delete_repo",
+        "ok": true,
+        "detail": "HAIFA-E2E-20261018-205746-238e"
+      },
+      {
+        "name": "purge_recycle_bin",
+        "ok": true,
+        "detail": "purged"
+      },
+      {
+        "name": "repo_gone",
+        "ok": true,
+        "detail": "HAIFA-E2E-20261018-205746-238e"
+      },
+      {
+        "name": "policy_1116_gone",
+        "ok": true,
+        "detail": "deleted (isDeleted: true)"
+      },
+      {
+        "name": "local_workdir",
+        "ok": true,
+        "detail": "deleted /private/var/folders/xs/x1r0h2kn0yn6nrkyzk8_yvkw0000gn/T/haifa-azure-e2e-jarpmuk0"
+      }
+    ]
+  },
+  "commands": [
+    {
+      "az": [
+        "repos",
+        "create",
+        "--name",
+        "HAIFA-E2E-20261018-205746-238e",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "policy",
+        "approver-count",
+        "create",
+        "--blocking",
+        "true",
+        "--enabled",
+        "true",
+        "--branch",
+        "main",
+        "--repository-id",
+        "fa074847-7e3e-4975-9d81-2ade108e04b1",
+        "--minimum-approver-count",
+        "1",
+        "--creator-vote-counts",
+        "true",
+        "--allow-downvotes",
+        "false",
+        "--reset-on-source-push",
+        "false",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "pr",
+        "list",
+        "--repository",
+        "HAIFA-E2E-20261018-205746-238e",
+        "--source-branch",
+        "factory-init/1",
+        "--status",
+        "all",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "pr",
+        "show",
+        "--id",
+        "30379",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "argv": [
+        "backlog",
+        "check",
+        "--repo",
+        "/private/var/folders/xs/x1r0h2kn0yn6nrkyzk8_yvkw0000gn/T/haifa-azure-e2e-jarpmuk0/repo",
+        "--json"
+      ],
+      "exit": 0,
+      "brief": "exit 0"
+    },
+    {
+      "argv": [
+        "backlog",
+        "commit",
+        "--repo",
+        "/private/var/folders/xs/x1r0h2kn0yn6nrkyzk8_yvkw0000gn/T/haifa-azure-e2e-jarpmuk0/repo",
+        "--json"
+      ],
+      "exit": 0,
+      "brief": "exit 0"
+    },
+    {
+      "az": [
+        "repos",
+        "pr",
+        "list",
+        "--repository",
+        "HAIFA-E2E-20261018-205746-238e",
+        "--source-branch",
+        "factory-backlog/1",
+        "--status",
+        "all",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "pr",
+        "show",
+        "--id",
+        "30380",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "argv": [
+        "task",
+        "run",
+        "E2E-S01-T01",
+        "--auto",
+        "--repo",
+        "/private/var/folders/xs/x1r0h2kn0yn6nrkyzk8_yvkw0000gn/T/haifa-azure-e2e-jarpmuk0/repo",
+        "--json"
+      ],
+      "exit": 0,
+      "brief": "exit 0"
+    },
+    {
+      "az": [
+        "repos",
+        "pr",
+        "list",
+        "--repository",
+        "HAIFA-E2E-20261018-205746-238e",
+        "--source-branch",
+        "factory/E2E-S01-T01-1",
+        "--status",
+        "all",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "pr",
+        "show",
+        "--id",
+        "30381",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "pr",
+        "list",
+        "--repository",
+        "HAIFA-E2E-20261018-205746-238e",
+        "--source-branch",
+        "factory/E2E-S01-T02-1",
+        "--status",
+        "all",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "pr",
+        "show",
+        "--id",
+        "30382",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "policy",
+        "delete",
+        "--id",
+        "1116",
+        "--yes",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "delete",
+        "--id",
+        "fa074847-7e3e-4975-9d81-2ade108e04b1",
+        "--yes",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "devops",
+        "invoke",
+        "--area",
+        "git",
+        "--resource",
+        "recycleBinRepositories",
+        "--route-parameters",
+        "project=NEO_HEF",
+        "repositoryId=fa074847-7e3e-4975-9d81-2ade108e04b1",
+        "--http-method",
+        "DELETE",
+        "--api-version",
+        "7.1",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "list",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    },
+    {
+      "az": [
+        "repos",
+        "policy",
+        "show",
+        "--id",
+        "1116",
+        "--org",
+        "https://asolcz.visualstudio.com",
+        "--detect",
+        "false",
+        "--project",
+        "NEO_HEF",
+        "--output",
+        "json",
+        "--only-show-errors"
+      ],
+      "exit": 0
+    }
+  ]
+}

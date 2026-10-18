@@ -63,5 +63,9 @@ bundle: web-build
 validate *ARGS:
     cd aifactory && uv run python -m validation "$@"
 
+# Azure DevOps E2E on a temporary repo with a required reviewer, deleted at the end (operator only)
+validate-azure-e2e *ARGS:
+    cd aifactory && uv run python -m validation.azure_e2e "$@"
+
 # full gate: frontend, pytest, mypy, ruff
 check: test typecheck lint

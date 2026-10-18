@@ -1673,13 +1673,15 @@ def _backlog_commit(args: argparse.Namespace) -> int:
     except (ConfigError, TaskEditError) as exc:
         return _fail_from_exception(exc, args.json, "factory backlog commit")
     if args.json:
-        return _emit_ok(result.to_json())
+        return _emit_ok(result.to_json(), result.warnings)
     if not result.committed:
         print("nothing to commit in the backlog")
         return 0
     short = (result.commit or "")[:12]
     pushed = ", pushed" if result.pushed else ""
     print(f"committed {len(result.paths)} backlog file(s) to {result.base} ({short}{pushed})")
+    for warning in result.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     return 0
 
 

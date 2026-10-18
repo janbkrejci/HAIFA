@@ -51,6 +51,31 @@ Git se k Azure DevOps přihlašuje přes HTTPS credential helper, který při ka
 
 Skript naklonuje sandbox a z jeho výchozí větve založí base větev `haifa-validate/<YYYYMMDD-HHMMSS>`. Výchozí větev sandboxu se nemění. Do `.factory/config.yaml` sandboxu přidá sekci `azure` (organizace, projekt, repo). Merge PR mimo factory (R3) jde přes `az repos pr update --status completed --squash true` a validace čeká, až Azure PR dokončí. Zavření PR mimo factory jde přes `az repos pr update --status abandoned`.
 
+## Azure E2E s povinným schválením (`just validate-azure-e2e`)
+
+Samostatný scénář (`azure_e2e.py`), spouští ho operátor ručně, nikdy CI ani test. Ověřuje, že repo, do jehož `main` vede cesta jen přes PR s aspoň jedním schvalovatelem, projde s HAIFA bez člověka.
+
+```
+just validate-azure-e2e                         # asolcz.visualstudio.com, projekt NEO_HEF
+just validate-azure-e2e --org URL --project P   # jiná organizace nebo projekt
+```
+
+Přepínače: `--name HAIFA-E2E-…` (výchozí `HAIFA-E2E-<datum>-<čas>-<hex>`; jméno musí začínat `HAIFA-E2E-`, `NEO_HEF` ani `HAIFA-Azure-Sandbox` nikdy), `--results-dir`, `--keep-workdir` (nechá lokální klon a logy, Azure repo se smaže vždy).
+
+Předpoklady: `az` s rozšířením `azure-devops`, přihlášení (`az account show`, nebo `AZURE_DEVOPS_EXT_PAT`) a dostupný projekt. Bez nich skript skončí kódem 2 dřív, než na Azure cokoli změní. Modely ani `just` nepotřebuje: agenty nahrazuje falešný harness.
+
+Kroky:
+1. `az repos create` založí dočasné repo a do `main` se pushne počáteční commit.
+2. Politika na `main`: minimálně 1 schvalovatel, autorův hlas se počítá (`creatorVoteCounts`), bez resetu po pushi. Přímý push do `main` musí Azure odmítnout (TF402455).
+3. Klon v dočasném adresáři se přidá do HAIFA stejně jako `POST /api/repos` (`add_repo`) s `base_changes: pr` a `base_pr_merge: auto`. Instalace jde přes PR `factory-init/<n>`, který factory schválí vlastním hlasem a mergne. Lokální `main` ho obsahuje a shoduje se s remote.
+4. Backlog (projekt `E2E`, workflow `build-review`, `auto_continue` a `auto_merge`, dva závislé tasky) jde přes `factory backlog commit` jako PR `factory-backlog/<n>`, automaticky schválený a mergnutý.
+5. `factory task run E2E-S01-T01 --auto` nad falešným harnessem: každý task má PR, auto-merge hlásí `reviewed: true`, PR je na Azure `completed` s hlasem autora 10 a bez `bypassPolicy`. Druhý task spustil řetěz sám (`started_by: auto-continue`), řetěz skončí `exhausted`.
+6. Lokální `main` = remote, oba tasky mají v remote base `status: done` a odkaz na PR pod `## Běhy`, `task_prs` je `merged` a hlavní checkout je čistý.
+
+Úklid běží ve `finally`, i po chybě nebo Ctrl+C: odregistrování z dashboardu (vlastní HAIFA home běhu, dashboard operátora se nemění), smazání politiky, `az repos delete` dočasného repa (jen podle jeho id), vysypání z koše projektu (recycle bin) a smazání lokálního adresáře. Pak se repo i politika znovu vyhledají. Azure smazanou politiku dál vrací podle id s `isDeleted: true`, to se počítá jako smazaná. Co zůstane, je chyba úklidu a celý běh skončí `failed`.
+
+Výsledek je `results/<datum>/azure-e2e-<čas>/azure-e2e.json`: `outcome` (`passed`/`failed`), každý krok s `ok`, popisem, URL PR, hlasy, SHA hlavy a merge commitu, dále úklid (`cleanup.ok` a jeho kroky) a všechna volání `az` a `factory`. Logy příkazů jsou v `logs/` (git je ignoruje). Kód návratu: 0 prošlo, 1 selhal krok nebo úklid, 2 preflight.
+
 ## Vynucená opravná kola
 
 **test → fix (R10)**: `hidden.py` zapíše skrytý test do `<workdir>/hidden/test_hidden_slugify.py`, tedy mimo repo i worktree. Požadavek ze zadání nejde odvodit: prázdný slug je `x-empty`, tedy `slugify("!!!") == "x-empty"`. Každý příkaz `factory` dostane proměnnou `HAIFA_VALIDATE_HIDDEN=<workdir>/hidden`, ale ta slouží jen jako kanál do `validation.worker`. Worker ji hned odstraní z `os.environ`, takže ji agenti nezdědí, a obalí kódový krok `test` enginu (`aifactory.testing.executor.execute`, spouští kontroly z plánu testera). Jen na dobu tohoto kroku vloží skrytý test do `tests/test_hidden_slugify.py` worktree běhu, kde ho `just test` sandboxu najde sám, a potom ho smaže. Agent ho tak na disku nikdy nevidí a nemůže ho ani odstranit. Cesta je v `info/exclude` sandboxu (ne v `.gitignore`, který agent čte), takže se případný zbytek nikdy necommitne. Proto `test_1` vždy selže. Tester ho posoudí (`triage_1`, falešný tester odpoví `failure_cause: code`), proběhne `fix` a po něm nový plán kontrol (`test_plan_1`) s jeho kontrolou (`test_review_1`). Běhy, ve kterých ještě `slugify` neexistuje, skrytý test přeskočí. Hlavní checkout spouští jen viditelné testy. Kontrola `hidden_unseen_by_agents` ověří, že skrytý test žádný agent neviděl.

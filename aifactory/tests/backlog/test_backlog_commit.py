@@ -120,3 +120,44 @@ def test_cli_json(repo: Path, capsys: pytest.CaptureFixture[str]) -> None:
     git(repo, "switch", "-q", "-c", "feature")
     rc, env = run_json(capsys, ["backlog", "commit", "--json", "--repo", str(repo)])
     assert rc == 2 and env["error"]["code"] == "not_on_base"
+
+
+def test_cli_json_carries_the_warnings(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aifactory.backlog as backlog_pkg
+    from aifactory.backlog.commit import BacklogCommit
+
+    stays_open = "pull request https://x/pr/1 stays open: policy"
+    done = BacklogCommit(
+        True,
+        "abc",
+        "main",
+        ["backlog/x.md"],
+        True,
+        pr={"id": "1", "url": "https://x/pr/1", "branch": "factory-backlog/1"},
+        warnings=(stays_open,),
+    )
+    monkeypatch.setattr(backlog_pkg, "commit_backlog", lambda *_a, **_k: done)
+    rc, env = run_json(capsys, ["backlog", "commit", "--json", "--repo", str(repo)])
+    assert rc == 0
+    assert env["data"]["merged"] is False
+    assert stays_open in env["warnings"]
+
+
+def test_cli_text_prints_the_warnings_to_stderr(
+    repo: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import aifactory.backlog as backlog_pkg
+    from aifactory.backlog.commit import BacklogCommit
+    from aifactory.cli import main
+
+    stays_open = "pull request https://x/pr/1 stays open: policy"
+    done = BacklogCommit(True, "abc", "main", ["backlog/x.md"], True, warnings=(stays_open,))
+    monkeypatch.setattr(backlog_pkg, "commit_backlog", lambda *_a, **_k: done)
+    capsys.readouterr()
+    assert main(["backlog", "commit", "--repo", str(repo)]) == 0
+    out, err = capsys.readouterr()
+    assert f"warning: {stays_open}" in err
+    assert stays_open not in out
+    assert "committed 1 backlog file(s) to main" in out

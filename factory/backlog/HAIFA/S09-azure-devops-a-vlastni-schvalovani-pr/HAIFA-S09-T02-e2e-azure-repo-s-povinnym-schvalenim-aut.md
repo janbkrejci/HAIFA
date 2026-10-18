@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S09-T02
 title: "E2E: Azure repo s povinným schválením, auto approve, auto-continue a úklid"
-status: todo
+status: done
 depends_on: [HAIFA-S90-T04]
 ---
 
@@ -27,3 +27,4 @@ Hotovo, když:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-18 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/113 · náklady $5.75
