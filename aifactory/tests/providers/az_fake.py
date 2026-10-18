@@ -146,22 +146,27 @@ def reply(stdout: object = "", exit: int = 0, stderr: str = "") -> dict[str, Any
 def pr_json(
     id: int = 7,
     status: str = "active",
-    merge_status: str = "succeeded",
+    merge_status: str | None = "succeeded",
     head: str = HEAD,
     merge: str | None = None,
-    web_url: str | None = WEB_URL,
+    web_url: str | None = None,
     source: str = "factory/T01-1",
     target: str = "main",
 ) -> dict[str, Any]:
-    """A PR object as ``az repos pr create/show/update`` prints it."""
+    """A PR object as ``az repos pr create/show/update`` prints it.
+
+    Real ``az`` (2.91, azure-devops 1.0.9) prints ``repository.webUrl: null`` in
+    ``pr create/show/list`` and dates like ``2026-10-06T15:19:37.209982+00:00``.
+    ``lastMergeCommit`` is ``null`` until the PR is completed, and an abandoned PR
+    has ``mergeStatus: null``.
+    """
     repository: dict[str, Any] = {
         "id": "3411ebc1-d5aa-464f-9615-0b527bc66719",
         "name": "app",
         "url": f"{ORG_URL}/_apis/git/repositories/3411ebc1-d5aa-464f-9615-0b527bc66719",
         "project": {"id": "a7573007-bbb3-4341-b726-0c4148a07853", "name": "Fab Rikam"},
     }
-    if web_url is not None:
-        repository["webUrl"] = web_url
+    repository["webUrl"] = web_url
     data: dict[str, Any] = {
         "pullRequestId": id,
         "codeReviewId": id,
@@ -183,10 +188,11 @@ def pr_json(
         "repository": repository,
         "createdBy": {"displayName": "Factory Bot", "uniqueName": "bot@contoso.com"},
         "creationDate": "2026-09-27T10:00:00.000000+00:00",
-        "closedDate": "2026-09-27T11:00:00.4513593Z" if status != "active" else None,
+        "closedDate": "2026-09-27T11:00:00.451359+00:00" if status != "active" else None,
         "mergeId": "f5fc8381-3fb2-49fe-8a0d-27dcc2d6ef82",
         "url": f"{repository['url']}/pullRequests/{id}",
         "completionOptions": None,
+        "lastMergeCommit": None,
     }
     if merge is not None:
         data["lastMergeCommit"] = {"commitId": merge, "url": f"{repository['url']}/commits/{merge}"}

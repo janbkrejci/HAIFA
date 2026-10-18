@@ -1,0 +1,89 @@
+{
+  "scenario": "R2",
+  "risk": "Paralelní běhy mění stejné soubory a PR kolidují",
+  "remote": "azure",
+  "outcome": "passed",
+  "started_at": "2026-10-18T15:25:59+00:00",
+  "ended_at": "2026-10-18T15:32:05+00:00",
+  "duration_s": 366.819,
+  "checks": [
+    {
+      "name": "both_runs_ok",
+      "ok": true,
+      "detail": "exit 0: run 073217a0 succeeded | exit 0: run be9f6058 succeeded"
+    },
+    {
+      "name": "runs_overlapped",
+      "ok": true,
+      "detail": "overlap 100.166 s"
+    },
+    {
+      "name": "both_prs_opened",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "name": "distinct_worktrees",
+      "ok": true,
+      "detail": "['/private/tmp/haifa-az/run4/repo/.factory/worktrees/073217a0', '/private/tmp/haifa-az/run4/repo/.factory/worktrees/be9f6058']"
+    },
+    {
+      "name": "shared_file_touched",
+      "ok": true,
+      "detail": "mathx.py changed per branch: [True, True]"
+    },
+    {
+      "name": "first_merged",
+      "ok": true,
+      "detail": "exit 0; status in base: done"
+    },
+    {
+      "name": "second_reports_conflict",
+      "ok": true,
+      "detail": "exit 2: conflict: PR 30364 has conflicts with haifa-validate/20261018-172554 (the done commit stays on factory/M01-S01-T02-2); base d3d933f -> d3d933f"
+    }
+  ],
+  "observations": [
+    "druhý PR zůstává otevřený, řeší ho scénář RESOLVE (task resolve M01-S01-T02)"
+  ],
+  "evidence": {
+    "run_ids": [
+      "073217a0",
+      "be9f6058"
+    ],
+    "prs": [
+      {
+        "task_id": "M01-S01-T01",
+        "branch": "factory/M01-S01-T01-2",
+        "url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-Azure-Sandbox/pullrequest/30365",
+        "pr_id": "30365",
+        "state": "open"
+      },
+      {
+        "task_id": "M01-S01-T02",
+        "branch": "factory/M01-S01-T02-2",
+        "url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-Azure-Sandbox/pullrequest/30364",
+        "pr_id": "30364",
+        "state": "open"
+      }
+    ],
+    "commits": [
+      "d3d933f23555815c6d0303a9dea3e3df67a7cd8c"
+    ],
+    "trace": {
+      "db": "trace/sssf.db",
+      "sessions": [
+        "trace/sessions/073217a0",
+        "trace/sessions/be9f6058"
+      ],
+      "files": []
+    }
+  },
+  "measurements": {
+    "overlap_s": 100.166,
+    "run_seconds": {
+      "M01-S01-T01": 113.908,
+      "M01-S01-T02": 100.183
+    }
+  }
+}

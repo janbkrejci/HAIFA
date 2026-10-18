@@ -20,7 +20,10 @@ is remembered. The constructor never runs ``az``.
 
 Commands used (shapes from the ``az repos pr`` / ``az devops invoke`` docs):
 
-- ``az repos pr create`` -- ``--description`` takes one value per line;
+- ``az repos pr create`` -- ``--description`` takes one value per line. Real
+  ``az`` prints ``repository.webUrl: null`` here and in ``pr show``/``pr list``,
+  so the PR URL is built from the settings
+  (``<organization_url>/<project>/_git/<repository>/pullrequest/<id>``);
 - ``az repos pr show --id`` -- status; Azure computes ``mergeStatus``
   asynchronously (``queued``/``notSet``), so ``status`` asks again a bounded
   number of times, like the GitHub provider;
@@ -46,9 +49,10 @@ Commands used (shapes from the ``az repos pr`` / ``az devops invoke`` docs):
   build (``az pipelines runs`` has no log command). A red status policy has no
   build, its entry is a note.
 
-Unit tests use fake ``az`` executors and perform no live hosting writes. The operator
-verifies the installed CLI read-only, then tests the PR lifecycle after merge in
-the separate HAIFA-Azure-Sandbox repo; see the task's app_docs guide.
+A missing PR is ``ERROR: TF401180 ...`` with exit 1 (``az_failed``). Unit tests
+use a fake ``az`` (``tests/providers/az_fake.py``) that prints what real ``az``
+prints; ``just validate --remote azure`` runs the PR lifecycle against a real
+sandbox repo.
 """
 
 from __future__ import annotations

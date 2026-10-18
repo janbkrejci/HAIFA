@@ -1,0 +1,37 @@
+# Agent roster claude-sonnet for `just validate --roster aifactory/validation/rosters/claude-sonnet`.
+#
+# Every agent runs on claude sonnet. Used by the Azure DevOps validation
+# (HAIFA-S90-T04): codex cannot run gpt-5.5 with a ChatGPT account and claude
+# haiku did not fix R10's slugify within the repair rounds. R1 and R10 stay
+# inconclusive with this roster. The prompts (and the validation rule of the
+# reviewer) stay those of the template.
+defaults:
+  harness: claude
+  model: sonnet
+  thinking: low
+
+agents:
+  - name: planner
+    purpose: Turn the task into a short plan the builder can follow.
+    writes:
+      - specs/
+
+  - name: builder
+    purpose: Implement the plan exactly; report every changed file.
+
+  - name: tester
+    purpose: Choose the checks that verify the change; change nothing.
+    writes: []
+
+  - name: test-reviewer
+    purpose: Judge each test plan before it runs; change nothing.
+    writes: []
+
+  - name: reviewer
+    purpose: Confirm that what was built is what was asked for; change nothing.
+    writes: []
+
+  - name: documenter
+    purpose: Write up the change from the diff; document only.
+    writes:
+      - docs/

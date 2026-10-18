@@ -216,7 +216,8 @@ def test_check_runs_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
     [
         ("ERROR: Please run 'az login' to setup account.", "az_not_logged_in"),
         ("TF400813: The user is not authorized to access this resource.", "az_not_logged_in"),
-        ("TF401180: The requested pull request was not found.", "az_failed"),
+        # real az 2.91 (exit 1)
+        ("ERROR: TF401180: The requested pull request was not found.\n", "az_failed"),
     ],
 )
 def test_operation_errors(
@@ -322,10 +323,18 @@ def test_long_description_is_cut_to_the_azure_limit(
 
 
 def test_create_pr_url_without_web_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    install_fake_az(tmp_path, monkeypatch, {"repos pr create": show(id=12, web_url=None)})
+    # real az prints repository.webUrl null: the URL is built from the settings
+    install_fake_az(tmp_path, monkeypatch, {"repos pr create": show(id=12)})
     pr = _provider(tmp_path, []).create_pr("factory/T01-1", "T01", "body")
     assert pr.id == "12"
     assert pr.url == f"{ORG_URL}/Fab%20Rikam/_git/app/pullrequest/12"
+
+
+def test_create_pr_url_from_web_url(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    web = "https://contoso.visualstudio.com/Fab%20Rikam/_git/app"
+    install_fake_az(tmp_path, monkeypatch, {"repos pr create": show(id=12, web_url=web)})
+    pr = _provider(tmp_path, []).create_pr("factory/T01-1", "T01", "body")
+    assert pr.url == f"{web}/pullrequest/12"
 
 
 @pytest.mark.parametrize(
@@ -369,6 +378,8 @@ def test_create_pr_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Non
             "2026-09-27T11:00:00.451+00:00",
         ),
         (show(status="abandoned", merge_status="notSet"), CLOSED, UNKNOWN, None, None),
+        # real az: an abandoned PR has mergeStatus null
+        (show(status="abandoned", merge_status=None), CLOSED, UNKNOWN, None, None),
     ],
 )
 def test_status(

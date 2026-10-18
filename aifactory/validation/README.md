@@ -5,10 +5,11 @@ Skript připraví testovací repo se šablonou backlogu (`template/`) a spustí 
 ```
 just validate --remote local     # bez sítě a bez modelů, zdarma
 just validate --remote github    # sandbox z HAIFA_SANDBOX_REPO, skutečné harnessy
+just validate --remote azure     # sandbox z HAIFA_AZURE_SANDBOX_REPO na Azure DevOps, skutečné harnessy
 ```
 
 Další přepínače:
-- `--only R1,RESOLVE`: jen vybrané scénáře. Pořadí je vždy R1, R10, R2, RESOLVE, R3, R4, R5, B1, F2. Když scénáři chybí předpoklad z dřívějšího scénáře, vyjde `inconclusive` (třeba RESOLVE bez konfliktu z R2).
+- `--only R1,RESOLVE`: jen vybrané scénáře. Pořadí je vždy R1, R10, R2, RESOLVE, R3, R4, R5, B1, F2. Když scénáři chybí předpoklad z dřívějšího scénáře, vyjde `inconclusive` (třeba RESOLVE bez konfliktu z R2). Výjimkou je R3: když R1 nebo R10 v `--only` vůbec nejsou, spustí jejich úkoly (`M02-S01-T02`, `M01-S02-T01`) sám. Když vybrané jsou, ale selhaly, R3 je znovu nespouští.
 - `--workdir PATH`: pracovní adresář. Výchozí je nový dočasný adresář.
 - `--keep-workdir`: pracovní adresář se na konci nesmaže. Bez tohoto přepínače se smaže, ale jen pokud ho skript sám vytvořil.
 - `--results-dir PATH`: kam se zapíšou výsledky (výchozí `aifactory/validation/results`).
@@ -21,11 +22,12 @@ Další přepínače:
   - Použitý roster a harness po krocích jsou v `summary.json` (`roster`, `harness_per_step`).
   - Příklad: `just validate --remote local --roster aifactory/validation/rosters/pi-haiku` (vše na pi, planner, tester, test-reviewer a documenter na claude haiku).
   - Příklad: `just validate --remote github --roster aifactory/validation/rosters/claude-codex-pi` (planner, tester, test-reviewer a documenter na claude, builder na codexu, reviewer na pi s modelem z OB5; ověří R1 i R10).
+  - Příklad: `just validate --remote azure --only R2,RESOLVE,R3,F2 --roster aifactory/validation/rosters/claude-sonnet` (všichni agenti na claude `sonnet`; R1 a R10 by s ním vyšly `inconclusive`, R2, RESOLVE, R3 a F2 harness neověřují).
 
 Kód návratu:
 - 0: všechny scénáře skončily `passed` nebo `inconclusive`;
 - 1: některý scénář skončil `failed`;
-- 2: chyba přípravy. Chybí `HAIFA_SANDBOX_REPO`, selže `gh auth status` nebo `factory harness check`, `just` není na PATH, nebo je neúplný roster.
+- 2: chyba přípravy. Chybí `HAIFA_SANDBOX_REPO` nebo `HAIFA_AZURE_SANDBOX_REPO`, selže `gh auth status`, kontrola `az` (instalace, rozšíření `azure-devops`, přihlášení, dostupnost sandboxu, přístup gitu) nebo `factory harness check`, `just` není na PATH, nebo je neúplný roster.
 
 ## Režimy
 
@@ -38,19 +40,38 @@ Kód návratu:
 
 Skript naklonuje sandbox a z jeho výchozí větve založí novou base větev `haifa-validate/<YYYYMMDD-HHMMSS>`, do které commitne šablonu. `main` sandboxu se nemění. S `--force-with-lease` pushuje jen `task resolve`, a to větev `factory/*`. B1 běží i na githubu s falešným harnessem: hlídač zápisů je kód a model k ověření nepotřebuje.
 
+**azure**: spouští ho engineer ručně, nikdy test. Potřebuje:
+- `HAIFA_AZURE_SANDBOX_REPO` v `.env` nebo v prostředí ve tvaru `https://<org>.visualstudio.com/<projekt>/_git/<repo>`, `https://dev.azure.com/<org>/<projekt>/_git/<repo>` (klonovací URL i s `org@`) nebo `<org>/<projekt>/<repo>`;
+- `az` s rozšířením `azure-devops` (`az extension add --name azure-devops`), přihlášené přes `az login --allow-no-subscriptions`, nebo token v `AZURE_DEVOPS_EXT_PAT`. Jinou binárku lze nastavit přes `AIFACTORY_AZ` (stejně jako provider);
+- harnessy rosteru na PATH a `just`.
+
+Preflight ověří `az --version`, rozšíření, přihlášení (`az account show`, s `AZURE_DEVOPS_EXT_PAT` se přeskočí), sandbox (`az repos show`) a že git sandbox přečte (`git ls-remote`).
+
+Git se k Azure DevOps přihlašuje přes HTTPS credential helper, který při každém volání gitu vypíše čerstvý token z `az account get-access-token` (resource Azure DevOps), nebo `AZURE_DEVOPS_EXT_PAT`. Helper je v repo-lokální konfiguraci klonu, takže ho sdílejí i worktree, které vytváří HAIFA. Globální helpery (třeba keychain) se pro sandbox vypnou, token se nikam neukládá.
+
+Skript naklonuje sandbox a z jeho výchozí větve založí base větev `haifa-validate/<YYYYMMDD-HHMMSS>`. Výchozí větev sandboxu se nemění. Do `.factory/config.yaml` sandboxu přidá sekci `azure` (organizace, projekt, repo). Merge PR mimo factory (R3) jde přes `az repos pr update --status completed --squash true` a validace čeká, až Azure PR dokončí. Zavření PR mimo factory jde přes `az repos pr update --status abandoned`.
+
 ## Vynucená opravná kola
 
 **test → fix (R10)**: `hidden.py` zapíše skrytý test do `<workdir>/hidden/test_hidden_slugify.py`, tedy mimo repo i worktree. Požadavek ze zadání nejde odvodit: prázdný slug je `x-empty`, tedy `slugify("!!!") == "x-empty"`. Každý příkaz `factory` dostane proměnnou `HAIFA_VALIDATE_HIDDEN=<workdir>/hidden`, ale ta slouží jen jako kanál do `validation.worker`. Worker ji hned odstraní z `os.environ`, takže ji agenti nezdědí, a obalí kódový krok `test` enginu (`aifactory.testing.executor.execute`, spouští kontroly z plánu testera). Jen na dobu tohoto kroku vloží skrytý test do `tests/test_hidden_slugify.py` worktree běhu, kde ho `just test` sandboxu najde sám, a potom ho smaže. Agent ho tak na disku nikdy nevidí a nemůže ho ani odstranit. Cesta je v `info/exclude` sandboxu (ne v `.gitignore`, který agent čte), takže se případný zbytek nikdy necommitne. Proto `test_1` vždy selže. Tester ho posoudí (`triage_1`, falešný tester odpoví `failure_cause: code`), proběhne `fix` a po něm nový plán kontrol (`test_plan_1`) s jeho kontrolou (`test_review_1`). Běhy, ve kterých ještě `slugify` neexistuje, skrytý test přeskočí. Hlavní checkout spouští jen viditelné testy. Kontrola `hidden_unseen_by_agents` ověří, že skrytý test žádný agent neviděl.
 
 **review → revise (všechny běhy)**: reviewer v šabloně (`template/.factory/prompts/reviewer/{system,user}.md`) má pravidlo „Validation rule (haifa-validate)“. V prvním kole vždy zamítne a požaduje přidat řádek `# haifa-validate: revised` na konec prvního změněného souboru. Proběhne tedy `revise_1`, `replan_1` (tester podle review znovu zvolí kontroly), `test_review_1` (test-reviewer plán schválí), `retest_1` a `review_2`, které už schválí. Pravidlo je jen ve validační šabloně, ve výchozí konfiguraci produktu (`aifactory/src/`) není. Hlídá to test. Na githubu rozhoduje skutečný model: když pravidlo nedodrží a schválí hned napoprvé, scénář vyjde `inconclusive`, ne `failed`.
 
-## Kolik to stojí na githubu
+## Kolik to stojí na hostingu (github, azure)
 
-Proběhne 13 běhů `simple-sdlc`: R1, R10, 2× R2, R4, v R3 běh `truncate` a jeho vrácení a 5 běhů F2. K tomu jeden běh `resolve`. F2 nenechává otevřené PR ani worktree. Každý běh `simple-sdlc` volá agenty 10krát až 14krát: plan, build, test_plan, test_review, review, revise, replan, test_review, druhé review, document a v R10 ještě triage, fix, test_plan a test_review po opravě. Každý uložený plán testů kontroluje test-reviewer (`test_review`). Revize a druhé review jsou proti prototypu navíc. Úkoly mají řádově desítky řádků. Modely nastavuje `template/.factory/agents.yaml`: planner, tester a test-reviewer claude `sonnet`, builder codex `gpt-5.5`, reviewer pi, documenter claude `haiku`.
+Celá sada spustí 13 běhů `simple-sdlc`: R1, R10, 2× R2, R4, v R3 běh `truncate` a jeho vrácení a 5 běhů F2. K tomu jeden běh `resolve`. F2 nenechává otevřené PR ani worktree. Každý běh `simple-sdlc` volá agenty 10krát až 14krát: plan, build, test_plan, test_review, review, revise, replan, test_review, druhé review, document a v R10 ještě triage, fix, test_plan a test_review po opravě. Každý uložený plán testů kontroluje test-reviewer (`test_review`). Revize a druhé review jsou proti prototypu navíc. Úkoly mají řádově desítky řádků. Modely nastavuje `template/.factory/agents.yaml`: planner, tester a test-reviewer claude `sonnet`, builder codex `gpt-5.5`, reviewer pi, documenter claude `haiku`.
+
+`--only R2,RESOLVE,R3,F2` spustí 2 běhy R2, jeden `resolve`, 3 běhy v R3 (předpoklady R10 a R1 a `truncate`) plus jeho vrácení a 5 běhů F2.
 
 Úklid po běhu na GitHubu dělá engineer ručně:
 - zavři zbylé otevřené PR (`M02-S01-T01` z R4 a případné sync PR `factory-sync/*` z R3) přes `gh pr close <n>`;
 - smaž větve `factory/*` (včetně `factory/M03-*` a `factory/M04-*` z F2), `factory-sync/*` a `haifa-validate/*` vytvořené během, třeba `git push origin --delete haifa-validate/<stamp>`.
+
+Úklid po běhu na Azure DevOps (s `--keep-workdir`, klon `<workdir>/repo` má credential helper):
+- vypiš aktivní PR: `az repos pr list --org <org-url> --project <projekt> --repository <repo> --status active --detect false -o table`;
+- PR z běhu (cíl `haifa-validate/<stamp>`, třeba sync PR `factory-sync/*` nebo `M02-S01-T01` z R4) opusť přes `az repos pr update --id <n> --org <org-url> --status abandoned`. PR do výchozí větve a PR, které nevytvořil tento běh, nech být;
+- najdi větve běhu: `git -C <workdir>/repo ls-remote --heads origin 'factory/*' 'factory-sync/*' 'haifa-validate/*'` a smaž je: `git -C <workdir>/repo push origin --delete haifa-validate/<stamp> factory/<…> factory-sync/<…>`. Bez klonu jde i `az repos ref delete --name heads/<větev> --object-id <sha> --org <org-url> --project <projekt> --repository <repo>`;
+- nakonec smaž pracovní adresář. Výchozí větev sandboxu má mít stejný commit jako před během.
 
 ## Výsledky
 
@@ -61,7 +82,7 @@ Výsledky se zapíšou do `results/<YYYY-MM-DD>/<remote>-<HHMMSS>/`:
 - `trace/sessions/<run_id>/`: prompty, `raw_output.jsonl` a stav harnessů z běhů, na které výsledky odkazují;
 - `logs/`: stderr každého příkazu `factory`, a když běžel falešný harness, i jeho skript a záznam volání.
 
-Lokální výsledky git ignoruje, výsledky z githubu se commitují.
+Lokální výsledky git ignoruje, výsledky z githubu a z azure se commitují.
 
 JSON scénáře obsahuje tato pole:
 - `outcome`: `passed` znamená, že prošly všechny checks. `failed` znamená, že některý check neprošel nebo scénář spadl (traceback je v `observations`). `inconclusive` znamená, že ověření nešlo provést, třeba když skutečný reviewer schválil hned v prvním kole.
@@ -78,7 +99,7 @@ JSON scénáře obsahuje tato pole:
 | R10 | `slugify` neprojde skrytým testem, takže `test_1` selže a jeho výstup obsahuje `HiddenSlugifyTest`. Tester ho v `triage_1` přisoudí kódu. Opravné kolo `fix_1` běží na codexu ve stejné session a `test_2` projde. Běh má i vynucené kolo review. Na githubu se navíc ověří jeden Codex thread (`codex exec resume`). |
 | R2 | Dva paralelní běhy (`clamp`, `lerp`) nad stejným řádkem `mathx.py`. Oba PR se otevřou, první se schválí a druhý skončí `conflict` (exit 2) bez změny base. |
 | RESOLVE | `factory task resolve` na konfliktní PR z R2: `rebase` → `resolve` (builder) → `test_plan` (tester) → `test_review` (test-reviewer) → `test`, bez konfliktních značek. Pak `task approve` a oba PR z R2 jsou `merged` a oba úkoly `done` v base. V local režimu ještě `just test` v čistém checkoutu base. |
-| R3 | Vazba na task jiného modulu blokuje běh (`unmet_dependencies`, exit 2). Pak přijde schválení ve factory (`status: done` a řádek pod `## Běhy` v base) a merge mimo factory. Následuje `backlog sync`, který otevře sync PR, a jeho merge. Dál vrácený PR (nový běh na stejné větvi) a zavřený PR: approve ho odmítne (`pr_not_open`, exit 2) a sync ho ignoruje. |
+| R3 | Když R10 nebo R1 nejsou vybrané, R3 nejdřív sám spustí jejich úkoly a otevře jejich PR (neúspěšný běh je check `prerequisite_<task>`). Vazba na task jiného modulu blokuje běh (`unmet_dependencies`, exit 2). Pak přijde schválení ve factory (`status: done` a řádek pod `## Běhy` v base) a merge mimo factory. Následuje `backlog sync`, který otevře sync PR, a jeho merge. Dál vrácený PR (nový běh na stejné větvi) a zavřený PR: approve ho odmítne (`pr_not_open`, exit 2) a sync ho ignoruje. |
 | R4 | Necommitnutá změna promptu i `agents.yaml` (`thinking: high` u planneru) se do běhu nedostane, protože konfigurace se čte z commitu v base. Běh na ni upozorní ve `warnings`. |
 | R5 | Čas `git worktree add`, velikost a počet souborů worktree a velikost `.git`. |
 | B1 | Falešný builder zapíše do hlavního checkoutu: nový soubor `B1-breach.md` a řádek do sledovaného `README.md`. Hlídač zápisy vrátí a fáze `build` selže (event `permission_breach`). Běh skončí `run_failed` (exit 1) a neotevře PR. Hlavní checkout zůstane jako předtím. Gitignorované soubory hlídač nevidí, proto B1 zapisuje jen do negitignorovaných. |

@@ -1,0 +1,56 @@
+# simple-sdlc of the claude-sonnet roster: the template's workflow with every
+# step on claude. R1 and R10 (Codex resume) are inconclusive with it.
+#
+# Loops (2.7): `until` is checked after every body step, so a last rejection is
+# not followed by revise_2 and a last red suite not by fix_3.
+name: simple-sdlc
+description: Plan, build, test with repairs, review with revision, then document — every step on claude
+steps:
+  - plan:
+      harness: claude
+  - commit:
+      id: commit_plan
+      description: Put the spec on record before any code exists to blur it
+  - build:
+      description: Implement the plan exactly
+      harness: claude
+  - test_plan:
+      description: Choose the checks that verify the build
+  - repeat: {max: 3, until: test.passed}
+    steps:
+      - test
+      - fix:
+          description: Repair what the suite reported, from its verbatim output
+          harness: claude
+      - test_plan:
+          description: Plan the checks again — the fix changed code, keep every earlier check
+  - repeat: {max: 2, until: review.approved}
+    steps:
+      - review:
+          input: [build, fix, revise]
+          description: Confirm the build matches the plan
+          harness: claude
+      - revise:
+          harness: claude
+      - test_plan:
+          id: replan
+          input: [review]
+          description: Plan the checks again from the review and the revised code
+      - test:
+          id: retest
+          description: Run the new checks on the revised code before the next review
+  - commit:
+      id: commit_build
+      when: test.passed and review.approved
+      description: "Land the code only now: green suite, approved review"
+  - changes:
+      when: test.passed and review.approved
+      description: Diff the whole run against its pinned baseline, for the documenter
+  - document:
+      when: test.passed and review.approved
+      description: Write up the completed change
+  - commit:
+      id: commit_docs
+      when: test.passed and review.approved
+      description: Ship the write-up in its own commit, beside the code it describes
+accept: test.passed and review.approved

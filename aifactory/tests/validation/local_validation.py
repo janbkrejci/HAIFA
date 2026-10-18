@@ -34,7 +34,12 @@ from validation.scenarios import (
 from fake_exe import make_executable
 from validation import runner
 
-HIDDEN_ENV_KEYS = ("HAIFA_SANDBOX_REPO", "HAIFA_VALIDATE_FAKE", "HAIFA_VALIDATE_HIDDEN")
+HIDDEN_ENV_KEYS = (
+    "HAIFA_SANDBOX_REPO",
+    "HAIFA_AZURE_SANDBOX_REPO",
+    "HAIFA_VALIDATE_FAKE",
+    "HAIFA_VALIDATE_HIDDEN",
+)
 
 
 def tripwire(directory: Path, marker: Path) -> Path:

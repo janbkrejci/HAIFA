@@ -6,8 +6,9 @@ ones (RESOLVE resolves the conflicting PR of R2, R3 approves the PR of R10 and
 merges the PR of R1 outside factory, R4 needs the slugify of R10 in base). F2
 (``validation.f2``, the acceptance of phase F2) depends on none of them. A
 missing precondition makes the part that needs it ``inconclusive`` instead of
-failing. The expected harnesses of R1 and R10 come from the roster (``--roster
-DIR`` or the template); a roster without the harnesses they verify (R1:
+failing; when R1 or R10 is not selected at all, R3 runs their tasks itself.
+The expected harnesses of R1 and R10 come from the roster (``--roster DIR`` or
+the template); a roster without the harnesses they verify (R1:
 claude, codex and pi in one workflow; R10: build and fix on codex) makes them
 ``inconclusive`` only when the harness is all that is missing and every other
 check passed; a failed run or check keeps them ``failed``.
@@ -485,7 +486,8 @@ def _r2_approve(ctx: Context, st: R2Run) -> bool:
     )
     if not ctx.local and approve2.error_code == "merge_failed":
         res.observe(
-            "GitHub ještě nespočítal mergeability, approve skončil merge_failed místo conflict"
+            f"hosting ({ctx.hosting}) ještě nespočítal mergeability, "
+            "approve skončil merge_failed místo conflict"
         )
     if conflict:
         ctx.state["R2"] = {
@@ -546,7 +548,9 @@ def _resolve_run(ctx: Context, st: ResolveRun) -> bool:
             ok = rebase.get("status") == "success" and agent.get("status") == "success" and test_ok
         else:
             ok = rebase.get("status") == "success" and test_ok
-            res.observe("rebase na GitHubu konflikt nehlásil, agent resolve se nespustil")
+            res.observe(
+                f"rebase na hostingu ({ctx.hosting}) konflikt nehlásil, agent resolve se nespustil"
+            )
         res.check(
             "resolve_phase_ran",
             ok,
@@ -636,6 +640,29 @@ class R3Run:
     first: Cmd | None = None
     ret: Cmd | None = None
     close_before: int | None = None  # base commits before the PR was closed
+
+
+def _r3_prerequisite(ctx: Context, st: R3Run, scenario: str, task_id: str, variant: str) -> None:
+    """Run `task_id` of `scenario` for R3 when that scenario is not selected in this run."""
+    if scenario in ctx.selected or scenario in ctx.state:
+        return
+    ctx.catch_up_base()
+    cmd = ctx.run_task(task_id, variant=variant)
+    ctx.reference(st.res, cmd)
+    if cmd.ok and cmd.run.get("state") == "succeeded" and cmd.pr.get("url"):
+        ctx.state[scenario] = {"task": task_id, "run": cmd.run, "pr": cmd.pr}
+        st.res.observe(f"R3: předpoklad {task_id} (jinak z {scenario}) spuštěn v R3")
+    else:
+        st.res.check(f"prerequisite_{task_id}", False, cmd.brief())
+
+
+def _r3_prerequisites(ctx: Context, st: R3Run) -> bool:
+    # R3 approves the PR of R10 and merges the PR of R1 outside factory; without those
+    # scenarios in the run, it opens the PRs itself (R10's first: its slugify stays
+    # not done, so the dependency check that follows still holds)
+    _r3_prerequisite(ctx, st, "R10", R10_TASK, "slugify_with_repair")
+    _r3_prerequisite(ctx, st, "R1", R1_TASK, "happy")
+    return True
 
 
 def _r3_dependency(ctx: Context, st: R3Run) -> bool:
@@ -830,8 +857,10 @@ def _r3_finish(ctx: Context, st: R3Run) -> bool:
     if ctx.local:
         res.observe(
             "local: squash merge mimo factory lokální provider nezachytí (tip větve není předkem "
-            "base), proto merge mimo factory použil --no-ff; squash se ověřuje na githubu"
+            "base), proto merge mimo factory použil --no-ff; squash se ověřuje na hostingu"
         )
+    elif ctx.hosting == "azure":
+        res.observe(_azure_vote_note(ctx, st))
     else:
         res.observe(
             "approve neposílá review na hosting (D11, dočasné), protože GitHub nedovolí "
@@ -847,6 +876,7 @@ def _r3_finish(ctx: Context, st: R3Run) -> bool:
 
 # R3 in order, one CLI step each; every stage runs (R3 does not stop early)
 R3_STAGES: tuple[tuple[str, Callable[[Context, R3Run], bool]], ...] = (
+    ("prerequisites", _r3_prerequisites),
     ("dependency", _r3_dependency),
     ("approve", _r3_approve),
     ("approve_show", _r3_approve_show),
@@ -867,12 +897,89 @@ def r3(ctx: Context) -> ScenarioResult:
     return st.res
 
 
+def _azure_vote_note(ctx: Context, st: R3Run) -> str:
+    """What approve did on Azure DevOps: the reviewers of R10's PR after `task approve`."""
+    pr_id = str(_dict(_dict(ctx.state.get("R10")).get("pr")).get("pr_id") or "")
+    if st.approve is None or not pr_id:
+        return "approve na Azure DevOps: PR R10 nebyl schválen, hlas se neověřuje"
+    out = ctx.az(
+        "repos",
+        "pr",
+        "reviewer",
+        "list",
+        "--id",
+        pr_id,
+        *ctx.az_org_args(),
+        *ctx.az_tail(),
+        check=False,
+    )
+    try:
+        reviewers = json.loads(out or "[]")
+    except ValueError:
+        reviewers = []
+    votes = [
+        f"{r.get('displayName') or r.get('uniqueName')}: {r.get('vote')}"
+        for r in reviewers
+        if isinstance(r, dict)
+    ]
+    return (
+        "approve na Azure DevOps hlasuje (az repos pr set-vote --vote approve), Azure "
+        f"dovolí schválit vlastní PR; recenzenti PR {pr_id} po approve: {votes or 'žádní'}"
+    )
+
+
+def _dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _azure_pr_id(ctx: Context, branch: str) -> str | None:
+    """The newest PR of `branch` into base on Azure DevOps (any status)."""
+    out = ctx.az(
+        "repos",
+        "pr",
+        "list",
+        *ctx.az_repo_args(),
+        "--source-branch",
+        branch,
+        "--target-branch",
+        ctx.base,
+        "--status",
+        "all",
+        *ctx.az_tail(),
+        check=False,
+    )
+    try:
+        items = json.loads(out or "[]")
+    except ValueError:
+        return None
+    ids = [
+        int(i["pullRequestId"])
+        for i in items
+        if isinstance(i, dict) and isinstance(i.get("pullRequestId"), int)
+    ]
+    return str(max(ids)) if ids else None
+
+
+def _azure_wait_status(ctx: Context, number: str, wanted: str, seconds: int = 120) -> str:
+    """Poll ``az repos pr show`` until the PR is `wanted`; its last status."""
+    status = ""
+    deadline = time.monotonic() + seconds
+    while True:
+        out = ctx.az("repos", "pr", "show", "--id", number, *ctx.az_org_args(), *ctx.az_tail())
+        status = str(_dict(json.loads(out or "{}")).get("status", ""))
+        if status == wanted or time.monotonic() >= deadline:
+            return status
+        time.sleep(5)
+
+
 def _pr_number(ctx: Context, pr: dict[str, Any]) -> str | None:
     if ctx.local:
         return str(pr.get("pr_id") or pr.get("branch") or "") or None
     branch = str(pr.get("branch") or "")
     if not branch:
         return None
+    if ctx.hosting == "azure":
+        return _azure_pr_id(ctx, branch)
     out = ctx.gh("pr", "view", branch, "--json", "number", check=False)
     try:
         return str(json.loads(out).get("number"))
@@ -906,6 +1013,31 @@ def _merge_outside(ctx: Context, res: ScenarioResult, pr: dict[str, Any]) -> Non
         git(outside, "push", "-q", "origin", ctx.base)
         res.commits.append(git(outside, "rev-parse", "HEAD"))
         res.observe(f"merge mimo factory: git merge --no-ff {branch} v druhém klonu, push do base")
+    elif ctx.hosting == "azure":
+        number = str(pr.get("pr_id"))
+        ctx.az(
+            "repos",
+            "pr",
+            "update",
+            "--id",
+            number,
+            *ctx.az_org_args(),
+            "--status",
+            "completed",
+            "--squash",
+            "true",
+            "--delete-source-branch",
+            "false",
+            "--merge-commit-message",
+            f"Merge {branch} outside factory",
+            *ctx.az_tail(),
+        )
+        status = _azure_wait_status(ctx, number, "completed")
+        if status != "completed":
+            raise RuntimeError(f"PR {number} not completed outside factory: status {status}")
+        res.observe(
+            f"merge mimo factory: az repos pr update --id {number} --status completed --squash true"
+        )
     else:
         number = str(pr.get("pr_id"))
         ctx.gh("pr", "merge", number, "--squash")
@@ -926,6 +1058,20 @@ def _close_outside(
         res.observe(
             f"zavření PR v local: worktree odstraněn, větev {branch} smazána lokálně i v remote"
         )
+    elif ctx.hosting == "azure":
+        number = str(pr.get("pr_id"))
+        ctx.az(
+            "repos",
+            "pr",
+            "update",
+            "--id",
+            number,
+            *ctx.az_org_args(),
+            "--status",
+            "abandoned",
+            *ctx.az_tail(),
+        )
+        res.observe(f"zavření PR mimo factory: az repos pr update --id {number} --status abandoned")
     else:
         number = str(pr.get("pr_id"))
         ctx.gh("pr", "close", number)

@@ -253,7 +253,7 @@ def _final_checks(
         suite_ok, suite = ctx.base_suite("f2-check")
         res.check("base_suite_green", suite_ok, f"just test in base: {suite}")
     else:
-        res.observe("just test v čistém checkoutu base se na githubu nespouští")
+        res.observe(f"just test v čistém checkoutu base se na hostingu ({ctx.hosting}) nespouští")
     res.measurements["run_seconds"] = {
         t: run_seconds(ctx.task_run(str(_dict(_dict(runs.get(t)).get("run")).get("run_id") or "")))
         for t in fb.ALL
@@ -294,9 +294,14 @@ def _stage_backlog(ctx: Context, st: F2Run) -> bool:
     st.base_sha = _push_backlog(ctx, st.res, st.adds)
     if st.base_sha is None:
         return False
+    approval = (
+        "approve hlasuje na Azure DevOps (az repos pr set-vote)"
+        if ctx.hosting == "azure"
+        else "approve bez approve review (D11)"
+    )
     st.res.observe(
         "F2: 2 moduly, 5 tasků; paralelně M03-S01-T01 a M04-S01-T01; --auto od M04-S01-T02 "
-        "spustil M04-S01-T03; approve bez approve review (D11)"
+        f"spustil M04-S01-T03; {approval}"
     )
     if ctx.local:
         st.res.observe("local: agenty nahrazuje falešný harness, kódové kroky běží doopravdy")
