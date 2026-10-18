@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // Port of the sssf visualizer's StatusChip: run states and phase statuses, in Czech.
 import { computed, type Component } from 'vue'
-import { Ban, Check, Circle, CircleSlash, Hourglass, LoaderCircle, Pause, X } from 'lucide-vue-next'
+import { Ban, Check, Circle, CircleSlash, Hourglass, LoaderCircle, Lock, Pause, X } from 'lucide-vue-next'
 
 const props = defineProps<{ status: string | null }>()
 
@@ -11,6 +11,8 @@ const KINDS: Record<string, { cls: string; label: string; icon: Component }> = {
   success: { cls: 'success', label: 'úspěch', icon: Check },
   failed: { cls: 'fail', label: 'chyba', icon: X },
   fail: { cls: 'fail', label: 'chyba', icon: X },
+  // a failed run that waits for its blocking tasks (failure kind blocked): not a failure
+  blocked: { cls: 'blocked', label: 'blokovaný', icon: Lock },
   aborted: { cls: 'aborted', label: 'přerušeno', icon: CircleSlash },
   stopped: { cls: 'stopped', label: 'zastaveno', icon: Ban },
   // a running run that waits before its next phase (factory task pause), or will
@@ -75,6 +77,12 @@ const kind = computed(
   color: var(--amber);
   border-color: rgba(232, 182, 74, 0.45);
   background: rgba(232, 182, 74, 0.08);
+}
+
+.chip.blocked {
+  color: var(--violet);
+  border-color: rgba(148, 163, 255, 0.45);
+  background: rgba(148, 163, 255, 0.09);
 }
 
 .chip.paused,

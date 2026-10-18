@@ -38,6 +38,7 @@ if TYPE_CHECKING:
     from aifactory.engine.role_registry import RoleRegistry
     from aifactory.harness.config import SSSFConfig
     from aifactory.run import ChainResult, TaskRunResult
+    from aifactory.run.store import TaskRunRow
     from aifactory.workflow import CodeRunner
 
 SUBCOMMANDS: tuple[tuple[str, str], ...] = (
@@ -2026,7 +2027,8 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="list the runs of a task with their state and failure kind",
         description="List every run of a task, newest first: state, failure_kind (why a run "
         "did not succeed: accept_not_met, nothing_to_do, quota, writes_violation, "
-        "invalid_output, process_gone, stopped or other) and the error. --json gives each run "
+        "invalid_output, process_gone, stopped, blocked or other) and the error; a blocked "
+        "run (it waits for blocking tasks) lists its blockers. --json gives each run "
         "with failure_kind and failure_detail.",
     )
     runs.add_argument("task_id", metavar="ID", help="task id")
@@ -2332,7 +2334,9 @@ def _task_show(args: argparse.Namespace, root: Path) -> int:
         print("runs:")
         for r in runs:
             head = r.head_sha[:7] if r.head_sha else "-"
-            print(f"  {r.started_at}  {r.run_id}  {r.shown_state:<9}  {r.branch}  {head}")
+            line = f"  {r.started_at}  {r.run_id}  {r.shown_state:<9}  {r.branch}  {head}"
+            blocked = _run_blocked_text(r)
+            print(f"{line}  {blocked}" if blocked else line)
     else:
         print("no runs")
     if prs:
@@ -2342,6 +2346,17 @@ def _task_show(args: argparse.Namespace, root: Path) -> int:
     for issue in own_issues:
         print(f"{issue['path']}: {issue['code']}: {issue['message']}", file=sys.stderr)
     return 0
+
+
+def _run_blocked_text(run: TaskRunRow) -> str:
+    """``blocked: waits for A, B`` for a run that ended blocked; empty for any other run."""
+    from aifactory import failure
+
+    if run.shown_failure_kind != failure.BLOCKED:
+        return ""
+    detail = run.failure_detail_dict() or {}
+    blockers = [str(b) for b in detail.get("blockers") or []]
+    return f"blocked: waits for {', '.join(blockers) or '-'}"
 
 
 def _task_runs(args: argparse.Namespace, root: Path) -> int:
@@ -2356,6 +2371,7 @@ def _task_runs(args: argparse.Namespace, root: Path) -> int:
     for r in runs:
         kind = r.shown_failure_kind or "-"
         error = (r.error or "").splitlines()[0][:100] if r.error else ""
+        error = _run_blocked_text(r) or error
         print(f"{r.started_at}  {r.run_id}  {r.shown_state:<9}  {kind:<16}  {error}".rstrip())
     return 0
 

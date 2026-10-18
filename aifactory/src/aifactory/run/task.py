@@ -990,7 +990,8 @@ def _execute(
             # a blocked task is neither published nor done: the run fails
             reason = blocked_reason(row.task_id, blockers)
             if error is None:
-                failure_kind, failure_detail = failures.OTHER, {"cause": "blocked"}
+                failure_kind = failures.BLOCKED
+                failure_detail = {"blockers": list(blockers)}
             error = reason if error is None else f"{reason}; {error}"[:2000]
     state = SUCCEEDED if error is None else FAILED
     store.finish(row.run_id, state, gitops.head(worktree), error, failure_kind, failure_detail)
@@ -1048,13 +1049,12 @@ def _execute(
     return result
 
 
-BLOCKED_PREFIX = "blocked: "
-_BLOCKED_WAITS = " waits for "
+BLOCKED_PREFIX = failures.BLOCKED_PREFIX
 
 
 def blocked_reason(task_id: str, blockers: list[str]) -> str:
     """The error of a run that ended blocked (``run_blockers`` reads it back)."""
-    return f"{BLOCKED_PREFIX}task {task_id} waits for {', '.join(blockers)}"
+    return failures.blocked_error(task_id, blockers)
 
 
 def run_blockers(row: TaskRunRow) -> list[str] | None:
@@ -1063,14 +1063,9 @@ def run_blockers(row: TaskRunRow) -> list[str] | None:
     Read from the stored error, so it holds for a chain member's run (another process)
     too. The list may hold placeholders of blockers that were not filed.
     """
-    error = row.error or ""
-    if row.state != FAILED or not error.startswith(BLOCKED_PREFIX):
+    if row.state != FAILED:
         return None
-    head = error.split(";", 1)[0]
-    _, sep, waits = head.partition(_BLOCKED_WAITS)
-    if not sep:
-        return []
-    return [part.strip() for part in waits.split(", ") if part.strip()]
+    return failures.error_blockers(row.error)
 
 
 def _record_follow_ups(

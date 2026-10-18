@@ -12,7 +12,8 @@ the task has an effective ``auto_merge`` and the PR no ``auto_merge_error``,
 merge outside factory that ``factory backlog sync`` would mark done), ``sync_pr`` (the newest
 open sync PR ``{url, branch, tasks}`` or ``null``), ``failed`` (tasks whose newest run ended
 ``failed`` or ``aborted`` and that are neither ``done`` nor ``cancelled`` in the backlog, with
-``failure_kind``), ``auto_actions`` (the newest ``AUTO_ACTIONS_LIMIT`` automatic actions of
+``failure_kind``; a run that ended blocked, kind ``blocked``, is not a failure and is left
+out), ``auto_actions`` (the newest ``AUTO_ACTIONS_LIMIT`` automatic actions of
 the repository's auto-continue chains after a failure, newest first: ``task_chains.events``,
 ``run.heal.HealEvent.to_json()`` with the ``chain_id``),
 ``config`` (whether the factory is installed, an invalid configuration in base and uncommitted
@@ -463,6 +464,10 @@ def _lists(
             continue
         if _closed(tasks, row["task_id"]):
             continue
+        # the typed kind (``aifactory.failure``); a run recorded before it: other or blocked
+        kind = failure.shown_kind(row["failure_kind"], row["error"])
+        if kind == failure.BLOCKED:
+            continue  # waits for its blockers: not a failure
         failed.append(
             {
                 "run_id": row["run_id"],
@@ -472,8 +477,7 @@ def _lists(
                 "workflow": row["workflow"],
                 "ended_at": row["ended_at"],
                 "error": row["error"],
-                # the typed kind (``aifactory.failure``); a run recorded before it: other
-                "failure_kind": row["failure_kind"] or failure.OTHER,
+                "failure_kind": kind,
             }
         )
 

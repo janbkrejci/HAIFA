@@ -265,3 +265,19 @@ def test_cli_and_api_return_the_kind(repo: Path, script: Script, capsys: Capsys)
     assert detail["run"]["failure_kind"] == "nothing_to_do"
     assert detail["run"]["failure_detail"]["summary"] == "done"
     json.dumps(detail)  # JSON-ready
+
+
+def test_cli_lists_a_blocked_run_with_its_blockers(repo: Path, capsys: Capsys) -> None:
+    store = _store(repo)
+    try:
+        store.claim(_row("blk", None))
+        error = failure.blocked_error(T01, ["M01-TODO-T01"])
+        store.finish("blk", FAILED, None, error, failure.BLOCKED, {"blockers": ["M01-TODO-T01"]})
+    finally:
+        store.close()
+    capsys.readouterr()
+    assert main(["task", "runs", T01, "--repo", str(repo)]) == 0
+    out = capsys.readouterr().out
+    assert "blocked" in out and "waits for M01-TODO-T01" in out
+    assert main(["task", "show", T01, "--repo", str(repo)]) == 0
+    assert "blocked: waits for M01-TODO-T01" in capsys.readouterr().out

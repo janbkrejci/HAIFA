@@ -573,6 +573,9 @@ def test_blocked_task_continues_with_its_blocker(repo: Path, script: Script) -> 
     first = chain.runs[0]
     assert first.run.state == "failed" and first.pr is None
     assert task_mod.run_blockers(first.run) == [BLOCKER]
+    # a blocked run is the failure kind blocked, its blockers in the detail
+    assert first.run.shown_failure_kind == "blocked"
+    assert first.run.failure_detail_dict() == {"blockers": [BLOCKER]}
     # the blocker goes before the rest of the step, then the usual order
     assert ids(chain) == [T01, BLOCKER, T02, T03]
     assert chain.stop == STOP_EXHAUSTED
@@ -643,6 +646,7 @@ def test_other_failure_still_stops_the_chain(repo: Path, script: Script) -> None
     chain = run_chain(repo, T01)
     assert ids(chain) == [T01]
     assert task_mod.run_blockers(chain.runs[0].run) is None
+    assert chain.runs[0].run.shown_failure_kind != "blocked"
     assert chain.stop == STOP_FAILED
 
 
