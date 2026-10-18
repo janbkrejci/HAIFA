@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T16
 title: "Update docs/decisions.md: the CI gate also waits for Azure DevOps"
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [HAIFA-TODO-T02]
@@ -20,3 +20,4 @@ Důvod: In HAIFA-TODO-T02 AzureProvider started reporting checks (reports_checks
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-18 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/110 · náklady $0.30
