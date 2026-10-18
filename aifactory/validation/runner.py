@@ -30,13 +30,19 @@ from validation.roster import (
 from validation.safety import Owned, safe_rmtree
 from validation.sandbox import (
     AIFACTORY_DIR,
+    AZURE_SANDBOX_ENV,
     HAIFA_ROOT,
     TEMPLATE_DIR,
     VALIDATION_DIR,
+    AzureRepo,
     Sandbox,
     SetupError,
+    azure_show,
     git,
+    git_auth_args,
+    normalize_azure_repo,
     normalize_repo,
+    setup_azure,
     setup_github,
     setup_local,
 )
@@ -53,10 +59,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--remote",
-        choices=("local", "github"),
+        choices=("local", "github", "azure"),
         default="local",
         help="local: bare repo in a temp dir, fake harness, no cost; "
-        "github: the HAIFA_SANDBOX_REPO sandbox with the real harnesses",
+        "github: the HAIFA_SANDBOX_REPO sandbox with the real harnesses; "
+        "azure: the HAIFA_AZURE_SANDBOX_REPO sandbox on Azure DevOps with the real harnesses",
     )
     parser.add_argument(
         "--results-dir",
@@ -179,18 +186,13 @@ def check_config(harnesses: list[str]) -> dict[str, Any]:
     return {"agents": [{"name": f"check-{name}", "harness": name} for name in harnesses]}
 
 
-def preflight_github(sandbox_repo: str | None, roster: Path | None = None) -> str:
-    """``owner/name`` of the sandbox after checking gh, just and the harnesses."""
-    owner_name = normalize_repo(sandbox_repo)  # no subprocess before this check
+def _require_just() -> None:
     if shutil.which("just") is None:
         raise SetupError("`just` is not on PATH (the sandbox's test step runs `just test`)")
-    from validation.sandbox import gh_executable
 
-    auth = subprocess.run(
-        [gh_executable(), "auth", "status"], capture_output=True, text=True, encoding="utf-8"
-    )
-    if auth.returncode != 0:
-        raise SetupError(f"gh auth status failed: {(auth.stderr or auth.stdout).strip()}")
+
+def _preflight_harnesses(roster: Path | None) -> None:
+    """``factory harness check`` of every harness the roster uses."""
     names = sorted(roster_harnesses(roster))
     with tempfile.TemporaryDirectory(prefix="haifa-validate-check-") as tmp:
         config = Path(tmp) / "harnesses.yaml"
@@ -200,7 +202,68 @@ def preflight_github(sandbox_repo: str | None, roster: Path | None = None) -> st
         raise SetupError(
             f"factory harness check ({', '.join(names)}) is not ok: {json.dumps(data)}"
         )
+
+
+def preflight_github(sandbox_repo: str | None, roster: Path | None = None) -> str:
+    """``owner/name`` of the sandbox after checking gh, just and the harnesses."""
+    owner_name = normalize_repo(sandbox_repo)  # no subprocess before this check
+    _require_just()
+    from validation.sandbox import gh_executable
+
+    auth = subprocess.run(
+        [gh_executable(), "auth", "status"], capture_output=True, text=True, encoding="utf-8"
+    )
+    if auth.returncode != 0:
+        raise SetupError(f"gh auth status failed: {(auth.stderr or auth.stdout).strip()}")
+    _preflight_harnesses(roster)
     return owner_name
+
+
+def _az_ok(*args: str) -> tuple[bool, str]:
+    from validation.sandbox import az_executable
+
+    try:
+        proc = subprocess.run(
+            [az_executable(), *args], capture_output=True, text=True, encoding="utf-8"
+        )
+    except OSError as exc:
+        return False, str(exc)
+    return proc.returncode == 0, (proc.stderr or proc.stdout).strip()
+
+
+def preflight_azure(sandbox_repo: str | None, roster: Path | None = None) -> AzureRepo:
+    """The Azure DevOps sandbox after checking just, az, the sandbox, git auth and harnesses."""
+    target = normalize_azure_repo(sandbox_repo)  # no subprocess before this check
+    _require_just()
+    ok, detail = _az_ok("--version")
+    if not ok:
+        raise SetupError(f"az (Azure CLI) is not installed or does not run: {detail}")
+    ok, detail = _az_ok("extension", "show", "--name", "azure-devops", "--output", "json")
+    if not ok:
+        raise SetupError(
+            "the azure-devops extension of az is missing; run: "
+            f"az extension add --name azure-devops ({detail})"
+        )
+    if not os.environ.get("AZURE_DEVOPS_EXT_PAT"):
+        ok, detail = _az_ok("account", "show", "--output", "json")
+        if not ok:
+            raise SetupError(
+                "az is not logged in; run 'az login --allow-no-subscriptions' "
+                f"or set AZURE_DEVOPS_EXT_PAT ({detail})"
+            )
+    with tempfile.TemporaryDirectory(prefix="haifa-validate-az-") as tmp:
+        url = str(azure_show(Path(tmp), target)["remoteUrl"])
+    probe = subprocess.run(
+        ["git", *git_auth_args(), "ls-remote", "--heads", url],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        env={**os.environ, "GIT_TERMINAL_PROMPT": "0"},
+    )
+    if probe.returncode != 0:
+        raise SetupError(f"git cannot authenticate to {url}: {probe.stderr.strip()}")
+    _preflight_harnesses(roster)
+    return target
 
 
 def _haifa_head() -> str:
@@ -236,7 +299,12 @@ def _existing(out: Path, paths: list[str]) -> list[str]:
 
 
 def make_context(
-    remote: str, sandbox: Sandbox, workdir: Path, owned: Owned, r5_samples: int
+    remote: str,
+    sandbox: Sandbox,
+    workdir: Path,
+    owned: Owned,
+    r5_samples: int,
+    selected: list[str] | tuple[str, ...] = (),
 ) -> Context:
     """The shared Context of one run over a prepared sandbox (writes the hidden test)."""
     harnesses = step_harnesses(sandbox.repo)
@@ -248,6 +316,7 @@ def make_context(
         r5_samples=r5_samples,
         hidden=write_hidden(workdir),
         harnesses=harnesses,
+        selected=list(selected),
     )
 
 
@@ -263,6 +332,7 @@ def write_results(ctx: Context, out: Path, done: list[ScenarioResult]) -> None:
 
 def run_scenarios(ctx: Context, names: list[str], out: Path) -> list[ScenarioResult]:
     done: list[ScenarioResult] = []
+    ctx.selected = list(names)
     for name, func in ORDER:
         if name not in names:
             continue
@@ -287,13 +357,13 @@ def main(argv: list[str] | None = None) -> int:
     try:
         names = _selected(args.only)
         roster = resolve_roster(args.roster) if args.roster is not None else None
-        owner_name = (
-            preflight_github(os.environ.get(SANDBOX_ENV), roster)
-            if args.remote == "github"
-            else None
-        )
-        if args.remote == "local" and shutil.which("just") is None:
-            raise SetupError("`just` is not on PATH (the sandbox's test step runs `just test`)")
+        target: str | AzureRepo | None = None
+        if args.remote == "github":
+            target = preflight_github(os.environ.get(SANDBOX_ENV), roster)
+        elif args.remote == "azure":
+            target = preflight_azure(os.environ.get(AZURE_SANDBOX_ENV), roster)
+        else:
+            _require_just()
     except SetupError as exc:
         print(f"validate: {exc}", file=sys.stderr)
         return EXIT_SETUP
@@ -316,7 +386,7 @@ def main(argv: list[str] | None = None) -> int:
     previous_home = os.environ.get(HOME_ENV)
     os.environ[HOME_ENV] = str(isolated_haifa_home(workdir))
     try:
-        return _run(args, names, roster, owner_name, started, owned, workdir)
+        return _run(args, names, roster, target, started, owned, workdir)
     finally:
         if previous_home is None:
             os.environ.pop(HOME_ENV, None)
@@ -328,7 +398,7 @@ def _run(
     args: argparse.Namespace,
     names: list[str],
     roster: Path | None,
-    owner_name: str | None,
+    target: str | AzureRepo | None,
     started: str,
     owned: Owned,
     workdir: Path,
@@ -338,12 +408,13 @@ def _run(
     out = results_mod.output_dir(args.results_dir.resolve(), args.remote, moment)
     try:
         sandbox: Sandbox
-        if args.remote == "local":
-            sandbox = setup_local(workdir, roster)
+        if isinstance(target, AzureRepo):
+            sandbox = setup_azure(workdir, target, moment, roster)
+        elif isinstance(target, str):
+            sandbox = setup_github(workdir, target, moment, roster)
         else:
-            assert owner_name is not None
-            sandbox = setup_github(workdir, owner_name, moment, roster)
-        ctx = make_context(args.remote, sandbox, workdir, owned, args.r5_samples)
+            sandbox = setup_local(workdir, roster)
+        ctx = make_context(args.remote, sandbox, workdir, owned, args.r5_samples, names)
     except (SetupError, RuntimeError) as exc:
         print(f"validate: cannot prepare the test repo: {exc}", file=sys.stderr)
         if not args.keep_workdir and owned.owns(workdir):
@@ -359,7 +430,9 @@ def _run(
     kept = args.keep_workdir or not owned.owns(workdir)
     summary = {
         "remote": args.remote,
-        "sandbox_repo": sandbox.github_repo or sandbox.remote_url,
+        "sandbox_repo": sandbox.github_repo
+        or (sandbox.azure.web_url if sandbox.azure else None)
+        or sandbox.remote_url,
         "base": sandbox.base,
         "haifa_commit": _haifa_head(),
         "started_at": started,

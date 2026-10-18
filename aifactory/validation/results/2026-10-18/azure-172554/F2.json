@@ -1,0 +1,164 @@
+{
+  "scenario": "F2",
+  "risk": "Akceptace F2: 5 úkolů z CLI (2 paralelně, auto-continue) po mergnutý PR a done v base",
+  "remote": "azure",
+  "outcome": "passed",
+  "started_at": "2026-10-18T16:09:00+00:00",
+  "ended_at": "2026-10-18T16:25:36+00:00",
+  "duration_s": 996.47,
+  "checks": [
+    {
+      "name": "backlog_created",
+      "ok": true,
+      "detail": "failed []; status in base {'M03-S01-T01': 'todo', 'M03-S01-T02': 'todo', 'M04-S01-T01': 'todo', 'M04-S01-T02': 'todo', 'M04-S01-T03': 'todo'}"
+    },
+    {
+      "name": "parallel_runs_ok",
+      "ok": true,
+      "detail": "exit 0: run 8fd4dece succeeded | exit 0: run 454ac19f succeeded"
+    },
+    {
+      "name": "runs_overlapped",
+      "ok": true,
+      "detail": "overlap 102.275 s"
+    },
+    {
+      "name": "distinct_worktrees",
+      "ok": true,
+      "detail": "['/private/tmp/haifa-az/run4/repo/.factory/worktrees/8fd4dece', '/private/tmp/haifa-az/run4/repo/.factory/worktrees/454ac19f']"
+    },
+    {
+      "name": "parallel_approved",
+      "ok": true,
+      "detail": "M03-S01-T01: exit 0 | M04-S01-T01: exit 0"
+    },
+    {
+      "name": "auto_chain",
+      "ok": true,
+      "detail": "exit 0: run 3f709550 succeeded; tasks ['M04-S01-T02', 'M04-S01-T03']; stop exhausted; waiting []"
+    },
+    {
+      "name": "last_run_ok",
+      "ok": true,
+      "detail": "exit 0: run 2f9360df succeeded"
+    },
+    {
+      "name": "all_approved",
+      "ok": true,
+      "detail": "M04-S01-T02: exit 0 | M04-S01-T03: exit 0 | M03-S01-T02: exit 0"
+    },
+    {
+      "name": "five_prs_merged",
+      "ok": true,
+      "detail": "PR states {'M03-S01-T01': 'merged', 'M03-S01-T02': 'merged', 'M04-S01-T01': 'merged', 'M04-S01-T02': 'merged', 'M04-S01-T03': 'merged'}"
+    },
+    {
+      "name": "all_done_in_base",
+      "ok": true,
+      "detail": "{'M03-S01-T01': 'done, PR in ## Běhy: True', 'M03-S01-T02': 'done, PR in ## Běhy: True', 'M04-S01-T01': 'done, PR in ## Běhy: True', 'M04-S01-T02': 'done, PR in ## Běhy: True', 'M04-S01-T03': 'done, PR in ## Běhy: True'}"
+    },
+    {
+      "name": "no_write_outside_worktree",
+      "ok": true,
+      "detail": "status '' (before ''); permission_breach {'8fd4dece': 0, '454ac19f': 0, '3f709550': 0, '614beeff': 0, '2f9360df': 0}; unexpected files in base []"
+    },
+    {
+      "name": "no_leftover_worktrees",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "name": "backlog_check_ok",
+      "ok": true,
+      "detail": "exit 0"
+    }
+  ],
+  "observations": [
+    "F2: 2 moduly, 5 tasků; paralelně M03-S01-T01 a M04-S01-T01; --auto od M04-S01-T02 spustil M04-S01-T03; approve bez approve review (D11)",
+    "just test v čistém checkoutu base se na hostingu (azure) nespouští"
+  ],
+  "evidence": {
+    "run_ids": [
+      "8fd4dece",
+      "454ac19f",
+      "3f709550",
+      "614beeff",
+      "2f9360df"
+    ],
+    "prs": [
+      {
+        "task_id": "M03-S01-T01",
+        "branch": "factory/M03-S01-T01-2",
+        "url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-Azure-Sandbox/pullrequest/30370",
+        "pr_id": "30370",
+        "state": "merged"
+      },
+      {
+        "task_id": "M04-S01-T01",
+        "branch": "factory/M04-S01-T01-2",
+        "url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-Azure-Sandbox/pullrequest/30371",
+        "pr_id": "30371",
+        "state": "merged"
+      },
+      {
+        "task_id": "M04-S01-T02",
+        "branch": "factory/M04-S01-T02-2",
+        "url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-Azure-Sandbox/pullrequest/30372",
+        "pr_id": "30372",
+        "state": "merged"
+      },
+      {
+        "task_id": "M04-S01-T03",
+        "branch": "factory/M04-S01-T03-2",
+        "url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-Azure-Sandbox/pullrequest/30373",
+        "pr_id": "30373",
+        "state": "merged"
+      },
+      {
+        "task_id": "M03-S01-T02",
+        "branch": "factory/M03-S01-T02-1",
+        "url": "https://asolcz.visualstudio.com/NEO_HEF/_git/HAIFA-Azure-Sandbox/pullrequest/30374",
+        "pr_id": "30374",
+        "state": "merged"
+      }
+    ],
+    "commits": [
+      "b3e35595ba5b1adec877ae39727bb43b45649eea",
+      "dca10c5117adcaf11b27e741ae9a35d027dad25a",
+      "2a70cdb0033453ce0862728cbb2bec8e87a15ad1",
+      "5eb7b9108de26e8c89d42b2c7b2005eeab3708e3",
+      "39c83a1f1903625bafc1b8a2a74478bfe0ab9620",
+      "3371ab562675c3c5c308e7e2536ee543be540bc7"
+    ],
+    "trace": {
+      "db": "trace/sssf.db",
+      "sessions": [
+        "trace/sessions/8fd4dece",
+        "trace/sessions/454ac19f",
+        "trace/sessions/3f709550",
+        "trace/sessions/614beeff",
+        "trace/sessions/2f9360df"
+      ],
+      "files": []
+    }
+  },
+  "measurements": {
+    "overlap_s": 102.275,
+    "auto_chain": {
+      "tasks": [
+        "M04-S01-T02",
+        "M04-S01-T03"
+      ],
+      "stop": "exhausted",
+      "waiting": []
+    },
+    "leftover_worktrees": [],
+    "run_seconds": {
+      "M03-S01-T01": 102.275,
+      "M03-S01-T02": 67.675,
+      "M04-S01-T01": 113.26,
+      "M04-S01-T02": 81.716,
+      "M04-S01-T03": 95.298
+    }
+  }
+}

@@ -59,7 +59,7 @@ web-dev:
 bundle: web-build
     cd aifactory && uv run python -m bundle.build
 
-# live-model validation scenarios: just validate --remote local|github [--roster DIR]
+# live-model validation scenarios: just validate --remote local|github|azure [--roster DIR]
 validate *ARGS:
     cd aifactory && uv run python -m validation "$@"
 

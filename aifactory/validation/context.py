@@ -4,7 +4,8 @@ Every ``factory`` command goes through ``python -m validation.worker`` in a
 subprocess with ``cwd`` in the main checkout, ``--repo`` and ``--json``: the
 JSON envelope (``{ok, data, error, warnings}``) on stdout, the narration in a
 log file. In ``--remote local`` every command gets a fake script, so a real
-harness can never be reached there; in ``--remote github`` only the commands
+harness can never be reached there; in ``--remote github`` and ``--remote
+azure`` only the commands
 asked for with ``fake=True`` (B1) do. Every command gets ``HAIFA_VALIDATE_HIDDEN``
 (the hidden test of ``validation.hidden``), which only the worker reads.
 """
@@ -28,7 +29,7 @@ from validation import f2_backlog, fake_scripts, hidden
 from validation.hidden import HIDDEN_ENV
 from validation.results import ScenarioResult
 from validation.safety import Owned, check_inside, safe_rmtree
-from validation.sandbox import AIFACTORY_DIR, Sandbox, gh, git, git_ok
+from validation.sandbox import AIFACTORY_DIR, AZ_TAIL, Sandbox, az, gh, git, git_ok
 from validation.worker import FAKE_ENV
 
 TASK_PATHS: dict[str, str] = {
@@ -154,6 +155,7 @@ class Context:
     state: dict[str, Any] = field(default_factory=dict)
     referenced_runs: list[str] = field(default_factory=list)
     commands: list[dict[str, Any]] = field(default_factory=list)
+    selected: list[str] = field(default_factory=list)  # the scenarios of this run
     _n: int = 0
 
     @property
@@ -173,6 +175,11 @@ class Context:
     @property
     def local(self) -> bool:
         return self.remote == "local"
+
+    @property
+    def hosting(self) -> str:
+        """``local``, ``github`` or ``azure``."""
+        return self.remote
 
     # -- HAIFA commands --
 
@@ -290,6 +297,21 @@ class Context:
 
     def gh(self, *args: str, check: bool = True) -> str:
         return gh(self.repo, *args, check=check)
+
+    def az(self, *args: str, check: bool = True) -> str:
+        return az(self.repo, *args, check=check)
+
+    def az_repo_args(self) -> list[str]:
+        assert self.sandbox.azure is not None
+        return self.sandbox.azure.repo_args()
+
+    def az_org_args(self) -> list[str]:
+        assert self.sandbox.azure is not None
+        return ["--org", self.sandbox.azure.organization_url]
+
+    @staticmethod
+    def az_tail() -> list[str]:
+        return list(AZ_TAIL)
 
     # -- trace --
 
