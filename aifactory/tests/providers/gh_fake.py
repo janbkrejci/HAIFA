@@ -52,7 +52,12 @@ def write_fake_gh(bin_dir: Path) -> Path:
     body = f"#!{sys.executable}\n{_SCRIPT}"
     # Windows: make_executable moves the script to gh.script beside gh.exe
     script = bin_dir / "gh.script" if sys.platform == "win32" else gh
-    if not script.is_file() or script.read_text(encoding="utf-8") != body:
+    executable = bin_dir / "gh.exe" if sys.platform == "win32" else gh
+    if (
+        not script.is_file()
+        or script.read_text(encoding="utf-8") != body
+        or not executable.is_file()
+    ):
         tmp = bin_dir / f".gh.{os.getpid()}"
         tmp.write_text(body, encoding="utf-8", newline="\n")
         tmp.chmod(0o755)
@@ -60,7 +65,7 @@ def write_fake_gh(bin_dir: Path) -> Path:
         if sys.platform == "win32":
             make_executable(gh)
     _shared_bin = bin_dir
-    return gh
+    return executable
 
 
 def _user() -> str:
@@ -74,6 +79,9 @@ def shared_bin_dir() -> Path:
     (much more under load); reusing the same file across sessions pays that once.
     """
     key = hashlib.sha256(f"{sys.executable}\n{_SCRIPT}".encode()).hexdigest()[:16]
+    # Windows creators rename the intermediate gh script; isolate xdist workers.
+    if sys.platform == "win32":
+        key += f"-{os.getpid()}"
     return Path(tempfile.gettempdir()) / f"aifactory-fake-gh-{_user()}-{key}"
 
 

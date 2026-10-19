@@ -23,6 +23,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 from aifactory.backlog import (
+    Backlog,
     Container,
     Task,
     TaskEditError,
@@ -31,9 +32,11 @@ from aifactory.backlog import (
     commit_backlog,
     find_task,
     is_done,
+    is_human,
     link_task,
     load_for_edit,
 )
+from aifactory.backlog.derived import descendant_tasks
 from aifactory.backlog.edit import compose_id
 from aifactory.backlog.model import HUMAN
 from aifactory.config import ProjectSettings
@@ -69,6 +72,7 @@ class Reported:
     writes: tuple[str, ...] | None = None
     for_human: bool = False
     workflow: str | None = None
+    origins: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -115,14 +119,16 @@ def _owners(wf: WorkflowRun) -> dict[str, str]:
     return {record.step: record.owner for record in wf.records}
 
 
-def collect(wf: WorkflowRun) -> tuple[list[Reported], list[str]]:
+def collect(
+    wf: WorkflowRun, settings: ProjectSettings | None = None
+) -> tuple[list[Reported], list[str]]:
     """Follow-ups and ``blocked_by`` ids of every envelope of the run, deduplicated.
 
-    Follow-ups are one per title (whitespace and case do not count); the first report
-    wins, but the follow-up blocks the task when any report of it does.
+    Follow-ups are one per title and assignee within this task's run. Preserve all
+    reporting phases and block the task when any report of the goal does.
     """
     owners = _owners(wf)
-    reported: dict[str, Reported] = {}
+    reported: dict[tuple[str, bool], Reported] = {}
     blocked: list[str] = []
     for key, envelope in wf.history:
         for item in getattr(envelope, "follow_ups", None) or []:
@@ -130,12 +136,7 @@ def collect(wf: WorkflowRun) -> tuple[list[Reported], list[str]]:
             if not title:
                 continue
             blocks = bool(getattr(item, "blocks_task", False))
-            known = reported.get(_norm(title))
-            if known is not None:
-                if blocks and not known.blocks_task:
-                    reported[_norm(title)] = replace(known, blocks_task=True)
-                continue
-            reported[_norm(title)] = Reported(
+            item_report = Reported(
                 step=str(key),
                 owner=owners.get(str(key), ""),
                 title=title,
@@ -145,7 +146,18 @@ def collect(wf: WorkflowRun) -> tuple[list[Reported], list[str]]:
                 writes=_writes(getattr(item, "writes", None)),
                 for_human=bool(getattr(item, "for_human", False)),
                 workflow=str(getattr(item, "workflow", None) or "").strip() or None,
+                origins=((str(key), owners.get(str(key), "")),),
             )
+            human = _for_human(item_report, settings) if settings else item_report.for_human
+            identity = (_norm(title), human)
+            known = reported.get(identity)
+            if known is not None:
+                item_report = replace(
+                    known,
+                    blocks_task=known.blocks_task or blocks,
+                    origins=tuple(dict.fromkeys((*known.origins, *item_report.origins))),
+                )
+            reported[identity] = item_report
         for raw in getattr(envelope, "blocked_by", None) or []:
             value = str(raw).strip()
             if value and value not in blocked:
@@ -192,7 +204,10 @@ def _todo_step(project: Container | None, roots: list[Container]) -> Container |
 
 def _task_body(item: Reported, task: Task, run_id: str) -> str:
     text = item.details or item.reason
-    where = f"v kroku `{item.step}`" + (f" (agent {item.owner})" if item.owner else "")
+    where = ", ".join(
+        f"v kroku `{step}`" + (f" (agent {owner})" if owner else "")
+        for step, owner in item.origins or ((item.step, item.owner),)
+    )
     lines = [
         text,
         "",
@@ -209,12 +224,52 @@ def _task_body(item: Reported, task: Task, run_id: str) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _existing(step: Container, task_id: str, title: str) -> Task | None:
+def _existing(step: Container, task_id: str, title: str, human: bool) -> Task | None:
     marker = follow_up_marker(task_id)
     for candidate in step.tasks:
-        if marker in candidate.body and _norm(candidate.title) == _norm(title):
+        if (
+            marker in candidate.body
+            and _norm(candidate.title) == _norm(title)
+            and is_human(candidate) == human
+        ):
             return candidate
     return None
+
+
+def open_dependencies(backlog: Backlog, task: Task) -> list[tuple[Task, Task]]:
+    """Open dependency tasks of this task and the tasks it explicitly relates to."""
+    result: list[tuple[Task, Task]] = []
+    for task_id in dict.fromkeys([task.id, *task.related]):
+        affected = backlog.by_id.get(task_id)
+        if not isinstance(affected, Task):
+            continue
+        for dep in affected.depends_on:
+            node = backlog.by_id.get(dep)
+            candidates = descendant_tasks(node) if isinstance(node, Container) else [node]
+            for candidate in candidates:
+                if isinstance(candidate, Task) and candidate.status == "todo":
+                    result.append((affected, candidate))
+    return result
+
+
+def dependency_prompt(backlog: Backlog, task: Task) -> str:
+    dependencies = open_dependencies(backlog, task)
+    if not dependencies:
+        return ""
+    lines = [
+        "\n## Existing open dependencies",
+        "Do not report follow_ups for work already covered by these tasks, even with a "
+        "different title. If one blocks completion, report its id in blocked_by instead.",
+    ]
+    for affected, dependency in dependencies:
+        assignee = "human" if is_human(dependency) else "agent"
+        lines += [
+            f"\n### {dependency.id}: {dependency.title}",
+            f"- {affected.id} depends_on {dependency.id}; assignee: {assignee}",
+            f"- task file: {dependency.path}",
+            dependency.body.strip(),
+        ]
+    return "\n".join(lines) + "\n"
 
 
 def _error(exc: TaskEditError) -> str:
@@ -234,16 +289,40 @@ def record(
     """
     outcome = FollowUpOutcome()
     reported, blocked_ids = collect(wf)
-    if not blocking:
-        reported = [replace(r, blocks_task=False) for r in reported]
-        blocked_ids = []
-    if not reported and not blocked_ids:
+    if not reported and (not blocked_ids or not blocking):
         return outcome
     backlog = load_for_edit(main)
     task = find_task(backlog, task_id)
+    reported, blocked_ids = collect(wf, backlog.settings)
+    if not blocking:
+        reported = [replace(r, blocks_task=False) for r in reported]
+        blocked_ids = []
     project = task.parent.parent
     wrote = False
     blockers: list[str] = []
+
+    uncovered: list[Reported] = []
+    dependencies = open_dependencies(backlog, task)
+    for item in reported:
+        found = next(
+            (
+                dep
+                for _, dep in dependencies
+                if dep.id != task_id
+                and _norm(dep.title) == _norm(item.title)
+                and is_human(dep) == _for_human(item, backlog.settings)
+            ),
+            None,
+        )
+        if found is None:
+            uncovered.append(item)
+        else:
+            outcome.created.append(
+                CreatedFollowUp(found.id, found.title, item.reason, item.blocks_task, existed=True)
+            )
+            if item.blocks_task:
+                blockers.append(found.id)
+    reported = uncovered
 
     if reported:
         step = _todo_step(project, backlog.containers)
@@ -262,7 +341,7 @@ def record(
         if step is not None:
             outcome.step_id = step.id
             for item in reported:
-                found = _existing(step, task_id, item.title)
+                found = _existing(step, task_id, item.title, _for_human(item, backlog.settings))
                 if found is not None:
                     created = CreatedFollowUp(
                         found.id, found.title, item.reason, item.blocks_task, existed=True

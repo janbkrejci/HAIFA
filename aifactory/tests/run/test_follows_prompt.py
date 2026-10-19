@@ -125,3 +125,31 @@ def test_chain_shows_direct_predecessor_and_links_older(tmp_path: Path, script: 
     # the older generation is a reference only: none of its texts or PR
     assert "Navrhnout schéma." not in prompt
     assert "DOC-BODY" not in prompt and URL not in prompt
+
+
+@pytest.mark.parametrize("related", [False, True])
+def test_prompt_carries_open_dependencies(tmp_path: Path, script: Script, related: bool) -> None:
+    repo = make_run_repo(tmp_path / "repo")
+    task_id = "M01-S01-T02"
+    if related:
+        write(
+            repo,
+            f"{STEP}/{T03}-more.md",
+            f"---\nid: {T03}\ntitle: More\nstatus: todo\nrelated: [{task_id}]\n---\n"
+            "\n## Zadání\nPrověřit loader.\n",
+        )
+        task_id = T03
+        commit_all(repo, "dependency context")
+    script.add("planner", ok(blocked_by=[T01]))
+
+    result = run_task(repo, task_id, force=True)
+
+    prompt = script.calls[0].prompt
+    section = prompt.split("## Existing open dependencies", 1)[1]
+    assert f"### {T01}: Schema" in section
+    assert "Navrhnout schéma." in section
+    assert "M01-S01-T02 depends_on" in section
+    assert "Do not report follow_ups" in section and "blocked_by" in section
+    assert result.follow_ups is not None
+    assert result.follow_ups.created == []
+    assert result.follow_ups.blocked_by == [T01]

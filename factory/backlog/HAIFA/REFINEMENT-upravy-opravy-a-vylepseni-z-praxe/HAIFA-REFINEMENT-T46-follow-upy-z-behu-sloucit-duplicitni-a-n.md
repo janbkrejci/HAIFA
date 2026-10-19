@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T46
 title: "Follow-upy z běhu: sloučit duplicitní a nehlásit, co už backlog kryje"
-status: todo
+status: done
 depends_on: []
 test_timeout: 3600
 ---
@@ -20,3 +20,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-19 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/114 · náklady $0.00

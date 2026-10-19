@@ -172,12 +172,28 @@ def test_coverage_none_passes_with_nothing_executed(tmp_path: Path) -> None:
     }
 
 
-def test_checks_share_one_time_limit(tmp_path: Path) -> None:
-    run = fake_run(tmp_path, timeout=1)
-    sleep = "import time; time.sleep(0.6)"
-    result = execute(run, plan(sleep, sleep))
+def test_checks_share_one_time_limit(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aifactory.engine import quality
+    from aifactory.testing import executor
+
+    run = fake_run(tmp_path, timeout=10)
+    # Control the shared budget independently of process startup and CI scheduling.
+    # Keep the quality runner's real clock so the second subprocess really times out.
+    clock = iter([0.0, 0.0, 9.75])
+    monkeypatch.setattr(executor, "time", SimpleNamespace(monotonic=lambda: next(clock)))
+    limits: list[float] = []
+    original = quality._run
+
+    def observed(spec: Any, running: Any) -> Any:
+        limits.append(spec.timeout_seconds)
+        return original(spec, running)
+
+    monkeypatch.setattr(quality, "_run", observed)
+    result = execute(run, plan("pass", "import time; time.sleep(30)"))
+    assert limits == [10.0, 0.25]
     assert not result.passed
-    assert result.checks[-1].returncode == 124
+    assert [check.returncode for check in result.checks] == [0, 124]
+    assert result.test_plan is not None and result.test_plan.not_run == []
 
 
 def test_exhausted_budget_does_not_start_the_next_check(

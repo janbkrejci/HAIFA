@@ -653,6 +653,7 @@ def run_task(
                     "are relative to the repository root, "
                     "including when running from this subdirectory.\n"
                 )
+        prompt += followups.dependency_prompt(backlog, task)
         row = TaskRunRow(
             run_id=run_id,
             task_id=task_id,
