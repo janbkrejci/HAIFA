@@ -101,6 +101,106 @@ def test_record_creates_todo_step_and_task(repo: Path) -> None:
     assert git(repo, "status", "--porcelain") == ""
 
 
+def test_record_merges_phases_and_keeps_all_origins(repo: Path) -> None:
+    item = follow_up().model_copy(update={"for_human": True})
+    wf = workflow_run(follow_ups=[item])
+    wf.history.append(("document", PlanOutput(status="success", follow_ups=[item])))
+    wf.records.append(
+        StepRecord(phase="document", step="document", kind="agent", owner="documenter")
+    )
+
+    outcome = record(repo, T01, "run-1", wf)
+
+    assert len(outcome.created) == 1
+    [filed] = backlog_of(repo).by_id[TODO_STEP].tasks
+    assert is_human(filed)
+    for origin in ("`plan`", "planner", "`document`", "documenter"):
+        assert origin in filed.body.split("### Původ", 1)[1]
+
+
+def test_record_keeps_different_assignees_separate(repo: Path) -> None:
+    human = follow_up().model_copy(update={"for_human": True})
+    outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[follow_up(), human]))
+    assert len(outcome.created) == 2
+    assert [is_human(task_of(repo, c.id)) for c in outcome.created] == [False, True]
+    again = record(repo, T01, "run-2", workflow_run(follow_ups=[follow_up(), human]))
+    assert [c.id for c in again.created] == [c.id for c in outcome.created]
+    assert all(c.existed for c in again.created)
+
+
+def test_record_merges_explicit_and_inferred_human_assignee(repo: Path) -> None:
+    inferred = follow_up().model_copy(update={"writes": [".factory/config.yaml"]})
+    explicit = follow_up().model_copy(update={"for_human": True})
+    wf = workflow_run(follow_ups=[inferred])
+    wf.history.append(("document", PlanOutput(status="success", follow_ups=[explicit])))
+
+    outcome = record(repo, T01, "run-1", wf)
+
+    assert len(outcome.created) == 1
+    filed = task_of(repo, outcome.created[0].id)
+    assert is_human(filed)
+    assert "`plan`" in filed.body and "`document`" in filed.body
+
+
+@pytest.mark.parametrize("related", [False, True])
+def test_record_reuses_open_dependency(repo: Path, related: bool) -> None:
+    # T02 already depends on T01. A run of T02 (or a related task) must reuse T01.
+    task_id = T02
+    if related:
+        task_id = "M01-S01-T03"
+        write(
+            repo,
+            f"backlog/M01-core/S01-model/{task_id}-more.md",
+            f"---\nid: {task_id}\ntitle: More\nstatus: todo\nrelated: [{T02}]\n---\n",
+        )
+    item = follow_up(" schema ", blocks=True)
+    outcome = record(repo, task_id, "run-1", workflow_run(follow_ups=[item]))
+
+    assert len(outcome.created) == 1
+    assert outcome.created[0].id == T01 and outcome.created[0].existed
+    assert outcome.step_id is None
+    assert TODO_STEP not in backlog_of(repo).by_id
+    assert outcome.blocked_by == [T01] and outcome.warnings == []
+    assert task_of(repo, task_id).depends_on == [T01]
+
+
+@pytest.mark.parametrize("status", ["done", "cancelled"])
+def test_record_does_not_reuse_closed_dependency(repo: Path, status: str) -> None:
+    path = repo / task_of(repo).path
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("status: todo", f"status: {status}"),
+        encoding="utf-8",
+    )
+    outcome = record(repo, T02, "run-1", workflow_run(follow_ups=[follow_up("Schema")]))
+    assert len(outcome.created) == 1 and not outcome.created[0].existed
+
+
+@pytest.mark.parametrize(
+    ("dependency_human", "follow_up_human"),
+    [(True, True), (True, False), (False, True)],
+)
+def test_record_dependency_reuse_respects_assignee(
+    repo: Path, dependency_human: bool, follow_up_human: bool
+) -> None:
+    # T02 depends on T01; the same title only covers work for the same assignee.
+    edit_task(repo, T01, assignee="human" if dependency_human else "agent")
+    item = follow_up("Schema").model_copy(update={"for_human": follow_up_human})
+
+    outcome = record(repo, T02, "run-1", workflow_run(follow_ups=[item]))
+
+    [created] = outcome.created
+    reuse = dependency_human == follow_up_human
+    assert created.id == (T01 if reuse else f"{TODO_STEP}-T01")
+    assert created.existed is reuse
+    assert is_human(task_of(repo, created.id)) is follow_up_human
+    assert is_human(task_of(repo, T01)) is dependency_human
+    if reuse:
+        assert TODO_STEP not in backlog_of(repo).by_id
+    else:
+        assert [task.id for task in backlog_of(repo).by_id[TODO_STEP].tasks] == [created.id]
+    assert outcome.warnings == []
+
+
 def test_record_gives_follow_up_its_writes(repo: Path) -> None:
     item = follow_up().model_copy(update={"writes": [" docs/decisions.md ", "docs/decisions.md"]})
     outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[item, follow_up("Jiný")]))
