@@ -260,6 +260,24 @@ def test_retry_after_rejected_review_continues_at_the_review(
     assert data["error"]["code"] == "run_not_retryable"
 
 
+def test_failed_retry_json_reports_run_failed(repo: Path, script: Script, capsys: Capsys) -> None:
+    first = rejected_run(repo, script)
+    review(script, approved=False)
+    revise(script)
+    test_plan(script)
+    review(script, approved=False)
+    capsys.readouterr()
+
+    code, env = run_json(capsys, ["task", "retry", T01, "--json", "--repo", str(repo)])
+
+    assert code == 1, env
+    assert env["ok"] is False
+    assert env["error"]["code"] == "run_failed"
+    assert env["data"]["run"]["run_id"] == first.run.run_id
+    assert env["data"]["run"]["state"] == "failed"
+    assert env["data"]["run"]["failure_kind"] == failure.ACCEPT_NOT_MET
+
+
 def test_retry_after_stop_continues_at_the_stopped_phase(repo: Path, script: Script) -> None:
     build(script)
     test_plan(script)

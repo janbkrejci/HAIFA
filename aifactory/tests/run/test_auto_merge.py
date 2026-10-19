@@ -434,20 +434,31 @@ def stopped_at_review(repo: Path, script: Script) -> str:
     return stopped.run_id
 
 
-def test_retry_merges_and_continues(repo: Path, script: Script, capsys: Capsys) -> None:
+@pytest.mark.parametrize("from_phase", [None, "plan"])
+def test_retry_merges_and_continues(
+    repo: Path, script: Script, capsys: Capsys, from_phase: str | None
+) -> None:
     setup(repo, step="auto_merge: true\nauto_continue: true\n")
     run_id = stopped_at_review(repo, script)
+    if from_phase is not None:
+        build(script, "one")
     review(script)
     build(script, "two")
     review(script)
     capsys.readouterr()  # the stopped run's narration
 
-    code = main(["task", "retry", T01, "--repo", str(repo), "--json"])
+    argv = ["task", "retry", T01, "--repo", str(repo), "--json"]
+    if from_phase is not None:
+        argv.extend(["--from", from_phase])
+    code = main(argv)
 
     env = read_envelope(capsys)
     assert code == 0, env
+    assert env["ok"] is True
+    assert env["error"] is None
     data = env["data"]
     assert data["run"]["run_id"] == run_id
+    assert data["run"]["state"] == "succeeded"
     assert data["auto_merge"]["merged"] is True
     chain = data["chain"]
     assert [r["run"]["task_id"] for r in chain["runs"]] == [T01, T02]
