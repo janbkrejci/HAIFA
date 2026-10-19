@@ -11,14 +11,17 @@ value), for work outside the paths this task may change, and ``workflow`` its ow
 workflow. A follow-up only a person can do (``for_human``, or ``writes`` that reach the
 backlog or ``protected_files``) gets ``assignee: human``: no run starts it.
 
-The backlog is written in the main checkout through ``aifactory.backlog.edit`` and
-committed to ``base``. A follow-up task carries the marker
+The backlog is edited in a temporary copy through ``aifactory.backlog.edit`` and
+published on ``base`` without writing pending files to the main checkout.
+A follow-up task carries the marker
 ``<!-- factory: follow-up-of=<task id> -->``; a retry or a replayed journal finds it
 by the marker and title and creates nothing new.
 """
 
 from __future__ import annotations
 
+import shutil
+import tempfile
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -29,7 +32,6 @@ from aifactory.backlog import (
     TaskEditError,
     add_container,
     add_task,
-    commit_backlog,
     find_task,
     is_done,
     is_human,
@@ -39,6 +41,7 @@ from aifactory.backlog import (
 from aifactory.backlog.derived import descendant_tasks
 from aifactory.backlog.edit import compose_id
 from aifactory.backlog.model import HUMAN
+from aifactory.backlog.roots import backlog_roots
 from aifactory.config import ProjectSettings
 from aifactory.run.scope import literal_prefix
 from aifactory.workflow import WorkflowRun
@@ -279,10 +282,113 @@ def _error(exc: TaskEditError) -> str:
 def record(
     main: Path, task_id: str, run_id: str, wf: WorkflowRun, *, blocking: bool = True
 ) -> FollowUpOutcome:
+    """Prepare follow-ups away from the operator's checkout, then publish only our edits."""
+    from aifactory.config import load_run_config
+    from aifactory.run import gitops
+
+    reported, blocked_ids = collect(wf)
+    if not reported and (not blocked_ids or not blocking):
+        return FollowUpOutcome()
+    main = gitops.main_root(main)
+    rc = load_run_config(main)
+    with tempfile.TemporaryDirectory(prefix="factory-followups-") as tmp:
+        stage = Path(tmp)
+        config = stage / ".factory/config.yaml"
+        config.parent.mkdir()
+        config.write_bytes((main / ".factory/config.yaml").read_bytes())
+        for directory in backlog_roots(main, load_for_edit(main).settings):
+            shutil.copytree(main / directory, stage / directory, dirs_exist_ok=True)
+        before = _contents(stage)
+        outcome = _record(stage, task_id, run_id, wf, blocking=blocking)
+        contents = {p: data for p, data in _contents(stage).items() if before.get(p) != data}
+        if contents:
+            _publish(
+                main, rc.base, rc.commit, rc.config.settings, contents, task_id, run_id, outcome
+            )
+        return outcome
+
+
+def _contents(root: Path) -> dict[str, bytes]:
+    return {path.relative_to(root).as_posix(): path.read_bytes() for path in root.rglob("*.md")}
+
+
+def _publish(
+    main: Path,
+    base: str,
+    base_sha: str,
+    settings: ProjectSettings,
+    contents: dict[str, bytes],
+    task_id: str,
+    run_id: str,
+    outcome: FollowUpOutcome,
+) -> None:
+    from aifactory.backlog.commit import BACKLOG_BRANCH_PREFIX
+    from aifactory.library.install_commit import _store
+    from aifactory.providers import ProviderError, get_provider, publish
+
+    subject = f"{task_id}: TODO tasky z běhu {run_id}"
+    try:
+        files = publish.plan_contents(main, base_sha, contents)
+        if not files:
+            return
+        plan = publish.PublishPlan(
+            base,
+            base_sha,
+            settings.base_changes,
+            tuple(files),
+            (),
+            publish.plan_digest(base, base_sha, files),
+        )
+        if publish.uses_pr(settings):
+            provider = get_provider(settings, main)
+            result = publish.publish_pr(
+                main,
+                provider=provider,
+                settings=settings,
+                plan=plan,
+                message=subject,
+                body=subject + "\n",
+                prefix=BACKLOG_BRANCH_PREFIX,
+            )
+            store = _store(main) if settings.base_pr_merge == "auto" else None
+            try:
+                result = publish.finish_pr(
+                    main,
+                    provider=provider,
+                    settings=settings,
+                    plan=plan,
+                    result=result,
+                    message=subject,
+                    store=store,
+                    materialize=True,
+                    command="follow-ups",
+                )
+            finally:
+                if store is not None:
+                    store.close()
+        else:
+            result = publish.publish_direct(
+                main,
+                settings=settings,
+                plan=plan,
+                message=subject,
+                store=None,
+                materialize=True,
+                command="follow-ups",
+            )
+        outcome.committed = True
+        outcome.warnings += list(result.warnings)
+    except (ProviderError, RuntimeError) as exc:
+        outcome.warnings.append(f"follow-up changes not published: {exc}")
+
+
+def _record(
+    main: Path, task_id: str, run_id: str, wf: WorkflowRun, *, blocking: bool = True
+) -> FollowUpOutcome:
     """File the run's follow-ups in the TODO step and link the task to its blockers.
 
-    Returns what was written; problems that do not stop the rest (an unknown id, a
-    rejected write, a commit that failed) are ``warnings``. A blocker counts even when
+    Returns what was written; problems that do not stop the rest (an unknown id or a
+    rejected write) are ``warnings``. A blocker counts even when
     its ``depends_on`` could not be written. ``blocking=False`` (a resolve run, whose
     task is built already) files every follow-up as not blocking and ignores
     ``blocked_by``.
@@ -298,7 +404,6 @@ def record(
         reported = [replace(r, blocks_task=False) for r in reported]
         blocked_ids = []
     project = task.parent.parent
-    wrote = False
     blockers: list[str] = []
 
     uncovered: list[Reported] = []
@@ -335,7 +440,7 @@ def record(
                     TODO_TITLE,
                     body=TODO_BODY,
                 )
-                step, wrote = added.container, True
+                step = added.container
             except TaskEditError as exc:
                 outcome.warnings.append(f"TODO step not created: {_error(exc)}")
         if step is not None:
@@ -366,7 +471,6 @@ def record(
                         if item.blocks_task:
                             blockers.append(f"(neuložený task: {item.title})")
                         continue
-                    wrote = True
                     created = CreatedFollowUp(
                         result.task.id, result.task.title, item.reason, item.blocks_task
                     )
@@ -394,17 +498,9 @@ def record(
     if links:
         try:
             link_task(main, task_id, depends_on=links)
-            wrote = True
         except TaskEditError as exc:
             outcome.warnings.append(
                 f"depends_on {', '.join(links)} not written to {task_id}: {_error(exc)}"
             )
 
-    if wrote:
-        try:
-            done = commit_backlog(main, f"{task_id}: TODO tasky z běhu {run_id}")
-            outcome.committed = done.committed
-            outcome.warnings += list(done.warnings)
-        except TaskEditError as exc:
-            outcome.warnings.append(f"backlog changes are written but not committed: {_error(exc)}")
     return outcome
