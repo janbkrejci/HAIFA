@@ -3,6 +3,7 @@ id: HAIFA-REFINEMENT-T46
 title: "Follow-upy z běhu: sloučit duplicitní a nehlásit, co už backlog kryje"
 status: todo
 depends_on: []
+test_timeout: 3600
 ---
 
 ## Zadání
