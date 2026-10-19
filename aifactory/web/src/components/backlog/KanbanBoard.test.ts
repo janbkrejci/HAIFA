@@ -30,6 +30,25 @@ const cards = (wrapper: ReturnType<typeof mount>, column: string) =>
   wrapper.find(`[data-column="${column}"]`).findAll('[data-card]').map((c) => c.attributes('data-card'))
 
 describe('KanbanBoard', () => {
+  it('renders long unbroken titles, IDs and workflows in full alongside labels and controls', () => {
+    const task = taskNode({
+      id: `HAIFA-REFINEMENT-${'T50'.repeat(40)}`,
+      title: 'a'.repeat(120),
+      workflow: 'workflow'.repeat(30),
+      invalid: true,
+      priority_rank: 0,
+      priority_of: ['HAIFA-REFINEMENT-T49'],
+    })
+    const wrapper = mount(KanbanBoard, { props: { tasks: [task], states: BOARD_STATES } })
+    const card = wrapper.get('[data-card]')
+    expect(card.get('.title').text()).toBe(task.title)
+    expect(card.get('.id').text()).toBe(`1. ${task.id}`)
+    expect(card.get('.meta').text()).toBe(task.workflow)
+    expect(card.get('[data-test="invalid"]').text()).toBe('neplatný status')
+    expect(card.get('[data-test="priority"]').text()).toBe('přednostně')
+    expect(wrapper.get('.tools').findAll('button')).toHaveLength(4)
+  })
+
   it('puts every task into the column of its board state', () => {
     const tasks = [...backlogData().tasks, taskNode({ id: 'X-1', path: 'x.md', board_state: 'todo', invalid: true })]
     const wrapper = mount(KanbanBoard, { props: { tasks, states: BOARD_STATES } })
