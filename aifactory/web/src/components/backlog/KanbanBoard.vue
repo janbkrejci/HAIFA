@@ -254,6 +254,12 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
   overflow-x: auto;
 }
 
+.column,
+.item,
+.card {
+  min-width: 0;
+}
+
 .column {
   padding: 10px;
   border: 1px solid var(--border);
@@ -318,6 +324,12 @@ h2 {
   padding: 8px 10px;
   color: var(--text);
   text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.card > *,
+.meta > * {
+  min-width: 0;
 }
 
 .id {
@@ -355,6 +367,7 @@ h2 {
 
 .tools {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 4px;
   padding: 0 6px 6px;
