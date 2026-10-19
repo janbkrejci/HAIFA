@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T48
 title: task retry vrací run_failed i po úspěšném a mergnutém pokusu
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -17,3 +17,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-19 · workflow build-test-review · bez změn, běh 61e65f98 · už hotovo: aifactory/src/aifactory/cli.py: _task_retry a _task_run používají společné _chain_output a _emit_runs., aifactory/src/aifactory/run/task.py: TaskRunResult.ok vyhodnocuje aktuální stav succeeded a pr_error., aifactory/tests/run/test_auto_merge.py: test_retry_merges_and_continues ověřuje exit 0 a úsp… · náklady $0.00
