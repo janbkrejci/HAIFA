@@ -4,7 +4,7 @@ title: "Kanban: texty nepřetékají přes okraje karet"
 status: todo
 workflow: build-test-review
 depends_on: []
-writes: [aifactory/web/src/components/backlog/KanbanBoard.vue, aifactory/web/src/components/backlog/KanbanBoard.test.ts, aifactory/src/aifactory/web/static/]
+writes: [aifactory/web/src/components/backlog/KanbanBoard.vue, aifactory/web/src/components/backlog/KanbanBoard.test.ts, aifactory/src/aifactory/web/static/, aifactory/tests/e2e/test_f3_browser.py]
 ---
 
 ## Zadání
