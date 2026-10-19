@@ -413,6 +413,132 @@ def _calls(script: Path) -> list[dict[str, Any]]:
     return [json.loads(line) for line in log.read_text(encoding="utf-8").splitlines() if line]
 
 
+def test_kanban_long_values_stay_inside_cards(page: Page, server: Server, net: Net) -> None:
+    """Measure shipped Kanban CSS in a real browser; DOM presence cannot detect overflow."""
+    task: dict[str, Any] = {
+        "kind": "task",
+        "level": "task",
+        "id": "T50",
+        "title": "Short title",
+        "path": "backlog/kanban-layout.md",
+        "status": "todo",
+        "state": "ready",
+        "board_state": "ready",
+        "workflow": "plan",
+        "effective": {"workflow": "plan"},
+        "own_workflow": None,
+        "depends_on": [],
+        "related": [],
+        "writes": [],
+        "own_writes": [],
+        "blocked_by": [],
+        "blocks": [],
+        "invalid": True,
+        "last_run": None,
+        "priority_rank": 0,
+        "priority_of": ["T49"],
+    }
+
+    def backlog_with_card(route: Route) -> None:
+        response = route.fetch()
+        body = response.json()
+        body["data"].update(tasks=[task], items=[task])
+        route.fulfill(response=response, json=body)
+
+    # Keep the actual app, server and shipped assets; substitute only the backlog data.
+    page.route(f"{server.api}/backlog", backlog_with_card)
+    page.goto(f"/#/r/{server.repo_id}/backlog")
+    page.locator('[data-test="mode-kanban"]').click()
+    board = page.locator('[data-test="kanban"]')
+    card = board.locator(".card")
+    expect(card).to_have_count(1)
+    page.evaluate("document.fonts.ready")
+
+    for viewport_width in (900, 1200):
+        page.set_viewport_size({"width": viewport_width, "height": 900})
+        task.update(id="T50", title="Short title", workflow="plan")
+        page.locator('[data-test="refresh"]').click()
+        expect(card.locator(".title")).to_have_text("Short title")
+        # Refresh remounts the board: constrain each new grid independently of its parent.
+        board.evaluate(
+            "(board, width) => { board.style.width = width + 'px'; }", viewport_width - 100
+        )
+        short_widths = board.locator(".column").evaluate_all(
+            "columns => columns.map(column => column.getBoundingClientRect().width)"
+        )
+
+        task.update(
+            id="HAIFA-REFINEMENT-" + "T50" * 40,
+            title="a" * 120,
+            workflow="workflow" * 30,
+        )
+        page.locator('[data-test="refresh"]').click()
+        expect(card.locator(".title")).to_have_text(task["title"])
+        expect(card.locator(".id")).to_have_text(f"1. {task['id']}")
+        expect(card.locator(".meta")).to_have_text(task["workflow"])
+        expect(card.locator('[data-test="invalid"]')).to_have_text("neplatný status")
+        expect(card.locator('[data-test="priority"]')).to_have_text("přednostně")
+        expect(board.locator(".tools button")).to_have_count(4)
+        board.evaluate(
+            "(board, width) => { board.style.width = width + 'px'; }", viewport_width - 100
+        )
+
+        geometry = board.evaluate(
+            """board => {
+                const columns = [...board.querySelectorAll('.column')];
+                const item = board.querySelector('.item');
+                const card = item.querySelector('.card');
+                const column = item.closest('.column');
+                const violations = [];
+                const inside = (rect, bounds, label) => {
+                    // Subpixel glyph and grid rounding may differ by a fraction of a pixel.
+                    if (rect.left < bounds.left - 1 || rect.right > bounds.right + 1 ||
+                        rect.top < bounds.top - 1 || rect.bottom > bounds.bottom + 1) {
+                        violations.push(label);
+                    }
+                };
+                inside(item.getBoundingClientRect(), column.getBoundingClientRect(), 'item');
+                inside(card.getBoundingClientRect(), item.getBoundingClientRect(), 'card');
+                for (const el of item.querySelectorAll('*')) {
+                    const bounds = (card.contains(el) ? card : item).getBoundingClientRect();
+                    inside(el.getBoundingClientRect(), bounds, el.className);
+                    if (el.scrollWidth > el.clientWidth + 1) {
+                        violations.push('scroll overflow: ' + el.className);
+                    }
+                }
+                // Element boxes alone miss glyphs painting outside a correctly sized span.
+                const walker = document.createTreeWalker(item, NodeFilter.SHOW_TEXT);
+                while (walker.nextNode()) {
+                    if (!walker.currentNode.textContent.trim()) continue;
+                    const range = document.createRange();
+                    range.selectNodeContents(walker.currentNode);
+                    const bounds = (card.contains(walker.currentNode) ? card : item)
+                        .getBoundingClientRect();
+                    for (const rect of range.getClientRects()) {
+                        inside(rect, bounds, 'text: ' + walker.currentNode.textContent);
+                    }
+                }
+                const widths = columns.map(col => col.getBoundingClientRect().width);
+                const tracks = getComputedStyle(board).gridTemplateColumns
+                    .split(' ').map(parseFloat);
+                board.scrollLeft = board.scrollWidth;
+                const scrollLeft = board.scrollLeft;
+                board.scrollLeft = 0;
+                return {violations, widths, tracks, scrollLeft,
+                    scrollable: board.scrollWidth > board.clientWidth,
+                    overflowX: getComputedStyle(board).overflowX};
+            }"""
+        )
+        assert geometry["violations"] == [], geometry
+        assert geometry["widths"] == pytest.approx(short_widths, abs=1), geometry
+        assert geometry["widths"] == pytest.approx(geometry["tracks"], abs=1), geometry
+        assert geometry["overflowX"] == "auto", geometry
+        assert geometry["scrollable"] and geometry["scrollLeft"] > 0, geometry
+
+    assert net.aborted == [], net.aborted
+    assert not server.marker.exists()
+
+
 def test_f3_task_lifecycle_in_browser(page: Page, server: Server, net: Net) -> None:
     page.goto(f"/#/r/{server.repo_id}/backlog")
     expect(page.locator("h1")).to_have_text("Backlog")
