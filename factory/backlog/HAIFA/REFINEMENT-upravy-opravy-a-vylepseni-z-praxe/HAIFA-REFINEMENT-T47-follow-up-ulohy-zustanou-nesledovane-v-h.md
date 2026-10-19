@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T47
 title: Follow-up úlohy zůstanou nesledované v hlavním checkoutu a zablokují pull
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -18,3 +18,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-19 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/115 · náklady $0.00

@@ -153,6 +153,8 @@ def test_record_reuses_open_dependency(repo: Path, related: bool) -> None:
             f"backlog/M01-core/S01-model/{task_id}-more.md",
             f"---\nid: {task_id}\ntitle: More\nstatus: todo\nrelated: [{T02}]\n---\n",
         )
+        git(repo, "add", "backlog")
+        git(repo, "commit", "-q", "-m", "related task")
     item = follow_up(" schema ", blocks=True)
     outcome = record(repo, task_id, "run-1", workflow_run(follow_ups=[item]))
 
@@ -340,6 +342,76 @@ def stored_pr_count(repo: Path) -> int:
         return len(store.prs_for_task(T01))
     finally:
         store.close()
+
+
+@pytest.mark.parametrize("mode", ["direct", "pr-manual", "pr-auto"])
+def test_follow_up_run_leaves_checkout_clean_and_pullable(
+    repo: Path, script: Script, tmp_path: Path, mode: str
+) -> None:
+    config = repo / ".factory/config.yaml"
+    target, _, merge = mode.partition("-")
+    write(
+        repo,
+        ".factory/config.yaml",
+        config.read_text(encoding="utf-8")
+        + f"base_changes: {target}\nbase_pr_merge: {merge or 'manual'}\n",
+    )
+    git(repo, "commit", "-q", "-am", "configure publishing")
+    bare = tmp_path / "origin.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
+    git(repo, "remote", "add", "origin", str(bare))
+    git(repo, "push", "-q", "-u", "origin", "main")
+    planner_reports(script, follow_ups=[follow_up().model_dump()])
+
+    result = run_task(repo, T01)
+
+    assert result.ok, (result.run.error, result.pr_error)
+    assert result.follow_ups is not None and result.follow_ups.committed
+    assert git(repo, "status", "--porcelain") == ""
+    if target == "pr":
+        assert result.follow_ups.created[0].id not in backlog_of(repo).by_id
+        # A reviewer merges a manual PR; auto may already have merged remotely
+        # while the running task prevented the local base from advancing.
+        git(repo, "push", "-q", "origin", "factory-backlog/1:main")
+    git(repo, "pull", "--ff-only")
+    assert git(repo, "status", "--porcelain") == ""
+    assert result.follow_ups.created[0].id in backlog_of(repo).by_id
+
+
+def test_follow_up_publish_failure_leaves_checkout_untouched(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.providers import publish
+    from aifactory.providers.base import ProviderError
+
+    def rejected(*args: Any, **kwargs: Any) -> Any:
+        raise ProviderError("push_failed", "rejected")
+
+    monkeypatch.setattr(publish, "publish_direct", rejected)
+    before = git(repo, "rev-parse", "HEAD")
+    outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[follow_up(blocks=True)]))
+
+    assert not outcome.committed and outcome.warnings
+    assert git(repo, "rev-parse", "HEAD") == before
+    assert git(repo, "status", "--porcelain") == ""
+    assert task_of(repo).depends_on == []
+    assert TODO_STEP not in backlog_of(repo).by_id
+
+
+def test_follow_up_preserves_unrelated_worktree_and_index_changes(repo: Path) -> None:
+    path = repo / task_of(repo, T02).path
+    path.write_text(path.read_text(encoding="utf-8") + "\nLocal note.\n", encoding="utf-8")
+    git(repo, "add", str(path))
+    write(repo, "README.md", "local readme\n")
+    staged = git(repo, "diff", "--cached")
+    unstaged = git(repo, "diff")
+
+    outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[follow_up()]))
+
+    assert outcome.committed and outcome.warnings == []
+    assert git(repo, "diff", "--cached") == staged
+    assert git(repo, "diff") == unstaged
+    assert "Local note." not in git(repo, "show", f"HEAD:{task_of(repo, T02).path}")
 
 
 def test_blocked_run_fails_without_pr(repo: Path, script: Script) -> None:
