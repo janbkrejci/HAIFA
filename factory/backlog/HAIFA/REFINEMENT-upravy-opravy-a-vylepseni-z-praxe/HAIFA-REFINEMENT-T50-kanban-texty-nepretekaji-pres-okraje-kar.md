@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T50
 title: "Kanban: texty nepřetékají přes okraje karet"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/components/backlog/KanbanBoard.vue, aifactory/web/src/components/backlog/KanbanBoard.test.ts, aifactory/src/aifactory/web/static/, aifactory/tests/e2e/test_f3_browser.py]
@@ -36,3 +36,4 @@ Na kanbanu stránky Backlog (`aifactory/web/src/components/backlog/KanbanBoard.v
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-19 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/117 · náklady $0.00
