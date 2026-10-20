@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T56
 title: "Auto continue: po dokončení blokátoru pokračovat odblokovaným taskem z jiného projektu"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/run/queue.py, aifactory/tests/run/test_auto_continue.py, docs/decisions.md]
@@ -29,3 +29,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/123 · náklady $0.00
