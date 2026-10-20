@@ -1909,7 +1909,8 @@ task retry: continues the task's newest failed, stopped or aborted run (or --run
   the task's writes and commits the backlog to base (by base_changes). Paths in
   protected_files, in the backlog or in the main checkout are never added; refused: a run
   of another kind (not_writes_violation), no path to add (nothing_to_allow), a change
-  waiting in an unmerged backlog PR (writes_in_pr).
+  waiting in an unmerged backlog PR (writes_in_pr), or base missing the new writes
+  (writes_not_committed: commit the backlog, then factory task retry ID).
   --harness [--model --thinking] continues with every agent on another harness (after a
   quota failure); the switch is recorded in the run's retries, its events and its PR.
 quota fallback: a run (or retry) that fails with failure_kind quota continues once by itself
@@ -2223,7 +2224,8 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="after a writes_violation: add the paths written outside writes to the task's "
         "writes (committed to base by base_changes), then retry. Paths in protected_files, "
-        "in the backlog or in the main checkout are never added",
+        "in the backlog or in the main checkout are never added. If base lacks the new writes "
+        "(writes_not_committed), commit the backlog, then factory task retry ID",
     )
     retry.add_argument(
         "--harness",

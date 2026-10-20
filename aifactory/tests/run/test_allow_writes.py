@@ -219,3 +219,80 @@ def test_allow_writes_with_base_changes_pr_waits_for_the_backlog_pr(
     assert row is not None
     assert (row.state, row.attempt) == (FAILED, 1)
     assert len(script.calls) == calls  # no agent ran again
+
+
+@pytest.mark.parametrize("result_kind", ["no-op", "committed", "merged-pr", "partial"])
+def test_retry_refuses_writes_missing_from_base(
+    repo: Path, script: Script, capsys: Capsys, monkeypatch: pytest.MonkeyPatch, result_kind: str
+) -> None:
+    from importlib import import_module
+
+    from aifactory.backlog import BacklogCommit, commit_backlog, edit_task
+
+    module = import_module("aifactory.run.allow_writes")
+    run_id = _failed_run(repo, script, "README.md", "docs/extra.md")
+    calls = len(script.calls)
+
+    def incomplete_commit(root: Path, message: str) -> BacklogCommit:
+        if result_kind == "partial":
+            edit_task(root, T01, writes=["src/app/", "README.md"])
+            return commit_backlog(root, message)
+        return BacklogCommit(
+            committed=result_kind != "no-op",
+            commit=None,
+            base="main",
+            paths=[],
+            pushed=False,
+            pr={"url": "https://example.test/pr/1"} if result_kind == "merged-pr" else None,
+            merged=result_kind == "merged-pr",
+        )
+
+    monkeypatch.setattr(module, "commit_backlog", incomplete_commit)
+    capsys.readouterr()
+    code, data = run_json(
+        capsys, ["task", "retry", T01, "--allow-writes", "--json", "--repo", str(repo)]
+    )
+    assert code == 2, data
+    assert data["error"]["code"] == "writes_not_committed"
+    message = data["error"]["message"]
+    assert "docs/extra.md" in message
+    assert ("README.md" in message) == (result_kind != "partial")
+    assert "commit the backlog" in message
+    assert f"factory task retry {T01}" in message
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        row = store.get(run_id)
+    finally:
+        store.close()
+    assert row is not None
+    assert (row.state, row.attempt) == (FAILED, 1)
+    assert len(script.calls) == calls
+
+
+@pytest.mark.parametrize("result_kind", ["no-op", "merged-pr"])
+def test_all_commit_results_verify_effective_writes_in_base(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, result_kind: str
+) -> None:
+    from dataclasses import replace
+    from importlib import import_module
+
+    from aifactory.backlog import BacklogCommit, commit_backlog, edit_container, edit_task
+
+    module = import_module("aifactory.run.allow_writes")
+    _failed_run(repo, script, "docs/extra.md")
+
+    def commit_inherited_writes(root: Path, message: str) -> BacklogCommit:
+        # The path is covered through an inherited directory, not an own literal path.
+        edit_container(root, "M01-S01", values={"writes": ["src/app/", "docs/"]})
+        edit_task(root, T01, clear_writes=True)
+        result = commit_backlog(root, message)
+        if result_kind == "no-op":
+            return replace(result, committed=False)
+        return replace(result, pr={"url": "https://example.test/pr/1"}, merged=True)
+
+    monkeypatch.setattr(module, "commit_backlog", commit_inherited_writes)
+    result = allow_writes(repo, T01)
+    assert result.plan.allow == ["docs/extra.md"]
+    assert "docs/" in _writes_in_base(repo) or "docs/" in git(
+        repo, "show", "main:backlog/M01-core/S01-model/index.md"
+    )

@@ -515,3 +515,11 @@ def test_skill_setup_and_item_procedures() -> None:
     upgrade = _section(skill, "Upgrade")
     for text in ("factory upgrade", "factory library seed", "next run"):
         assert text in upgrade, text
+
+
+def test_allow_writes_explains_uncommitted_base() -> None:
+    section = _section(render_skill(), "Retry")
+    assert "writes_not_committed" in section
+    assert "factory backlog commit --json" in section
+    assert "factory task retry ID --json" in section
+    assert ERROR_CODES["writes_not_committed"]

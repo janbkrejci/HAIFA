@@ -571,3 +571,32 @@ def test_publish_auto_merge_uses_launcher(
         assert body["data"]["pr_error"] == "push_failed: server error"
     else:
         assert body["error"]["code"] == error
+
+
+def test_allow_writes_does_not_launch_when_writes_are_not_committed(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from importlib import import_module
+
+    from aifactory.run import TaskRunError
+
+    module = import_module("aifactory.run.allow_writes")
+    calls: list[tuple[Path, str, str | None]] = []
+
+    def uncommitted(root: Path, task_id: str, run_id: str | None = None) -> None:
+        calls.append((root, task_id, run_id))
+        raise TaskRunError(
+            "writes_not_committed", "base lacks README.md; commit the backlog, then retry"
+        )
+
+    monkeypatch.setattr(module, "allow_writes", uncommitted)
+    launcher = _RetryLauncher()
+    app = create_app(repo, static_dir=tmp_path / "nostatic", launcher=launcher)  # type: ignore[arg-type]
+    client = TestClient(app, base_url=BASE)
+    response = client.post("/api/runs/r-fail/allow-writes", json={})
+    body = response.json()
+    assert response.status_code == 409, body
+    assert envelope_problems(body) == []
+    assert body["error"]["code"] == "writes_not_committed"
+    assert calls == [(repo, T1, "r-fail")]
+    assert launcher.calls == []

@@ -136,6 +136,11 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "checkout, or allowed already)",
     ),
     (
+        "writes_not_committed",
+        "2",
+        "task retry --allow-writes: base lacks the new writes; commit the backlog, then retry",
+    ),
+    (
         "writes_in_pr",
         "2",
         "task retry --allow-writes: the writes change waits in an unmerged backlog PR",

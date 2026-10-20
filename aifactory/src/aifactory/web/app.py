@@ -512,6 +512,7 @@ _RUN_ERROR_STATUS = {
     "not_writes_violation": 409,
     "nothing_to_allow": 409,
     "writes_in_pr": 409,
+    "writes_not_committed": 409,
     "not_nothing_to_do": 409,
     "task_done": 409,
     "unknown_branch": 404,
