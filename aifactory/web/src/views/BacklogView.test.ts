@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import BacklogView from './BacklogView.vue'
 import {
   backlogData,
@@ -17,6 +17,8 @@ import { chooseOption, openSelect, selectLabels } from '@/test/select'
 import { deferred, type Deferred } from '@/test/deferred'
 import { answerDialog } from '@/test/modal'
 import { HIDE_DONE_KEY, resetTreeForTests } from '@/lib/backlog'
+
+enableAutoUnmount(afterEach)
 
 function ok(data: unknown) {
   return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] }))
@@ -779,16 +781,11 @@ describe('BacklogView', () => {
     wrapper.unmount()
   })
 
-  it('checks and starts a run with a note, then with --force, and opens the started run', async () => {
+  it('checks and starts a run with a note and opens the started run', async () => {
     go('#/r/haifa/backlog/M01-S01-T02')
-    let first = true
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST' && url.endsWith('/run')) {
-        if (first) {
-          first = false
-          return fail('unmet_dependencies', 'task depends on work not done', 409)
-        }
-        return new Response(JSON.stringify({ ok: true, data: runStart({ force: true }), error: null, warnings: [] }), { status: 202 })
+        return new Response(JSON.stringify({ ok: true, data: runStart(), error: null, warnings: [] }), { status: 202 })
       }
       if (url.endsWith('/run-check')) return ok(runCheck())
       if (url.startsWith('/api/repos/haifa/backlog/tasks/')) return ok(taskDetail())
@@ -803,20 +800,42 @@ describe('BacklogView', () => {
     await wrapper.find('[data-test="run-note"]').setValue('z UI')
     await wrapper.find('[data-test="run-start"]').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[data-test="run-dialog"] [data-test="write-error"]').text()).toContain('depends on work')
-    await wrapper.find('[data-test="run-force"]').trigger('click')
-    await flushPromises()
     const posts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')
     expect(posts.map(([url]) => url)).toEqual([
       '/api/repos/haifa/backlog/tasks/M01-S01-T02/run',
-      '/api/repos/haifa/backlog/tasks/M01-S01-T02/run',
     ])
     expect(posts[0]?.[1]?.body).toBe('{"note":"z UI","force":false}')
-    expect(posts[1]?.[1]?.body).toBe('{"note":"z UI","force":true}')
     // a started run opens its detail
     expect(window.location.hash).toBe('#/r/haifa/runs/r-9')
     const gets = fetchMock.mock.calls.filter(([url, init]) => url === '/api/repos/haifa/backlog/tasks/M01-S01-T02' && !init)
     expect(gets).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('keeps an unmet_dependencies error visible and refuses another start', async () => {
+    go('#/r/haifa/backlog/M01-S01-T02')
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (init?.method === 'POST' && url.endsWith('/run')) {
+        return fail('unmet_dependencies', 'task depends on work not done', 409)
+      }
+      if (url.endsWith('/run-check')) return ok(runCheck())
+      if (url.startsWith('/api/repos/haifa/backlog/tasks/')) return ok(taskDetail())
+      return ok(backlogData())
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await wrapper.get('[data-test="run"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="run-start"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="run-dialog"] [data-test="write-error"]').text()).toContain('depends on work')
+    expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="run-start"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(1)
+    expect(window.location.hash).toBe('#/r/haifa/backlog/M01-S01-T02')
     wrapper.unmount()
   })
 
