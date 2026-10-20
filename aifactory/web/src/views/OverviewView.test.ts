@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import OverviewView from './OverviewView.vue'
 import type { OverviewData, RepoItem } from '@/lib/api'
-import { OVERVIEW_POLL_MS } from '@/lib/overview'
+import { BY_PROJECT_KEY, OVERVIEW_POLL_MS } from '@/lib/overview'
 import { config, factory, failed, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
 import { answerDialog, openDialog } from '@/test/modal'
 import { defineComponent, onMounted } from 'vue'
@@ -66,6 +66,7 @@ async function mountView() {
 enableAutoUnmount(afterEach)
 
 beforeEach(() => {
+  localStorage.removeItem(BY_PROJECT_KEY)
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
   vi.setSystemTime(NOW)
   visibility = 'visible'
@@ -79,6 +80,72 @@ afterEach(() => {
 })
 
 describe('OverviewView', () => {
+  it('toggles busy project rows and chips through the header switch', async () => {
+    stubOverview(() => overview([repo('busy', {
+      projects: [
+        { id: 'A', title: 'Alpha', tasks: tasks({ running: 1, ready: 2 }) },
+        { id: 'B', title: 'Beta', tasks: tasks({ running: 1, ready: 3, 'in review': 1 }) },
+      ],
+      tasks: tasks({ running: 2, ready: 5, 'in review': 1 }),
+      running: [
+        running({ project: 'A', run_id: 'run-a', task_id: 'A-T01' }),
+        running({ project: 'B', run_id: 'run-b', task_id: 'B-T01' }),
+      ],
+      review: [review({ project: 'B', task_id: 'B-T02' })],
+    })]))
+    const wrapper = await mountView()
+    const card = wrapper.get('[data-test="overview-card"][data-repo="busy"]')
+    const projectSwitch = wrapper.get('input[data-test="by-project"]')
+    expect((projectSwitch.element as HTMLInputElement).checked).toBe(true)
+
+    const assertGrouped = () => {
+      const sections = card.findAll('[data-test="project-section"]')
+      expect(sections).toHaveLength(2)
+      expect(sections[0].findAll('[data-test="row-running"]').map((r) => r.attributes('data-run'))).toEqual(['run-a'])
+      expect(sections[0].find('[data-test="row-review"]').exists()).toBe(false)
+      expect(sections[0].get('[data-state="ready"] b').text()).toBe('2')
+      expect(sections[1].findAll('[data-test="row-running"]').map((r) => r.attributes('data-run'))).toEqual(['run-b'])
+      expect(sections[1].get('[data-test="row-review"]').attributes('data-task')).toBe('B-T02')
+      expect(sections[1].get('[data-state="ready"] b').text()).toBe('3')
+      expect(card.findAll('[data-test="task-summary"]')).toHaveLength(2)
+    }
+    assertGrouped()
+
+    await projectSwitch.setValue(false)
+    expect(card.find('[data-test="project-section"]').exists()).toBe(false)
+    expect(card.findAll('[data-test="row-running"]').map((r) => r.attributes('data-run'))).toEqual(['run-a', 'run-b'])
+    expect(card.get('[data-test="row-review"]').attributes('data-task')).toBe('B-T02')
+    expect(card.findAll('[data-test="task-summary"]')).toHaveLength(1)
+    expect(card.get('[data-state="ready"] b').text()).toBe('5')
+    expect(card.get('[data-state="running"] b').text()).toBe('2')
+
+    await projectSwitch.setValue(true)
+    assertGrouped()
+  })
+
+  it('hides the project switch when no repo has multiple projects', async () => {
+    stubOverview(() => overview([repo('old'), repo('single', { projects: [{ id: 'A', title: 'Alpha', tasks: tasks() }] })]))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="by-project"]').exists()).toBe(false)
+  })
+
+  it('groups calm repos by default and remembers switching to the summary', async () => {
+    stubOverview(() => overview([repo('calm', { tasks: tasks({ ready: 3 }), projects: [
+      { id: 'A', title: 'Alpha', tasks: tasks({ ready: 1 }) },
+      { id: 'B', title: 'Beta', tasks: tasks({ ready: 2 }) },
+    ] })]))
+    const wrapper = await mountView()
+    expect((wrapper.get('[data-test="by-project"]').element as HTMLInputElement).checked).toBe(true)
+    expect(wrapper.findAll('[data-test="project-section"]')).toHaveLength(2)
+    await wrapper.get('input[data-test="by-project"]').setValue(false)
+    expect(wrapper.find('[data-test="project-section"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="task-summary"]').text()).toContain('3')
+    expect(localStorage.getItem(BY_PROJECT_KEY)).toBe('0')
+    wrapper.unmount()
+    const again = await mountView()
+    expect((again.get('[data-test="by-project"]').element as HTMLInputElement).checked).toBe(false)
+  })
+
   it('orders the cards by urgency and folds calm repos into one line each', async () => {
     stubOverview()
     const wrapper = await mountView()

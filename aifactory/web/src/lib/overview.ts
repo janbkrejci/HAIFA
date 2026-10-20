@@ -151,7 +151,7 @@ export interface TaskSummaryItem {
 }
 
 /** The tasks of a repo per board state, in kanban order; states without a task are left out. */
-export function taskSummary(repo: OverviewRepo): TaskSummaryItem[] {
+export function taskSummary(repo: Pick<OverviewRepo, 'tasks'>): TaskSummaryItem[] {
   const tasks = repo.tasks
   if (!tasks) return []
   return BOARD_STATES.filter((state) => (tasks[state] ?? 0) > 0).map((state) => ({
@@ -159,6 +159,45 @@ export function taskSummary(repo: OverviewRepo): TaskSummaryItem[] {
     label: STATE_LABELS[state],
     count: tasks[state],
   }))
+}
+
+export const BY_PROJECT_KEY = 'haifa.overview.byProject'
+
+export function readByProject(): boolean {
+  try {
+    return typeof localStorage === 'undefined' || localStorage.getItem(BY_PROJECT_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
+
+export function writeByProject(on: boolean): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(BY_PROJECT_KEY, on ? '1' : '0')
+  } catch {
+    // The switch still works when browser storage is unavailable.
+  }
+}
+
+/** Project slices keep repo identity for links; only work lists and task counts change. */
+export function projectSections(repo: OverviewRepo): { id: string | null; title: string; repo: OverviewRepo }[] {
+  const projects = repo.projects ?? []
+  const ids = new Set(projects.map((p) => p.id))
+  const sections: { id: string | null; title: string; tasks: OverviewRepo['tasks'] }[] =
+    projects.map((p) => ({ id: p.id, title: p.title, tasks: p.tasks }))
+  const lists = [repo.running, repo.review, repo.automerge ?? [], repo.failed]
+  if (lists.some((rows) => rows.some((row) => row.project == null || !ids.has(row.project)))) {
+    sections.push({ id: null, title: 'Bez projektu', tasks: null })
+  }
+  return sections.map(({ id, title, tasks }) => {
+    const belongs = (row: { project?: string | null }) =>
+      id === null ? row.project == null || !ids.has(row.project) : row.project === id
+    return {
+      id, title,
+      repo: { ...repo, tasks, running: repo.running.filter(belongs), review: repo.review.filter(belongs),
+        automerge: (repo.automerge ?? []).filter(belongs), failed: repo.failed.filter(belongs) },
+    }
+  })
 }
 
 /** Spustit továrnu: a ready task and a free parallel slot. */

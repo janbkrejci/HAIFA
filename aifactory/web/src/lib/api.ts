@@ -191,6 +191,7 @@ export interface OverviewPhase {
 
 /** A run in the `running` state (GET /api/overview). */
 export interface OverviewRunning {
+  project?: string | null
   run_id: string
   task_id: string
   task_title: string | null
@@ -208,6 +209,7 @@ export interface OverviewRunning {
 
 /** An open task PR of the trace without a running run. */
 export interface OverviewReview {
+  project?: string | null
   task_id: string
   task_title: string | null
   pr_id: string | null
@@ -220,6 +222,7 @@ export interface OverviewReview {
 
 /** A task whose newest PR was merged outside factory and that is not done in base yet. */
 export interface OverviewMergedOutside {
+  project?: string | null
   task_id: string
   task_title: string | null
   pr_id: string | null
@@ -237,6 +240,7 @@ export interface OverviewSyncPr {
 
 /** A task whose newest run ended failed or aborted. */
 export interface OverviewFailed {
+  project?: string | null
   run_id: string
   task_id: string
   task_title: string | null
@@ -250,6 +254,7 @@ export interface OverviewFailed {
 
 /** An automatic action of an auto-continue chain after a failure (run.heal, `task_chains.events`). */
 export interface OverviewAutoAction {
+  project?: string | null
   at: string
   /** `fallback` (quota: another harness), `retry` (process gone) or `close` (nothing to do). */
   action: string
@@ -346,8 +351,15 @@ export interface FactoryStopResult {
   pending: string[]
 }
 
+export interface OverviewProject {
+  id: string
+  title: string
+  tasks: OverviewTaskCounts
+}
+
 /** One repository of GET /api/overview. */
 export interface OverviewRepo {
+  projects?: OverviewProject[]
   id: string
   name: string
   path: string
@@ -384,6 +396,7 @@ export async function fetchOverview(): Promise<OverviewData> {
   return {
     repos: repos.map((r) => ({
       ...r,
+      projects: r.projects ?? [],
       running: r.running ?? [],
       review: r.review ?? [],
       automerge: r.automerge ?? [],

@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RepoCard from './RepoCard.vue'
 import type { OverviewRepo } from '@/lib/api'
-import { factory, mergedOutside, repo, review, running, tasks } from '@/test/overviewFixtures'
+import { factory, failed, mergedOutside, repo, review, running, tasks } from '@/test/overviewFixtures'
 
 const api = vi.hoisted(() => ({ backlogSync: vi.fn(), controlStart: vi.fn(), controlPause: vi.fn() }))
 vi.mock('@/lib/api', async (importOriginal) => ({ ...(await importOriginal<object>()), ...api }))
@@ -191,5 +191,122 @@ describe('RepoCard automatic actions', () => {
 
   it('has no section without automatic actions', () => {
     expect(mountWith(repo('a')).text()).not.toContain('Factory zasáhla sama')
+  })
+})
+
+
+describe('RepoCard projects', () => {
+  const projects = [
+    { id: 'A', title: 'Alpha', tasks: tasks({ running: 1, ready: 2 }) },
+    { id: 'B', title: 'Beta', tasks: tasks({ 'in review': 1, 'awaiting merge': 1 }) },
+  ]
+  it.each(['merged_outside', 'auto_actions'] as const)(
+    'renders unassigned %s once outside projects without an empty section', (list) => {
+      const card = mount(RepoCard, { props: {
+        repo: repo('multi', {
+          projects,
+          merged_outside: list === 'merged_outside' ? [mergedOutside({ project: null })] : [],
+          auto_actions: list === 'auto_actions' ? [{
+            project: null, at: '2026-10-06T09:58:00Z', action: 'retry',
+            failure_kind: 'process_gone', task_id: 'T01', run_id: 'run-1',
+            ok: true, text: 'Factory zopakovala běh',
+          }] : [],
+        }),
+        now: Date.now(), byProject: true,
+      } })
+
+      expect(card.findAll('[data-test="project-section"]')).toHaveLength(2)
+      expect(card.text()).not.toContain('Bez projektu')
+      const row = list === 'merged_outside' ? 'row-merged-outside' : 'row-auto-action'
+      expect(card.findAll(`[data-test="${row}"]`)).toHaveLength(1)
+      expect(card.find(`[data-test="project-section"] [data-test="${row}"]`).exists()).toBe(false)
+    },
+  )
+
+  it('keeps merged-outside PRs and working sync controls once per repo across grouping modes', async () => {
+    api.backlogSync.mockResolvedValue({
+      url: 'https://example.test/pr/38', created: true, updated: false,
+      tasks: [{ task_id: 'A-T04' }, { task_id: 'B-T04' }],
+    })
+    const card = mount(RepoCard, { props: {
+      repo: repo('multi', {
+        projects,
+        merged_outside: [
+          mergedOutside({ project: 'A', task_id: 'A-T04', pr_id: '37', url: 'https://example.test/pr/37' }),
+          mergedOutside({ project: 'B', task_id: 'B-T04', pr_id: '39', url: 'https://example.test/pr/39' }),
+        ],
+      }),
+      now: Date.now(), byProject: true,
+    } })
+    expect(card.findAll('[data-test="project-section"]')).toHaveLength(2)
+    const assertMerged = () => {
+      expect(card.findAll('[data-test="merged-outside"]')).toHaveLength(1)
+      const rows = card.findAll('[data-test="row-merged-outside"]')
+      expect(rows.map((r) => r.attributes('data-task'))).toEqual(['A-T04', 'B-T04'])
+      expect(rows.map((r) => r.attributes('href'))).toEqual(['https://example.test/pr/37', 'https://example.test/pr/39'])
+      expect(card.find('[data-test="project-section"] [data-test="merged-outside"]').exists()).toBe(false)
+    }
+    assertMerged()
+    expect(card.findAll('[data-test="sync-open"]')).toHaveLength(1)
+    await card.get('[data-test="sync-open"]').trigger('click')
+    await flushPromises()
+    expect(api.backlogSync).toHaveBeenCalledExactlyOnceWith('multi')
+    expect(card.findAll('[data-test="sync-pr-link"]')).toHaveLength(1)
+    expect(card.get('[data-test="sync-pr-link"]').attributes('href')).toBe('https://example.test/pr/38')
+    expect(card.emitted('changed')).toHaveLength(1)
+
+    await card.setProps({ byProject: false })
+    expect(card.find('[data-test="project-section"]').exists()).toBe(false)
+    assertMerged()
+    expect(card.findAll('[data-test="sync-pr-link"]')).toHaveLength(1)
+    expect(card.get('[data-test="sync-pr-link"]').attributes('href')).toBe('https://example.test/pr/38')
+  })
+
+  it('shows project rows and coloured chips, then restores the summary', async () => {
+    const card = mount(RepoCard, { props: { repo: repo('multi', {
+      projects, tasks: tasks({ running: 1, ready: 2, 'in review': 1, 'awaiting merge': 1 }),
+      running: [running({ project: 'A' })], review: [review({ project: 'B' })],
+      automerge: [review({ project: 'B', task_id: 'merge' })],
+      failed: [failed({ project: 'A' })], factory: factory({ running: 1 }),
+    }), now: Date.now(), byProject: true } })
+    const sections = card.findAll('[data-test="project-section"]')
+    expect(sections).toHaveLength(2)
+    expect(sections[0].text()).toContain('Alpha')
+    expect(sections[0].findAll('[data-test="row-running"]')).toHaveLength(1)
+    expect(sections[0].findAll('[data-test="row-failed"]')).toHaveLength(1)
+    expect(sections[0].find('[data-test="row-review"]').exists()).toBe(false)
+    expect(sections[0].get('[data-state="ready"]').classes()).toContain('state-ready')
+    expect(sections[0].get('[data-state="ready"]').text()).toContain('2')
+    expect(sections[1].text()).toContain('Beta')
+    expect(sections[1].findAll('[data-test="row-review"]')).toHaveLength(1)
+    expect(sections[1].findAll('[data-test="row-automerge"]')).toHaveLength(1)
+    expect(sections[1].get('[data-state="in review"]').classes()).toContain('state-in-review')
+    expect(card.findAll('[data-test="factory-slots"]')).toHaveLength(1)
+    await card.setProps({ byProject: false })
+    expect(card.find('[data-test="project-section"]').exists()).toBe(false)
+    expect(card.findAll('[data-test="task-summary"]')).toHaveLength(1)
+    expect(card.findAll('[data-test="row-running"]')).toHaveLength(1)
+    expect(card.findAll('[data-test="row-review"]')).toHaveLength(1)
+  })
+
+  it('shows unassigned work in its own section', () => {
+    const card = mount(RepoCard, { props: { repo: repo('multi', {
+      projects, running: [running({ project: null })],
+      failed: [failed({ run_id: 'ended', project: null })],
+    }), now: Date.now(), byProject: true } })
+    const sections = card.findAll('[data-test="project-section"]')
+    expect(sections).toHaveLength(3)
+    expect(sections[2].text()).toContain('Bez projektu')
+    expect(sections[2].findAll('[data-test="row-running"]')).toHaveLength(1)
+    expect(sections[2].findAll('[data-test="row-failed"]')).toHaveLength(1)
+    expect(sections[0].find('[data-test="row-running"]').exists()).toBe(false)
+  })
+
+  it('keeps one-project repos in aggregate mode', async () => {
+    const card = mount(RepoCard, { props: { repo: repo('single', { projects: projects.slice(0, 1), tasks: tasks({ ready: 2 }) }), now: Date.now(), byProject: true } })
+    expect(card.find('[data-test="project-section"]').exists()).toBe(false)
+    const before = card.text()
+    await card.setProps({ byProject: false })
+    expect(card.text()).toBe(before)
   })
 })

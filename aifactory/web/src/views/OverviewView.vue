@@ -5,13 +5,15 @@
 // Reloads every 2 s while the tab is visible, on a return to the window and by Obnovit; reads only.
 // Readiness reports its progress and actionable findings above the overview.
 // With no repo at all it offers adding one or trying the sample (TryDemoButton).
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { Plus, RefreshCw } from 'lucide-vue-next'
 import type { RepoItem } from '@/lib/api'
 import { useNow } from '@/lib/clock'
 import { fmtAge, fmtTime, ts } from '@/lib/format'
 import {
   TOTALS,
+  readByProject,
+  writeByProject,
   activeRuns,
   matchesFilter,
   sortRepos,
@@ -27,6 +29,7 @@ import TryDemoButton from '@/components/demo/TryDemoButton.vue'
 import RepoActions from '@/components/overview/RepoActions.vue'
 import RepoCard from '@/components/overview/RepoCard.vue'
 import RepoControls from '@/components/overview/RepoControls.vue'
+import RepoWork from '@/components/overview/RepoWork.vue'
 import RepoMenu from '@/components/overview/RepoMenu.vue'
 import RemoveRepoDialog from '@/components/repos/RemoveRepoDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -45,6 +48,9 @@ const removal = useRemoveRepo(() => {
   emit('changed')
 })
 const { remove, removing, error: removeError } = removal
+const byProject = ref(readByProject())
+watch(byProject, writeByProject)
+const hasMultipleProjects = computed(() => sorted.value.some((r) => (r.projects?.length ?? 0) > 1))
 const filter = ref<OverviewFilter | null>(null)
 /** The outcome of the last factory button of each calm repo, by repo id. */
 const feedback = ref<Record<string, ControlFeedback>>({})
@@ -80,6 +86,9 @@ function activity(iso: string | null): string {
   <section v-else class="overview-view" data-test="repo-page">
     <div class="head">
       <h1>Přehled</h1>
+      <label v-if="hasMultipleProjects" class="project-switch">
+        <input v-model="byProject" type="checkbox" class="switch" role="switch" data-test="by-project" /> Po projektech
+      </label>
       <button
         type="button"
         class="refresh"
@@ -120,6 +129,7 @@ function activity(iso: string | null): string {
           :key="repo.id"
           :repo="repo"
           :now="now"
+          :by-project="byProject"
           :removing="removing === repo.id"
           @remove="remove"
           @changed="refresh"
@@ -138,7 +148,8 @@ function activity(iso: string | null): string {
               <RepoMenu :name="repo.name" :removing="removing === repo.id" item-test="calm-remove" @remove="remove(repo)" />
             </div>
           </div>
-          <RepoControls :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" />
+          <RepoControls :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
+          <RepoWork v-if="byProject && (repo.projects?.length ?? 0) > 1" :repo="repo" :now="now" :by-project="byProject" />
           <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>
         </li>
       </ul>
@@ -185,6 +196,8 @@ h1 {
   font-weight: 700;
   letter-spacing: 0.02em;
 }
+
+.project-switch { display: flex; align-items: center; gap: 8px; margin-left: auto; margin-right: 16px; color: var(--dim); }
 
 .refresh {
   display: inline-flex;

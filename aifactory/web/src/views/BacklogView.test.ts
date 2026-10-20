@@ -376,8 +376,20 @@ describe('BacklogView', () => {
 
   it('opens Nový záměr from the graph without a target, and shows the step of a new project once applied', async () => {
     go('#/r/haifa/backlog/graph/M01-S01')
+    const newGraph = containerGraph({
+      container: {
+        ...containerGraph().container,
+        id: 'M03-S01', title: 'Export', path: 'backlog/M03-reporty/S01-export',
+      },
+      nodes: [{
+        id: 'M03-S01-T01', title: 'Nový', kind: 'task', board_state: 'ready',
+        step: 'M03-S01', external: false,
+      }],
+      edges: [],
+    })
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith('/containers/M01-S01/graph')) return ok(containerGraph())
+      if (url.endsWith('/containers/M03-S01/graph')) return ok(newGraph)
       if (url.endsWith('/containers/M01-S01')) return ok(containerDetail())
       if (url.endsWith('/backlog/intent') && init?.method === 'POST') {
         expect(JSON.parse(String(init.body))).toEqual({ intent: 'Další task' })
@@ -415,6 +427,12 @@ describe('BacklogView', () => {
     await wrapper.get('[data-test="intent-apply"]').trigger('click')
     await flushPromises()
     expect(window.location.hash).toBe('#/r/haifa/backlog/graph/M03-S01')
+    // The native hashchange fires after apply; keep the view mounted through its graph fetch.
+    await vi.waitFor(() => {
+      expect(wrapper.get('[data-test="graph-title"]').text()).toBe('Export')
+      expect(wrapper.get('a[data-node="M03-S01-T01"]').attributes('href')).toBe('#/r/haifa/backlog/M03-S01-T01')
+    })
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/containers/M03-S01/graph')
     expect(fetchMock.mock.calls.map((c) => c[0])).toContain('/api/repos/haifa/backlog/status')
     wrapper.unmount()
   })
