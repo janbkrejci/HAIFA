@@ -5,6 +5,7 @@ import { installOptions, lastFactoryResult } from '@/lib/factory'
 import { useConfirm } from '@/lib/confirm'
 import { useLive } from '@/lib/live'
 import { repoHref } from '@/lib/router'
+import { runningKey, runningLink } from '@/lib/overview'
 import { errorText, plural, shortSha } from '@/lib/format'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
@@ -148,7 +149,7 @@ onBeforeUnmount(() => { disposed = true; ++generation; ++runGeneration; cancel()
     <p v-else-if="!runsKnown">Stav běhů se ověřuje, zápis je zakázaný.</p>
     <div v-if="runs.length" data-test="factory-running">
       <p>V repu běží {{ runs.length }} {{ plural(runs.length, 'běh', 'běhy', 'běhů') }}, počká se, až {{ runs.length === 1 ? 'doběhne' : 'doběhnou' }}.</p>
-      <a v-for="run in runs" :key="run.run_id" :href="repoHref(repoId,'runs',run.run_id)">{{ run.run_id }} </a>
+      <a v-for="run in runs" :key="runningKey(run)" :href="runningLink({ id: repoId }, run)">{{ run.run_id ?? run.task_id }} </a>
     </div>
     <PlanView v-if="plan" :plan="plan" title="Náhled plánu" data-test="factory-plan">
       <p v-if="plan.action === 'pull'">Stáhnout konfiguraci do {{ plan.base }} ({{ shortSha(plan.before) }} → {{ shortSha(plan.after) }}) z {{ plan.remote }}/{{ plan.base }}</p>

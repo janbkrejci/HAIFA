@@ -310,11 +310,11 @@ export function runningKey(run: OverviewRunning): string {
   return run.run_id !== null ? `run:${run.run_id}` : `operation:${run.operation_id ?? run.task_id}`
 }
 
-export function runningLink(repo: OverviewRepo, run: OverviewRunning): string {
+export function runningLink(repo: Pick<OverviewRepo, 'id'>, run: OverviewRunning): string {
   return run.run_id !== null ? runLink(repo, run.run_id) : repoHref(repo.id, 'backlog', run.task_id)
 }
 
-export function runLink(repo: OverviewRepo, runId: string): string {
+export function runLink(repo: Pick<OverviewRepo, 'id'>, runId: string): string {
   return repoHref(repo.id, 'runs', runId)
 }
 

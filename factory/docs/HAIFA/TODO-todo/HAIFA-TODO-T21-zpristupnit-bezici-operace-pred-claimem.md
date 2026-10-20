@@ -13,3 +13,5 @@ Evidence operací neovlivňuje alokaci slotů: rozhodují skutečné živé `tas
 Cílené ověření: `test_task_operation_store.py`, `test_web_launcher.py`, `test_web_overview.py`, `test_web_backlog.py`, `test_parallel_chain.py` a `test_task_publish.py`.
 
 Regresní testy kontrolují přímo řádky `task_operations` po claimu, exitu, chybě publikace a ukončení procesu. Deterministický test timeoutu ProcessRunner ověřuje také ukončení a čekání na proces. Překryv živého běhu s operacemi testuje zachování workflow, fáze, pauzy, ceny a jediného slotu. Frontendové testy ověřují dva pending řádky, jejich taskové odkazy a nahrazení jedné operace skutečným během při změně pořadí.
+
+Také obrazovka Factory používá stejné klíče a odkazy: operace před claimem ukazuje task, skutečný běh jeho run ID. Živá operace zůstává důvodem k čekání před zápisem konfigurace; změna odkazu tento guard neoslabuje.
