@@ -7,9 +7,9 @@ set windows-shell := ["bash", "-cu"]
 default:
     @just --list
 
-# frontend checks, then pytest (args go to pytest)
+# frontend checks, then backend pytest; browsers run separately with e2e
 test *ARGS: web-test
-    cd aifactory && uv run pytest "$@"
+    cd aifactory && uv run pytest -m 'not browser' "$@"
 
 # pytest alone, without the frontend checks (args go to pytest)
 pytest *ARGS:

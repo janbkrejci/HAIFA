@@ -24,10 +24,16 @@ uv sync --project aifactory
 just web-build      # frontend do aifactory/src/aifactory/web/static
 just dash           # dashboard ze zdrojů
 just web-dev        # Vite na :4701 proti běžícímu `just dash`
-just check          # frontend, pytest, mypy, ruff
+just check          # frontend, backendové testy bez browseru, mypy, ruff
 just e2e            # browserové testy (just e2e-install stáhne Chromium)
 just bundle         # aifactory/dist/haifa-<verze>.zip
 ```
+
+Při vývoji spouštěj jen dotčené testy, např. `just pytest tests/web/test_web_fs.py`.
+Pytest vypisuje 20 nejpomalejších kroků. Počet workerů můžeš omezit pomocí `-n 2`
+nebo testy spustit sériově přes `-n0`. Na Windows je výchozí počet jeden worker na
+logické CPU, nejvýše osm. Úplná kontrola je `just check` a `just e2e`;
+browserové testy se tak spustí jen jednou.
 
 Struktura kódu a konvence jsou v [CLAUDE.md](CLAUDE.md), platná rozhodnutí v [docs/decisions.md](docs/decisions.md). Návod pro agenty, kteří HAIFA ovládají, vypíše `factory --skill`.
 

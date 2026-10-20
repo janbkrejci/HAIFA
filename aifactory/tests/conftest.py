@@ -10,7 +10,7 @@
   of optional WMI queries, which can stall or exhaust COM resources in xdist workers.
 - The app and engine modules are imported once, not inside the first test.
 - `-n auto` respects PYTEST_XDIST_AUTO_NUM_WORKERS; otherwise starts 1.5x as many
-  workers as logical CPUs, capped at eight on Windows to limit subprocess pressure.
+  workers as logical CPUs on POSIX, one per CPU (at most eight) on Windows.
 - Approve and auto-merge read CI checks without waiting for them (`review.ci` limits 0).
 - Every test gets `HAIFA_HOME` pointing at a temporary directory (the dashboard writes
   the logs of its run processes there) and fails when the real HAIFA home changed. Logs
@@ -153,11 +153,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 def pytest_xdist_auto_num_workers(config: pytest.Config) -> int:
-    """Respect the xdist override; otherwise use 1.5x CPUs (Windows: at most eight).
+    """Respect the override; Windows avoids oversubscribing CPUs and child processes.
 
-    The tests mostly wait for git and CLI subprocesses (and their I/O), so a few more
-    workers than CPUs finish sooner (measured: 6 workers on 4 logical CPUs 133 s, 4
-    workers 160 s).
+    On four Windows CPUs the web suite took 339 s with six workers and 348 s
+    with four. Four saves about 200 MB of worker memory for 3% more wall time.
+    POSIX keeps 1.5x CPUs for tests waiting on git and CLI subprocesses.
     """
     override = os.environ.get("PYTEST_XDIST_AUTO_NUM_WORKERS")
     if override:
@@ -170,8 +170,8 @@ def pytest_xdist_auto_num_workers(config: pytest.Config) -> int:
         if workers < 0:
             raise pytest.UsageError("PYTEST_XDIST_AUTO_NUM_WORKERS must be a nonnegative integer")
         return workers
-    workers = max(2, (os.cpu_count() or 2) * 3 // 2)
-    return min(workers, 8) if sys.platform == "win32" else workers
+    cpus = os.cpu_count() or 2
+    return min(cpus, 8) if sys.platform == "win32" else max(2, cpus * 3 // 2)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -244,12 +244,23 @@ def _snapshot(root: Path) -> Snapshot:
 @pytest.fixture(autouse=True)
 def _haifa_home(
     _real_haifa_home: Path,
+    _real_haifa_snapshot: Snapshot,
     tmp_path_factory: pytest.TempPathFactory,
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[Path]:
     home = tmp_path_factory.mktemp("haifa-home")
     monkeypatch.setenv(haifa_home_module.HOME_ENV, str(home))
-    before = _snapshot(_real_haifa_home)
     yield home
     after = _snapshot(_real_haifa_home)
-    assert after == before, f"the real HAIFA home {_real_haifa_home} changed"
+    assert after == _real_haifa_snapshot, f"the real HAIFA home {_real_haifa_home} changed"
+
+
+@pytest.fixture(scope="session")
+def _real_haifa_snapshot(_real_haifa_home: Path) -> Snapshot:
+    """One baseline per worker; every test still checks for writes at teardown.
+
+    The real home must stay unchanged throughout the session. Scanning it again
+    before every test doubles the I/O and would accept a previous test's leak as
+    the next test's baseline.
+    """
+    return _snapshot(_real_haifa_home)

@@ -48,7 +48,7 @@ testpaths = ["tests"]
 pythonpath = ["tests", "."]
 # parallel by default (`just test -n0` runs serially; worker count: tests/conftest.py);
 # tests marked xdist_group share a worker and run in file order
-addopts = "-n auto --dist loadgroup"
+addopts = "-n auto --dist loadgroup --durations=20"
 # test tiers: files listed in tests/tiers.py get these markers
 markers = [
     "slow: whole-factory integration test, left out of the fast tier",

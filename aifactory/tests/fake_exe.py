@@ -21,7 +21,7 @@ from pathlib import Path
 
 _RUNNER = """\
 import os, runpy, subprocess, sys
-script = {script!r}
+script = os.path.splitext(os.path.abspath(sys.argv[0]))[0] + ".script"
 if {python!r}:
     sys.argv[0] = script
     runpy.run_path(script, run_name="__main__")
@@ -50,16 +50,23 @@ def _sh() -> str:
     return str(root / "bin" / "sh.exe")
 
 
+@functools.cache
+def _windows_launcher(python: bool) -> bytes:
+    # Keep the executable bytes independent of the test's temporary path. Besides
+    # avoiding rebuilds, this lets Windows reuse its executable scan/cache.
+    runner = _RUNNER.format(python=python, sh="" if python else _sh())
+    archive = io.BytesIO()
+    with zipfile.ZipFile(archive, "w") as zf:
+        # A fixed ZIP timestamp makes separate workers and sessions identical too.
+        zf.writestr(zipfile.ZipInfo("__main__.py"), runner)
+    return _launcher() + f'#!"{sys.executable}"\n'.encode() + archive.getvalue()
+
+
 def _windows_exe(path: Path) -> Path:
     script = path.with_name(path.name + ".script")
     os.replace(path, script)
     first = script.read_text(encoding="utf-8").splitlines()[0] if script.stat().st_size else ""
-    python = "python" in first.lower()
-    runner = _RUNNER.format(script=str(script), python=python, sh="" if python else _sh())
-    archive = io.BytesIO()
-    with zipfile.ZipFile(archive, "w") as zf:
-        zf.writestr("__main__.py", runner)
-    data = _launcher() + f'#!"{sys.executable}"\n'.encode() + archive.getvalue()
+    data = _windows_launcher("python" in first.lower())
     exe = path.with_name(path.name + ".exe")
     if exe.is_file() and exe.read_bytes() == data:
         return exe
