@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T20
 title: Opravit mock grafu nového projektu v testu BacklogView
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T54]
 writes: [aifactory/web/src/views/BacklogView.test.ts]
@@ -19,3 +19,4 @@ Důvod: quality/17_web-tests/command.log hlásí TypeError na BacklogView.vue:21
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · bez změn, běh 4330c36b · už hotovo: aifactory/web/src/views/BacklogView.test.ts:381–394 vytváří newGraph s container, nodes a edges a vrací jej pro /containers/M03-S01/graph., aifactory/web/src/views/BacklogView.test.ts:432–439 používá vi.waitFor pro ověření názvu Export a odkazu nového tasku, kontroluje načtení grafu a teprve poté v… · náklady $0.00
