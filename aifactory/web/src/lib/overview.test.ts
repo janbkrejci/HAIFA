@@ -1,5 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
+  activeRuns,
+  BY_PROJECT_KEY,
+  projectSections,
+  readByProject,
+  writeByProject,
   canPause,
   canResume,
   canStart,
@@ -19,8 +24,8 @@ import {
   urgency,
 } from './overview'
 import { fmtAge, fmtElapsed } from './format'
-import type { OverviewFactory } from './api'
-import { config, factory, failed, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
+import { fetchOverview, type OverviewFactory } from './api'
+import { config, factory, failed, mergedOutside, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
 
 const CALM = repo('calm')
 const RUNS = repo('runs', { running: [running()] })
@@ -30,6 +35,38 @@ const FAILED = repo('failed', { failed: [failed()] })
 const ENDED = repo('ended', { running: [running({ process: 'ended', status_label: 'proces skončil' })] })
 const DIRTY = repo('dirty', { state: 'uncommitted', config: config({ uncommitted: [{ path: '.factory/x' }], clean: false }) })
 const MISSING = repo('missing', { state: 'missing', config: null, has_trace: false, last_activity: null })
+
+describe('fetchOverview projects', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('normalizes omitted projects from an older server to an empty list', async () => {
+    const older = repo('old')
+    delete older.projects
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true, data: overview([older]), error: null, warnings: [],
+    })))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const data = await fetchOverview()
+
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/overview')
+    expect(data.repos[0].projects).toEqual([])
+  })
+
+  it('preserves supplied project identities, titles and task counts', async () => {
+    const projects = [
+      { id: 'A', title: 'Alpha', tasks: tasks({ running: 1, ready: 2 }) },
+      { id: 'B', title: 'Beta', tasks: tasks({ 'in review': 3, done: 4 }) },
+    ]
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      ok: true, data: overview([repo('multi', { projects })]), error: null, warnings: [],
+    }))))
+
+    const data = await fetchOverview()
+
+    expect(data.repos[0].projects).toEqual(projects)
+  })
+})
 
 describe('overview urgency', () => {
   it('orders problems, failures, review, running, automerge, calm', () => {
@@ -180,5 +217,68 @@ describe('overview factory controls', () => {
   it('keeps a repo whose stop goes on out of the calm list', () => {
     expect(urgency(repo('a', { factory: stop({ pending: ['x'] }) }))).toBe('running')
     expect(urgency(repo('a', { factory: stop({ finished_at: 'now' }) }))).toBe('calm')
+  })
+})
+
+
+describe('overview projects', () => {
+  it.each(['merged_outside', 'auto_actions'] as const)(
+    'does not create an unassigned section for repo-wide %s', (list) => {
+      const r = repo('multi', {
+        projects: [
+          { id: 'A', title: 'Alpha', tasks: tasks() },
+          { id: 'B', title: 'Beta', tasks: tasks() },
+        ],
+        merged_outside: list === 'merged_outside' ? [mergedOutside({ project: null })] : [],
+        auto_actions: list === 'auto_actions' ? [{
+          project: null, at: '2026-10-06T09:58:00Z', action: 'retry',
+          failure_kind: 'process_gone', task_id: 'T01', run_id: 'run-1',
+          ok: true, text: 'Factory zopakovala běh',
+        }] : [],
+      })
+
+      expect(projectSections(r).map((s) => s.id)).toEqual(['A', 'B'])
+      expect(r[list]).toHaveLength(1)
+    },
+  )
+
+  it('splits all work lists, retaining ended runs and unassigned rows', () => {
+    const r = repo('multi', {
+      projects: [{ id: 'A', title: 'Alpha', tasks: tasks({ running: 1 }) }, { id: 'B', title: 'Beta', tasks: tasks({ ready: 2 }) }],
+      running: [running({ project: 'A' }), running({ run_id: 'ended', project: 'B', process: 'ended' })],
+      review: [review({ project: 'B' }), review({ task_id: 'legacy' })],
+      automerge: [review({ project: 'A' })],
+      failed: [failed({ project: null })],
+    })
+    const sections = projectSections(r)
+    expect(sections.map((s) => s.title)).toEqual(['Alpha', 'Beta', 'Bez projektu'])
+    expect(activeRuns(sections[0].repo).map((r) => r.run_id)).toEqual(['run-1'])
+    expect(sections[0].repo.automerge).toEqual(r.automerge)
+    expect(sections[1].repo.review.map((r) => r.task_id)).toEqual(['M01-S01-T02'])
+    expect(failedRows(sections[1].repo)[0].run_id).toBe('ended')
+    expect(sections[2].repo.review[0].task_id).toBe('legacy')
+    expect(sections[2].repo.failed).toEqual(r.failed)
+    expect(sections[0].repo.tasks).toEqual(r.projects![0].tasks)
+    expect(projectSections(repo('empty', { projects: r.projects }))).toHaveLength(2)
+    expect(r.running).toHaveLength(2)
+  })
+
+  it('defaults to enabled and remembers either choice', () => {
+    localStorage.removeItem(BY_PROJECT_KEY)
+    expect(readByProject()).toBe(true)
+    writeByProject(false)
+    expect(readByProject()).toBe(false)
+    writeByProject(true)
+    expect(readByProject()).toBe(true)
+    localStorage.removeItem(BY_PROJECT_KEY)
+  })
+
+  it('works when browser storage rejects access', () => {
+    const get = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    const set = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    expect(readByProject()).toBe(true)
+    expect(() => writeByProject(false)).not.toThrow()
+    get.mockRestore()
+    set.mockRestore()
   })
 })

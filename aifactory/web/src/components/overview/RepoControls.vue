@@ -9,11 +9,12 @@ import { controlErrors, controlStatus, stateClass, taskSummary } from '@/lib/ove
 import Spinner from '@/components/ui/Spinner.vue'
 import { NO_FEEDBACK, type ControlFeedback } from './feedback'
 
-const props = withDefaults(defineProps<{ repo: OverviewRepo; feedback?: ControlFeedback }>(), {
+const props = withDefaults(defineProps<{ repo: OverviewRepo; feedback?: ControlFeedback; showSummary?: boolean }>(), {
   feedback: () => NO_FEEDBACK,
+  showSummary: true,
 })
 
-const summary = computed(() => taskSummary(props.repo))
+const summary = computed(() => props.showSummary ? taskSummary(props.repo) : [])
 const status = computed(() => controlStatus(props.repo))
 const errors = computed(() => controlErrors(props.repo))
 const factory = computed(() => props.repo.factory ?? null)
@@ -21,6 +22,7 @@ const anything = computed(
   () =>
     status.value !== null ||
     summary.value.length > 0 ||
+    factory.value !== null ||
     errors.value.length > 0 ||
     props.feedback.message !== null ||
     props.feedback.error !== null,

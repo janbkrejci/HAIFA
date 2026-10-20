@@ -7,23 +7,23 @@
 // link to the sync PR that is already open; the sync PR is never opened automatically.
 import { computed, ref } from 'vue'
 import { backlogSync, type OverviewRepo } from '@/lib/api'
-import { errorText, fmtAge, fmtCost, fmtElapsed, fmtTime, ts } from '@/lib/format'
-import { activeRuns, automergePrs, failedRows, problems, reviewLink, runLink } from '@/lib/overview'
+import { errorText, fmtAge, fmtTime, ts } from '@/lib/format'
+import { problems, runLink } from '@/lib/overview'
 import { repoHref } from '@/lib/router'
 import RepoActions from './RepoActions.vue'
 import RepoControls from './RepoControls.vue'
+import RepoWork from './RepoWork.vue'
 import RepoMenu from './RepoMenu.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import { NO_FEEDBACK, type ControlFeedback } from './feedback'
 
-const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removing?: boolean }>(), {
+const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removing?: boolean; byProject?: boolean }>(), {
   removing: false,
+  byProject: false,
 })
 const emit = defineEmits<{ remove: [repo: OverviewRepo]; changed: [] }>()
 
-const running = computed(() => activeRuns(props.repo))
-const failed = computed(() => failedRows(props.repo))
 const autoActions = computed(() => props.repo.auto_actions ?? [])
 const configProblems = computed(() => problems(props.repo).filter((p) => p.href !== null))
 const stateProblems = computed(() => problems(props.repo).filter((p) => p.href === null))
@@ -37,7 +37,6 @@ function since(iso: string | null | undefined): number | null {
 const feedback = ref<ControlFeedback>(NO_FEEDBACK)
 
 const mergedOutside = computed(() => props.repo.merged_outside ?? [])
-const automerge = computed(() => automergePrs(props.repo))
 const syncing = ref(false)
 const syncError = ref<string | null>(null)
 const syncUrl = ref<string | null>(null)
@@ -58,9 +57,6 @@ async function onSync() {
   }
 }
 
-function reviewAge(opened: string | null, ageS: number | null): string {
-  return fmtAge(since(opened) ?? ageS)
-}
 </script>
 
 <template>
@@ -75,115 +71,45 @@ function reviewAge(opened: string | null, ageS: number | null): string {
       </div>
     </header>
 
-    <RepoControls :repo="repo" :feedback="feedback" />
+    <RepoControls :repo="repo" :feedback="feedback" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
 
-    <section v-if="running.length" class="group">
-      <h3>Běží</h3>
-      <a
-        v-for="run in running"
-        :key="run.run_id"
-        :href="runLink(repo, run.run_id)"
-        class="row"
-        data-test="row-running"
-        :data-run="run.run_id"
-      >
-        <span class="task mono">{{ run.task_id }}</span>
-        <span class="title">{{ run.task_title ?? '' }}</span>
-        <span class="meta">{{ run.workflow ?? '—' }}</span>
-        <span class="meta" data-test="row-phase">
-          <template v-if="run.phase">{{ run.phase.name }}<template v-if="run.phase.attempt"> · pokus {{ run.phase.attempt }}</template></template>
-          <template v-else>—</template>
-        </span>
-        <span class="meta mono" data-test="row-elapsed">{{ fmtElapsed(since(run.started_at)) }}</span>
-        <span class="meta mono" data-test="row-cost">{{ fmtCost(run.cost) }}</span>
-      </a>
-    </section>
+    <RepoWork :repo="repo" :now="now" :by-project="byProject">
 
-    <section v-if="repo.review.length" class="group">
-      <h3>Čeká na review</h3>
-      <a
-        v-for="pr in repo.review"
-        :key="pr.task_id"
-        :href="reviewLink(repo, pr.task_id)"
-        class="row"
-        data-test="row-review"
-        :data-task="pr.task_id"
-      >
-        <span class="task mono">{{ pr.task_id }}</span>
-        <span class="title">{{ pr.task_title ?? '' }}</span>
-        <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
-        <span class="meta" data-test="row-age">{{ reviewAge(pr.opened_at, pr.age_s) }}</span>
-        <span class="meta faint">podle trace</span>
-      </a>
-    </section>
-
-    <section v-if="automerge.length" class="group" data-test="automerge">
-      <h3>Čeká na automerge PR</h3>
-      <a
-        v-for="pr in automerge"
-        :key="pr.task_id"
-        :href="reviewLink(repo, pr.task_id)"
-        class="row"
-        data-test="row-automerge"
-        :data-task="pr.task_id"
-      >
-        <span class="task mono">{{ pr.task_id }}</span>
-        <span class="title">{{ pr.task_title ?? '' }}</span>
-        <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
-        <span class="meta" data-test="row-age">{{ reviewAge(pr.opened_at, pr.age_s) }}</span>
-        <span class="meta faint">podle trace</span>
-      </a>
-    </section>
-
-    <section v-if="mergedOutside.length" class="group" data-test="merged-outside">
-      <h3>Sloučeno mimo factory</h3>
-      <a
-        v-for="pr in mergedOutside"
-        :key="pr.task_id"
-        :href="pr.url ?? undefined"
-        target="_blank"
-        rel="noopener"
-        class="row"
-        data-test="row-merged-outside"
-        :data-task="pr.task_id"
-      >
-        <span class="task mono">{{ pr.task_id }}</span>
-        <span class="title">{{ pr.task_title ?? '' }}</span>
-        <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
-      </a>
-      <div class="sync">
-        <a v-if="syncPrUrl" :href="syncPrUrl" target="_blank" rel="noopener" data-test="sync-pr-link">Sync PR čeká na merge</a>
-        <button
-          v-else
-          type="button"
-          data-test="sync-open"
-          :disabled="syncing"
-          :aria-busy="syncing || undefined"
-          @click="onSync"
+      <section v-if="mergedOutside.length" class="group" data-test="merged-outside">
+        <h3>Sloučeno mimo factory</h3>
+        <a
+          v-for="pr in mergedOutside"
+          :key="pr.task_id"
+          :href="pr.url ?? undefined"
+          target="_blank"
+          rel="noopener"
+          class="row"
+          data-test="row-merged-outside"
+          :data-task="pr.task_id"
         >
-          <Spinner v-if="syncing" /> Otevřít sync PR
-        </button>
-        <span v-if="syncError" class="sync-error" data-test="sync-error">{{ syncError }}</span>
-      </div>
-    </section>
+          <span class="task mono">{{ pr.task_id }}</span>
+          <span class="title">{{ pr.task_title ?? '' }}</span>
+          <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
+        </a>
+        <div class="sync">
+          <a v-if="syncPrUrl" :href="syncPrUrl" target="_blank" rel="noopener" data-test="sync-pr-link">Sync PR čeká na merge</a>
+          <button
+            v-else
+            type="button"
+            data-test="sync-open"
+            :disabled="syncing"
+            :aria-busy="syncing || undefined"
+            @click="onSync"
+          >
+            <Spinner v-if="syncing" /> Otevřít sync PR
+          </button>
+          <span v-if="syncError" class="sync-error" data-test="sync-error">{{ syncError }}</span>
+        </div>
+      </section>
 
-    <section v-if="failed.length" class="group">
-      <h3>Selhalo</h3>
-      <a
-        v-for="row in failed"
-        :key="row.run_id"
-        :href="runLink(repo, row.run_id)"
-        class="row failed"
-        data-test="row-failed"
-        :data-run="row.run_id"
-      >
-        <span class="task mono">{{ row.task_id }}</span>
-        <span class="title">{{ row.task_title ?? '' }}</span>
-        <span class="error" data-test="row-error">{{ row.label ?? row.error ?? 'bez chyby' }}</span>
-      </a>
-    </section>
+    </RepoWork>
 
     <section v-if="autoActions.length" class="group">
       <h3>Factory zasáhla sama</h3>
