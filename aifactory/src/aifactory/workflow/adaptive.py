@@ -41,7 +41,9 @@ from aifactory.workflow.parse import outline, parse_workflow
 install()
 
 # Board states of a task that the workflow advice is not offered for.
-ADVICE_CLOSED_STATES = frozenset({"running", "in review", "awaiting merge", "done", "cancelled"})
+ADVICE_CLOSED_STATES = frozenset(
+    {"running", "in review", "approved", "awaiting merge", "done", "cancelled"}
+)
 
 
 class WorkflowRecommendationOutput(EnvelopeBase):

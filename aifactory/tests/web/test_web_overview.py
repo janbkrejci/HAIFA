@@ -153,7 +153,7 @@ def test_overview_of_repos_with_and_without_trace_and_a_missing_folder(
 
     p = repos["plain"]
     assert p["has_trace"] is False
-    assert p["running"] == p["review"] == p["failed"] == []
+    assert p["running"] == p["review"] == p["approved"] == p["failed"] == []
     assert p["config"] is not None and p["config"]["installed"] is True
     assert p["state"] == "ok"
     assert p["projects"] == [{"id": "M01", "title": "Core", "tasks": p["tasks"]}]
@@ -168,6 +168,7 @@ def test_overview_of_repos_with_and_without_trace_and_a_missing_folder(
         "repos": 4,
         "running": 4,
         "review": 2,
+        "approved": 0,
         "automerge": 0,
         "failed": 2,
         "merged_outside": 0,
@@ -415,6 +416,7 @@ def test_task_summary_counts_tasks_per_board_state(repo_a: Path, tmp_path: Path)
         "blocked": 0,
         "running": 2,
         "in review": 1,
+        "approved": 0,
         "awaiting merge": 0,
         "done": 1,
         "cancelled": 1,
@@ -479,6 +481,7 @@ def test_trace_db_without_publication_columns(
     expected = dict.fromkeys(BOARD_STATES, 0) | {
         "running": 3,
         "in review": 1,
+        "approved": 0,
         "done": 1,
         "cancelled": 1,
     }
@@ -1102,3 +1105,35 @@ def test_overview_lists_the_automatic_actions_of_chains(repo_a: Path, tmp_path: 
     assert [x["chain_id"] for x in actions] == ["c-new", "c-old"]
     assert actions[0]["task_title"] is not None
     assert all(action["project"] == "M01" for action in actions)
+
+
+@pytest.mark.parametrize("error", [None, "checks_failing: ci"])
+def test_manually_approved_pr_overview(repo_a: Path, tmp_path: Path, error: str | None) -> None:
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.update_pr(
+            f"factory/{T_REV}-r-rev", approved_at="2026-01-07T10:00:00Z", auto_merge_error=error
+        )
+    finally:
+        store.close()
+    home = tmp_path / "home"
+    register(home, repo_a)
+    data = _get(_client(home, tmp_path))
+    [item] = data["repos"]
+    expected = "approved" if error is None else "review"
+    assert [pr["task_id"] for pr in item[expected]] == [T_REV]
+    assert item["review" if error is None else "approved"] == []
+    assert item[expected][0]["project"] == "M01"
+    assert item["factory"]["in_review"] == 1
+    assert data["totals"]["approved"] == (1 if error is None else 0)
+    assert item["tasks"]["approved"] == (1 if error is None else 0)
+
+
+def test_trace_db_without_approved_at(repo_a: Path, tmp_path: Path) -> None:
+    with sqlite3.connect(_db(repo_a)) as conn:
+        conn.execute("ALTER TABLE task_prs DROP COLUMN approved_at")
+    item = _repo_item(repo_a, tmp_path)
+    assert item["warnings"] == []
+    assert item["approved"] == []
+    assert [pr["task_id"] for pr in item["review"]] == [T_REV]
+    assert item["tasks"]["in review"] == 1

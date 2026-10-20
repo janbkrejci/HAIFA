@@ -7,7 +7,8 @@ Reads the open pull requests from ``task_prs`` in the trace DB (a missing trace 
 created), the title and project (top level) of each task from the backlog of the main
 checkout, the mergeability from the git provider and the costs, gates, tests and the
 reviewer's verdict from the trace. An open PR without a running run is ``awaiting_review``
-(by the user) or ``awaiting_automerge`` (the factory merges it by itself,
+(by the user), ``approved`` (manually approved and waiting for CI), or ``awaiting_automerge``
+(the factory merges it by itself,
 ``web.backlog.waits_for_automerge``). Listing never writes the provider state into
 ``task_prs``; the actions do, through the core functions.
 
@@ -165,7 +166,8 @@ def _pr_summary(ctx: _Ctx, store: TaskRunStore, row: TaskPrRow) -> JsonDict:
     cost, tokens = branch_cost(store.db_path, [r.run_id for r in runs])
     last = runs[0] if runs else None
     waiting = status.state == OPEN and running is None
-    automerge = waiting and waits_for_automerge(task, row.auto_merge_error)
+    approved = waiting and bool(row.approved_at) and not row.auto_merge_error
+    automerge = waiting and not approved and waits_for_automerge(task, row.auto_merge_error)
     return {
         "task_id": row.task_id,
         "task_title": None if task is None else task.title,
@@ -173,7 +175,9 @@ def _pr_summary(ctx: _Ctx, store: TaskRunStore, row: TaskPrRow) -> JsonDict:
         "provider_state": status.state,
         "mergeability": status.mergeability,
         "running_run": running,
-        "awaiting_review": waiting and not automerge,
+        "approved": approved,
+        "approved_at": row.approved_at,
+        "awaiting_review": waiting and not approved and not automerge,
         "awaiting_automerge": automerge,
         "cost": cost,
         "tokens": tokens,
@@ -231,7 +235,9 @@ def review_list(repo: Path, include_done: bool = False) -> tuple[JsonDict, list[
                 seen.add(row.task_id)
                 items.append(_pr_summary(ctx, store, row))
         items.sort(key=lambda i: i["_row"].created_at, reverse=True)
-        items.sort(key=lambda i: (not i["awaiting_review"], not i["awaiting_automerge"]))
+        items.sort(
+            key=lambda i: (not i["awaiting_review"], not i["approved"], not i["awaiting_automerge"])
+        )
         prs: list[JsonDict] = []
         for item in items:
             row = item.pop("_row")

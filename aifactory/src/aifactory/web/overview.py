@@ -4,7 +4,8 @@ For each repository of the registry the overview returns ``running`` (runs in th
 state with their running phase, attempt, start and cost so far), ``review`` (open task PRs of
 ``task_prs`` for tasks without an active run that are neither ``done`` nor ``cancelled`` in the
 backlog and that wait for the user; ``source: trace`` says they come from the trace, not from
-the hosting), ``automerge`` (the same kind of open PR, but the factory merges it by itself:
+the hosting), ``approved`` (manually approved open PRs waiting for CI without an
+``auto_merge_error``), ``automerge`` (the same kind of open PR, but the factory merges it by itself:
 the task has an effective ``auto_merge`` and the PR no ``auto_merge_error``,
 ``web.backlog.waits_for_automerge``),
 ``merged_outside`` (tasks without an active run whose newest PR is merged, that are neither
@@ -20,10 +21,11 @@ the repository's auto-continue chains after a failure, newest first: ``task_chai
 shared configuration, D4),
 ``last_activity`` and ``warnings``; ``totals`` sums them up. Every item of ``running`` has
 ``pause`` (``null``, ``pausing`` or ``paused``; ``null`` for a trace DB without the column).
-Every item of ``running``, ``review``, ``automerge``, ``failed``, ``merged_outside`` and
-``auto_actions`` has ``project``: its task's top ancestor id, or ``null`` for an unknown task
-or a backlog with fewer than three levels. ``projects`` lists ``{id, title, tasks}`` in
-backlog project order, with the same board-state counts as the repository's ``tasks``.
+Every item of ``running``, ``review``, ``approved``, ``automerge``, ``failed``,
+``merged_outside`` and ``auto_actions`` has ``project``: its task's top ancestor id, or
+``null`` for an unknown task or a backlog with fewer than three levels.
+``projects`` lists ``{id, title, tasks}`` in backlog project order, with the same
+board-state counts as the repository's ``tasks``.
 It is empty without project levels or a readable backlog, including stub repositories.
 
 ``tasks`` counts the backlog's tasks per kanban board state (``web.backlog.BOARD_STATES``,
@@ -31,7 +33,8 @@ every state present, zeros included), computed by ``board_state`` from the trace
 here: a task with a running row (even an ended process awaiting reaping), or a successful
 run awaiting publication/completion without a publication error, is ``running``. A merged
 PR is ``done`` until recorded in the task's history (a reopened task). One with an open PR is
-``awaiting merge`` when the factory merges it by itself, otherwise ``in review``. ``factory``
+``approved`` after manual approval while waiting for CI, ``awaiting merge`` when the
+factory merges it by itself, otherwise ``in review``. ``factory``
 is what the Overview's factory controls need (``control.py``):
 ``max_parallel_runs`` (``.factory/config.yaml`` of the main checkout; ``null`` when invalid),
 ``running`` (running rows whose process did not end), ``in_review`` (tasks with an open PR
@@ -285,9 +288,10 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
         columns = _columns(conn, "task_prs")
         merged = "merged_at" if "merged_at" in columns else "NULL AS merged_at"
         error = "auto_merge_error" if "auto_merge_error" in columns else "NULL AS auto_merge_error"
+        approved = "approved_at" if "approved_at" in columns else "NULL AS approved_at"
         prs = conn.execute(
             "SELECT rowid, branch, task_id, pr_id, url, state, created_at, updated_at, "
-            f"{merged}, {error} FROM task_prs"
+            f"{merged}, {error}, {approved} FROM task_prs"
         ).fetchall()
     if _has_table(conn, "sync_prs"):
         sync_prs = conn.execute(
@@ -456,6 +460,7 @@ def _lists(
         if pr["task_id"] not in active and not _closed(tasks, pr["task_id"])
     ]
     review: list[JsonDict] = []
+    approved: list[JsonDict] = []
     automerge: list[JsonDict] = []
     for pr in sorted(open_prs, key=lambda p: p["created_at"] or "", reverse=True):
         opened = _time(pr["created_at"])
@@ -464,7 +469,8 @@ def _lists(
         merges = waits_for_automerge(
             task if isinstance(task, Task) else None, pr["auto_merge_error"]
         )
-        (automerge if merges else review).append(
+        waiting = bool(pr["approved_at"] and not pr["auto_merge_error"])
+        (approved if waiting else automerge if merges else review).append(
             {
                 "task_id": pr["task_id"],
                 "task_title": title(pr["task_id"]),
@@ -514,6 +520,7 @@ def _lists(
     lists: JsonDict = {
         "running": running,
         "review": review,
+        "approved": approved,
         "automerge": automerge,
         "failed": failed,
         "auto_actions": [
@@ -523,7 +530,15 @@ def _lists(
         "merged_outside": _merged_outside(trace, tasks, active, root),
         "sync_pr": _sync_pr(trace),
     }
-    for key in ("running", "review", "automerge", "failed", "merged_outside", "auto_actions"):
+    for key in (
+        "running",
+        "review",
+        "approved",
+        "automerge",
+        "failed",
+        "merged_outside",
+        "auto_actions",
+    ):
         for item in lists[key]:
             item["project"] = _project_id(backlog, item.get("task_id"))
     return lists, (last[1] if last else None)
@@ -676,6 +691,7 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         "has_trace": False,
         "running": [],
         "review": [],
+        "approved": [],
         "automerge": [],
         "failed": [],
         "auto_actions": [],
@@ -779,6 +795,7 @@ class Overview:
             "repos": len(repos),
             "running": sum(len(r["running"]) for r in repos),
             "review": sum(len(r["review"]) for r in repos),
+            "approved": sum(len(r["approved"]) for r in repos),
             "automerge": sum(len(r["automerge"]) for r in repos),
             "failed": sum(len(r["failed"]) for r in repos),
             "merged_outside": sum(len(r["merged_outside"]) for r in repos),

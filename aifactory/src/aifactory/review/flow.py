@@ -294,12 +294,24 @@ def approve_task(
     the PR open with the reason in ``task_prs.auto_merge_error`` and raise ``ReviewError``.
     """
     ctx = _context(repo, provider)
+    row = ctx.store.latest_pr(task_id) if merged_by == MERGED_BY_OPERATOR else None
     try:
-        result = _approve_gated(repo, ctx, task_id, merged_by, code)
-    except ProviderError as exc:
-        raise ReviewError(exc.code, exc.message) from exc
-    except RuntimeError as exc:
-        raise ReviewError("worktree_failed", str(exc)) from exc
+        if row is not None and row.state == OPEN:
+            ctx.store.update_pr(row.branch, approved_at=_now(), auto_merge_error=None)
+        try:
+            result = _approve_gated(repo, ctx, task_id, merged_by, code)
+        except ProviderError as exc:
+            raise ReviewError(exc.code, exc.message) from exc
+        except RuntimeError as exc:
+            raise ReviewError("worktree_failed", str(exc)) from exc
+    except ReviewError as exc:
+        if row is not None:
+            saved = ctx.store.pr_for_branch(row.branch)
+            if saved is not None and saved.state == OPEN:
+                ctx.store.update_pr(
+                    row.branch, approved_at=None, auto_merge_error=f"{exc.code}: {exc.message}"
+                )
+        raise
     finally:
         ctx.store.close()
     # Local import: review.stack resolves and merges through this module.
@@ -327,7 +339,10 @@ def _approve_gated(
         row = prepared.row
 
         def stop(code_: str, reason: str, row: TaskPrRow = row) -> ReviewError:
-            ctx.store.update_pr(row.branch, auto_merge_error=f"{code_}: {reason}")
+            fields: dict[str, object] = {"auto_merge_error": f"{code_}: {reason}"}
+            if merged_by == MERGED_BY_OPERATOR:
+                fields["approved_at"] = None
+            ctx.store.update_pr(row.branch, **fields)
             return ReviewError(code_, reason)
 
         try:

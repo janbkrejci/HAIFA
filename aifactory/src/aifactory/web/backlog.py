@@ -11,6 +11,7 @@ changes to ``base``.
 Board states (the kanban columns), first match wins: ``done``, ``cancelled``,
 ``running`` (a running row or a successful run awaiting publication/completion),
 ``done`` (a merged PR not recorded in the reopened task's history),
+``approved`` (a manually approved open PR waiting for CI),
 ``awaiting merge`` (an open PR the factory
 merges by itself, see ``waits_for_automerge``), ``in review`` (any other open PR: it waits
 for the user), ``blocked``, ``human`` (a person's task, ``assignee: human``), ``ready``
@@ -60,6 +61,7 @@ BOARD_STATES: tuple[str, ...] = (
     "blocked",
     "running",
     "in review",
+    "approved",
     "awaiting merge",
     "done",
     "cancelled",
@@ -110,6 +112,7 @@ AUTO_MODES: dict[str, bool | None] = {"on": True, "off": False, "inherit": None}
 class _Runtime:
     running: set[str] = field(default_factory=set)
     in_review: set[str] = field(default_factory=set)
+    approved: set[str] = field(default_factory=set)
     # tasks whose newest open PR has an auto_merge_error (auto-merge gave up on it)
     merge_blocked: set[str] = field(default_factory=set)
     last_run: dict[str, str] = field(default_factory=dict)
@@ -190,6 +193,8 @@ def _display_runtime(runs: list[sqlite3.Row], prs: list[sqlite3.Row]) -> _Runtim
         rt.in_review.add(pr["task_id"])
         if pr["auto_merge_error"]:
             rt.merge_blocked.add(pr["task_id"])
+        elif pr["approved_at"]:
+            rt.approved.add(pr["task_id"])
     for run in runs:  # newest first; an older success must not hide a newer failure
         task_id = run["task_id"]
         if task_id in rt.last_run:
@@ -238,6 +243,8 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
     if task.id in rt.merged and _merged_unrecorded(backlog.root, task.path, rt.merged[task.id]):
         return "done"
     if task.id in rt.in_review:
+        if task.id in rt.approved:
+            return "approved"
         error = "auto_merge_error" if task.id in rt.merge_blocked else None
         return "awaiting merge" if waits_for_automerge(task, error) else "in review"
     state = core.derived_state(backlog, task)

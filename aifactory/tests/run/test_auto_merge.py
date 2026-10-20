@@ -793,19 +793,42 @@ def test_store_adds_the_new_columns(tmp_path: Path) -> None:
     conn.commit()
     conn.close()
 
+    approved_at = "2026-01-07T10:00:00+00:00"
+    error = "checks_pending: ci"
     store = TaskRunStore(db)
     try:
         row = store.pr_for_branch("factory/T-1")
-        assert row is not None and row.merged_by is None and row.auto_merge_error is None
-        store.update_pr("factory/T-1", merged_by=MERGED_BY_OPERATOR)
+        assert row is not None
+        assert row.merged_by is None and row.auto_merge_error is None and row.approved_at is None
+        store.update_pr(
+            "factory/T-1",
+            merged_by=MERGED_BY_OPERATOR,
+            auto_merge_error=error,
+            approved_at=approved_at,
+        )
         again = store.pr_for_branch("factory/T-1")
-        assert again is not None and again.merged_by == MERGED_BY_OPERATOR
+        assert again is not None
+        assert (again.merged_by, again.auto_merge_error, again.approved_at) == (
+            MERGED_BY_OPERATOR,
+            error,
+            approved_at,
+        )
     finally:
         store.close()
-    TaskRunStore(db).close()  # opening an up-to-date DB again changes nothing
-    columns = [r[1] for r in sqlite3.connect(db).execute("PRAGMA table_info(task_prs)")]
-    assert columns[-2:] == ["merged_by", "auto_merge_error"]
-    assert json.dumps(columns)  # plain strings
+    store = TaskRunStore(db)  # opening an up-to-date DB again preserves the values
+    try:
+        reopened = store.pr_for_branch("factory/T-1")
+        assert reopened is not None
+        assert (reopened.merged_by, reopened.auto_merge_error, reopened.approved_at) == (
+            MERGED_BY_OPERATOR,
+            error,
+            approved_at,
+        )
+        columns = [r[1] for r in store.conn.execute("PRAGMA table_info(task_prs)")]
+        assert {"merged_by", "auto_merge_error", "approved_at"} <= set(columns)
+        assert json.dumps(columns)  # plain strings
+    finally:
+        store.close()
 
 
 def test_store_adds_started_by_to_older_runs(tmp_path: Path) -> None:

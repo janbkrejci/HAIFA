@@ -206,6 +206,19 @@ def test_list_orders_review_before_automerge(
     # the newer T02 waits for auto-merge, the older T01 for review
     _check(client.post(f"/api/backlog/tasks/{T02}/edit", json={"auto_merge": True}), 200)
     assert list(_pr_waits(client).items()) == [(T01, (True, False)), (T02, (False, True))]
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        store.update_pr(BRANCH1, approved_at="2026-01-07T10:00:00Z")
+    finally:
+        store.close()
+    assert list(_pr_waits(client).items()) == [(T01, (False, False)), (T02, (False, True))]
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        store.update_pr(BRANCH1, approved_at=None)
+        store.update_pr(BRANCH2, approved_at="2026-01-07T10:00:00Z")
+    finally:
+        store.close()
+    assert list(_pr_waits(client).items()) == [(T01, (True, False)), (T02, (False, False))]
 
 
 def test_list_without_trace_db_is_empty(client: TestClient) -> None:
@@ -477,3 +490,54 @@ def test_backlog_sync_error_is_mapped(client: TestClient, monkeypatch: pytest.Mo
     monkeypatch.setattr(aifactory.review.sync, "sync_backlog", fail)
     body = _check(client.post("/api/backlog/sync"), 409)
     assert body["error"]["code"] == "sync_on_base"
+
+
+@pytest.mark.parametrize("error", [None, "checks_pending: ci"])
+def test_manually_approved_pr_list_and_detail(
+    client: TestClient, repo: Path, script: Script, error: str | None
+) -> None:
+    first_run(repo, script)
+    stamp = "2026-01-07T10:00:00Z"
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        store.update_pr(BRANCH1, approved_at=stamp, auto_merge_error=error)
+    finally:
+        store.close()
+    [item] = _check(client.get("/api/review"), 200)["data"]["prs"]
+    detail = _check(client.get(f"/api/review/{T01}"), 200)["data"]
+    for result in (item, detail):
+        assert result["approved"] is (error is None)
+        assert result["approved_at"] == stamp
+        assert result["awaiting_review"] is (error is not None)
+        assert result["awaiting_automerge"] is False
+    assert detail["actions"]["approve"] is True
+
+
+@pytest.mark.parametrize(
+    "missing_columns", [("approved_at",), ("merged_by", "auto_merge_error", "approved_at")]
+)
+def test_review_migrates_database_without_approved_at(
+    client: TestClient, repo: Path, script: Script, missing_columns: tuple[str, ...]
+) -> None:
+    first_run(repo, script)
+    with sqlite3.connect(repo / ".factory" / "trace.db") as conn:
+        for column in missing_columns:
+            conn.execute(f"ALTER TABLE task_prs DROP COLUMN {column}")
+    [item] = _check(client.get("/api/review"), 200)["data"]["prs"]
+    assert item["approved"] is False
+    assert item["approved_at"] is None
+    assert item["awaiting_review"] is True
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        store.update_pr(BRANCH1, approved_at="2026-01-07T10:00:00Z")
+        row = store.latest_pr(T01)
+        assert row is not None and row.approved_at == "2026-01-07T10:00:00Z"
+        assert row.merged_by is None and row.auto_merge_error is None
+    finally:
+        store.close()
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        row = store.latest_pr(T01)
+        assert row is not None and row.approved_at == "2026-01-07T10:00:00Z"
+    finally:
+        store.close()
