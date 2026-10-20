@@ -28,7 +28,9 @@ It is empty without project levels or a readable backlog, including stub reposit
 
 ``tasks`` counts the backlog's tasks per kanban board state (``web.backlog.BOARD_STATES``,
 every state present, zeros included), computed by ``board_state`` from the trace rows read
-here: a task with a running row whose process did not end is ``running``, one with an open PR
+here: a task with a running row (even an ended process awaiting reaping), or a successful
+run awaiting publication/completion without a publication error, is ``running``. A merged
+PR is ``done`` until recorded in the task's history (a reopened task). One with an open PR is
 ``awaiting merge`` when the factory merges it by itself, otherwise ``in review``. ``factory``
 is what the Overview's factory controls need (``control.py``):
 ``max_parallel_runs`` (``.factory/config.yaml`` of the main checkout; ``null`` when invalid),
@@ -74,9 +76,16 @@ from typing import Any, TypeVar
 from urllib.parse import quote
 
 from aifactory import database, failure, oscompat
-from aifactory.backlog import Backlog, Task, TaskEditError, iter_tasks, load_for_edit
+from aifactory.backlog import (
+    Backlog,
+    Task,
+    TaskEditError,
+    derived_state,
+    effective_workflow,
+    iter_tasks,
+    load_for_edit,
+)
 from aifactory.backlog.derived import ancestors
-from aifactory.backlog.taskfile import has_entry
 from aifactory.config import ConfigError
 from aifactory.config.loader import load_config
 from aifactory.config.repo_state import repo_state
@@ -84,7 +93,14 @@ from aifactory.config.source import CommitSource
 from aifactory.config.status import config_changes
 from aifactory.run.gitops import repo_layout
 from aifactory.run.queue import Slots
-from aifactory.web.backlog import BOARD_STATES, _Runtime, board_state, waits_for_automerge
+from aifactory.web.backlog import (
+    BOARD_STATES,
+    _display_runtime,
+    _merged_unrecorded,
+    _newest_prs,
+    board_state,
+    waits_for_automerge,
+)
 from aifactory.web.chains import max_parallel_runs_in
 from aifactory.web.config_cache import CONFIG_TTL as CONFIG_TTL
 from aifactory.web.config_cache import ConfigCache
@@ -117,6 +133,15 @@ STARTABLE_STATES = frozenset({"ok", "uncommitted"})
 class _Tasks:
     index: TaskIndex
     backlog: Backlog | None
+    stamps: dict[str, tuple[int, int] | None] = field(default_factory=dict)
+
+
+def _task_stamp(root: Path, path: str) -> tuple[int, int] | None:
+    try:
+        stat = (root / path).stat()
+        return stat.st_mtime_ns, stat.st_size
+    except OSError:
+        return None
 
 
 def _time(value: object) -> datetime | None:
@@ -245,9 +270,12 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
         run_columns = _columns(conn, "task_runs")
         pause = "pause" if "pause" in run_columns else "NULL AS pause"
         kind = "failure_kind" if "failure_kind" in run_columns else "NULL AS failure_kind"
+        branch = "branch" if "branch" in run_columns else "NULL AS branch"
+        pr_error = "pr_error" if "pr_error" in run_columns else "NULL AS pr_error"
         runs = conn.execute(
             "SELECT rowid, run_id, task_id, state, started_at, ended_at, pid, workflow, error, "
-            f"{pause}, {kind} FROM task_runs ORDER BY started_at DESC, rowid DESC"
+            f"{pause}, {kind}, {branch}, {pr_error} FROM task_runs "
+            "ORDER BY started_at DESC, rowid DESC"
         ).fetchall()
     if _has_table(conn, "task_queue"):
         excluded = frozenset(
@@ -335,14 +363,7 @@ def _merged_outside(
     trace: _Trace, tasks: TaskIndex, active: set[str], root: Path
 ) -> list[JsonDict]:
     """Tasks whose newest PR is merged but which ``base`` does not have as done yet."""
-    newest: dict[str, sqlite3.Row] = {}
-    for pr in trace.prs:
-        seen = newest.get(pr["task_id"])
-        if seen is None or ((pr["created_at"] or ""), pr["rowid"]) > (
-            (seen["created_at"] or ""),
-            seen["rowid"],
-        ):
-            newest[pr["task_id"]] = pr
+    newest = _newest_prs(trace.prs)
     found: list[JsonDict] = []
     for task_id, pr in newest.items():
         hit = tasks.get(task_id)
@@ -351,11 +372,7 @@ def _merged_outside(
         title, status, path = hit
         if status in CLOSED_STATUSES:
             continue
-        try:
-            text = (root / path).read_text(encoding="utf-8")
-        except OSError:
-            continue
-        if pr["url"] and has_entry(text, pr["url"]):
+        if not _merged_unrecorded(root, path, pr["url"]):
             continue  # reopened after the merge
         found.append(
             {
@@ -386,15 +403,7 @@ def _sync_pr(trace: _Trace) -> JsonDict | None:
 
 def _newest_open_prs(prs: list[sqlite3.Row]) -> dict[str, sqlite3.Row]:
     """The newest open PR of each task (by ``created_at``, then ``rowid``)."""
-    newest: dict[str, sqlite3.Row] = {}
-    for pr in prs:
-        if pr["state"] != "open":
-            continue
-        seen = newest.get(pr["task_id"])
-        key = (pr["created_at"] or "", pr["rowid"] or 0)
-        if seen is None or key > (seen["created_at"] or "", seen["rowid"] or 0):
-            newest[pr["task_id"]] = pr
-    return newest
+    return _newest_prs([pr for pr in prs if pr["state"] == "open"])
 
 
 def _lists(
@@ -410,12 +419,20 @@ def _lists(
 
     running: list[JsonDict] = []
     active: set[str] = set()
+    listed: set[str] = set()
+    rt = _display_runtime(trace.runs, trace.prs)
     for row in trace.runs:
-        if row["state"] != "running":
+        if row["state"] != "running" and not (
+            row["task_id"] in rt.running and rt.last_run[row["task_id"]] == "succeeded"
+        ):
+            continue
+        if row["task_id"] in listed:
+            continue
+        if _closed(tasks, row["task_id"]):
             continue
         process = _process(row["pid"])
-        if process != "ended":
-            active.add(row["task_id"])
+        active.add(row["task_id"])
+        listed.add(row["task_id"])
         cost, tokens = trace.costs.get(row["run_id"], (0.0, 0))
         running.append(
             {
@@ -555,7 +572,8 @@ def _task_index(root: Path) -> tuple[_Tasks, list[str]]:
     except (ConfigError, TaskEditError, OSError, ValueError) as exc:
         return _Tasks({}, None), [f"task titles are not available: {exc}"]
     index = {t.id: (t.title, t.status, t.path) for t in iter_tasks(backlog)}
-    return _Tasks(index, backlog), []
+    stamps = {task_id: _task_stamp(root, hit[2]) for task_id, hit in index.items()}
+    return _Tasks(index, backlog, stamps), []
 
 
 def _active_runs(trace: _Trace | None) -> list[sqlite3.Row]:
@@ -576,12 +594,9 @@ def _task_summary(
     backlog: Backlog, trace: _Trace | None, active: list[sqlite3.Row]
 ) -> tuple[JsonDict, list[str], list[JsonDict]]:
     """Repository/project board-state counts (including zeros) and ready ids, in one pass."""
-    rt = _Runtime()
-    if trace is not None:
-        rt.running = {r["task_id"] for r in active}
-        newest = _newest_open_prs(trace.prs)
-        rt.in_review = set(newest)
-        rt.merge_blocked = {t for t, p in newest.items() if p["auto_merge_error"]}
+    rt = _display_runtime(trace.runs, trace.prs) if trace is not None else _display_runtime([], [])
+    # Keep capacity's pre-existing ready calculation separate from display handoffs.
+    active_ids = {r["task_id"] for r in active}
     counts: JsonDict = dict.fromkeys(BOARD_STATES, 0)
     projects: list[JsonDict] = [
         {"id": c.id, "title": c.title, "tasks": dict.fromkeys(BOARD_STATES, 0)}
@@ -596,7 +611,13 @@ def _task_summary(
         project = _project_id(backlog, task.id)
         if project in project_counts:
             project_counts[project][state] += 1
-        if state == "ready":
+        if (
+            task.status not in CLOSED_STATUSES
+            and task.id not in active_ids
+            and task.id not in rt.in_review
+            and derived_state(backlog, task) == "ready"
+            and effective_workflow(task)
+        ):
             ready.append(task.id)
     return counts, ready, projects
 
@@ -704,6 +725,15 @@ class Overview:
         config, config_warnings = self._configs.get(key, root, lambda: _config_view(root))
         tasks, task_warnings = self._tasks.get(key, TASKS_TTL, lambda: _task_index(root))
         trace, trace_warnings = _trace_view(trace_db_of(root))
+        if trace is not None:
+            handoffs = {r["task_id"] for r in trace.runs if r["state"] == "succeeded"}
+            handoffs.update(p["task_id"] for p in trace.prs if p["state"] == "merged")
+            if any(
+                task_id in tasks.index
+                and tasks.stamps.get(task_id) != _task_stamp(root, tasks.index[task_id][2])
+                for task_id in handoffs
+            ):
+                tasks, task_warnings = self._tasks.get(key, 0, lambda: _task_index(root))
         item = _stub(entry, _state(config), [*config_warnings, *task_warnings, *trace_warnings])
         item["config"] = config
         active = _active_runs(trace)
