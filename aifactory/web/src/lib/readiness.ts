@@ -8,19 +8,26 @@ import { repoStatusText } from './repos'
 
 type Issue = Pick<Step, 'id' | 'title' | 'hint' | 'href' | 'action'> & { repo?: RepoItem }
 function createReadiness() {
-  const phase = ref<'checking' | 'warning' | 'success'>('checking')
+  const phase = ref<'checking' | 'warning' | 'success' | null>(null)
   const issues = ref<Issue[]>([])
   let checking = false
+  let generation = 0
   let disposed = false
-  async function check(fresh = false) {
-    if (checking || disposed) return
+  let loadingTimer: ReturnType<typeof setTimeout> | undefined
+  async function check(fresh = false, manual = false) {
+    if (disposed || (checking && !manual)) return
+    const current = ++generation
     checking = true
-    phase.value = 'checking'
-    issues.value = []
+    clearTimeout(loadingTimer)
+    if (manual) phase.value = 'checking'
+    else if (phase.value === null) {
+      loadingTimer = setTimeout(() => { phase.value = 'checking' }, 1000)
+    }
     try {
       const [machine, library, registry] = await Promise.all([
         fetchMachineCheck(fresh), fetchLibrarySummary(), fetchRepos(),
       ])
+      if (disposed || current !== generation) return
       const repo = focusRepo(registry.repos)
       let rosterAgents = 0
       let projects = 0
@@ -32,7 +39,7 @@ function createReadiness() {
         rosterAgents = roster.agents.length
         projects = backlog.items?.length ?? 0
       }
-      if (disposed) return
+      if (disposed || current !== generation) return
       const machineErrors = machine.findings.filter(f => f.severity === 'error' || f.severity === 'warning')
       issues.value = gettingStartedSteps({ check: machine, library, repos: registry.repos, rosterAgents, projects }).filter(step => {
         if (step.id === 'machine' && machineErrors.length) return false
@@ -51,18 +58,22 @@ function createReadiness() {
       if (issues.value.length) phase.value = 'warning'
       else phase.value = 'success'
     } catch (error) {
-      if (!disposed) {
+      if (!disposed && current === generation) {
         issues.value = [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít stránku Knihovna' }]
         phase.value = 'warning'
       }
-    } finally { checking = false }
+    } finally {
+      if (current === generation) { clearTimeout(loadingTimer); checking = false }
+    }
   }
 
   // The server checks once at start; a page load reads that result, later checks are explicit.
-  function recheck() { void check(true) }
-  onMounted(() => { void check(); window.addEventListener('factory-applied', recheck) })
-  onBeforeUnmount(() => { disposed = true; window.removeEventListener('factory-applied', recheck) })
-  return { phase, issues, recheck }
+  function recheck() { void check(true, true) }
+  function refresh(fresh = false) { void check(fresh) }
+  function onFactoryApplied() { refresh() }
+  onMounted(() => { refresh(); window.addEventListener('factory-applied', onFactoryApplied) })
+  onBeforeUnmount(() => { disposed = true; clearTimeout(loadingTimer); window.removeEventListener('factory-applied', onFactoryApplied) })
+  return { phase, issues, recheck, refresh }
 }
 const key: InjectionKey<ReturnType<typeof createReadiness>> = Symbol('readiness')
 export function provideReadiness() {

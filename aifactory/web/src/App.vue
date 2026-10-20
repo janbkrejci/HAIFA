@@ -283,7 +283,7 @@ onBeforeUnmount(() => {
       <OverviewView :repos="repos" :error="reposError" @changed="reloadRepos" />
     </main>
   </div>
-  <MachineHarnessesDialog :open="harnessDialog" @close="harnessDialog = false" @saved="limits.refresh(); readiness.recheck()" @tested="limits.refresh(); readiness.recheck()" />
+  <MachineHarnessesDialog :open="harnessDialog" @close="harnessDialog = false" @saved="limits.refresh(); readiness.refresh(true)" @tested="limits.refresh(); readiness.refresh(true)" />
   <AssistantPanel :repos="repoIds" />
   <ConfirmDialog v-bind="leaveDialog" @confirm="confirmLeave" @cancel="cancelLeave" />
 </template>
