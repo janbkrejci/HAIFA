@@ -142,6 +142,10 @@ describe('KanbanBoard', () => {
     }
     expect(wrapper.get('[data-item="R-1"]').attributes('draggable')).toBe('true')
     expect(wrapper.get('[data-item="T-1"]').attributes('draggable')).toBe('false')
+    expect(wrapper.get('[data-item="X-1"]').attributes('draggable')).toBe('false')
+    await drag('X-1', '[data-column="ready"]')
+    expect(wrapper.emitted('reorder')).toBeUndefined()
+    expect(wrapper.emitted('exclude')).toBeUndefined()
     // onto a card of Připraveno: before it
     await drag('R-3', '[data-item="R-1"]')
     // onto the column: at the end

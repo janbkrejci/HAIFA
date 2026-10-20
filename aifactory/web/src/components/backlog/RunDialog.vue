@@ -68,11 +68,9 @@ const dirtyConfig = computed(() => config.value !== null && !config.value.clean)
 const running = computed(() => props.check?.running ?? null)
 const launcherBusy = computed(() => props.check?.launcher_busy === true)
 const notInBase = computed(() => !!props.check && props.check.in_base === false)
-const showForce = computed(
-  () => blocking.value.length > 0 || props.error?.code === 'unmet_dependencies',
-)
 const blocked = computed(
   () =>
+    props.error?.code === 'unmet_dependencies' ||
     props.busy ||
     props.startDisabled ||
     props.waiting ||
@@ -132,6 +130,7 @@ function onHarnessToggle(event: Event) {
 }
 
 function start(force: boolean) {
+  if (blocked.value || blocking.value.length) return
   const input: RunInput & { force: boolean } = { force }
   const text = note.value.trim()
   if (text) input.note = text
@@ -281,17 +280,6 @@ function start(force: boolean) {
       >
         <Spinner v-if="action === 'start'" />
         Spustit
-      </button>
-      <button
-        v-if="showForce"
-        type="button"
-        data-test="run-force"
-        :disabled="blocked"
-        :aria-busy="action === 'force' || undefined"
-        @click="start(true)"
-      >
-        <Spinner v-if="action === 'force'" />
-        Spustit přesto (ignorovat nesplněné závislosti)
       </button>
       <button type="button" data-test="run-cancel" :disabled="busy" @click="emit('cancel')">
         Zavřít

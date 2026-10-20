@@ -14,6 +14,24 @@ afterEach(() => {
 })
 
 describe('RunDetail', () => {
+  it('shows already_running from retry when the task state is unknown', async () => {
+    const message = 'task M01-S01-T01 is already running: run r-new (pid 123)'
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+      ok: false, data: null, error: { code: 'already_running', message, issues: [] }, warnings: [],
+    }), { status: 409, headers: { 'Content-Type': 'application/json' } })))
+    try {
+      const wrapper = mount(RunDetail, { props: { detail: detail({ state: 'failed', pr: null }), events: [] } })
+      expect(wrapper.get('[data-test="retry-run"]').attributes('disabled')).toBeUndefined()
+      await wrapper.get('[data-test="retry-run"]').trigger('click')
+      await wrapper.get('[data-test="retry-form"]').trigger('submit')
+      await flushPromises()
+      expect(wrapper.get('[data-test="retry-error"]').text()).toContain(message)
+      expect(wrapper.emitted('retried')).toBeUndefined()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('explains the steps only in the run of the sample repository', () => {
     const plain = mount(RunDetail, { props: { detail: detail(), events: events() } })
     expect(plain.find('[data-test="demo-steps"]').exists()).toBe(false)

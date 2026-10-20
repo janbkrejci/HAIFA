@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TaskDetail from './TaskDetail.vue'
 import TaskForm from './TaskForm.vue'
+import Tooltip from '@/components/ui/Tooltip.vue'
 import { runCheck, taskDetail } from '@/test/backlogFixtures'
 import { answerDialog, openDialog } from '@/test/modal'
 import { resetNamesForTests, setNames } from '@/lib/names'
@@ -20,6 +21,133 @@ function detailWrapper(error: { message: string; issues: [] } | null = null) {
 }
 
 describe('TaskDetail', () => {
+  it.each(['running', 'in review', 'awaiting merge', 'ready'] as const)('gates actions and explains disabled actions for %s', async (state) => {
+    const detail = taskDetail()
+    detail.task.board_state = state
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
+    const locked = state !== 'ready'
+    for (const id of ['run', 'edit', 'improve', `unlink-${detail.depends[0]!.id}`, `unrelate-${detail.task.related[0]}`]) {
+      expect(wrapper.get(`[data-test="${id}"]`).attributes('disabled') !== undefined).toBe(locked)
+      const tip = wrapper.findAllComponents(Tooltip).find((t) => t.find(`[data-test="${id}"]`).exists())
+      expect(tip).toBeDefined()
+      if (locked) expect(tip!.props('text')).toContain(id === 'run' ? (state === 'running' ? 'právě běží' : 'review/merge') : 'už nejde měnit')
+    }
+    await wrapper.setProps({ detail: { ...detail, task: { ...detail.task, assignee: 'human' } } })
+    expect(wrapper.get('[data-test="mark-done"]').attributes('disabled') !== undefined).toBe(locked)
+    if (locked) expect(wrapper.findAllComponents(Tooltip).find((t) => t.find('[data-test="mark-done"]').exists())!.props('text')).toContain('už nejde měnit')
+    wrapper.unmount()
+  })
+
+  it.each(['ready', 'in review', 'awaiting merge'] as const)('allows a blocked start only when all blockers have open PRs (%s)', (state) => {
+    const detail = taskDetail()
+    detail.task.board_state = 'blocked'
+    detail.task.blocked_by = [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }]
+    detail.depends[0]!.state = state
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
+    expect(wrapper.get('[data-test="run"]').attributes('disabled') !== undefined).toBe(state === 'ready')
+    if (state === 'ready') {
+      const tip = wrapper.findAllComponents(Tooltip).find((t) => t.find('[data-test="run"]').exists())!
+      expect(tip.props('text')).toContain('M01-S01-T01')
+      expect(tip.props('text')).toContain('není hotový')
+    }
+    for (const id of ['edit', 'improve', 'unlink-M01-S01-T01']) expect(wrapper.get(`[data-test="${id}"]`).attributes('disabled')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it.each(['in review', 'running'] as const)('resolves unfinished container dependencies before allowing a stacked start (%s)', async (state) => {
+    const detail = taskDetail()
+    detail.task.board_state = 'blocked'
+    detail.task.blocked_by = [{ id: 'STEP', reason: 'incomplete', missing: ['A', 'B'] }]
+    detail.depends = [{ id: 'STEP', kind: 'container', title: null, state: '0/2' }]
+    api.getApi.mockImplementation(async (url: string) => url === '/backlog'
+      ? { tasks: [{ id: 'A', title: 'A', board_state: 'awaiting merge' }, { id: 'B', title: 'B', board_state: state }] }
+      : { documents: [] })
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.get('[data-test="run"]').attributes('disabled')).toBeDefined()
+    await flushPromises()
+    expect(wrapper.get('[data-test="run"]').attributes('disabled') !== undefined).toBe(state === 'running')
+    wrapper.unmount()
+    api.getApi.mockReset()
+  })
+
+  it('ignores an older container lookup after live refresh finds a non-PR blocker', async () => {
+    const detail = taskDetail()
+    detail.task.board_state = 'blocked'
+    detail.task.blocked_by = [{ id: 'STEP', reason: 'incomplete', missing: ['A'] }]
+    detail.depends = [{ id: 'STEP', kind: 'container', title: null, state: '0/1' }]
+    let resolveOld!: (value: unknown) => void
+    let resolveNew!: (value: unknown) => void
+    const oldLookup = new Promise((resolve) => { resolveOld = resolve })
+    const newLookup = new Promise((resolve) => { resolveNew = resolve })
+    let lookups = 0
+    api.getApi.mockImplementation((url: string) => url === '/backlog'
+      ? (++lookups === 1 ? oldLookup : newLookup)
+      : Promise.resolve({ documents: [] }))
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.get('[data-test="run"]').attributes('disabled')).toBeDefined()
+    await wrapper.setProps({ detail: { ...detail, task: { ...detail.task } } })
+    expect(lookups).toBe(2)
+    resolveNew({ tasks: [{ id: 'A', title: 'A', board_state: 'running' }] })
+    await flushPromises()
+    expect(wrapper.get('[data-test="run"]').attributes('disabled')).toBeDefined()
+    resolveOld({ tasks: [{ id: 'A', title: 'A', board_state: 'in review' }] })
+    await flushPromises()
+    expect(wrapper.get('[data-test="run"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+    api.getApi.mockReset()
+  })
+
+  it('keeps start disabled when a container dependency lookup rejects', async () => {
+    const detail = taskDetail()
+    detail.task.board_state = 'blocked'
+    detail.task.blocked_by = [{ id: 'STEP', reason: 'incomplete', missing: ['A'] }]
+    detail.depends = [{ id: 'STEP', kind: 'container', title: null, state: '0/1' }]
+    let rejectLookup!: (reason: Error) => void
+    const lookup = new Promise((_resolve, reject) => { rejectLookup = reject })
+    api.getApi.mockImplementation((url: string) => url === '/backlog'
+      ? lookup
+      : Promise.resolve({ documents: [] }))
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.get('[data-test="run"]').attributes('disabled')).toBeDefined()
+    rejectLookup(new Error('Backlog unavailable'))
+    await flushPromises()
+    expect(wrapper.get('[data-test="run"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="run"]').trigger('click')
+    expect(wrapper.emitted('open-run')).toBeUndefined()
+    wrapper.unmount()
+    api.getApi.mockReset()
+  })
+
+  it.each(['running', 'in review', 'awaiting merge'] as const)('does not offer to retry an old failed run while the task is %s', (state) => {
+    const detail = taskDetail()
+    detail.task.board_state = state
+    detail.runs[0]!.state = 'failed'
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.find('[data-test="retry-run"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not allow stacking with a second blocker outside an open PR', () => {
+    const detail = taskDetail()
+    detail.task.board_state = 'blocked'
+    detail.task.blocked_by = ['A', 'B'].map((id) => ({ id, reason: 'not_done', missing: [id] }))
+    detail.depends = [{ id: 'A', title: null, kind: 'task', state: 'in review' }, { id: 'B', title: null, kind: 'task', state: 'running' }]
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.get('[data-test="run"]').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  it.each(['running', 'in review', 'awaiting merge'] as const)('closes editing after a live transition to %s', async (state) => {
+    const wrapper = detailWrapper()
+    await wrapper.get('[data-test="edit"]').trigger('click')
+    expect(wrapper.findComponent(TaskForm).exists()).toBe(true)
+    const next = taskDetail()
+    next.task.board_state = state
+    await wrapper.setProps({ detail: next })
+    expect(wrapper.findComponent(TaskForm).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('shows the task documents card, loaded by the task id', async () => {
     api.getApi.mockReset().mockResolvedValue({ task_id: 'x', documents: [] })
     const wrapper = detailWrapper()
