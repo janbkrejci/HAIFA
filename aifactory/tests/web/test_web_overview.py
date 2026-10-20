@@ -495,6 +495,57 @@ def test_trace_db_without_publication_columns(
             assert row[column] is None
 
 
+@pytest.mark.parametrize("missing", [("branch",), ("branch", "pr_error")])
+@pytest.mark.parametrize("run_state", ["succeeded", "running"])
+def test_legacy_merge_and_reopen_with_populated_cache(
+    repo_a: Path, tmp_path: Path, missing: tuple[str, ...], run_state: str
+) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    with sqlite3.connect(_db(repo_a)) as conn:
+        conn.execute(
+            "UPDATE task_runs SET state = ?, pid = ? WHERE run_id = 'r-rev'",
+            (run_state, os.getpid()),
+        )
+        for column in missing:
+            conn.execute(f"ALTER TABLE task_runs DROP COLUMN {column}")
+    ov = Overview(Registry(tmp_path / "home"), clock=lambda: 1000.0)
+    entry = RepoEntry(id="alpha", name="alpha", path=str(repo_a), added_at="2026-01-01")
+    before = ov.repo(entry)  # populate the cache before the PR state changes
+    running = run_state == "running"
+    assert before["tasks"]["in review"] == (not running)
+    assert before["tasks"]["running"] == 2 + running
+    with sqlite3.connect(_db(repo_a)) as conn:
+        conn.execute("UPDATE task_prs SET state = 'merged' WHERE task_id = ?", (T_REV,))
+
+    def check(expected: str) -> dict[str, Any]:
+        item = ov.repo(entry)
+        assert item["warnings"] == []
+        board, warnings = backlog_view(repo_a)
+        assert warnings == []
+        assert {t["id"]: t["board_state"] for t in board["tasks"]}[T_REV] == expected
+        assert item["tasks"] == item["projects"][0]["tasks"] == board["state_counts"]
+        assert item["tasks"]["running"] == 2 + running
+        assert (T_REV in {r["task_id"] for r in item["running"]}) == running
+        assert item["review"] == item["automerge"] == []
+        return item
+
+    merged = check("running" if running else "done")
+    assert merged["tasks"]["done"] == 1 + (not running)
+    assert merged["tasks"]["ready"] == 1
+    assert (T_REV in {p["task_id"] for p in merged["merged_outside"]}) == (not running)
+    path = next((repo_a / "backlog").rglob(f"{T_REV}-*.md"))
+    path.write_text(
+        path.read_text(encoding="utf-8") + f"\n## Běhy\n- PR {PR_URL} merged\n", encoding="utf-8"
+    )
+    reopened = check("running" if running else "ready")
+    assert reopened["tasks"]["done"] == 1
+    assert reopened["tasks"]["ready"] == 1 + (not running)
+    assert reopened["merged_outside"] == []
+    with sqlite3.connect(_db(repo_a)) as conn:
+        assert "branch" not in {row[1] for row in conn.execute("PRAGMA table_info(task_runs)")}
+
+
 @pytest.mark.parametrize("same_branch", [True, False])
 def test_success_with_closed_pr_matches_kanban(
     repo_a: Path, tmp_path: Path, same_branch: bool

@@ -46,6 +46,7 @@ jiné závislosti či přiřazení mohou místo něj dát `blocked`, `human` neb
 | Automatický merge → catch-up base / pull / cache | Ready | done ihned podle nejnovějšího PR v trace; změna souboru obnoví cache. |
 | Ruční merge → refresh trace → backlog sync/pull | PR stav → Ready | PR stav do refresh trace, pak done; žádné volání hostingu při čtení pohledu. |
 | Znovuotevření po merge, záznam stejného PR v tasku | Ready | Ready; respektuje has_entry a změnu souboru i před TTL. |
+| Starší DB bez branch: succeeded a merged PR → znovuotevření | Ready | done → ready i s naplněnou cache; skutečný running běh má přednost. |
 | Retry/pokračování failed nebo aborted před claimem | Ready, případně PR stav | Před claimem bez PR navazující task; po reclaim running. Novější selhání nepřekryje starší úspěch. |
 | Pauza a pokračování | running | Beze změny; pause/pausing zůstává v seznamu. |
 | Samostatné task publish | Ready při dosavadním pr_error, jinak Ready | Bez pr_error running; při opakované publikaci s uloženou chybou do zápisu PR původní stav, zahrnuto v navazujícím tasku. |
@@ -59,6 +60,9 @@ jiné závislosti či přiřazení mohou místo něj dát `blocked`, `human` neb
 `web/backlog.py::_display_runtime` sdílí pravidla pro oba pohledy.
 `board_state` používá nejnovější běh a nejnovější PR, včetně sloučených.
 Přehled načítá `branch` a `pr_error` s fallbackem `NULL AS ...` pro staré DB.
+Neznámá větev úspěšného běhu není důkazem nepublikované práce, pokud již existuje
+nejnovější sloučené PR tasku. Tento fallback zachovává `done` a rozpoznání
+znovuotevření pomocí `has_entry`; výslovný stav běhu `running` má stále přednost.
 Kanban čte stejný read-only trace snapshot, nastavení pořadí fronty čte dosavadním
 způsobem. Přehled obnovuje index při změně souborů tasků v předání po úspěchu/merge;
 ostatní cache i plánování zůstávají zachované.
@@ -70,20 +74,19 @@ shoda kanbanu s chipy repozitáře i projektu a čtení ukončeného procesu bez
 Stávající testy pokrývají review/automerge, chybu auto-merge, pauzu, starší trace DB
 a neměnnost výpočtu kapacity. Frontend ani distribuovaný build se nemění.
 
-### Výsledek širšího ověření na Windows
+### Ověření na Windows
 
-Testovací krok dokončil lint, typecheck a testy workflow advice úspěšně. Backendové
-webové testy skončily výsledkem 541 passed, 10 skipped a 5 failed. Dvě selhání
-`test_delete_refuses_a_thread_that_answers` a `test_delete_removes_the_thread_for_good`
-způsobuje `web/assistant.py::delete`: obyčejné `shutil.rmtree` nedokáže odstranit
-read-only Git objekty pracovního repozitáře vlákna (`WinError 5`, odpověď HTTP 500).
-Obě selhání se reprodukovala i se zdrojovým kódem `web/backlog.py` a `web/overview.py`
-z `HEAD`, načteným místo změněných modulů pouze do paměti procesu pytest.
+Testovací krok před opravou legacy kombinace (`quality/23_*`) prošel všemi čtyřmi
+schválenými kontrolami: lint, typecheck, workflow advice a backendové webové testy
+(546 passed, 10 skipped, návratový kód 0).
 
-Zbývající tři selhání jsou parametrizace
-`test_publish_launcher_reports_quick_errors`: při paralelním běhu neobdržely chybu
-do výchozího třísekundového limitu launcheru. V cíleném sériovém běhu všechny tři
-prošly, a to se změnou T58 i s původními moduly z `HEAD`. Produkční launcher po
-vypršení limitu záměrně vrací pending; test musí odlišit tuto větev od ověřování
-chybové obálky dokončeného procesu. Tato zjištění jsou předána v reportu s cestami
-pro opravu mimo povolené zápisy T58; širší webový gate zatím není zelený.
+Regrese legacy kombinace v obou dotčených testovacích souborech odstraňují sloupec
+`branch`, případně i `pr_error`, a ověřují merge i následné znovuotevření. Kontrolují
+shodu kanbanu s chipy repozitáře a projektu, seznamy Přehledu a přednost skutečného
+`running` běhu. Přehled má při změně PR i při záznamu historie naplněnou cache
+a konstantní hodiny; testy také kontrolují, že se sloupec `branch` neobnovil migrací.
+
+Po opravě legacy kombinace prošly oba dotčené soubory: `uv run pytest
+tests/web/test_web_overview.py tests/web/test_web_backlog.py -n 4 -q` — 85 passed,
+návratový kód 0. Scoped Ruff lint, kontrola formátování a mypy změněného Python
+kódu také prošly.

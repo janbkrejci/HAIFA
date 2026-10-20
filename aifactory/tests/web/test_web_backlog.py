@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import sqlite3
 from pathlib import Path
 from typing import Any
 
@@ -305,6 +307,35 @@ def test_merge_handoff_and_reopening(tmp_path: Path) -> None:
         encoding="utf-8",
     )
     assert _states(backlog_view(root)[0])[B3] == "ready"
+
+
+@pytest.mark.parametrize("missing", [("branch",), ("branch", "pr_error")])
+@pytest.mark.parametrize("run_state", ["succeeded", "running"])
+def test_legacy_merge_handoff_and_reopening(
+    tmp_path: Path, missing: tuple[str, ...], run_state: str
+) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    with sqlite3.connect(root / ".factory/trace.db") as conn:
+        conn.execute(
+            "UPDATE task_runs SET state = ?, pid = ? WHERE run_id = 'r-b3'",
+            (run_state, os.getpid()),
+        )
+        conn.execute("UPDATE task_prs SET state = 'merged' WHERE task_id = ?", (B3,))
+        for column in missing:
+            conn.execute(f"ALTER TABLE task_runs DROP COLUMN {column}")
+    data, warnings = backlog_view(root)
+    assert warnings == []
+    assert _states(data)[B3] == ("done" if run_state == "succeeded" else "running")
+    path = _file(root, B3)
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\n## Běhy\n- PR https://example.test/pr/3 merged\n",
+        encoding="utf-8",
+    )
+    reopened, warnings = backlog_view(root)
+    assert warnings == []
+    assert _states(reopened)[B3] == ("ready" if run_state == "succeeded" else "running")
 
 
 def test_ended_process_stays_running_until_reaped(tmp_path: Path) -> None:

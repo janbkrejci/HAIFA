@@ -200,6 +200,8 @@ def _display_runtime(runs: list[sqlite3.Row], prs: list[sqlite3.Row]) -> _Runtim
             and not run["pr_error"]
             and run["branch"] not in branches
             and task_id not in rt.in_review
+            # Without branch evidence, a known merge must not look unpublished.
+            and (run["branch"] is not None or task_id not in rt.merged)
         ):
             rt.running.add(task_id)
     return rt

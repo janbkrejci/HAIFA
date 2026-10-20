@@ -10,6 +10,9 @@ Zůstávají stávající `BOARD_STATES`.
 - Nejnovější PR `merged` znamená pro dosud neuzavřený task `done`, pokud task
   neobsahuje záznam tohoto PR v historii (`has_entry`, stejně jako `_merged_outside`).
   Aktivní nový běh má přednost. Explicitní `done` a `cancelled` mají nejvyšší prioritu.
+- Pokud starší trace DB nemá `branch`, úspěšný běh s neznámou větví nepřekryje
+  známé sloučení čekáním na publikaci. Bez historie PR je task `done`, po záznamu
+  stejného PR a znovuotevření `ready`; skutečný řádek `running` má nadále přednost.
 - Nevyčištěný řádek `running` zůstává v obou pohledech `running`; Přehled zachovává
   informaci „proces skončil“. Samotné čtení kanbanu neprovádí reap běhů.
 - Přehled zahrnuje čekání na publikaci i do seznamu `running`. Kontrola změny
