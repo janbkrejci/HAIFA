@@ -1137,3 +1137,62 @@ def test_trace_db_without_approved_at(repo_a: Path, tmp_path: Path) -> None:
     assert item["approved"] == []
     assert [pr["task_id"] for pr in item["review"]] == [T_REV]
     assert item["tasks"]["in review"] == 1
+
+
+@pytest.mark.parametrize(
+    "action,state,error",
+    [
+        ("run", "failed", None),
+        ("retry", "failed", None),
+        ("publish", "succeeded", "previous push failed"),
+    ],
+)
+def test_live_operation_overrides_previous_outcome(
+    repo_a: Path, tmp_path: Path, action: str, state: str, error: str | None
+) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.finish("r-fail", state, None, None)
+        store.set_pr_error("r-fail", error)
+        before = _repo_item(repo_a, tmp_path)
+        operation = store.start_operation(T_FAIL, action, os.getpid())
+        # Repeated launch records must never double count task capacity.
+        duplicate = store.start_operation(T_FAIL, action, os.getpid())
+        item = _repo_item(repo_a, tmp_path)
+        board, warnings = backlog_view(repo_a)
+        assert warnings == []
+        assert item["tasks"] == board["state_counts"]
+        assert {t["id"]: t["board_state"] for t in board["tasks"]}[T_FAIL] == "running"
+        assert item["failed"] == []
+        assert item["factory"] == before["factory"]
+        pending = next(r for r in item["running"] if r["task_id"] == T_FAIL)
+        assert pending["run_id"] is None
+        assert pending["operation_id"] in {operation, duplicate}
+        assert pending["workflow"] == action
+        # Reading does not discard the previous publication failure.
+        row = store.get("r-fail")
+        assert row is not None and row.pr_error == error
+        store.finish_operation(operation)
+        store.finish_operation(duplicate)
+        after = _repo_item(repo_a, tmp_path)
+        assert T_FAIL not in {r["task_id"] for r in after["running"]}
+    finally:
+        store.close()
+
+
+def test_dead_operation_is_hidden_without_mutating_trace(repo_a: Path, tmp_path: Path) -> None:
+    with dead_pid() as pid:
+        store = TaskRunStore(_db(repo_a))
+        try:
+            operation = store.start_operation(T_FAIL, "publish", pid)
+            item = _repo_item(repo_a, tmp_path)
+            assert T_FAIL not in {r["task_id"] for r in item["running"]}
+            assert (
+                store.conn.execute("SELECT operation_id FROM task_operations").fetchone()[0]
+                == operation
+            )
+            assert store.live_operations() == []
+        finally:
+            store.close()

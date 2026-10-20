@@ -1,5 +1,9 @@
 """The ``task_runs``, ``task_prs``, ``sync_prs`` and ``task_chains`` tables in the trace DB.
 
+``task_operations`` records a task, action, process and start time before claim or
+while publishing again. Launchers remove completed operations; ``live_operations``
+reaps dead local processes. Operations are display evidence, not run claims or slots.
+
 ``task_runs`` has one row per run and is the lock between runs; ``task_prs`` has
 one row per branch with a pull request (``open``, ``merged`` or ``closed``);
 ``sync_prs`` has one row per ``backlog sync`` pull request (it belongs to no task).
@@ -88,6 +92,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import secrets
 import sqlite3
 import threading
 import time
@@ -111,6 +116,14 @@ RETRYABLE = (FAILED, STOPPED, ABORTED)
 PAUSING, PAUSED = "pausing", "paused"
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS task_operations (
+  operation_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  action TEXT NOT NULL,
+  pid INTEGER NOT NULL,
+  started_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS task_runs (
   run_id TEXT PRIMARY KEY,
   task_id TEXT NOT NULL,
@@ -831,6 +844,47 @@ class TaskRunStore:
         """The commit of base the run's branch now starts from (after a retry's rebase)."""
         self.conn.execute("UPDATE task_runs SET base_sha = ? WHERE run_id = ?", (base_sha, run_id))
 
+    def start_operation(self, task_id: str, action: str, pid: int) -> str:
+        """Publish process ownership before a run exists, or while publishing again."""
+        operation_id = "operation-" + secrets.token_hex(8)
+        self.conn.execute(
+            "INSERT INTO task_operations VALUES (?, ?, ?, ?, ?)",
+            (operation_id, task_id, action, pid, now_iso()),
+        )
+        self._own(operation_id)
+        return operation_id
+
+    def finish_operation(self, operation_id: str) -> None:
+        self.conn.execute("DELETE FROM task_operations WHERE operation_id = ?", (operation_id,))
+
+    def live_operations(self) -> list[TaskRunRow]:
+        """Live operation evidence without changing run claims; reap dead owners."""
+        rows = self.conn.execute(
+            "SELECT operation_id, task_id, action, pid, started_at FROM task_operations "
+            "ORDER BY started_at DESC, rowid DESC"
+        ).fetchall()
+        result = []
+        for operation_id, task_id, action, pid, started_at in rows:
+            if self.owned_here(operation_id) and not _alive(pid):
+                self.finish_operation(operation_id)
+                continue
+            result.append(
+                TaskRunRow(
+                    run_id=operation_id,
+                    task_id=task_id,
+                    branch="",
+                    worktree="",
+                    base="",
+                    base_sha="",
+                    head_sha=None,
+                    state=RUNNING,
+                    started_at=started_at,
+                    pid=pid,
+                    workflow=action,
+                )
+            )
+        return result
+
     def live_runs_locked(self) -> list[TaskRunRow]:
         """`running` rows whose process is alive (dead ones become `aborted`).
 
@@ -838,6 +892,7 @@ class TaskRunStore:
         """
         with self._txn():
             self._reap()
+            self.live_operations()
             return self._select("state = ?", (RUNNING,))
 
     def live_runs(self) -> list[TaskRunRow]:

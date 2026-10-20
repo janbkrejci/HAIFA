@@ -340,6 +340,9 @@ def test_retry_does_not_return_the_previous_attempt_before_claim(
     stub.plan(T01, "claim-exit", delay=1.5)
     assert launcher.start_retry(repo, T01, failed.run_id, timeout=0.1) is None
     assert _row(repo, failed.run_id) == failed
+    from aifactory.web.backlog import _runtime
+
+    assert T01 in _runtime(repo)[0].running
     launcher.wait(30)
     assert [(r.run_id, r.attempt) for r in runs_of(repo, T01)] == [(failed.run_id, 2)]
 
@@ -401,6 +404,14 @@ def test_pending_when_not_claimed_in_time(repo: Path, stub: Stub) -> None:
     try:
         assert launcher.start(repo, T01, note=None, force=False, timeout=0.2) is None
         assert len(launcher.running()) == 1
+        from aifactory.web.backlog import _runtime
+
+        assert T01 in _runtime(repo)[0].running
+        store = TaskRunStore(repo / ".factory" / "trace.db")
+        try:
+            assert [r.task_id for r in store.live_operations()] == [T01]
+        finally:
+            store.close()
         # The stub starts Python, imports aifactory and sleeps 1.5 s before it claims;
         # under a loaded parallel suite that alone can take longer than 10 s.
         assert _until(lambda: len(runs_of(repo, T01)) == 1, timeout=60)

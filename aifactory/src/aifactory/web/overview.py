@@ -21,6 +21,8 @@ the repository's auto-continue chains after a failure, newest first: ``task_chai
 shared configuration, D4),
 ``last_activity`` and ``warnings``; ``totals`` sums them up. Every item of ``running`` has
 ``pause`` (``null``, ``pausing`` or ``paused``; ``null`` for a trace DB without the column).
+Before claim, a running item has ``run_id: null`` and an ``operation_id``; its
+``workflow`` names the operation's action. Operations never change factory capacity.
 Every item of ``running``, ``review``, ``approved``, ``automerge``, ``failed``,
 ``merged_outside`` and ``auto_actions`` has ``project``: its task's top ancestor id, or
 ``null`` for an unknown task or a backlog with fewer than three levels.
@@ -30,7 +32,8 @@ It is empty without project levels or a readable backlog, including stub reposit
 
 ``tasks`` counts the backlog's tasks per kanban board state (``web.backlog.BOARD_STATES``,
 every state present, zeros included), computed by ``board_state`` from the trace rows read
-here: a task with a running row (even an ended process awaiting reaping), or a successful
+here: a task with a live launch/publication operation, a running row (even an ended
+process awaiting reaping), or a successful
 run awaiting publication/completion without a publication error, is ``running``. A merged
 PR is ``done`` until recorded in the task's history (a reopened task). One with an open PR is
 ``approved`` after manual approval while waiting for CI, ``awaiting merge`` when the
@@ -280,6 +283,25 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
             f"{pause}, {kind}, {branch}, {pr_error} FROM task_runs "
             "ORDER BY started_at DESC, rowid DESC"
         ).fetchall()
+    if _has_table(conn, "task_operations"):
+        # Reuse the shared display/capacity derivation without inventing task_runs.
+        # A claimed live run carries richer phase/pause evidence than its launcher.
+        live_tasks = {
+            r["task_id"] for r in runs if r["state"] == "running" and _process(r["pid"]) != "ended"
+        }
+        operations = conn.execute(
+            "SELECT operation_id AS run_id, task_id, 'running' AS state, started_at, "
+            "NULL AS ended_at, pid, action AS workflow, NULL AS error, NULL AS pause, "
+            "NULL AS failure_kind, NULL AS branch, NULL AS pr_error "
+            "FROM task_operations ORDER BY started_at DESC, rowid DESC"
+        ).fetchall()
+        pending = []
+        for operation in operations:
+            if operation["task_id"] in live_tasks or _process(operation["pid"]) == "ended":
+                continue
+            pending.append(operation)
+            live_tasks.add(operation["task_id"])
+        runs = pending + runs
     if _has_table(conn, "task_queue"):
         excluded = frozenset(
             str(row[0]) for row in conn.execute("SELECT task_id FROM task_queue WHERE excluded")
@@ -440,7 +462,8 @@ def _lists(
         cost, tokens = trace.costs.get(row["run_id"], (0.0, 0))
         running.append(
             {
-                "run_id": row["run_id"],
+                "run_id": (None if row["run_id"].startswith("operation-") else row["run_id"]),
+                "operation_id": (row["run_id"] if row["run_id"].startswith("operation-") else None),
                 "task_id": row["task_id"],
                 "task_title": title(row["task_id"]),
                 "workflow": row["workflow"],
@@ -595,7 +618,13 @@ def _active_runs(trace: _Trace | None) -> list[sqlite3.Row]:
     """Running rows whose process did not end (newest first)."""
     if trace is None:
         return []
-    return [r for r in trace.runs if r["state"] == "running" and _process(r["pid"]) != "ended"]
+    return [
+        r
+        for r in trace.runs
+        if r["state"] == "running"
+        and not r["run_id"].startswith("operation-")
+        and _process(r["pid"]) != "ended"
+    ]
 
 
 def _project_id(backlog: Backlog | None, task_id: str | None) -> str | None:
