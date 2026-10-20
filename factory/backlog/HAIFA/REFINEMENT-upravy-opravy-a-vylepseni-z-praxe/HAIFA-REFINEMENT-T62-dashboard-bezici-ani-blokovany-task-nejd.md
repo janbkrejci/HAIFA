@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T62
 title: "Dashboard: běžící ani blokovaný task nejde Spustit, běžící nejde Upravit, další akce jen v povoleném stavu"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/components/backlog/TaskDetail.vue, aifactory/web/src/components/backlog/TaskDetail.test.ts, aifactory/web/src/lib/backlog.ts, aifactory/web/src/components/runs/RunDetail.vue, aifactory/web/src/components/runs/RunDetail.test.ts, aifactory/web/src/components/runs/FailureCard.vue, aifactory/web/src/components/runs/FailureCard.test.ts, aifactory/web/src/components/backlog/KanbanBoard.vue, aifactory/web/src/components/backlog/KanbanBoard.test.ts, aifactory/web/src/components/backlog/RunDialog.vue, aifactory/web/src/components/backlog/RunDialog.test.ts, aifactory/src/aifactory/web/static/, aifactory/web/src/views/BacklogView.test.ts, aifactory/web/src/views/BacklogView.spinner.test.ts]
@@ -39,3 +39,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/131 · náklady $0.00
