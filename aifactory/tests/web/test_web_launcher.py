@@ -31,7 +31,7 @@ from aifactory.web.launcher import DEFAULT_COMMAND, RunLauncher
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "run"))
 
-from run_repo import T01, T02, git, make_run_repo  # noqa: E402
+from run_repo import T01, T02, commit_all, git, make_run_repo, write  # noqa: E402
 
 BASE = "http://127.0.0.1:4700"
 STUB = Path(__file__).resolve().with_name("launch_stub.py")
@@ -412,6 +412,10 @@ def test_pending_when_not_claimed_in_time(repo: Path, stub: Stub) -> None:
 
 
 def test_two_tasks_of_one_repo_run_concurrently(make_app: Apps, repo: Path, stub: Stub) -> None:
+    rel = "backlog/M01-core/S01-model/M01-S01-T02-loader.md"
+    text = (repo / rel).read_text(encoding="utf-8")
+    write(repo, rel, text.replace(f"depends_on: [{T01}]", "depends_on: []"))
+    commit_all(repo, "make concurrent tasks independent")
     _app, client, launcher = make_app(repo)
     first = _run(client, T01, {})["data"]["run"]
     second = _run(client, T02, {"force": True})["data"]["run"]
