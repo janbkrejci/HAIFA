@@ -43,7 +43,6 @@ from __future__ import annotations
 
 import json
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -62,6 +61,7 @@ from aifactory.harness import load as load_harness
 from aifactory.harness import settings as harness_settings
 from aifactory.web import assistant_gate as gate
 from aifactory.web.workflow_advice import Cancellation
+from aifactory.workflow.adaptive import remove_tree
 
 GUIDE_AGENT = "guide"
 GUIDE_COMMAND = "./guide"
@@ -694,7 +694,7 @@ class AssistantManager:
             folder = self.root / thread.id
             if folder.exists():
                 try:
-                    shutil.rmtree(folder)
+                    remove_tree(folder)
                 except OSError as exc:
                     raise AssistantError(
                         "delete_failed", f"cannot delete the thread: {exc}", 500

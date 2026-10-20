@@ -566,6 +566,12 @@ def test_delete_removes_the_thread_for_good(
     folder = haifa_home() / "assistant" / "threads" / gone
     assert (folder / "thread.json").is_file()
 
+    # Git objects in the guide's work repo are read-only on Windows. Include one
+    # explicitly so deletion keeps covering this even if repo setup changes.
+    readonly = folder / "readonly-object"
+    readonly.write_bytes(b"object")
+    readonly.chmod(0o444)
+
     # The write guard applies to DELETE as to every other write.
     refused = client.delete(
         f"/api/assistant/threads/{gone}", headers={"Origin": "http://evil.example"}

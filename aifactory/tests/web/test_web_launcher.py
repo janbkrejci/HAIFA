@@ -561,5 +561,7 @@ def test_publish_launcher_reports_quick_errors(
     _app, _client, launcher = make_app(repo)
     stub.plan(T01, "fail", code=code, message="cannot publish")
     with pytest.raises(TaskRunError) as info:
-        launcher.start_publish(repo, T01)
+        # This checks the completed process's error envelope; startup under parallel
+        # load can exceed the UI's short wait. The pending path is tested separately.
+        launcher.start_publish(repo, T01, timeout=30)
     assert info.value.code == code
