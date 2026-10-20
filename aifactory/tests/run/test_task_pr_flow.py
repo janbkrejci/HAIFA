@@ -13,6 +13,7 @@ from run_repo import SPEC, T01, T02, Script, fake_env, git, make_run_repo, ok, w
 from aifactory.cli import main
 from aifactory.config import load_run_config
 from aifactory.providers import PullRequest
+from aifactory.providers import git as pgit
 from aifactory.providers.local import LocalProvider
 from aifactory.review import ReviewError, approve_task, return_task
 from aifactory.run import TaskPrRow, TaskRunStore, run_task
@@ -92,11 +93,26 @@ def test_failed_run_has_no_pr(repo: Path, script: Script) -> None:
     assert stored_pr(repo) is None
 
 
-def test_approve_commits_done_and_merges(repo: Path, script: Script, capsys: Capsys) -> None:
+def test_approve_commits_done_and_merges(
+    repo: Path, script: Script, capsys: Capsys, monkeypatch: pytest.MonkeyPatch
+) -> None:
     succeed(script)
     run = run_task(repo, T01)
     worktree = Path(run.run.worktree)
+    merge_heads: list[str] = []
+    original_merge = LocalProvider.merge
 
+    def capture_merge_head(
+        self: LocalProvider,
+        pr: PullRequest,
+        head_sha: str,
+        subject: str,
+        strategy: str | None = None,
+    ) -> str | None:
+        merge_heads.append(head_sha)
+        return original_merge(self, pr, head_sha, subject, strategy)
+
+    monkeypatch.setattr(LocalProvider, "merge", capture_merge_head)
     code, data = cli_json(capsys, "task", "approve", T01, "--json", "--repo", str(repo))
 
     assert code == 0, data
@@ -116,7 +132,10 @@ def test_approve_commits_done_and_merges(repo: Path, script: Script, capsys: Cap
     assert isinstance(removed, list) and str(worktree) in removed
     assert git(repo, "status", "--porcelain") == ""
     assert git(repo, "rev-parse", "--abbrev-ref", "HEAD") == "main"
-    assert git(repo, "log", "-1", "--format=%s", BRANCH) == f"{T01}: status done"
+    assert len(merge_heads) == 1
+    assert git(repo, "log", "-1", "--format=%s", merge_heads[0]) == f"{T01}: status done"
+    assert pgit.rev_parse(repo, f"refs/heads/{BRANCH}") is None
+    assert data["data"]["deleted_branches"] == [BRANCH]
 
     code, data = cli_json(capsys, "task", "approve", T01, "--json", "--repo", str(repo))
     assert code == 2
@@ -315,7 +334,12 @@ def test_clean_removes_closed_pr_worktree(repo: Path, script: Script, capsys: Ca
 def test_clean_without_runs(repo: Path, capsys: Capsys) -> None:
     code, data = cli_json(capsys, "task", "clean", "--json", "--repo", str(repo))
     assert code == 0
-    assert data == {"ok": True, "data": {"removed": []}, "error": None, "warnings": []}
+    assert data == {
+        "ok": True,
+        "data": {"removed": [], "deleted_branches": []},
+        "error": None,
+        "warnings": [],
+    }
 
 
 def test_store_prs(tmp_path: Path) -> None:

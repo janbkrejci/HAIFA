@@ -27,6 +27,7 @@ from aifactory.providers import (
     PrStatus,
     PullRequest,
 )
+from aifactory.providers import git as pgit
 from aifactory.providers.local import LocalProvider
 from aifactory.review import ReviewError, approve_task, ci, try_auto_merge
 from aifactory.run import TaskPrRow, TaskRunRow, TaskRunStore, run_task
@@ -202,8 +203,11 @@ def test_merges_without_red_checks(
     assert row.state == "merged" and row.auto_merge_error is None
     assert row.merged_by == (MERGED_BY_AUTO if auto else MERGED_BY_OPERATOR)
     # the checks read are those of the head with the status: done commit
-    assert provider.asked == [git(repo, "rev-parse", BRANCH)]
-    assert git(repo, "log", "-1", "--format=%s", BRANCH) == f"{T01}: status done"
+    assert len(provider.asked) == 1
+    head = provider.asked[0]
+    assert git(repo, "rev-parse", f"{head}~1") == first.run.head_sha
+    assert git(repo, "log", "-1", "--format=%s", head) == f"{T01}: status done"
+    assert pgit.rev_parse(repo, f"refs/heads/{BRANCH}") is None
     assert provider.logs_for == []
     assert [r.workflow for r in runs(repo)] == ["plan-review-commit"]
 
@@ -235,11 +239,14 @@ def test_red_checks_are_repaired_on_the_same_branch(repo: Path, script: Script, 
     assert row.state == "merged" and row.branch == BRANCH and row.auto_merge_error is None
     assert on_main(repo, FIX)
     # the repair lands on top of the done commit; the second read is of the repaired head
-    assert git(repo, "log", "-2", "--format=%s", BRANCH).splitlines() == [
+    head = fix_run.head_sha
+    assert head is not None
+    assert git(repo, "log", "-2", "--format=%s", head).splitlines() == [
         "Fix CI",
         f"{T01}: status done",
     ]
-    assert provider.asked == [git(repo, "rev-parse", f"{BRANCH}~1"), git(repo, "rev-parse", BRANCH)]
+    assert provider.asked == [git(repo, "rev-parse", f"{head}~1"), head]
+    assert pgit.rev_parse(repo, f"refs/heads/{BRANCH}") is None
 
 
 @MODES
