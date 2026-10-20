@@ -3,7 +3,7 @@ id: HAIFA-REFINEMENT-T59
 title: "Backend: stav „Schváleno, čeká na CI“ po ručním schválení PR"
 status: todo
 workflow: build-test-review
-depends_on: [HAIFA-TODO-T22]
+depends_on: []
 writes: [aifactory/src/aifactory/run/store.py, aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/overview.py, aifactory/src/aifactory/web/review.py, aifactory/src/aifactory/workflow/adaptive.py, aifactory/tests/review/test_ci_gate.py, aifactory/tests/web/test_web_backlog.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/web/test_web_review.py, aifactory/tests/run/test_auto_merge.py]
 ---
 
