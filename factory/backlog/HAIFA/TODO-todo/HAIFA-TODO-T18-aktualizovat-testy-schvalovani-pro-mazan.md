@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T18
 title: Aktualizovat testy schvalování pro mazání větví po merge
-status: todo
+status: cancelled
 depends_on: []
 related: [HAIFA-REFINEMENT-T51]
 writes: [aifactory/tests/review/test_approve_merge_retry.py, aifactory/tests/review/test_ci_gate.py, aifactory/tests/run/test_task_pr_flow.py]
