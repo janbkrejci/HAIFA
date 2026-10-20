@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T57
 title: "Chip „Probíhá kontrola“ jen při ruční kontrole, ne při každém načtení stránky"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/lib/readiness.ts, aifactory/web/src/components/OverviewReadiness.vue, aifactory/web/src/components/OverviewReadiness.test.ts, aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/src/aifactory/web/static/]
@@ -40,3 +40,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/124 · náklady $0.00
