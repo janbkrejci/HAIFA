@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { OverviewRepo } from '@/lib/api'
-import { activeRuns, automergePrs, failedRows, projectSections, reviewLink, runLink, stateClass, taskSummary } from '@/lib/overview'
+import { activeRuns, automergePrs, failedRows, projectSections, reviewLink, runLink, runningKey, runningLink, stateClass, taskSummary } from '@/lib/overview'
 import { fmtAge, fmtCost, fmtElapsed, ts } from '@/lib/format'
 
 const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; byProject?: boolean }>(), { byProject: false })
@@ -28,11 +28,12 @@ function reviewAge(opened: string | null, ageS: number | null): string {
       <h3>Běží</h3>
       <a
         v-for="run in activeRuns(section.repo)"
-        :key="run.run_id"
-        :href="runLink(repo, run.run_id)"
+        :key="runningKey(run)"
+        :href="runningLink(repo, run)"
         class="row"
         data-test="row-running"
         :data-run="run.run_id"
+        :data-operation="run.operation_id"
       >
         <span class="task mono">{{ run.task_id }}</span>
         <span class="title">{{ run.task_title ?? '' }}</span>

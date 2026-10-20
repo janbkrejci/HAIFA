@@ -45,7 +45,7 @@ from typing import Any, Protocol
 from aifactory import home, oscompat
 from aifactory.config import ConfigError
 from aifactory.run.errors import TaskRunError
-from aifactory.run.store import FAILED, STARTED_MANUAL, TaskRunRow
+from aifactory.run.store import FAILED, STARTED_MANUAL, TaskRunRow, TaskRunStore
 from aifactory.run.task import TaskRunResult, existing_store, task_runs_for
 
 _TAIL_LINES = 20
@@ -134,6 +134,28 @@ def new_row(repo: Path, task_id: str, known: set[str]) -> TaskRunRow | None:
     except (TaskRunError, sqlite3.Error):
         return None
     return next((r for r in rows if r.run_id not in known), None)
+
+
+def register_operation(repo: Path, task_id: str, action: str, pid: int) -> str:
+    """Create the trace DB if needed and record a newly spawned process."""
+    from aifactory.config import load_local
+    from aifactory.run import gitops
+
+    main = gitops.main_root(repo)
+    store = TaskRunStore(load_local(main).trace_db_path(main))
+    try:
+        return store.start_operation(task_id, action, pid)
+    finally:
+        store.close()
+
+
+def finish_operation(repo: Path, operation_id: str) -> None:
+    store = existing_store(repo)
+    if store is not None:
+        try:
+            store.finish_operation(operation_id)
+        finally:
+            store.close()
 
 
 class ChainRunner(Protocol):
@@ -351,6 +373,13 @@ class ProcessRunner:
                 )
         except OSError as exc:
             raise TaskRunError("internal_error", f"cannot start {argv[0]}: {exc}") from exc
+        try:
+            operation_id = register_operation(self.repo, task_id, "run", process.pid)
+        except Exception:
+            with contextlib.suppress(OSError):
+                oscompat.kill_group(process.pid, force=True)
+            process.wait()
+            raise
         member = _Member(task_id, process, envelope_path, log_path)
         deadline = time.monotonic() + self.claim_timeout
         while True:
@@ -358,6 +387,7 @@ class ProcessRunner:
             if row is None and process.poll() is not None:
                 row = new_row(self.repo, task_id, known)
                 if row is None:
+                    finish_operation(self.repo, operation_id)
                     error = launch_error(
                         envelope_path, log_path, process.returncode, f"run {task_id}"
                     )
@@ -365,6 +395,7 @@ class ProcessRunner:
                         "internal_error", f"run {task_id}: exited without a run"
                     )
             if row is not None:
+                finish_operation(self.repo, operation_id)
                 member.row = row
                 self._members.append(member)
                 return row
@@ -372,6 +403,7 @@ class ProcessRunner:
                 with contextlib.suppress(OSError):
                     oscompat.kill_group(process.pid, force=False)
                 process.wait()
+                finish_operation(self.repo, operation_id)
                 raise TaskRunError(
                     "internal_error", f"run {task_id} was not claimed in {self.claim_timeout}s"
                 )

@@ -27,6 +27,7 @@ export function config(over: Partial<OverviewConfig> = {}): OverviewConfig {
 export function running(over: Partial<OverviewRunning> = {}): OverviewRunning {
   return {
     run_id: 'run-1',
+    operation_id: null,
     task_id: 'M01-S01-T01',
     task_title: 'Schema',
     workflow: 'build-test-review',
@@ -39,6 +40,10 @@ export function running(over: Partial<OverviewRunning> = {}): OverviewRunning {
     pause: null,
     ...over,
   }
+}
+
+export function operation(id: string, over: Partial<OverviewRunning> = {}): OverviewRunning {
+  return running({ run_id: null, operation_id: id, workflow: 'run', phase: null, cost: 0, tokens: 0, ...over })
 }
 
 export function review(over: Partial<OverviewReview> = {}): OverviewReview {

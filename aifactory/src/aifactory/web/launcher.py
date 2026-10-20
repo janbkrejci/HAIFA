@@ -32,6 +32,7 @@ its runs the same way) and are re-exported here.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import secrets
 import sqlite3
@@ -126,6 +127,7 @@ class LaunchedRun:
     log_path: Path
     process: subprocess.Popen[bytes] = field(repr=False)
     started_at: float = field(default_factory=time.time)
+    operation_id: str | None = None
 
 
 def _launch_error(launched: LaunchedRun) -> TaskRunError | None:
@@ -320,9 +322,17 @@ class RunLauncher:
                 )
         except OSError as exc:
             raise TaskRunError("internal_error", f"cannot start {argv[0]}: {exc}") from exc
+        try:
+            operation_id = members.register_operation(repo, task_id, action, process.pid)
+        except Exception:
+            with contextlib.suppress(OSError):
+                oscompat.kill_group(process.pid, force=True)
+            process.wait()
+            raise
         launched = LaunchedRun(
             task_id=task_id,
             action=action,
+            operation_id=operation_id,
             argv=argv,
             pid=process.pid,
             envelope_path=envelope_path,
@@ -344,10 +354,12 @@ class RunLauncher:
         while True:
             row = claimed()
             if row is not None:
+                members.finish_operation(repo, operation_id)
                 return row
             if process.poll() is not None:
                 row = claimed()
                 if row is not None:
+                    members.finish_operation(repo, operation_id)
                     return row
                 error = _launch_error(launched)
                 if error is not None:
@@ -367,6 +379,8 @@ class RunLauncher:
             if store is None:
                 return
             try:
+                if launched.operation_id is not None:
+                    store.finish_operation(launched.operation_id)
                 store.for_task(task_id)  # a killed process's `running` row becomes `aborted`
             finally:
                 store.close()

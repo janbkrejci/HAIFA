@@ -25,6 +25,7 @@
 from __future__ import annotations
 
 import datetime
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -591,11 +592,13 @@ def publish_task(
     workflow journal. Otherwise the PR stays open for review without continuing the queue.
     """
     ctx = _context(repo, provider)
+    operation_id = ctx.store.start_operation(task_id, "publish", os.getpid())
     try:
         published = _publish(ctx, task_id, run_id)
     except RuntimeError as exc:
         raise ReviewError("worktree_failed", str(exc)) from exc
     finally:
+        ctx.store.finish_operation(operation_id)
         ctx.store.close()
 
     from aifactory.run.queue import _fresh_backlog, auto_merge_enabled, run_chain
