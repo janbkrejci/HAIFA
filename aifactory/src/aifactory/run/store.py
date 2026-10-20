@@ -233,8 +233,7 @@ _PR_COLUMNS = (
     "approved_at",
 )
 # columns added to task_prs after its first release; older DBs get them on open
-# Keep the legacy merged_by/auto_merge_error trailing pair on original-schema upgrades.
-_PR_ADDED_COLUMNS = {"approved_at": "TEXT", "merged_by": "TEXT", "auto_merge_error": "TEXT"}
+_PR_ADDED_COLUMNS = {"merged_by": "TEXT", "auto_merge_error": "TEXT", "approved_at": "TEXT"}
 MERGED_BY_AUTO = "auto-merge"
 MERGED_BY_OPERATOR = "operator"
 _SYNC_COLUMNS = (
