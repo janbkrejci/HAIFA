@@ -9,3 +9,5 @@ Ukončený proces se v pohledu ignoruje. Launcher odstraní operaci při dokonč
 Výpočty slotů a připravenosti dál používají skutečné živé běhy a otevřené PR. Samotná operace nemění kapacitu ani chování ovládání běhů.
 
 Ověření zahrnuje čekání před claimem, retry stejného run ID, opakovanou publikaci se starou chybou, selhání člena před claimem, mrtvý proces, úklid a shodu obou pohledů. Testy nepoužívají živé modely ani hosting.
+
+Frontend přijímá `run_id: null` se stabilním `operation_id`. Pending položky mají samostatné klíče a odkazují na existující detail tasku, po claimu na detail běhu. Pending operace sama nenabízí ovládání vyžadující skutečný run ID. Regrese pokrývá více souběžných operací, změnu pořadí a přechod na claimnutý běh s původní fází a pauzou.

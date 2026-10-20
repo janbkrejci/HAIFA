@@ -84,7 +84,7 @@ export function activeRuns(repo: OverviewRepo): OverviewRunning[] {
 /** Failed tasks plus running rows whose process is gone. */
 export function failedRows(repo: OverviewRepo): FailedRow[] {
   const ended = repo.running
-    .filter((r) => r.process === 'ended')
+    .filter((r): r is OverviewRunning & { run_id: string } => r.process === 'ended' && r.run_id !== null)
     .map((r) => ({
       run_id: r.run_id,
       task_id: r.task_id,
@@ -207,17 +207,17 @@ export function canStart(repo: OverviewRepo): boolean {
 
 /** Pauza: a running run without a pause. */
 export function canPause(repo: OverviewRepo): boolean {
-  return activeRuns(repo).some((r) => !r.pause)
+  return activeRuns(repo).some((r) => r.run_id !== null && !r.pause)
 }
 
 /** Pokračovat: a run that pauses or is paused. */
 export function canResume(repo: OverviewRepo): boolean {
-  return activeRuns(repo).some((r) => r.pause === 'pausing' || r.pause === 'paused')
+  return activeRuns(repo).some((r) => r.run_id !== null && (r.pause === 'pausing' || r.pause === 'paused'))
 }
 
-/** Stop: anything running. */
+/** Stop: at least one claimed run that the backend can control. */
 export function canStop(repo: OverviewRepo): boolean {
-  return activeRuns(repo).length > 0
+  return activeRuns(repo).some((r) => r.run_id !== null)
 }
 
 /** "dobíhá 1 běh", "dobíhají 2 běhy", "dobíhá 5 běhů". */
@@ -240,7 +240,7 @@ export function controlStatus(repo: OverviewRepo): ControlStatus | null {
     return { kind: 'stopped', text: 'Zastaveno' }
   }
   const ids = new Set(control.run_ids)
-  const affected = activeRuns(repo).filter((r) => ids.has(r.run_id))
+  const affected = activeRuns(repo).filter((r) => r.run_id !== null && ids.has(r.run_id))
   const left = affected.filter((r) => r.pause !== 'paused').length
   if (left > 0) return { kind: 'pausing', text: `Pozastavuje se – ${runsFinishing(left)}` }
   if (affected.length > 0) return { kind: 'paused', text: 'Pozastaveno' }
@@ -303,6 +303,15 @@ export function matchesFilter(repo: OverviewRepo, filter: OverviewFilter | null)
   if (filter === null) return true
   if (filter === 'problems') return hasProblems(repo)
   return repoCounts(repo)[filter] > 0
+}
+
+/** An operation has its own identity until a real run takes over. */
+export function runningKey(run: OverviewRunning): string {
+  return run.run_id !== null ? `run:${run.run_id}` : `operation:${run.operation_id ?? run.task_id}`
+}
+
+export function runningLink(repo: OverviewRepo, run: OverviewRunning): string {
+  return run.run_id !== null ? runLink(repo, run.run_id) : repoHref(repo.id, 'backlog', run.task_id)
 }
 
 export function runLink(repo: OverviewRepo, runId: string): string {

@@ -16,6 +16,8 @@ import {
   problems,
   reviewLink,
   runLink,
+  runningKey,
+  runningLink,
   runsFinishing,
   sortRepos,
   stateClass,
@@ -25,7 +27,7 @@ import {
 } from './overview'
 import { fmtAge, fmtElapsed } from './format'
 import { fetchOverview, type OverviewFactory } from './api'
-import { config, factory, failed, mergedOutside, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
+import { config, factory, failed, mergedOutside, operation, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
 
 const CALM = repo('calm')
 const RUNS = repo('runs', { running: [running()] })
@@ -280,5 +282,30 @@ describe('overview projects', () => {
     expect(() => writeByProject(false)).not.toThrow()
     get.mockRestore()
     set.mockRestore()
+  })
+})
+
+
+describe('pending operations', () => {
+  it('uses separate stable identities and task links until a real run is claimed', () => {
+    const first = operation('op-1', { task_id: 'T/1' })
+    const second = operation('op-2', { task_id: 'T2' })
+    const r = repo('a b', { running: [first, second] })
+    expect(activeRuns(r)).toEqual([first, second])
+    expect(new Set(r.running.map(runningKey)).size).toBe(2)
+    expect(runningKey(first)).toBe('operation:op-1')
+    expect(runningLink(r, first)).toBe('#/r/a%20b/backlog/T%2F1')
+    const claimed = running({ run_id: 'real-1', task_id: first.task_id, pause: 'paused' })
+    expect(runningKey(claimed)).toBe('run:real-1')
+    expect(runningLink(r, claimed)).toBe('#/r/a%20b/runs/real-1')
+    expect(canPause(r)).toBe(false)
+    expect(canResume(r)).toBe(false)
+    expect(canStop(r)).toBe(false)
+    expect(canResume(repo('a', { running: [claimed, second] }))).toBe(true)
+    expect(canStop(repo('a', { running: [claimed, second] }))).toBe(true)
+  })
+
+  it('never treats an ended operation without a run as a failed run', () => {
+    expect(failedRows(repo('a', { running: [operation('dead', { process: 'ended' })] }))).toEqual([])
   })
 })

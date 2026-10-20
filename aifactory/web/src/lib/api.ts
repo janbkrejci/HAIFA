@@ -189,10 +189,12 @@ export interface OverviewPhase {
   started_at: string | null
 }
 
-/** A run in the `running` state (GET /api/overview). */
+/** A running run or a live operation before claim (GET /api/overview). */
 export interface OverviewRunning {
   project?: string | null
-  run_id: string
+  run_id: string | null
+  /** Stable identity before claim; omitted by older servers. */
+  operation_id?: string | null
   task_id: string
   task_title: string | null
   workflow: string | null

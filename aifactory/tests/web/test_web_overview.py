@@ -1196,3 +1196,40 @@ def test_dead_operation_is_hidden_without_mutating_trace(repo_a: Path, tmp_path:
             assert store.live_operations() == []
         finally:
             store.close()
+
+
+@pytest.mark.parametrize("pause", [None, "pausing", "paused"])
+def test_claimed_run_takes_precedence_over_live_operations(
+    repo_a: Path, tmp_path: Path, pause: str | None
+) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.conn.execute("UPDATE task_runs SET pause = ? WHERE run_id = 'r-run'", (pause,))
+        before = _repo_item(repo_a, tmp_path)
+        store.start_operation(T_RUN, "retry", os.getpid())
+        store.start_operation(T_RUN, "publish", os.getpid())
+        item = _repo_item(repo_a, tmp_path)
+        rows = [r for r in item["running"] if r["task_id"] == T_RUN]
+        assert len(rows) == 1
+        run = rows[0]
+        assert run["run_id"] == "r-run"
+        assert run["operation_id"] is None
+        assert run["workflow"] == "build-test-review"
+        assert run["phase"] == {
+            "name": "build",
+            "attempt": 2,
+            "started_at": "2026-01-07T10:02:00+00:00",
+        }
+        assert run["pause"] == pause
+        assert run["cost"] == 0.42
+        assert run["tokens"] == 1200
+        assert item["factory"] == before["factory"]
+        assert item["factory"]["running"] == 1
+        board, warnings = backlog_view(repo_a)
+        assert warnings == []
+        assert item["tasks"] == board["state_counts"]
+        assert {t["id"]: t["board_state"] for t in board["tasks"]}[T_RUN] == "running"
+    finally:
+        store.close()

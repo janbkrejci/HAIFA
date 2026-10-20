@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RepoCard from './RepoCard.vue'
 import type { OverviewRepo } from '@/lib/api'
-import { factory, failed, mergedOutside, repo, review, running, tasks } from '@/test/overviewFixtures'
+import { factory, failed, mergedOutside, operation, repo, review, running, tasks } from '@/test/overviewFixtures'
 
 const api = vi.hoisted(() => ({ backlogSync: vi.fn(), controlStart: vi.fn(), controlPause: vi.fn() }))
 vi.mock('@/lib/api', async (importOriginal) => ({ ...(await importOriginal<object>()), ...api }))
@@ -308,5 +308,28 @@ describe('RepoCard projects', () => {
     const before = card.text()
     await card.setProps({ byProject: false })
     expect(card.text()).toBe(before)
+  })
+})
+
+
+describe('RepoCard pending operations', () => {
+  it('links multiple pending tasks and replaces an operation with the claimed run', async () => {
+    const first = operation('operation-1', { task_id: 'T1', task_title: 'First' })
+    const second = operation('operation-2', { task_id: 'T2', task_title: 'Second', workflow: 'publish' })
+    const card = mountWith(repo('a', { running: [first, second] }))
+    const rows = () => card.findAll('[data-test="row-running"]')
+    expect(rows().map((r) => r.attributes('data-operation'))).toEqual(['operation-1', 'operation-2'])
+    expect(rows().map((r) => r.attributes('href'))).toEqual(['#/r/a/backlog/T1', '#/r/a/backlog/T2'])
+    const secondElement = rows()[1].element
+    const claimed = running({ run_id: 'claimed-1', task_id: 'T1', task_title: 'First', pause: 'paused' })
+    await card.setProps({ repo: repo('a', { running: [second, claimed] }) })
+    expect(rows()[0].element).toBe(secondElement)
+    expect(rows()[0].attributes('href')).toBe('#/r/a/backlog/T2')
+    expect(rows()[1].attributes('data-run')).toBe('claimed-1')
+    expect(rows()[1].attributes('data-operation')).toBeUndefined()
+    expect(rows()[1].attributes('href')).toBe('#/r/a/runs/claimed-1')
+    expect(rows()[1].get('[data-test="row-phase"]').text()).toBe('build · pokus 2')
+    expect(rows()[1].get('[data-test="row-cost"]').text()).toContain('1.25')
+    expect(card.find('[data-test="factory-resume"]').exists()).toBe(true)
   })
 })

@@ -153,6 +153,15 @@ def _zombie_or_gone(pid: int) -> str:
     return done.stdout.strip()
 
 
+def operations_of(repo: Path) -> list[tuple[str, str, int]]:
+    """Raw evidence: never call the reaper while checking launcher cleanup."""
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        return store.conn.execute("SELECT task_id, action, pid FROM task_operations").fetchall()
+    finally:
+        store.close()
+
+
 def test_run_is_a_separate_process(
     make_app: Apps, repo: Path, stub: Stub, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -162,6 +171,7 @@ def test_run_is_a_separate_process(
     run = data["run"]
     assert run["state"] == "running"
     assert run["task_id"] == T01
+    assert operations_of(repo) == []
     [live] = launcher.running()
     [record] = stub.records(T01)
     assert run["pid"] == record["pid"] != os.getpid()
@@ -392,6 +402,7 @@ def test_process_that_finishes(make_app: Apps, repo: Path, stub: Stub) -> None:
     assert data["run"] is not None
     launcher.wait(10)
     assert launcher.running() == []
+    assert operations_of(repo) == []
     [row] = runs_of(repo, T01)
     assert row.state == "succeeded"
     [live] = [p for p in home.logs_dir().iterdir() if p.suffix == ".json"]
@@ -515,6 +526,8 @@ def test_killed_process_is_reaped(make_app: Apps, repo: Path, stub: Stub) -> Non
         return row is not None and row.state == "aborted"
 
     assert _until(aborted)  # the launcher reaped the store itself
+    launcher.wait(30)
+    assert operations_of(repo) == []
 
 
 def test_command_prefix_is_configurable(repo: Path, stub: Stub) -> None:
@@ -558,12 +571,16 @@ def test_publish_launches_separate_process_and_returns_while_waiting(
     stub: Stub,
 ) -> None:
     _app, _client, launcher = make_app(repo)
-    stub.plan(T01, "claim-wait")
+    stub.plan(T01, "fail", code="pr_failed", message="cannot publish", delay=60)
     launcher.start_publish(repo, T01, timeout=0.3)
     live = launcher.running()
     assert len(live) == 1
     assert live[0].action == "publish" and live[0].pid != os.getpid()
     assert live[0].argv[-6:] == ["task", "publish", T01, "--repo", str(repo), "--json"]
+    assert operations_of(repo) == [(T01, "publish", live[0].pid)]
+    _kill(live[0].pid)
+    launcher.wait(30)
+    assert operations_of(repo) == []
 
 
 @pytest.mark.parametrize("code", ["pr_failed", "pr_exists", "no_succeeded_run"])
@@ -580,3 +597,16 @@ def test_publish_launcher_reports_quick_errors(
         # load can exceed the UI's short wait. The pending path is tested separately.
         launcher.start_publish(repo, T01, timeout=30)
     assert info.value.code == code
+    launcher.wait(30)
+    assert operations_of(repo) == []
+
+
+def test_non_claiming_publication_completion_cleans_operation(repo: Path, stub: Stub) -> None:
+    # An independent child prints an ok envelope without ever claiming a task_run.
+    command = [sys.executable, "-c", "import json; print(json.dumps({'ok': True}))"]
+    launcher = RunLauncher(command=command)
+    launcher.start_publish(repo, T01, timeout=30)
+    launcher.wait(30)
+    assert launcher.running() == []
+    assert operations_of(repo) == []
+    assert runs_of(repo, T01) == []
