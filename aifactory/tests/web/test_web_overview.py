@@ -407,18 +407,211 @@ def _repo_item(repo: Path, tmp_path: Path) -> dict[str, Any]:
 
 def test_task_summary_counts_tasks_per_board_state(repo_a: Path, tmp_path: Path) -> None:
     a = _repo_item(repo_a, tmp_path)
-    # T_DEAD's process ended: its board state comes from the backlog (ready)
+    # An unreaped row stays visible as running, including in the board-state chips.
     assert a["tasks"] == {
         "todo": 0,
-        "ready": 2,
+        "ready": 1,
         "human": 0,
         "blocked": 0,
-        "running": 1,
+        "running": 2,
         "in review": 1,
         "awaiting merge": 0,
         "done": 1,
         "cancelled": 1,
     }
+
+
+@pytest.mark.parametrize(
+    ("state", "pr_error", "expected"),
+    [
+        ("succeeded", None, "running"),
+        ("succeeded", "push failed", "ready"),
+        ("failed", None, "ready"),
+        ("aborted", None, "ready"),
+        ("running", None, "running"),
+    ],
+)
+def test_handoff_counts_match_kanban(
+    repo_a: Path, tmp_path: Path, state: str, pr_error: str | None, expected: str
+) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.finish("r-fail", state, None, None)
+        store.set_pr_error("r-fail", pr_error)
+    finally:
+        store.close()
+    dead_before = _run_row(_db(repo_a), "r-dead")
+    item = _repo_item(repo_a, tmp_path)
+    board, warnings = backlog_view(repo_a)
+    assert warnings == []
+    assert {t["id"]: t["board_state"] for t in board["tasks"]}[T_FAIL] == expected
+    assert item["tasks"] == board["state_counts"] == item["projects"][0]["tasks"]
+    assert item["tasks"]["running"] == 2 + (expected == "running")
+    assert (T_FAIL in {r["task_id"] for r in item["running"]}) == (expected == "running")
+    # Includes T_DEAD, whose process ended; reading either view must not reap it.
+    assert _run_row(_db(repo_a), "r-dead") == dead_before
+    assert any(r["task_id"] == T_DEAD and r["process"] == "ended" for r in item["running"])
+
+
+@pytest.mark.parametrize("missing", [("branch",), ("pr_error",), ("branch", "pr_error")])
+def test_trace_db_without_publication_columns(
+    repo_a: Path, tmp_path: Path, missing: tuple[str, ...]
+) -> None:
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.finish("r-fail", "succeeded", None, None)
+    finally:
+        store.close()
+    with sqlite3.connect(_db(repo_a)) as conn:
+        for column in missing:
+            conn.execute(f"ALTER TABLE task_runs DROP COLUMN {column}")
+
+    ov = Overview(Registry(tmp_path / "home"))
+    entry = RepoEntry(id="alpha", name="alpha", path=str(repo_a), added_at="2026-01-01")
+    item = ov.repo(entry)
+    assert item["state"] == "ok"
+    assert item["has_trace"] is True
+    assert item["warnings"] == []
+    assert {r["task_id"] for r in item["running"]} == {T_RUN, T_DEAD, T_FAIL}
+    assert [p["task_id"] for p in item["review"]] == [T_REV]
+    expected = dict.fromkeys(BOARD_STATES, 0) | {
+        "running": 3,
+        "in review": 1,
+        "done": 1,
+        "cancelled": 1,
+    }
+    assert item["tasks"] == item["projects"][0]["tasks"] == expected
+    # The read must exercise SQL fallbacks, without migrating the missing columns back.
+    with sqlite3.connect(_db(repo_a)) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)")}
+    assert not columns.intersection(missing)
+    trace, warnings = overview._trace_view(_db(repo_a))
+    assert warnings == []
+    assert trace is not None
+    for row in trace.runs:
+        for column in missing:
+            assert row[column] is None
+
+
+@pytest.mark.parametrize("same_branch", [True, False])
+def test_success_with_closed_pr_matches_kanban(
+    repo_a: Path, tmp_path: Path, same_branch: bool
+) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.update_pr(f"factory/{T_REV}-r-rev", state="closed")
+        if not same_branch:
+            store.conn.execute(
+                "UPDATE task_prs SET branch = 'factory/older-branch' WHERE task_id = ?", (T_REV,)
+            )
+    finally:
+        store.close()
+    item = _repo_item(repo_a, tmp_path)
+    board, warnings = backlog_view(repo_a)
+    assert warnings == []
+    expected = "ready" if same_branch else "running"
+    assert {t["id"]: t["board_state"] for t in board["tasks"]}[T_REV] == expected
+    assert item["tasks"] == item["projects"][0]["tasks"] == board["state_counts"]
+    assert item["tasks"]["ready"] == 1 + same_branch
+    assert item["tasks"]["running"] == 2 + (not same_branch)
+    assert (T_REV in {r["task_id"] for r in item["running"]}) == (not same_branch)
+    assert item["review"] == item["automerge"] == []
+
+
+@pytest.mark.parametrize("handoff", ["publication", "merge"])
+@pytest.mark.parametrize("limit", [2, 3])
+def test_display_handoffs_preserve_factory_capacity(
+    repo_a: Path, tmp_path: Path, handoff: str, limit: int
+) -> None:
+    write(repo_a, ".factory/config.yaml", f"base: main\ndocs_root: .\nmax_parallel_runs: {limit}\n")
+    ov = Overview(Registry(tmp_path / "home"), clock=lambda: 1000.0)
+    entry = RepoEntry(id="alpha", name="alpha", path=str(repo_a), added_at="2026-01-01")
+    before = ov.repo(entry)
+    if handoff == "publication":
+        store = TaskRunStore(_db(repo_a))
+        try:
+            store.finish("r-fail", "succeeded", None, None)
+        finally:
+            store.close()
+    else:
+        _save_pr(repo_a, T_FAIL, "factory/merged-fail", "merged", 1)
+    after = ov.repo(entry)
+    expected_capacity = {
+        "ready": 2,
+        "running": 1,
+        "in_review": 1,
+        "free_slots": limit - 2,
+        "can_start": limit > 2,
+    }
+    for key, value in expected_capacity.items():
+        assert before["factory"][key] == after["factory"][key] == value
+    assert before["tasks"]["ready"] == 1
+    assert after["tasks"]["ready"] == 0
+    display = "running" if handoff == "publication" else "done"
+    assert after["tasks"][display] == before["tasks"][display] + 1
+    assert after["tasks"] == after["projects"][0]["tasks"]
+    path = next((repo_a / "backlog").rglob(f"{T_FAIL}-*.md"))
+    assert "status: todo" in path.read_text(encoding="utf-8")
+
+
+def test_merge_and_reopen_bypass_populated_task_cache(repo_a: Path, tmp_path: Path) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    ov = Overview(Registry(tmp_path / "home"), clock=lambda: 1000.0)
+    entry = RepoEntry(id="alpha", name="alpha", path=str(repo_a), added_at="2026-01-01")
+    before = ov.repo(entry)
+    assert before["tasks"]["in review"] == 1
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.update_pr(f"factory/{T_REV}-r-rev", state="merged")
+    finally:
+        store.close()
+    merged = ov.repo(entry)
+    assert merged["tasks"]["done"] == before["tasks"]["done"] + 1
+    assert (
+        merged["tasks"] == merged["projects"][0]["tasks"] == backlog_view(repo_a)[0]["state_counts"]
+    )
+    assert merged["review"] == []
+    path = next((repo_a / "backlog").rglob(f"{T_REV}-*.md"))
+    original = path.read_text(encoding="utf-8")
+    history = f"\n## Běhy\n- PR {PR_URL} merged\n"
+    path.write_text(original.replace("status: todo", "status: done") + history, encoding="utf-8")
+    assert ov.repo(entry)["tasks"]["done"] == merged["tasks"]["done"]
+    # Reopen while the exact same TTL entry would otherwise still say done.
+    path.write_text(original + history, encoding="utf-8")
+    reopened = ov.repo(entry)
+    assert reopened["tasks"]["ready"] == before["tasks"]["ready"] + 1
+    assert (
+        reopened["tasks"]
+        == reopened["projects"][0]["tasks"]
+        == backlog_view(repo_a)[0]["state_counts"]
+    )
+
+
+def test_unchanged_completion_bypasses_task_cache(repo_a: Path, tmp_path: Path) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.finish("r-fail", "succeeded", None, None)
+    finally:
+        store.close()
+    ov = Overview(Registry(tmp_path / "home"), clock=lambda: 1000.0)
+    entry = RepoEntry(id="alpha", name="alpha", path=str(repo_a), added_at="2026-01-01")
+    before = ov.repo(entry)
+    assert T_FAIL in {r["task_id"] for r in before["running"]}
+    path = next((repo_a / "backlog").rglob(f"{T_FAIL}-*.md"))
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("status: todo", "status: done"), encoding="utf-8"
+    )
+    done = ov.repo(entry)
+    assert done["tasks"]["done"] == before["tasks"]["done"] + 1
+    assert T_FAIL not in {r["task_id"] for r in done["running"]}
+    assert done["tasks"] == done["projects"][0]["tasks"] == backlog_view(repo_a)[0]["state_counts"]
 
 
 def test_projects_split_lists_and_task_counts(
@@ -466,7 +659,7 @@ def test_projects_split_lists_and_task_counts(
     expected = dict.fromkeys(BOARD_STATES, 0)
     expected.update({"ready": 1, "running": 1, "in review": 1})
     assert a["projects"][1]["tasks"] == expected
-    expected.update({"ready": 2, "done": 1, "cancelled": 1})
+    expected.update({"running": 2, "done": 1, "cancelled": 1})
     assert a["projects"][0]["tasks"] == expected
     assert {state: sum(p["tasks"][state] for p in a["projects"]) for state in BOARD_STATES} == a[
         "tasks"
@@ -483,7 +676,7 @@ def test_two_level_backlog_has_no_projects(repo_a: Path, tmp_path: Path) -> None
     a = _repo_item(repo_a, tmp_path)
     assert a["warnings"] == []
     assert a["projects"] == []
-    assert a["tasks"]["running"] == 1
+    assert a["tasks"]["running"] == 2
     for key in ("running", "review", "failed"):
         assert a[key]
         assert all(item["project"] is None for item in a[key])
@@ -557,7 +750,7 @@ def test_factory_can_start_with_a_free_slot_and_excluded_tasks_are_not_ready(
     assert factory["ready"] == 1
     assert factory["can_start"] is True
     assert (factory["pausing"], factory["paused"]) == (1, 0)
-    assert a["tasks"]["ready"] == 2  # the summary is the kanban's, exclusion aside
+    assert a["tasks"]["ready"] == 1  # dead process is still shown as running
     assert next(r for r in a["running"] if r["task_id"] == T_RUN)["pause"] == "pausing"
 
 

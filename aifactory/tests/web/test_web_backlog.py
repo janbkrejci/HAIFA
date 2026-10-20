@@ -242,6 +242,91 @@ def test_no_trace_db_means_no_runtime_states(tmp_path: Path) -> None:
     assert not (root / ".factory" / "trace.db").exists()
 
 
+@pytest.mark.parametrize(
+    ("state", "pr_error", "expected"),
+    [
+        ("succeeded", None, "running"),
+        ("succeeded", "push failed", "ready"),
+        ("failed", None, "ready"),
+        ("aborted", None, "ready"),
+    ],
+)
+def test_run_to_publication_handoff(
+    tmp_path: Path, state: str, pr_error: str | None, expected: str
+) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    store = TaskRunStore(root / ".factory/trace.db")
+    try:
+        store.finish("r-b2", state, None, None)
+        store.set_pr_error("r-b2", pr_error)
+    finally:
+        store.close()
+    data, warnings = backlog_view(root)
+    assert warnings == []
+    assert _states(data)[B2] == expected
+
+
+@pytest.mark.parametrize("same_branch", [True, False])
+def test_success_with_closed_pr_is_ready(tmp_path: Path, same_branch: bool) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    store = TaskRunStore(root / ".factory/trace.db")
+    try:
+        store.update_pr(f"factory/{B3}-1", state="closed")
+        if not same_branch:
+            store.conn.execute(
+                "UPDATE task_prs SET branch = 'factory/older-branch' WHERE task_id = ?", (B3,)
+            )
+    finally:
+        store.close()
+    data, warnings = backlog_view(root)
+    assert warnings == []
+    assert _states(data)[B3] == ("ready" if same_branch else "running")
+    assert data["state_counts"]["running"] == 1 + (not same_branch)
+    assert data["state_counts"]["in review"] == data["state_counts"]["awaiting merge"] == 0
+
+
+def test_merge_handoff_and_reopening(tmp_path: Path) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    store = TaskRunStore(root / ".factory/trace.db")
+    try:
+        store.update_pr(f"factory/{B3}-1", state="merged")
+    finally:
+        store.close()
+    assert _states(backlog_view(root)[0])[B3] == "done"
+    path = _file(root, B3)
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\n## Běhy\n- PR https://example.test/pr/3 merged\n",
+        encoding="utf-8",
+    )
+    assert _states(backlog_view(root)[0])[B3] == "ready"
+
+
+def test_ended_process_stays_running_until_reaped(tmp_path: Path) -> None:
+    from overview_fixture import dead_pid
+
+    from aifactory.web.backlog import backlog_view
+
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    with dead_pid() as pid:
+        store = TaskRunStore(root / ".factory/trace.db")
+        try:
+            store.conn.execute("UPDATE task_runs SET pid = ? WHERE run_id = 'r-b2'", (pid,))
+        finally:
+            store.close()
+        assert _states(backlog_view(root)[0])[B2] == "running"
+        store = TaskRunStore(root / ".factory/trace.db")
+        try:
+            assert store.get("r-b2").state == "running"  # type: ignore[union-attr]
+        finally:
+            store.close()
+
+
 def test_task_detail(tmp_path: Path) -> None:
     root = make_backlog_repo(tmp_path / "repo", with_trace=True)
     client = _client(root, tmp_path)

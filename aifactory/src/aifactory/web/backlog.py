@@ -9,7 +9,9 @@ committed except by ``commit`` (``factory backlog commit``), which commits the b
 changes to ``base``.
 
 Board states (the kanban columns), first match wins: ``done``, ``cancelled``,
-``running`` (a running run in the trace DB), ``awaiting merge`` (an open PR the factory
+``running`` (a running row or a successful run awaiting publication/completion),
+``done`` (a merged PR not recorded in the reopened task's history),
+``awaiting merge`` (an open PR the factory
 merges by itself, see ``waits_for_automerge``), ``in review`` (any other open PR: it waits
 for the user), ``blocked``, ``human`` (a person's task, ``assignee: human``), ``ready``
 (only with an effective workflow), otherwise ``todo``
@@ -27,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 from aifactory import backlog as core
 from aifactory.backlog import Backlog, Container, Task
+from aifactory.backlog.taskfile import has_entry
 from aifactory.config import ConfigError, load_local, load_run_config
 from aifactory.config.loader import WORKFLOWS_DIR
 from aifactory.config.run import worktree_base
@@ -110,6 +113,7 @@ class _Runtime:
     # tasks whose newest open PR has an auto_merge_error (auto-merge gave up on it)
     merge_blocked: set[str] = field(default_factory=set)
     last_run: dict[str, str] = field(default_factory=dict)
+    merged: dict[str, str] = field(default_factory=dict)
     queue: QueuePrefs = field(default_factory=QueuePrefs)
     # ``queue.priority_map`` of the backlog, computed once (``_priority``)
     priority: dict[str, list[str]] | None = None
@@ -138,22 +142,18 @@ def _runs_hidden(exc: Exception) -> str:
 
 def _runtime(repo: Path) -> tuple[_Runtime, list[str]]:
     """Running tasks, tasks with an open PR and the state of each task's newest run."""
-    rt = _Runtime()
+    # Use the same read-only snapshot as Overview; all_runs() would reap dead rows
+    # while merely displaying the board.
+    from aifactory.web.overview import _trace_view
+    from aifactory.web.repos import trace_db_of
+
+    trace, warnings = _trace_view(trace_db_of(repo))
+    rt = _display_runtime(trace.runs, trace.prs) if trace is not None else _Runtime()
     try:
         store = existing_store(repo)
         if store is None:
-            return rt, []
+            return rt, warnings
         try:
-            for run in store.all_runs():  # newest first
-                rt.last_run.setdefault(run.task_id, run.state)
-                if run.state == "running":
-                    rt.running.add(run.task_id)
-            for pr in store.open_prs():  # newest first
-                if pr.task_id in rt.in_review:
-                    continue
-                rt.in_review.add(pr.task_id)
-                if pr.auto_merge_error:
-                    rt.merge_blocked.add(pr.task_id)
             rt.queue = store.queue_prefs()
         finally:
             store.close()
@@ -163,7 +163,55 @@ def _runtime(repo: Path) -> tuple[_Runtime, list[str]]:
         return _Runtime(), [f"runs are not shown: {exc.message}"]
     except sqlite3.Error as exc:
         return _Runtime(), [_runs_hidden(exc)]
-    return rt, []
+    return rt, warnings
+
+
+def _newest_prs(prs: list[sqlite3.Row]) -> dict[str, sqlite3.Row]:
+    newest: dict[str, sqlite3.Row] = {}
+    for pr in prs:
+        seen = newest.get(pr["task_id"])
+        if seen is None or (pr["created_at"] or "", pr["rowid"]) > (
+            seen["created_at"] or "",
+            seen["rowid"],
+        ):
+            newest[pr["task_id"]] = pr
+    return newest
+
+
+def _display_runtime(runs: list[sqlite3.Row], prs: list[sqlite3.Row]) -> _Runtime:
+    """Display evidence only: never use these handoff states to allocate slots."""
+    rt = _Runtime()
+    branches = {p["branch"] for p in prs}
+    newest = _newest_prs(prs)
+    for task_id, pr in newest.items():
+        if pr["state"] == "merged":
+            rt.merged[task_id] = pr["url"]
+    for pr in _newest_prs([p for p in prs if p["state"] == "open"]).values():
+        rt.in_review.add(pr["task_id"])
+        if pr["auto_merge_error"]:
+            rt.merge_blocked.add(pr["task_id"])
+    for run in runs:  # newest first; an older success must not hide a newer failure
+        task_id = run["task_id"]
+        if task_id in rt.last_run:
+            continue
+        rt.last_run[task_id] = run["state"]
+        if run["state"] == "running" or (
+            run["state"] == "succeeded"
+            and not run["pr_error"]
+            and run["branch"] not in branches
+            and task_id not in rt.in_review
+        ):
+            rt.running.add(task_id)
+    return rt
+
+
+def _merged_unrecorded(root: Path, path: str, url: str) -> bool:
+    """A merged PR absent from the task's history (present means reopened)."""
+    try:
+        text = (root / path).read_text(encoding="utf-8")
+    except OSError:
+        return False
+    return not (url and has_entry(text, url))
 
 
 def waits_for_automerge(task: Task | None, auto_merge_error: str | None) -> bool:
@@ -185,6 +233,8 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
         return "cancelled"
     if task.id in rt.running:
         return "running"
+    if task.id in rt.merged and _merged_unrecorded(backlog.root, task.path, rt.merged[task.id]):
+        return "done"
     if task.id in rt.in_review:
         error = "auto_merge_error" if task.id in rt.merge_blocked else None
         return "awaiting merge" if waits_for_automerge(task, error) else "in review"
