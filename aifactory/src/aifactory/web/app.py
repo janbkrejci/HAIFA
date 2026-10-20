@@ -792,7 +792,7 @@ async def publish_run(request: Request) -> JSONResponse:
     repo: Path = _repo(request)
     try:
         data, warnings = await run_in_threadpool(
-            runs.publish_run, repo, request.path_params["run_id"]
+            runs.publish_run, repo, request.path_params["run_id"], request.app.state.launcher
         )
     except (ReviewError, TaskRunError, ConfigError) as exc:
         return _review_error(exc)

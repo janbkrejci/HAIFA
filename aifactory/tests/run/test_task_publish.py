@@ -92,7 +92,12 @@ def remote_has(origin: Path, branch: str) -> bool:
 
 
 def failed_publish_run(
-    repo: Path, script: Script, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    repo: Path,
+    script: Script,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    prepared: bool = False,
 ) -> tuple[Path, GhLog, FakeGit]:
     """A succeeded run of T01 whose push failed on the network every time (``pr_failed``)."""
     origin = github_repo(repo, tmp_path)
@@ -102,7 +107,8 @@ def failed_publish_run(
     fake = install_fake_git(tmp_path, monkeypatch)
     for n in range(1, pgit.PUSH_ATTEMPTS + 1):
         fake.fail_push(n, HTTP2)
-    succeed(script)
+    if not prepared:
+        succeed(script)
     result = run_task(repo, T01)
     assert result.run.state == "succeeded"
     assert result.pr is None
@@ -114,17 +120,21 @@ def failed_publish_run(
     return origin, log, fake
 
 
+@pytest.mark.parametrize(
+    "push_error", [HTTP2, " ! [remote rejected] x -> x (Internal Server Error)"]
+)
 def test_push_retries_transient_error_in_task_run(
     repo: Path,
     script: Script,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     sleeps: list[float],
+    push_error: str,
 ) -> None:
     origin = github_repo(repo, tmp_path)
     log = install_fake_gh(tmp_path, monkeypatch, {"pr create": reply(PR_URL + "\n")})
     fake = install_fake_git(tmp_path, monkeypatch)
-    fake.fail_push(1, HTTP2)
+    fake.fail_push(1, push_error)
     succeed(script)
 
     result = run_task(repo, T01)
@@ -183,6 +193,7 @@ def test_publish_after_pr_failed(
     assert rc == 0, env
     data = env["data"]
     assert data["pr_error"] is None
+    assert data["auto_merge"] is None
     assert data["pr"]["url"] == PR_URL and data["pr"]["pr_id"] == "7"
     assert data["run"]["run_id"] == run_id and data["run"]["pr_error"] is None
     assert remote_has(origin, BRANCH)
@@ -370,3 +381,322 @@ def test_dashboard_shows_pr_error_and_publishes(
     assert again.status_code == 409
     assert again.json()["error"]["code"] == "pr_exists"
     assert len([a for a in log.argvs() if a[:2] == ["pr", "create"]]) == 1
+
+
+@pytest.mark.parametrize("parallel", [1, 2])
+def test_publish_finishes_merge_and_continues(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, parallel: int
+) -> None:
+    from test_auto_merge import T02, build, review, setup, status_on_main
+
+    from aifactory.providers import ProviderError
+    from aifactory.providers.local import LocalProvider
+
+    setup(repo, step="auto_merge: true\nauto_continue: true\n")
+    build(script, "one")
+    review(script)
+    with monkeypatch.context() as patch:
+
+        def fail(*args: Any, **kwargs: Any) -> None:
+            raise ProviderError("push_failed", "temporary hosting error")
+
+        patch.setattr(LocalProvider, "push", fail)
+        first = run_task(repo, T01)
+    assert first.pr_error is not None
+    build(script, "two")
+    review(script)
+    # Parallel children normally run as processes; keep this test's fake harness local.
+    from aifactory.run import queue
+
+    if parallel == 1:
+        result = publish_task(repo, T01)
+        assert result.chain is not None
+        assert [r.run.task_id for r in result.chain.runs] == [T01, T02]
+        assert all(r.auto_merge and r.auto_merge.merged for r in result.chain.runs)
+        assert status_on_main(repo, T02) == "done"
+    else:
+        # The first publication/merge runs in-process even for a parallel chain.
+        # Stop automatic selection so no fake harness must cross process boundaries.
+        monkeypatch.setattr(queue, "_max_parallel", lambda repo: 2)
+        monkeypatch.setattr(queue, "auto_continue_enabled", lambda task: False)
+        result = publish_task(repo, T01)
+        assert result.chain is not None and result.chain.max_parallel == 2
+    assert result.chain.runs[0].run.run_id == first.run.run_id
+    assert result.chain.runs[0].auto_merge is not None
+    assert result.chain.runs[0].auto_merge.merged
+    assert status_on_main(repo, T01) == "done"
+
+
+@pytest.mark.parametrize("green", [True, False])
+def test_publish_github_applies_ci_gate(
+    repo: Path,
+    script: Script,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sleeps: list[float],
+    capsys: Capsys,
+    green: bool,
+) -> None:
+    from test_auto_merge import MERGE_SHA, _view, build, review, setup
+
+    from aifactory.review import ci
+
+    setup(repo)
+    build(script, "one")
+    review(script)
+    _, log, _ = failed_publish_run(repo, script, tmp_path, monkeypatch, prepared=True)
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_TIMEOUT", 0.0)
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_APPEAR", 0.0)
+    monkeypatch.setattr(ci, "CI_FIX_ROUNDS", 0)
+    views = [_view(), _view(), _view(), _view(), _view("MERGED", MERGE_SHA)]
+    log.respond("pr view", views if green else _view())
+    log.respond("pr checks", reply([{"name": "ci", "bucket": "pass" if green else "fail"}]))
+
+    rc, env = publish_cli(capsys, repo)
+
+    assert rc == 0, env
+    outcome = env["data"]["auto_merge"]
+    assert outcome["merged"] is green, outcome
+    assert outcome["code"] == (None if green else "checks_failing")
+    assert len(env["data"]["chain"]["runs"]) == 1
+    store = store_of(repo)
+    try:
+        pr = store.latest_pr(T01)
+        assert pr is not None
+        assert pr.state == ("merged" if green else "open")
+        assert (
+            pr.auto_merge_error is None
+            if green
+            else (pr.auto_merge_error or "").startswith("checks_failing:")
+        )
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("approve_resolution", [True, False])
+def test_publish_resolves_conflicts_like_run(
+    repo: Path,
+    script: Script,
+    monkeypatch: pytest.MonkeyPatch,
+    approve_resolution: bool,
+) -> None:
+    from test_auto_merge import ResolveCode, _resolver, build, review, setup
+
+    from aifactory.providers import ProviderError
+    from aifactory.providers.local import LocalProvider
+
+    setup(repo)
+    build(script, "one", text="NAME = 'branch'\n")
+    review(script)
+    with monkeypatch.context() as patch:
+
+        def fail(*args: Any, **kwargs: Any) -> None:
+            raise ProviderError("push_failed", "temporary hosting error")
+
+        patch.setattr(LocalProvider, "push", fail)
+        first = run_task(repo, T01)
+    assert first.pr_error is not None
+    write(repo, "src/app/one.py", "NAME = 'main'\n")
+    commit_all(repo, "conflicting change on main")
+    _resolver(script)
+    review(script, approved=approve_resolution)
+
+    result = publish_task(repo, T01, code=ResolveCode([True]))
+
+    assert result.chain is not None
+    merge = result.chain.runs[0].auto_merge
+    assert merge is not None and merge.merged is approve_resolution
+    assert len(result.chain.runs) == 2  # the original run and its resolution
+    store = store_of(repo)
+    try:
+        pr = store.latest_pr(T01)
+        assert pr is not None
+        if approve_resolution:
+            assert pr.state == "merged" and pr.auto_merge_error is None
+        else:
+            assert pr.state == "open" and pr.auto_merge_error
+            assert pr.auto_merge_error.startswith(f"{merge.code}:")
+    finally:
+        store.close()
+
+
+def test_dashboard_publish_merges_after_response(
+    repo: Path,
+    script: Script,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    from starlette.testclient import TestClient
+    from test_auto_merge import build, review, setup
+
+    from aifactory.providers import ProviderError
+    from aifactory.providers.local import LocalProvider
+    from aifactory.review import automerge
+    from aifactory.web import create_app
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web"))
+    from thread_launcher import ThreadLauncher
+
+    setup(repo)
+    build(script, "one")
+    review(script)
+    with monkeypatch.context() as patch:
+
+        def fail(*args: Any, **kwargs: Any) -> None:
+            raise ProviderError("push_failed", "temporary hosting error")
+
+        patch.setattr(LocalProvider, "push", fail)
+        first = run_task(repo, T01)
+    assert first.pr_error
+    waiting, release = threading.Event(), threading.Event()
+    from aifactory.review import approve_task as real_approve
+
+    def approve(*args: Any, **kwargs: Any) -> Any:
+        waiting.set()
+        assert release.wait(10)
+        return real_approve(*args, **kwargs)
+
+    monkeypatch.setattr(automerge, "approve_task", approve)
+
+    class Launcher(ThreadLauncher):
+        def start_publish(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None:
+            super().start_publish(repo, task_id, timeout=0.05)
+
+    launcher = Launcher()
+    client = TestClient(create_app(repo, launcher=launcher), base_url="http://127.0.0.1:4700")
+    try:
+        response = client.post(f"/api/runs/{first.run.run_id}/publish")
+        assert response.status_code == 200, response.json()
+        assert response.json()["data"]["started"] is True
+        assert waiting.wait(5) and launcher.busy()
+    finally:
+        release.set()
+        launcher.wait(10)
+    assert not launcher.busy() and launcher.last_error is None
+    store = store_of(repo)
+    try:
+        pr = store.latest_pr(T01)
+        assert pr is not None and pr.state == "merged" and not pr.auto_merge_error
+    finally:
+        store.close()
+
+
+def test_publish_uses_last_kept_review(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from dataclasses import replace
+
+    from test_auto_merge import T02, build, review, setup
+
+    from aifactory.providers import ProviderError
+    from aifactory.providers.local import LocalProvider
+    from aifactory.run.task import session_dir_of
+    from aifactory.workflow.journal import JOURNAL_FILE, read_journal
+
+    setup(repo, step="auto_merge: true\nauto_continue: true\n")
+    build(script, "one")
+    review(script)
+    with monkeypatch.context() as patch:
+
+        def fail(*args: Any, **kwargs: Any) -> None:
+            raise ProviderError("push_failed", "temporary hosting error")
+
+        patch.setattr(LocalProvider, "push", fail)
+        first = run_task(repo, T01)
+    assert first.run.state == "succeeded" and first.pr_error is not None
+    assert first.pr is None
+
+    journal = read_journal(session_dir_of(repo, first.run.run_id) / JOURNAL_FILE)
+    approved = next(e for e in reversed(journal.entries) if e.output == "ReviewOutput")
+    assert approved.kept and approved.envelope is not None
+    assert approved.envelope["approved"] is True
+    rejection = "Missing regression coverage in the original run"
+    journal.entries.extend(
+        [
+            replace(
+                approved,
+                phase="review_2",
+                envelope={**approved.envelope, "approved": False, "blocking": [rejection]},
+            ),
+            replace(approved, phase="triage_review", kept=False),
+        ]
+    )
+    journal.save()
+    calls_before = len(script.calls)
+
+    result = publish_task(repo, T01)
+
+    assert result.chain is not None
+    assert [r.run.run_id for r in result.chain.runs] == [first.run.run_id]
+    assert result.chain.stop == "not_merged"
+    merge = result.chain.runs[0].auto_merge
+    assert merge is not None and not merge.merged
+    assert merge.code == "review_rejected" and rejection in (merge.reason or "")
+    assert len(script.calls) == calls_before
+    store = store_of(repo)
+    try:
+        pr = store.latest_pr(T01)
+        assert pr is not None and pr.state == "open"
+        assert pr.auto_merge_error is not None
+        assert pr.auto_merge_error.startswith("review_rejected:")
+        assert rejection in pr.auto_merge_error
+        assert store.for_task(T02) == []
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("dashboard", [False, True], ids=["direct", "dashboard"])
+def test_publish_without_auto_merge_does_not_continue(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, dashboard: bool
+) -> None:
+    from test_auto_merge import T02, build, review, setup
+
+    from aifactory.providers import ProviderError
+    from aifactory.providers.local import LocalProvider
+
+    setup(
+        repo,
+        step="auto_merge: true\nauto_continue: true\n",
+        t01_extra="auto_merge: false\n",
+        t02_depends=False,
+    )
+    build(script, "one")
+    review(script)
+    with monkeypatch.context() as patch:
+
+        def fail(*args: Any, **kwargs: Any) -> None:
+            raise ProviderError("push_failed", "temporary hosting error")
+
+        patch.setattr(LocalProvider, "push", fail)
+        first = run_task(repo, T01)
+    assert first.run.state == "succeeded" and first.pr_error is not None
+    assert first.pr is None
+    calls_before = len(script.calls)
+
+    if dashboard:
+        from starlette.testclient import TestClient
+
+        from aifactory.web import create_app
+
+        client = TestClient(create_app(repo), base_url="http://127.0.0.1:4700")
+        response = client.post(f"/api/runs/{first.run.run_id}/publish")
+        assert response.status_code == 200, response.json()
+        data = response.json()["data"]
+        assert data["pr"]["state"] == "open" and data["pr_error"] is None
+        assert not data.get("started")
+    else:
+        result = publish_task(repo, T01)
+        assert result.ok and result.chain is None
+        assert result.pr is not None and result.pr.state == "open"
+
+    assert len(script.calls) == calls_before
+    store = store_of(repo)
+    try:
+        pr = store.latest_pr(T01)
+        assert pr is not None and pr.state == "open" and pr.auto_merge_error is None
+        assert store.for_task(T02) == []
+        assert [r.run_id for r in store.all_runs()] == [first.run.run_id]
+    finally:
+        store.close()

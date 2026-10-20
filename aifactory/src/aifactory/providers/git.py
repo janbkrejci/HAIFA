@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import re
 import shutil
 import subprocess
 import tempfile
@@ -81,8 +82,8 @@ def remote_url(root: Path, remote: str) -> str | None:
 
 
 # A push that fails with one of these (lowercased stderr) failed on the way, not because
-# the remote refused it: it is retried. A rejected push (non-fast-forward, stale lease,
-# missing rights, hook) is never retried.
+# the remote refused it: it is retried. Hosting server errors are retried even when
+# git labels them remote rejected; policy refusals (rights, hooks, stale lease) are not.
 TRANSIENT_PUSH_ERRORS = (
     "rpc failed",
     "http2 framing layer",
@@ -122,8 +123,13 @@ _sleep: Callable[[float], None] = time.sleep  # tests replace it
 
 
 def transient_push_error(stderr: str) -> bool:
-    """Whether a failed push may succeed when tried again (network, HTTP2, timeout)."""
+    """Whether a failed push may succeed when tried again (network or hosting server error)."""
     text = stderr.lower()
+    # Policy/authentication refusals win even alongside a server error.
+    if any(marker in text for marker in REJECTED_PUSH_ERRORS[2:]) or "hook declined" in text:
+        return False
+    if "internal server error" in text or re.search(r"\b5\d{2}\b", text):
+        return True
     if any(marker in text for marker in REJECTED_PUSH_ERRORS):
         return False
     return any(marker in text for marker in TRANSIENT_PUSH_ERRORS)

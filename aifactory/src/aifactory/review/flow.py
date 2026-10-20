@@ -25,11 +25,13 @@ from __future__ import annotations
 import datetime
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from aifactory.backlog import Task, load_backlog, unmet
 from aifactory.backlog.taskfile import mark_done, run_entry
 from aifactory.config import ConfigError, RunConfig, load_run_config
 from aifactory.config.settings import ProjectSettings
+from aifactory.engine.data_types import ReviewOutput
 from aifactory.providers import (
     CHECKS_FAILING,
     CLOSED,
@@ -61,9 +63,13 @@ from aifactory.run.store import (
     _now,
     already_running,
 )
-from aifactory.run.task import TaskRunResult, run_task
+from aifactory.run.task import TaskRunResult, run_task, session_dir_of
 from aifactory.run.unchanged import finish_unchanged, unchanged
-from aifactory.workflow import CodeRunner
+from aifactory.workflow import CodeRunner, WorkflowRun
+from aifactory.workflow.journal import JOURNAL_FILE, read_journal
+
+if TYPE_CHECKING:
+    from aifactory.run.queue import ChainResult
 
 
 @dataclass
@@ -513,13 +519,28 @@ def return_task(
 # ── publish ──────────────────────────────────────────────────────────────────
 
 
+@dataclass
+class TaskPublishResult(PublishResult):
+    chain: ChainResult | None = None
+
+    def to_json(self) -> dict[str, object]:
+        data = super().to_json()
+        data["auto_merge"] = None
+        if self.chain is not None:
+            first = self.chain.runs[0]
+            data["auto_merge"] = first.auto_merge.to_json() if first.auto_merge else None
+            data["chain"] = self.chain.to_json()
+        return data
+
+
 def publish_task(
     repo: Path,
     task_id: str,
     *,
     run_id: str | None = None,
     provider: GitProvider | None = None,
-) -> PublishResult:
+    code: CodeRunner | None = None,
+) -> TaskPublishResult:
     """Push the branch of the task's last succeeded run and open its PR (``task publish``).
 
     For a run whose push or PR failed at the end of ``task run`` (``pr_failed``): the
@@ -529,15 +550,53 @@ def publish_task(
     (``run/unchanged.py``). Without a succeeded run (``no_succeeded_run``), with a PR already known
     (``pr_exists``) or while a run of the task is in progress (``already_running``)
     nothing changes. `run_id` (the dashboard) must name that last succeeded run. A failed
-    push or hosting call is ``result.pr_error`` and is kept on the run.
+    push or hosting call is ``result.pr_error`` and is kept on the run. After publication,
+    effective ``auto_merge`` enables ``run_chain`` to finish auto-merge and auto-continue
+    with the completed attempt as its first run; its review is recovered from the
+    workflow journal. Otherwise the PR stays open for review without continuing the queue.
     """
     ctx = _context(repo, provider)
     try:
-        return _publish(ctx, task_id, run_id)
+        published = _publish(ctx, task_id, run_id)
     except RuntimeError as exc:
         raise ReviewError("worktree_failed", str(exc)) from exc
     finally:
         ctx.store.close()
+
+    from aifactory.run.queue import _fresh_backlog, auto_merge_enabled, run_chain
+
+    def first() -> TaskRunResult:
+        # A retry's journal includes the replayed review of the finished attempt.
+        journal = read_journal(session_dir_of(repo, published.run.run_id) / JOURNAL_FILE)
+        wf = WorkflowRun(exit_code=0, accepted=True, adw_id=published.run.run_id)
+        for entry in journal.entries:
+            if entry.kept and entry.output == "ReviewOutput" and entry.envelope is not None:
+                wf.history.append((entry.step, ReviewOutput.model_validate(entry.envelope)))
+        return TaskRunResult(
+            run=published.run,
+            workflow_run=wf,
+            warnings=tuple(published.warnings),
+            trace_db=ctx.rc.local.trace_db_path(ctx.main),
+            pr=published.pr,
+            pr_error=published.pr_error,
+            done_without_pr=published.done_without_pr,
+        )
+
+    chain = None
+    if published.ok:
+        with _fresh_backlog(repo) as backlog:
+            task = backlog.by_id.get(task_id)
+            resume_chain = isinstance(task, Task) and auto_merge_enabled(task)
+        if resume_chain:
+            chain = run_chain(repo, task_id, first_run=first, provider=provider, code=code)
+    return TaskPublishResult(
+        run=published.run,
+        pr=published.pr,
+        pr_error=published.pr_error,
+        warnings=published.warnings,
+        done_without_pr=published.done_without_pr,
+        chain=chain,
+    )
 
 
 def _publish(ctx: _Ctx, task_id: str, run_id: str | None) -> PublishResult:
