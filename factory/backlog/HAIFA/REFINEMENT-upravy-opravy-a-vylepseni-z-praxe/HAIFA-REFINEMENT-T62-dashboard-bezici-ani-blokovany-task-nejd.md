@@ -4,7 +4,7 @@ title: "Dashboard: běžící ani blokovaný task nejde Spustit, běžící nejd
 status: todo
 workflow: build-test-review
 depends_on: []
-writes: [aifactory/web/src/components/backlog/TaskDetail.vue, aifactory/web/src/components/backlog/TaskDetail.test.ts, aifactory/web/src/lib/backlog.ts, aifactory/web/src/components/runs/RunDetail.vue, aifactory/web/src/components/runs/RunDetail.test.ts, aifactory/web/src/components/runs/FailureCard.vue, aifactory/web/src/components/runs/FailureCard.test.ts, aifactory/web/src/components/backlog/KanbanBoard.vue, aifactory/web/src/components/backlog/KanbanBoard.test.ts, aifactory/web/src/components/backlog/RunDialog.vue, aifactory/web/src/components/backlog/RunDialog.test.ts, aifactory/src/aifactory/web/static/, aifactory/web/src/views/BacklogView.test.ts, aifactory/web/src/views/BacklogView.spinner.test.ts]
+writes: [aifactory/web/src/components/backlog/TaskDetail.vue, aifactory/web/src/components/backlog/TaskDetail.test.ts, aifactory/web/src/lib/backlog.ts, aifactory/web/src/components/runs/RunDetail.vue, aifactory/web/src/components/runs/RunDetail.test.ts, aifactory/web/src/components/runs/FailureCard.vue, aifactory/web/src/components/runs/FailureCard.test.ts, aifactory/web/src/components/backlog/KanbanBoard.vue, aifactory/web/src/components/backlog/KanbanBoard.test.ts, aifactory/web/src/components/backlog/RunDialog.vue, aifactory/web/src/components/backlog/RunDialog.test.ts, aifactory/src/aifactory/web/static/, aifactory/web/src/views/BacklogView.test.ts, aifactory/web/src/views/BacklogView.spinner.test.ts, aifactory/src/aifactory/guide/, aifactory/tests/test_guide_consistency.py]
 ---
 
 ## Zadání
