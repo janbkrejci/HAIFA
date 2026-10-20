@@ -1,7 +1,7 @@
 ---
 id: HAIFA-LEARN-T01
 title: "Lekce: When a task or follow-up must change docs/decisions.md, aifactory/web/src/ or any…"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S03-T18, HAIFA-TODO-T01, HAIFA-TODO-T05, HAIFA-TODO-T07, HAIFA-TODO-T08]
@@ -44,3 +44,4 @@ Výtky z 6 běhů, ze kterých lekce vznikla:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/128 · náklady $0.00
