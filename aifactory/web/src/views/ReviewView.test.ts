@@ -1,3 +1,4 @@
+import { fmtTime } from '@/lib/format'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ReviewView from './ReviewView.vue'
@@ -130,8 +131,10 @@ describe('ReviewView', () => {
 
   it('shows an approve that waits for CI in the background', async () => {
     go('#/r/haifa/review/M01-S01-T01')
-    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+    let approved = false
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST') {
+        approved = true
         return ok(
           {
             task_id: 'M01-S01-T01',
@@ -143,7 +146,10 @@ describe('ReviewView', () => {
           202,
         )
       }
-      return ok(reviewDetail())
+      if (url === '/api/repos/haifa/review' || url.startsWith('/api/repos/haifa/review?')) return ok(reviewList({
+        prs: [reviewPr({ approved, awaiting_review: !approved })],
+      }))
+      return ok(reviewDetail({ approved, awaiting_review: !approved, approved_at: approved ? '2026-01-01T12:00:00+00:00' : null }))
     })
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(ReviewView)
@@ -155,6 +161,13 @@ describe('ReviewView', () => {
     expect(gets).toHaveLength(2)
     expect(wrapper.find('[data-test="approve-started"]').text()).toContain('Schvalování běží na pozadí')
     expect(wrapper.find('[data-test="merged"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="approved-at"]').text()).toContain('Schváleno, čeká na CI')
+    expect(wrapper.get('[data-test="approved-at"]').text()).toContain(fmtTime('2026-01-01T12:00:00+00:00'))
+    expect(wrapper.get('[data-test="approve"]').attributes('disabled')).toBeUndefined()
+    go('#/r/haifa/review')
+    await flushPromises()
+    expect(wrapper.get('[data-test="approved"] [data-pr]').attributes('data-pr')).toBe('M01-S01-T01')
+    expect(wrapper.get('[data-test="awaiting"]').find('[data-pr]').exists()).toBe(false)
     wrapper.unmount()
   })
 
@@ -176,7 +189,7 @@ describe('ReviewView', () => {
       if (url === '/api/repos/haifa/review') {
         const list = reviewList()
         // the merged PR and one not waiting for review come first: the waiting one wins
-        return ok({ ...list, prs: [list.prs[0], list.prs[1], reviewPr({ task_id: 'M04-S01-T01' })] })
+        return ok({ ...list, prs: [list.prs[0], reviewPr({ task_id: 'approved', approved: true }), list.prs[1], reviewPr({ task_id: 'M04-S01-T01' })] })
       }
       return ok(reviewDetail())
     })

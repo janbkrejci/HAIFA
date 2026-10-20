@@ -269,6 +269,10 @@ h1 {
   color: var(--purple);
 }
 
+.total-approved .total-count {
+  color: var(--cyan);
+}
+
 .total-automerge .total-count {
   color: var(--violet);
 }

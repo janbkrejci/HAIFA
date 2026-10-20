@@ -18,11 +18,12 @@ import { failureLabel } from './failure'
 export const OVERVIEW_POLL_MS = 2000
 
 /** The totals at the top; a click on one filters the cards. */
-export type OverviewFilter = 'running' | 'review' | 'automerge' | 'failed' | 'problems'
+export type OverviewFilter = 'running' | 'review' | 'approved' | 'automerge' | 'failed' | 'problems'
 
 export const TOTALS: readonly { id: OverviewFilter; label: string }[] = [
   { id: 'running', label: 'Běží' },
   { id: 'review', label: 'Čeká na review' },
+  { id: 'approved', label: 'Schváleno, čeká na CI' },
   { id: 'automerge', label: 'Čeká na automerge PR' },
   { id: 'failed', label: 'Selhalo' },
   { id: 'problems', label: 'Problémy' },
@@ -69,6 +70,11 @@ const PROBLEM_TEXT: Record<Problem['kind'], string> = {
   not_git: 'Není git repozitář',
   timeout: 'Repo neodpovědělo včas',
   error: 'Repo se nepodařilo přečíst',
+}
+
+/** Manually approved PRs waiting for CI (older responses have no list). */
+export function approvedPrs(repo: OverviewRepo): OverviewReview[] {
+  return repo.approved ?? []
 }
 
 /** Open PRs the factory merges by itself (older responses have no list). */
@@ -133,7 +139,7 @@ export function urgency(repo: OverviewRepo): Urgency {
   if (activeRuns(repo).length > 0) return 'running'
   // a stop still on its way keeps the card (and its progress) in sight
   if ((repo.factory?.control?.pending.length ?? 0) > 0) return 'running'
-  if (automergePrs(repo).length > 0) return 'automerge'
+  if (approvedPrs(repo).length > 0 || automergePrs(repo).length > 0) return 'automerge'
   return 'calm'
 }
 
@@ -185,7 +191,7 @@ export function projectSections(repo: OverviewRepo): { id: string | null; title:
   const ids = new Set(projects.map((p) => p.id))
   const sections: { id: string | null; title: string; tasks: OverviewRepo['tasks'] }[] =
     projects.map((p) => ({ id: p.id, title: p.title, tasks: p.tasks }))
-  const lists = [repo.running, repo.review, repo.automerge ?? [], repo.failed]
+  const lists = [repo.running, repo.review, repo.approved ?? [], repo.automerge ?? [], repo.failed]
   if (lists.some((rows) => rows.some((row) => row.project == null || !ids.has(row.project)))) {
     sections.push({ id: null, title: 'Bez projektu', tasks: null })
   }
@@ -195,6 +201,7 @@ export function projectSections(repo: OverviewRepo): { id: string | null; title:
     return {
       id, title,
       repo: { ...repo, tasks, running: repo.running.filter(belongs), review: repo.review.filter(belongs),
+        approved: approvedPrs(repo).filter(belongs),
         automerge: (repo.automerge ?? []).filter(belongs), failed: repo.failed.filter(belongs) },
     }
   })
@@ -264,6 +271,7 @@ export function sortRepos(repos: readonly OverviewRepo[]): OverviewRepo[] {
 export interface RepoCounts {
   running: number
   review: number
+  approved: number
   automerge: number
   failed: number
 }
@@ -272,6 +280,7 @@ export function repoCounts(repo: OverviewRepo): RepoCounts {
   return {
     running: activeRuns(repo).length,
     review: repo.review.length,
+    approved: approvedPrs(repo).length,
     automerge: automergePrs(repo).length,
     failed: failedRows(repo).length,
   }
@@ -286,11 +295,12 @@ export function countsById(data: OverviewData | null): Record<string, RepoCounts
 
 /** The totals at the top: runs, PRs (review and auto-merge apart), failures, problem repos. */
 export function totals(repos: readonly OverviewRepo[]): Record<OverviewFilter, number> {
-  const sum = { running: 0, review: 0, automerge: 0, failed: 0, problems: 0 }
+  const sum = { running: 0, review: 0, approved: 0, automerge: 0, failed: 0, problems: 0 }
   for (const repo of repos) {
     const c = repoCounts(repo)
     sum.running += c.running
     sum.review += c.review
+    sum.approved += c.approved
     sum.automerge += c.automerge
     sum.failed += c.failed
     if (hasProblems(repo)) sum.problems += 1

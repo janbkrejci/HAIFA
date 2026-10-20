@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import type { OverviewRepo } from '@/lib/api'
-import { activeRuns, automergePrs, failedRows, projectSections, reviewLink, runLink, runningKey, runningLink, stateClass, taskSummary } from '@/lib/overview'
+import { activeRuns, approvedPrs, automergePrs, failedRows, projectSections, reviewLink, runLink, runningKey, runningLink, stateClass, taskSummary } from '@/lib/overview'
 import { fmtAge, fmtCost, fmtElapsed, ts } from '@/lib/format'
 
 const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; byProject?: boolean }>(), { byProject: false })
@@ -55,6 +55,24 @@ function reviewAge(opened: string | null, ageS: number | null): string {
         :href="reviewLink(repo, pr.task_id)"
         class="row"
         data-test="row-review"
+        :data-task="pr.task_id"
+      >
+        <span class="task mono">{{ pr.task_id }}</span>
+        <span class="title">{{ pr.task_title ?? '' }}</span>
+        <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
+        <span class="meta" data-test="row-age">{{ reviewAge(pr.opened_at, pr.age_s) }}</span>
+        <span class="meta faint">podle trace</span>
+      </a>
+    </section>
+
+    <section v-if="approvedPrs(section.repo).length" class="group" data-test="approved">
+      <h3>Schváleno, čeká na CI</h3>
+      <a
+        v-for="pr in approvedPrs(section.repo)"
+        :key="pr.task_id"
+        :href="reviewLink(repo, pr.task_id)"
+        class="row"
+        data-test="row-approved"
         :data-task="pr.task_id"
       >
         <span class="task mono">{{ pr.task_id }}</span>

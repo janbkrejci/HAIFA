@@ -13,6 +13,17 @@ afterEach(() => {
 const BLOCKED_BY = [{ id: 'M01-S01-T02', reason: 'not_done', missing: ['M01-S01-T02'] }]
 
 describe('StateChip', () => {
+  it('explains approved PRs waiting for CI', async () => {
+    wrapper = mount(StateChip, { props: { state: 'approved', count: 1 }, attachTo: document.body })
+    expect(wrapper.get('[data-state="approved"]').text()).toBe('Schváleno, čeká na CI 1')
+    expect(wrapper.get('[data-state="approved"]').classes()).toContain('state-approved')
+    await wrapper.get('[data-test="tip-anchor"]').trigger('mouseenter')
+    await flushPromises()
+    expect(document.body.querySelector('[data-test="tooltip"]')?.textContent).toContain(
+      'Schválil jsi pull request. Factory čeká na zelené CI a potom ho mergne sama.',
+    )
+  })
+
   it('shows what blocks the task in a tooltip', async () => {
     wrapper = mount(StateChip, { props: { state: 'blocked', blockedBy: BLOCKED_BY }, attachTo: document.body })
     expect(wrapper.find('[data-state="blocked"]').text()).toBe('Blokováno')

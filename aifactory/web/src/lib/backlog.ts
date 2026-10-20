@@ -12,6 +12,7 @@ export type BoardState =
   | 'blocked'
   | 'running'
   | 'in review'
+  | 'approved'
   | 'awaiting merge'
   | 'done'
   | 'cancelled'
@@ -24,6 +25,7 @@ export const BOARD_STATES: readonly BoardState[] = [
   'blocked',
   'running',
   'in review',
+  'approved',
   'awaiting merge',
   'done',
   'cancelled',
@@ -36,6 +38,7 @@ export const STATE_LABELS: Record<BoardState, string> = {
   blocked: 'Blokováno',
   running: 'Běží',
   'in review': 'Čeká na review',
+  approved: 'Schváleno, čeká na CI',
   'awaiting merge': 'Čeká na automerge PR',
   done: 'Hotovo',
   cancelled: 'Zrušeno',
@@ -46,6 +49,7 @@ export const STATE_TOOLTIPS: Partial<Record<BoardState, string>> = {
   todo: 'Task nejde spustit, dokud nemá workflow (vlastní nebo zděděné z projektu či stepu).',
   human: 'Task udělá člověk, factory ho nespustí. Až bude hotový, označ ho v detailu jako hotový.',
   'in review': 'Pull request čeká na tvoje review.',
+  approved: 'Schválil jsi pull request. Factory čeká na zelené CI a potom ho mergne sama.',
   'awaiting merge': 'Auto-merge je zapnutý, factory pull request mergne sama.',
 }
 
@@ -60,7 +64,7 @@ export const DEFERRABLE_STATES: readonly BoardState[] = ['ready', 'blocked', 'to
 
 /** An open PR still owns the task until review and merge finish. */
 export function hasOpenPr(state: string): boolean {
-  return state === 'in review' || state === 'awaiting merge'
+  return state === 'in review' || state === 'approved' || state === 'awaiting merge'
 }
 
 /** A running task or its open PR prevents another run and task mutations. */
@@ -109,7 +113,7 @@ export function mergeQueueOrder(all: readonly string[], shown: readonly string[]
 }
 
 /** States shown only when some task is in them (kanban column, status filter option). */
-export const OPTIONAL_STATES: readonly BoardState[] = ['todo', 'human', 'awaiting merge']
+export const OPTIONAL_STATES: readonly BoardState[] = ['todo', 'human', 'approved', 'awaiting merge']
 
 /** States hidden by the „Skrýt hotové“ switch. */
 export const DONE_STATES: readonly BoardState[] = ['done', 'cancelled']

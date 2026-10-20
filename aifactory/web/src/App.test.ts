@@ -530,6 +530,7 @@ describe('App', () => {
             ovRepo('haifa', {
               running: [running(), running({ run_id: 'run-2' })],
               review: [review()],
+              approved: [review({ task_id: 'T-8' })],
               automerge: [review({ task_id: 'T-9' })],
               failed: [failed()],
             }),
@@ -549,6 +550,8 @@ describe('App', () => {
     expect(haifa.get('[data-test="count-running"]').attributes('aria-label')).toBe('Běží: 2')
     expect(haifa.get('[data-test="count-review"]').text()).toBe('1')
     expect(haifa.get('[data-test="count-review"]').attributes('aria-label')).toBe('Čeká na review: 1')
+    expect(haifa.get('[data-test="count-approved"]').text()).toBe('1')
+    expect(haifa.get('[data-test="count-approved"]').attributes('aria-label')).toBe('Schváleno, čeká na CI: 1')
     expect(haifa.get('[data-test="count-automerge"]').text()).toBe('1')
     expect(haifa.get('[data-test="count-automerge"]').attributes('aria-label')).toBe('Čeká na automerge PR: 1')
     expect(haifa.get('[data-test="count-failed"]').text()).toBe('1')

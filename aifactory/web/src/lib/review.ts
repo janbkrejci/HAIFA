@@ -57,6 +57,9 @@ interface ReviewBase {
   awaiting_review: boolean
   /** Open, no running run, and the factory merges it by itself (effective auto_merge). */
   awaiting_automerge: boolean
+  /** Manually approved and waiting for CI (absent from older servers). */
+  approved?: boolean
+  approved_at?: string | null
   cost: number
   tokens: number
 }

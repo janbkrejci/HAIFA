@@ -45,6 +45,32 @@ function editForm(over = {}) {
 }
 
 describe('TaskForm', () => {
+  it.each([
+    ['approved', '[data-test="improve"]', '/backlog/task-advice'],
+    ['approved', '[data-test="workflow-advice"] button', '/backlog/workflow-advice'],
+    ['ready', '[data-test="improve"]', '/backlog/task-advice'],
+    ['ready', '[data-test="workflow-advice"] button', '/backlog/workflow-advice'],
+  ] as const)('gates %s task action %s before requesting advice', async (state, selector, endpoint) => {
+    api.getApi.mockResolvedValue({ state: 'running' })
+    const wrapper = editForm({ board_state: state, title: 'Valid task', own_workflow: 'plan' })
+    try {
+      await flushPromises()
+      expect(wrapper.get('[data-test="title"]').element).toHaveProperty('value', 'Valid task')
+      const button = wrapper.get(selector)
+      expect(button.attributes('disabled') !== undefined).toBe(state === 'approved')
+      await button.trigger('click')
+      await flushPromises()
+      if (state === 'approved') {
+        expect(api.postApi).not.toHaveBeenCalled()
+        expect(api.getApi).not.toHaveBeenCalled()
+      } else {
+        expect(api.postApi.mock.calls.map((call) => call[0])).toEqual([endpoint])
+      }
+    } finally {
+      wrapper.unmount()
+    }
+  })
+
   it('sends the live edit draft and saves the recommendation without clearing inherited fields', async () => {
     const task = taskNode({ own_workflow: 'plan', own_writes: [], own_auto_merge: null })
     const wrapper = mount(TaskForm, { props: {

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import KanbanBoard from './KanbanBoard.vue'
-import { BOARD_STATES, kanbanColumns } from '@/lib/backlog'
+import { BOARD_STATES, kanbanColumns, presentStates } from '@/lib/backlog'
 import { backlogData, taskNode } from '@/test/backlogFixtures'
 
 function readyTasks() {
@@ -30,6 +30,15 @@ const cards = (wrapper: ReturnType<typeof mount>, column: string) =>
   wrapper.find(`[data-column="${column}"]`).findAll('[data-card]').map((c) => c.attributes('data-card'))
 
 describe('KanbanBoard', () => {
+  it('shows the approved column only while a task is waiting for CI', () => {
+    const task = taskNode({ board_state: 'approved' })
+    const wrapper = mount(KanbanBoard, { props: { tasks: [task], states: presentStates(BOARD_STATES, { approved: 1 }) } })
+    expect(cards(wrapper, 'approved')).toEqual([task.id])
+    expect(wrapper.get('[data-column="approved"] h2').text()).toContain('Schváleno, čeká na CI')
+    expect(presentStates(BOARD_STATES, {})).not.toContain('approved')
+    wrapper.unmount()
+  })
+
   it('renders long unbroken titles, IDs and workflows in full alongside labels and controls', () => {
     const task = taskNode({
       id: `HAIFA-REFINEMENT-${'T50'.repeat(40)}`,
@@ -55,7 +64,7 @@ describe('KanbanBoard', () => {
     const columns = wrapper.findAll('[data-column]')
     expect(columns.map((c) => c.attributes('data-column'))).toEqual(kanbanColumns(BOARD_STATES))
     expect(columns.map((c) => c.attributes('data-column'))).toEqual([
-      'todo', 'ready', 'deferred', 'human', 'blocked', 'running', 'in review', 'awaiting merge', 'done', 'cancelled',
+      'todo', 'ready', 'deferred', 'human', 'blocked', 'running', 'in review', 'approved', 'awaiting merge', 'done', 'cancelled',
     ])
     expect(columns[0].find('h2').text()).toContain('Bez workflow')
     expect(cards(wrapper, 'todo')).toEqual(['M02-S01-T01', 'X-1'])

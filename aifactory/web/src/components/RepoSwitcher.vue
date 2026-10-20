@@ -42,6 +42,7 @@ async function loadCounts() {
 const COUNTS: readonly { key: keyof RepoCounts; label: string }[] = [
   { key: 'running', label: 'Běží' },
   { key: 'review', label: 'Čeká na review' },
+  { key: 'approved', label: 'Schváleno, čeká na CI' },
   { key: 'automerge', label: 'Čeká na automerge PR' },
   { key: 'failed', label: 'Selhalo' },
 ]
@@ -300,6 +301,11 @@ onBeforeUnmount(() => listen(false))
 .count-review {
   background: rgba(200, 155, 255, 0.18);
   color: var(--purple);
+}
+
+.count-approved {
+  background: rgba(90, 210, 221, 0.18);
+  color: var(--cyan);
 }
 
 .count-automerge {

@@ -204,9 +204,9 @@ const autoMergeOptions = computed<SelectOption[]>(() => [
 /** A new task needs a step; without one the form explains how to create it. */
 const noSteps = computed(() => props.mode === 'add' && props.steps.length === 0)
 const stepNoun = computed(() => levelNoun(level.step.value))
-/** The task can no longer change (done, cancelled, running, in review or awaiting merge). */
+/** The task can no longer change (done, cancelled, running, in review, approved or awaiting merge). */
 const frozen = computed(() =>
-  ['done', 'cancelled', 'running', 'in review', 'awaiting merge'].includes(task?.board_state ?? ''),
+  ['done', 'cancelled', 'running', 'in review', 'approved', 'awaiting merge'].includes(task?.board_state ?? ''),
 )
 /** Why the AI proposals are disabled; '' when they can run. */
 const adviceBlocker = computed(() => {

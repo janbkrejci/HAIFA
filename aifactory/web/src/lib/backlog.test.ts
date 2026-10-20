@@ -1,6 +1,9 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
 import {
+  hasOpenPr,
+  taskInProgress,
+  canStackDependencies,
   linkActionKey,
   newRun,
   addTask,
@@ -298,5 +301,31 @@ describe('documentMarkdown', () => {
 
   it('keeps markdown without front matter', () => {
     expect(documentMarkdown('# Plán\n---\nx\n---\n')).toBe('# Plán\n---\nx\n---\n')
+  })
+})
+
+describe('open PR guards', () => {
+  it.each([
+    ['in review', true, true],
+    ['approved', true, true],
+    ['awaiting merge', true, true],
+    ['running', false, true],
+    ['ready', false, false],
+    ['done', false, false],
+  ] as const)('classifies %s for task actions and stacked dependencies', (state, open, inProgress) => {
+    expect(hasOpenPr(state)).toBe(open)
+    expect(taskInProgress(state)).toBe(inProgress)
+    expect(canStackDependencies(
+      [{ id: 'A', reason: 'not_done', missing: ['A'] }],
+      [{ id: 'A', kind: 'task', title: null, state }],
+    )).toBe(open)
+  })
+
+  it('requires every unfinished task in a container to have an open PR', () => {
+    const blocked = [{ id: 'STEP', reason: 'incomplete', missing: ['A', 'B'] }]
+    const approved = { id: 'A', kind: 'task' as const, title: null, state: 'approved' }
+    expect(canStackDependencies(blocked, [approved, { ...approved, id: 'B', state: 'in review' }])).toBe(true)
+    expect(canStackDependencies(blocked, [approved, { ...approved, id: 'B', state: 'running' }])).toBe(false)
+    expect(canStackDependencies(blocked, [approved])).toBe(false)
   })
 })

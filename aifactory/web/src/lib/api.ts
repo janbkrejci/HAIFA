@@ -372,6 +372,8 @@ export interface OverviewRepo {
   review: OverviewReview[]
   /** Open task PRs the factory merges by itself (effective auto_merge, no auto-merge error). */
   automerge?: OverviewReview[]
+  /** Manually approved open PRs waiting for CI. */
+  approved?: OverviewReview[]
   failed: OverviewFailed[]
   /** The newest automatic actions of the repo's chains, newest first (absent from an older server). */
   auto_actions?: OverviewAutoAction[]
@@ -402,6 +404,7 @@ export async function fetchOverview(): Promise<OverviewData> {
       running: r.running ?? [],
       review: r.review ?? [],
       automerge: r.automerge ?? [],
+      approved: r.approved ?? [],
       failed: r.failed ?? [],
       auto_actions: r.auto_actions ?? [],
       merged_outside: r.merged_outside ?? [],

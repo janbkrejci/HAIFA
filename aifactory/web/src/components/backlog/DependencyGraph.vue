@@ -254,6 +254,14 @@ a:hover .node rect {
   fill: var(--purple);
 }
 
+.state-approved rect {
+  stroke: var(--cyan);
+}
+
+.state-approved .node-state {
+  fill: var(--cyan);
+}
+
 .state-awaiting-merge rect {
   stroke: var(--violet);
 }
@@ -318,6 +326,10 @@ a:hover .node rect {
 
 .legend .state-in-review .swatch {
   border-color: var(--purple);
+}
+
+.legend .state-approved .swatch {
+  background: var(--cyan);
 }
 
 .legend .state-awaiting-merge .swatch {
