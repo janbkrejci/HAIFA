@@ -17,22 +17,33 @@ value plus the new paths, through ``backlog.edit``) and commits the backlog to `
 (``commit_backlog``, by ``base_changes``). The caller then retries the run
 (``factory task retry --allow-writes``, ``POST /api/runs/{id}/allow-writes``). With
 ``base_changes: pr`` and a PR that is not merged at once, base lacks the new writes:
-``writes_in_pr`` is raised and the run is not retried.
+``writes_in_pr`` is raised and the run is not retried. Every other commit result
+(including a no-op or a merged PR) is checked against the backlog in the base
+commit. If any allowed path is missing from the effective writes there,
+``writes_not_committed`` is raised before the caller can retry.
 
 Error codes (``TaskRunError.code``): ``unknown_run``, ``invalid_value`` (a run of another
 task), ``already_running``, ``run_not_retryable``, ``not_writes_violation``,
-``nothing_to_allow``, ``writes_in_pr``. Errors of the edit and the commit are
-``TaskEditError`` (``backlog_invalid``, ``not_on_base``, ``commit_failed``, ...).
+``nothing_to_allow``, ``writes_in_pr``, ``writes_not_committed``. Errors of the edit
+and the commit are ``TaskEditError`` (``backlog_invalid``, ``not_on_base``, ``commit_failed``, ...).
 """
 
 from __future__ import annotations
 
+import tempfile
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from aifactory import failure
-from aifactory.backlog import commit_backlog, edit_task, find_task, load_for_edit
+from aifactory.backlog import (
+    Task,
+    commit_backlog,
+    edit_task,
+    find_task,
+    load_backlog,
+    load_for_edit,
+)
 from aifactory.backlog.commit import BacklogCommit
 from aifactory.backlog.roots import owning_root
 from aifactory.config import ConfigError, ProjectSettings, load_run_config
@@ -214,5 +225,24 @@ def allow_writes(repo: Path, task_id: str, run_id: str | None = None) -> AllowWr
             "writes_in_pr",
             f"the writes of {task_id} are extended in {commit.pr.get('url') or 'a pull request'}; "
             f"retry the run after it is merged (factory task retry {task_id})",
+        )
+    rc = load_run_config(main)
+    settings = rc.config.settings
+    with tempfile.TemporaryDirectory(prefix="factory-base-") as tmp:
+        base_copy = Path(tmp)
+        try:
+            sha = gitops.git(main, "rev-parse", f"refs/heads/{rc.base}")
+            gitops.extract_backlog(main, sha, settings.backlog_patterns, base_copy)
+        except (OSError, RuntimeError) as exc:
+            raise TaskRunError("invalid_config", f"cannot read the backlog: {exc}") from exc
+        task = load_backlog(base_copy, settings).by_id.get(task_id)
+        committed_writes = effective_task_writes(task) if isinstance(task, Task) else ()
+    missing = [p for p in plan.allow if not any(matches(p, w) for w in committed_writes)]
+    if missing:
+        raise TaskRunError(
+            "writes_not_committed",
+            f"the backlog in base {rc.base} does not allow these paths for {task_id}: "
+            f"{', '.join(missing)}; commit the backlog to base "
+            f"(factory backlog commit), then retry (factory task retry {task_id})",
         )
     return AllowWritesResult(plan, new_writes, commit)

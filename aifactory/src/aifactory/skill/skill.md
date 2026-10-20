@@ -854,7 +854,11 @@ NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped
    retries; `data.allow_writes` lists `allow` and `refused` (with `reason`). A path in
    `protected_files`, in the backlog or in the main checkout is never added. Refused:
    `not_writes_violation`, `nothing_to_allow`, `writes_in_pr` (base_changes: pr and the
-   backlog PR is not merged yet: retry after the merge).
+   backlog PR is not merged yet: retry after the merge), `writes_not_committed` (the
+   backlog in base lacks the new effective writes: commit the backlog with
+   `factory backlog commit --json`, then `factory task retry ID --json`). The retry
+   starts only after all allowed paths are verified in the base commit, including
+   when the commit reports no change or a backlog PR has merged.
 8. `--harness` (with `--model`, `--thinking`) continues with every agent on another
    harness, e.g. after `failure_kind: quota`; it replaces the run's roster override. The
    switch is in `data.run.retries[].harness_switch` (`from`, `to`, `reason`, `auto`), in
