@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T58
 title: "Přehled: revize stavů tasku, aby se při přechodech (běží → automerge, merge a další) na chvíli neukázal jako Ready"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/web/test_web_backlog.py]
@@ -44,3 +44,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/126 · náklady $0.00
