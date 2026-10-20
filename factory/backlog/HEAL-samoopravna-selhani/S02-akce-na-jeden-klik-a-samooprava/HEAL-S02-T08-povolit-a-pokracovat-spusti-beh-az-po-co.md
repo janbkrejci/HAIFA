@@ -1,7 +1,7 @@
 ---
 id: HEAL-S02-T08
 title: Povolit a pokračovat spustí běh až po commitu backlogu do base
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HEAL-S02-T01]
 writes: [aifactory/src/aifactory/run/allow_writes.py, aifactory/src/aifactory/web/runs.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/skill/codes.py, aifactory/src/aifactory/skill/skill.md, aifactory/tests/run/test_allow_writes.py, aifactory/tests/web/test_web_runs.py, aifactory/tests/test_skill.py]
@@ -27,3 +27,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/132 · náklady $0.00
