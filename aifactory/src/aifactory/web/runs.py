@@ -360,16 +360,61 @@ def run_summary(repo: Path, run_id: str) -> JsonDict:
         store.close()
 
 
-def publish_run(repo: Path, run_id: str) -> tuple[JsonDict, list[str]]:
+def publish_run(repo: Path, run_id: str, launcher: Any = None) -> tuple[JsonDict, list[str]]:
     """``factory task publish`` for the task of `run_id` (its last succeeded run).
 
     ``{run, pr, pr_error}``: ``run`` as in the list; a push or PR that failed again is
-    ``pr_error`` (HTTP 200, the request itself did its job).
+    ``pr_error`` (HTTP 200, the request itself did its job). With auto-merge a launcher
+    runs publish in a separate process and returns ``started`` while it waits for CI.
     """
     from aifactory.review import publish_task
 
     store, row = _open_run(repo, run_id)
     store.close()
+    if launcher is not None:
+        import tempfile
+
+        from aifactory.backlog import Task
+        from aifactory.run.queue import _base_backlog, auto_merge_enabled
+
+        with tempfile.TemporaryDirectory(prefix="factory-publish-") as tmp:
+            task = _base_backlog(repo, Path(tmp)).by_id.get(row.task_id)
+        if isinstance(task, Task) and auto_merge_enabled(task):
+            from aifactory.review import ReviewError
+
+            check, _ = _open_run(repo, run_id)
+            try:
+                succeeded = [r for r in check.for_task(row.task_id) if r.state == "succeeded"]
+                if not succeeded:
+                    raise ReviewError(
+                        "no_succeeded_run", f"task {row.task_id} has no succeeded run"
+                    )
+                if succeeded[0].run_id != run_id:
+                    raise ReviewError(
+                        "invalid_value", f"run {run_id} is not the last succeeded run"
+                    )
+            finally:
+                check.close()
+            try:
+                launcher.start_publish(repo, row.task_id)
+            except TaskRunError as exc:
+                if exc.code == "pr_failed":
+                    summary = run_summary(repo, run_id)
+                    return {
+                        "run": summary,
+                        "pr": summary["pr"],
+                        "pr_error": summary["pr_error"],
+                    }, []
+                raise ReviewError(exc.code, exc.message) from exc
+            summary = run_summary(repo, run_id)
+            return {
+                "run": summary,
+                "pr": summary["pr"],
+                "pr_error": summary["pr_error"],
+                "task_id": row.task_id,
+                "action": "publish",
+                "started": True,
+            }, []
     result = publish_task(repo, row.task_id, run_id=run_id)
     return (
         {

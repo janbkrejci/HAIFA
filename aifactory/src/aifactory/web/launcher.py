@@ -2,7 +2,8 @@
 
 ``RunLauncher.start`` (Spustit), ``start_return`` (Vrátit), ``start_resolve`` (Vyřešit
 konflikt), ``start_retry`` (Pokračovat) and ``start_approve`` (Schválit on a hosting with
-CI checks) start ``<prefix> task run|return|resolve|retry|approve ID --repo ROOT --json`` with
+CI checks), and ``start_publish`` (Publikovat with auto-merge) start
+``<prefix> task run|return|resolve|retry|approve|publish ID --repo ROOT --json`` with
 ``start_new_session``, stdin closed, the repository root as cwd and the server's
 environment. The process's stdout (its JSON envelope) and stderr (its narration) go to two
 new files with mode 0600 in ``logs/`` of the HAIFA home (``aifactory.home``), never into
@@ -93,6 +94,8 @@ class Launcher(Protocol):
     ) -> TaskRunRow | None: ...
 
     def start_approve(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None: ...
+
+    def start_publish(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None: ...
 
     def start_retry(
         self,
@@ -246,6 +249,11 @@ class RunLauncher:
         """
         args = ["task", "approve", task_id, "--repo", str(repo), "--json"]
         self._launch(repo, task_id, "approve", args, timeout, lambda: None)
+
+    def start_publish(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None:
+        """Publish and finish auto-merge/auto-continue in a separate process."""
+        args = ["task", "publish", task_id, "--repo", str(repo), "--json"]
+        self._launch(repo, task_id, "publish", args, timeout, lambda: None)
 
     def start_retry(
         self,

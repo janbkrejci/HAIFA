@@ -535,3 +535,31 @@ def test_haifa_home_resolution(tmp_path: Path) -> None:
         assert stat.S_IMODE((logs / "a.json").stat().st_mode) == 0o600
     with pytest.raises(FileExistsError):
         home.create_private(logs / "a.json")
+
+
+def test_publish_launches_separate_process_and_returns_while_waiting(
+    make_app: Apps,
+    repo: Path,
+    stub: Stub,
+) -> None:
+    _app, _client, launcher = make_app(repo)
+    stub.plan(T01, "claim-wait")
+    launcher.start_publish(repo, T01, timeout=0.3)
+    live = launcher.running()
+    assert len(live) == 1
+    assert live[0].action == "publish" and live[0].pid != os.getpid()
+    assert live[0].argv[-6:] == ["task", "publish", T01, "--repo", str(repo), "--json"]
+
+
+@pytest.mark.parametrize("code", ["pr_failed", "pr_exists", "no_succeeded_run"])
+def test_publish_launcher_reports_quick_errors(
+    make_app: Apps,
+    repo: Path,
+    stub: Stub,
+    code: str,
+) -> None:
+    _app, _client, launcher = make_app(repo)
+    stub.plan(T01, "fail", code=code, message="cannot publish")
+    with pytest.raises(TaskRunError) as info:
+        launcher.start_publish(repo, T01)
+    assert info.value.code == code

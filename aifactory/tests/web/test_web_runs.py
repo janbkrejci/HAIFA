@@ -508,3 +508,66 @@ def test_retry_starts_a_failed_run_and_refuses_others(repo: Path, tmp_path: Path
     bad = client.post("/api/runs/r-fail/retry", json={"notes": "x"})
     assert bad.status_code == 400
     assert len(launcher.calls) == 1
+
+
+@pytest.mark.parametrize("error", [None, "pr_failed", "pr_exists", "no_succeeded_run"])
+def test_publish_auto_merge_uses_launcher(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    error: str | None,
+) -> None:
+    from thread_launcher import ThreadLauncher
+
+    from aifactory.backlog import Task
+    from aifactory.run import queue
+    from aifactory.run.errors import TaskRunError
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "run"))
+    from run_repo import T01, make_run_repo
+
+    root = make_run_repo(tmp_path / "publish-repo")
+    # A completed run whose branch could not be published. The launcher is the API's
+    # boundary: it owns all hosting/CI work and reports immediate CLI errors.
+    from aifactory.run.store import TaskRunRow
+
+    store = TaskRunStore(root / ".factory" / "trace.db")
+    try:
+        store.claim(
+            TaskRunRow(
+                run_id="publish-me",
+                task_id=T01,
+                branch="factory/test-1",
+                worktree="",
+                base="main",
+                base_sha="0",
+                head_sha=None,
+                state="running",
+                started_at="2026-01-01T10:00:00+00:00",
+                pid=os.getpid(),
+            )
+        )
+        store.finish("publish-me", "succeeded", "abc", None)
+        store.set_pr_error("publish-me", "push_failed: server error")
+    finally:
+        store.close()
+    monkeypatch.setattr(queue, "auto_merge_enabled", lambda task: isinstance(task, Task))
+    called: list[str] = []
+
+    class Launcher(ThreadLauncher):
+        def start_publish(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None:
+            called.append(task_id)
+            if error:
+                raise TaskRunError(error, "cannot publish")
+
+    client = TestClient(create_app(root, launcher=Launcher()), base_url=BASE)
+    response = client.post("/api/runs/publish-me/publish")
+    assert called == [T01]
+    assert response.status_code == (409 if error in ("pr_exists", "no_succeeded_run") else 200)
+    body = response.json()
+    assert envelope_problems(body) == []
+    if error is None:
+        assert body["data"]["started"] is True
+    elif error == "pr_failed":
+        assert body["data"]["pr_error"] == "push_failed: server error"
+    else:
+        assert body["error"]["code"] == error

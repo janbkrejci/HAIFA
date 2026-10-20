@@ -1880,10 +1880,11 @@ task run: a failed run keeps its worktree and branch. After a successful run the
   continues only after that merge. Otherwise the PR stays open and auto_merge says why.
 task publish: for the last succeeded run without a pull request (pr_failed) push the
   branch and open the PR as 'task run' does, or adopt the open PR the hosting has for the
-  branch. No succeeded run (no_succeeded_run), a PR already known (pr_exists) or a run in
+  branch. Then finish effective auto-merge and auto-continue as after task run.
+  No succeeded run (no_succeeded_run), a PR already known (pr_exists) or a run in
   progress (already_running): exit 2, nothing changed. Push or PR failed again: pr_failed,
   exit 1. A push failing on the network (RPC, HTTP2, hung up, timeout) is retried a few
-  times; a rejected push is not.
+  times, including hosting HTTP 5xx; a rejected push is not.
 task approve: on conflict run 'factory task resolve <task-id>'. Waits for the CI checks of
   the pushed head (none: merge at once); red checks get up to 2 ci-fix runs on the PR
   branch, then checks_failing, checks_pending or ci_fix_failed and the PR stays open. On
@@ -2131,7 +2132,8 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="push the branch of the last succeeded run and open its pull request",
         description="For the task's last succeeded run that has no pull request (its push or "
         "PR failed at the end of 'task run'): push the branch and open the pull request with "
-        "the body from the run, recorded like after 'task run'. An open PR the hosting already "
+        "the body from the run, then finish auto-merge and auto-continue as after 'task run'. "
+        "An open PR the hosting already "
         "has for the branch is adopted and its body updated. Without a succeeded run, with a "
         "known PR or while a run is in progress it fails with exit 2 and changes nothing.",
     )
@@ -2826,7 +2828,11 @@ def _task_approve(args: argparse.Namespace, root: Path) -> int:
 def _task_publish(args: argparse.Namespace, root: Path) -> int:
     from aifactory.review import publish_task
 
-    result = publish_task(root, args.task_id)
+    with contextlib.redirect_stdout(sys.stderr) if args.json else contextlib.nullcontext():
+        result = publish_task(root, args.task_id)
+    chain = result.chain
+    if chain is not None:
+        return _chain_output(args, lambda: chain)
     if args.json:
         data = result.to_json()
         if result.pr_error is not None:

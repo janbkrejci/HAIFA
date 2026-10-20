@@ -108,6 +108,16 @@ class ThreadLauncher:
             lambda: None,
         )
 
+    def start_publish(self, repo: Path, task_id: str, *, timeout: float = 3.0) -> None:
+        self._start(
+            repo,
+            task_id,
+            lambda: review_core.publish_task(repo, task_id),
+            f"publish {task_id}",
+            timeout,
+            lambda: None,
+        )
+
     def start_retry(
         self,
         repo: Path,

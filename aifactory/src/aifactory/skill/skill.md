@@ -890,7 +890,16 @@ branch and opens the PR with the body kept from the run, recorded in `task_prs` 
 run. When the hosting already has an open PR for the branch that factory does not know, it
 is adopted (recorded, its body updated) instead of opening a second one. A push failing on
 the network (RPC failed, HTTP2 framing, remote end hung up, timeout) is retried a few times
-with a pause; a rejected push (non-fast-forward, rights) is not.
+with a pause, including hosting server errors (HTTP 5xx, Internal Server Error); a rejected
+push (non-fast-forward, rights, protected branch or hook) is not.
+
+After publication, effective `auto_merge` merges the PR under the same review and CI
+conditions as `task run`, including conflict resolution and `auto_merge_error` on failure.
+The same auto-continue chain then selects ready tasks in kanban order and respects slots
+and `max_parallel_runs`. No `--auto` flag is needed: inherited `auto_continue` applies.
+Without `auto_merge` the PR stays open for review.
+`data.auto_merge` and `data.chain` report the merge outcome, runs and stop reason.
+The dashboard starts publish with auto-merge in a separate process so CI never blocks it.
 
 - `data.run`, `data.pr`, `data.pr_error`: as for a run.
 - `no_succeeded_run` (exit 2): no succeeded run; nothing changed.

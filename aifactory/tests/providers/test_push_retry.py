@@ -54,11 +54,18 @@ def _remote_tip(repo: Path, branch: str) -> str:
     return _git(repo, "ls-remote", "origin", f"refs/heads/{branch}")
 
 
+@pytest.mark.parametrize(
+    "first_error", [HTTP2, " ! [remote rejected] x -> x (Internal Server Error)"]
+)
 def test_transient_failure_then_success(
-    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, sleeps: list[float]
+    repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    sleeps: list[float],
+    first_error: str,
 ) -> None:
     fake = install_fake_git(tmp_path, monkeypatch)
-    fake.fail_push(1, HTTP2)
+    fake.fail_push(1, first_error)
     fake.fail_push(2, "fatal: unable to access 'https://h/r.git/': Operation timed out\n")
 
     pgit.push(repo, "origin", "factory/x-1")
@@ -106,6 +113,10 @@ def test_gives_up_after_bounded_attempts(
     "stderr",
     [
         HTTP2,
+        "remote: Internal Server Error",
+        " ! [remote rejected] x -> x (500)",
+        "502 Bad Gateway",
+        "503 Service Unavailable",
         "fatal: the remote end hung up unexpectedly",
         "ssh: connect to host github.com port 22: Operation timed out",
         "fatal: unable to access 'https://github.com/o/r.git/': Could not resolve host: x",
@@ -120,6 +131,8 @@ def test_transient_errors(stderr: str) -> None:
     "stderr",
     [
         REJECTED,
+        " ! [remote rejected] x -> x (pre-receive hook declined)",
+        "remote: Internal Server Error\n ! [remote rejected] x -> x (pre-receive hook declined)",
         " ! [rejected]  main -> main (fetch first)",
         " ! [remote rejected] factory/x -> factory/x (protected branch hook declined)",
         "ERROR: Permission to o/r.git denied to someone.\nfatal: Could not read from remote "
