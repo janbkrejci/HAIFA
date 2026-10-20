@@ -1,7 +1,7 @@
 ---
 id: HAIFA-LEARN-T03
 title: "Lekce: Before you finalize the plan, grep aifactory/tests for every changed module, class…"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S07-T04, HAIFA-REFINEMENT-T19, HAIFA-REFINEMENT-T22, HAIFA-REFINEMENT-T26, HAIFA-REFINEMENT-T23, HAIFA-REFINEMENT-T28, HAIFA-REFINEMENT-T35, HAIFA-REFINEMENT-T41, HAIFA-REFINEMENT-T36, HEAL-S02-T04, INTENT-S01-T03, HAIFA-S08-T04, HAIFA-S01-T43]
@@ -59,3 +59,4 @@ Výtky z 14 běhů, ze kterých lekce vznikla:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/130 · náklady $0.00
