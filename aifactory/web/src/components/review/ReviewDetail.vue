@@ -92,6 +92,10 @@ const checks = () => (Array.isArray(props.detail.checks) ? props.detail.checks :
       </p>
     </header>
 
+    <p v-if="detail.approved" data-test="approved-at">
+      Schváleno, čeká na CI<span v-if="detail.approved_at"> · {{ fmtTime(detail.approved_at) }}</span>
+    </p>
+
     <div class="actions-bar" data-test="actions">
       <p v-if="!readOnly && detail.pr.auto_merge_error" class="auto-error" data-test="auto-merge-error">
         Auto-merge nesloučil: {{ detail.pr.auto_merge_error }} – schval ručně.

@@ -44,6 +44,7 @@ describe('fetchOverview projects', () => {
   it('normalizes omitted projects from an older server to an empty list', async () => {
     const older = repo('old')
     delete older.projects
+    delete older.approved
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       ok: true, data: overview([older]), error: null, warnings: [],
     })))
@@ -53,6 +54,7 @@ describe('fetchOverview projects', () => {
 
     expect(fetchMock.mock.calls[0][0]).toBe('/api/overview')
     expect(data.repos[0].projects).toEqual([])
+    expect(data.repos[0].approved).toEqual([])
   })
 
   it('preserves supplied project identities, titles and task counts', async () => {
@@ -71,6 +73,17 @@ describe('fetchOverview projects', () => {
 })
 
 describe('overview urgency', () => {
+  it('counts approved PRs without treating them as waiting for the user', () => {
+    const approved = repo('approved', { approved: [review({ project: 'A' })],
+      projects: [{ id: 'A', title: 'Alpha', tasks: tasks({ approved: 1 }) }] })
+    expect(urgency(approved)).toBe('automerge')
+    expect(totals([approved])).toEqual({ running: 0, review: 0, approved: 1, automerge: 0, failed: 0, problems: 0 })
+    expect(matchesFilter(approved, 'approved')).toBe(true)
+    expect(matchesFilter(approved, 'review')).toBe(false)
+    expect(projectSections(approved)[0].repo.approved).toEqual(approved.approved)
+    expect(taskSummary(approved.projects![0])).toEqual([{ state: 'approved', label: 'Schváleno, čeká na CI', count: 1 }])
+  })
+
   it('orders problems, failures, review, running, automerge, calm', () => {
     const order = sortRepos([CALM, AUTOMERGE, RUNS, REVIEW, FAILED, DIRTY]).map((r) => r.id)
     expect(order).toEqual(['dirty', 'failed', 'review', 'runs', 'automerge', 'calm'])
@@ -90,7 +103,7 @@ describe('overview urgency', () => {
   it('counts a running row whose process ended as a failure', () => {
     expect(urgency(ENDED)).toBe('failed')
     expect(failedRows(ENDED)[0].label).toBe('proces skončil')
-    expect(countsById(overview([ENDED])).ended).toEqual({ running: 0, review: 0, automerge: 0, failed: 1 })
+    expect(countsById(overview([ENDED])).ended).toEqual({ running: 0, review: 0, approved: 0, automerge: 0, failed: 1 })
   })
 
   it('labels a failed task with its failure kind, an older server with its error', () => {
@@ -111,7 +124,7 @@ describe('overview totals and filter', () => {
   const all = [CALM, RUNS, REVIEW, AUTOMERGE, FAILED, ENDED, DIRTY, MISSING]
 
   it('sums runs, review, auto-merge, failures and repos with problems', () => {
-    expect(totals(all)).toEqual({ running: 1, review: 1, automerge: 1, failed: 2, problems: 2 })
+    expect(totals(all)).toEqual({ running: 1, review: 1, approved: 0, automerge: 1, failed: 2, problems: 2 })
   })
 
   it('filters the cards by a total', () => {

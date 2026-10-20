@@ -21,7 +21,7 @@ function detailWrapper(error: { message: string; issues: [] } | null = null) {
 }
 
 describe('TaskDetail', () => {
-  it.each(['running', 'in review', 'awaiting merge', 'ready'] as const)('gates actions and explains disabled actions for %s', async (state) => {
+  it.each(['running', 'in review', 'approved', 'awaiting merge', 'ready'] as const)('gates actions and explains disabled actions for %s', async (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
@@ -38,7 +38,7 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['ready', 'in review', 'awaiting merge'] as const)('allows a blocked start only when all blockers have open PRs (%s)', (state) => {
+  it.each(['ready', 'in review', 'approved', 'awaiting merge'] as const)('allows a blocked start only when all blockers have open PRs (%s)', (state) => {
     const detail = taskDetail()
     detail.task.board_state = 'blocked'
     detail.task.blocked_by = [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }]
@@ -54,7 +54,7 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['in review', 'running'] as const)('resolves unfinished container dependencies before allowing a stacked start (%s)', async (state) => {
+  it.each(['in review', 'approved', 'running'] as const)('resolves unfinished container dependencies before allowing a stacked start (%s)', async (state) => {
     const detail = taskDetail()
     detail.task.board_state = 'blocked'
     detail.task.blocked_by = [{ id: 'STEP', reason: 'incomplete', missing: ['A', 'B'] }]
@@ -118,7 +118,7 @@ describe('TaskDetail', () => {
     api.getApi.mockReset()
   })
 
-  it.each(['running', 'in review', 'awaiting merge'] as const)('does not offer to retry an old failed run while the task is %s', (state) => {
+  it.each(['running', 'in review', 'approved', 'awaiting merge'] as const)('does not offer to retry an old failed run while the task is %s', (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     detail.runs[0]!.state = 'failed'
@@ -137,7 +137,7 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['running', 'in review', 'awaiting merge'] as const)('closes editing after a live transition to %s', async (state) => {
+  it.each(['running', 'in review', 'approved', 'awaiting merge'] as const)('closes editing after a live transition to %s', async (state) => {
     const wrapper = detailWrapper()
     await wrapper.get('[data-test="edit"]').trigger('click')
     expect(wrapper.findComponent(TaskForm).exists()).toBe(true)
@@ -178,7 +178,7 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['cancelled', 'running', 'in review', 'awaiting merge'] as const)('disables Vylepšit agentem for %s tasks', (state) => {
+  it.each(['cancelled', 'running', 'in review', 'approved', 'awaiting merge'] as const)('disables Vylepšit agentem for %s tasks', (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
@@ -388,7 +388,7 @@ describe('TaskDetail', () => {
     wrapper.unmount()
   })
 
-  it.each(['done', 'cancelled', 'running', 'in review', 'awaiting merge'] as const)('offers no cancel for %s tasks', (state) => {
+  it.each(['done', 'cancelled', 'running', 'in review', 'approved', 'awaiting merge'] as const)('offers no cancel for %s tasks', (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })

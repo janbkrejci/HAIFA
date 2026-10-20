@@ -1,10 +1,8 @@
 # První běh
 
-Spusť dashboard příkazem `factory obs`. Otevře se `http://127.0.0.1:4700` (jiný port `--port N`); terminál nech otevřený. Běhy zastavení serveru přežijí.
+Spusť dashboard příkazem `factory obs`. Otevře se `http://127.0.0.1:4700` (jiný port `--port N`); terminál nech otevřený. Běhy přežijí zastavení serveru.
 
 ## Horní lišta
-
-Zleva doprava:
 
 - **HAIFA:** návrat na Přehled.
 - **Necommitnutý backlog**, **Necommitnutá konfigurace:** červené chipy při necommitnutých změnách; klik otevře soubory a commit.
@@ -29,7 +27,7 @@ Harness zapni, vyber **Výchozí model** a **Výchozí thinking level** a spusť
 
 ## Přehled a záložky repa
 
-Přehled ukazuje všechna repa; **Běží**, **Čeká na review**, **Čeká na automerge PR**, **Selhalo** a **Problémy** je filtrují. Karta repa má ikony **Spustit továrnu** (připravené tasky), **Pauza** / **Pokračovat** a **Stop** (všechny běhy repa). **Odebrat repozitář** v menu ⋮ repo jen odpojí; `.factory/` a backlog zůstanou.
+Přehled ukazuje všechna repa; **Běží**, **Čeká na review**, **Schváleno, čeká na CI**, **Čeká na automerge PR**, **Selhalo** a **Problémy** je filtrují. Karta repa má ikony **Spustit továrnu** (připravené tasky), **Pauza** / **Pokračovat** a **Stop** (všechny běhy repa). **Odebrat repozitář** v menu ⋮ repo jen odpojí; `.factory/` a backlog zůstanou.
 
 Repo má záložky **Backlog** ([Backlog a tasky](#/guide/backlog)), **Běhy** a **Review** ([Běhy a review](#/guide/behy-a-review)) a **Factory** ([Konfigurace](#/guide/konfigurace)).
 
@@ -39,3 +37,4 @@ Repo má záložky **Backlog** ([Backlog a tasky](#/guide/backlog)), **Běhy** a
 2. Commitni backlog chipem **Necommitnutý backlog**.
 3. V detailu tasku **Spustit**.
 4. Úspěšný task je **Čeká na review**: na záložce Review **Schválit**, nebo **Vrátit s poznámkou**.
+5. Schválení: **Schváleno, čeká na CI**, po merge **Hotovo**.

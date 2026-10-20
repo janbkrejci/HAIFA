@@ -98,7 +98,7 @@ function message(e: unknown): string {
 /** The next open PR to approve after `id`: one waiting for review first, else any other. */
 async function nextPr(id: string): Promise<string | null> {
   try {
-    const prs = normalise(await fetchReviews()).prs.filter((p) => p.task_id !== id)
+    const prs = normalise(await fetchReviews()).prs.filter((p) => p.task_id !== id && !p.approved)
     const next = prs.find((p) => p.awaiting_review) ?? prs.find((p) => p.awaiting_automerge) ?? prs[0]
     return next?.task_id ?? null
   } catch {

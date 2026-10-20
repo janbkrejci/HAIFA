@@ -10,7 +10,7 @@ Backlog je strom markdown souborů pod `<docs_root>/backlog/`: **projekt**, **st
 
 ## Stavy tasku
 
-**Bez workflow** (nejde spustit), **Připraveno**, **Pro člověka** (udělá člověk, `assignee: human`), **Blokováno** (závislost není hotová; čeká-li na task pro člověka, **Čeká na člověka**), **Běží**, **Čeká na review**, **Čeká na automerge PR**, **Hotovo** a **Zrušeno**.
+**Bez workflow** (nejde spustit), **Připraveno**, **Pro člověka** (udělá člověk, `assignee: human`), **Blokováno** (závislost není hotová; čeká-li na task pro člověka, **Čeká na člověka**), **Běží**, **Čeká na review**, **Schváleno, čeká na CI**, **Čeká na automerge PR**, **Hotovo** a **Zrušeno**.
 
 V souboru je jen `status` (`todo`, `done`, `cancelled`). Hotovo nastavuje schválení PR; task pro člověka označíš tlačítkem **Hotovo** v detailu. Založíš ho přes `factory task add STEP TITLE --assignee human`.
 

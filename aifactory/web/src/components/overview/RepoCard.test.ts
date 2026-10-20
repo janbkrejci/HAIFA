@@ -26,12 +26,14 @@ describe('RepoCard pull requests', () => {
     const card = mountWith(
       repo('a', {
         review: [review({ task_id: 'M01-S01-T02', pr_id: '42' })],
+        approved: [review({ task_id: 'approved', pr_id: '44' })],
         automerge: [review({ task_id: 'M01-S01-T05', pr_id: '45' })],
       }),
     )
     const sections = card.findAll('section.group h3').map((h) => h.text())
-    expect(sections).toEqual(['Čeká na review', 'Čeká na automerge PR'])
+    expect(sections).toEqual(['Čeká na review', 'Schváleno, čeká na CI', 'Čeká na automerge PR'])
     expect(card.findAll('[data-test="row-review"]').map((r) => r.attributes('data-task'))).toEqual(['M01-S01-T02'])
+    expect(card.get('[data-test="approved"] [data-test="row-approved"]').attributes('href')).toBe('#/r/a/review/approved')
     const merge = card.get('[data-test="automerge"]')
     const rows = merge.findAll('[data-test="row-automerge"]')
     expect(rows.map((r) => r.attributes('data-task'))).toEqual(['M01-S01-T05'])
@@ -41,6 +43,7 @@ describe('RepoCard pull requests', () => {
 
   it('has no auto-merge section without such a PR', () => {
     const card = mountWith(repo('a', { review: [review()] }))
+    expect(card.find('[data-test="approved"]').exists()).toBe(false)
     expect(card.find('[data-test="automerge"]').exists()).toBe(false)
     expect(card.text()).not.toContain('Čeká na automerge PR')
   })

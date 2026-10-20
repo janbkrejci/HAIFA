@@ -839,7 +839,7 @@ describe('BacklogView', () => {
     wrapper.unmount()
   })
 
-  it.each(['running', 'in review', 'awaiting merge', 'blocked'] as const)('does not POST from an open dialog after the task refreshes to %s', async (state) => {
+  it.each(['running', 'in review', 'approved', 'awaiting merge', 'blocked'] as const)('does not POST from an open dialog after the task refreshes to %s', async (state) => {
     go('#/r/haifa/backlog/M01-S01-T02')
     let refreshed = false
     const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {

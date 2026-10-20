@@ -498,6 +498,12 @@ body button.btn-improve:disabled {
   background: rgba(200, 155, 255, 0.08);
 }
 
+.state-chip.state-approved {
+  color: var(--cyan);
+  border-color: rgba(90, 210, 221, 0.45);
+  background: rgba(90, 210, 221, 0.08);
+}
+
 .state-chip.state-awaiting-merge {
   color: var(--violet);
   border-color: rgba(148, 163, 255, 0.45);

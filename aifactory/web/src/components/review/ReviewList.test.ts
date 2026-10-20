@@ -18,6 +18,7 @@ describe('ReviewList', () => {
 
   it('has no "Čeká na automerge PR" group without such a PR', () => {
     const wrapper = mount(ReviewList, { props: { list: reviewList() } })
+    expect(wrapper.find('[data-test="approved"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="automerge"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Čeká na automerge PR')
   })
@@ -26,6 +27,7 @@ describe('ReviewList', () => {
     const list = reviewList({
       prs: [
         reviewPr({ task_id: 'M01-S01-T01' }),
+        reviewPr({ task_id: 'approved', approved: true, awaiting_review: false }),
         reviewPr({ task_id: 'M01-S01-T02', awaiting_review: false, awaiting_automerge: true }),
         reviewPr({ task_id: 'M01-S01-T03', awaiting_review: false, awaiting_automerge: false }),
       ],
@@ -35,10 +37,12 @@ describe('ReviewList', () => {
       wrapper.find(`[data-test="${key}"]`).findAll('tr[data-pr]').map((r) => r.attributes('data-pr'))
     expect(wrapper.findAll('section.group h2').map((h) => h.text())).toEqual([
       'Čeká na review (1)',
+      'Schváleno, čeká na CI (1)',
       'Čeká na automerge PR (1)',
       'Ostatní otevřené PR (1)',
     ])
     expect(ids('awaiting')).toEqual(['M01-S01-T01'])
+    expect(ids('approved')).toEqual(['approved'])
     expect(ids('automerge')).toEqual(['M01-S01-T02'])
     expect(ids('other')).toEqual(['M01-S01-T03'])
   })
@@ -102,6 +106,7 @@ describe('ReviewList', () => {
   it('shows the task as "ID Název", or only the id without a title', () => {
     const list = reviewList({
       prs: [
+        reviewPr({ task_id: 'approved', approved: true, awaiting_review: false }),
         reviewPr({ task_id: 'M01-S01-T02', task_title: 'Loader' }),
         reviewPr({ task_id: 'M01-S01-T03', task_title: null }),
       ],
