@@ -5,18 +5,18 @@ status: todo
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S07-T04, HAIFA-REFINEMENT-T19, HAIFA-REFINEMENT-T22, HAIFA-REFINEMENT-T26, HAIFA-REFINEMENT-T23, HAIFA-REFINEMENT-T28, HAIFA-REFINEMENT-T35, HAIFA-REFINEMENT-T41, HAIFA-REFINEMENT-T36, HEAL-S02-T04, INTENT-S01-T03, HAIFA-S08-T04, HAIFA-S01-T43]
-writes: [.factory/prompts/tester/]
+writes: [aifactory/src/aifactory/seed/agents/tester/]
 ---
 
 ## Zadání
-Zapiš do promptu role tester (`.factory/prompts/tester/`) pravidlo z lekce `L4556f6b5`, kterou factory našla ve výtkách opakovaných v bězích:
+Zapiš do promptu role tester (`aifactory/src/aifactory/seed/agents/tester/`) pravidlo z lekce `L4556f6b5`, kterou factory našla ve výtkách opakovaných v bězích:
 
 > Before you finalize the plan, grep aifactory/tests for every changed module, class, function, constant and data-test selector, and include each test file that imports or calls it, including tests/e2e browser tests of changed screens.
 
-Pravidlo formuluj stručně, zařaď ho tam, kam v souboru patří, a nenech ho odporovat tomu, co tam už je. Jiné soubory neměň.
+Pravidlo formuluj stručně, zařaď ho tam, kam v souboru patří, a nenech ho odporovat tomu, co tam už je. Pravidlo patří do `system.md` seedu role tester, odkud ho dostanou knihovny po upgradu. `.factory/prompts/` je chráněný (`protected_files`) a přepis promptu v repu by odřízl HAIFA od dalších změn knihovny. Jiné soubory neměň.
 
 Hotovo znamená:
-- Pravidlo je v promptu role tester (`.factory/prompts/tester/`).
+- Pravidlo je v promptu role tester (`aifactory/src/aifactory/seed/agents/tester/`).
 
 ### Důkazy
 

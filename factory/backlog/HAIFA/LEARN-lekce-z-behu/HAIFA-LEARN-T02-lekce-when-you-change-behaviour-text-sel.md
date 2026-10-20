@@ -5,18 +5,18 @@ status: todo
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T16, HAIFA-REFINEMENT-T22, HAIFA-REFINEMENT-T40, LEARN-S01-T01, HAIFA-REFINEMENT-T61]
-writes: [.factory/prompts/builder/]
+writes: [aifactory/src/aifactory/seed/agents/builder/]
 ---
 
 ## Zadání
-Zapiš do promptu role builder (`.factory/prompts/builder/`) pravidlo z lekce `Ldcb5b512`, kterou factory našla ve výtkách opakovaných v bězích:
+Zapiš do promptu role builder (`aifactory/src/aifactory/seed/agents/builder/`) pravidlo z lekce `Ldcb5b512`, kterou factory našla ve výtkách opakovaných v bězích:
 
 > When you change behaviour, text, selectors or preconditions, grep the tests for the old behaviour and update every test or fixture that still expects it in the same change.
 
-Pravidlo formuluj stručně, zařaď ho tam, kam v souboru patří, a nenech ho odporovat tomu, co tam už je. Jiné soubory neměň.
+Pravidlo formuluj stručně, zařaď ho tam, kam v souboru patří, a nenech ho odporovat tomu, co tam už je. Pravidlo patří do `system.md` seedu role builder, odkud ho dostanou knihovny po upgradu. `.factory/prompts/` je chráněný (`protected_files`) a přepis promptu v repu by odřízl HAIFA od dalších změn knihovny. Jiné soubory neměň.
 
 Hotovo znamená:
-- Pravidlo je v promptu role builder (`.factory/prompts/builder/`).
+- Pravidlo je v promptu role builder (`aifactory/src/aifactory/seed/agents/builder/`).
 
 ### Důkazy
 
