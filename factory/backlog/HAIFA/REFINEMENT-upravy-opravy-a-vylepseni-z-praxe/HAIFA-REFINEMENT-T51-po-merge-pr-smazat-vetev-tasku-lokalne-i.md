@@ -3,7 +3,7 @@ id: HAIFA-REFINEMENT-T51
 title: Po merge PR smazat větev tasku lokálně i na remote
 status: todo
 workflow: build-test-review
-depends_on: []
+depends_on: [HAIFA-TODO-T18, HAIFA-TODO-T19]
 writes: [aifactory/src/aifactory/review/flow.py aifactory/src/aifactory/providers/base.py aifactory/src/aifactory/providers/git.py aifactory/src/aifactory/providers/github.py aifactory/src/aifactory/providers/local.py aifactory/src/aifactory/providers/azure.py aifactory/src/aifactory/cli.py aifactory/tests/review/test_branch_cleanup.py aifactory/tests/providers/test_providers_github.py aifactory/tests/providers/test_providers_local.py aifactory/tests/providers/gh_fake.py, aifactory/tests/review/test_approve_merge_retry.py, aifactory/tests/review/test_ci_gate.py, aifactory/tests/run/test_task_pr_flow.py]
 ---
 
