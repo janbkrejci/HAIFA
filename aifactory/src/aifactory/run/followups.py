@@ -6,6 +6,7 @@ in the project's ``TODO`` step (the step is created when it is missing) and says
 and why it came from. A follow-up with ``blocks_task`` and every not-done id in
 ``blocked_by`` become ``depends_on`` of the task: the run then fails as blocked
 (``run/task.py``), so the task is neither done nor merged until its blockers are done.
+A blocker that is ``cancelled`` (the operator waived it) blocks nothing.
 A follow-up with ``writes`` gets them as its own ``writes`` (they replace the inherited
 value), for work outside the paths this task may change, and ``workflow`` its own
 workflow. A follow-up only a person can do (``for_human``, or ``writes`` that reach the
@@ -237,6 +238,10 @@ def _existing(step: Container, task_id: str, title: str, human: bool) -> Task | 
         ):
             return candidate
     return None
+
+
+def _cancelled(node: object) -> bool:
+    return isinstance(node, Task) and node.status == "cancelled"
 
 
 def open_dependencies(backlog: Backlog, task: Task) -> list[tuple[Task, Task]]:
@@ -488,8 +493,13 @@ def _record(
             outcome.warnings.append(f"blocked_by: unknown backlog id '{dep}', ignored")
         elif dep not in blockers:
             blockers.append(dep)
+    # a cancelled blocker never gets done: the operator waived it, so it does not block
+    # (a retry replays the follow-ups of earlier attempts and finds the cancelled task)
     open_blockers = [
-        dep for dep in blockers if dep not in backlog.by_id or not is_done(backlog.by_id[dep])
+        dep
+        for dep in blockers
+        if dep not in backlog.by_id
+        or not (is_done(backlog.by_id[dep]) or _cancelled(backlog.by_id[dep]))
     ]
     outcome.blocked_by = open_blockers
 

@@ -16,6 +16,7 @@ from aifactory.backlog import (
     derived_state,
     edit_task,
     is_human,
+    link_task,
     load_backlog,
 )
 from aifactory.engine.data_types import FollowUp, PlanOutput
@@ -325,6 +326,20 @@ def test_blocked_by_done_task_does_not_block(repo: Path) -> None:
     git(repo, "commit", "-q", "-am", "T02 done")
     outcome = record(repo, T01, "run-1", workflow_run(blocked_by=[T02]))
     assert outcome.blocked_by == []
+    assert backlog_of(repo).by_id[T01].depends_on == []
+
+
+def test_cancelled_follow_up_does_not_block_again(repo: Path) -> None:
+    # a retry replays the follow-ups of the first attempt: the cancelled one is waived
+    wf = workflow_run(follow_ups=[follow_up(blocks=True)])
+    first = record(repo, T01, "run-1", wf)
+    new_id = first.created[0].id
+    edit_task(repo, new_id, status="cancelled")
+    link_task(repo, T01, depends_on=[new_id], remove=True)
+    commit_backlog(repo, "waive")
+    again = record(repo, T01, "run-1", wf)
+    assert again.created[0].id == new_id and again.created[0].existed
+    assert again.blocked_by == []
     assert backlog_of(repo).by_id[T01].depends_on == []
 
 
