@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T61
 title: "API: běžící task nejde upravit ani měnit jeho vazby, blokovaný task nejde spustit"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/web/workflow_advice.py, aifactory/tests/web/test_web_task_running_guard.py, aifactory/tests/web/test_web_task_run.py, aifactory/tests/web/test_web_launcher.py]
@@ -34,3 +34,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/127 · náklady $0.00
