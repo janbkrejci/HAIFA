@@ -9,8 +9,8 @@ import TryDemoButton from '@/components/demo/TryDemoButton.vue'
 
 withDefaults(defineProps<{ chip?: boolean }>(), { chip: false })
 const emit = defineEmits<{ changed: [] }>()
-const { phase, issues, recheck } = useReadiness()
-const removal = useRemoveRepo(() => { emit('changed'); recheck() })
+const { phase, issues, recheck, refresh } = useReadiness()
+const removal = useRemoveRepo(() => { emit('changed'); refresh() })
 const { remove, removing, error: removeError } = removal
 defineExpose({ recheck })
 function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open')) }
@@ -20,9 +20,9 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
   <template v-if="chip">
     <span v-if="phase === 'checking'" class="status-chip checking" role="status" data-test="readiness-checking"><Spinner /> Probíhá kontrola</span>
     <Tooltip v-else-if="phase === 'success'" text="Spustit kontrolu znovu"><button type="button" class="status-chip success" data-test="readiness-success" @click="recheck"><Check :size="14" aria-hidden="true" /> Systém v pořádku</button></Tooltip>
-    <a v-else href="#/problems" class="status-chip warning" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /> Nalezeny problémy</a>
+    <a v-else-if="phase === 'warning'" href="#/problems" class="status-chip warning" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /> Nalezeny problémy</a>
   </template>
-  <div v-else class="readiness" :class="phase" :role="phase === 'warning' ? 'alert' : 'status'" :data-test="`readiness-${phase}`">
+  <div v-else-if="phase" class="readiness" :class="phase" :role="phase === 'warning' ? 'alert' : 'status'" :data-test="`readiness-${phase}`">
     <p v-if="phase === 'checking'"><Spinner /> Probíhá kontrola</p>
     <p v-else-if="phase === 'success'"><Check :size="18" aria-hidden="true" /> Systém v pořádku</p>
     <template v-else>

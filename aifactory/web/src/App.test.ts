@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import App from './App.vue'
+import MachineHarnessesDialog from './components/MachineHarnessesDialog.vue'
 import { resetConfigStatusForTests } from './lib/configStatus'
 import { CLEAN_STATUS, DIRTY_STATUS } from './test/settingsFixtures'
 import { runsResponse, summary } from './test/runsFixtures'
@@ -83,6 +84,29 @@ describe('App', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/machine/check')
     expect(fetchMock).not.toHaveBeenCalledWith('/api/machine/check?fresh=1')
     wrapper.unmount()
+  })
+  it.each(['saved', 'tested'] as const)('silently refreshes machine findings after harnesses are %s', async event => {
+    let pending: Promise<Response> | undefined
+    let finish!: (response: Response) => void
+    const fetchMock = stubApi({ handler: url => {
+      if (url.startsWith('/api/machine/check') && pending) return pending
+      if (url.endsWith('/factory/roster')) return envelope({ agents: [] })
+    } })
+    go('#/overview')
+    const wrapper = mount(App)
+    await flushPromises()
+    const previous = wrapper.get('[data-test="readiness-warning"]').text()
+    pending = new Promise(resolve => { finish = resolve })
+    wrapper.getComponent(MachineHarnessesDialog).vm.$emit(event)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/machine/check?fresh=1')
+    expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="readiness-warning"]').text()).toBe(previous)
+    finish(envelope({ ok: false, findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.' }] }))
+    await flushPromises()
+    go('#/problems')
+    await flushPromises()
+    expect(wrapper.text()).toContain('Chybí Git.')
   })
   it('refreshes the registered repo state after a Factory operation and removes its listener on unmount', async () => {
     const repos = [HAIFA]
