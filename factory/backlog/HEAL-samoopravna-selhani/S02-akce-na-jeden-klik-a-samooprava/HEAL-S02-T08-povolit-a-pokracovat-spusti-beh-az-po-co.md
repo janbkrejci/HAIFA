@@ -4,7 +4,7 @@ title: Povolit a pokračovat spustí běh až po commitu backlogu do base
 status: todo
 workflow: build-test-review
 depends_on: [HEAL-S02-T01]
-writes: [aifactory/src/aifactory/run/allow_writes.py, aifactory/src/aifactory/web/runs.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/skill/codes.py, aifactory/src/aifactory/skill/skill.md, aifactory/tests/run/test_allow_writes.py]
+writes: [aifactory/src/aifactory/run/allow_writes.py, aifactory/src/aifactory/web/runs.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/skill/codes.py, aifactory/src/aifactory/skill/skill.md, aifactory/tests/run/test_allow_writes.py, aifactory/tests/web/test_web_runs.py, aifactory/tests/test_skill.py]
 ---
 
 ## Zadání
