@@ -669,7 +669,7 @@ def test_run_blockers_reads_the_error() -> None:
     assert task_mod.run_blockers(succeeded) is None
 
 
-def _other_project(repo: Path) -> None:
+def _other_project(repo: Path, *, depends_on: tuple[str, ...] = (), extra: str = "") -> None:
     write(
         repo,
         "backlog/M02-other/index.md",
@@ -683,8 +683,112 @@ def _other_project(repo: Path) -> None:
     write(
         repo,
         f"backlog/M02-other/S01-x/{OTHER}.md",
-        f"---\nid: {OTHER}\ntitle: Other\nstatus: todo\n---\n\nDo it.\n",
+        f"---\nid: {OTHER}\ntitle: Other\nstatus: todo\n"
+        f"depends_on: [{', '.join(depends_on)}]\n{extra}---\n\nDo it.\n",
     )
+
+
+@pytest.mark.parametrize(
+    ("extra", "depends_on", "auto", "starts"),
+    [
+        ("", (T01,), False, True),
+        ("", (T01, T02), False, False),
+        ("auto_continue: false\n", (T01,), False, False),
+        ("auto_continue: false\n", (T01,), True, True),
+    ],
+)
+def test_chain_continues_with_a_direct_dependent_of_another_project(
+    repo: Path,
+    script: Script,
+    monkeypatch: pytest.MonkeyPatch,
+    extra: str,
+    depends_on: tuple[str, ...],
+    auto: bool,
+    starts: bool,
+) -> None:
+    setup_chain(repo, module_auto=True)
+    _other_project(repo, depends_on=depends_on, extra=extra)
+    commit_all(repo, "cross-project dependent")
+    store = _store(repo)
+    try:
+        store.set_excluded(T02, True)
+        store.set_excluded(T03, True)
+    finally:
+        store.close()
+    real = task_mod.run_task
+
+    def run_then_approve(*args: Any, **kwargs: Any) -> task_mod.TaskRunResult:
+        result = real(*args, **kwargs)
+        if result.run.task_id == T01:
+            assert result.ok
+            approve_task(repo, T01)
+        return result
+
+    monkeypatch.setattr(task_mod, "run_task", run_then_approve)
+    build(script, "one")
+    if starts:
+        build(script, "other", "src/other/other.py")
+    chain = run_chain(repo, T01, auto=auto)
+    assert ids(chain) == ([T01, OTHER] if starts else [T01])
+    assert chain.ok and chain.stop == STOP_EXHAUSTED
+    assert bool(runs_of(repo, OTHER)) is starts
+    if T02 in depends_on:
+        assert (OTHER, "blocked") in [(s.task_id, s.reason) for s in chain.waiting]
+
+
+def test_cross_project_dependent_follows_queue_and_step_before_rest(repo: Path) -> None:
+    _queue_backlog(repo)
+    _other_project(repo, depends_on=(T01,))
+    _set_status(repo, T01, "done")
+    backlog = load_backlog(repo)
+    after = backlog.by_id[T01]
+    assert isinstance(after, Task)
+    # A foreign queue entry cannot move the dependent ahead of our own queue or step.
+    prefs = QueuePrefs(order=(OTHER, S02_T01))
+    for excluded, expected in [
+        (set(), S02_T01),
+        ({S02_T01}, T02),
+        ({S02_T01, T02}, T03),
+        ({S02_T01, T02, T03}, OTHER),
+    ]:
+        sel = select_next(
+            backlog, after, open_pr=_none, running=_none, exclude=excluded, prefs=prefs
+        )
+        assert sel.next is not None and sel.next.id == expected
+    sel = select_next(backlog, after, open_pr=_none, running=_none, exclude={T02, T03})
+    assert sel.next is not None and sel.next.id == OTHER
+
+
+@pytest.mark.parametrize(
+    ("extra", "excluded", "reason"),
+    [
+        ("", True, "excluded"),
+        ("workflow: null\n", False, "no_workflow"),
+        ("assignee: human\n", False, "human_task"),
+    ],
+)
+def test_cross_project_dependent_passes_normal_checks(
+    repo: Path, extra: str, excluded: bool, reason: str
+) -> None:
+    setup_chain(repo)
+    _other_project(repo, depends_on=(T01,), extra=extra)
+    _set_status(repo, T01, "done")
+    backlog = load_backlog(repo)
+    after = backlog.by_id[T01]
+    assert isinstance(after, Task)
+    prefs = QueuePrefs(excluded=frozenset({OTHER}) if excluded else frozenset())
+    sel = select_next(backlog, after, open_pr=_none, running=_none, prefs=prefs)
+    assert (OTHER, reason) in [(s.task_id, s.reason) for s in sel.skipped]
+
+
+def test_cross_project_dependent_waits_for_the_blockers_pr(repo: Path) -> None:
+    _other_project(repo, depends_on=(T01,))
+    backlog = load_backlog(repo)
+    after = backlog.by_id[T01]
+    assert isinstance(after, Task)
+    pr = TaskPrRow("b", T01, "local", "b", "URL", "main", "0", "t", "", "open", "", "")
+    sel = select_next(backlog, after, open_pr={T01: pr}.get, running=_none)
+    assert (OTHER, "waits_on_pr") in [(s.task_id, s.reason) for s in sel.skipped]
 
 
 def test_chain_never_starts_a_queued_task_of_another_project(repo: Path, script: Script) -> None:
