@@ -83,6 +83,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("agent_unavailable", "2", "the agent is missing from the roster or its harness is off"),
     # Runs.
     ("already_running", "2", "a run of this task is in progress"),
+    ("task_running", "2", "dashboard API: a running task cannot be edited or linked"),
     ("task_not_in_base", "2", "the task is not committed in base"),
     ("unmet_dependencies", "2", "depends_on are not done in base (use --force)"),
     ("no_writes", "2", "the task has no writes"),
