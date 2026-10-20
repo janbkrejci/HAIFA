@@ -3,7 +3,6 @@ import { computed } from 'vue'
 import type { OverviewRepo } from '@/lib/api'
 import { activeRuns, automergePrs, failedRows, projectSections, reviewLink, runLink, stateClass, taskSummary } from '@/lib/overview'
 import { fmtAge, fmtCost, fmtElapsed, ts } from '@/lib/format'
-import Tooltip from '@/components/ui/Tooltip.vue'
 
 const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; byProject?: boolean }>(), { byProject: false })
 const grouped = computed(() => props.byProject && (props.repo.projects?.length ?? 0) > 1)
@@ -20,7 +19,7 @@ function reviewAge(opened: string | null, ageS: number | null): string {
 <template>
   <div v-for="section in sections" :key="section.id ?? ''" class="work-section" :class="{ 'project-section': grouped }" :data-test="grouped ? 'project-section' : undefined" :data-project="section.id">
     <template v-if="grouped">
-      <h3 class="project-name"><Tooltip :text="section.id ?? 'Bez projektu'">{{ section.title }}</Tooltip></h3>
+      <h3 class="project-name"><span v-if="section.id" class="project-code mono">{{ section.id }}</span><span>{{ section.title }}</span></h3>
       <div v-if="taskSummary(section.repo).length" class="tasks" data-test="task-summary">
         <span v-for="item in taskSummary(section.repo)" :key="item.state" class="chip state-chip" :class="stateClass(item.state)" data-test="task-summary-item" :data-state="item.state">{{ item.label }} <b>{{ item.count }}</b></span>
       </div>
@@ -109,7 +108,8 @@ function reviewAge(opened: string | null, ageS: number | null): string {
 .work-section { display: flex; flex-direction: column; gap: 10px; }
 .work-section:empty { display: none; }
 .project-section { border-top: 1px solid var(--border); padding-top: 8px; }
-.project-name { color: var(--text); text-transform: none; font-size: 15px; }
+.project-name { display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px; color: var(--text); text-transform: none; font-size: 15px; }
+.project-code { color: var(--dim); font-size: 13px; font-weight: 400; }
 .tasks { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; font-size: 13px; }
 .chip { padding: 1px 8px; border-radius: 999px; }
 .group {
