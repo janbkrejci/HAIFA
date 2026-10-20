@@ -4,7 +4,9 @@
   and a ``## Běhy`` line -> push -> the CI checks of that head (``review.ci``; red
   checks get up to ``CI_FIX_ROUNDS`` ``ci-fix`` repair runs on the same branch, each
   followed by a new done commit, push and wait) -> supported host approval -> merge ->
-  ``task_prs`` merged -> ``base`` caught up with the remote -> worktrees removed.
+  ``task_prs`` merged -> ``base`` caught up with the remote -> worktrees removed ->
+  dependents restacked ->
+  merged branch deleted locally and remotely when no open stack or checkout uses it.
   ``merged_by``
   (``operator``, or ``auto-merge`` from ``review/automerge.py``) goes to ``task_prs``.
 * ``return_task``: a new run on the same branch with the note in the prompt;
@@ -17,7 +19,7 @@
 * ``publish_task``: push the branch of the last succeeded run without a PR and open
   its PR (or adopt the open one the hosting has), as at the end of ``task run``.
 * ``clean_worktrees``: remove worktrees of runs whose PR is merged or closed and
-  of runs a newer run of the same task has superseded.
+  of runs a newer run of the same task has superseded; delete unused merged PR branches.
 """
 
 from __future__ import annotations
@@ -52,7 +54,7 @@ from aifactory.review.publish import PublishResult, publish
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
 from aifactory.run.resolve import CI_FIX_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW, RESOLVE_WORKFLOW
-from aifactory.run.stack import open_stack
+from aifactory.run.stack import open_stack, stacked_on
 from aifactory.run.store import (
     MERGED_BY_OPERATOR,
     RUNNING,
@@ -84,6 +86,7 @@ class ApproveResult:
     warnings: list[str] = field(default_factory=list)
     merged_by: str = MERGED_BY_OPERATOR
     ci_fix_runs: list[str] = field(default_factory=list)  # ci-fix runs before the merge
+    deleted_branches: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -98,6 +101,7 @@ class ApproveResult:
             "removed_worktrees": list(self.removed_worktrees),
             "warnings": list(self.warnings),
             "ci_fix_runs": list(self.ci_fix_runs),
+            "deleted_branches": list(self.deleted_branches),
         }
 
 
@@ -105,9 +109,15 @@ class ApproveResult:
 class CleanResult:
     removed: list[dict[str, str]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    deleted_branches: list[str] = field(default_factory=list)
 
     def to_json(self) -> dict[str, object]:
-        return {"ok": True, "removed": list(self.removed), "warnings": list(self.warnings)}
+        return {
+            "ok": True,
+            "removed": list(self.removed),
+            "deleted_branches": list(self.deleted_branches),
+            "warnings": list(self.warnings),
+        }
 
 
 @dataclass
@@ -213,7 +223,11 @@ def _remove(ctx: _Ctx, path: Path, removed: list[str], warnings: list[str]) -> N
 def _remove_run_worktrees(ctx: _Ctx, branch: str) -> tuple[list[str], list[str]]:
     removed: list[str] = []
     warnings: list[str] = []
-    for r in ctx.store.runs_on_branch(branch):
+    runs = ctx.store.runs_on_branch(branch)
+    active = {Path(r.worktree).resolve() for r in runs if r.state == RUNNING}
+    for r in runs:
+        if Path(r.worktree).resolve() in active:
+            continue
         _remove(ctx, Path(r.worktree), removed, warnings)
     return removed, warnings
 
@@ -294,6 +308,12 @@ def approve_task(
     result.warnings += restack_dependents(
         repo, ctx.store.db_path, result.pr.branch, provider=ctx.provider, code=code
     )
+    # Restacking may recursively approve other PRs and writes through separate stores.
+    ctx.store = TaskRunStore(ctx.store.db_path)
+    try:
+        _delete_merged_branch(ctx, result.pr, result.deleted_branches, result.warnings)
+    finally:
+        ctx.store.close()
     return result
 
 
@@ -720,7 +740,7 @@ def resolve_task(
 
 
 def clean_worktrees(repo: Path, *, provider: GitProvider | None = None) -> CleanResult:
-    """Remove worktrees of runs whose PR is merged or closed, and of abandoned runs."""
+    """Remove finished worktrees and unused local/remote branches of merged PRs."""
     ctx = _context(repo, provider)
     try:
         return _clean(ctx)
@@ -739,9 +759,10 @@ def _clean(ctx: _Ctx) -> CleanResult:
     newest: dict[str, str] = {}
     for r in runs:
         newest.setdefault(r.task_id, r.run_id)
+    active = {Path(r.worktree).resolve() for r in runs if r.state == RUNNING}
     for r in runs:
         path = Path(r.worktree)
-        if r.state == RUNNING or not path.exists():
+        if path.resolve() in active or not path.exists():
             continue
         pr = ctx.store.pr_for_branch(r.branch)
         if pr is not None and pr.state in (MERGED, CLOSED):
@@ -764,4 +785,56 @@ def _clean(ctx: _Ctx) -> CleanResult:
                 "reason": reason,
             }
         )
+    for pr in ctx.store.done_prs():
+        if pr.state == MERGED:
+            _delete_merged_branch(ctx, pr, result.deleted_branches, result.warnings)
     return result
+
+
+def _delete_merged_branch(
+    ctx: _Ctx, pr: TaskPrRow, deleted: list[str], warnings: list[str]
+) -> None:
+    """Best-effort cleanup after restack; keep branches still used by open PRs or runs."""
+    branch = pr.branch
+    try:
+        if branch == ctx.rc.config.settings.base or branch == pr.base:
+            return
+        for child in ctx.store.open_prs():
+            if stacked_on(ctx.store, child.branch) != branch:
+                continue
+            # stacked_on preserves the original fork even after a successful restack.
+            # Only a completed resolve after that fork releases the dependency.
+            for run in ctx.store.runs_on_branch(child.branch):
+                if (
+                    run.state == SUCCEEDED
+                    and run.pr_error is None
+                    and run.workflow in (RESOLVE_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW)
+                ):
+                    break
+                if run.stacked_on == branch:
+                    return
+        if any(r.state == RUNNING for r in ctx.store.runs_on_branch(branch)):
+            return
+        if pgit.checked_out_in(ctx.main, branch) is not None:
+            return
+    except (ProviderError, RuntimeError, OSError) as exc:
+        warnings.append(f"branch {branch} not deleted: {exc}")
+        return
+    # Try each independently so a failed remote deletion remains retryable by task clean.
+    try:
+        if pgit.rev_parse(ctx.main, f"refs/heads/{branch}") is not None:
+            pgit.git(ctx.main, "branch", "-D", "--", branch)
+            deleted.append(branch)
+    except (ProviderError, RuntimeError, OSError) as exc:
+        warnings.append(f"branch {branch} not deleted: {exc}")
+    remote = ctx.rc.config.settings.remote
+    try:
+        if pgit.has_remote(ctx.main, remote):
+            exists = pgit.remote_branch_exists(ctx.main, remote, branch)
+            if exists is None:
+                raise RuntimeError(f"cannot query {remote}")
+            if exists:
+                pgit.git(ctx.main, "push", remote, "--delete", branch)
+                deleted.append(f"{remote}/{branch}")
+    except (ProviderError, RuntimeError, OSError) as exc:
+        warnings.append(f"remote branch {remote}/{branch} not deleted: {exc}")

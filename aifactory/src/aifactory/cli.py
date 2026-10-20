@@ -2098,7 +2098,11 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="merge the task's pull request after a commit with status: done and green CI",
         description="Add a commit with status: done and a line in '## Běhy' to the task's "
         "pull request, wait for the CI checks of that head, merge it, bring base up to date "
-        "with the remote and remove the branch's worktrees. Red checks start up to 2 "
+        "with the remote and remove the branch's worktrees. After restacking dependents, "
+        "delete the merged branch locally and on the remote unless an open stacked PR, "
+        "a running run or a checkout still uses it. Deletion failures are warnings; "
+        "deleted_branches lists "
+        "deleted refs (remote refs prefixed by the remote name). Red checks start up to 2 "
         "ci-fix repair runs on the PR branch (started_by auto-ci-fix), each followed by a "
         "new wait; checks still red or running leave the PR open (auto_merge_error). Azure "
         "sends an approval vote after the final push and before merge; local and GitHub do "
@@ -2143,7 +2147,10 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         "clean",
         help="remove worktrees that are no longer needed",
         description="Remove worktrees of runs whose PR is merged or closed, and of abandoned "
-        "runs (a newer run of the task exists).",
+        "runs (a newer run of the task exists). Also delete local and remote branches of "
+        "merged PRs, including older merges, unless an open stacked PR, a running run or "
+        "a checkout still uses them. Keep closed and abandoned branches. Deletion failures "
+        "are warnings; deleted_branches lists deleted local and remote refs.",
     )
 
     stop = sub.add_parser(
@@ -2820,6 +2827,8 @@ def _task_approve(args: argparse.Namespace, root: Path) -> int:
     print("note: approve review sent" if result.reviewed else "note: approve review not sent")
     if result.ci_fix_runs:
         print(f"ci-fix runs: {', '.join(result.ci_fix_runs)}")
+    for branch in result.deleted_branches:
+        print(f"deleted branch {branch}")
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
     return 0
@@ -2861,6 +2870,8 @@ def _task_clean(args: argparse.Namespace, root: Path) -> int:
     for item in result.removed:
         print(f"removed {item['worktree']} ({item['reason']}, {item['task_id']})")
     print(f"{len(result.removed)} worktree(s) removed")
+    for branch in result.deleted_branches:
+        print(f"deleted branch {branch}")
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
     return 0
