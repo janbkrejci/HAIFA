@@ -1,7 +1,7 @@
 ---
 id: HAIFA-LEARN-T02
 title: "Lekce: When you change behaviour, text, selectors or preconditions, grep the tests for th…"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T16, HAIFA-REFINEMENT-T22, HAIFA-REFINEMENT-T40, LEARN-S01-T01, HAIFA-REFINEMENT-T61]
@@ -39,3 +39,4 @@ Výtky z 5 běhů, ze kterých lekce vznikla:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/129 · náklady $0.00
