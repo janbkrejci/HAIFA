@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T22
 title: Aktualizovat migrační test task_prs pro approved_at
-status: todo
+status: cancelled
 depends_on: []
 related: [HAIFA-REFINEMENT-T59]
 writes: [aifactory/tests/run/test_auto_merge.py]
