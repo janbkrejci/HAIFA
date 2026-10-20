@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T55
 title: "Test: závislosti mezi projekty v jednom repu"
-status: todo
+status: done
 workflow: build-test
 depends_on: []
 writes: [aifactory/tests/backlog/test_cross_project_deps.py]
@@ -28,3 +28,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test · PR https://github.com/janbkrejci/HAIFA/pull/122 · náklady $0.00
