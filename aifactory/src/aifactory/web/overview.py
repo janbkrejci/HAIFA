@@ -20,6 +20,11 @@ the repository's auto-continue chains after a failure, newest first: ``task_chai
 shared configuration, D4),
 ``last_activity`` and ``warnings``; ``totals`` sums them up. Every item of ``running`` has
 ``pause`` (``null``, ``pausing`` or ``paused``; ``null`` for a trace DB without the column).
+Every item of ``running``, ``review``, ``automerge``, ``failed``, ``merged_outside`` and
+``auto_actions`` has ``project``: its task's top ancestor id, or ``null`` for an unknown task
+or a backlog with fewer than three levels. ``projects`` lists ``{id, title, tasks}`` in
+backlog project order, with the same board-state counts as the repository's ``tasks``.
+It is empty without project levels or a readable backlog, including stub repositories.
 
 ``tasks`` counts the backlog's tasks per kanban board state (``web.backlog.BOARD_STATES``,
 every state present, zeros included), computed by ``board_state`` from the trace rows read
@@ -70,6 +75,7 @@ from urllib.parse import quote
 
 from aifactory import database, failure, oscompat
 from aifactory.backlog import Backlog, Task, TaskEditError, iter_tasks, load_for_edit
+from aifactory.backlog.derived import ancestors
 from aifactory.backlog.taskfile import has_entry
 from aifactory.config import ConfigError
 from aifactory.config.loader import load_config
@@ -488,7 +494,7 @@ def _lists(
         parsed = _time(value)
         if parsed is not None and (last is None or parsed > last[0]):
             last = (parsed, value)
-    lists = {
+    lists: JsonDict = {
         "running": running,
         "review": review,
         "automerge": automerge,
@@ -500,6 +506,9 @@ def _lists(
         "merged_outside": _merged_outside(trace, tasks, active, root),
         "sync_pr": _sync_pr(trace),
     }
+    for key in ("running", "review", "automerge", "failed", "merged_outside", "auto_actions"):
+        for item in lists[key]:
+            item["project"] = _project_id(backlog, item.get("task_id"))
     return lists, (last[1] if last else None)
 
 
@@ -556,10 +565,17 @@ def _active_runs(trace: _Trace | None) -> list[sqlite3.Row]:
     return [r for r in trace.runs if r["state"] == "running" and _process(r["pid"]) != "ended"]
 
 
+def _project_id(backlog: Backlog | None, task_id: str | None) -> str | None:
+    if backlog is None or len(backlog.settings.levels) < 3:
+        return None
+    task = backlog.by_id.get(task_id) if task_id is not None else None
+    return ancestors(task)[-1].id if isinstance(task, Task) else None
+
+
 def _task_summary(
     backlog: Backlog, trace: _Trace | None, active: list[sqlite3.Row]
-) -> tuple[JsonDict, list[str]]:
-    """The number of tasks per kanban board state (every state present) and the ready ids."""
+) -> tuple[JsonDict, list[str], list[JsonDict]]:
+    """Repository/project board-state counts (including zeros) and ready ids, in one pass."""
     rt = _Runtime()
     if trace is not None:
         rt.running = {r["task_id"] for r in active}
@@ -567,13 +583,22 @@ def _task_summary(
         rt.in_review = set(newest)
         rt.merge_blocked = {t for t, p in newest.items() if p["auto_merge_error"]}
     counts: JsonDict = dict.fromkeys(BOARD_STATES, 0)
+    projects: list[JsonDict] = [
+        {"id": c.id, "title": c.title, "tasks": dict.fromkeys(BOARD_STATES, 0)}
+        for c in backlog.containers
+        if len(backlog.settings.levels) >= 3
+    ]
+    project_counts = {p["id"]: p["tasks"] for p in projects}
     ready: list[str] = []
     for task in iter_tasks(backlog):
         state = board_state(backlog, task, rt)
         counts[state] += 1
+        project = _project_id(backlog, task.id)
+        if project in project_counts:
+            project_counts[project][state] += 1
         if state == "ready":
             ready.append(task.id)
-    return counts, ready
+    return counts, ready, projects
 
 
 def _factory(
@@ -639,6 +664,7 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         "last_activity": None,
         "warnings": warnings,
         "tasks": None,
+        "projects": [],
         "factory": None,
     }
 
@@ -681,10 +707,11 @@ class Overview:
         item = _stub(entry, _state(config), [*config_warnings, *task_warnings, *trace_warnings])
         item["config"] = config
         active = _active_runs(trace)
-        summary, ready = (
-            (None, []) if tasks.backlog is None else _task_summary(tasks.backlog, trace, active)
+        summary, ready, projects = (
+            (None, [], []) if tasks.backlog is None else _task_summary(tasks.backlog, trace, active)
         )
         item["tasks"] = summary
+        item["projects"] = projects
         item["factory"] = _factory(root, item["state"], ready, trace, active, self.control)
         if trace is not None:
             lists, last = _lists(trace, tasks.index, datetime.now(UTC), root, tasks.backlog)

@@ -33,6 +33,7 @@ from starlette.testclient import TestClient
 from aifactory.run.store import SyncPrRow, TaskPrRow, TaskRunStore
 from aifactory.skill import envelope_problems
 from aifactory.web import create_multi_app, overview
+from aifactory.web.backlog import BOARD_STATES
 from aifactory.web.overview import CONFIG_TTL, PROCESS_ENDED, TASKS_TTL, Overview
 from aifactory.web.registry import Registry, RepoEntry
 
@@ -155,6 +156,7 @@ def test_overview_of_repos_with_and_without_trace_and_a_missing_folder(
     assert p["running"] == p["review"] == p["failed"] == []
     assert p["config"] is not None and p["config"]["installed"] is True
     assert p["state"] == "ok"
+    assert p["projects"] == [{"id": "M01", "title": "Core", "tasks": p["tasks"]}]
     assert not _db(plain).exists()
     assert _db_files(plain) == set()
 
@@ -302,6 +304,7 @@ def test_slow_repo_times_out_and_the_others_answer(
     took = time.monotonic() - start
     repos = _by_id(data)
     assert repos["alpha"]["state"] == "timeout"
+    assert repos["alpha"]["projects"] == []
     assert "did not answer" in repos["alpha"]["warnings"][0]
     assert repos["beta"]["state"] == "ok"
     assert {r["run_id"] for r in repos["beta"]["running"]} == {"b-r-run", "b-r-dead"}
@@ -323,6 +326,7 @@ def test_broken_repo_gives_an_error_and_the_others_answer(
     monkeypatch.setattr(overview, "_trace_view", broken)
     repos = _by_id(_get(_client(home, tmp_path)))
     assert repos["alpha"]["state"] == "error"
+    assert repos["alpha"]["projects"] == []
     assert repos["alpha"]["warnings"] == ["RuntimeError: kaputt"]
     assert repos["beta"]["state"] == "ok"
     assert repos["beta"]["failed"]
@@ -415,6 +419,107 @@ def test_task_summary_counts_tasks_per_board_state(repo_a: Path, tmp_path: Path)
         "done": 1,
         "cancelled": 1,
     }
+
+
+def test_projects_split_lists_and_task_counts(
+    repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write(repo_a, "backlog/M02-other/index.md", "---\nid: M02\ntitle: Other\n---\n")
+    write(
+        repo_a,
+        "backlog/M02-other/S01-model/index.md",
+        "---\nid: M02-S01\ntitle: Model\nwrites: [src/app/]\n---\n",
+    )
+    for suffix in ("T01", "T02", "T03"):
+        task_id = f"M02-S01-{suffix}"
+        write(
+            repo_a,
+            f"backlog/M02-other/S01-model/{task_id}.md",
+            f"---\nid: {task_id}\ntitle: {suffix}\nstatus: todo\n---\n",
+        )
+    commit_all(repo_a, "second project")
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.claim(_row("other-run", "M02-S01-T01", 8, os.getpid()))
+        store.claim(_row("other-fail", "M02-S01-T03", 9, os.getpid()))
+        store.finish("other-fail", "failed", None, "boom")
+    finally:
+        store.close()
+    _save_pr(repo_a, "M02-S01-T02", "factory/other-review", "open", 1)
+    real_board_state = getattr(overview, "board_state")  # noqa: B009
+    calls: list[str] = []
+
+    def count_state(*args: Any, **kwargs: Any) -> str:
+        # A timed-out overview from an earlier test can still finish in its worker thread.
+        if args[0].root == repo_a:
+            calls.append(args[1].id)
+        state: str = real_board_state(*args, **kwargs)
+        return state
+
+    monkeypatch.setattr(overview, "board_state", count_state)
+    a = _repo_item(repo_a, tmp_path)
+    assert len(calls) == len(set(calls)) == 9
+    for key in ("running", "review", "failed"):
+        assert {item["project"] for item in a[key]} == {"M01", "M02"}
+        assert all(item["project"] == item["task_id"].split("-")[0] for item in a[key])
+    assert [(p["id"], p["title"]) for p in a["projects"]] == [("M01", "Core"), ("M02", "Other")]
+    expected = dict.fromkeys(BOARD_STATES, 0)
+    expected.update({"ready": 1, "running": 1, "in review": 1})
+    assert a["projects"][1]["tasks"] == expected
+    expected.update({"ready": 2, "done": 1, "cancelled": 1})
+    assert a["projects"][0]["tasks"] == expected
+    assert {state: sum(p["tasks"][state] for p in a["projects"]) for state in BOARD_STATES} == a[
+        "tasks"
+    ]
+
+
+def test_two_level_backlog_has_no_projects(repo_a: Path, tmp_path: Path) -> None:
+    write(repo_a, ".factory/config.yaml", "base: main\ndocs_root: .\nlevels: [step, task]\n")
+    step = repo_a / "backlog/M01-core/S01-model"
+    for path in step.iterdir():
+        write(repo_a, f"backlog/S01-model/{path.name}", path.read_text(encoding="utf-8"))
+    rmtree(repo_a / "backlog/M01-core")
+    commit_all(repo_a, "two levels")
+    a = _repo_item(repo_a, tmp_path)
+    assert a["warnings"] == []
+    assert a["projects"] == []
+    assert a["tasks"]["running"] == 1
+    for key in ("running", "review", "failed"):
+        assert a[key]
+        assert all(item["project"] is None for item in a[key])
+
+
+def test_unknown_tasks_have_no_project(repo_a: Path, tmp_path: Path) -> None:
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.claim(_row("unknown-run", "unknown-running", 8, os.getpid()))
+        store.claim(_row("unknown-fail", "unknown-failed", 9, os.getpid()))
+        store.finish("unknown-fail", "failed", None, "boom")
+    finally:
+        store.close()
+    _save_pr(repo_a, "unknown-review", "factory/unknown-review", "open", 1)
+    a = _repo_item(repo_a, tmp_path)
+    for key in ("running", "review", "failed"):
+        unknown = [item for item in a[key] if item["task_id"].startswith("unknown-")]
+        assert len(unknown) == 1
+        assert unknown[0]["project"] is None
+
+
+def test_repo_without_backlog_has_no_projects(repo_a: Path, tmp_path: Path) -> None:
+    rmtree(repo_a / "backlog")
+    commit_all(repo_a, "remove backlog")
+    a = _repo_item(repo_a, tmp_path)
+    assert a["projects"] == []
+    for key in ("running", "review", "failed"):
+        assert a[key]
+        assert all(item["project"] is None for item in a[key])
+
+
+def test_not_git_stub_has_no_projects(tmp_path: Path) -> None:
+    entry = RepoEntry(id="plain", name="Plain", path=str(tmp_path), added_at="2026-01-01")
+    item = Overview(Registry(tmp_path / "home")).repo(entry)
+    assert item["state"] == "not_git"
+    assert item["projects"] == []
 
 
 def test_factory_block_with_the_default_limit(repo_a: Path, tmp_path: Path) -> None:
@@ -527,6 +632,7 @@ def test_missing_repo_has_no_tasks_nor_factory(tmp_path: Path) -> None:
     g = _get(_client(home, tmp_path))["repos"][0]
     assert g["state"] == "missing"
     assert (g["tasks"], g["factory"]) == (None, None)
+    assert g["projects"] == []
 
 
 # ── PRs waiting for review or for auto-merge ─────────────────────────────────
@@ -567,6 +673,7 @@ def test_open_pr_with_auto_merge_waits_for_automerge(repo_a: Path, tmp_path: Pat
     assert [r["task_id"] for r in a["automerge"]] == [T_REV]
     assert a["automerge"][0]["pr_id"] == "7"
     assert a["automerge"][0]["source"] == "trace"
+    assert a["automerge"][0]["project"] == "M01"
     assert (a["tasks"]["in review"], a["tasks"]["awaiting merge"]) == (0, 1)
     # the PR still holds its slot
     assert a["factory"]["in_review"] == 1
@@ -644,6 +751,7 @@ def test_merged_outside_lists_tasks_not_done_in_base(repo_a: Path, tmp_path: Pat
     assert a["merged_outside"] == [
         {
             "task_id": T_FAIL,
+            "project": "M01",
             "task_title": "Failing",
             "pr_id": "factory/fail-1",
             "url": url,
@@ -749,3 +857,4 @@ def test_overview_lists_the_automatic_actions_of_chains(repo_a: Path, tmp_path: 
     ]
     assert [x["chain_id"] for x in actions] == ["c-new", "c-old"]
     assert actions[0]["task_title"] is not None
+    assert all(action["project"] == "M01" for action in actions)
