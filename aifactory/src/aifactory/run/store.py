@@ -154,7 +154,8 @@ CREATE TABLE IF NOT EXISTS task_prs (
   merged_at TEXT,
   merge_sha TEXT,
   merged_by TEXT,
-  auto_merge_error TEXT
+  auto_merge_error TEXT,
+  approved_at TEXT
 );
 CREATE INDEX IF NOT EXISTS task_prs_task ON task_prs(task_id);
 CREATE TABLE IF NOT EXISTS sync_prs (
@@ -229,9 +230,11 @@ _PR_COLUMNS = (
     "merge_sha",
     "merged_by",
     "auto_merge_error",
+    "approved_at",
 )
 # columns added to task_prs after its first release; older DBs get them on open
-_PR_ADDED_COLUMNS = {"merged_by": "TEXT", "auto_merge_error": "TEXT"}
+# Keep the legacy merged_by/auto_merge_error trailing pair on original-schema upgrades.
+_PR_ADDED_COLUMNS = {"approved_at": "TEXT", "merged_by": "TEXT", "auto_merge_error": "TEXT"}
 MERGED_BY_AUTO = "auto-merge"
 MERGED_BY_OPERATOR = "operator"
 _SYNC_COLUMNS = (
@@ -433,6 +436,7 @@ class TaskPrRow:
     merge_sha: str | None = None
     merged_by: str | None = None  # MERGED_BY_AUTO | MERGED_BY_OPERATOR once merged
     auto_merge_error: str | None = None  # why auto-merge left the PR open
+    approved_at: str | None = None  # operator approval waiting for CI and merge
 
     def to_json(self) -> dict[str, object]:
         return dict(asdict(self))

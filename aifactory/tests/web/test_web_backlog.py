@@ -94,6 +94,7 @@ def test_tree_follows_levels_and_board_states(tmp_path: Path) -> None:
     assert data["states"] == list(BOARD_STATES)
     assert data["state_counts"] == {state: 1 for state in BOARD_STATES} | {
         "awaiting merge": 0,
+        "approved": 0,
         "human": 0,
     }
     assert "owners" not in data
@@ -570,3 +571,50 @@ def test_api_calls_core_functions(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     }
     assert calls[2][1] == (root, B1)
     assert calls[2][2] == {"depends_on": None, "related": [B2], "remove": False}
+
+
+@pytest.mark.parametrize("error", [None, "checks_pending: ci"])
+def test_manually_approved_pr_board_state(tmp_path: Path, error: str | None) -> None:
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    store = TaskRunStore(root / ".factory" / "trace.db")
+    try:
+        store.update_pr(
+            f"factory/{B3}-1", approved_at="2026-01-07T10:00:00Z", auto_merge_error=error
+        )
+    finally:
+        store.close()
+    client = _client(root, tmp_path)
+    expected = "approved" if error is None else "in review"
+    data = _get(client, "/api/backlog")["data"]
+    assert _states(data)[B3] == expected
+    assert data["state_counts"][expected] == 1
+    assert [t["id"] for t in _get(client, "/api/backlog?status=approved")["data"]["tasks"]] == (
+        [B3] if error is None else []
+    )
+    detail = _get(client, f"/api/backlog/tasks/{B3}")["data"]
+    assert detail["task"]["board_state"] == expected
+
+
+@pytest.mark.parametrize("newest_approved", [False, True])
+def test_only_newest_open_pr_decides_approval(tmp_path: Path, newest_approved: bool) -> None:
+    from dataclasses import replace
+
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    store = TaskRunStore(root / ".factory" / "trace.db")
+    try:
+        row = store.latest_pr(B3)
+        assert row is not None
+        stamp = "2026-01-07T10:00:00Z"
+        store.update_pr(row.branch, approved_at=None if newest_approved else stamp)
+        store.save_pr(
+            replace(
+                row,
+                branch="factory/newer-pr",
+                created_at=stamp,
+                approved_at=stamp if newest_approved else None,
+            )
+        )
+    finally:
+        store.close()
+    data = _get(_client(root, tmp_path), "/api/backlog")["data"]
+    assert _states(data)[B3] == ("approved" if newest_approved else "in review")

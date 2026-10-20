@@ -24,6 +24,7 @@ from aifactory.providers import (
     CHECKS_PENDING,
     ChecksStatus,
     GitProvider,
+    ProviderError,
     PrStatus,
     PullRequest,
 )
@@ -68,9 +69,17 @@ class CiProvider(LocalProvider):
         super().__init__(repo, load_run_config(repo).config.settings)
         self.script = list(checks)
         self.asked: list[str] = []  # the PR head at each read of the checks
+        self.approvals: list[tuple[str | None, str | None]] = []
         self.logs_for: list[tuple[str, ...]] = []
 
     def checks(self, pr: PullRequest) -> ChecksStatus:
+        store = TaskRunStore(self.root / ".factory" / "trace.db")
+        try:
+            row = store.pr_for_branch(pr.branch)
+        finally:
+            store.close()
+        assert row is not None
+        self.approvals.append((row.approved_at, row.auto_merge_error))
         self.asked.append(git(self.root, "rev-parse", pr.branch))
         return self.script.pop(0) if len(self.script) > 1 else self.script[0]
 
@@ -202,6 +211,8 @@ def test_merges_without_red_checks(
     row = pr(repo)
     assert row.state == "merged" and row.auto_merge_error is None
     assert row.merged_by == (MERGED_BY_AUTO if auto else MERGED_BY_OPERATOR)
+    assert bool(row.approved_at) is (not auto)
+    assert all(bool(stamp) is (not auto) and error is None for stamp, error in provider.approvals)
     # the checks read are those of the head with the status: done commit
     assert len(provider.asked) == 1
     head = provider.asked[0]
@@ -266,8 +277,10 @@ def test_checks_red_after_every_repair_keep_the_pr_open(
     assert all(r.branch == BRANCH and r.started_by == "auto-ci-fix" for r in fix_runs)
     row = pr(repo)
     assert row.state == "open"
+    assert row.approved_at is None
     error = row.auto_merge_error or ""
     assert error.startswith("checks_failing: ")
+    assert all(bool(stamp) is (not auto) and error is None for stamp, error in provider.approvals)
     assert "unit tests" in error and f"after {ci.CI_FIX_ROUNDS} ci-fix run(s)" in error
     assert not on_main(repo, FIX)
     assert len(provider.asked) == ci.CI_FIX_ROUNDS + 1
@@ -291,6 +304,8 @@ def test_checks_running_past_the_limit_keep_the_pr_open(
     assert [r.workflow for r in runs(repo)] == ["plan-review-commit"]
     row = pr(repo)
     assert row.state == "open" and (row.auto_merge_error or "").startswith("checks_pending: ")
+    assert row.approved_at is None
+    assert all(bool(stamp) is (not auto) and error is None for stamp, error in provider.approvals)
 
 
 @MODES
@@ -306,6 +321,7 @@ def test_failed_repair_run_keeps_the_pr_open(repo: Path, script: Script, auto: b
     assert fix_run.workflow == "ci-fix" and fix_run.state == "failed"
     row = pr(repo)
     assert row.state == "open"
+    assert row.approved_at is None
     error = row.auto_merge_error or ""
     assert error.startswith("ci_fix_failed: ") and fix_run.run_id in error
     assert len(provider.asked) == 1
@@ -396,3 +412,61 @@ def test_run_task_with_a_workflow_needs_the_branch(repo: Path) -> None:
     with pytest.raises(TaskRunError) as info:
         run_task(repo, T01, workflow_name="ci-fix")
     assert info.value.code == "unknown_branch"
+
+
+@pytest.mark.parametrize(
+    "stage,code",
+    [
+        ("_prepare_approve", "conflict"),
+        ("_prepare_approve", "task_blocked"),
+        ("_finish_approve", "approve_failed"),
+        ("_finish_approve", "merge_failed"),
+    ],
+)
+def test_review_failure_clears_manual_approval(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, stage: str, code: str
+) -> None:
+    from aifactory.review import flow
+
+    first_run(repo, script)
+
+    def fail(*args: object) -> None:
+        assert pr(repo).approved_at is not None
+        raise ReviewError(code, "stopped before merge")
+
+    monkeypatch.setattr(flow, stage, fail)
+    with pytest.raises(ReviewError, match=code):
+        approve_task(repo, T01, provider=CiProvider(repo, [GREEN]))
+    row = pr(repo)
+    assert row.approved_at is None
+    assert row.auto_merge_error == f"{code}: stopped before merge"
+
+
+def test_unavailable_checks_clear_manual_approval(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first_run(repo, script)
+
+    def fail(*args: object) -> None:
+        assert pr(repo).approved_at is not None
+        raise ProviderError("offline", "checks unavailable")
+
+    monkeypatch.setattr(ci, "head_checks", fail)
+    with pytest.raises(ReviewError, match="checks_unavailable"):
+        approve_task(repo, T01, provider=CiProvider(repo, [GREEN]))
+    row = pr(repo)
+    assert row.approved_at is None
+    assert (row.auto_merge_error or "").startswith("checks_unavailable:")
+
+
+def test_manual_approval_retries_clear_previous_error(repo: Path, script: Script) -> None:
+    first_run(repo, script)
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        store.update_pr(BRANCH, approved_at="2026-01-01T00:00:00Z", auto_merge_error="old error")
+    finally:
+        store.close()
+    provider = CiProvider(repo, [GREEN])
+    approve_task(repo, T01, provider=provider)
+    assert provider.approvals == [(pr(repo).approved_at, None)]
+    assert pr(repo).approved_at != "2026-01-01T00:00:00Z"
