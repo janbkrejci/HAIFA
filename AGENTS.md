@@ -4,6 +4,8 @@ Python source: `aifactory/src/aifactory/`. Tests: `aifactory/tests/`. Vue fronte
 
 Use Python 3.11+, uv, Bun and just. `just web-build` updates the shipped static frontend. Keep tests independent of live models and services. Preserve THIRD_PARTY_NOTICES.
 
+Before a task or follow-up runs, list any required paths outside its inherited `writes` (such as `docs/decisions.md` or `aifactory/web/src/`) in its own `writes`.
+
 The whole suite takes about 30 minutes on Windows. CI runs it on every pull request (`.github/workflows/ci.yml`) and auto-merge waits for it. A factory task run checks only what the change can affect, inside its test step's time limit:
 
 - `just lint` and `just typecheck`, always.
