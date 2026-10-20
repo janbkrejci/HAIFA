@@ -160,7 +160,10 @@ def test_run_from_api_creates_task_run(
     assert row.state == "succeeded", row.error
     assert [c["agent"] for c in worker.calls()] == ["planner"]
 
-    # a second process with the same script gets the script's second entry
+    # A second, unblocked task gets the script's second entry.
+    path = repo / "backlog/M01-core/S01-model/M01-S01-T02-loader.md"
+    path.write_text(path.read_text().replace(f"depends_on: [{T01}]", "depends_on: []"))
+    commit_all(repo, "unblock second task")
     _run(client, T02, {"force": True})
     wait(app)
     [row2] = runs_of(repo, T02)
@@ -183,10 +186,11 @@ def test_unmet_dependencies_and_force(
     wait(app)
     assert runs_of(repo, T02) == []
     assert worker.calls() == []
-    data = _run(client, T02, {"force": True})["data"]
-    assert data["force"] is True
+    body = _run(client, T02, {"force": True}, 409)
+    assert body["error"]["code"] == "unmet_dependencies"
     wait(app)
-    assert [r.state for r in runs_of(repo, T02)] == ["succeeded"]
+    assert runs_of(repo, T02) == []
+    assert worker.calls() == []
 
 
 def test_task_without_workflow_does_not_start(
@@ -196,7 +200,7 @@ def test_task_without_workflow_does_not_start(
         repo,
         "backlog/M01-core/S01-model/M01-S01-T02-loader.md",
         f"---\nid: {T02}\ntitle: Loader\nstatus: todo\nworkflow: null\n"
-        f"depends_on: [{T01}]\n---\n\nNačíst.\n",
+        "depends_on: []\n---\n\nNačíst.\n",
     )
     commit_all(repo, "task without workflow")
     for payload in ({}, {"force": True}):

@@ -24,6 +24,7 @@ from aifactory.harness import HARNESSES, canonical
 from aifactory.harness import settings as harness_settings
 from aifactory.home import haifa_home
 from aifactory.run import gitops, mainwrites
+from aifactory.web.backlog import ensure_task_not_running
 from aifactory.workflow.adaptive import (
     WorkflowRecommendationOutput,
     context,
@@ -238,6 +239,8 @@ class AdviceManager:
         if task_id is not None and not isinstance(task_id, str):
             raise UsageError("task_id must be a string")
         repo = repo.resolve()
+        if task_id is not None:
+            ensure_task_not_running(repo, task_id)
         ctx = context(repo, task_id, body["draft"], task_parameters=self.task_parameters)
         if self.task_parameters:
             harness = body.get("harness")
@@ -382,6 +385,8 @@ class AdviceManager:
         if not isinstance(identifier, str):
             raise UsageError("workflow_advice_id must be a string")
         with repo_lock(repo), self.lock:
+            if task_id is not None:
+                ensure_task_not_running(repo, task_id)
             job = self.get(repo, identifier)
             if job.state != "succeeded" or job.result is None or job.context["task_id"] != task_id:
                 raise UsageError("workflow advice is not ready for this task")
