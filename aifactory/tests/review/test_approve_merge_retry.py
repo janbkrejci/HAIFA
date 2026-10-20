@@ -16,6 +16,7 @@ import pytest
 
 from aifactory.config import load_run_config
 from aifactory.config.settings import AzureSettings
+from aifactory.providers import git as pgit
 from aifactory.providers.azure import AzCli, AzureProvider
 from aifactory.providers.github import GitHubProvider
 from aifactory.review import ReviewError, approve_task
@@ -124,8 +125,10 @@ def test_approve_again_after_transient_merge_failure(
 
     assert result.merge_sha == MERGE_SHA
     assert result.reviewed is False
-    assert git(origin, "rev-parse", BRANCH) == tip
-    assert done_commits(origin, BRANCH) == 1
+    assert done_commits(origin, tip) == 1
+    assert pgit.rev_parse(repo, f"refs/heads/{BRANCH}") is None
+    assert pgit.remote_branch_exists(repo, "origin", BRANCH) is False
+    assert result.deleted_branches == [BRANCH, f"origin/{BRANCH}"]
     merges = [a for a in log.argvs() if a[:2] == ["pr", "merge"]]
     assert len(merges) == 1
     assert merges[0][merges[0].index("--match-head-commit") + 1] == tip
@@ -283,5 +286,8 @@ def test_azure_approve_final_push_before_vote_and_retry(
     assert result.to_json()["reviewed"] is True
     assert calls.index("repos pr set-vote") < calls.index("repos pr update")
     assert vote_heads == [tip, tip]
-    assert done_commits(origin, BRANCH) == 1
+    assert done_commits(origin, tip) == 1
+    assert pgit.rev_parse(repo, f"refs/heads/{BRANCH}") is None
+    assert pgit.remote_branch_exists(repo, "origin", BRANCH) is False
+    assert result.deleted_branches == [BRANCH, f"origin/{BRANCH}"]
     assert result.merge_sha == MERGE_SHA
