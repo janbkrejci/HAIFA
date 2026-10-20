@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T53
 title: "API přehledu: běhy, PR, selhání a stavy tasků po projektech"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/web/overview_fixture.py]
@@ -32,3 +32,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-20 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/120 · náklady $0.00
