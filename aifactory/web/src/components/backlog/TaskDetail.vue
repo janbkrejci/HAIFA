@@ -379,6 +379,7 @@ function onEdit(input: EditTaskInput) {
       :result="run.result"
       :action="run.action"
       :waiting="run.waiting"
+      :start-disabled="runBlocked"
       @start="emit('run-start', $event)"
       @cancel="emit('run-cancel')"
       @commit="emit('run-commit')"

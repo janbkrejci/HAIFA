@@ -839,6 +839,41 @@ describe('BacklogView', () => {
     wrapper.unmount()
   })
 
+  it.each(['running', 'in review', 'awaiting merge', 'blocked'] as const)('does not POST from an open dialog after the task refreshes to %s', async (state) => {
+    go('#/r/haifa/backlog/M01-S01-T02')
+    let refreshed = false
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith('/run-check')) return ok(runCheck())
+      if (url.startsWith('/api/repos/haifa/backlog/tasks/')) {
+        const detail = taskDetail()
+        if (refreshed) {
+          detail.task.board_state = state
+          if (state === 'blocked') {
+            detail.task.blocked_by = [{ id: 'M01-S01-T01', reason: 'not_done', missing: [] }]
+            detail.depends[0]!.state = 'ready'
+          }
+        }
+        return ok(detail)
+      }
+      return ok(backlogData())
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await wrapper.get('[data-test="run"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeUndefined()
+    refreshed = true
+    await wrapper.get('[data-test="refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="run-start"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock.mock.calls.filter(([, init]) => init?.method === 'POST')).toHaveLength(0)
+    expect(window.location.hash).toBe('#/r/haifa/backlog/M01-S01-T02')
+    wrapper.unmount()
+  })
+
   it('commits the backlog from the run dialog and checks the run again', async () => {
     go('#/r/haifa/backlog/M01-S01-T02')
     let committed = false

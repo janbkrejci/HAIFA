@@ -495,6 +495,49 @@ describe('TaskDetail', () => {
     expect(wrapper.emitted('run-cancel')).toHaveLength(1)
   })
 
+  it.each(['running', 'in review', 'awaiting merge', 'blocked'] as const)('blocks an already open run dialog after a live transition to %s', async (state) => {
+    const detail = taskDetail()
+    const wrapper = mount(TaskDetail, { props: {
+      detail, workflows: [], busy: false, error: null,
+      run: { open: true, check: runCheck(), loading: false, busy: false, error: null, result: null, action: null, waiting: false },
+    } })
+    expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeUndefined()
+    const next = taskDetail()
+    next.task.board_state = state
+    if (state === 'blocked') {
+      next.task.blocked_by = [{ id: 'M01-S01-T01', reason: 'not_done', missing: [] }]
+      next.depends[0]!.state = 'ready'
+    }
+    await wrapper.setProps({ detail: next })
+    expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('[data-test="run-start"]').trigger('click')
+    expect(wrapper.emitted('run-start')).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('keeps stacked start enabled after a live refresh while the dialog is open', async () => {
+    const detail = taskDetail()
+    detail.task.board_state = 'blocked'
+    detail.task.blocked_by = [{ id: 'M01-S01-T01', reason: 'not_done', missing: [] }]
+    detail.depends[0]!.state = 'in review'
+    const wrapper = mount(TaskDetail, { props: {
+      detail, workflows: [], busy: false, error: null,
+      run: {
+        open: true, check: runCheck({ unmet: detail.task.blocked_by,
+          stack: { branch: 'factory/dependency', prs: [{ task_id: 'M01-S01-T01', url: 'https://example.test/pr/1' }] },
+        }), loading: false, busy: false, error: null, result: null, action: null, waiting: false,
+      },
+    } })
+    const next = taskDetail()
+    next.task = { ...detail.task }
+    next.depends[0]!.state = 'awaiting merge'
+    await wrapper.setProps({ detail: next })
+    expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-test="run-start"]').trigger('click')
+    expect(wrapper.emitted('run-start')).toEqual([[{ force: false }]])
+    wrapper.unmount()
+  })
+
   it('explains a blocked task in the header with a tooltip', async () => {
     const detail = taskDetail()
     detail.task = {

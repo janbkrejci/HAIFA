@@ -3,6 +3,8 @@
 Běžící task a task čekající na review či merge PR nelze znovu spustit,
 upravovat, vylepšovat agentem, označit jako hotový ani mu odebírat vazby.
 Přechod do těchto stavů při živém obnovení zavře otevřené úpravy.
+Již otevřený dialog spuštění přebírá aktuální zákaz startu z detailu tasku,
+takže starší úspěšná kontrola běhu neobejde novou blokaci ani běžící task.
 Blokovaný task lze dále upravovat; spuštění je dostupné pouze tehdy,
 když všechny nehotové závislosti čekají v otevřených PR.
 U závislostí na stepu či projektu se stavy nehotových tasků načtou z backlogu.
