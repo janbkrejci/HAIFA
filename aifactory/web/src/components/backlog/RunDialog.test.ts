@@ -68,15 +68,15 @@ describe('RunDialog', () => {
     expect(wrapper.find('[data-test="run-start"]').attributes('disabled')).toBeUndefined()
   })
 
-  it('blocks a run with unmet dependencies and offers --force', async () => {
+  it('blocks every start with unmet dependencies', async () => {
     const wrapper = dialog(
       runCheck({ unmet: [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }] }),
     )
     expect(wrapper.find('[data-unmet="M01-S01-T01"]').text()).toContain('not_done')
     expect(wrapper.find('[data-test="run-start"]').attributes('disabled')).toBeDefined()
-    await wrapper.find('[data-test="run-note"]').setValue('přesto')
-    await wrapper.find('[data-test="run-force"]').trigger('click')
-    expect(wrapper.emitted('start')).toEqual([[{ note: 'přesto', force: true }]])
+    expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
+    await wrapper.get('[data-test="run-start"]').trigger('click')
+    expect(wrapper.emitted('start')).toBeUndefined()
   })
 
   it('starts a task stacked on its dependency\'s open PR without --force', async () => {
@@ -93,12 +93,13 @@ describe('RunDialog', () => {
     expect(wrapper.emitted('start')).toEqual([[{ force: false }]])
   })
 
-  it('offers --force after an unmet_dependencies error', () => {
+  it('blocks starting after an unmet_dependencies error', () => {
     const wrapper = dialog(runCheck(), {
       error: { message: 'depends on work not done', issues: [], code: 'unmet_dependencies' },
     })
     expect(wrapper.find('[data-test="write-error"]').text()).toContain('depends on work not done')
-    expect(wrapper.find('[data-test="run-force"]').text()).toBe('Spustit přesto (ignorovat nesplněné závislosti)')
+    expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeDefined()
   })
 
   it('refuses while the task or another dashboard run is running', () => {

@@ -58,6 +58,25 @@ export const COLUMN_LABELS: Record<KanbanColumn, string> = { ...STATE_LABELS, de
 /** Board states whose excluded tasks move to Odloženo (they have not started yet). */
 export const DEFERRABLE_STATES: readonly BoardState[] = ['ready', 'blocked', 'todo']
 
+/** An open PR still owns the task until review and merge finish. */
+export function hasOpenPr(state: string): boolean {
+  return state === 'in review' || state === 'awaiting merge'
+}
+
+/** A running task or its open PR prevents another run and task mutations. */
+export function taskInProgress(state: string): boolean {
+  return state === 'running' || hasOpenPr(state)
+}
+
+/** Every unfinished task dependency must have an open PR for a stacked start. */
+export function canStackDependencies(blockedBy: readonly Unmet[], depends: readonly DependsRef[]): boolean {
+  return blockedBy.length > 0 && blockedBy.every((u) => {
+    if (u.reason !== 'not_done' && u.reason !== 'incomplete') return false
+    const ids = u.missing.length ? u.missing : [u.id]
+    return ids.every((id) => depends.some((d) => d.id === id && d.kind === 'task' && hasOpenPr(d.state)))
+  })
+}
+
 /** The kanban column of a task: Odloženo for an excluded task that has not started. */
 export function kanbanColumn(task: Pick<TaskNode, 'board_state' | 'auto_excluded'>): KanbanColumn {
   return task.auto_excluded && DEFERRABLE_STATES.includes(task.board_state) ? 'deferred' : task.board_state

@@ -19,6 +19,12 @@ import {
   X,
 } from 'lucide-vue-next'
 import {
+  canStackDependencies,
+  fetchBacklog,
+  type DependsRef,
+  taskInProgress,
+  isDoneState,
+  blockedTooltip,
   levelLabel,
   levelNoun,
   linkActionKey,
@@ -98,7 +104,7 @@ const noWorkflow = computed(() => !task.value.workflow)
 const forHuman = computed(() => task.value.assignee === 'human')
 const HUMAN_HINT = 'Task udělá člověk, factory ho nespustí. Až bude hotový, označ ho jako hotový.'
 /** A done or cancelled task never runs again. */
-const finished = computed(() => ['done', 'cancelled'].includes(task.value.board_state))
+const finished = computed(() => isDoneState(task.value.board_state))
 /** A done task is not run, edited or improved again: a follow-up task continues it. */
 const done = computed(() => task.value.board_state === 'done')
 const followUpOpen = ref(false)
@@ -108,7 +114,36 @@ function onFollowUpCreated(result: FollowUpResult) {
   followUpOpen.value = false
   emit('follow-up', result)
 }
+const inProgress = computed(() => taskInProgress(task.value.board_state))
+// Container dependencies list unfinished task IDs but no states in the detail.
+// Resolve those states from the board; until it loads, keep the start disabled.
+const containerDependencies = ref<DependsRef[]>([])
+watch(
+  () => props.detail,
+  async (detail, _previous, onCleanup) => {
+    containerDependencies.value = []
+    if (!detail.task.blocked_by.some((u) => u.reason === 'incomplete')) return
+    let current = true
+    onCleanup(() => { current = false })
+    try {
+      const backlog = await fetchBacklog()
+      if (current) containerDependencies.value = backlog.tasks.map((t) => ({
+        id: t.id, kind: 'task', title: t.title, state: t.board_state,
+      }))
+    } catch {
+      // An unavailable board cannot establish that every blocker has an open PR.
+    }
+  },
+  { immediate: true },
+)
+const dependenciesBlocked = computed(() =>
+  (task.value.board_state === 'blocked' || task.value.blocked_by.length > 0) &&
+  !canStackDependencies(task.value.blocked_by, [...props.detail.depends, ...containerDependencies.value]),
+)
 const runTooltip = computed(() => {
+  if (inProgress.value) return task.value.board_state === 'running' ? 'Task právě běží.' : 'Task čeká na review/merge PR.'
+  if (dependenciesBlocked.value) return blockedTooltip(task.value.blocked_by, names.value) || 'Task je blokovaný.'
+
   if (finished.value) {
     const noun = levelLabel(level.task.value)
     return task.value.board_state === 'done' ? `${noun} je hotový, znovu se nespouští.` : `${noun} je zrušený, nespouští se.`
@@ -116,16 +151,15 @@ const runTooltip = computed(() => {
   if (forHuman.value) return HUMAN_HINT
   return noWorkflow.value ? NO_WORKFLOW_HINT.value : ''
 })
-const runBlocked = computed(() => noWorkflow.value || finished.value || forHuman.value)
+const runBlocked = computed(() => noWorkflow.value || finished.value || forHuman.value || inProgress.value || dependenciesBlocked.value)
 /** The task can wait in the auto-continue queue (it has not started). */
 const queueable = computed(() => DEFERRABLE_STATES.includes(task.value.board_state))
 /** Advice is offered only for a task that has not started. */
-const adviceBlocked = computed(() =>
-  ['done', 'cancelled', 'running', 'in review', 'awaiting merge'].includes(task.value.board_state),
-)
+const adviceBlocked = computed(() => finished.value || inProgress.value)
 const improveTooltip = computed(() => (adviceBlocked.value ? `${levelLabel(level.task.value)} už nejde měnit.` : ''))
 
 function openEdit(improve: boolean) {
+  if (inProgress.value || (improve && adviceBlocked.value)) return
   autoImprove.value = improve
   editing.value = true
 }
@@ -143,7 +177,7 @@ type Readiness = { tone: 'ok' | 'warn' | 'muted'; title: string; reasons: string
 const readiness = computed<Readiness>(() => {
   const state = task.value.board_state
   if (finished.value) return { tone: 'muted', title: runTooltip.value, reasons: [], runId: null }
-  if (state === 'running' || state === 'in review' || state === 'awaiting merge') {
+  if (inProgress.value) {
     return {
       tone: 'muted',
       title: `${levelLabel(level.task.value)} je ve stavu ${STATE_LABELS[state]}.`,
@@ -183,8 +217,8 @@ watch(
   () => props.detail,
   (next, previous) => {
     const sameTask = next.task.id === previous?.task.id
-    // a live refresh of the same task must not close a form being edited
-    if (!sameTask || saving || !editing.value) {
+    // Preserve a draft across live refreshes while the task remains editable.
+    if (!sameTask || saving || !editing.value || inProgress.value || finished.value) {
       closeEdit()
       saving = false
     }
@@ -204,10 +238,12 @@ function unlinkKey(key: 'depends_on' | 'related', id: string): string {
 }
 
 function removeLink(key: 'depends_on' | 'related', id: string) {
+  if (inProgress.value) return
   emit('link', { [key]: [id], remove: true })
 }
 
 function onEdit(input: EditTaskInput) {
+  if (inProgress.value) return
   saving = true
   emit('edit', input)
 }
@@ -245,24 +281,26 @@ function onEdit(input: EditTaskInput) {
               <Play v-else :size="14" /> Spustit
             </button>
           </Tooltip>
-          <button
-            v-if="!editing && !done"
-            type="button"
-            data-test="edit"
-            :disabled="busy"
-            @click="openEdit(false)"
-          >
-            <Pencil :size="14" /> Upravit
-          </button>
-          <button
-            v-if="forHuman && !finished"
-            type="button"
-            data-test="mark-done"
-            :disabled="busy"
-            @click="onEdit({ status: 'done' })"
-          >
-            <CheckCircle2 :size="14" /> Hotovo
-          </button>
+          <Tooltip v-if="!editing && !done" :text="inProgress ? improveTooltip : ''">
+            <button
+              type="button"
+              data-test="edit"
+              :disabled="busy || inProgress"
+              @click="openEdit(false)"
+            >
+              <Pencil :size="14" /> Upravit
+            </button>
+          </Tooltip>
+          <Tooltip v-if="forHuman && !finished" :text="inProgress ? improveTooltip : ''">
+            <button
+              type="button"
+              data-test="mark-done"
+              :disabled="busy || inProgress"
+              @click="onEdit({ status: 'done' })"
+            >
+              <CheckCircle2 :size="14" /> Hotovo
+            </button>
+          </Tooltip>
           <button
             v-if="queueable"
             type="button"
@@ -341,6 +379,7 @@ function onEdit(input: EditTaskInput) {
       :result="run.result"
       :action="run.action"
       :waiting="run.waiting"
+      :start-disabled="runBlocked"
       @start="emit('run-start', $event)"
       @cancel="emit('run-cancel')"
       @commit="emit('run-commit')"
@@ -388,7 +427,7 @@ function onEdit(input: EditTaskInput) {
                 <td class="right nowrap">{{ fmtTime(run.started_at) }}</td>
                 <td class="right">
                   <RetryRunButton
-                    v-if="index === 0 && canRetry(run) && !finished"
+                    v-if="index === 0 && canRetry(run) && !finished && !inProgress"
                     :run-id="run.run_id"
                     @started="emit('retried')"
                   />
@@ -467,12 +506,12 @@ function onEdit(input: EditTaskInput) {
                 <span v-else class="mono">{{ dep.id }}</span>
                 <span v-if="dep.title" class="ellipsis">{{ dep.title }}</span>
                 <span class="faint small" data-test="dep-state">{{ dep.state }}</span>
-                <span class="push"><Tooltip text="Odebrat vazbu">
+                <span class="push"><Tooltip :text="inProgress ? improveTooltip : 'Odebrat vazbu'">
                   <button
                     type="button"
                     class="icon"
                     :data-test="`unlink-${dep.id}`"
-                    :disabled="busy"
+                    :disabled="busy || inProgress"
                     aria-label="Odebrat vazbu"
                     :aria-busy="action === unlinkKey('depends_on', dep.id) || undefined"
                     @click="removeLink('depends_on', dep.id)"
@@ -514,12 +553,12 @@ function onEdit(input: EditTaskInput) {
             <ul v-if="task.related.length">
               <li v-for="r in task.related" :key="r" :data-related="r">
                 <a :href="taskHref(r)" class="mono">{{ r }}</a>
-                <span class="push"><Tooltip text="Odebrat vazbu">
+                <span class="push"><Tooltip :text="inProgress ? improveTooltip : 'Odebrat vazbu'">
                   <button
                     type="button"
                     class="icon"
                     :data-test="`unrelate-${r}`"
-                    :disabled="busy"
+                    :disabled="busy || inProgress"
                     aria-label="Odebrat vazbu"
                     :aria-busy="action === unlinkKey('related', r) || undefined"
                     @click="removeLink('related', r)"

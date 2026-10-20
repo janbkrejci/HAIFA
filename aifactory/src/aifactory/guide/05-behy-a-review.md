@@ -4,7 +4,7 @@ Běh provede workflow tasku ve vlastním worktree a větvi `factory/<id-tasku>-<
 
 ## Spuštění a sledování
 
-**Spustit** v detailu tasku (`factory task run ID`) otevře dialog s workflow, zápisy, varováním na necommitnutý backlog či konfiguraci, volbou **Harness pro tento běh**, **Po úspěchu pokračovat dalšími tasky (auto continue)** a poznámkou pro agenty. Blokovaný task spustí **Spustit přesto (ignorovat nesplněné závislosti)**.
+**Spustit** v detailu tasku (`factory task run ID`) otevře dialog s workflow, zápisy, varováním na necommitnutý backlog či konfiguraci, volbou **Harness pro tento běh**, **Po úspěchu pokračovat dalšími tasky (auto continue)** a poznámkou pro agenty. Běžící task ani task s otevřeným PR spustit nejde. Blokovanému tasku tooltip vypíše nesplněné závislosti; dialog je nedovolí obejít. Výjimkou je stacked start: čekají-li všechny nesplněné závislosti v otevřených PR, spuštění zůstává povolené. Se zapnutým `stacked_prs` běh naváže na jejich větev; jinak dialog ukáže chybu backendu.
 
 Záložka **Běhy** má **Aktivní** a **Archivované** běhy, panel **Náklady** a **Řetěz**. Detail běhu ukazuje fáze; klik na fázi otevře prompty, výstup a živé události. **Pauza** dokončí fázi a čeká, **Pokračovat** pustí další, **Zastavit** běh ukončí (worktree zůstane).
 

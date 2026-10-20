@@ -36,6 +36,31 @@ function actions(wrapper: VueWrapper): string[] {
 }
 
 describe('FailureCard', () => {
+  it.each(['continue', 'switch', 'allow'] as const)('shows already_running for %s when another run owns the task', async (action) => {
+    const message = 'task M01-S01-T01 is already running: run r-new (pid 123)'
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {
+      if (init?.method === 'POST') return new Response(JSON.stringify({
+        ok: false, data: null, error: { code: 'already_running', message, issues: [] }, warnings: [],
+      }), { status: 409, headers: { 'Content-Type': 'application/json' } })
+      return okResponse(action === 'allow'
+        ? { run_id: 'r-fail', task_id: 'M01-S01-T01', writes: [], allow: ['README.md'], refused: [] }
+        : { run_id: 'r-fail', choices: [{ harness: 'claude', model: 'model', thinking: null }] })
+    }))
+    const wrapper = card({ failure_kind: action === 'allow' ? 'writes_violation' : 'quota', failure_detail: { harness: 'codex', paths: ['README.md'] } })
+    await flushPromises()
+    if (action === 'allow') {
+      await wrapper.get('[data-test="allow-writes"]').trigger('click')
+      await answerDialog(true)
+    } else {
+      await wrapper.get(`[data-test="${action === 'switch' ? 'switch-harness' : 'retry-run'}"]`).trigger('click')
+      await flushPromises()
+      await wrapper.get(`[data-test="${action === 'switch' ? 'switch-form' : 'retry-form'}"]`).trigger('submit')
+    }
+    await flushPromises()
+    expect(wrapper.get(`[data-test="${action === 'allow' ? 'allow-error' : action === 'switch' ? 'switch-error' : 'retry-error'}"]`).text()).toContain(message)
+    expect(wrapper.emitted('retried')).toBeUndefined()
+  })
+
   it('accept_not_met: the error sentence, review objections, failed checks and the accept values', () => {
     const wrapper = card({
       error: 'Review neschválilo ani po 2 kolech: chybí test pro prázdný vstup',

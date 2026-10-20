@@ -1,7 +1,7 @@
 // Spinners on Backlog actions: the clicked button spins until the server answers,
 // colliding actions are disabled meanwhile, and a `pending` run start spins until live updates.
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import BacklogView from './BacklogView.vue'
 import {
   backlogData,
@@ -16,6 +16,8 @@ import { LIVE_DEBOUNCE_MS, resetLiveForTests } from '@/lib/live'
 import { FakeEventSource, traceEvent } from '@/test/fakeEventSource'
 
 const TASK = 'M01-S01-T02'
+
+enableAutoUnmount(afterEach)
 
 function ok(data: unknown) {
   return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] }))
@@ -113,7 +115,7 @@ describe('BacklogView spinners', () => {
     wrapper.unmount()
   })
 
-  it('spins Spustit přesto, not Spustit', async () => {
+  it('spins the normal start when stacking on dependency PRs', async () => {
     go(`#/r/haifa/backlog/${TASK}`)
     const start = deferred<Response>()
     vi.stubGlobal(
@@ -121,7 +123,10 @@ describe('BacklogView spinners', () => {
       vi.fn(async (url: string, init?: RequestInit) => {
         if (init?.method === 'POST' && url.endsWith('/run')) return start.promise
         if (url.endsWith('/run-check')) {
-          return ok(runCheck({ unmet: [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }] }))
+          return ok(runCheck({
+            unmet: [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }],
+            stack: { branch: 'factory/dependency', prs: [{ task_id: 'M01-S01-T01', url: 'https://example.test/pr/1' }] },
+          }))
         }
         if (url.startsWith('/api/repos/haifa/backlog/tasks/')) return ok(taskDetail())
         return ok(backlogData())
@@ -131,15 +136,45 @@ describe('BacklogView spinners', () => {
     await flushPromises()
     await wrapper.find('[data-test="run"]').trigger('click')
     await flushPromises()
-    await wrapper.find('[data-test="run-force"]').trigger('click')
+    expect(wrapper.get('[data-test="run-stacked"]').text()).toContain('factory/dependency')
+    expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
+    await wrapper.get('[data-test="run-start"]').trigger('click')
     await flushPromises()
-    expect(spins(wrapper, '[data-test="run-force"]')).toBe(true)
+    expect(spins(wrapper, '[data-test="run-start"]')).toBe(true)
     expect(spinners(wrapper)).toHaveLength(1)
-    expect(disabled(wrapper, '[data-test="run-force"]')).toBe(true)
-    start.resolve(ok(runStart({ force: true })))
+    expect(disabled(wrapper, '[data-test="run-start"]')).toBe(true)
+    expect(fetch).toHaveBeenCalledWith(expect.stringContaining('/run'), expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ force: false }),
+    }))
+    start.resolve(ok(runStart()))
     await flushPromises()
     expect(spinners(wrapper)).toHaveLength(0)
     expect(window.location.hash).toBe('#/r/haifa/runs/r-9')
+    wrapper.unmount()
+  })
+
+  it('does not start or spin with unmet dependencies and no stack', async () => {
+    go(`#/r/haifa/backlog/${TASK}`)
+    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) => {
+      if (url.endsWith('/run-check')) return ok(runCheck({
+        unmet: [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }],
+      }))
+      if (url.startsWith('/api/repos/haifa/backlog/tasks/')) return ok(taskDetail())
+      return ok(backlogData())
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await wrapper.get('[data-test="run"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="unmet-warning"]').text()).toContain('M01-S01-T01')
+    expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
+    expect(disabled(wrapper, '[data-test="run-start"]')).toBe(true)
+    await wrapper.get('[data-test="run-start"]').trigger('click')
+    await flushPromises()
+    expect(spinners(wrapper)).toHaveLength(0)
+    expect(fetchMock.mock.calls.every(([, init]) => !init)).toBe(true)
+    expect(window.location.hash).toBe(`#/r/haifa/backlog/${TASK}`)
     wrapper.unmount()
   })
 
