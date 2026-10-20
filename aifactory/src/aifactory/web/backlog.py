@@ -663,11 +663,28 @@ def add(
     return _write_json(repo, result)
 
 
+def ensure_task_not_running(repo: Path, task_id: str) -> None:
+    """Dashboard writes must wait for the task's active trace DB run to finish."""
+    store = existing_store(repo)
+    if store is None:
+        return
+    try:
+        row = store.running(task_id)
+    finally:
+        store.close()
+    if row is not None:
+        raise TaskRunError(
+            "task_running",
+            f"Task {task_id} právě běží (běh {row.run_id}), upravit ho jde až po doběhnutí.",
+        )
+
+
 def edit(
     repo: Path, task_id: str, body: JsonDict, *, advice: AdviceManager | None = None
 ) -> tuple[JsonDict, list[str]]:
     """``factory task edit``: title, status, workflow (assign or clear), writes, auto_merge."""
     _check_keys(body, EDIT_KEYS)
+    ensure_task_not_running(repo, task_id)
     if "workflow_advice_id" in body:
         if advice is None:
             raise UsageError("workflow advice service is unavailable")
@@ -721,6 +738,7 @@ def follow_up(
         committed = core.commit_backlog(repo, core.follow_up_commit_message(new_id, task_id))
         data["commit"] = committed.to_json()
         warnings = warnings + list(committed.warnings)
+        _ensure_dependencies_met(repo, new_id)
         row = launcher.start(repo, new_id, note=None, force=False)
         data["run"] = None if row is None else row.to_json()
         data["pending"] = row is None
@@ -730,6 +748,7 @@ def follow_up(
 def link(repo: Path, task_id: str, body: JsonDict) -> tuple[JsonDict, list[str]]:
     """``factory task link``: add (or with ``remove``) drop depends_on / related ids."""
     _check_keys(body, LINK_KEYS)
+    ensure_task_not_running(repo, task_id)
     depends_on = _opt_str_list(body, "depends_on")
     related = _opt_str_list(body, "related")
     remove = _opt_bool(body, "remove")
@@ -846,6 +865,19 @@ def run_check(
     return data, warnings
 
 
+def _ensure_dependencies_met(repo: Path, task_id: str) -> None:
+    check, _ = run_check(repo, task_id)
+    # Let the launcher keep reporting already_running for duplicate starts.
+    if check["running"]:
+        return
+    if check["unmet"] and not check["stack"]:
+        raise TaskRunError(
+            "unmet_dependencies",
+            f"Task {task_id} má nesplněné závislosti: "
+            + ", ".join(dep["id"] for dep in check["unmet"]),
+        )
+
+
 def start_run(
     repo: Path, task_id: str, body: JsonDict, launcher: Launcher
 ) -> tuple[JsonDict, list[str]]:
@@ -867,6 +899,7 @@ def start_run(
         raise core.TaskEditError(
             "invalid_value", f"thinking {thinking!r} is not one of {list(THINKING_LEVELS)}"
         )
+    _ensure_dependencies_met(repo, task_id)
     row = launcher.start(
         repo,
         task_id,
