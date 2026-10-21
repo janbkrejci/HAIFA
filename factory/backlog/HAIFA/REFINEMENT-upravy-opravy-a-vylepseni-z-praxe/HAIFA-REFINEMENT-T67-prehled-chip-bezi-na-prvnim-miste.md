@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T67
 title: "Přehled: chip Běží na prvním místě"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/lib/overview.ts, aifactory/web/src/lib/overview.test.ts, aifactory/web/src/views/OverviewView.test.ts, aifactory/web/src/components/overview/RepoControls.test.ts, aifactory/web/src/components/overview/RepoCard.test.ts, aifactory/src/aifactory/web/static/]
@@ -12,3 +12,4 @@ Na Přehledu má být stavový chip Běží v souhrnu tasků vždy první, pokud
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-21 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/140 · náklady $0.00

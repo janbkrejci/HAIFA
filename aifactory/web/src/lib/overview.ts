@@ -156,11 +156,13 @@ export interface TaskSummaryItem {
   count: number
 }
 
-/** The tasks of a repo per board state, in kanban order; states without a task are left out. */
+const TASK_SUMMARY_STATES: readonly BoardState[] = ['running', ...BOARD_STATES.filter((state) => state !== 'running')]
+
+/** The tasks of a repo: running first, then kanban order; states without a task are left out. */
 export function taskSummary(repo: Pick<OverviewRepo, 'tasks'>): TaskSummaryItem[] {
   const tasks = repo.tasks
   if (!tasks) return []
-  return BOARD_STATES.filter((state) => (tasks[state] ?? 0) > 0).map((state) => ({
+  return TASK_SUMMARY_STATES.filter((state) => (tasks[state] ?? 0) > 0).map((state) => ({
     state,
     label: STATE_LABELS[state],
     count: tasks[state],

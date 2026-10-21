@@ -104,9 +104,13 @@ describe('OverviewView', () => {
       expect(sections[0].findAll('[data-test="row-running"]').map((r) => r.attributes('data-run'))).toEqual(['run-a'])
       expect(sections[0].find('[data-test="row-review"]').exists()).toBe(false)
       expect(sections[0].get('[data-state="ready"] b').text()).toBe('2')
+      expect(sections[0].findAll('[data-test="task-summary-item"]').map((i) => i.attributes('data-state')))
+        .toEqual(['running', 'ready'])
       expect(sections[1].findAll('[data-test="row-running"]').map((r) => r.attributes('data-run'))).toEqual(['run-b'])
       expect(sections[1].get('[data-test="row-review"]').attributes('data-task')).toBe('B-T02')
       expect(sections[1].get('[data-state="ready"] b').text()).toBe('3')
+      expect(sections[1].findAll('[data-test="task-summary-item"]').map((i) => i.attributes('data-state')))
+        .toEqual(['running', 'ready', 'in review'])
       expect(card.findAll('[data-test="task-summary"]')).toHaveLength(2)
     }
     assertGrouped()
@@ -118,6 +122,8 @@ describe('OverviewView', () => {
     expect(card.findAll('[data-test="task-summary"]')).toHaveLength(1)
     expect(card.get('[data-state="ready"] b').text()).toBe('5')
     expect(card.get('[data-state="running"] b').text()).toBe('2')
+    expect(card.findAll('[data-test="task-summary-item"]').map((i) => i.attributes('data-state')))
+      .toEqual(['running', 'ready', 'in review'])
 
     await projectSwitch.setValue(true)
     assertGrouped()
