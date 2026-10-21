@@ -52,7 +52,7 @@ dashboard started, or ``null``). A repository that is missing, not git, slow or 
 ``tasks`` and ``factory`` ``null``.
 
 It only reads. The trace DB is opened with a ``mode=ro`` sqlite connection (``query_only``;
-``immutable`` for a WAL DB nobody has open, so no ``-wal``/``-shm`` file appears),
+``immutable`` without journal sidecars, so a closed DB gets no ``-wal``/``-shm`` files),
 never through ``TaskRunStore``, which creates tables and reaps dead runs: a running row whose
 process is gone is shown with ``status_label`` "proces skončil" and stays as it is. A missing
 trace DB is not created. Git is read only through the config readers, which run with
@@ -206,27 +206,33 @@ class _TtlCache:
 # --- trace DB (read-only) ---------------------------------------------------------------
 
 
-def _closed_wal(db: Path) -> bool:
-    """A WAL-mode DB without a ``-wal`` file: no connection has it open, all of it is in ``db``.
+def _without_journal(db: Path) -> bool:
+    """Infer a quiescent DB from sidecar metadata, without opening the DB file.
 
-    Opening such a DB with ``mode=ro`` alone would create ``-wal`` and ``-shm`` next to it,
-    so it is opened ``immutable`` instead (no lock, no side file). A writer that opens the DB
-    while the overview reads can at worst make this read fail, which becomes a warning.
+    A raw open/read/close would drop the POSIX locks of SQLite connections in this
+    process (https://sqlite.org/howtocorrupt.html, section 2.2).
+    Use normal SQLite locking whenever a WAL, SHM or rollback journal is present,
+    even if empty. Otherwise immutable avoids creating sidecars for a closed WAL DB.
+    This is a best-effort snapshot: a writer can start after the metadata check;
+    that poll can be stale or fail (reported as a warning), and the next poll checks again.
     """
     try:
-        with db.open("rb") as handle:
-            header = handle.read(20)
+        for suffix in ("-wal", "-shm", "-journal"):
+            try:
+                Path(f"{db}{suffix}").stat()
+            except FileNotFoundError:
+                continue
+            return False
     except OSError:
         return False
-    wal = header[:16] == b"SQLite format 3\x00" and len(header) == 20 and header[18] == 2
-    return wal and not Path(f"{db}-wal").exists()
+    return True
 
 
 def _open_ro(db: Path) -> sqlite3.Connection | None:
     """A read-only connection to ``db``, or None when the file does not exist."""
     if not database.available(db):
         return None
-    flags = "mode=ro&immutable=1" if _closed_wal(db) else "mode=ro"
+    flags = "mode=ro&immutable=1" if _without_journal(db) else "mode=ro"
     conn = database.connect(
         f"file:{quote(str(db))}?{flags}",
         uri=True,

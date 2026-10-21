@@ -1,0 +1,9 @@
+# Zachování SQLite zámků při čtení Přehledu
+
+Přehled ani jeho společný čtenář pro Backlog nesmějí otevírat, číst či zavírat databázový soubor mimo SQLite. Volba režimu používá pouze metadata sidecarů `-wal`, `-shm` a `-journal`. Přítomnost kteréhokoli z nich, včetně prázdného souboru, nebo chyba při zjišťování metadat znamená běžné `mode=ro`. Bez sidecarů se použije `mode=ro&immutable=1`, aby čtení uzavřené WAL databáze nevytvářelo nové soubory. V obou režimech platí `query_only`; chybějící databáze se nevytvoří.
+
+Živá WAL databáze se čte přes SQLite se zámky a s aktuálními commitnutými daty. Necommitnutá transakce writeru není vidět. Výběr podle metadat není atomický vůči startu nového writeru: při jeho startu až po kontrole může daný poll vrátit starší data nebo diagnostické varování. Další poll režim znovu vyhodnotí. Čtenář nezavírá raw fd, a proto neruší zámky existujících SQLite spojení v serverovém procesu.
+
+Deterministická POSIX regrese drží skutečnou WAL transakci v procesu API testu, zvlášť čtecí a zapisovací. Čerstvý subprocess zkouší přes `fcntl.lockf` exkluzivní neblokující zámek celého DB souboru. Před GET Přehledu i po něm musí dostat konflikt; po zavření SQLite spojení musí zámek získat. Test navíc kontroluje commitnutá data a `PRAGMA integrity_check`. Pouze tato regrese se na ne-POSIX přeskočí. Přenosné testy ověřují viditelnost commitů, izolaci probíhajícího zápisu a read-only ochranu ve WAL i DELETE režimu.
+
+Ověření zahrnuje původní testy Přehledu, busy DB, přímých volajících Backlogu a řízení factory, API běhů, oba retry browser scénáře a multi-repo browser scénář. Builder ověřuje lint, formát a typy změněných Python souborů; povinné globální `just lint` a `just typecheck` zajišťuje testovací krok workflow. Celá suite zůstává CI. Testy používají lokální stuby bez živých modelů a služeb.

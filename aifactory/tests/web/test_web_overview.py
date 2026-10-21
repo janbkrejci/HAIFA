@@ -238,6 +238,117 @@ def test_overview_never_uses_task_run_store(
     assert [r["task_id"] for r in a["failed"]] == [T_FAIL]
 
 
+@pytest.mark.parametrize("journal_mode", ["WAL", "DELETE"])
+def test_overview_reads_live_commits_and_keeps_reader_readonly(
+    repo_a: Path, tmp_path: Path, journal_mode: str
+) -> None:
+    db = _db(repo_a)
+    home = tmp_path / "home"
+    register(home, repo_a)
+    client = _client(home, tmp_path)
+    writer = sqlite3.connect(db, isolation_level=None)
+    try:
+        assert writer.execute(f"PRAGMA journal_mode = {journal_mode}").fetchone()[0] == (
+            journal_mode.lower()
+        )
+        writer.execute("UPDATE task_runs SET error = 'latest commit' WHERE run_id = 'r-fail'")
+        writer.execute("BEGIN IMMEDIATE")
+        writer.execute("UPDATE task_runs SET error = 'pending commit' WHERE run_id = 'r-fail'")
+        item = _get(client)["repos"][0]
+        assert item["warnings"] == []
+        assert next(r for r in item["failed"] if r["task_id"] == T_FAIL)["error"] == "latest commit"
+        reader = overview._open_ro(db)
+        assert reader is not None
+        try:
+            assert reader.execute("PRAGMA query_only").fetchone()[0] == 1
+            with pytest.raises(sqlite3.OperationalError, match="readonly"):
+                reader.execute("DELETE FROM task_runs")
+        finally:
+            reader.close()
+        writer.commit()
+        item = _get(client)["repos"][0]
+        assert item["warnings"] == []
+        assert (
+            next(r for r in item["failed"] if r["task_id"] == T_FAIL)["error"] == "pending commit"
+        )
+        assert writer.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        writer.close()
+
+
+def _probe_db_lock(db: Path) -> str:
+    """Probe in a fresh process: POSIX locks belong to a process, not a connection."""
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import errno, fcntl, sys\n"
+            "with open(sys.argv[1], 'r+b') as db:\n"
+            "    try:\n"
+            "        fcntl.lockf(db, fcntl.LOCK_EX | fcntl.LOCK_NB)\n"
+            "    except OSError as exc:\n"
+            "        if exc.errno not in (errno.EACCES, errno.EAGAIN):\n"
+            "            raise\n"
+            "        print('blocked')\n"
+            "    else:\n"
+            "        print('acquired')\n",
+            str(db),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=True,
+    )
+    return probe.stdout.strip()
+
+
+@pytest.mark.skipif(os.name != "posix", reason="fcntl locks are POSIX only")
+@pytest.mark.parametrize("transaction", ["read", "write"])
+def test_overview_preserves_sqlite_posix_locks(
+    repo_a: Path, tmp_path: Path, transaction: str
+) -> None:
+    db = _db(repo_a)
+    home = tmp_path / "home"
+    register(home, repo_a)
+    writer = sqlite3.connect(db, isolation_level=None)
+    try:
+        assert writer.execute("PRAGMA journal_mode = WAL").fetchone()[0] == "wal"
+        writer.execute(
+            "UPDATE task_runs SET error = 'committed before overview' WHERE run_id = 'r-fail'"
+        )
+        writer.execute("BEGIN")
+        writer.execute("SELECT * FROM task_runs").fetchall()
+        if transaction == "write":
+            writer.execute(
+                "UPDATE task_runs SET error = 'committed after overview' WHERE run_id = 'r-fail'"
+            )
+        assert writer.in_transaction
+        assert _probe_db_lock(db) == "blocked"
+        item = _get(_client(home, tmp_path))["repos"][0]
+        # Check before any further SQLite call could reacquire the lost locks.
+        assert _probe_db_lock(db) == "blocked"
+        assert item["warnings"] == []
+        assert next(r for r in item["failed"] if r["task_id"] == T_FAIL)["error"] == (
+            "committed before overview"
+        )
+        writer.commit()
+        assert writer.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        writer.close()
+    assert _probe_db_lock(db) == "acquired"
+    reader = sqlite3.connect(db)
+    try:
+        expected = (
+            "committed after overview" if transaction == "write" else "committed before overview"
+        )
+        assert reader.execute("SELECT error FROM task_runs WHERE run_id = 'r-fail'").fetchone() == (
+            expected,
+        )
+        assert reader.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+    finally:
+        reader.close()
+
+
 def test_git_reads_without_optional_locks_and_no_fetch(
     repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
