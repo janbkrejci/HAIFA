@@ -12,8 +12,10 @@ import os
 import stat
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable, Iterator
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
@@ -22,12 +24,12 @@ from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from aifactory import home, oscompat
-from aifactory.run import TaskRunRow, TaskRunStore
+from aifactory.run import TaskRunRow, TaskRunStore, members
 from aifactory.run.errors import TaskRunError
 from aifactory.skill import envelope_problems
 from aifactory.web import create_app
 from aifactory.web import launcher as launcher_module
-from aifactory.web.launcher import DEFAULT_COMMAND, RunLauncher
+from aifactory.web.launcher import DEFAULT_COMMAND, LaunchedRun, RunLauncher
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "run"))
 
@@ -610,3 +612,109 @@ def test_non_claiming_publication_completion_cleans_operation(repo: Path, stub: 
     assert launcher.running() == []
     assert operations_of(repo) == []
     assert runs_of(repo, T01) == []
+
+
+@pytest.mark.parametrize("outcome", ["claimed", "refused"])
+def test_retry_child_exits_before_operation_registration(
+    make_app: Apps,
+    repo: Path,
+    stub: Stub,
+    monkeypatch: pytest.MonkeyPatch,
+    outcome: str,
+) -> None:
+    _app, client, launcher = make_app(repo)
+    failed = _failed_run(repo)
+    if outcome == "claimed":
+        stub.plan(T01, "claim-exit")
+    else:
+        stub.plan(T01, "fail", code="already_running", message="retry refused")
+    spawned = threading.Event()
+    register = threading.Event()
+    child: list[int] = []
+    original = members.register_operation
+
+    def delayed_registration(root: Path, task: str, action: str, pid: int) -> str:
+        child.append(pid)
+        spawned.set()
+        assert register.wait(10), "registration was not released"
+        return original(root, task, action, pid)
+
+    monkeypatch.setattr(members, "register_operation", delayed_registration)
+    with ThreadPoolExecutor(max_workers=1) as pool:
+        response = pool.submit(client.post, f"/api/runs/{failed.run_id}/retry", json={})
+        try:
+            assert spawned.wait(10)
+            # The child must finish and close its envelope before the parent publishes
+            # its operation. No HTTP request is repeated to obtain an accepted result.
+            assert _until(
+                lambda: (
+                    bool(list(home.logs_dir().glob("*retry*.json")))
+                    and any(
+                        p.read_text(encoding="utf-8").strip().endswith("}")
+                        for p in home.logs_dir().glob("*retry*.json")
+                    )
+                    and (
+                        not oscompat.alive(child[0])
+                        if sys.platform == "win32"
+                        else _zombie_or_gone(child[0]).startswith("Z")
+                    )
+                ),
+                timeout=10,
+            )
+        finally:
+            register.set()
+        body = _check(response.result(timeout=10), 202 if outcome == "claimed" else 409)
+    launcher.wait(10)
+    assert operations_of(repo) == []
+    if outcome == "claimed":
+        assert body["data"]["run"]["attempt"] == 2
+        row = _row(repo, failed.run_id)
+        assert row is not None and row.state == "succeeded"
+    else:
+        assert body["error"]["code"] == "already_running"
+        assert _row(repo, failed.run_id) == failed
+
+
+def test_previous_reaper_finishes_after_retry_claim(
+    make_app: Apps, repo: Path, stub: Stub, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _app, _client, launcher = make_app(repo)
+    reaping = threading.Event()
+    reaped = threading.Event()
+    release = threading.Event()
+    original = TaskRunStore.finish_operation
+
+    def delayed_cleanup(store: TaskRunStore, operation_id: str) -> None:
+        if threading.current_thread().name.startswith("factory-run-wait-"):
+            reaping.set()
+            assert release.wait(10), "previous reaper was not released"
+        original(store, operation_id)
+
+    original_reap = launcher._reap
+
+    def reap(launched: LaunchedRun, root: Path, task: str) -> None:
+        original_reap(launched, root, task)
+        reaped.set()
+
+    monkeypatch.setattr(launcher, "_reap", reap)
+    monkeypatch.setattr(TaskRunStore, "finish_operation", delayed_cleanup)
+    stub.plan(T01, "claim-exit")
+    try:
+        first = launcher.start(repo, T01, note=None, force=False)
+        assert first is not None
+        assert reaping.wait(10)
+        store = TaskRunStore(repo / ".factory" / "trace.db")
+        try:
+            store.finish(first.run_id, "failed", None, "review rejected")
+        finally:
+            store.close()
+        stub.plan(T01, "claim-wait")
+        retried = launcher.start_retry(repo, T01, first.run_id)
+        assert retried is not None and retried.attempt == 2
+        release.set()
+        assert reaped.wait(10), "previous reaper did not finish"
+        row = _row(repo, first.run_id)
+        assert row is not None and (row.state, row.attempt, row.pid) == ("running", 2, retried.pid)
+        assert operations_of(repo) == []
+    finally:
+        release.set()
