@@ -69,6 +69,7 @@ from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
 from aifactory.run.queue import WAITS_FOR_STACK, auto_merge_enabled
 from aifactory.run.resolve import RESOLVE_REVIEWED_WORKFLOW
+from aifactory.run.scope import output_paths
 from aifactory.run.stack import open_stack
 from aifactory.run.store import (
     MERGED_BY_AUTO,
@@ -303,6 +304,16 @@ def _check_and_merge(
         )
     review = review_blocker(last_review(result.workflow_run))
     if review is not None:
+        if review[0] == "no_review":
+            files = gitops.pr_changed_files(main, pr.base, pr.branch, result.run.base_sha)
+            spec = output_paths(task, rc.config.settings).spec
+            if files is not None and not (set(files) - {spec}):
+                return blocked(
+                    "no_review",
+                    "no review ran in this run: build changed no files outside the planner "
+                    "spec; already_done evidence is missing. Retry the build and report "
+                    "already_done with checked commit/file evidence if the work is already done",
+                )
         return blocked(*review)
     store = TaskRunStore(result.trace_db)
     try:

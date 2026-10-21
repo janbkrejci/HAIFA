@@ -82,7 +82,7 @@ from aifactory.engine import data_types as dt
 from aifactory.engine import git_helper, session
 from aifactory.engine import quality as engine_quality
 from aifactory.engine.role_registry import RAN_FIELD, Issue
-from aifactory.failure import RunFailure
+from aifactory.failure import InvalidOutput, RunFailure
 from aifactory.harness.override import effective_agent, step_override
 from aifactory.workflow.check import check_agents
 from aifactory.workflow.conditions import truthy
@@ -554,6 +554,8 @@ class _Interpreter:
         if entry is not None:
             envelope = role.output_type.model_validate(entry.envelope or {})
             self.records.append(StepRecord(name, step.name, "agent", role.agent))
+            if keep and isinstance(envelope, dt.BuildOutput):
+                self.check_empty_first_build(envelope, step)
         else:
             envelope = self.call_agent(step, name, keep)
         if keep:
@@ -563,6 +565,28 @@ class _Interpreter:
             if isinstance(envelope, dt.BuildOutput) and envelope.already_done is not None:
                 self.stop_if_first_build(envelope.already_done)
         return envelope
+
+    def check_empty_first_build(self, envelope: dt.BuildOutput, step: RoleStep) -> None:
+        """A task's empty first build needs explicit evidence, not a spec-only PR."""
+        spec = self.run.prompt_variables.get("spec_path")
+        if (
+            not spec
+            or envelope.status != "success"
+            or envelope.changed_files
+            or envelope.already_done is not None
+            or any(isinstance(e, dt.BuildOutput) for _, e in self.history)
+            or self.resolving
+        ):
+            return
+        files = set(git_helper.diff_files(self.baseline)) | set(git_helper.untracked_files())
+        if files - {spec}:
+            return
+        raise InvalidOutput(
+            f"{step.role.agent}: first build returned success without changes outside the "
+            "planner spec and without already_done; if the work is already in the repo, "
+            "return already_done with checked commit/file evidence, otherwise implement the task",
+            detail={"agent": step.role.agent, "step": step.name, "cause": "empty_first_build"},
+        )
 
     def writes_nothing(self) -> bool:
         """Whether the run's write guard allows no file at all (a resolve without one)."""
@@ -618,12 +642,23 @@ class _Interpreter:
                 envelope = ph.call(
                     dt.AgentCall(
                         output_type=role.output_type,
-                        prompt=self.prompt,
+                        prompt=(
+                            self.prompt
+                            + "\n\nIf the work is already done, return status: success with "
+                            "already_done containing evidence (checked repository commits or "
+                            "files) and a reason. Never report an empty first-build success "
+                            "without already_done when there is nothing to implement. "
+                            "A later fix or revision may succeed without further changes."
+                            if role.output_type is dt.BuildOutput
+                            else self.prompt
+                        ),
                         previous=previous,
                         gates=list(role.gates),
                         variables=self.variables(step),
                     )
                 )
+                if keep and isinstance(envelope, dt.BuildOutput):
+                    self.check_empty_first_build(envelope, step)
         self.journal_done(
             JournalEntry(
                 phase=name,
