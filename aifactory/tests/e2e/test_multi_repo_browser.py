@@ -130,10 +130,12 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     )
                     page.locator("a.brand").click()
                     expect(page).to_have_url(f"{obs.url}/#/overview")
+                    expect(page.locator('[data-test="system-problems"]')).to_have_count(0)
                     assert page.evaluate("window.homeNavigationMarker") is True
-                    expect(page.locator('[data-test="readiness-warning"]')).to_be_visible()
+                    chip = page.locator('.topbar [data-test="readiness-warning"]')
+                    expect(chip).to_be_visible()
                     assert checks == []
-                    page.locator('[data-test="readiness-warning"]').click()
+                    chip.click()
                     expect(page).to_have_url(f"{obs.url}/#/problems")
                     warning.locator('a[href="#/repos/add"]').first.click()
                     _inspect(page, repo_a)
