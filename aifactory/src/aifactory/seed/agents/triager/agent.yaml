@@ -1,0 +1,6 @@
+purpose: Compare reported follow-ups with todo backlog tasks and recommend handling; read-only.
+defaults:
+  harness: claude
+  model: claude-opus-5-5
+  thinking: medium
+  writes: []
