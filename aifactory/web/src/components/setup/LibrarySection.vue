@@ -27,6 +27,7 @@ import PlanView from '@/components/factory/PlanView.vue'
 import FolderBrowser from '@/components/repos/FolderBrowser.vue'
 import PathField from '@/components/repos/PathField.vue'
 import MachineFinding from './MachineFinding.vue'
+import RepoLibraryItems from './RepoLibraryItems.vue'
 
 defineProps<{ findings: CheckFinding[] }>()
 const emit = defineEmits<{ changed: [] }>()
@@ -312,10 +313,17 @@ onBeforeUnmount(() => { generation++ })
         <button type="submit" :disabled="busy || !remoteUrl.trim()" data-test="library-connect">Propojit a odeslat</button>
       </form>
     </section>
-    <template v-if="library?.exists">
     <div role="tablist" aria-label="Typ položek" class="item-tabs">
       <button v-for="t in ITEM_TABS" :key="t.type" role="tab" :aria-selected="tab === t.type" :disabled="busy" :data-test="'tab-' + t.type" @click="changeTab(t.type)">{{ t.label }}</button>
     </div>
+    <RepoLibraryItems @changed="loadOverrides" :type="tab" :shared="library?.items ?? []" @move="o => { close(); showDiff({ ...o, same: null }, true) }" @import="(p, t) => { path = p; importType = t; planImport() }" />
+    <section v-if="diffFor && movePlan && !currentItem" data-test="repo-move-plan">
+      <PlanView :plan="movePlan.library_plan" collapsed />
+      <PlanView :plan="movePlan" collapsed />
+      <button :disabled="busy || !!movePlan.blockers.length" @click="moveConfirm = true">Přesunout do knihovny</button>
+    </section>
+    <template v-if="library?.exists">
+    <h3>Sdílená knihovna</h3>
     <div class="split">
       <div class="list">
         <ul data-test="library-items" class="item-list">

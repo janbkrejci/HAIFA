@@ -264,7 +264,7 @@ def test_seed_and_local_blockers(client: TestClient, monkeypatch: pytest.MonkeyP
     response(client.post("/api/library/push"), 409, "no_remote")
 
 
-@pytest.mark.parametrize("route", ["plan", "apply", "pull", "push"])
+@pytest.mark.parametrize("route", ["plan", "apply", "pull", "push", "ignore", "repo-item"])
 def test_write_guard(client: TestClient, route: str) -> None:
     url = f"/api/library/{route}"
     response(
@@ -500,3 +500,118 @@ def test_connect_remote_and_fetch_status(client: TestClient, tmp_path: Path) -> 
 def test_overrides_without_repos(client: TestClient) -> None:
     data = response(client.get("/api/library/overrides"))
     assert data == {"library": None, "overrides": [], "errors": []}
+
+
+def test_repo_inventory_and_ignore_persistence(client: TestClient) -> None:
+    from aifactory.library.load import load_repo_item
+    from aifactory.web.library_inventory import inventory
+    from aifactory.web.registry import Registry
+
+    registry = state(client).registry
+    roots = [state(client).user_home / name for name in ("one", "two")]
+    workflow = ".factory/workflows/haifa-implement-task.yaml"
+    skill = "---\nname: bmad-builder\ndescription: Build with BMAD\n---\nInstructions\n"
+    for root in roots:
+        write(root, workflow, "name: haifa-implement-task\nsteps: []\n")
+        write(root, ".claude/skills/bmad-builder/SKILL.md", skill)
+        write(root, ".agents/skills/bmad-builder/SKILL.md", "mirror must not duplicate")
+        write(root, ".agents/skills/codex-only/SKILL.md", skill)
+        write(root, ".claude/agents/bmad-builder.md", "Native Claude agent")
+        write(root, ".codex/agents/bmad-builder.toml", 'name = "Codex agent"')
+        # Projects do not participate in this inventory.
+        write(root, "factory/backlog/P1/index.md", "# P1")
+        write(root, "factory/backlog/P2/index.md", "# P2")
+        registry.add(root)
+    first, second = registry.snapshot()[0].repos
+    assert not registry.add(roots[0])[1]
+    data = response(client.get("/api/library/inventory"))
+    assert len(data["items"]) == 10
+    assert len([r for r in data["items"] if r["name"] == "haifa-implement-task"]) == 2
+    assert not any(r["path"] == ".agents/skills/bmad-builder" for r in data["items"])
+    detail = response(
+        client.post(
+            "/api/library/repo-item",
+            json={"repo": second.id, "type": "agent", "path": ".codex/agents/bmad-builder.toml"},
+        )
+    )
+    assert detail["files"][0]["content"] == 'name = "Codex agent"'
+    assert not detail["movable"]
+    before = load_repo_item(roots[0], "skill", "bmad-builder").version
+    rule = {"type": "*", "mode": "prefix", "value": "bmad-"}
+    data = response(client.post("/api/library/ignore", json={"repo": first.id, "rules": [rule]}))
+    assert len([r for r in data["items"] if r["ignored"]]) == 3
+    assert not any(r["ignored"] for r in data["items"] if r["repo"] == second.id)
+    assert load_repo_item(roots[0], "skill", "bmad-builder").version == before
+    write(roots[0], ".claude/skills/bmad-new/SKILL.md", skill)
+    restarted = Registry(state(client).home)
+    assert restarted.library_rules(first.id) == [rule]
+    assert next(r for r in inventory(restarted)["items"] if r["name"] == "bmad-new")["ignored"]
+    # A broken repo is a partial error, not a failure of the whole response.
+    missing = state(client).user_home / "missing"
+    missing.mkdir()
+    broken, _ = registry.add(missing)
+    missing.rmdir()
+    data = response(client.get("/api/library/inventory"))
+    assert data["errors"][0]["repo"] == broken.id
+    assert len(data["items"]) == 11
+    data = response(client.post("/api/library/ignore", json={"repo": first.id, "rules": []}))
+    assert not any(r["ignored"] for r in data["items"])
+    assert not (state(client).home / "library").exists()
+
+
+def test_inventory_directory_exact_rules_and_validation(client: TestClient) -> None:
+    registry = state(client).registry
+    root = state(client).user_home / "repo"
+    for name in ("bmad/a", "bmad/b", "bmad-other"):
+        write(root, f".claude/skills/{name}/SKILL.md", f"# {name}")
+    entry, _ = registry.add(root)
+    directory = {"type": "skill", "mode": "directory", "value": ".claude/skills/bmad"}
+    exact = {"type": "skill", "mode": "item", "value": ".claude/skills/bmad-other"}
+    data = response(
+        client.post("/api/library/ignore", json={"repo": entry.id, "rules": [directory]})
+    )
+    assert {r["name"] for r in data["items"] if r["ignored"]} == {"bmad/a", "bmad/b"}
+    data = response(client.post("/api/library/ignore", json={"repo": entry.id, "rules": [exact]}))
+    assert {r["name"] for r in data["items"] if r["ignored"]} == {"bmad-other"}
+    for value in ("../secret", "/absolute", "a//b", "a/./b"):
+        response(
+            client.post(
+                "/api/library/ignore", json={"repo": entry.id, "rules": [{**exact, "value": value}]}
+            ),
+            400,
+            "usage_error",
+        )
+    response(
+        client.post(
+            "/api/library/repo-item", json={"repo": entry.id, "type": "skill", "path": "../secret"}
+        ),
+        404,
+        "unknown_item",
+    )
+    response(
+        client.post("/api/library/ignore", json={"repo": "absent", "rules": []}),
+        404,
+        "unknown_repo",
+    )
+
+
+def test_inventory_bulk_bmad_and_broken_config(client: TestClient) -> None:
+    registry = state(client).registry
+    root = state(client).user_home / "bmad"
+    for number in range(40):
+        write(root, f".claude/skills/bmad-{number}/SKILL.md", f"# Skill {number}")
+    write(root, ".factory/config.yaml", "invalid: [\n")
+    entry, _ = registry.add(root)
+    data = response(client.get("/api/library/inventory"))
+    assert len(data["items"]) == 40 and data["errors"][0]["repo"] == entry.id
+    data = response(
+        client.post(
+            "/api/library/ignore",
+            json={
+                "repo": entry.id,
+                "rules": [{"type": "skill", "mode": "prefix", "value": "bmad-"}],
+            },
+        )
+    )
+    assert all(row["ignored"] for row in data["items"])
+    assert len(data["items"]) == 40
