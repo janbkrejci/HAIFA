@@ -1,6 +1,6 @@
 ---
 id: HAIFA-TODO-T23
-title: Opravit občasné HTTP 500 při retry z dashboardu
+title: Zpřesnit diagnostiku retry a pokrýt jeho souběžný životní cyklus
 status: todo
 depends_on: []
 follows: HAIFA-TODO-T21
@@ -8,13 +8,16 @@ writes: [aifactory/src/aifactory/run/store.py, aifactory/src/aifactory/run/membe
 ---
 
 ## Zadání
-Finální CI main 421d714dc7ef5e2822ab7d8c99c7ad3631460357 selhalo v https://github.com/janbkrejci/HAIFA/actions/runs/39521521254: tests/e2e/test_retry_browser.py::test_retry_from_run_and_task_detail[backlog] řádek 116 dostal HTTP 500 místo 202 při POST /api/repos/repo/runs/{run_id}/retry. Tatáž sada na PR #136 před mergem prošla a varianta runs v neúspěšném CI též prošla. Backend suite i Windows jsou zelené. Podrobný výstup je operátorovi v /tmp/haifa-main-final-failure.log. Místní reprodukce originálního browser testu běží s --basetemp=/tmp/haifa-retry-diagnosis, takže lze číst obs.log a logy subprocessů; první varianta runs uspěla.
 
-Vyšetři a oprav příčinu HTTP 500 při rychlém retry, zejména souběh RunLauncher._launch/_reap, register_operation/finish_operation a claim nového pokusu z T21. Zachovej zobrazení pending operací a odstranění operací po claimu/exitu. Zachovej odpověď 202 při úspěšném retry; chyby skutečně odmítnutého retry zůstávají odpovídající chyby, ne falešný úspěch. Nezakrývej selhání opakováním HTTP požadavku ani vyřazením testu.
+Finální CI main 421d714dc7ef5e2822ab7d8c99c7ad3631460357 jednou selhalo v https://github.com/janbkrejci/HAIFA/actions/runs/39521521254: `test_retry_from_run_and_task_detail[backlog]` dostal HTTP 500 místo 202. Tatáž sada před mergem prošla. CI log neobsahuje JSON odpovědi ani subprocess log. Kompletní lokální gate následně prošel (3145 backendových testů a 23 browser scénářů). Vyšetřovací běh T23 ověřil 94 cílených testů, 22 browser opakování a řízené překryvy; původní HTTP 500 nezachytil. Tato zjištění nedokládají konkrétní produkční opravu.
 
-Získej konkrétní důvod 500 (JSON odpověď i log procesu) a doplň deterministickou regresi, pokud jde o souběh. Zlepši diagnostiku browser assertion, aby při chybě obsahovala odpověď a server.report, místo samotného statusu. Ověř obě varianty původního retry browser testu a nové unit/integration regrese. Povinné just lint, just typecheck a cílené pytest změněných balíčků/přímých volajících; žádná celá suite uvnitř tasku. Testy nezávislé na živých modelech/službách.
+Dodat konkrétní, již rozpracované zlepšení diagnostiky a regresního pokrytí do Linux CI:
+- Při neúspěšném retry vypíše původní browser assertion status, celé tělo odpovědi a server.report včetně dostupných subprocess logů. Očekávaná odpověď 202 a ostatní původní assertions zůstávají zachované.
+- Deterministické integrační testy ověří úspěšně claimnutý retry, jehož proces skončí před registrací operace; skutečně odmítnutý retry ve stejném pořadí vrátí původní chybu; úklid starého procesu po claimu nového pokusu nesmí změnit stav/pid/pokus nového běhu. Ověřit úklid task_operations.
+- Zachovat produkční ochrany a chybové odpovědi. Nedoplňovat spekulativní produkční změnu bez reprodukce, neopakovat HTTP požadavek kvůli maskování selhání a testy nepřeskakovat.
+- Popis PR přesně uvádí diagnostiku a pokrytí, nikoli neprokázanou opravu původní HTTP 500. Nevytvářet další blokující follow-up jen na publikaci či spuštění CI; to zajišťuje workflow a operátor.
 
-Hotovo znamená: příčina selhání vysvětlená důkazem a opravená; původní browser scénář retry ze seznamu běhů i Backlogu prochází, nové regrese pokrývají nalezený stav. Neoslabuj ochrany tasků ani registraci/úklid operací.
+Hotovo znamená: just lint, just typecheck, cílené testy přímých volajících a oba původní retry browser scénáře projdou. Nové regrese výše procházejí. Změny projdou Linux CI; případné další selhání poskytne konkrétní diagnostiku k opravě. Celou suite neprovádět uvnitř tasku.
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
