@@ -121,13 +121,15 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "run_not_retryable",
         "2",
-        "task retry: the run is not failed, stopped or aborted, or it is a resolve run",
+        "task retry: the run is not failed, stopped or aborted, or it is a resolve or "
+        "ci-fix run (after a ci-fix writes_needed: task approve --allow-writes)",
     ),
     ("task_done", "2", "task retry: the task's PR is merged or the task is done in base"),
     (
         "not_writes_violation",
         "2",
-        "task retry --allow-writes: the run did not fail with writes_violation",
+        "task retry/approve --allow-writes: the run did not fail with writes_violation or "
+        "writes_needed (approve: the newest run is not a ci-fix run)",
     ),
     (
         "nothing_to_allow",
@@ -149,6 +151,12 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "not_nothing_to_do",
         "2",
         "dashboard Hotovo of a run: the run did not fail with nothing_to_do",
+    ),
+    (
+        "writes_needed",
+        "2",
+        "task approve: a ci-fix run needs paths outside the task's writes (listed); the PR "
+        "stays open; task approve --allow-writes adds them and approves again",
     ),
     ("unknown_chain", "2", "no auto-continue chain with this id in the trace database"),
     ("chain_running", "2", "the chain is still running and cannot be dismissed"),

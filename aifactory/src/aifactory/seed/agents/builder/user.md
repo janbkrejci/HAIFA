@@ -45,7 +45,9 @@ Respond with ONLY valid JSON matching `BuildOutput` — no prose before or after
 
 When the work is already done (another task or commit made the change), change nothing and report `"status": "success"` with `"already_done": {"evidence": ["<commit sha or subject, or repo file where the change is>"], "reason": "<one sentence>"}`, `"changed_files": []` and the evidence in `summary`. The run then ends as done without changes. Name only evidence you checked in the repo.
 
-When the request asks only for a change of the backlog (a task's front matter, status or text), or for no change at all, report `"status": "fail"` with `"fail_kind": "nothing_to_do"` and say in `summary` what must change and where. The backlog is the factory's, never edit it. Leave `fail_kind` and `already_done` out in every other case.
+When the request asks only for a change of the backlog (a task's front matter, status or text), or for no change at all, report `"status": "fail"` with `"fail_kind": "nothing_to_do"` and say in `summary` what must change and where. The backlog is the factory's, never edit it. Leave `fail_kind` and `already_done` out in every other case, except `needs_writes` below.
+
+`needs_writes` lists the paths this task must change that its allowed paths do not cover, each `{"path": "...", "reason": "..."}` (see "Unfinished work"). When you cannot finish without them, report `"status": "fail"` with `"fail_kind": "needs_writes"` and the paths in `needs_writes`, and no follow-up for them. Otherwise leave `needs_writes` out.
 
 `follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false, "writes": null, "for_human": false, "workflow": null}`; `blocked_by` holds ids of existing backlog tasks.
 

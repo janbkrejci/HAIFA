@@ -353,8 +353,9 @@ def retry_run(
                 "or aborted run can be retried",
             )
         if row.workflow in INTERNAL_WORKFLOWS:
+            allow = " --allow-writes" if row.shown_failure_kind == failures.WRITES_NEEDED else ""
             again = (
-                f"approve the PR again (factory task approve {task_id})"
+                f"approve the PR again (factory task approve {task_id}{allow})"
                 if row.workflow == CI_FIX_WORKFLOW
                 else "run factory task resolve again"
             )

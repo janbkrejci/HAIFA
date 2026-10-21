@@ -1,8 +1,9 @@
 <script setup lang="ts">
 // The failure card at the top of a run detail: the kind of the failure in Czech, one
 // sentence and the facts from the run's `failure_detail`, the whole error text, and the
-// actions that exist for the kind (lib/failure.ts). A writes_violation offers „Povolit tyto
-// cesty a pokračovat“ (`factory task retry --allow-writes`) for the paths writes can allow
+// actions that exist for the kind (lib/failure.ts). A writes_violation or writes_needed offers
+// „Povolit tyto cesty a pokračovat“ (`factory task retry --allow-writes`; for a ci-fix run
+// „Povolit tyto cesty a schválit znovu“, `factory task approve --allow-writes`) for the paths writes can allow
 // and says why the others stay forbidden (GET /api/runs/{id}/allow-writes). A nothing_to_do
 // run offers „Hotovo“: the task is done in base without changes (POST /api/runs/{id}/done). A
 // quota run offers „Pokračovat s jiným harnessem“ (SwitchHarnessButton, `task retry --harness`).
@@ -31,7 +32,11 @@ const props = defineProps<{ run: RunSummary; phases?: readonly FailurePhase[] }>
 const emit = defineEmits<{ retried: []; cancelled: []; done: [] }>()
 
 const card = computed(() => failureCard(props.run, props.phases ?? []))
-const canContinue = computed(() => !!card.value?.actions.includes('continue') && canRetry(props.run))
+// a ci-fix run is never retried: its PR is approved again (factory task approve)
+const isCiFix = computed(() => props.run.workflow === 'ci-fix')
+const canContinue = computed(
+  () => !!card.value?.actions.includes('continue') && canRetry(props.run) && !isCiFix.value,
+)
 const canCancel = computed(() => !!card.value?.actions.includes('cancel_task'))
 const canMarkDone = computed(() => !!card.value?.actions.includes('mark_done'))
 const canSwitch = computed(() => !!card.value?.actions.includes('switch_harness') && canRetry(props.run))
@@ -78,8 +83,10 @@ async function onAllowWrites() {
   if (!paths.length) return
   const ok = await ask({
     title: `Povolit cesty tasku ${props.run.task_id}?`,
-    message: `Do writes tasku přibude ${paths.join(', ')}. Změna backlogu se commitne do base a běh pokračuje.`,
-    confirmLabel: 'Povolit a pokračovat',
+    message: isCiFix.value
+      ? `Do writes tasku přibude ${paths.join(', ')}. Změna backlogu se commitne do base a schválení PR se spustí znovu.`
+      : `Do writes tasku přibude ${paths.join(', ')}. Změna backlogu se commitne do base a běh pokračuje.`,
+    confirmLabel: isCiFix.value ? 'Povolit a schválit' : 'Povolit a pokračovat',
     cancelLabel: 'Ponechat',
   })
   if (!ok) return
@@ -159,7 +166,7 @@ async function onCancelTask() {
           @click="onAllowWrites"
         >
           <Spinner v-if="allowing" />
-          <ShieldCheck v-else :size="14" /> Povolit tyto cesty a pokračovat
+          <ShieldCheck v-else :size="14" /> {{ isCiFix ? 'Povolit tyto cesty a schválit znovu' : 'Povolit tyto cesty a pokračovat' }}
         </button>
         <button
           v-if="canMarkDone"
@@ -215,7 +222,9 @@ async function onCancelTask() {
       <summary>Celá chybová zpráva</summary>
       <pre data-test="run-error">{{ fullError }}</pre>
     </details>
-    <p v-if="allowed" class="done" data-test="allow-done">Writes tasku {{ run.task_id }} rozšířené, běh pokračuje.</p>
+    <p v-if="allowed" class="done" data-test="allow-done">
+      Writes tasku {{ run.task_id }} rozšířené, {{ isCiFix ? 'schválení PR běží znovu' : 'běh pokračuje' }}.
+    </p>
     <p v-if="allowError" class="error" data-test="allow-error">{{ allowError }}</p>
     <p v-if="marked" class="done" data-test="mark-done-done">Task {{ run.task_id }} je hotový bez změn.</p>
     <p v-if="markError" class="error" data-test="mark-done-error">{{ markError }}</p>

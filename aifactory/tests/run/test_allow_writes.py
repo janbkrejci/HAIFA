@@ -175,7 +175,9 @@ def test_dashboard_plan_and_action(repo: Path, script: Script, tmp_path: Path) -
     body = response.json()
     assert response.status_code == 202, body
     assert body["data"]["allow_writes"]["new_writes"] == ["src/app/", "README.md"]
-    assert launcher.calls == [(T01, run_id, "go")]
+    assert [(t, r) for t, r, _ in launcher.calls] == [(T01, run_id)]
+    note = launcher.calls[0][2] or ""
+    assert "README.md" in note and ".factory/x.md" in note and note.endswith("go")
     assert "README.md" in _writes_in_base(repo)
 
     # the paths are allowed now: nothing left to add

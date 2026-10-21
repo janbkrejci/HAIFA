@@ -516,10 +516,12 @@ def start_retry(
 def allow_writes_plan(repo: Path, run_id: str) -> JsonDict:
     """What „Povolit tyto cesty a pokračovat“ adds to the task's writes and what it refuses."""
     from aifactory.run.allow_writes import plan_allow_writes
+    from aifactory.run.resolve import CI_FIX_WORKFLOW
 
     store, row = _open_run(repo, run_id)
     store.close()
-    return plan_allow_writes(repo, row.task_id, run_id).to_json()
+    ci_fix = row.workflow == CI_FIX_WORKFLOW
+    return plan_allow_writes(repo, row.task_id, run_id, ci_fix=ci_fix).to_json()
 
 
 ALLOW_WRITES_KEYS = ("note",)
@@ -529,8 +531,14 @@ def start_allow_writes(
     repo: Path, run_id: str, body: JsonDict, launcher: Any
 ) -> tuple[JsonDict, list[str]]:
     """``factory task retry --allow-writes``: extend the task's writes in base, then start
-    the retry as a separate process; ``{allow_writes, task_id, action, run, pending}``."""
-    from aifactory.run.allow_writes import allow_writes
+    the retry as a separate process; ``{allow_writes, task_id, action, run, pending}``.
+
+    For a ``ci-fix`` run (``writes_needed``) it is ``factory task approve --allow-writes``:
+    the approve starts again as a separate process (``action: approve``, ``started``), so
+    its new ``ci-fix`` runs read the extended writes from base.
+    """
+    from aifactory.run.allow_writes import allow_writes, retry_note
+    from aifactory.run.resolve import CI_FIX_WORKFLOW
 
     for key in body:
         if key not in ALLOW_WRITES_KEYS:
@@ -542,10 +550,18 @@ def start_allow_writes(
         raise TaskRunError("invalid_value", "'note' must be a string")
     store, row = _open_run(repo, run_id)
     store.close()
+    if row.workflow == CI_FIX_WORKFLOW:
+        result = allow_writes(repo, row.task_id, run_id, ci_fix=True)
+        launcher.start_approve(repo, row.task_id)
+        approved: JsonDict = {
+            "allow_writes": result.to_json(),
+            "task_id": row.task_id,
+            "action": "approve",
+            "started": True,
+        }
+        return approved, list(result.commit.warnings)
     result = allow_writes(repo, row.task_id, run_id)
-    started = launcher.start_retry(
-        repo, row.task_id, run_id, note=note.strip() if note and note.strip() else None
-    )
+    started = launcher.start_retry(repo, row.task_id, run_id, note=retry_note(result, note))
     data: JsonDict = {
         "allow_writes": result.to_json(),
         "task_id": row.task_id,

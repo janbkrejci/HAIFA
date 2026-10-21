@@ -10,6 +10,11 @@ and a JSON object with the facts in ``task_runs.failure_detail``:
   harness adapter, ``QuotaExhausted``).
 - ``writes_violation``: an agent wrote outside its worktree or its ``writes``
   (``engine.permissions.PermissionBreach``, raised by the write guard).
+- ``writes_needed``: an agent reported ``status: fail`` with ``fail_kind: needs_writes``:
+  the task needs paths its ``writes`` do not cover (the agent's ``needs_writes``).
+  ``failure_detail`` holds ``agent``, ``summary``, ``paths`` (the normalized paths) and
+  ``needs_writes`` (each path with the agent's reason). ``factory task retry
+  --allow-writes`` adds them to ``writes`` like those of a ``writes_violation``.
 - ``invalid_output``: an agent never returned a valid envelope (JSON that does not parse
   or validate, or claim gates still red after the corrections).
 - ``process_gone``: the run's process died (the run was reaped as ``aborted``).
@@ -32,6 +37,7 @@ ACCEPT_NOT_MET = "accept_not_met"
 NOTHING_TO_DO = "nothing_to_do"
 QUOTA = "quota"
 WRITES_VIOLATION = "writes_violation"
+WRITES_NEEDED = "writes_needed"
 INVALID_OUTPUT = "invalid_output"
 PROCESS_GONE = "process_gone"
 STOPPED = "stopped"
@@ -42,12 +48,16 @@ FAILURE_KINDS = (
     NOTHING_TO_DO,
     QUOTA,
     WRITES_VIOLATION,
+    WRITES_NEEDED,
     INVALID_OUTPUT,
     PROCESS_GONE,
     STOPPED,
     BLOCKED,
     OTHER,
 )
+
+# the envelope's ``fail_kind`` of an agent that needs paths outside the task's writes
+NEEDS_WRITES = "needs_writes"
 
 # the error of a run that ended blocked starts with it (``run.task.blocked_reason``)
 BLOCKED_PREFIX = "blocked: "
@@ -88,15 +98,56 @@ class InvalidOutput(RunFailure):
 
 
 class AgentReportedFail(RunFailure):
-    """An agent's envelope said ``status: fail``; ``fail_kind`` refines the kind."""
+    """An agent's envelope said ``status: fail``; ``fail_kind`` refines the kind.
 
-    def __init__(self, agent: str, summary: str, fail_kind: str | None) -> None:
-        kind = NOTHING_TO_DO if fail_kind == NOTHING_TO_DO else OTHER
-        super().__init__(
-            f"{agent} reported status='fail': {summary}",
-            kind=kind,
-            detail={"agent": agent, "summary": summary[:1000], "fail_kind": fail_kind},
-        )
+    ``fail_kind: nothing_to_do`` is ``nothing_to_do``; ``fail_kind: needs_writes`` with
+    paths in `needs_writes` (``[{path, reason}]``) is ``writes_needed``; else ``other``.
+    """
+
+    def __init__(
+        self,
+        agent: str,
+        summary: str,
+        fail_kind: str | None,
+        needs_writes: list[dict[str, str]] | None = None,
+    ) -> None:
+        needed = needed_paths(needs_writes or [])
+        detail: dict[str, Any] = {"agent": agent, "summary": summary[:1000], "fail_kind": fail_kind}
+        if fail_kind == NOTHING_TO_DO:
+            kind = NOTHING_TO_DO
+        elif fail_kind == NEEDS_WRITES and needed:
+            kind = WRITES_NEEDED
+            detail["paths"] = [item["path"] for item in needed]
+            detail["needs_writes"] = needed
+        else:
+            kind = OTHER
+        message = f"{agent} reported status='fail': {summary}"
+        if kind == WRITES_NEEDED:
+            message += f" (needs writes: {', '.join(detail['paths'])})"
+        super().__init__(message, kind=kind, detail=detail)
+
+
+def normalize_path(path: str) -> str:
+    """A repository path as ``writes`` holds it: forward slashes, no leading ``./``."""
+    value = path.strip().replace("\\", "/")
+    while value.startswith("./"):
+        value = value[2:]
+    return value
+
+
+def needed_paths(items: list[Any]) -> list[dict[str, str]]:
+    """The ``needs_writes`` items with a path: ``[{path, reason}]``, normalized, unique."""
+    out: dict[str, str] = {}
+    for item in items:
+        path = item.get("path") if isinstance(item, dict) else getattr(item, "path", None)
+        reason = item.get("reason") if isinstance(item, dict) else getattr(item, "reason", "")
+        if not isinstance(path, str) or not normalize_path(path):
+            continue
+        key = normalize_path(path)
+        text = reason.strip() if isinstance(reason, str) else ""
+        if key not in out or (text and not out[key]):
+            out[key] = text
+    return [{"path": p, "reason": r} for p, r in out.items()]
 
 
 def shown_kind(kind: str | None, error: str | None) -> str:

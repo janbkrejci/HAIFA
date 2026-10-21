@@ -8,7 +8,10 @@ names and logs of the red checks (``check_logs``) go as the note into a ``ci-fix
 on the PR's own branch (``run_ci_fix``, ``started_by`` ``auto-ci-fix``), which pushes
 its repair to the same PR; then the checks are waited for again. At most
 ``CI_FIX_ROUNDS`` repair runs per approve; checks still red after them, or still
-running after ``AUTO_MERGE_CHECKS_TIMEOUT``, leave the PR open.
+running after ``AUTO_MERGE_CHECKS_TIMEOUT``, leave the PR open. A repair run whose agent
+needs paths outside the task's ``writes`` (``writes_needed``) leaves it open with the
+code ``writes_needed`` and the paths in ``auto_merge_error``; ``factory task approve
+--allow-writes`` adds them to the task's writes in base and approves again.
 """
 
 from __future__ import annotations
@@ -48,7 +51,8 @@ _clock = monotonic
 _INSTRUCTION = (
     "Fix the cause in the code this task owns so these checks pass; do not disable or "
     "skip checks; do not edit CI configuration unless the failure is in it and it is in "
-    "your allowed paths."
+    "your allowed paths. When the fix needs a path outside your allowed paths, report "
+    "status fail with fail_kind needs_writes and the paths in needs_writes."
 )
 
 
