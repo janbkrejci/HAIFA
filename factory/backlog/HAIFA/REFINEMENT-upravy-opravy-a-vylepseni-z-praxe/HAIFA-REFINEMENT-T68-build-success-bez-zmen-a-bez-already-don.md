@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T68
 title: "Build success bez změn a bez already_done: běh nesmí tiše otevřít PR jen se specem"
 status: todo
+test_timeout: 1800
 depends_on: []
 writes: [aifactory/src/aifactory/workflow/interpreter.py, aifactory/src/aifactory/engine/data_types.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/run/unchanged.py, aifactory/src/aifactory/review/automerge.py, aifactory/tests/, docs/decisions.md]
 ---
