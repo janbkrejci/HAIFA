@@ -21,6 +21,16 @@ from aifactory.run.retry import retry_run
 from aifactory.run.task import _record_follow_ups
 
 
+@pytest.fixture(autouse=True)
+def offline_triage(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aifactory.run import triage
+
+    def unavailable(*args: object) -> None:
+        raise triage.TriageUnavailable("Offline legacy follow-up scenario")
+
+    monkeypatch.setattr(triage, "ask_triager", unavailable)
+
+
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path: Path) -> Path:
     return make_run_repo(tmp_path / "repo")
@@ -197,5 +207,66 @@ def test_unpublished_followups_are_not_queued(
         assert follow is not None and not follow.committed
         assert warnings and blockers == []
         assert store.queue_prefs().order == (T01,)
+    finally:
+        store.close()
+
+
+def test_mixed_triage_only_queues_new_agent_tasks(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from run_repo import T02
+
+    from aifactory.run import triage
+    from aifactory.run.triage import Decision
+
+    planner_reports(script)
+    result = run_task(repo, T01)
+    assert result.ok
+    items = [
+        follow_up("New agent"),
+        follow_up("Already covered"),
+        follow_up("Addition"),
+        follow_up("Change assignment"),
+        follow_up("Human work").model_copy(update={"for_human": True}),
+    ]
+    choices = [
+        Decision(follow_up_id="f1", action="new", reason="Separate work"),
+        Decision(follow_up_id="f2", action="covered", reason="Covered", task_id=T02),
+        Decision(
+            follow_up_id="f3",
+            action="extend",
+            reason="Additive",
+            task_id=T02,
+            addition="Also document `src/app/model.py`.",
+            addition_writes=["src/app/model.py"],
+        ),
+        Decision(
+            follow_up_id="f4",
+            action="decide",
+            reason="Needs a person",
+            task_id=T02,
+            proposal="Reduce the original assignment",
+        ),
+        Decision(follow_up_id="f5", action="new", reason="Human work"),
+    ]
+    # Recommendations are keyed by fN, independently of their return order.
+    monkeypatch.setattr(triage, "ask_triager", lambda *args: list(reversed(choices)))
+    store = queue_store(repo)
+    try:
+        store.set_queue_order([T01, T02])
+        outcome, warnings, blockers = _record_follow_ups(
+            repo, store, result.run, workflow_run(follow_ups=items)
+        )
+        assert outcome is not None and outcome.committed, warnings
+        assert not warnings and not blockers
+        assert sorted(c.decision for c in outcome.created) == [
+            "covered",
+            "decide",
+            "extend",
+            "new",
+            "new",
+        ]
+        [new_agent] = [c for c in outcome.created if c.decision == "new" and c.assignee == "agent"]
+        assert store.queue_prefs().order == (new_agent.id, T01, T02)
     finally:
         store.close()
