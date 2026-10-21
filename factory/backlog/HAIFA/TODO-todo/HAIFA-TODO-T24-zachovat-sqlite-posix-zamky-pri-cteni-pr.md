@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T24
 title: Zachovat SQLite POSIX zámky při čtení Přehledu
-status: todo
+status: done
 depends_on: []
 follows: HAIFA-TODO-T23
 writes: [aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/web/test_web_db_busy.py, aifactory/tests/e2e/test_retry_browser.py, aifactory/tests/e2e/test_multi_repo_browser.py]
@@ -20,3 +20,4 @@ Hotovo: prokázaná regrese a oprava zámků, původní testy Přehledu a oba re
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-21 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/138 · náklady $0.00
