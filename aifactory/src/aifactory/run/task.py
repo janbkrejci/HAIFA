@@ -96,7 +96,7 @@ from aifactory.run.store import (
     _now,
     already_running,
 )
-from aifactory.run.unchanged import finish_unchanged, unchanged
+from aifactory.run.unchanged import finish_unchanged, only_spec_changes, unchanged
 from aifactory.run.workdir import agent_workdir, project_workdir, validate_base_dirs
 from aifactory.workflow import (
     DEFAULT_WORKFLOWS_DIR,
@@ -1009,7 +1009,14 @@ def _execute(
         state == SUCCEEDED
         and resolve is None
         and store.pr_for_branch(final.branch) is None
-        and unchanged(final)
+        and (
+            unchanged(final)
+            or (
+                wf is not None
+                and wf.already_done is not None
+                and only_spec_changes(final, outputs.spec)
+            )
+        )
     ):
         evidence = wf.already_done.evidence if wf is not None and wf.already_done else ()
         failure, notes = finish_unchanged(main, store, final, evidence)

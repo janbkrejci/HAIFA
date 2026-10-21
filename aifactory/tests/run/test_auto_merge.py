@@ -48,6 +48,7 @@ from aifactory.run import (
     run_chain,
     run_task,
 )
+from aifactory.run.scope import output_paths
 from aifactory.run.store import MERGED_BY_AUTO, MERGED_BY_OPERATOR
 from aifactory.workflow import EngineCodeRunner
 from cli_json import read_envelope
@@ -228,6 +229,27 @@ def test_merges_a_reviewed_run(repo: Path, script: Script) -> None:
     assert merged["merged_by"] == "auto-merge"
     # the local provider sends no host vote
     assert merged["reviewed"] is False
+
+
+@pytest.mark.parametrize("spec_only", [False, True])
+def test_missing_review_explains_a_spec_only_pr(
+    repo: Path, script: Script, spec_only: bool
+) -> None:
+    setup(repo)
+    write(
+        repo,
+        f".factory/workflows/{REVIEWED}.yaml",
+        f"name: {REVIEWED}\ndescription: Legacy spec-only run\n"
+        "steps: [plan, {review: {when: 'false'}}, commit]\n",
+    )
+    commit_all(repo, "Simulate legacy workflow skipping review")
+    spec = output_paths(base_task(repo, T01), load_run_config(repo).config.settings).spec
+    build(script, "one", path=spec if spec_only else None)
+    result = run_chain(repo, T01).runs[0]
+    assert result.auto_merge is not None and result.auto_merge.code == "no_review"
+    reason = result.auto_merge.reason or ""
+    assert ("already_done evidence is missing" in reason) == spec_only
+    assert ("Retry the build" in reason) == spec_only
 
 
 def test_merge_passes_the_host_vote_on(

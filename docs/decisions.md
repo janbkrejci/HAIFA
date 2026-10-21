@@ -24,6 +24,27 @@ Platná rozhodnutí, jejichž důvod z kódu nevyčteš. Historie (product brief
 - **Samooprava řetězu (`auto_heal`):** řetěz, který by po tasku pokračoval, jedná po selhání podle druhu: `quota` jednou pokračuje na záložním harnessu, `process_gone` jednou zopakuje a `nothing_to_do` s důvodem od agenta uzavře task jako hotový bez změn a pokračuje. Ostatní druhy (i `nothing_to_do` bez důvodu) nechá na člověku a zastaví se. Každý běh se opravuje nejvýš jednou. Provedené akce se zapisují do `task_chains.events` a ukazují na Přehledu. `auto_heal` se dědí stejně jako `auto_continue`, výchozí hodnota je true. `false` vypne samoopravu i automatické přepnutí na záložní harness u jednotlivého běhu.
 - **Navazující task (`follows`):** hotový task se nemění ani znovu neotevírá. Rozvíjí ho nový task s klíčem `follows: <id tasku>`. Klíč se nedědí, `backlog check` ho kontroluje jako odkaz na existující task (`unknown_ref`, `self_ref`). `factory task follow-up ID --body TEXT [--title TEXT] [--run]` (a `POST /api/backlog/tasks/{id}/follow-up`) založí navazující task jen na task ve stavu `done`, jinak odmítne s `not_done`. Nový task je ve stejném stepu, převezme vlastní `writes` a `workflow` původního (zděděné hodnoty zůstanou zděděné) a výchozí titulek je „Navazuje na <ID>: <titulek původního>“. S `--run` se backlog commitne do base a task se hned spustí. Prompt agentů navazujícího tasku jmenuje původní task a cesty k jeho souboru, specu a dokumentaci. Detail tasku vrací `follows` a tasky, které na něj navazují (`followed_by`).
 
+## Prázdný první build (HAIFA-REFINEMENT-T68)
+
+Volíme variantu a): první build tasku, který vrátí `success`, prázdné
+`changed_files` a nemá skutečný diff mimo konkrétní spec plánovače, bez
+`already_done` selže jako `invalid_output`. Kontrolují se i necommitnuté a nové
+soubory proti začátku běhu. Selhání nastane ve fázi buildu před jejím uzavřením
+v journalu, takže retry znovu zavolá buildera. Testy, review ani publikace PR
+se po tomto selhání nespustí a task zůstane k opravě operátorem.
+
+Text `summary` se neinterpretuje jako důkaz: automatický převod by mohl označit
+nedokončenou práci za hotovou. Instrukce přidaná továrnou do promptu buildera
+vyžaduje `already_done` s ověřenou evidencí v commitech nebo souborech repozitáře
+a důvodem. Pozdější fix či revise může legitimně nechat dřívější změny beze změn;
+kontrola se netýká ani resolve běhů, které ověřují existující implementaci.
+
+Explicitní `already_done` ukončí běh bez PR i po commitu samotného specu;
+spec se v takovém případě nepublikuje. Žádná další změna se tímto pravidlem
+nepovažuje za spec. U starších PR bez review auto-merge doplní důvod o chybějící
+`already_done` a návod k retry jen tehdy, když skutečný PR diff neobsahuje nic
+mimo spec daného tasku. Ostatním PR zůstává původní důvod odmítnutí.
+
 ## Konfigurace a knihovna
 
 - **Dědičnost z knihovny:** agenti, workflow, skilly a rozšíření se hledají nejdřív v `.factory/` repa, potom v knihovně (`$HAIFA_HOME/library`, bez ní seed). Kopie v repu má přednost. Nic se mezi knihovnou a repem nesynchronizuje, „Přesunout do knihovny“ přesune kopii z repa do knihovny. Běh zapíše do trace commit knihovny, ze kterého četl, a skilly z knihovny jen nakopíruje do worktree.

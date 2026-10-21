@@ -11,13 +11,14 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from run_repo import T01, Script, commit_all, fake_env, git, make_run_repo, ok, write
+from run_repo import SPEC, T01, Script, commit_all, fake_env, git, make_run_repo, ok, write
 from starlette.testclient import TestClient
 
 from aifactory import failure
 from aifactory.backlog import Task, load_backlog
 from aifactory.engine.data_types import BuildOutput
 from aifactory.run import TaskRunError, TaskRunStore, run_task
+from aifactory.run.retry import retry_run
 from aifactory.run.store import FAILED, SUCCEEDED
 from aifactory.run.unchanged import finish_nothing_to_do
 from aifactory.web import create_app
@@ -102,6 +103,94 @@ def test_builder_already_done_ends_the_run_done_without_changes(repo: Path, scri
     assert "už hotovo: abc1234 Add schema, src/app/schema.py" in task.body
     subject = git(repo, "log", "-1", "--format=%s")
     assert subject == f"{T01}: hotovo bez změn (běh {result.run.run_id})"
+
+
+@pytest.mark.parametrize("with_spec", [False, True])
+@pytest.mark.parametrize("already_done", [False, True])
+def test_empty_first_build_requires_evidence(
+    repo: Path, script: Script, with_spec: bool, already_done: bool
+) -> None:
+    steps = "[plan, commit, build, test_plan, test, commit]" if with_spec else "[build, commit]"
+    _use_workflow(repo, "empty-build", f"name: empty-build\ndescription: Build\nsteps: {steps}\n")
+    if with_spec:
+        script.on("planner", lambda wt: write(wt, SPEC, "Already implemented\n"))
+        script.add("planner", ok(commit_message="Document plan"))
+    script.add("builder", ok(**({"already_done": ALREADY_DONE} if already_done else {})))
+
+    result = run_task(repo, T01)
+
+    assert result.pr is None and result.pr_error is None
+    assert [c.agent for c in script.calls] == (["planner", "builder"] if with_spec else ["builder"])
+    assert "already_done containing evidence" in script.calls[-1].prompt
+    if already_done:
+        assert result.ok and result.done_without_pr
+        assert _task(repo).status == "done"
+        assert "už hotovo: abc1234 Add schema" in _task(repo).body
+    else:
+        assert result.run.state == FAILED
+        assert result.run.failure_kind == failure.INVALID_OUTPUT
+        assert "without already_done" in (result.run.error or "")
+        assert not result.done_without_pr and _task(repo).status == "todo"
+        if with_spec:
+            script.add("builder", ok(already_done=ALREADY_DONE))
+            retried = retry_run(repo, T01)
+            assert retried.ok and retried.done_without_pr and retried.pr is None
+            assert [c.agent for c in script.calls] == ["planner", "builder", "builder"]
+
+
+@pytest.mark.parametrize("committed", [False, True])
+def test_empty_changed_files_with_actual_implementation_is_allowed(
+    repo: Path, script: Script, committed: bool
+) -> None:
+    steps = "[plan, commit, build, commit]" if committed else "[build, commit]"
+    _use_workflow(repo, "build-only", f"name: build-only\ndescription: Build\nsteps: {steps}\n")
+    script.on(
+        "planner" if committed else "builder",
+        lambda wt: write(wt, "src/app/schema.py", "SCHEMA = 1\n"),
+    )
+    if committed:
+        script.add("planner", ok(commit_message="Add schema"))
+    script.add("builder", ok())
+    result = run_task(repo, T01)
+    assert result.ok, result.run.error
+    assert result.pr is not None and not result.done_without_pr
+
+
+@pytest.mark.parametrize("change_state", ["committed", "tracked-uncommitted", "untracked"])
+def test_already_done_does_not_discard_non_spec_changes(
+    repo: Path, script: Script, change_state: str
+) -> None:
+    implementation = "src/app/schema.py"
+    if change_state == "tracked-uncommitted":
+        write(repo, implementation, "SCHEMA = 0\n")
+        commit_all(repo, "Add existing schema")
+    _use_workflow(
+        repo,
+        "already-done-with-changes",
+        "name: already-done-with-changes\ndescription: Plan then build\n"
+        "steps: [plan, commit, build, commit]\n",
+    )
+
+    def plan(wt: Path) -> None:
+        write(wt, SPEC, "Implementation is already present\n")
+        if change_state == "committed":
+            write(wt, implementation, "SCHEMA = 1\n")
+
+    script.on("planner", plan)
+    script.add("planner", ok(commit_message="Record plan and existing work"))
+    if change_state != "committed":
+        script.on("builder", lambda wt: write(wt, implementation, "SCHEMA = 1\n"))
+    script.add("builder", ok(already_done=ALREADY_DONE))
+
+    result = run_task(repo, T01)
+
+    assert result.ok, (result.run.error, result.pr_error)
+    assert result.workflow_run is not None and result.workflow_run.already_done is not None
+    assert not result.done_without_pr
+    assert _task(repo).status == "todo"
+    worktree = Path(result.run.worktree)
+    assert git(worktree, "show", f"HEAD:{SPEC}") == "Implementation is already present"
+    assert (worktree / implementation).read_text(encoding="utf-8") == "SCHEMA = 1\n"
 
 
 def test_already_done_of_a_later_build_does_not_end_the_run(repo: Path, script: Script) -> None:

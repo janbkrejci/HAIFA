@@ -38,6 +38,17 @@ def unchanged(row: TaskRunRow) -> bool:
     return count == "0"
 
 
+def only_spec_changes(row: TaskRunRow, spec: str) -> bool:
+    """No implementation diff, including uncommitted and untracked files."""
+    worktree = Path(row.worktree)
+    if not worktree.is_dir() or not row.base_sha:
+        return False
+    tracked = gitops.git(worktree, "diff", "--name-only", "-z", row.base_sha)
+    untracked = gitops.git(worktree, "ls-files", "--others", "--exclude-standard", "-z")
+    files = {name for name in (tracked + "\0" + untracked).split("\0") if name}
+    return not (files - {spec})
+
+
 def _one_line(text: str, limit: int = 300) -> str:
     line = " ".join(text.split())
     return line if len(line) <= limit else line[: limit - 1] + "…"
