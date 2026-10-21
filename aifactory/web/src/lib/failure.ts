@@ -8,6 +8,7 @@ export type FailureKind =
   | 'nothing_to_do'
   | 'quota'
   | 'writes_violation'
+  | 'writes_needed'
   | 'invalid_output'
   | 'process_gone'
   | 'stopped'
@@ -16,7 +17,8 @@ export type FailureKind =
 
 /**
  * An action of the card: `continue` is `factory task retry`, `cancel_task` cancels the task,
- * `allow_writes` is `factory task retry --allow-writes` (add the paths to writes, continue),
+ * `allow_writes` is `factory task retry --allow-writes` (add the paths to writes, continue;
+ * for a ci-fix run `factory task approve --allow-writes`), after `writes_violation` or `writes_needed`,
  * `mark_done` marks the task of a `nothing_to_do` run done without changes (`POST /api/runs/{id}/done`),
  * `switch_harness` is `factory task retry --harness` on an enabled and tested harness.
  */
@@ -27,6 +29,7 @@ const LABELS: Record<FailureKind, string> = {
   nothing_to_do: 'Agent neměl co dělat',
   quota: 'Vyčerpaná kvóta',
   writes_violation: 'Zápis mimo writes',
+  writes_needed: 'Chybí cesty ve writes',
   invalid_output: 'Neplatný výstup agenta',
   process_gone: 'Proces běhu skončil',
   stopped: 'Běh zastaven',
@@ -39,6 +42,7 @@ const ACTIONS: Record<FailureKind, readonly FailureAction[]> = {
   nothing_to_do: ['mark_done', 'cancel_task'],
   quota: ['switch_harness', 'continue', 'cancel_task'],
   writes_violation: ['allow_writes', 'continue', 'cancel_task'],
+  writes_needed: ['allow_writes', 'continue', 'cancel_task'],
   invalid_output: ['continue', 'cancel_task'],
   process_gone: ['continue', 'cancel_task'],
   stopped: ['continue', 'cancel_task'],
@@ -232,6 +236,36 @@ function writesCard(d: Detail): [string, FailureFact[]] {
   ]
 }
 
+/** The paths a `writes_needed` agent reported (`needs_writes`, else `paths`) with reasons. */
+export function neededPaths(d: Detail): string[] {
+  const items = Array.isArray(d.needs_writes) ? d.needs_writes.map(obj).filter((i): i is Detail => i !== null) : []
+  const listed = items
+    .map((i) => {
+      const path = str(i.path)
+      const reason = str(i.reason)
+      return path ? (reason ? `${path} — ${reason}` : path) : null
+    })
+    .filter((p): p is string => p !== null)
+  return listed.length ? listed : strings(d.paths)
+}
+
+function neededCard(d: Detail): [string, FailureFact[]] {
+  const agent = str(d.agent) ?? 'agent'
+  const paths = neededPaths(d)
+  const n = paths.length
+  const text = n
+    ? `Agent ${agent} potřebuje změnit cesty mimo writes tasku (${n} ${plural(n, 'cesta', 'cesty', 'cest')})`
+    : `Agent ${agent} potřebuje změnit cesty mimo writes tasku`
+  const summary = str(d.summary)
+  return [
+    text,
+    [
+      ...fact('paths', 'Potřebné cesty', paths, true),
+      ...fact('summary', 'Zdůvodnění agenta', summary ? [summary] : []),
+    ],
+  ]
+}
+
 function quotaCard(d: Detail, phases: readonly FailurePhase[]): [string, FailureFact[]] {
   const failed = [...phases].reverse().find((p) => p.status !== 'success' && (p.model || p.harness))
   const harness = str(d.harness) ?? str(failed?.harness) ?? 'harness'
@@ -297,6 +331,9 @@ export function failureCard(run: FailedRun, phases: readonly FailurePhase[] = []
       break
     case 'writes_violation':
       ;[text, facts] = writesCard(d)
+      break
+    case 'writes_needed':
+      ;[text, facts] = neededCard(d)
       break
     case 'invalid_output':
       ;[text, facts] = invalidCard(run, d)

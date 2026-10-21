@@ -20,7 +20,9 @@ worktrees removed), with ``merged_by == "auto-merge"``, but only when all holds:
    checks to show up before "no checks" counts. Red checks start up to
    ``ci.CI_FIX_ROUNDS`` ``ci-fix`` runs on the PR branch (``started_by`` ``auto-ci-fix``),
    each pushing its repair to the same PR; still red after them is ``checks_failing``, a
-   repair run that fails is ``ci_fix_failed``. A chain member's auto-merge holds the merge
+   repair run that fails is ``ci_fix_failed``, one that needs paths outside the task's
+   ``writes`` is ``writes_needed`` with the paths (``factory task approve --allow-writes``
+   allows them and approves again). A chain member's auto-merge holds the merge
    lock across this wait and the repair runs.
 
 An open PR whose mergeability is still unknown is polled again until the hosting

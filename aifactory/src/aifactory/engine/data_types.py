@@ -102,6 +102,15 @@ class PrSummary(BaseModel):
         return not (self.goal.strip() or any(d.strip() for d in self.done))
 
 
+# aifactory 3.6: a path this task must change that its `writes` do not cover (a test the
+# new behaviour breaks, a registry, a test the review asks for). Reported with
+# `status: fail` and `fail_kind: needs_writes`; the run fails as `writes_needed` and
+# `factory task retry --allow-writes` adds the paths to the task's writes.
+class NeedsWrite(BaseModel):
+    path: str = Field(min_length=1)
+    reason: str = ""                    # why this task must change it
+
+
 class EnvelopeBase(BaseModel):
     """Base of every agent's final JSON response. Output types extend this."""
 
@@ -116,7 +125,16 @@ class EnvelopeBase(BaseModel):
     pr_summary: Optional[PrSummary] = None
     # aifactory 3.4: why an agent reports status=fail; "nothing_to_do" (the work is done
     # already or the task asks for no change) becomes the run's failure_kind.
+    # aifactory 3.6: "needs_writes" with `needs_writes` becomes `writes_needed`.
     fail_kind: Optional[str] = None
+    needs_writes: list[NeedsWrite] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _needs_writes_has_paths(self) -> "EnvelopeBase":
+        # aifactory 3.6: fail_kind needs_writes without a path cannot be allowed
+        if self.fail_kind == "needs_writes" and not any(n.path.strip() for n in self.needs_writes):
+            raise ValueError("fail_kind 'needs_writes' needs the paths in needs_writes")
+        return self
 
 
 class GenericOutput(EnvelopeBase):

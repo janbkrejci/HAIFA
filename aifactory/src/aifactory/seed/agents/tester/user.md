@@ -85,6 +85,8 @@ Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or af
 }
 ```
 
+`needs_writes` lists the paths this task must change that its allowed paths do not cover, each `{"path": "...", "reason": "..."}` (see "Unfinished work"). A test the review requires, or a broken test, outside the allowed paths is such a path. When you cannot finish without them, report `"status": "fail"` with `"fail_kind": "needs_writes"` and the paths in `needs_writes`, and no follow-up for them. Otherwise leave `needs_writes` out.
+
 `follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false, "writes": null, "for_human": false, "workflow": null}`; `blocked_by` holds ids of existing backlog tasks.
 
 Order the checks from the fastest to the slowest. `stop_on_fail` (optional, default `false`) is only for a prerequisite such as a build or an install whose failure makes the remaining checks pointless: `{ "name": "build", "argv": ["npm", "run", "build"], "stop_on_fail": true }`.

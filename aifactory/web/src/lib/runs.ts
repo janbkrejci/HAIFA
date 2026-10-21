@@ -607,16 +607,24 @@ export interface AllowWritesPlan {
   refused: AllowWritesRefused[]
 }
 
-export interface AllowWritesResponse extends RetryResponse {
+export interface AllowWritesResponse extends Omit<RetryResponse, 'action' | 'run' | 'pending'> {
+  /** `approve` for a ci-fix run: the approve starts again (`factory task approve --allow-writes`). */
+  action: 'retry' | 'approve'
+  run?: RunSummary | null
+  pending?: boolean
+  started?: boolean
   allow_writes: AllowWritesPlan & { new_writes: string[] }
 }
 
-/** The plan of „Povolit tyto cesty a pokračovat“ for a run that wrote outside writes. */
+/** The plan of „Povolit tyto cesty a pokračovat“ for a `writes_violation` or `writes_needed` run. */
 export function allowWritesPlan(runId: string, signal?: AbortSignal): Promise<AllowWritesPlan> {
   return getApi<AllowWritesPlan>(runPath(runId, 'allow-writes'), signal)
 }
 
-/** `factory task retry --allow-writes`: add the paths to the task's writes in base, retry. */
+/**
+ * `factory task retry --allow-writes`: add the paths to the task's writes in base, retry; for a
+ * ci-fix run `factory task approve --allow-writes` (the approve and its ci-fix runs start again).
+ */
 export function allowWritesAndRetry(runId: string): Promise<AllowWritesResponse> {
   return postApi<AllowWritesResponse>(runPath(runId, 'allow-writes'), {})
 }

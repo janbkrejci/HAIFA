@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T63
 title: Agent ohlásí chybějící writes strukturovaně a retry --allow-writes je doplní
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/failure.py, aifactory/src/aifactory/engine/data_types.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/run/allow_writes.py, aifactory/src/aifactory/run/retry.py, aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/review/ci.py, aifactory/src/aifactory/review/automerge.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/web/runs.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/seed/agents/builder/, aifactory/src/aifactory/seed/agents/tester/, aifactory/src/aifactory/seed/agents/test-reviewer/, aifactory/src/aifactory/skill/skill.md, aifactory/src/aifactory/skill/codes.py, aifactory/src/aifactory/web/static/, aifactory/web/src/components/runs/, aifactory/web/src/lib/failure.ts, aifactory/web/src/lib/runs.ts, docs/decisions.md, aifactory/tests/run/test_allow_writes.py, aifactory/tests/run/test_writes_needed.py, aifactory/tests/review/test_ci_gate.py, aifactory/tests/web/test_web_runs.py, aifactory/tests/test_skill.py, aifactory/tests/engine/test_gate_correction.py, aifactory/tests/run/test_failure_kind.py, aifactory/tests/test_failure.py, aifactory/tests/e2e/test_failure_card_browser.py, aifactory/src/aifactory/engine/agents.py, aifactory/src/aifactory/engine/role_registry.py, aifactory/tests/engine/test_role_registry.py]
@@ -48,3 +48,4 @@ Princip: chybějící cesta ve `writes` tasku je problém rozsahu tohoto tasku, 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-21 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/136 · náklady $8.65

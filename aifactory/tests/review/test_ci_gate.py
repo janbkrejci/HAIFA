@@ -327,6 +327,98 @@ def test_failed_repair_run_keeps_the_pr_open(repo: Path, script: Script, auto: b
     assert len(provider.asked) == 1
 
 
+@MODES
+def test_ci_fix_that_needs_writes_keeps_the_pr_open_then_approve_allows_them(
+    repo: Path, script: Script, auto: bool
+) -> None:
+    first = first_run(repo, script)
+    provider = CiProvider(repo, [RED])
+    script.add(
+        "planner",
+        {
+            "status": "fail",
+            "summary": "the red check lives in README.md",
+            "fail_kind": "needs_writes",
+            "needs_writes": [{"path": "README.md", "reason": "the failing check reads it"}],
+        },
+    )
+
+    merged, code, _ = approve(repo, first, provider, auto)
+
+    assert (merged, code) == (False, "writes_needed")
+    fix_run = runs(repo)[0]
+    assert fix_run.workflow == "ci-fix" and fix_run.failure_kind == "writes_needed"
+    row = pr(repo)
+    assert row.state == "open" and row.approved_at is None
+    error = row.auto_merge_error or ""
+    assert error.startswith("writes_needed: ") and fix_run.run_id in error
+    assert "README.md (the failing check reads it)" in error and "--allow-writes" in error
+    assert len(provider.asked) == 1
+
+    # approve --allow-writes: README.md joins the task's writes in base; the new ci-fix
+    # run may write it and the PR merges
+    provider.script = [RED, GREEN]
+    script.on("planner", lambda wt: write(wt, "README.md", "FIXED\n"))
+    script.add("planner", ok(artifacts=[], changed_files=["README.md"], commit_message="Fix CI"))
+    approved = approve_task(repo, T01, provider=provider, allow_writes=True)
+
+    assert approved.allow_writes is not None and approved.allow_writes["allow"] == ["README.md"]
+    assert "README.md" in base_task(repo).writes
+    fix = runs(repo)[0]
+    assert approved.ci_fix_runs == [fix.run_id] and fix.state == "succeeded"
+    row = pr(repo)
+    assert row.state == "merged" and row.auto_merge_error is None and row.approved_at
+    assert git(repo, "show", "main:README.md") == "FIXED"
+
+
+def test_cli_approve_allow_writes_allows_the_paths_and_merges(
+    repo: Path, script: Script, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.review import flow
+    from cli_json import run_json
+
+    first = first_run(repo, script)
+    provider = CiProvider(repo, [RED])
+    script.add(
+        "planner",
+        {
+            "status": "fail",
+            "summary": "the red check lives in README.md",
+            "fail_kind": "needs_writes",
+            "needs_writes": [{"path": "README.md", "reason": "the failing check reads it"}],
+        },
+    )
+    assert approve(repo, first, provider, False)[:2] == (False, "writes_needed")
+
+    # the CLI reads the provider from the configuration: the same scripted checks
+    provider.script = [RED, GREEN]
+    monkeypatch.setattr(flow, "get_provider", lambda settings, main: provider)
+    script.on("planner", lambda wt: write(wt, "README.md", "FIXED\n"))
+    script.add("planner", ok(artifacts=[], changed_files=["README.md"], commit_message="Fix CI"))
+    capsys.readouterr()
+    code, data = run_json(
+        capsys, ["task", "approve", T01, "--allow-writes", "--json", "--repo", str(repo)]
+    )
+
+    assert code == 0, data
+    assert data["data"]["allow_writes"]["allow"] == ["README.md"]
+    assert len(data["data"]["ci_fix_runs"]) == 1
+    row = pr(repo)
+    assert row.state == "merged" and row.auto_merge_error is None
+    assert git(repo, "show", "main:README.md") == "FIXED"
+
+
+def test_approve_allow_writes_without_a_ci_fix_run_changes_nothing(
+    repo: Path, script: Script
+) -> None:
+    first_run(repo, script)
+    provider = CiProvider(repo, [GREEN])
+    with pytest.raises(ReviewError) as caught:
+        approve_task(repo, T01, provider=provider, allow_writes=True)
+    assert caught.value.code == "not_writes_violation"
+    assert pr(repo).state == "open"
+
+
 def test_approve_records_the_repairs(
     repo: Path, script: Script, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -399,7 +491,7 @@ def test_ci_report_keeps_the_end_of_long_logs() -> None:
     assert report.startswith("## CI checks failed on this PR\n\n- a\n- b\n")
     assert "the real error" in report and "start" not in report
     assert "short log" in report
-    assert report.rstrip().endswith("your allowed paths.")
+    assert report.rstrip().endswith("the paths in needs_writes.")
     assert "do not disable or skip checks" in report
 
 

@@ -393,6 +393,55 @@ describe('FailureCard', () => {
     expect(wrapper.get('[data-test="allow-done"]').text()).toContain('Writes tasku M01-S01-T01 rozšířené')
   })
 
+  it('writes_needed: the paths with reasons and Povolit tyto cesty a pokračovat', async () => {
+    const plan = { run_id: 'r-fail', task_id: 'M01-S01-T01', writes: ['src/app/'], allow: ['tests/e2e/test_x.py'], refused: [] }
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST'
+        ? okResponse({ task_id: 'M01-S01-T01', action: 'retry', run: null, pending: true, allow_writes: { ...plan, new_writes: ['src/app/', 'tests/e2e/test_x.py'] } })
+        : okResponse(plan),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = card({
+      error: "builder reported status='fail': review needs a browser test",
+      failure_kind: 'writes_needed',
+      failure_detail: {
+        agent: 'builder',
+        summary: 'review needs a browser test',
+        fail_kind: 'needs_writes',
+        paths: ['tests/e2e/test_x.py'],
+        needs_writes: [{ path: 'tests/e2e/test_x.py', reason: 'the browser test the review requires' }],
+      },
+    })
+    await flushPromises()
+    expect(wrapper.get('[data-test="failure-kind"]').text()).toBe('Chybí cesty ve writes')
+    expect(wrapper.get('[data-test="failure-sentence"]').text()).toBe('Agent builder potřebuje změnit cesty mimo writes tasku (1 cesta).')
+    expect(fact(wrapper, 'paths')).toEqual(['tests/e2e/test_x.py — the browser test the review requires'])
+    expect(actions(wrapper)).toEqual(['Povolit tyto cesty a pokračovat', 'Pokračovat', 'Zrušit task'])
+    expect(fact(wrapper, 'allow')).toEqual(['tests/e2e/test_x.py'])
+    await wrapper.get('[data-test="allow-writes"]').trigger('click')
+    await answerDialog(true)
+    const [url, init] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/runs\/r-fail\/allow-writes$/)
+    expect(init.method).toBe('POST')
+    expect(wrapper.emitted('retried')).toHaveLength(1)
+  })
+
+  it('writes_needed of a ci-fix run: allow and approve again, no Pokračovat', async () => {
+    const plan = { run_id: 'r-fail', task_id: 'M01-S01-T01', writes: ['src/app/'], allow: ['src/skill/codes.py'], refused: [] }
+    vi.stubGlobal('fetch', vi.fn(async () => okResponse(plan)))
+    const wrapper = card({
+      workflow: 'ci-fix',
+      error: "builder reported status='fail': needs codes.py",
+      failure_kind: 'writes_needed',
+      failure_detail: { agent: 'builder', paths: ['src/skill/codes.py'] },
+    })
+    await flushPromises()
+    expect(fact(wrapper, 'paths')).toEqual(['src/skill/codes.py'])
+    expect(actions(wrapper)).toEqual(['Povolit tyto cesty a schválit znovu', 'Zrušit task'])
+    await wrapper.get('[data-test="allow-writes"]').trigger('click')
+    expect(openDialog()?.textContent).toContain('schválení PR se spustí znovu')
+  })
+
   it('writes_violation with nothing writes can allow: no action, the reasons', async () => {
     const plan = {
       run_id: 'r-fail',

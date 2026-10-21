@@ -133,7 +133,8 @@ What to do with the common ones:
   remote and the provider CLI (`gh`, `az`), then `factory task publish ID --json` (see
   Publish). A push that failed on the network was already retried a few times.
 - `run_failed`: read `data.run.failure_kind` (`accept_not_met`, `nothing_to_do`, `quota`,
-  `writes_violation`, `invalid_output`, `process_gone`, `stopped`, `blocked`, `other`), its
+  `writes_violation`, `writes_needed`, `invalid_output`, `process_gone`, `stopped`,
+  `blocked`, `other`), its
   facts in `data.run.failure_detail` and the text in `data.run.error`; `factory task runs ID
   --json` and `factory task show ID --json` give them for every run (a run recorded before
   the field reads as `other`, or `blocked` when its error starts with `blocked: `).
@@ -849,16 +850,20 @@ NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped
    `done`), `already_running`, `run_not_retryable` (a succeeded or running run, or a
    resolve run), `unknown_branch` (the run's branch is gone).
 7. After a `writes_violation` (`data.run.failure_detail.paths` are the worktree paths
-   written outside `writes`), `factory task retry ID --allow-writes --json` first adds
-   them to the task's `writes` and commits the backlog to base (by `base_changes`), then
-   retries; `data.allow_writes` lists `allow` and `refused` (with `reason`). A path in
+   written outside `writes`) or a `writes_needed` (an agent reported `fail_kind:
+   needs_writes`: `failure_detail.paths` and `needs_writes` hold the paths this task must
+   change, with the agent's reasons), `factory task retry ID --allow-writes --json` first
+   adds them to the task's `writes` and commits the backlog to base (by `base_changes`),
+   then retries from the failed phase with the allowed paths in the `## Retry note`;
+   `data.allow_writes` lists `allow` and `refused` (with `reason`). A path in
    `protected_files`, in the backlog or in the main checkout is never added. Refused:
    `not_writes_violation`, `nothing_to_allow`, `writes_in_pr` (base_changes: pr and the
    backlog PR is not merged yet: retry after the merge), `writes_not_committed` (the
    backlog in base lacks the new effective writes: commit the backlog with
    `factory backlog commit --json`, then `factory task retry ID --json`). The retry
    starts only after all allowed paths are verified in the base commit, including
-   when the commit reports no change or a backlog PR has merged.
+   when the commit reports no change or a backlog PR has merged. A `ci-fix` run is not
+   retried (`run_not_retryable`): see Approve.
 8. `--harness` (with `--model`, `--thinking`) continues with every agent on another
    harness, e.g. after `failure_kind: quota`; it replaces the run's roster override. The
    switch is in `data.run.retries[].harness_switch` (`from`, `to`, `reason`, `auto`), in
@@ -885,6 +890,12 @@ NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped
 3. On GitHub an approve review is sent as `github_approver` (`config.yaml`, another
    account logged in to `gh`) when it is set; otherwise none is sent. Azure DevOps gets
    an approval vote. `data.reviewed` says whether a host approval was sent.
+4. Red CI checks start up to 2 `ci-fix` runs on the PR branch. One that ends
+   `writes_needed` (its agent needs paths outside the task's `writes`) leaves the PR open
+   with `writes_needed` and the paths (`task_prs.auto_merge_error`). `factory task approve
+   ID --allow-writes --json` adds them to the task's `writes` in base (same refusals as
+   `task retry --allow-writes`, `data.allow_writes`) and approves again, so the new
+   `ci-fix` runs may write them.
 
 ### Publish
 

@@ -54,3 +54,31 @@ def test_shown_kind_reads_an_older_blocked_run_from_its_error() -> None:
     assert failure.error_blockers(f"{error}; boom") == ["B-T01", "C-T02"]
     assert failure.error_blockers("boom") is None
     assert failure.BLOCKED in failure.FAILURE_KINDS
+
+
+def test_agent_reported_needs_writes_is_writes_needed() -> None:
+    exc = failure.AgentReportedFail(
+        "builder",
+        "tests outside writes break",
+        "needs_writes",
+        [
+            {"path": "./tests/a.py", "reason": "broken by the change"},
+            {"path": "tests\\a.py", "reason": ""},
+            {"path": " ", "reason": "blank"},
+            {"path": "src/codes.py", "reason": "registry"},
+        ],
+    )
+    kind, detail = failure.classify(exc)
+    assert kind == failure.WRITES_NEEDED
+    assert detail["paths"] == ["tests/a.py", "src/codes.py"]
+    assert detail["needs_writes"] == [
+        {"path": "tests/a.py", "reason": "broken by the change"},
+        {"path": "src/codes.py", "reason": "registry"},
+    ]
+    assert "needs writes: tests/a.py, src/codes.py" in str(exc)
+
+
+def test_needs_writes_without_paths_stays_other() -> None:
+    kind, detail = failure.classify(failure.AgentReportedFail("builder", "x", "needs_writes", []))
+    assert kind == failure.OTHER
+    assert "paths" not in detail

@@ -279,7 +279,9 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
     run.console.agent_finished(agent.name, spent.total_tokens, spent.total_cost)
     if envelope.status != "success":
         # aifactory 3.4: typed, so the run records nothing_to_do or other
-        raise AgentReportedFail(agent.name, envelope.summary, envelope.fail_kind)
+        # aifactory 3.6: the paths of fail_kind needs_writes make it writes_needed
+        raise AgentReportedFail(agent.name, envelope.summary, envelope.fail_kind,
+                                [n.model_dump() for n in envelope.needs_writes])
     return envelope
 
 

@@ -847,7 +847,9 @@ async def allow_writes_plan(request: Request) -> JSONResponse:
 
 
 async def allow_writes_run(request: Request) -> JSONResponse:
-    """``factory task retry --allow-writes``: extend writes in base, start the retry; 202."""
+    """``factory task retry --allow-writes`` after ``writes_violation`` or ``writes_needed``:
+    extend writes in base, start the retry; for a ``ci-fix`` run start the approve again
+    (``factory task approve --allow-writes``); 202."""
     repo: Path = _repo(request)
     launcher: Launcher = request.app.state.launcher
     try:

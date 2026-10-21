@@ -30,7 +30,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from aifactory import failure as failures
 from aifactory.backlog import Task, load_backlog, unmet
+from aifactory.backlog.roots import owning_root
 from aifactory.backlog.taskfile import mark_done, run_entry
 from aifactory.config import ConfigError, RunConfig, load_run_config
 from aifactory.config.settings import ProjectSettings
@@ -55,6 +57,7 @@ from aifactory.review.publish import PublishResult, publish
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
 from aifactory.run.resolve import CI_FIX_WORKFLOW, RESOLVE_REVIEWED_WORKFLOW, RESOLVE_WORKFLOW
+from aifactory.run.scope import matches
 from aifactory.run.stack import open_stack, stacked_on
 from aifactory.run.store import (
     MERGED_BY_OPERATOR,
@@ -62,6 +65,7 @@ from aifactory.run.store import (
     STARTED_MANUAL,
     SUCCEEDED,
     TaskPrRow,
+    TaskRunRow,
     TaskRunStore,
     _now,
     already_running,
@@ -72,6 +76,7 @@ from aifactory.workflow import CodeRunner, WorkflowRun
 from aifactory.workflow.journal import JOURNAL_FILE, read_journal
 
 if TYPE_CHECKING:
+    from aifactory.run.allow_writes import AllowWritesResult
     from aifactory.run.queue import ChainResult
 
 
@@ -88,6 +93,7 @@ class ApproveResult:
     merged_by: str = MERGED_BY_OPERATOR
     ci_fix_runs: list[str] = field(default_factory=list)  # ci-fix runs before the merge
     deleted_branches: list[str] = field(default_factory=list)
+    allow_writes: dict[str, object] | None = None  # --allow-writes: the paths allowed first
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -103,6 +109,7 @@ class ApproveResult:
             "warnings": list(self.warnings),
             "ci_fix_runs": list(self.ci_fix_runs),
             "deleted_branches": list(self.deleted_branches),
+            **({"allow_writes": self.allow_writes} if self.allow_writes is not None else {}),
         }
 
 
@@ -285,6 +292,7 @@ def approve_task(
     provider: GitProvider | None = None,
     merged_by: str = MERGED_BY_OPERATOR,
     code: CodeRunner | None = None,
+    allow_writes: bool = False,
 ) -> ApproveResult:
     """Commit ``status: done`` to the task's PR branch, wait for its CI and merge the PR.
 
@@ -293,13 +301,20 @@ def approve_task(
     start up to ``ci.CI_FIX_ROUNDS`` ``ci-fix`` runs on the PR branch (``code`` runs
     their code steps), each followed by a new wait. Checks still red or running leave
     the PR open with the reason in ``task_prs.auto_merge_error`` and raise ``ReviewError``.
+    A ``ci-fix`` run that needs paths outside the task's writes (``writes_needed``) stops
+    with the code ``writes_needed`` and its paths. ``allow_writes`` (``factory task approve
+    --allow-writes``) first adds those paths of the newest ``ci-fix`` run to the task's
+    writes in base (``run.allow_writes``), so the new ``ci-fix`` runs may write them.
     """
+    allowed = _allow_ci_fix_writes(repo, task_id) if allow_writes else None
     ctx = _context(repo, provider)
     row = ctx.store.latest_pr(task_id) if merged_by == MERGED_BY_OPERATOR else None
     try:
         if row is not None and row.state == OPEN:
             ctx.store.update_pr(row.branch, approved_at=_now(), auto_merge_error=None)
         try:
+            if allowed is not None:
+                _take_base_backlog(ctx, task_id)
             result = _approve_gated(repo, ctx, task_id, merged_by, code)
         except ProviderError as exc:
             raise ReviewError(exc.code, exc.message) from exc
@@ -315,6 +330,9 @@ def approve_task(
         raise
     finally:
         ctx.store.close()
+    if allowed is not None:
+        result.allow_writes = allowed.to_json()
+        result.warnings += list(allowed.commit.warnings)
     # Local import: review.stack resolves and merges through this module.
     from aifactory.review.stack import restack_dependents
 
@@ -328,6 +346,88 @@ def approve_task(
     finally:
         ctx.store.close()
     return result
+
+
+def _allow_ci_fix_writes(repo: Path, task_id: str) -> AllowWritesResult:
+    """``approve --allow-writes``: the paths of the newest ``ci-fix`` run into ``writes``."""
+    from aifactory.run.allow_writes import allow_writes
+
+    try:
+        return allow_writes(repo, task_id, ci_fix=True)
+    except TaskRunError as exc:
+        raise ReviewError(exc.code, exc.message) from exc
+
+
+def _take_base_backlog(ctx: _Ctx, task_id: str) -> None:
+    """Merge base into the PR branch after ``--allow-writes`` changed the task in base.
+
+    An earlier approve left its ``status: done`` commit on the branch; it and the new
+    ``writes`` in base change the same front matter, so the PR would not merge. Backlog
+    files take base's version (``_prepare_approve`` commits ``status: done`` again); a
+    conflict in any other file aborts the merge (``conflict``).
+    """
+    row, _ = _checked_pr(ctx, task_id)
+    settings = ctx.rc.config.settings
+    base = f"refs/heads/{settings.base}"
+    _free_branch(ctx, row)
+    worktree, temp = _branch_worktree(ctx, row.branch, "allow-writes")
+    try:
+        if gitops.git(worktree, "merge-base", "HEAD", base) == gitops.git(
+            worktree, "rev-parse", base
+        ):
+            return  # base is in the branch already
+        try:
+            gitops.git(worktree, "merge", "--no-ff", "--no-commit", base)
+        except RuntimeError:
+            pass
+        conflicted = [
+            p
+            for p in gitops.git(worktree, "diff", "--name-only", "--diff-filter=U").splitlines()
+            if p.strip()
+        ]
+        others = [
+            p
+            for p in conflicted
+            if owning_root(p, settings) is None
+            and not any(matches(p, root) for root in settings.backlog_patterns)
+        ]
+        if others:
+            gitops.git(worktree, "merge", "--abort")
+            raise ReviewError(
+                "conflict",
+                f"PR {row.url} does not merge into {row.base} ({', '.join(others)}); run "
+                f"`factory task resolve {task_id}`, then approve again",
+            )
+        for path in conflicted:
+            gitops.git(worktree, "checkout", "--theirs", "--", path)
+            gitops.git(worktree, "add", "--", path)
+        gitops.git(
+            worktree,
+            "commit",
+            "-q",
+            "--no-edit",
+            "-m",
+            f"{task_id}: merge {settings.base} (writes)",
+        )
+        ctx.provider.push(worktree, row.branch)
+    finally:
+        if temp is not None:
+            _remove(ctx, temp, [], [])
+
+
+def ci_fix_needs(run: TaskRunRow) -> str | None:
+    """The reason of a ``ci-fix`` run that ended ``writes_needed``: its paths; else None."""
+    if run.shown_failure_kind != failures.WRITES_NEEDED:
+        return None
+    detail = run.failure_detail_dict() or {}
+    items = failures.needed_paths(detail.get("needs_writes") or [])
+    if not items:
+        items = failures.needed_paths([{"path": p} for p in detail.get("paths") or []])
+    paths = "; ".join(f"{i['path']} ({i['reason']})" if i["reason"] else i["path"] for i in items)
+    return (
+        f"ci-fix run {run.run_id} needs paths outside the task's writes: {paths or '?'}; "
+        f"allow them and approve again (factory task approve {run.task_id} --allow-writes)"
+    )
 
 
 def _approve_gated(
@@ -377,6 +477,9 @@ def _approve_gated(
             reason = f"ci-fix run did not start: {exc.code}: {exc.message}"
             raise stop("ci_fix_failed", reason) from exc
         fixes.append(fixed.run.run_id)
+        needs = ci_fix_needs(fixed.run) if fixed.run.state != SUCCEEDED else None
+        if needs is not None:
+            raise stop("writes_needed", needs)
         if fixed.run.state != SUCCEEDED:
             detail = f": {fixed.run.error}" if fixed.run.error else ""
             raise stop(

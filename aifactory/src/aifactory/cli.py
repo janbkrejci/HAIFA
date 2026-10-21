@@ -1887,7 +1887,11 @@ task publish: for the last succeeded run without a pull request (pr_failed) push
   times, including hosting HTTP 5xx; a rejected push is not.
 task approve: on conflict run 'factory task resolve <task-id>'. Waits for the CI checks of
   the pushed head (none: merge at once); red checks get up to 2 ci-fix runs on the PR
-  branch, then checks_failing, checks_pending or ci_fix_failed and the PR stays open. On
+  branch, then checks_failing, checks_pending or ci_fix_failed and the PR stays open. A
+  ci-fix run that needs paths outside the task's writes leaves it open with writes_needed
+  and the paths; --allow-writes adds them to the task's writes (committed to base like
+  task retry --allow-writes, same refusals) and approves again, so the new ci-fix runs may
+  write them. On
   GitHub an approve review is sent as github_approver (config.yaml) when it is set;
   otherwise none is sent.
 task resolve: a run that fails leaves the branch as it was before the rebase.
@@ -1905,10 +1909,13 @@ task retry: continues the task's newest failed, stopped or aborted run (or --run
   past the branch, the branch is rebased onto it, a conflict resolved like 'task resolve',
   and the tests run again before any review. Refused: a task merged or done (task_done), a
   run that cannot be retried (run_not_retryable), a running task (already_running).
-  --allow-writes after a writes_violation first adds the paths written outside writes to
-  the task's writes and commits the backlog to base (by base_changes). Paths in
+  --allow-writes after a writes_violation (paths written outside writes) or a
+  writes_needed (paths an agent reported in needs_writes) first adds the paths to the
+  task's writes and commits the backlog to base (by base_changes); the retry continues
+  from the failed phase and its Retry note names the allowed paths. Paths in
   protected_files, in the backlog or in the main checkout are never added; refused: a run
-  of another kind (not_writes_violation), no path to add (nothing_to_allow), a change
+  of another kind (not_writes_violation), a ci-fix run (run_not_retryable: use task
+  approve --allow-writes), no path to add (nothing_to_allow), a change
   waiting in an unmerged backlog PR (writes_in_pr), or base missing the new writes
   (writes_not_committed: commit the backlog, then factory task retry ID).
   --harness [--model --thinking] continues with every agent on another harness (after a
@@ -2031,9 +2038,9 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="list the runs of a task with their state and failure kind",
         description="List every run of a task, newest first: state, failure_kind (why a run "
         "did not succeed: accept_not_met, nothing_to_do, quota, writes_violation, "
-        "invalid_output, process_gone, stopped, blocked or other) and the error; a blocked "
-        "run (it waits for blocking tasks) lists its blockers. --json gives each run "
-        "with failure_kind and failure_detail.",
+        "writes_needed, invalid_output, process_gone, stopped, blocked or other) and the "
+        "error; a blocked run (it waits for blocking tasks) lists its blockers. --json gives "
+        "each run with failure_kind and failure_detail.",
     )
     runs.add_argument("task_id", metavar="ID", help="task id")
 
@@ -2107,9 +2114,19 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         "ci-fix repair runs on the PR branch (started_by auto-ci-fix), each followed by a "
         "new wait; checks still red or running leave the PR open (auto_merge_error). Azure "
         "sends an approval vote after the final push and before merge; local and GitHub do "
-        "not send a self-approval review.",
+        "not send a self-approval review. A ci-fix run that needs paths outside the task's "
+        "writes leaves the PR open with writes_needed; --allow-writes adds those paths to "
+        "the task's writes in base first.",
     )
     approve.add_argument("task_id", metavar="ID", help="task id")
+    approve.add_argument(
+        "--allow-writes",
+        action="store_true",
+        help="after a ci-fix run that ended writes_needed: add the paths it needs to the "
+        "task's writes (committed to base by base_changes), then approve again; the new "
+        "ci-fix runs may write them. Paths in protected_files or in the backlog are never "
+        "added",
+    )
 
     return_ = sub.add_parser(
         "return",
@@ -2222,8 +2239,10 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     retry.add_argument(
         "--allow-writes",
         action="store_true",
-        help="after a writes_violation: add the paths written outside writes to the task's "
-        "writes (committed to base by base_changes), then retry. Paths in protected_files, "
+        help="after a writes_violation or writes_needed: add the paths written outside "
+        "writes or reported in needs_writes to the task's writes (committed to base by "
+        "base_changes), then retry from the failed phase with the paths in the Retry note. "
+        "Paths in protected_files, "
         "in the backlog or in the main checkout are never added. If base lacks the new writes "
         "(writes_not_committed), commit the backlog, then factory task retry ID",
     )
@@ -2789,12 +2808,14 @@ def _task_retry(args: argparse.Namespace, root: Path) -> int:
     from aifactory.run import retry_chain
 
     run_id: str | None = args.run
+    note: str | None = args.note
     extra: dict[str, Any] = {}
     if args.allow_writes:
-        from aifactory.run.allow_writes import allow_writes
+        from aifactory.run.allow_writes import allow_writes, retry_note
 
         allowed = allow_writes(root, args.task_id, run_id)
         run_id = allowed.plan.run_id
+        note = retry_note(allowed, note)
         extra["allow_writes"] = allowed.to_json()
         if not args.json:
             print(f"writes of {args.task_id} += {', '.join(allowed.plan.allow)}")
@@ -2808,7 +2829,7 @@ def _task_retry(args: argparse.Namespace, root: Path) -> int:
             root,
             args.task_id,
             run_id=run_id,
-            note=args.note,
+            note=note,
             from_phase=args.from_phase,
             auto=args.auto,
             agents_override=_agents_override(args),
@@ -2820,13 +2841,18 @@ def _task_retry(args: argparse.Namespace, root: Path) -> int:
 def _task_approve(args: argparse.Namespace, root: Path) -> int:
     from aifactory.review import approve_task
 
-    result = approve_task(root, args.task_id)
+    # ci-fix runs narrate on stdout; with --json stdout carries only the result
+    with contextlib.redirect_stdout(sys.stderr) if args.json else contextlib.nullcontext():
+        result = approve_task(root, args.task_id, allow_writes=args.allow_writes)
     if args.json:
         data, warnings = strip_payload(result.to_json())
         return _emit_ok(data, warnings)
     sha = result.merge_sha[:7] if result.merge_sha else "?"
     print(f"merged {result.pr.url} into {result.pr.base} ({sha})")
     print("note: approve review sent" if result.reviewed else "note: approve review not sent")
+    allowed = (result.allow_writes or {}).get("allow")
+    if isinstance(allowed, list):
+        print(f"writes of {args.task_id} += {', '.join(map(str, allowed))}")
     if result.ci_fix_runs:
         print(f"ci-fix runs: {', '.join(result.ci_fix_runs)}")
     for branch in result.deleted_branches:
