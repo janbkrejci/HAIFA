@@ -4,6 +4,7 @@ import { ITEM_TABS, fetchInventory, fetchRepoItem, saveIgnore,
   type RepoInventory, type RepoLibraryItem, type RepoItemDetail, type IgnoreRule } from '@/lib/library'
 import type { FactoryItemType } from '@/lib/api'
 import { errorText } from '@/lib/format'
+import SelectMenu from '@/components/ui/SelectMenu.vue'
 
 const props = defineProps<{ type: FactoryItemType; shared: { type: string; name: string }[] }>()
 const emit = defineEmits<{ move: [item: RepoLibraryItem]; import: [path: string, type: FactoryItemType]; changed: [] }>()
@@ -21,6 +22,23 @@ const ruleType = ref<IgnoreRule['type']>('*')
 let generation = 0
 const rows = computed(() => inventory.value?.items.filter(i => i.type === props.type && (!repo.value || repo.value === i.repo)
   && (showIgnored.value || !i.ignored) && (!source.value || source.value === (isOverride(i) ? 'override' : 'repo'))) ?? [])
+const repoOptions = computed(() => [
+  { value: '', label: 'Všechna repa' },
+  ...(inventory.value?.repos.map(r => ({ value: r.id, label: r.name })) ?? []),
+])
+const sourceOptions = [
+  { value: '', label: 'Všechny zdroje' },
+  { value: 'repo', label: 'Pouze v repu' },
+  { value: 'override', label: 'Vlastní kopie sdílené položky' },
+]
+const ruleModeOptions = [
+  { value: 'prefix', label: 'Prefix názvu' },
+  { value: 'directory', label: 'Adresář' },
+]
+const ruleTypeOptions = [
+  { value: '*', label: 'Všechny typy' },
+  ...ITEM_TABS.map(t => ({ value: t.type, label: t.label })),
+]
 const ruleRepos = computed(() => inventory.value?.repos.filter(r => !repo.value || repo.value === r.id) ?? [])
 function isOverride(i: RepoLibraryItem) { return i.movable && props.shared.some(s => s.type === i.type && s.name === i.name) }
 function identity(i: RepoLibraryItem) { return `${i.repo}/${i.type}/${i.path}` }
@@ -63,16 +81,16 @@ onMounted(load)
     <h3>Položky připojených repozitářů</h3>
     <p>Vlastní kopie a položky pouze v repu. Ignorování skryje položky jen v Knihovně a nabídce ke sdílení; běh ani soubory nemění.</p>
     <div class="filters">
-      <label>Repo <select v-model="repo" data-test="inventory-repo"><option value="">Všechna repa</option><option v-for="r in inventory?.repos" :key="r.id" :value="r.id">{{ r.name }}</option></select></label>
-      <label>Zdroj <select v-model="source" data-test="inventory-source"><option value="">Všechny zdroje</option><option value="repo">Pouze v repu</option><option value="override">Vlastní kopie sdílené položky</option></select></label>
+      <label>Repo <SelectMenu v-model="repo" :options="repoOptions" label="Repo" data-test="inventory-repo" /></label>
+      <label>Zdroj <SelectMenu v-model="source" :options="sourceOptions" label="Zdroj" data-test="inventory-source" /></label>
       <label><input v-model="showIgnored" type="checkbox" data-test="inventory-ignored" /> Zobrazit ignorované a pravidla</label>
       <button :disabled="busy" @click="load">Obnovit přehled</button>
     </div>
     <p v-if="error" role="alert">{{ error }}</p>
     <p v-for="e in inventory?.errors" :key="e.repo" role="alert">{{ e.repo_name }}: {{ e.message }}</p>
     <form v-if="repo" class="filters" @submit.prevent="addRule">
-      <label>Hromadně ignorovat <select v-model="ruleMode" data-test="ignore-mode"><option value="prefix">Prefix názvu</option><option value="directory">Adresář</option></select></label>
-      <label>Typ <select v-model="ruleType"><option value="*">Všechny typy</option><option v-for="t in ITEM_TABS" :key="t.type" :value="t.type">{{ t.label }}</option></select></label>
+      <label>Hromadně ignorovat <SelectMenu v-model="ruleMode" :options="ruleModeOptions" label="Hromadně ignorovat" data-test="ignore-mode" /></label>
+      <label>Typ <SelectMenu v-model="ruleType" :options="ruleTypeOptions" label="Typ" data-test="ignore-type" /></label>
       <label>Hodnota <input v-model="ruleValue" data-test="ignore-value" placeholder="bmad nebo .claude/skills/bmad" /></label>
       <button :disabled="busy || !ruleValue.trim()" data-test="ignore-add">Přidat pravidlo</button>
     </form>

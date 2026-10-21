@@ -45,6 +45,9 @@ function stubApi(
     if (url.startsWith('/api/updates')) return envelope({ status: 'current', current_version: '0.1.0' })
     if (url.startsWith('/api/machine/check')) return envelope({ ok: true, findings: [] })
     if (url === '/api/library') return envelope({ exists: true, items: [] })
+    if (url === '/api/library/inventory') return envelope({
+      items: [], repos: repos.map(({ id, name }) => ({ id, name, rules: [] })), errors: [],
+    })
     if (url === '/api/health') return envelope(HEALTH)
     if (url === '/api/repos') return envelope({ repos, home: HEALTH.home })
     if (url === '/api/code') return envelope({ stale: false, started: 'a', current: 'a' })
@@ -193,7 +196,7 @@ describe('App', () => {
   })
 
   it('titles the page by repo and screen', async () => {
-    stubApi()
+    const fetchMock = stubApi()
     go('#/r/haifa/runs')
     const wrapper = mount(App)
     await flushPromises()
@@ -209,6 +212,15 @@ describe('App', () => {
     expect(document.title).toBe('Knihovna · HAIFA')
     expect(wrapper.get('[data-test="switcher-current"]').text()).toBe('Knihovna')
     expect(wrapper.get('main h1').text()).toBe('Knihovna')
+    expect(fetchMock).toHaveBeenCalledWith('/api/library/inventory')
+    expect(wrapper.find('[data-test="repo-library"]').exists()).toBe(true)
+    const repoFilter = wrapper.get('[data-test="inventory-repo"]')
+    expect(repoFilter.attributes('aria-label')).toBe('Repo')
+    await repoFilter.trigger('click')
+    await flushPromises()
+    const options = document.body.querySelectorAll('[role="listbox"] [role="option"]')
+    expect([...options].map(option => option.textContent?.trim())).toEqual(['Všechna repa', 'HAIFA'])
+    await repoFilter.trigger('click')
     wrapper.unmount()
   })
 

@@ -8,10 +8,20 @@ from pathlib import Path
 import pytest
 from f3_repo import api_get, git, make_f3_repo, obs_server
 from multi_repo_e2e import diagnostic_tripwire
-from playwright.sync_api import Dialog, Route, expect, sync_playwright
-from test_f3_browser import _launch
+from playwright.sync_api import Dialog, Page, Route, expect, sync_playwright
+from test_f3_browser import _choose, _launch
 
 pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
+
+
+def _choose_inventory(page: Page, test_id: str, value: str) -> None:
+    # Settle the scroll before opening: SelectMenu closes on window scroll events.
+    selector = f'[data-test="{test_id}"]'
+    page.locator(selector).scroll_into_view_if_needed()
+    page.evaluate(
+        "() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))"
+    )
+    _choose(page, selector, value)
 
 
 def test_library_seed_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -142,6 +152,9 @@ def test_repo_library_hide_restore_browser(tmp_path: Path, monkeypatch: pytest.M
                     has_text="haifa-implement-task"
                 )
                 expect(row).to_contain_text("Pouze v repu")
+                expect(page.locator('[data-test="library-setup"]')).to_be_visible()
+                _choose_inventory(page, "inventory-repo", server.repo_id)
+                _choose_inventory(page, "inventory-source", "repo")
                 row.locator("button").first.click()
                 expect(page.locator('[data-test="inventory-detail"]')).to_contain_text(
                     "haifa-implement-task.yaml"
@@ -151,6 +164,17 @@ def test_repo_library_hide_restore_browser(tmp_path: Path, monkeypatch: pytest.M
                 page.reload()
                 page.locator('[data-test="tab-workflow"]').click()
                 expect(row).to_have_count(0)
+                page.locator('[data-test="inventory-ignored"]').check()
+                expect(row).to_contain_text("Ignorováno")
+                page.locator('[data-test="ignore-restore"]').click()
+                page.locator('[data-test="inventory-ignored"]').uncheck()
+                expect(row).to_have_count(1)
+                _choose_inventory(page, "inventory-repo", server.repo_id)
+                _choose_inventory(page, "ignore-mode", "directory")
+                _choose_inventory(page, "ignore-type", "workflow")
+                page.locator('[data-test="ignore-value"]').fill(".factory/workflows")
+                page.locator('[data-test="ignore-add"]').click()
+                expect(page.locator('[data-test="inventory-item"]')).to_have_count(0)
                 page.locator('[data-test="inventory-ignored"]').check()
                 expect(row).to_contain_text("Ignorováno")
                 page.locator('[data-test="ignore-restore"]').click()
