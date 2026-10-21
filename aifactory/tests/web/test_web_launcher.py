@@ -671,7 +671,10 @@ def test_retry_child_exits_before_operation_registration(
         row = _row(repo, failed.run_id)
         assert row is not None and row.state == "succeeded"
     else:
-        assert body["error"]["code"] == "already_running"
+        assert (body["error"]["code"], body["error"]["message"]) == (
+            "already_running",
+            "retry refused",
+        )
         assert _row(repo, failed.run_id) == failed
 
 
