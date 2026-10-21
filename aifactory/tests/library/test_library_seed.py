@@ -93,9 +93,14 @@ SSSF_WORKFLOWS = {
 
 
 def test_seed_follows_sssf() -> None:
-    assert SSSF_AGENTS | {"tester", "test-reviewer", "guide", "proposer", "learner"} == set(
-        seed_agent_names()
-    )
+    assert SSSF_AGENTS | {
+        "tester",
+        "test-reviewer",
+        "guide",
+        "proposer",
+        "learner",
+        "triager",
+    } == set(seed_agent_names())
     assert SSSF_WORKFLOWS <= set(seed_workflow_names())
     assert seed_extension_names() == ["subagents"]
 
@@ -322,3 +327,40 @@ def test_init_library_writes_the_factory_skill(
     assert shown == render_skill().encode("utf-8")
     meta = yaml.safe_load((lib / "library.yaml").read_text("utf-8"))
     assert meta["seed"][f"skill/{SKILL_NAME}"] == skill_seed_item().version
+
+
+def test_triager_seed_is_read_only() -> None:
+    item = load_library_item(SEED_DIR, "agent", "triager")
+    assert item.defaults is not None
+    assert item.defaults.writes == ()
+    assert {p.name for p in (SEED_DIR / "agents/triager").iterdir()} == {
+        "agent.yaml",
+        "system.md",
+        "user.md",
+    }
+    assert {Path(f.path).name for f in item.files} == {"system.md", "user.md"}
+    system = (SEED_DIR / "agents/triager/system.md").read_text("utf-8")
+    user = (SEED_DIR / "agents/triager/user.md").read_text("utf-8")
+    assert all(word in system for word in ("covered", "extend", "decide", "new", "addition_writes"))
+    assert "{{prompt}}" in user
+
+
+def test_seed_offers_missing_triager(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aifactory.library.reseed import seed_library
+
+    monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "haifa"))
+    monkeypatch.delenv("HAIFA_LIBRARY", raising=False)
+    for kind in ("AUTHOR", "COMMITTER"):
+        monkeypatch.setenv(f"GIT_{kind}_NAME", "Ada Tester")
+        monkeypatch.setenv(f"GIT_{kind}_EMAIL", "ada@example.com")
+    packaged = store.packaged_seed()
+    monkeypatch.setattr(
+        store, "packaged_seed", lambda: [i for i in packaged if i.name != "triager"]
+    )
+    result = store.init_library("team")
+    monkeypatch.setattr(store, "packaged_seed", lambda: packaged)
+    plan = seed_library(dry_run=True)
+    assert [(i.name, i.action) for i in plan.plan.items if i.name == "triager"] == [
+        ("triager", "create")
+    ]
+    assert not (Path(result.plan.library) / "agents/triager").exists()

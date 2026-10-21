@@ -28,12 +28,15 @@ def test_sample_config_loads(tmp_path: Path) -> None:
         "scout",
         "test-reviewer",
         "tester",
+        "triager",
     ]
     assert config.library is None
     assert "agent/planner" not in config.inherited and "agent/tester" in config.inherited
     assert all(a.coding_agent == "claude" for a in agents.values())
     assert agents["planner"].model == "opus"
     assert agents["builder"].model == "sonnet"
+    assert agents["triager"].writes == []
+    assert "Triager Agent" in config.prompts["triager"].system
     assert agents["planner"].writes == ["specs/"]
     assert agents["planner"].prompt_engineering.system == ".factory/prompts/planner/system.md"
     assert "{{prompt}}" in config.prompts["planner"].user
@@ -159,6 +162,7 @@ def test_missing_agents_inherits_the_whole_roster(tmp_path: Path) -> None:
         "scout",
         "test-reviewer",
         "tester",
+        "triager",
     }
     # prompts in the repo still win over the library's
     assert config.prompts["planner"].system == "You are the planner.\n"
