@@ -1077,18 +1077,49 @@ def _record_follow_ups(
     A failure to record never hides a blocker an agent reported (``blocking``).
     """
     try:
+        from aifactory.backlog import load_for_edit
+        from aifactory.run import triage
+
+        decisions = None
+        triage_warnings: list[str] = []
+        backlog = load_for_edit(main)
+        reported, _ = followups.collect(wf, backlog.settings)
+        if reported:
+            try:
+                choices = triage.ask_triager(main, reported, backlog)
+                by_id = {choice.follow_up_id: choice for choice in choices}
+                if len(choices) != len(reported) or set(by_id) != {
+                    f"f{n}" for n in range(1, len(reported) + 1)
+                }:
+                    raise triage.TriageUnavailable("Incomplete follow-up decisions")
+                decisions = {item: by_id[f"f{n}"] for n, item in enumerate(reported, 1)}
+            except Exception as exc:
+                triage_warnings.append(f"follow-up triage unavailable; using new: {exc}")
         with store.serialized():
-            follow = followups.record(main, row.task_id, row.run_id, wf, blocking=blocking)
+            follow = followups.record(
+                main,
+                row.task_id,
+                row.run_id,
+                wf,
+                blocking=blocking,
+                decisions=decisions,
+                running=store.running,
+            )
+            follow.warnings.extend(triage_warnings)
             if follow.committed:
-                ids = [c.id for c in follow.created if not c.existed and c.assignee != "human"]
+                ids = [
+                    c.id
+                    for c in follow.created
+                    if c.decision == "new" and not c.existed and c.assignee != "human"
+                ]
                 if ids:
                     try:
                         store.queue_front(ids)
                     except Exception as exc:
                         follow.warnings.append(f"follow-ups not queued: {exc}")
     except Exception as exc:
-        reported = blocking and followups.reported_blockers(wf)
-        blockers = ["(neuložené hlášení agenta)"] if reported else []
+        has_blockers = blocking and followups.reported_blockers(wf)
+        blockers = ["(neuložené hlášení agenta)"] if has_blockers else []
         return None, [f"follow-ups not recorded: {exc}"], blockers
     return follow, list(follow.warnings), list(follow.blocked_by)
 

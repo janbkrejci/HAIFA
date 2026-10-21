@@ -1,0 +1,15 @@
+# HAIFA-REFINEMENT-T66 — triáž follow-upů
+
+Před zápisem follow-upů běh zavolá read-only triager nad celým neudělaným backlogem mimo `store.serialized()`. Výsledky předá zápisu; pod zámkem se znovu načte backlog a ověří stav cíle, běžící tasky, lidské přiřazení, efektivní rozsah i bezpečnost nové závislosti. Zastaralé doporučení přejde s varováním na samostatný follow-up.
+
+`covered` použije existující task. `extend` připojí oddíl `### Doplnění z běhu <run_id> tasku <task_id>` přes validující editor backlogu, bez přepisu původního souboru či front matter. Marker obsahuje zdrojový task a digest normalizovaného titulku a lidského přiřazení; dvě různá hlášení doplní stejný cíl samostatně a retry ani přehozené pořadí je nezdvojí. `decide` založí lidský TODO task s návrhem změny, důvodem a oběma `related`; původní cíl nezmění. Zadání existujícího tasku se bez člověka nezužuje ani zásadně nemění. `new` zachová dosavadní zakládání TODO tasků.
+
+Před použitím nového doporučení i záložního chování zápis hledá marker dříve uloženého doplnění v celém čerstvém backlogu podle zdroje a stabilní identity hlášení. Nalezený zápis vrátí jako `extend` s `existed=True`, i když triáž nyní hlásí `new`, jiné doporučení, jiný text či cíl nebo je nedostupná. Nevytvoří další oddíl ani TODO. Potvrzení minulého zápisu nemění původní ani nově navržený cíl, a to ani při změně stavu, lidského přiřazení, rozsahu nebo při běžícím tasku. Kontroly způsobilosti a rozsahu zůstávají povinné pro každé nové doplnění.
+
+Blokující hlášení přidá závislost na skutečný použitý task, u `decide` na lidské rozhodnutí. Samotný zdroj ani task vytvářející cyklus nelze použít jako blokující cíl. Pokud by nová závislost na již doplněném tasku vytvořila cyklus, nezapíše se; výsledek vrátí varování a neuložený blokátor, takže běh neztratí blokující hlášení ani nezaloží duplicitní práci. Resolve nadále zaznamenává práci bez blokování. Pokud triáž selže nebo není dostupná, zápis použije dosavadní chování včetně rozpoznání otevřených závislostí podle titulku a vrátí varování. Přímé volání `record()` bez doporučení nevolá model.
+
+JSON výsledku každého follow-upu obsahuje `decision`, `existed` a `assignee`. Na začátek fronty se po úspěšném publikování přesunou pouze nové agentní tasky s rozhodnutím `new`. Ostatní doporučení ani nepublikované zápisy frontu nemění.
+
+Ověření pokrývá čtyři výsledky a jejich blokování, retry a replay dvou doplnění téhož cíle, přesné zachování původního souboru včetně CRLF, zastaralé cíle, souběžný běh, nepovolené rozsahy a lidskou práci, cykly, nedostupnost triáže, JSON a smíšenou frontu. Testy používají dočasná lokální repozitáře a mock triáže či fake harness; nevyžadují živé modely ani služby.
+
+Cílené ověření prošlo: 45 testů triáže follow-upů, 8 testů fronty a dalších 109 testů dosavadních follow-upů, triagera, promptů závislostí, resolve s chybějícím testem a PR shrnutí. Ruff lint i format check a mypy pěti změněných Python souborů prošly. Mypy pro samostatně vybrané soubory používá `MYPYPATH=tests:tests/run:tests/workflow`, aby našel sdílené testovací helpery.

@@ -1,9 +1,10 @@
 """New work and blockers the agents of a run reported, filed in the backlog.
 
 Agents never leave open work in the repository. Work that a task run found but does not
-finish comes back in an envelope's ``follow_ups``; ``record`` files each one as a task
-in the project's ``TODO`` step (the step is created when it is missing) and says where
-and why it came from. A follow-up with ``blocks_task`` and every not-done id in
+finish comes back in an envelope's ``follow_ups``. The run triages them before
+``record`` applies recommendations to the fresh backlog: reuse, additive extension,
+a human decision, or a new task in the project's ``TODO`` step. A follow-up with
+``blocks_task`` and every not-done id in
 ``blocked_by`` become ``depends_on`` of the task: the run then fails as blocked
 (``run/task.py``), so the task is neither done nor merged until its blockers are done.
 A blocker that is ``cancelled`` (the operator waived it) blocks nothing.
@@ -21,10 +22,13 @@ by the marker and title and creates nothing new.
 
 from __future__ import annotations
 
+import hashlib
 import shutil
 import tempfile
+from collections.abc import Callable
 from dataclasses import dataclass, field, replace
 from pathlib import Path
+from typing import TYPE_CHECKING, Literal
 
 from aifactory.backlog import (
     Backlog,
@@ -33,19 +37,26 @@ from aifactory.backlog import (
     TaskEditError,
     add_container,
     add_task,
+    check_backlog,
     find_task,
     is_done,
     is_human,
+    iter_tasks,
     link_task,
     load_for_edit,
 )
 from aifactory.backlog.derived import descendant_tasks
-from aifactory.backlog.edit import compose_id
+from aifactory.backlog.edit import _write_checked, compose_id
 from aifactory.backlog.model import HUMAN
 from aifactory.backlog.roots import backlog_roots
 from aifactory.config import ProjectSettings
 from aifactory.run.scope import literal_prefix
 from aifactory.workflow import WorkflowRun
+
+if TYPE_CHECKING:
+    from aifactory.run.triage import Decision
+
+DecisionKind = Literal["covered", "extend", "decide", "new"]
 
 TODO_CODE = "TODO"
 TODO_TITLE = "TODO"
@@ -81,7 +92,7 @@ class Reported:
 
 @dataclass(frozen=True)
 class CreatedFollowUp:
-    """A follow-up task in the backlog (``existed``: an earlier attempt filed it)."""
+    """A follow-up task in the backlog (``existed``: a task was reused)."""
 
     id: str
     title: str
@@ -89,6 +100,7 @@ class CreatedFollowUp:
     blocks: bool
     existed: bool = False
     assignee: str = "agent"
+    decision: DecisionKind = "new"
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -98,6 +110,7 @@ class CreatedFollowUp:
             "blocks": self.blocks,
             "existed": self.existed,
             "assignee": self.assignee,
+            "decision": self.decision,
         }
 
 
@@ -175,7 +188,7 @@ def _writes(value: object) -> tuple[str, ...] | None:
     if not isinstance(value, list):
         return None
     paths = [str(v).strip() for v in value if str(v).strip()]
-    return tuple(dict.fromkeys(paths)) or None
+    return tuple(dict.fromkeys(paths))
 
 
 def _for_human(item: Reported, settings: ProjectSettings) -> bool:
@@ -286,8 +299,37 @@ def _error(exc: TaskEditError) -> str:
     return f"{exc.code}: {exc.message}"
 
 
+def _extension_marker(task_id: str, item: Reported, settings: ProjectSettings) -> str:
+    return f"<!-- factory: extended-by={task_id} follow-up={_identity(item, settings)} -->"
+
+
+def _identity(item: Reported, settings: ProjectSettings) -> str:
+    identity = f"{_norm(item.title)}:{_for_human(item, settings)}"
+    return hashlib.sha256(identity.encode()).hexdigest()[:24]
+
+
+def _can_block(backlog: Backlog, source: Task, target: Task) -> bool:
+    """Validate the proposed edge, including dependencies through containers."""
+    if source.id == target.id:
+        return False
+    baseline = {(i.code, i.path, i.message) for i in check_backlog(backlog)}
+    previous = source.depends_on
+    try:
+        source.depends_on = list(dict.fromkeys([*previous, target.id]))
+        return all((i.code, i.path, i.message) in baseline for i in check_backlog(backlog))
+    finally:
+        source.depends_on = previous
+
+
 def record(
-    main: Path, task_id: str, run_id: str, wf: WorkflowRun, *, blocking: bool = True
+    main: Path,
+    task_id: str,
+    run_id: str,
+    wf: WorkflowRun,
+    *,
+    blocking: bool = True,
+    decisions: dict[Reported, Decision] | None = None,
+    running: Callable[[str], object] | None = None,
 ) -> FollowUpOutcome:
     """Prepare follow-ups away from the operator's checkout, then publish only our edits."""
     from aifactory.config import load_run_config
@@ -306,7 +348,9 @@ def record(
         for directory in backlog_roots(main, load_for_edit(main).settings):
             shutil.copytree(main / directory, stage / directory, dirs_exist_ok=True)
         before = _contents(stage)
-        outcome = _record(stage, task_id, run_id, wf, blocking=blocking)
+        outcome = _record(
+            stage, task_id, run_id, wf, blocking=blocking, decisions=decisions, running=running
+        )
         contents = {p: data for p, data in _contents(stage).items() if before.get(p) != data}
         if contents:
             _publish(
@@ -390,9 +434,16 @@ def _publish(
 
 
 def _record(
-    main: Path, task_id: str, run_id: str, wf: WorkflowRun, *, blocking: bool = True
+    main: Path,
+    task_id: str,
+    run_id: str,
+    wf: WorkflowRun,
+    *,
+    blocking: bool = True,
+    decisions: dict[Reported, Decision] | None = None,
+    running: Callable[[str], object] | None = None,
 ) -> FollowUpOutcome:
-    """File the run's follow-ups in the TODO step and link the task to its blockers.
+    """Apply recommendations, file uncovered follow-ups and link the task to its blockers.
 
     Returns what was written; problems that do not stop the rest (an unknown id or a
     rejected write) are ``warnings``. A blocker counts even when
@@ -408,40 +459,137 @@ def _record(
     task = find_task(backlog, task_id)
     reported, blocked_ids = collect(wf, backlog.settings)
     if not blocking:
-        reported = [replace(r, blocks_task=False) for r in reported]
         blocked_ids = []
     project = task.parent.parent
     blockers: list[str] = []
 
-    uncovered: list[Reported] = []
-    dependencies = open_dependencies(backlog, task)
-    for item in reported:
-        found = next(
-            (
-                dep
-                for _, dep in dependencies
-                if dep.id != task_id
-                and _norm(dep.title) == _norm(item.title)
-                and is_human(dep) == _for_human(item, backlog.settings)
-            ),
-            None,
-        )
-        if found is None:
-            uncovered.append(item)
-        else:
+    pending: list[tuple[Reported, Decision | None]] = []
+    for original in reported:
+        item = original if blocking else replace(original, blocks_task=False)
+        decision = decisions.get(original) if decisions is not None else None
+        backlog = load_for_edit(main)
+        task = find_task(backlog, task_id)
+        # A persisted marker acknowledges an earlier application, regardless of the
+        # new recommendation. It does not authorize extending the target again.
+        marker = _extension_marker(task_id, item, backlog.settings)
+        applied = next((t for t in iter_tasks(backlog) if marker in t.body), None)
+        if applied is not None:
             outcome.created.append(
                 CreatedFollowUp(
-                    found.id,
-                    found.title,
+                    applied.id,
+                    applied.title,
                     item.reason,
                     item.blocks_task,
                     existed=True,
-                    assignee=HUMAN if is_human(found) else "agent",
+                    assignee=HUMAN if is_human(applied) else "agent",
+                    decision="extend",
                 )
             )
-            if item.blocks_task:
-                blockers.append(found.id)
-    reported = uncovered
+            if item.blocks_task and not (is_done(applied) or _cancelled(applied)):
+                if _can_block(backlog, task, applied):
+                    blockers.append(applied.id)
+                else:
+                    outcome.warnings.append(
+                        f"applied extension {applied.id}: linking {task_id} to this task "
+                        "would create a cycle; not linked"
+                    )
+                    blockers.append(f"(neuložená závislost: {applied.id})")
+            continue
+        target = backlog.by_id.get(decision.task_id or "") if decision else None
+        if decision is not None and decision.action != "new":
+            from aifactory.run.triage import TriageOutput, _violations
+
+            errors = []
+            if not isinstance(target, Task) or target.status != "todo":
+                errors.append("target is no longer todo")
+            elif target.id == task_id or (running is not None and running(target.id)):
+                errors.append("target is the source task or is running")
+            elif (
+                decision.action in ("covered", "extend")
+                and item.blocks_task
+                and not _can_block(backlog, task, target)
+            ):
+                errors.append("target would create a dependency cycle")
+            else:
+                checked = replace(item, for_human=_for_human(item, backlog.settings))
+                errors = _violations(
+                    TriageOutput(
+                        status="success",
+                        decisions=[decision.model_copy(update={"follow_up_id": "f1"})],
+                    ),
+                    [checked],
+                    backlog,
+                )
+            if errors:
+                outcome.warnings.append(
+                    f"follow-up '{item.title}' triage no longer applies; using new: "
+                    + "; ".join(errors)
+                )
+                decision = None
+            elif isinstance(target, Task) and decision.action in ("covered", "extend"):
+                if decision.action == "extend":
+                    marker = _extension_marker(task_id, item, backlog.settings)
+                    original_text = (main / target.path).read_bytes().decode("utf-8")
+                    if marker not in original_text:
+                        section = (
+                            f"\n\n### Doplnění z běhu {run_id} tasku {task_id}\n\n"
+                            f"{decision.addition}\n\n{marker}\n"
+                        )
+                        try:
+                            _write_checked(
+                                backlog,
+                                check_backlog(backlog),
+                                {target.path: original_text + section},
+                                "follow-ups",
+                            )
+                        except TaskEditError as exc:
+                            outcome.warnings.append(f"extension not written: {_error(exc)}")
+                            pending.append((item, None))
+                            continue
+                outcome.created.append(
+                    CreatedFollowUp(
+                        target.id,
+                        target.title,
+                        item.reason,
+                        item.blocks_task,
+                        existed=True,
+                        assignee=HUMAN if is_human(target) else "agent",
+                        decision=decision.action,
+                    )
+                )
+                if item.blocks_task:
+                    blockers.append(target.id)
+                continue
+        # Keep the historical title fallback only when no triage was supplied.
+        if decisions is None:
+            found = next(
+                (
+                    dep
+                    for _, dep in open_dependencies(backlog, task)
+                    if dep.id != task_id
+                    and _norm(dep.title) == _norm(item.title)
+                    and is_human(dep) == _for_human(item, backlog.settings)
+                    and (not item.blocks_task or _can_block(backlog, task, dep))
+                ),
+                None,
+            )
+            if found is not None:
+                outcome.created.append(
+                    CreatedFollowUp(
+                        found.id,
+                        found.title,
+                        item.reason,
+                        item.blocks_task,
+                        existed=True,
+                        assignee=HUMAN if is_human(found) else "agent",
+                        decision="covered",
+                    )
+                )
+                if item.blocks_task:
+                    blockers.append(found.id)
+                continue
+        pending.append((item, decision))
+    reported = [item for item, _ in pending]
 
     if reported:
         step = _todo_step(project, backlog.containers)
@@ -459,8 +607,34 @@ def _record(
                 outcome.warnings.append(f"TODO step not created: {_error(exc)}")
         if step is not None:
             outcome.step_id = step.id
-            for item in reported:
-                found = _existing(step, task_id, item.title, _for_human(item, backlog.settings))
+            for item, decision in pending:
+                backlog = load_for_edit(main)
+                task = find_task(backlog, task_id)
+                assert step.id is not None
+                refreshed_step = backlog.by_id[step.id]
+                assert isinstance(refreshed_step, Container)
+                step = refreshed_step
+                deciding = decision is not None and decision.action == "decide"
+                human = deciding or _for_human(item, backlog.settings)
+                decision_marker = (
+                    f"<!-- factory: decision-for={task_id} target={decision.task_id} "
+                    f"follow-up={_identity(item, backlog.settings)} -->"
+                    if deciding and decision
+                    else ""
+                )
+                found = (
+                    next(
+                        (
+                            candidate
+                            for candidate in step.tasks
+                            if decision_marker in candidate.body and is_human(candidate)
+                        ),
+                        None,
+                    )
+                    if deciding
+                    else _existing(step, task_id, item.title, human)
+                )
+                kind: DecisionKind = "decide" if deciding else "new"
                 if found is not None:
                     created = CreatedFollowUp(
                         found.id,
@@ -469,6 +643,7 @@ def _record(
                         item.blocks_task,
                         existed=True,
                         assignee=HUMAN if is_human(found) else "agent",
+                        decision=kind,
                     )
                 else:
                     assert step.id is not None
@@ -477,11 +652,24 @@ def _record(
                             main,
                             step.id,
                             item.title,
-                            related=[task_id],
-                            writes=list(item.writes) if item.writes else None,
+                            related=[task_id, decision.task_id]
+                            if deciding and decision and decision.task_id
+                            else [task_id],
+                            writes=list(item.writes) if item.writes is not None else None,
                             workflow=item.workflow,
-                            assignee=HUMAN if _for_human(item, backlog.settings) else None,
-                            body=_task_body(item, task, run_id),
+                            assignee=HUMAN if human else None,
+                            body=_task_body(item, task, run_id)
+                            + (
+                                "\n### Rozhodnutí člověka\n\n"
+                                f"Navrhovaná změna tasku `{decision.task_id}`: "
+                                f"{decision.proposal}\n\n"
+                                f"Důvod triáže: {decision.reason}\n\n"
+                                f"{decision_marker}\n\n"
+                                "Zadání existujícího tasku se bez člověka nezužuje "
+                                "ani zásadně nemění.\n"
+                                if deciding and decision
+                                else ""
+                            ),
                         )
                     except TaskEditError as exc:
                         outcome.warnings.append(
@@ -496,6 +684,7 @@ def _record(
                         item.reason,
                         item.blocks_task,
                         assignee=HUMAN if is_human(result.task) else "agent",
+                        decision=kind,
                     )
                 outcome.created.append(created)
                 if item.blocks_task:

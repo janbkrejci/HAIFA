@@ -29,6 +29,16 @@ from aifactory.workflow import StepRecord, WorkflowRun
 TODO_STEP = "M01-TODO"
 
 
+@pytest.fixture(autouse=True)
+def offline_triage(monkeypatch: pytest.MonkeyPatch) -> None:
+    from aifactory.run import triage
+
+    def unavailable(*args: object) -> None:
+        raise triage.TriageUnavailable("Offline legacy follow-up scenario")
+
+    monkeypatch.setattr(triage, "ask_triager", unavailable)
+
+
 @pytest.fixture(name="repo")
 def repo_fixture(tmp_path: Path) -> Path:
     return make_run_repo(tmp_path / "repo")
