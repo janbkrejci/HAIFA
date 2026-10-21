@@ -18,12 +18,14 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
 
 <template>
   <template v-if="chip">
-    <span v-if="phase === 'checking'" class="status-chip checking" role="status" data-test="readiness-checking"><Spinner /> Probíhá kontrola</span>
+    <span v-if="phase === 'loading'" class="status-chip checking" role="status" data-test="readiness-loading"><Spinner /> Načítání stavu</span>
+    <span v-else-if="phase === 'checking'" class="status-chip checking" role="status" data-test="readiness-checking"><Spinner /> Probíhá kontrola</span>
     <Tooltip v-else-if="phase === 'success'" text="Spustit kontrolu znovu"><button type="button" class="status-chip success" data-test="readiness-success" @click="recheck"><Check :size="14" aria-hidden="true" /> Systém v pořádku</button></Tooltip>
     <a v-else-if="phase === 'warning'" href="#/problems" class="status-chip warning" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /> Nalezeny problémy</a>
   </template>
   <div v-else-if="phase" class="readiness" :class="phase" :role="phase === 'warning' ? 'alert' : 'status'" :data-test="`readiness-${phase}`">
-    <p v-if="phase === 'checking'"><Spinner /> Probíhá kontrola</p>
+    <p v-if="phase === 'loading'"><Spinner /> Načítání stavu</p>
+    <p v-else-if="phase === 'checking'"><Spinner /> Probíhá kontrola</p>
     <p v-else-if="phase === 'success'"><Check :size="18" aria-hidden="true" /> Systém v pořádku</p>
     <template v-else>
       <p><TriangleAlert :size="18" aria-hidden="true" /> Nalezeny problémy</p>
@@ -41,7 +43,7 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
       </ul>
       <p v-if="removeError" role="alert">{{ removeError }}</p>
     </template>
-    <button v-if="phase !== 'checking'" type="button" class="action" data-test="readiness-retry" @click="recheck">Zkontrolovat znovu</button>
+    <button v-if="phase !== 'checking' && phase !== 'loading'" type="button" class="action" data-test="readiness-retry" @click="recheck">Zkontrolovat znovu</button>
   </div>
   <RemoveRepoDialog :removal="removal" />
 </template>

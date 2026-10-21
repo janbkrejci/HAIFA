@@ -117,6 +117,24 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                         '[data-test="system-problems"] [data-test="readiness-warning"]'
                     )
                     expect(warning).to_contain_text("Přidej repozitář")
+                    # The brand must navigate within the app, preserving the check result.
+                    page.evaluate("window.homeNavigationMarker = true")
+                    checks: list[str] = []
+                    page.on(
+                        "request",
+                        lambda request: (
+                            checks.append(request.url)
+                            if "/api/machine/check" in request.url
+                            else None
+                        ),
+                    )
+                    page.locator("a.brand").click()
+                    expect(page).to_have_url(f"{obs.url}/#/overview")
+                    assert page.evaluate("window.homeNavigationMarker") is True
+                    expect(page.locator('[data-test="readiness-warning"]')).to_be_visible()
+                    assert checks == []
+                    page.locator('[data-test="readiness-warning"]').click()
+                    expect(page).to_have_url(f"{obs.url}/#/problems")
                     warning.locator('a[href="#/repos/add"]').first.click()
                     _inspect(page, repo_a)
                     fixture = git(repo_a, "rev-parse", "HEAD:.factory")

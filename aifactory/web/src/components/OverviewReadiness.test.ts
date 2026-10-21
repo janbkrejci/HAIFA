@@ -96,14 +96,15 @@ describe('overview readiness', () => {
     })
   })
 
-  it.each([true, false])('only shows startup progress after a slow initial read (chip=%s)', async chip => {
+  it.each([true, false])('labels a slow initial read as loading, not a new check (chip=%s)', async chip => {
     let finish!: (response: Response) => void
     stub({ pending: new Promise(resolve => { finish = resolve }) })
     const wrapper = mount(OverviewReadiness, { props: { chip } })
     await vi.advanceTimersByTimeAsync(999)
     expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
-    expect(wrapper.get('[data-test="readiness-checking"]').text()).toBe('Probíhá kontrola')
+    expect(wrapper.get('[data-test="readiness-loading"]').text()).toBe('Načítání stavu')
+    expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(false)
     finish(envelope(machine))
     await flushPromises()
     expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)

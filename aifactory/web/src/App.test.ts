@@ -76,6 +76,22 @@ afterEach(() => {
 })
 
 describe('App', () => {
+  it('returns home through the hash router and preserves readiness across navigation', async () => {
+    const fetchMock = stubApi()
+    go('#/r/haifa/backlog')
+    const wrapper = mount(App)
+    await flushPromises()
+    const status = wrapper.get('[data-test="readiness-warning"]').text()
+    const home = wrapper.get('a.brand').attributes('href')!
+    expect(home).toBe('#/overview')
+    for (const hash of [home, '#/guide', home, '#/problems', home]) {
+      go(hash)
+      await flushPromises()
+      expect(wrapper.get('.topbar [data-test="readiness-warning"]').text()).toBe(status)
+      expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(false)
+    }
+    expect(fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/machine/check'))).toHaveLength(1)
+  })
   it('reads the server system check on startup without forcing new probes', async () => {
     const fetchMock = stubApi()
     go('#/overview')
