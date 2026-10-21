@@ -1411,6 +1411,29 @@ class TaskRunStore:
                 )
             self._prune_queue()
 
+    def queue_front(self, task_ids: Sequence[str]) -> None:
+        """Move tasks to the front in the given order, preserving other ranks and exclusions."""
+        ids = list(task_ids)
+        if len(set(ids)) != len(ids):
+            raise ValueError("duplicate task id in queue order")
+        if not ids:
+            return
+        front = set(ids)
+        now = _now()
+        with self._txn():
+            rows = self.conn.execute(
+                "SELECT task_id FROM task_queue WHERE rank IS NOT NULL ORDER BY rank, task_id"
+            ).fetchall()
+            order = [*ids, *(str(r[0]) for r in rows if r[0] not in front)]
+            for rank, task_id in enumerate(order):
+                self.conn.execute(
+                    "INSERT INTO task_queue (task_id, rank, excluded, updated_at) "
+                    "VALUES (?, ?, 0, ?) "
+                    "ON CONFLICT(task_id) DO UPDATE SET rank = excluded.rank, "
+                    "updated_at = excluded.updated_at",
+                    (task_id, rank, now),
+                )
+
     def set_excluded(self, task_id: str, excluded: bool) -> None:
         """Exclude `task_id` from auto-continue (or include it again)."""
         now = _now()
