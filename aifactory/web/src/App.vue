@@ -155,7 +155,7 @@ onBeforeUnmount(() => {
           <rect x="8" y="13.5" width="20" height="5" rx="2.5" fill="#c89bff" />
           <rect x="4" y="21" width="13" height="5" rx="2.5" fill="#5ad2dd" />
         </svg>
-        <a class="brand" href="/">HAIFA</a>
+        <a class="brand" :href="OVERVIEW_HREF">HAIFA</a>
       </div>
 
       <div class="topbar-right">

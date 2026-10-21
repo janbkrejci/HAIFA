@@ -8,7 +8,7 @@ import { repoStatusText } from './repos'
 
 type Issue = Pick<Step, 'id' | 'title' | 'hint' | 'href' | 'action'> & { repo?: RepoItem }
 function createReadiness() {
-  const phase = ref<'checking' | 'warning' | 'success' | null>(null)
+  const phase = ref<'loading' | 'checking' | 'warning' | 'success' | null>(null)
   const issues = ref<Issue[]>([])
   let checking = false
   let generation = 0
@@ -21,7 +21,7 @@ function createReadiness() {
     clearTimeout(loadingTimer)
     if (manual) phase.value = 'checking'
     else if (phase.value === null) {
-      loadingTimer = setTimeout(() => { phase.value = 'checking' }, 1000)
+      loadingTimer = setTimeout(() => { phase.value = 'loading' }, 1000)
     }
     try {
       const [machine, library, registry] = await Promise.all([

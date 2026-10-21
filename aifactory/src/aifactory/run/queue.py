@@ -32,13 +32,12 @@ that have it. So with ``auto_continue: true`` on step S01 only, the chain runs t
 tasks of S01 and stops; a task of a step with auto-continue off is never started by
 a chain.
 
-The next task stays in the same project (the root container of the backlog), except
-for tasks of other projects that directly depend on the just finished task. It is
+The next task stays in the same project (the root container of the backlog). It is
 taken from the same project's kanban manual queue first (``task_queue`` in the trace
-DB, ``store.QueuePrefs``), then from the same step, then from those cross-project
-dependents, then from the rest of the same project, each in backlog order, only
-``status: todo``. Unrelated tasks of other projects stay outside the chain even when
-queued. All candidates pass the same checks. A task excluded from
+DB, ``store.QueuePrefs``), then from the same step, then from the rest of the same
+project, each in backlog order, only ``status: todo``. Tasks of other projects stay
+outside the chain even when queued, depended on or blocking a task.
+All candidates pass the same checks. A task excluded from
 auto-continue in the kanban is never started by a chain (``excluded``), with
 ``--auto`` too; started by hand it runs. A task whose
 dependencies are only waiting in open (not merged) pull requests is skipped
@@ -255,8 +254,7 @@ def auto_merge_enabled(task: Task) -> bool:
 
 
 def candidates(backlog: Backlog, after: Task, order: Sequence[str] = ()) -> list[Task]:
-    """`todo` tasks: own project's `order`, same step, cross-project direct dependents
-    of `after`, then the rest of the project, each in backlog order.
+    """`todo` tasks: own project's `order`, same step, then the rest of the project.
 
     The manual order wins over "same step first"; ids in `order` outside the project
     (or not `todo`) are ignored.
@@ -274,13 +272,8 @@ def candidates(backlog: Backlog, after: Task, order: Sequence[str] = ()) -> list
     rank = {task_id: i for i, task_id in enumerate(order)}
     ranked = sorted((t for t in pool if t.id in rank), key=lambda t: rank[t.id])
     same_step = [t for t in pool if t.id not in rank and t.parent is step]
-    dependents = [
-        t
-        for t in iter_tasks(backlog)
-        if t.status == "todo" and after.id in t.depends_on and ancestors(t)[-1] is not project
-    ]
     rest = [t for t in pool if t.id not in rank and t.parent is not step]
-    return [*ranked, *same_step, *dependents, *rest]
+    return [*ranked, *same_step, *rest]
 
 
 def select_next(
@@ -298,8 +291,7 @@ def select_next(
 ) -> Selection:
     """The first startable candidate after `after`, and every candidate that was skipped.
 
-    Candidates include other projects' direct dependents of `after`, after the own
-    project's manual queue and same step, before the rest of the own project.
+    Candidates stay in `after`'s project, including queued and priority tasks.
 
     ``conflict`` (parallel chains, ``Occupancy``) is asked only about a candidate that
     could start otherwise, until one is chosen; a ``Skip`` it returns is recorded and the
