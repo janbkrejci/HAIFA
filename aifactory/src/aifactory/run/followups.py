@@ -88,6 +88,7 @@ class CreatedFollowUp:
     reason: str
     blocks: bool
     existed: bool = False
+    assignee: str = "agent"
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -96,6 +97,7 @@ class CreatedFollowUp:
             "reason": self.reason,
             "blocks": self.blocks,
             "existed": self.existed,
+            "assignee": self.assignee,
         }
 
 
@@ -428,7 +430,14 @@ def _record(
             uncovered.append(item)
         else:
             outcome.created.append(
-                CreatedFollowUp(found.id, found.title, item.reason, item.blocks_task, existed=True)
+                CreatedFollowUp(
+                    found.id,
+                    found.title,
+                    item.reason,
+                    item.blocks_task,
+                    existed=True,
+                    assignee=HUMAN if is_human(found) else "agent",
+                )
             )
             if item.blocks_task:
                 blockers.append(found.id)
@@ -454,7 +463,12 @@ def _record(
                 found = _existing(step, task_id, item.title, _for_human(item, backlog.settings))
                 if found is not None:
                     created = CreatedFollowUp(
-                        found.id, found.title, item.reason, item.blocks_task, existed=True
+                        found.id,
+                        found.title,
+                        item.reason,
+                        item.blocks_task,
+                        existed=True,
+                        assignee=HUMAN if is_human(found) else "agent",
                     )
                 else:
                     assert step.id is not None
@@ -477,7 +491,11 @@ def _record(
                             blockers.append(f"(neuložený task: {item.title})")
                         continue
                     created = CreatedFollowUp(
-                        result.task.id, result.task.title, item.reason, item.blocks_task
+                        result.task.id,
+                        result.task.title,
+                        item.reason,
+                        item.blocks_task,
+                        assignee=HUMAN if is_human(result.task) else "agent",
                     )
                 outcome.created.append(created)
                 if item.blocks_task:

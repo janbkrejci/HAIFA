@@ -124,9 +124,11 @@ def test_record_keeps_different_assignees_separate(repo: Path) -> None:
     outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[follow_up(), human]))
     assert len(outcome.created) == 2
     assert [is_human(task_of(repo, c.id)) for c in outcome.created] == [False, True]
+    assert [c.assignee for c in outcome.created] == ["agent", "human"]
     again = record(repo, T01, "run-2", workflow_run(follow_ups=[follow_up(), human]))
     assert [c.id for c in again.created] == [c.id for c in outcome.created]
     assert all(c.existed for c in again.created)
+    assert [c.to_json()["assignee"] for c in again.created] == ["agent", "human"]
 
 
 def test_record_merges_explicit_and_inferred_human_assignee(repo: Path) -> None:
@@ -196,6 +198,7 @@ def test_record_dependency_reuse_respects_assignee(
     assert created.id == (T01 if reuse else f"{TODO_STEP}-T01")
     assert created.existed is reuse
     assert is_human(task_of(repo, created.id)) is follow_up_human
+    assert created.assignee == ("human" if follow_up_human else "agent")
     assert is_human(task_of(repo, T01)) is dependency_human
     if reuse:
         assert TODO_STEP not in backlog_of(repo).by_id
@@ -230,6 +233,7 @@ def test_record_files_a_persons_follow_up(repo: Path, update: dict[str, Any], hu
 
     filed = task_of(repo, outcome.created[0].id)
     assert is_human(filed) is human
+    assert outcome.created[0].assignee == ("human" if human else "agent")
 
 
 def test_record_gives_follow_up_its_workflow(repo: Path) -> None:
