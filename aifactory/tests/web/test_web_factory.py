@@ -385,6 +385,27 @@ def test_items_and_move_to_the_library(api: Api, tmp_path: Path) -> None:
         ("a", "agent", "builder", False)
     ]
 
+    # Ignore changes only the overview; runtime inheritance and shared detail stay intact.
+    ignored = api.client.post(
+        "/api/library/ignore",
+        json={
+            "repo": "a",
+            "rules": [{"type": "agent", "mode": "item", "value": ".factory/prompts/builder"}],
+        },
+    )
+    assert ignored.status_code == 200
+    assert api.client.get("/api/library/overrides").json()["data"]["overrides"] == []
+    runtime = api.get("a", "factory/items")["data"]["items"]
+    assert (
+        next(i for i in runtime if i["type"] == "agent" and i["name"] == "builder")["origin"]
+        == "repo"
+    )
+    assert api.client.get("/api/library/items/agent/builder").status_code == 200
+    assert (
+        api.client.post("/api/library/ignore", json={"repo": "a", "rules": []}).status_code == 200
+    )
+    assert len(api.client.get("/api/library/overrides").json()["data"]["overrides"]) == 1
+
     options = {"type": "agent", "name": "builder"}
     plan = api.plan("a", "move", options=options)
     assert plan["blockers"] == [] and plan["library_plan"]["files"]
@@ -574,3 +595,27 @@ def test_pull_requires_review_and_rejects_changed_remote(api: Api, tmp_path: Pat
     assert next_plan["files"][0]["content"] == "remote change\n"
     api.post("a", "config/pull", {"digest": next_plan["digest"]})
     assert git(a, "rev-parse", "main") == after
+
+
+def test_repo_only_workflow_inventory_and_move(api: Api, tmp_path: Path) -> None:
+    store.init_library("team")
+    install(api, "a")
+    root = tmp_path / "a"
+    path = ".factory/workflows/haifa-implement-task.yaml"
+    write(root, path, "name: haifa-implement-task\ndescription: Repo only\nsteps:\n  - build\n")
+    commit_push(root, "repo-only workflow")
+    shared = api.client.get("/api/library").json()["data"]["items"]
+    assert not any(i["name"] == "haifa-implement-task" for i in shared)
+    inventory = api.client.get("/api/library/inventory").json()["data"]
+    row = next(i for i in inventory["items"] if i["name"] == "haifa-implement-task")
+    assert row["repo"] == "a" and row["path"] == path and not row["ignored"]
+    detail = api.client.post(
+        "/api/library/repo-item", json={"repo": "a", "type": "workflow", "path": path}
+    )
+    assert detail.status_code == 200 and detail.json()["data"]["movable"]
+    options = {"type": "workflow", "name": "haifa-implement-task"}
+    plan = api.plan("a", "move", options=options)
+    assert plan["blockers"] == []
+    done = api.apply("a", plan, options=options)["data"]
+    assert done["committed"] and not (root / path).exists()
+    assert api.client.get("/api/library/items/workflow/haifa-implement-task").status_code == 200

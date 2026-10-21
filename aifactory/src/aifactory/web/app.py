@@ -2375,13 +2375,51 @@ async def library_overrides(request: Request) -> JSONResponse:
 
     def build() -> tuple[dict[str, Any], list[str]]:
         state, warnings = registry.snapshot()
-        return library.overrides(request.app.state.home, state.repos), warnings
+        from aifactory.library.load import repo_path
+        from aifactory.web.library_inventory import matches
+
+        data = library.overrides(request.app.state.home, state.repos)
+        rules = {entry.id: registry.library_rules(entry.id) for entry in state.repos}
+        data["overrides"] = [
+            row
+            for row in data["overrides"]
+            if not any(
+                matches({**row, "path": repo_path(row["type"], row["name"])}, rule)
+                for rule in rules[row["repo"]]
+            )
+        ]
+        return data, warnings
 
     try:
         data, warnings = await run_in_threadpool(build)
     except factory.Failure as exc:
         return _failure(exc)
     return JSONResponse(envelope_ok(data, warnings))
+
+
+async def library_inventory(request: Request) -> JSONResponse:
+    """Read repo inventory/details or save dashboard-only ignore rules."""
+    from aifactory.web import library_inventory as inventory
+
+    try:
+        registry = _registry(request)
+        if request.method == "GET":
+            data = await run_in_threadpool(inventory.inventory, registry)
+        elif request.url.path.endswith("/ignore"):
+            repo, rules = inventory.rules_body(await _json_body(request))
+            await run_in_threadpool(registry.set_library_rules, repo, rules)
+            data = await run_in_threadpool(inventory.inventory, registry)
+        else:
+            data = await run_in_threadpool(inventory.detail, registry, await _json_body(request))
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except RepoError as exc:
+        return _repo_error(exc)
+    except factory.Failure as exc:
+        return _failure(exc)
+    except OSError as exc:
+        return _failure(factory.Failure("repo_unavailable", str(exc), 409))
+    return JSONResponse(envelope_ok(data))
 
 
 async def library_plan(request: Request) -> JSONResponse:
@@ -2604,6 +2642,9 @@ def create_multi_app(
             Route("/library", library_get, methods=["GET"]),
             Route("/library/items/{type}/{name}", library_item, methods=["GET"]),
             Route("/library/overrides", library_overrides, methods=["GET"]),
+            Route("/library/inventory", library_inventory, methods=["GET"]),
+            Route("/library/ignore", library_inventory, methods=["POST"]),
+            Route("/library/repo-item", library_inventory, methods=["POST"]),
             Route("/library/plan", library_plan, methods=["POST"]),
             Route("/library/apply", library_apply, methods=["POST"]),
             Route("/library/remote", library_remote, methods=["POST"]),

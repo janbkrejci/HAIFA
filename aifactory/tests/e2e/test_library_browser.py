@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from f3_repo import api_get, git, obs_server
+from f3_repo import api_get, git, make_f3_repo, obs_server
 from multi_repo_e2e import diagnostic_tripwire
 from playwright.sync_api import Dialog, Route, expect, sync_playwright
 from test_f3_browser import _launch
@@ -104,6 +104,60 @@ def test_library_seed_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
                 assert api_get(server.url, "/api/repos")["repos"] == []
                 assert not marker.exists()
                 assert external == [] and dialogs == []
+            finally:
+                context.close()
+                browser.close()
+
+
+def test_repo_library_hide_restore_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("HAIFA_LIBRARY", raising=False)
+    script = tmp_path / "fake.json"
+    script.write_text(json.dumps({"agents": {}}), encoding="utf-8")
+    wire, marker = diagnostic_tripwire(tmp_path)
+    home = tmp_path / "haifa-home"
+    repo = make_f3_repo(tmp_path / "repo")
+    workflows = repo / ".factory/workflows"
+    (workflows / "haifa-implement-task.yaml").write_text(
+        "name: repo-only\nsteps: []\n", encoding="utf-8"
+    )
+    with obs_server(repo, script, wire, tmp_path / "obs.log", home) as server:
+        with sync_playwright() as playwright:
+            browser = _launch(playwright)
+            context = browser.new_context(base_url=server.url, service_workers="block")
+            context.set_default_timeout(30_000)
+            page = context.new_page()
+
+            def offline(route: Route) -> None:
+                if "/api/machine/check" in route.request.url:
+                    query = "&" if "?" in route.request.url else "?"
+                    route.continue_(url=route.request.url + query + "offline=1")
+                else:
+                    route.continue_()
+
+            context.route("**/*", offline)
+            try:
+                page.goto("/#/setup/library")
+                page.locator('[data-test="tab-workflow"]').click()
+                row = page.locator('[data-test="inventory-item"]').filter(
+                    has_text="haifa-implement-task"
+                )
+                expect(row).to_contain_text("Pouze v repu")
+                row.locator("button").first.click()
+                expect(page.locator('[data-test="inventory-detail"]')).to_contain_text(
+                    "haifa-implement-task.yaml"
+                )
+                row.locator('[data-test="inventory-hide"]').click()
+                expect(row).to_have_count(0)
+                page.reload()
+                page.locator('[data-test="tab-workflow"]').click()
+                expect(row).to_have_count(0)
+                page.locator('[data-test="inventory-ignored"]').check()
+                expect(row).to_contain_text("Ignorováno")
+                page.locator('[data-test="ignore-restore"]').click()
+                page.locator('[data-test="inventory-ignored"]').uncheck()
+                expect(row).to_have_count(1)
+                assert (workflows / "haifa-implement-task.yaml").exists()
+                assert not marker.exists()
             finally:
                 context.close()
                 browser.close()

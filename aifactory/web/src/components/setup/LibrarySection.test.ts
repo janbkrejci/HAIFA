@@ -7,6 +7,7 @@ function envelope(data: unknown) { return new Response(JSON.stringify({ ok: true
 function api(handler?: (url: string, init?: RequestInit) => Response | Promise<Response> | undefined) {
   const mock = vi.fn(async (url: string, init?: RequestInit) => {
     const own = handler?.(url, init); if (own) return own
+    if (url === '/api/library/inventory') return envelope({ items: [], repos: [], errors: [] })
     if (url === '/api/library') return envelope({ exists: true, items })
     if (url === '/api/library/overrides') return envelope({ library: 'abc', overrides: [], errors: [] })
     if (url.startsWith('/api/library/items/')) {
@@ -92,6 +93,69 @@ describe('LibrarySection', () => {
     const body = JSON.parse(String(mock.mock.calls.find(([url]) => url === '/api/repos/web/factory/apply')![1]!.body))
     expect(body).toEqual({ action: 'move', options: { type: 'agent', name: 'agent-demo' }, target: 'base', digest: 'move-digest' })
     expect(wrapper.text()).toContain('je v knihovně')
+  })
+  it('moves the second repo’s identically named repo-only workflow through preview and confirmation', async () => {
+    const name = 'haifa-implement-task'
+    const path = `.factory/workflows/${name}.yaml`
+    const inventory = ['first', 'second'].map(repo => ({ repo, repo_name: repo, type: 'workflow', name, path, ignored: false, movable: true }))
+    const plan = { action: 'move', type: 'workflow', name, base: 'develop', base_sha: 'b', digest: 'second-workflow-digest', target: 'base', library: 'abc',
+      files: [{ path, action: 'delete', diff: '', content: null, binary: false }], blockers: [],
+      library_plan: { digest: 'library-digest', files: [{ path: `workflows/${name}.yaml`, action: 'create', diff: '+SECOND REPO WORKFLOW', content: 'SECOND REPO WORKFLOW', binary: false }] } }
+    const mock = api((url) => {
+      if (url === '/api/library/inventory') return envelope({ items: inventory, repos: ['first', 'second'].map(id => ({ id, name: id, rules: [] })), errors: [] })
+      if (url === '/api/library/repo-item') return envelope({ movable: true, absolute_path: `/repos/second/${path}`, files: [{ path, content: 'SECOND REPO WORKFLOW', binary: false }] })
+      if (url === '/api/repos/second/factory/plan') return envelope(plan)
+      if (url === '/api/repos/second/factory/apply') return envelope({ ...plan, library_commit: 'feedbeef00' })
+    })
+    const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
+    await wrapper.get('[data-test="tab-workflow"]').trigger('click')
+    const rows = wrapper.findAll('[data-test="inventory-item"]')
+    expect(rows).toHaveLength(2)
+    expect(rows.every(row => row.text().includes('Pouze v repu'))).toBe(true)
+    expect(wrapper.get('[data-test="library-items"]').text()).not.toContain(name)
+    await rows[1]!.get('button').trigger('click'); await flushPromises()
+    const detailCall = mock.mock.calls.find(([url]) => url === '/api/library/repo-item')!
+    expect(JSON.parse(String(detailCall[1]!.body))).toEqual({ repo: 'second', type: 'workflow', path })
+    expect(wrapper.get('[data-test="inventory-detail"]').text()).toContain('second · workflow/' + name)
+    await wrapper.get('[data-test="inventory-move"]').trigger('click'); await flushPromises()
+    expect(wrapper.get('[data-test="repo-move-plan"]').text()).toContain(`workflows/${name}.yaml`)
+    expect(wrapper.get('[data-test="repo-move-plan"]').text()).toContain('SECOND REPO WORKFLOW')
+    expect(openDialog()?.textContent).toContain(`Přesunout workflow/${name} do knihovny?`)
+    const planCall = mock.mock.calls.find(([url]) => url === '/api/repos/second/factory/plan')!
+    expect(JSON.parse(String(planCall[1]!.body))).toEqual({ action: 'move', options: { type: 'workflow', name }, target: 'base' })
+    expect(mock.mock.calls.some(([url]) => url.endsWith('/factory/apply'))).toBe(false)
+    await answerDialog(true)
+    const applyCalls = mock.mock.calls.filter(([url]) => url.endsWith('/factory/apply'))
+    expect(applyCalls).toHaveLength(1)
+    expect(applyCalls[0]![0]).toBe('/api/repos/second/factory/apply')
+    expect(JSON.parse(String(applyCalls[0]![1]!.body))).toEqual({ action: 'move', options: { type: 'workflow', name }, target: 'base', digest: plan.digest })
+    expect(mock.mock.calls.some(([url]) => url.startsWith('/api/repos/first/'))).toBe(false)
+    expect(wrapper.text()).toContain(`workflow/${name} z repa second je v knihovně`)
+  })
+  it('imports an inventory skill using its detail’s absolute path only after confirming the preview', async () => {
+    const path = '.agents/skills/repo-skill'
+    const absolutePath = 'C:/Users/ada/repos/second/.agents/skills/repo-skill'
+    const mock = api((url) => {
+      if (url === '/api/library/inventory') return envelope({ items: [{ repo: 'second', repo_name: 'Second', type: 'skill', name: 'repo-skill', path, ignored: false, movable: false }], repos: [{ id: 'second', name: 'Second', rules: [] }], errors: [] })
+      if (url === '/api/library/repo-item') return envelope({ movable: false, absolute_path: absolutePath, files: [{ path: path + '/SKILL.md', content: 'REPO SKILL CONTENT', binary: false }] })
+      if (url === '/api/library/plan') return envelope({ digest: 'inventory-skill-digest', files: [{ path: 'skills/repo-skill/SKILL.md', action: 'create', content: 'REPO SKILL CONTENT', binary: false }], items: [], blockers: [] })
+    })
+    const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
+    await wrapper.get('[data-test="tab-skill"]').trigger('click')
+    await wrapper.get('[data-test="inventory-item"] button').trigger('click'); await flushPromises()
+    expect(wrapper.get('[data-test="inventory-detail"]').text()).toContain('REPO SKILL CONTENT')
+    expect(mock.mock.calls.some(([url]) => url === '/api/library/plan')).toBe(false)
+    await wrapper.get('[data-test="inventory-import"]').trigger('click'); await flushPromises()
+    const planCall = mock.mock.calls.find(([url]) => url === '/api/library/plan')!
+    expect(JSON.parse(String(planCall[1]!.body))).toEqual({ action: 'import', options: { path: absolutePath, type: 'skill' } })
+    expect(openDialog()?.textContent).toContain('Plán importu')
+    expect(openDialog()?.textContent).toContain('REPO SKILL CONTENT')
+    expect(mock.mock.calls.some(([url]) => url === '/api/library/apply')).toBe(false)
+    await answerDialog(true)
+    const applyCalls = mock.mock.calls.filter(([url]) => url === '/api/library/apply')
+    expect(applyCalls).toHaveLength(1)
+    expect(JSON.parse(String(applyCalls[0]![1]!.body))).toEqual({ action: 'import', options: { path: absolutePath, type: 'skill' }, digest: 'inventory-skill-digest' })
+    expect(wrapper.text()).toContain('Import dokončen')
   })
   it('re-seeds after a preview; an item the team changed is overwritten only when ticked', async () => {
     const kept = { type: 'agent', name: 'builder', action: 'kept', version: 'sha256:new', diff: [{ path: 'agents/builder/system.md', action: 'modify', diff: '-team\n+seed', content: null, binary: false }] }
@@ -234,7 +298,7 @@ describe('LibrarySection', () => {
     const wrapper = mount(LibrarySection, { props: { findings: [finding] } }); await flushPromises()
     expect(wrapper.get('[data-test="library"] [data-test="machine-finding"]').text()).toContain('varování · library_dirty')
   })
-  it('sets up a missing library in the section and hides the item browser', async () => {
+  it('sets up a missing shared library while keeping the repo inventory available', async () => {
     let ready = false
     const mock = api((url) => {
       if (url === '/api/library') return envelope(ready ? { exists: true, items } : { exists: false, default_url: 'https://example.test/team.git' })
@@ -242,6 +306,7 @@ describe('LibrarySection', () => {
     })
     const wrapper = mount(LibrarySection, { props: { findings: [] }, attachTo: document.body }); await flushPromises()
     expect(wrapper.find('[data-test="library-items"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="repo-library"]').exists()).toBe(true)
     expect((wrapper.get('[data-test="library-url"]').element as HTMLInputElement).value).toBe('https://example.test/team.git')
     await wrapper.get('[data-test="library-init"]').trigger('click'); await flushPromises()
     expect(openDialog()?.textContent).toContain('IMPORT FILE CONTENT')

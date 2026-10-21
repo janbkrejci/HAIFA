@@ -337,3 +337,23 @@ class Registry:
             return True
 
         return self._mutate(change)
+
+    def library_rules(self, repo_id: str) -> list[JsonDict]:
+        """Dashboard-only rules, kept with the registered repository."""
+        with self._locked():
+            _, raw = parse_registry(self._read_text(), str(self.path))
+            entry: JsonDict = next((r for r in raw.get("repos", []) if r["id"] == repo_id), {})
+            return list(entry.get("library_ignore", []))
+
+    def set_library_rules(self, repo_id: str, rules: list[JsonDict]) -> None:
+        """Replace one repo's rules with the registry's locked atomic writer."""
+
+        def change(raw: JsonDict, state: RegistryState) -> bool:
+            if state.by_id(repo_id) is None:
+                raise RepoError("unknown_repo", "repository is not registered")
+            for entry in raw.get("repos", []):
+                if entry["id"] == repo_id:
+                    entry["library_ignore"] = rules
+            return True
+
+        self._mutate(change)

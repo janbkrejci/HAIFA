@@ -95,3 +95,11 @@ export function versionLabel(item: { n?: number; short_version?: string | null; 
   const hash = item.short_version ?? item.version?.replace(/^sha256:/, '').slice(0, 8) ?? '—'
   return `${item.n ? 'v' + item.n + ' · ' : ''}${hash}`
 }
+
+export interface IgnoreRule { type: FactoryItemType | '*'; mode: 'item' | 'prefix' | 'directory'; value: string }
+export interface RepoLibraryItem { repo: string; repo_name: string; type: FactoryItemType; name: string; path: string; ignored: boolean; movable: boolean }
+export interface RepoInventory { items: RepoLibraryItem[]; repos: { id: string; name: string; rules: IgnoreRule[] }[]; errors: { repo: string; repo_name: string; message: string }[] }
+export interface RepoItemDetail { files: { path: string; content: string | null; binary: boolean }[]; movable: boolean; absolute_path: string }
+export function fetchInventory(): Promise<RepoInventory> { return getGlobal('/library/inventory') }
+export function saveIgnore(repo: string, rules: IgnoreRule[]): Promise<RepoInventory> { return postGlobal('/library/ignore', { repo, rules }) }
+export function fetchRepoItem(item: RepoLibraryItem): Promise<RepoItemDetail> { return postGlobal('/library/repo-item', { repo: item.repo, type: item.type, path: item.path }) }
