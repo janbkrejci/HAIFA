@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T64
 title: Nové TODO tasky z follow-upů na začátek fronty
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/run/store.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/run/followups.py, aifactory/tests/run/test_queue_prefs.py, aifactory/tests/run/test_followups_queue.py, aifactory/tests/run/test_followups.py, docs/decisions.md]
@@ -40,3 +40,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-21 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/139 · náklady $0.00
