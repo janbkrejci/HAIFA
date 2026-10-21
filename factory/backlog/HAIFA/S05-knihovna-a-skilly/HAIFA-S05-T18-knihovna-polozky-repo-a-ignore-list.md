@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S05-T18
 title: "Knihovna: položky všech připojených repo a ignore list pro repo"
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/, justfile, docs/]
 ---
@@ -24,3 +24,4 @@ Výchozí místa: aifactory/web/src/components/setup/LibrarySection.vue, compone
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-21 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/145 · náklady $0.00
