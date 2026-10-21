@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T66
 title: "Follow-upy: před založením TODO vyhodnotit backlog, nezužovat zadání bez člověka"
-status: todo
+status: done
 workflow: plan-build-test
 depends_on: [HAIFA-REFINEMENT-T64, HAIFA-REFINEMENT-T65]
 writes: [aifactory/src/aifactory/run/followups.py, aifactory/src/aifactory/run/task.py, aifactory/tests/run/test_followups.py, aifactory/tests/run/test_followups_queue.py, aifactory/tests/run/test_followups_triage.py, docs/decisions.md]
@@ -41,3 +41,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-21 · workflow plan-build-test · PR https://github.com/janbkrejci/HAIFA/pull/142 · náklady $0.00
