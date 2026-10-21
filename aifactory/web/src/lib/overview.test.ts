@@ -177,7 +177,7 @@ describe('overview factory controls', () => {
       },
     })
 
-  it('summarizes the tasks in kanban order without empty states', () => {
+  it('summarizes running tasks first, then kanban order without empty states', () => {
     expect(taskSummary(repo('a'))).toEqual([])
     expect(
       taskSummary(repo('a', { tasks: tasks({ done: 4, todo: 1, 'in review': 2, 'awaiting merge': 3 }) })),
@@ -185,6 +185,14 @@ describe('overview factory controls', () => {
       { state: 'todo', label: 'Bez workflow', count: 1 },
       { state: 'in review', label: 'Čeká na review', count: 2 },
       { state: 'awaiting merge', label: 'Čeká na automerge PR', count: 3 },
+      { state: 'done', label: 'Hotovo', count: 4 },
+    ])
+    expect(
+      taskSummary(repo('a', { tasks: tasks({ running: 2, todo: 1, ready: 3, done: 4 }) })),
+    ).toEqual([
+      { state: 'running', label: 'Běží', count: 2 },
+      { state: 'todo', label: 'Bez workflow', count: 1 },
+      { state: 'ready', label: 'Připraveno', count: 3 },
       { state: 'done', label: 'Hotovo', count: 4 },
     ])
   })

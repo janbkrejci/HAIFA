@@ -76,12 +76,12 @@ describe('RepoControls', () => {
       repo('a', { tasks: tasks({ ready: 3, running: 1, done: 12 }), factory: factory({ running: 1, max_parallel_runs: 2 }) }),
     )
     const items = wrapper.findAll('[data-test="task-summary-item"]')
-    expect(items.map((i) => i.attributes('data-state'))).toEqual(['ready', 'running', 'done'])
-    expect(items.map((i) => i.text())).toEqual(['Připraveno 3', 'Běží 1', 'Hotovo 12'])
+    expect(items.map((i) => i.attributes('data-state'))).toEqual(['running', 'ready', 'done'])
+    expect(items.map((i) => i.text())).toEqual(['Běží 1', 'Připraveno 3', 'Hotovo 12'])
     // The same state classes colour the chips as in the backlog StateChip (style.css).
     expect(items.map((i) => i.classes())).toEqual([
-      expect.arrayContaining(['state-chip', 'state-ready']),
       expect.arrayContaining(['state-chip', 'state-running']),
+      expect.arrayContaining(['state-chip', 'state-ready']),
       expect.arrayContaining(['state-chip', 'state-done']),
     ])
     expect(wrapper.find('[data-test="factory-slots"]').text()).toBe('Sloty: 1/2')
