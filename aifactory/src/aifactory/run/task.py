@@ -1079,6 +1079,13 @@ def _record_follow_ups(
     try:
         with store.serialized():
             follow = followups.record(main, row.task_id, row.run_id, wf, blocking=blocking)
+            if follow.committed:
+                ids = [c.id for c in follow.created if not c.existed and c.assignee != "human"]
+                if ids:
+                    try:
+                        store.queue_front(ids)
+                    except Exception as exc:
+                        follow.warnings.append(f"follow-ups not queued: {exc}")
     except Exception as exc:
         reported = blocking and followups.reported_blockers(wf)
         blockers = ["(neuložené hlášení agenta)"] if reported else []
