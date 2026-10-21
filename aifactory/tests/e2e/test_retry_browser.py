@@ -113,7 +113,9 @@ def test_retry_from_run_and_task_detail(tmp_path: Path, screen: str) -> None:
                 lambda r: r.url.endswith(f"/runs/{run_id}/retry")
             ) as response:
                 page.locator('[data-test="retry-submit"]').click()
-            assert response.value.status == 202
+            assert response.value.status == 202, (
+                f"HTTP {response.value.status}: {response.value.text()}\n{server.report(task_id)}"
+            )
             payload = response.value.json()["data"]
             assert payload["action"] == "retry"
             if payload["run"] is not None:
