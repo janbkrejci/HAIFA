@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T69
 title: "Sdílený výběr harnessu, modelu a thinking pro AI pomocníky podle objektu (repo, projekt, step, task)"
-status: todo
+status: done
 workflow: plan-build-test
 depends_on: []
 writes: [aifactory/src/aifactory/backlog/derived.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/harness/settings.py, aifactory/src/aifactory/workflow/adaptive.py, aifactory/src/aifactory/web/workflow_advice.py, aifactory/tests/backlog/, aifactory/tests/harness/test_harness_settings.py, aifactory/tests/web/test_web_workflow_advice.py, aifactory/tests/web/test_web_task_advice.py, aifactory/tests/workflow/test_workflow_advice.py]
@@ -28,3 +28,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-23 · workflow plan-build-test · PR https://github.com/janbkrejci/HAIFA/pull/147 · náklady $0.00
