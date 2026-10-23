@@ -1,8 +1,8 @@
-# factory project settings, written by factory init
 base: main
 git_provider: github
 docs_root: factory
 stacked_prs: true
 generated:
-  - path: aifactory/src/aifactory/web/static
-    command: just web-build
+- path: aifactory/src/aifactory/web/static
+  command: just web-build
+base_pr_merge: auto
