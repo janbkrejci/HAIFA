@@ -22,6 +22,7 @@ from pydantic import ConfigDict, Field
 
 from aifactory import backlog as core
 from aifactory import oscompat, yamlload
+from aifactory.backlog.derived import harness_values
 from aifactory.config import load_run_config
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentCall, EnvelopeBase, PhaseParams
@@ -30,6 +31,7 @@ from aifactory.engine.tracer import Tracer
 from aifactory.errors import UsageError
 from aifactory.harness import canonical, install
 from aifactory.harness.check import check_harness
+from aifactory.harness.settings import context_binding
 from aifactory.providers.git import PARALLEL_CHECKOUT
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.scope import TaskScope
@@ -185,6 +187,12 @@ def context(
         if current[key] is not None:
             effective[key] = current[key]
     effective.update({k: v for k, v in current.get("parameters", {}).items() if v is not None})
+    for key in ("harness", "model", "thinking"):
+        effective.pop(key, None)
+    try:
+        effective.update(context_binding(harness_values(task if task is not None else parent)))
+    except ValueError as exc:
+        raise UsageError(str(exc)) from exc
     return {
         "task_id": task_id,
         "task_snapshot": fingerprint(
@@ -371,13 +379,14 @@ def recommend(
     task_parameters = ctx.get("task_parameters", False)
     output_type = TaskRecommendationOutput if task_parameters else WorkflowRecommendationOutput
     rc = load_run_config(repo, ctx["commit"])
-    from aifactory.harness.settings import effective_override, ensure_enabled
+    from aifactory.harness.settings import ensure_enabled
     from aifactory.run.task import apply_agents_override
 
-    if task_parameters:
-        rc = apply_agents_override(rc, ctx.get("advisor") or {})
-    else:
-        rc = apply_agents_override(rc, effective_override(ctx.get("effective", {}), None))
+    try:
+        binding = ctx["advisor"] if "advisor" in ctx else context_binding(ctx.get("effective", {}))
+        rc = apply_agents_override(rc, binding)
+    except ValueError as exc:
+        raise UsageError(str(exc)) from exc
     role = rc.config.roles.roles.get("plan")
     if role is None:
         raise UsageError("configured plan role is missing")

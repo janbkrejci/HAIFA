@@ -113,10 +113,19 @@ def test_invalid_output_never_writes(tmp_path: Path, change: dict[str, Any]) -> 
     assert not (repo / ".factory/workflows/research.yaml").exists()
 
 
-def test_engine_lifecycle_in_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("task_id", ["P01-S01-T01", None])
+def test_engine_lifecycle_in_thread(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, task_id: str | None
+) -> None:
     repo = make_repo(tmp_path / "repo")
+    project = repo / "backlog/P01/index.md"
+    project.write_text(
+        project.read_text().replace(
+            "writes: [src/]", "writes: [src/]\nharness: codex\nmodel: gpt-5.5\nthinking: high"
+        )
+    )
     seen: list[Any] = []
-    module = agents.INTERFACES["claude"]
+    module = agents.INTERFACES["codex"]
     monkeypatch.setattr(
         "aifactory.workflow.adaptive.check_harness",
         lambda name: HarnessStatus(name, "fake", "fake", "1"),
@@ -137,10 +146,14 @@ def test_engine_lifecycle_in_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(signal, "signal", forbidden)
     monkeypatch.setattr("os.chdir", forbidden)
+    ctx = context(repo, task_id, {} if task_id else {"step": "P01-S01", "title": "First"})
+    assert {k: ctx["effective"][k] for k in ("harness", "model", "thinking")} == {
+        "harness": "codex",
+        "model": "gpt-5.5",
+        "thinking": "high",
+    }
     with ThreadPoolExecutor(1) as pool:
-        result = pool.submit(
-            recommend, repo, context(repo, "P01-S01-T01", {}), "test-advice", threading.Event()
-        ).result()
+        result = pool.submit(recommend, repo, ctx, "test-advice", threading.Event()).result()
     assert result["workflow_name"] == "plan"
     import sqlite3
 
@@ -148,7 +161,8 @@ def test_engine_lifecycle_in_thread(tmp_path: Path, monkeypatch: pytest.MonkeyPa
         status, ended = db.execute("SELECT status, ended_at FROM sessions").fetchone()
         assert status == "success"
         assert ended
-    assert seen[0].model == "sonnet"
+    assert seen[0].model == "gpt-5.5"
+    assert seen[0].thinking == "high"
     assert not Path(seen[0].cwd).exists()
     assert (repo / "backlog/P01/S01/P01-S01-T01-first.md").read_text().endswith("Full task body\n")
 
@@ -360,3 +374,41 @@ def test_remove_tree_handles_read_only_files(tmp_path: Path) -> None:
         path.chmod(stat.S_IREAD)
     remove_tree(root)
     assert not root.exists()
+
+
+@pytest.mark.parametrize("task_id", ["P01-S01-T01", None])
+def test_context_harness_switch_drops_ancestor_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, task_id: str | None
+) -> None:
+    from aifactory import backlog as core
+    from aifactory.harness import settings
+
+    repo = make_repo(tmp_path / "repo")
+    backlog = core.load_for_edit(repo)
+    project = backlog.by_id["P01"]
+    step = backlog.by_id["P01-S01"]
+    assert isinstance(project, core.Container) and isinstance(step, core.Container)
+    project.defaults.update(harness="codex", model="gpt-5.5", thinking="high")
+    step.defaults.update(harness="claude")
+    monkeypatch.setattr(core, "load_for_edit", lambda _: backlog)
+    machine = settings.HarnessSettings(
+        default_harness="codex",
+        harnesses={
+            "claude": settings.HarnessChoice(model="sonnet"),
+            "codex": settings.HarnessChoice(model="gpt-5.5"),
+            "pi": settings.HarnessChoice(enabled=False),
+        },
+    )
+    monkeypatch.setattr(settings, "read", lambda: machine)
+    ctx = context(repo, task_id, {} if task_id else {"step": "P01-S01", "title": "Draft"})
+    assert {k: ctx["effective"][k] for k in ("harness", "model", "thinking")} == {
+        "harness": "claude",
+        "model": "sonnet",
+        "thinking": "high",
+    }
+
+
+def test_context_without_computer_binding_leaves_roster_in_control(tmp_path: Path) -> None:
+    repo = make_repo(tmp_path / "repo")
+    ctx = context(repo, "P01-S01-T01", {})
+    assert all(ctx["effective"][k] is None for k in ("harness", "model", "thinking"))

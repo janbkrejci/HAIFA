@@ -350,3 +350,48 @@ def test_advice_save_survives_concurrent_guard_restoration(tmp_path: Path) -> No
             guard.enforce(run, None, agent, before_restore)
         assert task_path.read_bytes() == saved_task
         assert workflow_path.read_bytes() == saved_workflow
+
+
+@pytest.mark.parametrize("task_id", ["P01-S01-T01", None])
+@pytest.mark.parametrize("change_parent", [False, True])
+def test_project_binding_in_job_and_save(
+    tmp_path: Path, task_id: str | None, change_parent: bool
+) -> None:
+    repo = make_repo(tmp_path / "repo")
+    project = repo / "backlog/P01/index.md"
+    project.write_text(
+        project.read_text().replace(
+            "writes: [src/]", "writes: [src/]\nharness: codex\nmodel: gpt-5.5\nthinking: high"
+        )
+    )
+    seen: list[dict[str, Any]] = []
+
+    def runner(
+        root: Path, ctx: dict[str, Any], identifier: str, event: threading.Event
+    ) -> dict[str, Any]:
+        seen.append(ctx)
+        return output()
+
+    draft = {"title": "Draft"}
+    if task_id is None:
+        draft["step"] = "P01-S01"
+    expected = {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+    with client_for(repo, runner) as client:
+        response = client.post(
+            "/api/backlog/workflow-advice", json={"task_id": task_id, "draft": draft}
+        )
+        assert response.status_code == 202, response.text
+        job = response.json()["data"]
+        assert job["advisor"] == expected
+        data = wait(client, job["job_id"])
+        assert data["state"] == "succeeded", data
+        assert data["advisor"] == expected
+        assert seen[0]["advisor"] == expected
+        assert {k: seen[0]["effective"][k] for k in expected} == expected
+        if change_parent:
+            project.write_text(project.read_text().replace("thinking: high", "thinking: low"))
+        url = f"/api/backlog/tasks/{task_id}/edit" if task_id else "/api/backlog/tasks"
+        saved = client.post(
+            url, json={**draft, "workflow": "plan", "workflow_advice_id": job["job_id"]}
+        )
+        assert saved.status_code == (400 if change_parent else 200), saved.text
