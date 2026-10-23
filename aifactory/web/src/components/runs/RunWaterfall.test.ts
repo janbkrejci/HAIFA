@@ -31,6 +31,21 @@ afterEach(() => {
 })
 
 describe('RunWaterfall', () => {
+  it('shows the model as soon as a running agent lane arrives without a session or start event', async () => {
+    const initial = detail({ state: 'running' })
+    const running = { ...initial.phases.find((p) => p.kind === 'agent')!, status: 'running', ended_at: null, model: 'claude-opus-4' }
+    initial.phases = []
+    initial.agents = []
+    const wrapper = mount(RunWaterfall, { props: { detail: initial, events: [], now: NOW } })
+    expect(wrapper.find('[data-lane="agent:planner"]').exists()).toBe(false)
+
+    await wrapper.setProps({ detail: { ...initial, phases: [running] } })
+
+    const model = wrapper.find('[data-lane="agent:planner"] [data-test="lane-model"]')
+    expect(model.text()).toContain('claude-opus-4')
+    expect(model.find('img.model-icon').attributes('src')).toBe('/models/claude.png')
+  })
+
   it('draws engineer, code and agent lanes with model, context and color', () => {
     const wrapper = mount(RunWaterfall, { props: { detail: withAgent(), events: events(), now: NOW } })
     expect(wrapper.findAll('[data-lane]').map((l) => l.attributes('data-lane'))).toEqual([

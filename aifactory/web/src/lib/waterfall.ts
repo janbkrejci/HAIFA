@@ -118,15 +118,16 @@ export function buildLanes(detail: RunDetail, events: TraceEvent[]): Lane[] {
   for (const [i, owner] of owners.entries()) {
     const info = (detail.agents ?? []).find((a) => a.agent === owner)
     const start = starts[owner]
+    const ownerPhases = phases.filter((p) => p.kind === 'agent' && p.owner === owner)
     lanes.push({
       id: `agent:${owner}`,
       kind: 'agent',
       label: owner,
-      model: info?.model ?? start?.model ?? null,
+      model: info?.model ?? start?.model ?? ownerPhases.find((p) => p.model)?.model ?? null,
       context: laneContext(info),
       meta: null,
       color: agentColor(info?.color, start?.color, i),
-      phases: phases.filter((p) => p.kind === 'agent' && p.owner === owner),
+      phases: ownerPhases,
     })
   }
   return lanes

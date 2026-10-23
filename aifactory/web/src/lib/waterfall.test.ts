@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AGENT_FALLBACK_COLORS } from './events'
 import type { AgentSession, PhaseRow, RunDetail, TraceEvent } from './runs'
+import { applyTail } from './runs'
 import {
   MIN_BLOCK_PCT,
   REQ_ZONE_PCT,
@@ -82,6 +83,45 @@ function overlaps(blocks: { left: number; width: number }[]): boolean {
 }
 
 describe('buildLanes', () => {
+  it.each(['new', 'updated'] as const)('shows the model after a tail with a %s phase, before an agent session exists', (change) => {
+    const pending = phase({ phase_id: 'a', status: 'running', ended_at: null })
+    const initial = run(change === 'new' ? [] : [pending], [], 'running')
+    const start = event({ type: 'agent_start', phase_id: 'a', name: 'planner', payload: { model: 'gpt-5' } })
+    // A phase can already contain the model while its start event is on a later tail page.
+    for (const tailEvents of [[], [start]]) {
+      const merged = applyTail(initial, [], {
+        run: initial.run,
+        session: initial.session,
+        phases: [{ ...pending, model: 'gpt-5' }],
+        events: tailEvents,
+        agents: [],
+        gates: [],
+        envelopes: [],
+        usage_delta: { read: 0, written: 0 },
+        cursors: { events: tailEvents.length, phases: 1, gates: 0, envelopes: 0 },
+        has_more: tailEvents.length === 0,
+      })
+      expect(buildLanes(merged.detail, merged.events).find((l) => l.id === 'agent:planner')!.model).toBe('gpt-5')
+    }
+  })
+
+  it('finds the model in any phase of the same agent lane', () => {
+    const phases = [
+      phase({ phase_id: 'a' }),
+      phase({ phase_id: 'b', seq: 2, owner: 'builder', model: 'other-model' }),
+      phase({ phase_id: 'c', seq: 3, model: 'gpt-5' }),
+    ]
+    expect(buildLanes(run(phases), []).find((l) => l.id === 'agent:planner')!.model).toBe('gpt-5')
+  })
+
+  it('keeps session and start models ahead of the phase fallback', () => {
+    const phases = [phase({ phase_id: 'a', model: 'phase-model' })]
+    const start = event({ type: 'agent_start', phase_id: 'a', payload: { model: 'start-model' } })
+    expect(buildLanes(run(phases), [start]).find((l) => l.id === 'agent:planner')!.model).toBe('start-model')
+    expect(buildLanes(run(phases, [agent({ agent: 'planner', model: 'session-model' })]), [start])
+      .find((l) => l.id === 'agent:planner')!.model).toBe('session-model')
+  })
+
   it('orders engineer, code, then agents by first appearance', () => {
     const lanes = buildLanes(
       run([
