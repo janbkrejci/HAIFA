@@ -205,6 +205,16 @@ def effective_override(
     return result
 
 
+def context_binding(values: dict[str, object]) -> dict[str, str]:
+    """Bind a backlog context to computer settings, or leave selection to the roster."""
+    harness = values.get("harness")
+    if not isinstance(harness, str) or not harness.strip():
+        settings = read()
+        if settings is None or settings.default_harness is None:
+            return {}
+    return effective_override(values, None)
+
+
 def ensure_enabled(harness: str) -> None:
     settings = read()
     if settings and not settings.harnesses[canonical(harness)].enabled:

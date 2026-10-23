@@ -150,3 +150,37 @@ def test_legacy_null_uses_computer_model_default_without_writing_on_read(
     assert settings.effective_override({"thinking": "low"}, None)["thinking"] == "low"
     assert settings.effective_override({}, {"thinking": "high"})["thinking"] == "high"
     assert settings.path(tmp_path).read_text() == original
+
+
+def test_context_binding_uses_computer_and_object_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HAIFA_HOME", str(tmp_path))
+    assert settings.context_binding({}) == {}
+    assert settings.context_binding({"model": "orphan", "thinking": "high"}) == {}
+    value = choices()
+    value["harnesses"]["codex"]["thinking"] = "high"
+    settings.path(tmp_path).write_text(json.dumps(value))
+    assert settings.context_binding({}) == {
+        "harness": "codex",
+        "model": "gpt-5.5",
+        "thinking": "high",
+    }
+    binding: dict[str, object] = {"harness": "claude", "model": "opus", "thinking": "low"}
+    assert settings.context_binding(binding) == binding
+    value["default_harness"] = None
+    settings.path(tmp_path).write_text(json.dumps(value))
+    assert settings.context_binding({}) == {}
+    assert settings.context_binding({"model": "orphan", "thinking": "high"}) == {}
+    assert settings.context_binding(binding) == binding
+    # The task runner's strict resolver still rejects a missing machine default.
+    with pytest.raises(ValueError, match="no default harness"):
+        settings.effective_override({}, None)
+    with pytest.raises(ValueError, match="disabled"):
+        settings.context_binding({"harness": "pi"})
+    (tmp_path / settings.TEST_FILE).write_text(json.dumps({"codex": {"gpt-5.5": {"ok": False}}}))
+    with pytest.raises(ValueError, match="failed its test"):
+        settings.context_binding({"harness": "codex"})
+    settings.path(tmp_path).write_text("invalid json")
+    with pytest.raises(ValueError):
+        settings.context_binding({})

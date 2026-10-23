@@ -238,23 +238,42 @@ def test_advisor_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
             time.sleep(0.01)
         manager.close()
     advisors = sorted((ctx["advisor"] for ctx in seen), key=lambda a: a["harness"])
-    assert advisors[0]["harness"] == "claude"
+    assert advisors[0] == {"harness": "claude", "model": "sonnet", "thinking": "medium"}
     assert advisors[1]["harness"] == "claude" and advisors[1]["model"] == "sonnet"
     assert advisors[2]["harness"] == "codex" and advisors[2]["model"] == "gpt-5.5"
 
 
-def test_advisor_inherits_task_settings(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("task_id", ["P01-S01-T01", None])
+@pytest.mark.parametrize(
+    ("explicit", "switch"),
+    [
+        ({}, False),
+        ({"harness": "claude"}, False),
+        ({"harness": "claude", "model": "opus"}, False),
+        ({}, True),
+    ],
+)
+def test_advisor_inherits_task_settings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    task_id: str | None,
+    explicit: dict[str, str],
+    switch: bool,
+) -> None:
     """Without an explicit choice the advisor is the agent the task itself would run with."""
     from advice_fixture import git
 
     repo = make_repo(tmp_path / "repo")
-    (repo / "backlog/P01/S01/index.md").write_text(
-        "---\nid: P01-S01\ntitle: Step\nharness: codex\nmodel: gpt-5.5\nthinking: high\n"
-        "---\nStep context\n",
+    (repo / "backlog/P01/index.md").write_text(
+        "---\nid: P01\ntitle: Project\nharness: codex\nmodel: gpt-5.5\nthinking: high\n"
+        "---\nProject context\n",
         encoding="utf-8",
-        newline="\n",
     )
-    git(repo, "commit", "-qam", "step defaults")
+    if switch:
+        # Legacy lower-level values remain readable; editing rules are unchanged.
+        step = repo / "backlog/P01/S01/index.md"
+        step.write_text(step.read_text().replace("title: Step", "title: Step\nharness: claude"))
+    git(repo, "commit", "-qam", "project defaults")
     machine_settings(monkeypatch)
     seen: list[dict[str, Any]] = []
 
@@ -264,17 +283,34 @@ def test_advisor_inherits_task_settings(tmp_path: Path, monkeypatch: pytest.Monk
         seen.append(ctx)
         return proposal()
 
-    manager = AdviceManager(runner, task_parameters=True)
-    try:
-        job = manager.start(repo, {"task_id": "P01-S01-T01", "draft": {"body": "Live body"}})
-        assert job["advisor"] == {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+    app = create_app(repo, static_dir=repo / "absent")
+    app.state.task_advice.close()
+    app.state.task_advice = AdviceManager(runner, task_parameters=True)
+    expected = (
+        {
+            "harness": "claude",
+            "model": explicit.get("model", "sonnet"),
+            "thinking": "medium" if explicit.get("model") == "opus" else "high",
+        }
+        if explicit or switch
+        else {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+    )
+    draft = {"body": "Live body"} if task_id else {"step": "P01-S01", "title": "Draft"}
+    with TestClient(app, base_url="http://127.0.0.1:4700") as client:
+        response = client.post(
+            "/api/backlog/task-advice", json={"task_id": task_id, "draft": draft, **explicit}
+        )
+        assert response.status_code == 202, response.text
+        job = response.json()["data"]
+        assert job["advisor"] == expected
         for _ in range(200):
-            if seen:
+            data = client.get(f"/api/backlog/task-advice/{job['job_id']}").json()["data"]
+            if data["state"] in {"succeeded", "failed"}:
                 break
             time.sleep(0.01)
-    finally:
-        manager.close()
-    assert seen[0]["advisor"] == {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+        assert data["state"] == "succeeded", data
+        assert data["advisor"] == expected
+    assert seen[0]["advisor"] == expected
 
 
 def test_available_tasks_share_the_context_budget(

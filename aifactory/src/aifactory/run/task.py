@@ -43,7 +43,7 @@ from aifactory.backlog import (
     load_backlog,
     unmet,
 )
-from aifactory.backlog.derived import ancestors
+from aifactory.backlog.derived import ancestors, harness_values
 from aifactory.config import (
     ConfigError,
     FactoryConfig,
@@ -462,13 +462,7 @@ def override_note(note: str | None, override: dict[str, str] | None) -> str | No
 
 def task_harness_values(task: Task) -> dict[str, object]:
     """A harness switch at a nearer level inherits that harness's model, not its sibling's."""
-    result: dict[str, object] = {}
-    for values in [*(c.defaults for c in reversed(ancestors(task))), task.own]:
-        harness = values.get("harness")
-        if harness and harness != result.get("harness"):
-            result.pop("model", None)
-        result.update({k: values[k] for k in ("harness", "model", "thinking") if values.get(k)})
-    return result
+    return harness_values(task)
 
 
 def run_task(

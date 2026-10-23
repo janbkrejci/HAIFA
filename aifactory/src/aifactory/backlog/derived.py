@@ -27,6 +27,17 @@ def ancestors(node: Node) -> list[Container]:
     return result
 
 
+def harness_values(node: Node) -> dict[str, object]:
+    """Inherited binding; switching harness drops the previous harness's model."""
+    result: dict[str, object] = {}
+    for values in [*(own_values(c) for c in reversed(ancestors(node))), own_values(node)]:
+        harness = values.get("harness")
+        if harness and harness != result.get("harness"):
+            result.pop("model", None)
+        result.update({k: values[k] for k in ("harness", "model", "thinking") if values.get(k)})
+    return result
+
+
 def effective(task: Task) -> dict[str, object]:
     """Inherited values: top ancestor first, nearer ancestors override, the task wins."""
     values: dict[str, object] = {}

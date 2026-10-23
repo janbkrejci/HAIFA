@@ -161,13 +161,16 @@ def _remove_created(target: Path, identity: tuple[int, int], content: bytes) -> 
         target.unlink()
 
 
-def _resolve(repo: Path, explicit: dict[str, str]) -> dict[str, str]:
-    """Fallback advisor: explicit choice, computer default, else the roster plan agent.
-
-    Task advice without an explicit choice first uses the task's inherited harness settings.
-    """
+def _resolve(
+    repo: Path, explicit: dict[str, str], values: dict[str, object] | None = None
+) -> dict[str, str]:
+    """Explicit choice, inherited computer binding, else the roster plan agent."""
     try:
-        selection = harness_settings.effective_override({}, explicit)
+        selection = (
+            harness_settings.effective_override({}, explicit)
+            if explicit
+            else harness_settings.context_binding(values or {})
+        )
     except ValueError as exc:
         raise UsageError(str(exc)) from exc
     if selection.get("harness"):
@@ -179,7 +182,10 @@ def _resolve(repo: Path, explicit: dict[str, str]) -> dict[str, str]:
     )
     if agent is None:
         return {}
-    return {"harness": canonical(agent.coding_agent), "model": agent.model}
+    result = {"harness": canonical(agent.coding_agent), "model": agent.model}
+    if agent.thinking:
+        result["thinking"] = agent.thinking
+    return result
 
 
 class AdviceManager:
@@ -242,6 +248,7 @@ class AdviceManager:
         if task_id is not None:
             ensure_task_not_running(repo, task_id)
         ctx = context(repo, task_id, body["draft"], task_parameters=self.task_parameters)
+        explicit: dict[str, str] = {}
         if self.task_parameters:
             harness = body.get("harness")
             model = body.get("model")
@@ -253,24 +260,16 @@ class AdviceManager:
             if model and (not harness or model not in offered[harness]):
                 raise UsageError("choose a model of the selected harness")
             ctx["task_parameters"] = True
-            advisor: dict[str, str] = {}
-            if not harness and not model:
-                # The agent the task itself would run with: task, ancestors, config, computer.
-                try:
-                    advisor = harness_settings.effective_override(ctx["effective"], None)
-                except ValueError as exc:
-                    raise UsageError(str(exc)) from exc
-            if not advisor.get("harness"):
-                advisor = _resolve(
-                    repo, {k: v for k, v in (("harness", harness), ("model", model)) if v}
-                )
-            ctx["advisor"] = advisor
+            explicit = {k: v for k, v in (("harness", harness), ("model", model)) if v}
+            ctx["advisor"] = _resolve(repo, explicit, ctx["effective"])
             ctx["available_tasks"] = [
                 {"id": t.id, "title": t.title, "depends_on": t.depends_on}
                 for t in core.load_for_edit(repo).by_id.values()
                 if isinstance(t, core.Task)
             ][:1000]
         digest = fingerprint(ctx)
+        if not self.task_parameters:
+            ctx["advisor"] = _resolve(repo, explicit, ctx["effective"])
         with self.lock:
             self._expire()
             for job in self.jobs.values():
