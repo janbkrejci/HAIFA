@@ -201,7 +201,9 @@ tasks into the free ``max_parallel_runs`` slots, HTTP 200 also when nothing star
 the overview's ``factory.control``).
 The guide (``assistant.py``, multi-repository app only) reads, never writes:
 ``GET /api/assistant/threads`` (newest first), ``POST /api/assistant/threads``
-(``{title?}``, HTTP 201; the guide runs on claude only, HTTP 409 ``harness_unavailable``
+(``{title?, screen?: {repo?, task?, run?}}``, HTTP 201; task/run context selects the binding,
+else computer defaults; invalid context returns HTTP 400 ``usage_error``.
+The guide runs on claude only, HTTP 409 ``harness_unavailable``
 without an enabled claude), ``GET /api/assistant/threads/{id}`` (with messages),
 ``DELETE /api/assistant/threads/{id}`` (the thread and its folder for good; HTTP 409 ``busy``
 while an answer runs),
@@ -2525,7 +2527,11 @@ async def assistant_threads(request: Request) -> JSONResponse:
 
 
 async def assistant_create(request: Request) -> JSONResponse:
-    """A new thread (``{title?}``) with the computer's harness and model."""
+    """Create ``{title?, screen?: {repo?, task?, run?}}`` with a context-bound selection.
+
+    Task/run uses inherited binding, otherwise computer defaults; invalid context is HTTP
+    400 ``usage_error``, an unavailable harness is HTTP 409 ``harness_unavailable``.
+    """
     try:
         body = await _json_body(request) if await request.body() else {}
         data = await run_in_threadpool(_assistant(request).create, body)
