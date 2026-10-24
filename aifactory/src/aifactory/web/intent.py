@@ -59,6 +59,7 @@ class Runner(Protocol):
         job_id: str | None = ...,
         workdir: Path | None = ...,
         refinement: Refinement | None = ...,
+        on_agent: Callable[[dict[str, str]], None] | None = ...,
     ) -> tuple[BacklogProposalOutput, core.BatchResult, list[Finding]]: ...
 
 
@@ -74,6 +75,7 @@ class IntentJob:
     round: int = 1
     proposal: BacklogProposalOutput | None = None
     data: dict[str, Any] | None = None
+    agent: dict[str, str] | None = None
     error: str | None = None
     issues: list[dict[str, Any]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
@@ -119,6 +121,7 @@ class IntentJob:
             "target": self.placement(),
             "requested": {"project": self.target.project, "step": self.target.step},
             "proposal": self.data,
+            "agent": dict(self.agent) if self.agent is not None else None,
             "error": self.error,
             "issues": self.issues,
             "notes": list(self.notes),
@@ -292,6 +295,11 @@ class IntentManager:
                 job.events_from = job.events.stat().st_size
             except OSError:
                 job.events_from = 0
+
+        def on_agent(selection: dict[str, str]) -> None:
+            with self.lock:
+                job.agent = dict(selection)
+
         try:
             proposal, result, findings = self.runner(
                 job.repo,
@@ -300,6 +308,7 @@ class IntentManager:
                 job_id=job.id,
                 workdir=job.workdir,
                 refinement=refinement,
+                on_agent=on_agent,
             )
             data = to_json(proposal, result, job.target, findings)
         except BaseException as exc:

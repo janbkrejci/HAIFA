@@ -26,7 +26,7 @@ from __future__ import annotations
 import json
 import secrets
 import subprocess
-from collections.abc import Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -37,6 +37,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from aifactory import backlog as core
 from aifactory import yamlload
 from aifactory.backlog import Issue, NewTask, TaskEditError
+from aifactory.backlog.derived import harness_values
 from aifactory.config import load_run_config
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentCall, EnvelopeBase, PhaseParams
@@ -45,10 +46,12 @@ from aifactory.engine.tracer import Tracer
 from aifactory.failure import AgentReportedFail, InvalidOutput
 from aifactory.harness import canonical, install
 from aifactory.harness.check import check_harness
+from aifactory.harness.settings import context_binding, ensure_enabled
 from aifactory.providers.git import PARALLEL_CHECKOUT
+from aifactory.run.errors import TaskRunError
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.scope import TaskScope
-from aifactory.run.task import _main_ignored, prepare_cfg
+from aifactory.run.task import _main_ignored, apply_agents_override, prepare_cfg
 from aifactory.workflow import DEFAULT_WORKFLOWS_DIR, propose_check
 from aifactory.workflow.adaptive import advice_dir
 from aifactory.workflow.propose_check import DONE_HEADING, Candidate, Finding
@@ -624,6 +627,7 @@ def run_proposer(
     job_id: str | None = None,
     workdir: Path | None = None,
     refinement: Refinement | None = None,
+    on_agent: Callable[[dict[str, str]], None] | None = None,
 ) -> tuple[BacklogProposalOutput, core.BatchResult, list[Finding]]:
     """One turn of the proposer: the first proposal, or a ``refinement`` of it in the same
     session (``job_id`` and ``workdir`` of the first turn)."""
@@ -636,8 +640,21 @@ def run_proposer(
     catalog = workflow_catalog(repo)
     job_id = job_id or f"propose-{secrets.token_hex(4)}"
     rc = load_run_config(repo)
+    runtime = repo / ".factory/data/backlog-propose" / job_id
+    snapshot = runtime / "agent.json"
+    try:
+        if refinement is not None and snapshot.exists():
+            binding = json.loads(snapshot.read_text(encoding="utf-8"))
+        else:
+            backlog = core.load_for_edit(repo)
+            node = backlog.by_id.get(target.step or target.project or "")
+            binding = context_binding(harness_values(node) if node is not None else {})
+        rc = apply_agents_override(rc, binding)
+    except ValueError as exc:
+        raise TaskEditError("agent_unavailable", str(exc)) from exc
+    except TaskRunError as exc:
+        raise TaskEditError(exc.code, exc.message) from exc
     with _isolated(repo, rc.commit, workdir) as isolated:
-        runtime = repo / ".factory/data/backlog-propose" / job_id
         runtime.mkdir(parents=True, exist_ok=True)
         cfg = prepare_cfg(repo, rc, runtime / "prompts")
         if not any(a.name == PROPOSER_AGENT for a in cfg.agents):
@@ -647,8 +664,6 @@ def run_proposer(
                 "run 'factory library seed' to take it from the seed",
             )
         agent = agents.resolve(cfg, PROPOSER_AGENT)
-        from aifactory.harness.settings import ensure_enabled
-
         try:
             ensure_enabled(agent.coding_agent)
         except ValueError as exc:
@@ -659,6 +674,14 @@ def run_proposer(
                 "agent_unavailable",
                 f"proposer harness unavailable: {status.name}: {status.error}",
             )
+        selection = {
+            "harness": canonical(agent.coding_agent),
+            "model": agent.model,
+            "thinking": agent.thinking,
+        }
+        snapshot.write_text(json.dumps(selection), encoding="utf-8")
+        if on_agent is not None:
+            on_agent(dict(selection))
         agent.writes = []
         agents.validate(cfg, [agent.name])
         cfg.defaults.data_dir = str(runtime)

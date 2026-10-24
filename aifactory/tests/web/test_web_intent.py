@@ -58,6 +58,8 @@ def test_propose_refine_in_same_session_and_apply(
     job = response.json()["data"]["job_id"]
     data = wait(client, job)
     assert data["state"] == "ready", data
+    selection = {"harness": "claude", "model": seen[0].model, "thinking": seen[0].thinking}
+    assert data["agent"] == selection
     proposal = data["proposal"]
     assert proposal["step"]["id"] == "P01-S02" and proposal["step"]["new"] is True
     assert [t["id"] for t in proposal["tasks"]] == ["P01-S02-T01", "P01-S02-T02"]
@@ -74,6 +76,7 @@ def test_propose_refine_in_same_session_and_apply(
     assert response.status_code == 202, response.text
     data = wait(client, job)
     assert data["state"] == "ready" and data["round"] == 2
+    assert data["agent"] == selection
     assert data["notes"] == ["Přidej dokumentaci."]
     assert len(seen) == 2
     assert seen[1].session_id == seen[0].session_id
@@ -106,6 +109,7 @@ def test_propose_refine_in_same_session_and_apply(
     assert "Jinak." in backlog.by_id["P01-S02-T02"].body
     assert "P01-S02-T03" not in backlog.by_id
     assert wait(client, job)["state"] == "applied"
+    assert wait(client, job)["agent"] == selection
     assert client.post(f"/api/backlog/intent/{job}/apply", json={}).status_code == 400
 
 
@@ -269,3 +273,92 @@ def test_requested_target_is_reported(
         "new_project": False,
         "new_step": True,
     }
+
+
+@pytest.mark.parametrize("target", ["project", "step", "auto"])
+def test_job_reports_selected_agent(
+    repo: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    from intent_fixture import computer_binding, container_binding
+
+    computer_binding()
+    container_binding(
+        repo,
+        "backlog/P01/index.md",
+        "harness: claude\nmodel: sonnet\n"
+        if target == "auto"
+        else "harness: codex\nmodel: gpt-5.5\nthinking: low\n",
+    )
+    answer = (
+        export_step()
+        if target == "project"
+        else {"status": "success", "summary": "Task", "tasks": [task("T02", "Druhý")]}
+    )
+    body = {"intent": "Export"}
+    if target == "auto":
+        answer.update(existing_step="P01-S01", placement_reason="Patří sem.")
+    else:
+        body[target] = "P01" if target == "project" else "P01-S01"
+    seen = install_fake(monkeypatch, [answer], "codex")
+    job = client.post("/api/backlog/intent", json=body).json()["data"]["job_id"]
+    data = wait(client, job)
+    assert data["state"] == "ready", data
+    expected = {
+        "harness": "codex",
+        "model": "gpt-6.1-sol" if target == "auto" else "gpt-5.5",
+        "thinking": "high" if target == "auto" else "low",
+    }
+    assert data["agent"] == expected
+    assert (seen[0].model, seen[0].thinking) == (expected["model"], expected["thinking"])
+    computer_binding("claude")
+    # Target changes cannot switch an existing conversation either.
+    container_binding(repo, "backlog/P01/S01/index.md", "harness: claude\nmodel: sonnet\n")
+    response = client.post(f"/api/backlog/intent/{job}/refine", json={"note": "Upřesni"})
+    assert response.status_code == 202
+    refined = wait(client, job)
+    assert refined["state"] == "ready", refined
+    assert refined["agent"] == expected
+    assert seen[1].session_id == seen[0].session_id
+    assert seen[1].cwd == seen[0].cwd
+    assert (seen[1].model, seen[1].thinking) == (expected["model"], expected["thinking"])
+    computer_binding("claude", enabled=False)
+    assert (
+        client.post(f"/api/backlog/intent/{job}/refine", json={"note": "Ještě jednou"}).status_code
+        == 202
+    )
+    failed = wait(client, job)
+    assert failed["state"] == "ready"
+    assert "disabled" in failed["error"]
+    assert failed["agent"] == expected
+    assert len(seen) == 2
+
+
+def test_agent_metadata_is_visible_while_running(
+    repo: Path, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import threading
+
+    entered = threading.Event()
+    release = threading.Event()
+
+    def answer(request: Any) -> dict[str, Any]:
+        entered.set()
+        assert release.wait(10)
+        return export_step()
+
+    seen = install_fake(monkeypatch, [answer])
+    try:
+        job = client.post(
+            "/api/backlog/intent", json={"intent": "Export", "project": "P01"}
+        ).json()["data"]["job_id"]
+        assert entered.wait(10)
+        data = client.get(f"/api/backlog/intent/{job}").json()["data"]
+        assert data["state"] == "running"
+        assert data["agent"] == {
+            "harness": "claude",
+            "model": seen[0].model,
+            "thinking": seen[0].thinking,
+        }
+    finally:
+        release.set()
+    assert wait(client, job)["agent"] == data["agent"]
