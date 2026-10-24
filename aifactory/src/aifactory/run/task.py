@@ -1080,6 +1080,7 @@ def _record_follow_ups(
     try:
         from aifactory.backlog import load_for_edit
         from aifactory.run import triage
+        from aifactory.run.retry import _note_override
 
         decisions = None
         triage_warnings: list[str] = []
@@ -1087,7 +1088,9 @@ def _record_follow_ups(
         reported, _ = followups.collect(wf, backlog.settings)
         if reported:
             try:
-                choices = triage.ask_triager(main, reported, backlog)
+                choices = triage.ask_triager(
+                    main, reported, backlog, task_id=row.task_id, binding=_note_override(row.note)
+                )
                 by_id = {choice.follow_up_id: choice for choice in choices}
                 if len(choices) != len(reported) or set(by_id) != {
                     f"f{n}" for n in range(1, len(reported) + 1)

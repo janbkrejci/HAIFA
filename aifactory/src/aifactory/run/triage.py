@@ -18,7 +18,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aifactory.backlog import Backlog, effective_writes, is_human, iter_tasks
-from aifactory.backlog.derived import ancestors
+from aifactory.backlog.derived import ancestors, harness_values
 from aifactory.config import load_run_config
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentCall, EnvelopeBase, PhaseParams
@@ -26,11 +26,11 @@ from aifactory.engine.runner import Run
 from aifactory.engine.tracer import Tracer
 from aifactory.harness import canonical, install
 from aifactory.harness.check import check_harness
-from aifactory.harness.settings import ensure_enabled
+from aifactory.harness.settings import context_binding, ensure_enabled
 from aifactory.run.followups import Reported
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.scope import TaskScope, matches
-from aifactory.run.task import _main_ignored, prepare_cfg
+from aifactory.run.task import _main_ignored, apply_agents_override, prepare_cfg
 from aifactory.workflow.propose import _isolated
 
 install()
@@ -206,7 +206,14 @@ def _violations(output: TriageOutput, reported: Sequence[Reported], backlog: Bac
     return errors
 
 
-def ask_triager(repo: Path, reported: Sequence[Reported], backlog: Backlog) -> list[Decision]:
+def ask_triager(
+    repo: Path,
+    reported: Sequence[Reported],
+    backlog: Backlog,
+    *,
+    task_id: str | None = None,
+    binding: dict[str, str] | None = None,
+) -> list[Decision]:
     """Recommend handling, or raise TriageUnavailable after one semantic correction."""
     if not reported:
         return []
@@ -216,16 +223,29 @@ def ask_triager(repo: Path, reported: Sequence[Reported], backlog: Backlog) -> l
             for n, _ in enumerate(reported, 1)
         ]
     try:
-        return _invoke(repo, reported, backlog)
+        return _invoke(repo, reported, backlog, task_id=task_id, binding=binding)
     except TriageUnavailable:
         raise
     except Exception as exc:
         raise TriageUnavailable(f"Triager unavailable: {exc}") from exc
 
 
-def _invoke(repo: Path, reported: Sequence[Reported], backlog: Backlog) -> list[Decision]:
+def _invoke(
+    repo: Path,
+    reported: Sequence[Reported],
+    backlog: Backlog,
+    *,
+    task_id: str | None = None,
+    binding: dict[str, str] | None = None,
+) -> list[Decision]:
     job_id = f"triage-{secrets.token_hex(4)}"
     rc = load_run_config(repo)
+    if binding is None and task_id is not None:
+        task = next((t for t in iter_tasks(backlog) if t.id == task_id), None)
+        if task is None:
+            raise TriageUnavailable(f"Unknown source task: {task_id}")
+        binding = context_binding(harness_values(task))
+    rc = apply_agents_override(rc, binding)
     with _isolated(repo, rc.commit, None) as isolated:
         runtime = repo / ".factory/data/triage" / job_id
         runtime.mkdir(parents=True, exist_ok=True)
