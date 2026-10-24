@@ -39,3 +39,11 @@ Při opakovaném ověření:
 - Typová kontrola pěti změněných Python souborů, Ruff lint i kontrola formátování opět prošly.
 
 Samotný timeout není důkaz chyby implementace. Celá run sada ani celoprojektová typová kontrola nebyly v builder fázi opakovány; jejich dokončení posuzuje navazující testovací fáze. Frontend a statický build zůstávají v rozsahu T47.
+
+## Ověření po rebase na main 15f5cda
+
+Kontrola aktuální implementace potvrdila migraci `task_queue`, zachování archivace při ostatních zápisech i registraci a validaci API. Testovací fáze `quality/16` dokončila lint, celoprojektovou typovou kontrolu (493 souborů), 122 testů přímých volajících a 165 testů fronty a jejích konzumentů.
+
+Webová sada skončila výsledkem 651 prošlých a jednoho selhaného testu: `tests/web/test_web_fs.py::test_pick_one_at_a_time` překročil desetisekundové čekání na start falešného dialogu. Samostatné opakování příkazem `just pytest tests/web/test_web_fs.py::test_pick_one_at_a_time -n0 --tb=short` prošlo za 3,15 s. Cesta výběru složky nevolá archivaci ani trace DB; příčina původního prodlení nebyla reprodukována. Zdrojový kód ani test výběru složky proto nebyly změněny.
+
+Po rebase opět prošlo všech 34 testů příkazem `just pytest tests/run/test_queue_prefs.py tests/web/test_web_backlog_queue.py`. Výsledek samostatného opakování nenahrazuje výsledek celé webové sady; její poslední běh měl výše popsané selhání.
