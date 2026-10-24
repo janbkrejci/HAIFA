@@ -38,8 +38,10 @@ when necessary; never weaken a check because it caught a real defect.
 
 {{context_handoff_dir}}
 
-An absolute path outside the repo. Write a short `test-plan.md` there, not inside the
-worktree. Change nothing in the repository and do not run the checks yourself.
+`<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at exactly that path; never create a directory of the same name inside the repo or the worktree.
+
+Write a short `test-plan.md` there. Change nothing in the repository and do not run
+the checks yourself.
 
 ## Report
 
