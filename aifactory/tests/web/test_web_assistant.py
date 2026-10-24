@@ -34,7 +34,7 @@ def machine_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     value = settings.HarnessSettings(
         default_harness="claude",
         harnesses={
-            "claude": settings.HarnessChoice(model="sonnet"),
+            "claude": settings.HarnessChoice(model="sonnet", thinking="medium"),
             "codex": settings.HarnessChoice(model="gpt-5.5"),
             "pi": settings.HarnessChoice(enabled=False),
         },
@@ -633,3 +633,219 @@ def test_delete_refuses_a_thread_that_answers(
         time.sleep(0.05)
     assert client.delete(f"/api/assistant/threads/{thread_id}").status_code == 200
     assert not folder.exists()
+
+
+def project_binding(repo: Path, harness: str = "claude") -> None:
+    with_task(repo)
+    write(
+        repo,
+        "backlog/P01/index.md",
+        f"---\nid: P01\ntitle: Project\nharness: {harness}\n"
+        "model: context-model\nthinking: high\n---\n",
+    )
+
+
+def stored_thread(thread_id: str) -> dict[str, Any]:
+    path = haifa_home() / "assistant" / "threads" / thread_id / "thread.json"
+    data: dict[str, Any] = json.loads(path.read_text())
+    return data
+
+
+@pytest.mark.parametrize("allow_codex", [True, False])
+def test_create_inherits_project_binding_and_applies_guide_limit(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, allow_codex: bool
+) -> None:
+    client, repo, repo_id = setup
+    machine_settings(monkeypatch)
+    project_binding(repo, "codex")
+    if allow_codex:
+        monkeypatch.setattr("aifactory.web.assistant.GUIDE_HARNESSES", ("claude", "codex"))
+    codex = fake_unlimited(monkeypatch, "codex")
+    claude = fake_harness(monkeypatch)
+    response = client.post(
+        "/api/assistant/threads", json={"screen": {"repo": repo_id, "task": "P01-S01-T01"}}
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    thread_id = data["id"]
+    expected = ("codex", "context-model", "high") if allow_codex else ("claude", "sonnet", "medium")
+    stored = stored_thread(thread_id)
+    assert tuple(stored[k] for k in ("harness", "model", "thinking")) == expected
+    manager = client.app.state.assistant  # type: ignore[attr-defined]
+    assert manager.threads[thread_id].thinking == expected[2]
+    ask(client, thread_id, "Ahoj")
+    request = (codex if allow_codex else claude)[0]
+    assert (request.model, request.thinking) == expected[1:]
+    assert not (claude if allow_codex else codex)
+
+
+@pytest.mark.parametrize("configured", [True, False])
+def test_context_binding_survives_messages_and_restart(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, configured: bool
+) -> None:
+    from aifactory.web.assistant import AssistantManager
+
+    client, repo, repo_id = setup
+    if configured:
+        machine_settings(monkeypatch)
+    project_binding(repo)
+    seen = fake_harness(monkeypatch)
+    response = client.post(
+        "/api/assistant/threads", json={"screen": {"repo": repo_id, "task": "P01-S01-T01"}}
+    )
+    assert response.status_code == 201, response.text
+    thread_id = response.json()["data"]["id"]
+    ask(client, thread_id, "První")
+    project = repo / "backlog/P01/index.md"
+    project.write_text(project.read_text().replace("context-model", "changed-model"))
+    machine_settings(monkeypatch)
+    ask(client, thread_id, "Druhá", screen={"repo": "other", "task": "other"})
+    assert [(r.model, r.thinking) for r in seen] == [("context-model", "high")] * 2
+    assert seen[0].session_id == seen[1].session_id
+    stored = stored_thread(thread_id)
+    assert (stored["model"], stored["thinking"]) == ("context-model", "high")
+    restarted = AssistantManager(haifa_home(), lambda: [(repo_id, repo)])
+    try:
+        assert restarted.get(thread_id)["model"] == "context-model"
+        thread = restarted.threads[thread_id]
+        assert (thread.harness, thread.thinking, thread.session_id) == (
+            "claude",
+            "high",
+            seen[0].session_id,
+        )
+    finally:
+        restarted.close()
+
+
+@pytest.mark.parametrize("screen", [None, {}, {"repo": "$repo"}, {"repo": " ", "task": None}])
+def test_create_without_task_uses_computer_binding(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, screen: Any
+) -> None:
+    client, repo, repo_id = setup
+    machine_settings(monkeypatch)
+    project_binding(repo, "codex")
+    if isinstance(screen, dict):
+        screen = {k: repo_id if v == "$repo" else v for k, v in screen.items()}
+    response = client.post("/api/assistant/threads", json={"screen": screen})
+    assert response.status_code == 201, response.text
+    assert response.json()["data"]["model"] == "sonnet"
+
+
+def run_context(repo: Path) -> Path:
+    db = repo / ".factory/trace.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE task_runs (run_id TEXT, task_id TEXT, state TEXT, started_at TEXT, "
+            "ended_at TEXT, pid INTEGER, workflow TEXT, error TEXT, harness TEXT, model TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO task_runs VALUES "
+            "('r1', 'P01-S01-T01', 'done', '', '', NULL, '', '', 'codex', 'historical-model')"
+        )
+    conn.close()
+    return db
+
+
+@pytest.mark.parametrize("explicit_task", [False, True])
+def test_run_uses_current_task_binding_read_only(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, explicit_task: bool
+) -> None:
+    client, repo, repo_id = setup
+    machine_settings(monkeypatch)
+    project_binding(repo)
+    db = run_context(repo)
+    before = db.read_bytes()
+    screen = {"repo": repo_id, "run": "r1"}
+    if explicit_task:
+        screen["task"] = "P01-S01-T01"
+    response = client.post("/api/assistant/threads", json={"screen": screen})
+    assert response.status_code == 201, response.text
+    stored = stored_thread(response.json()["data"]["id"])
+    assert (stored["harness"], stored["model"], stored["thinking"]) == (
+        "claude",
+        "context-model",
+        "high",
+    )
+    assert db.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        {"extra": 1},
+        *({"screen": v} for v in [False, 0, "", [], True, "repo", 1, ["repo"]]),
+        {"screen": {"extra": "x"}},
+        {"screen": {"repo": 1}},
+        {"screen": {"task": "x" * 201}},
+        {"screen": {"run": "x\ny"}},
+        {"screen": {"repo": "unknown"}},
+        {"screen": {"task": "P01-S01-T01"}},
+        {"screen": {"run": "r1"}},
+        {"screen": {"repo": "$repo", "task": "unknown"}},
+        {"screen": {"repo": "$repo", "run": "unknown"}},
+        {"screen": {"repo": "$repo", "task": "other", "run": "r1"}},
+        {"screen": {"repo": "$repo", "task": "P01-S01-T01", "run": "unknown"}},
+    ],
+)
+def test_create_rejects_invalid_context_without_creating_thread(
+    setup: tuple[TestClient, Path, str], body: dict[str, Any]
+) -> None:
+    client, repo, repo_id = setup
+    with_task(repo)
+    run_context(repo)
+    body = json.loads(json.dumps(body).replace("$repo", repo_id))
+    response = client.post("/api/assistant/threads", json=body)
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "usage_error"
+    assert client.get("/api/assistant/threads").json()["data"]["threads"] == []
+    root = haifa_home() / "assistant/threads"
+    assert not root.exists() or not list(root.iterdir())
+
+
+def test_run_without_trace_db_does_not_create_it(setup: tuple[TestClient, Path, str]) -> None:
+    client, repo, repo_id = setup
+    db = repo / ".factory/trace.db"
+    assert not db.exists()
+    response = client.post(
+        "/api/assistant/threads", json={"screen": {"repo": repo_id, "run": "missing"}}
+    )
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "usage_error"
+    assert not db.exists()
+
+
+@pytest.mark.parametrize("invalid", ["missing", "duplicate", "config", "trace"])
+def test_invalid_repository_context_is_usage_error(
+    setup: tuple[TestClient, Path, str], invalid: str
+) -> None:
+    client, repo, repo_id = setup
+    screen = {"repo": repo_id, "task": "P01-S01-T01"}
+    if invalid == "duplicate":
+        with_task(repo)
+        write(repo, TASK_FILE.replace("first", "duplicate"), (repo / TASK_FILE).read_text())
+    elif invalid == "config":
+        write(repo, ".factory/config.yaml", "invalid: [")
+    elif invalid == "trace":
+        (repo / ".factory/trace.db").write_bytes(b"invalid database")
+        screen = {"repo": repo_id, "run": "r1"}
+    response = client.post("/api/assistant/threads", json={"screen": screen})
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "usage_error"
+    if invalid == "trace":
+        assert "not readable" in response.json()["error"]["message"]
+    if invalid == "missing":
+        assert not (repo / "backlog").exists()
+    assert client.get("/api/assistant/threads").json()["data"]["threads"] == []
+
+
+def test_disabled_context_harness_is_not_silently_replaced(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, repo, repo_id = setup
+    machine_settings(monkeypatch)
+    project_binding(repo, "pi")
+    response = client.post(
+        "/api/assistant/threads", json={"screen": {"repo": repo_id, "task": "P01-S01-T01"}}
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "harness_unavailable"
