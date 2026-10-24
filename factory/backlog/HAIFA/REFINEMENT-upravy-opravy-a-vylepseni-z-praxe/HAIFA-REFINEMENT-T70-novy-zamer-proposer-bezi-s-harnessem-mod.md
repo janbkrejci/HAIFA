@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T70
 title: "Nový záměr: proposer běží s harnessem, modelem a thinking cílového projektu nebo stepu"
-status: todo
+status: done
 workflow: plan-build-test
 depends_on: [HAIFA-REFINEMENT-T69]
 writes: [aifactory/src/aifactory/workflow/propose.py, aifactory/src/aifactory/web/intent.py, aifactory/tests/workflow/test_backlog_propose.py, aifactory/tests/web/test_web_intent.py, aifactory/tests/intent_fixture.py]
@@ -25,3 +25,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-24 · workflow plan-build-test · PR https://github.com/janbkrejci/HAIFA/pull/148 · náklady $0.00
