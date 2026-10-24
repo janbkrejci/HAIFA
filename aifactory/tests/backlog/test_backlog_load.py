@@ -197,3 +197,23 @@ def test_invalid_config_raises(tmp_path: Path) -> None:
     write(tmp_path, ".factory/config.yaml", "levels: [x]\n")
     with pytest.raises(ConfigError):
         load_backlog(tmp_path)
+
+
+@pytest.mark.parametrize("status", ["todo", "done", "cancelled"])
+@pytest.mark.parametrize("flag", ["", "archived: true\n", "archived: false\n"])
+def test_archived_frontmatter(tmp_path: Path, status: str, flag: str) -> None:
+    root = sample_repo(tmp_path)
+    path = root / T02
+    path.write_text(task_md("M01-S01-T02", status, flag), encoding="utf-8")
+    task = _task("M01-S01-T02", root)
+    expected = status == "cancelled" if not flag else "true" in flag
+    assert task.archived is expected
+    assert check_backlog(load_backlog(root)) == []
+
+
+@pytest.mark.parametrize("value", ["null", "1", '"true"'])
+def test_archived_must_be_boolean(tmp_path: Path, value: str) -> None:
+    root = sample_repo(tmp_path)
+    (root / T02).write_text(task_md("M01-S01-T02", extra=f"archived: {value}\n"), encoding="utf-8")
+    issues = check_backlog(load_backlog(root))
+    assert any(i.code == "invalid_field" and "archived" in i.message for i in issues)

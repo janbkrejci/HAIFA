@@ -4,7 +4,7 @@ Backlog: markdown strom pod `<docs_root>/backlog/`: **projekt**, **step**, **tas
 
 ## Strom a kanban
 
-Zrušené tasky se archivují rovnou, hotové tlačítkem **Archivovat**; archivované ukáže přepínač Zobrazit archivované v záhlaví sloupce a archivace se necommituje.
+Archivaci (`archived: true/false`) ukládá **Archivovat**/**Obnovit** do front matter; commituje se. Chybějící hodnota: `cancelled`=archivovaný, ostatní=nearchivovaný. Archiv ukáže přepínač sloupce.
 
 **Strom**: projekty, stepy, počty tasků, graf závislostí a **Nastavení** (posuvníky): auto-continue, auto-merge a klíče `index.md`.
 

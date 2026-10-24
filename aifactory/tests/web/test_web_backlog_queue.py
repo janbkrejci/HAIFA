@@ -10,6 +10,7 @@ import pytest
 from backlog_fixture import A1, A2, A3, A4, B1, B2, B3, make_backlog_repo
 from starlette.testclient import TestClient
 
+from aifactory.backlog import parse_frontmatter
 from aifactory.run.store import TaskRunStore
 from aifactory.skill import envelope_problems
 from aifactory.web import create_app
@@ -156,7 +157,8 @@ def test_cancelling_a_task_drops_its_priority(tmp_path: Path) -> None:
     assert [p.task_id for p in _prefs(root).priority] == [B2]
 
 
-def test_archive_round_trip_without_backlog_edits(tmp_path: Path) -> None:
+@pytest.mark.parametrize("task_id", [A1, A4])
+def test_archive_round_trip_in_frontmatter(tmp_path: Path, task_id: str) -> None:
     root = make_backlog_repo(tmp_path / "repo")
     client = _client(root, tmp_path)
     before = {p: p.read_bytes() for p in (root / "backlog").rglob("*.md")}
@@ -165,37 +167,48 @@ def test_archive_round_trip_without_backlog_edits(tmp_path: Path) -> None:
     assert tasks[A1]["archived"] is False
     assert tasks[A4]["archived"] is True
     assert tasks[B1]["archived"] is False
-    assert not (root / ".factory" / "trace.db").exists()
-    for archived in (True, False):
+    path = root / tasks[task_id]["path"]
+    default = task_id == A4
+    for archived in (not default, default):
         body = _check(
-            client.post(f"/api/backlog/tasks/{A1}/archive", json={"archived": archived}), 200
+            client.post(f"/api/backlog/tasks/{task_id}/archive", json={"archived": archived}), 200
         )
-        assert body["data"] == {"task_id": A1, "archived": archived}
-        assert _prefs(root).archived == (frozenset({A1}) if archived else frozenset())
-        data = _check(client.get("/api/backlog"), 200)["data"]
+        assert body["data"] == {"task_id": task_id, "archived": archived}
+        header, _ = parse_frontmatter(path.read_text(encoding="utf-8"))
+        if archived == default:
+            assert "archived" not in header
+        else:
+            assert header["archived"] is archived
+        # A new app reads the file, with no trace database.
+        fresh = _client(root, tmp_path)
+        data = _check(fresh.get("/api/backlog"), 200)["data"]
         tasks = {t["id"]: t for t in data["tasks"]}
-        assert tasks[A1]["archived"] is archived
-        assert tasks[A4]["archived"] is True
-        detail = _check(client.get(f"/api/backlog/tasks/{A1}"), 200)["data"]
+        assert tasks[task_id]["archived"] is archived
+        detail = _check(fresh.get(f"/api/backlog/tasks/{task_id}"), 200)["data"]
         assert detail["task"]["archived"] is archived
-    store = TaskRunStore(root / ".factory" / "trace.db")
-    try:
-        store.set_archived(B1, True)
-    finally:
-        store.close()
-    data = _check(client.get("/api/backlog"), 200)["data"]
-    assert next(t for t in data["tasks"] if t["id"] == B1)["archived"] is False
+        assert not (root / ".factory" / "trace.db").exists()
     assert {p: p.read_bytes() for p in (root / "backlog").rglob("*.md")} == before
 
 
-@pytest.mark.parametrize("task_id", [B1, A4, "M09-S01-T01", "M01-S01"])
+def test_legacy_database_archive_does_not_override_frontmatter(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    store = TaskRunStore(root / ".factory" / "trace.db")
+    try:
+        store.set_archived(A1, True)
+    finally:
+        store.close()
+    data = _check(_client(root, tmp_path).get("/api/backlog"), 200)["data"]
+    assert next(t for t in data["tasks"] if t["id"] == A1)["archived"] is False
+
+
+@pytest.mark.parametrize("task_id", [B1, "M09-S01-T01", "M01-S01"])
 @pytest.mark.parametrize("archived", [True, False])
 def test_archive_rejects_unknown_and_unfinished_tasks(
     tmp_path: Path, task_id: str, archived: bool
 ) -> None:
     root = make_backlog_repo(tmp_path / "repo")
     client = _client(root, tmp_path)
-    status, code = (400, "invalid_value") if task_id in (B1, A4) else (404, "unknown_task")
+    status, code = (400, "invalid_value") if task_id == B1 else (404, "unknown_task")
     body = _check(
         client.post(f"/api/backlog/tasks/{task_id}/archive", json={"archived": archived}), status
     )

@@ -80,6 +80,7 @@ describe('BacklogView', () => {
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/tasks/finished/archive',
       expect.objectContaining({ method: 'POST', body: '{"archived":true}' }))
     expect(listGets()).toBeGreaterThan(before)
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/status')
     expect(wrapper.find('[data-item="finished"]').exists()).toBe(false)
     await wrapper.get('[data-column="done"] [data-test="show-archived"]').trigger('click')
     await wrapper.get('[data-column="cancelled"] [data-test="show-archived"]').trigger('click')

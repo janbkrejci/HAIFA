@@ -282,9 +282,6 @@ def _task_json(
     rank = rt.queue.order.index(task.id) if task.id in rt.queue.order else None
     data["queue_rank"] = rank
     data["auto_excluded"] = task.id in rt.queue.excluded
-    data["archived"] = task.status == "cancelled" or (
-        task.status == "done" and task.id in rt.queue.archived
-    )
     prio = _priority(backlog, rt)
     data["priority_rank"] = list(prio).index(task.id) if task.id in prio else None
     data["priority_of"] = list(prio.get(task.id, []))
@@ -989,23 +986,13 @@ def auto_exclude(repo: Path, task_id: str, body: JsonDict) -> tuple[JsonDict, li
 
 
 def archive(repo: Path, task_id: str, body: JsonDict) -> tuple[JsonDict, list[str]]:
-    """Archive a done task (``{archived: bool}``) without editing the backlog."""
+    """Archive or restore a done/cancelled task in its front matter."""
     _check_keys(body, ARCHIVE_KEYS)
     archived = body.get("archived")
     if not isinstance(archived, bool):
         raise core.TaskEditError("invalid_value", "'archived' must be true or false")
-    backlog = core.load_for_edit(repo)
-    task = backlog.by_id.get(task_id)
-    if not isinstance(task, Task):
-        raise core.TaskEditError("unknown_task", f"unknown task '{task_id}'")
-    if task.status != "done":
-        raise core.TaskEditError("invalid_value", "only done tasks can be archived")
-    store = _queue_store(repo)
-    try:
-        store.set_archived(task_id, archived)
-    finally:
-        store.close()
-    return {"task_id": task_id, "archived": archived}, []
+    result = core.edit_task(repo, task_id, archived=archived)
+    return {"task_id": task_id, "archived": result.task.archived}, _warnings(result.issues)
 
 
 def _drop_priority(repo: Path, task_id: str) -> bool:

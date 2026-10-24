@@ -393,7 +393,10 @@ async function onExclude(id: string, excluded: boolean) {
 
 async function onArchive(id: string, archived: boolean) {
   const undo = optimistic((list) => list.map((t) => (t.id === id ? { ...t, archived } : t)))
-  await queueWrite(() => setArchived(id, archived), undo)
+  await queueWrite(async () => {
+    await setArchived(id, archived)
+    void backlogStatus.refresh()
+  }, undo)
 }
 
 /** Take the priority of a blocked task (or of its blocker) away, from the kanban. */
