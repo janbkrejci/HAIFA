@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T72
 title: "AI průvodce: nové vlákno přebírá harness, model a thinking z kontextu obrazovky"
-status: todo
+status: done
 workflow: plan-build-test
 depends_on: [HAIFA-REFINEMENT-T69]
 writes: [aifactory/src/aifactory/web/assistant.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_assistant.py]
@@ -25,3 +25,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-24 · workflow plan-build-test · PR https://github.com/janbkrejci/HAIFA/pull/151 · náklady $0.00
