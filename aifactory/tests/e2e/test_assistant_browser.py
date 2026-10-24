@@ -87,13 +87,24 @@ def test_assistant_conversation_browser(tmp_path: Path, monkeypatch: pytest.Monk
             expect(panel.locator('[data-test="assistant-suggestion"]')).to_have_count(3)
 
             panel.locator('[data-test="assistant-input"]').fill("Proč selhal první task?")
-            panel.locator('[data-test="assistant-send"]').click()
+            with page.expect_response(
+                lambda response: (
+                    response.request.method == "POST"
+                    and response.url.endswith("/api/assistant/threads")
+                )
+            ) as created:
+                panel.locator('[data-test="assistant-send"]').click()
+            assert created.value.request.post_data_json == {"screen": {"repo": identifier}}
+            binding = created.value.json()["data"]
+            expected_binding = " · ".join(
+                value
+                for value in (binding["harness"], binding["model"], binding.get("thinking"))
+                if value
+            )
             # the first part streams in while the agent still works
             streaming = panel.locator('[data-test="assistant-streaming"]')
             expect(streaming.locator("strong")).to_have_text("trace DB")
-            expect(panel.locator('[data-test="assistant-harness"]')).to_have_text(
-                "claude · claude-opus-5-5"
-            )
+            expect(panel.locator('[data-test="assistant-harness"]')).to_have_text(expected_binding)
             release.set()
             answer = panel.locator('[data-test="assistant-answer"]')
             expect(answer).to_contain_text("selhal v testech")
@@ -112,8 +123,14 @@ def test_assistant_conversation_browser(tmp_path: Path, monkeypatch: pytest.Monk
             run_link = answer.get_by_role("link", name="abcd1234")
             expect(run_link).to_have_attribute("href", f"#/r/{identifier}/runs/abcd1234")
 
-            # a new thread offers the questions of the screen, the old one is in the list
-            panel.locator('[data-test="assistant-new"]').click()
+            # Reload restores the selected thread; reopening from the topbar starts fresh.
+            page.reload()
+            expect(panel.locator('[data-test="assistant-answer"]')).to_contain_text("selhal")
+            panel.locator('[data-test="assistant-close"]').click()
+            expect(panel).to_have_count(0)
+            page.locator('[data-test="assistant-toggle"]').click()
+            expect(panel.locator('[data-test="assistant-user"]')).to_have_count(0)
+            expect(panel.locator('[data-test="assistant-answer"]')).to_have_count(0)
             expect(panel.locator('[data-test="assistant-suggestion"]').first).to_have_text(
                 "Co má tenhle task udělat?"
             )
@@ -122,6 +139,19 @@ def test_assistant_conversation_browser(tmp_path: Path, monkeypatch: pytest.Monk
             expect(items).to_have_count(1)
             items.first.click()
             expect(panel.locator('[data-test="assistant-answer"]')).to_contain_text("selhal")
+            panel.locator('[data-test="assistant-new"]').click()
+            with page.expect_request(
+                lambda request: (
+                    request.method == "POST" and request.url.endswith("/api/assistant/threads")
+                )
+            ) as task_created:
+                panel.locator('[data-test="assistant-suggestion"]').first.click()
+            assert task_created.value.post_data_json == {
+                "screen": {"repo": identifier, "task": "P01-S01-T01"}
+            }
+            expect(panel.locator('[data-test="assistant-answer"]')).to_contain_text("selhal")
+            panel.locator('[data-test="assistant-threads"]').click()
+            expect(items).to_have_count(2)
         finally:
             release.set()
             browser.close()

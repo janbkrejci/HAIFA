@@ -715,9 +715,24 @@ describe('App', () => {
     wrapper.unmount()
   })
 
-  it('opens the AI guide from the topbar on every screen and keeps it open across screens', async () => {
+  it('opens a fresh guide from the topbar and keeps older conversations in history', async () => {
+    vi.stubGlobal('EventSource', FakeEventSource)
+    const thread = {
+      id: 'aaaaaaaaaaaa', title: 'Question', harness: 'claude', model: 'opus', thinking: 'medium',
+      created_at: '', updated_at: '', busy: false, seq: 0, messages: [] as unknown[],
+    }
     stubApi({
-      handler: (url) => (url === '/api/assistant/threads' ? envelope({ threads: [] }) : undefined),
+      handler: (url, init) => {
+        if (url === '/api/assistant/threads') {
+          return envelope(init?.method === 'POST' ? thread : { threads: [{ ...thread, messages: 2 }] })
+        }
+        if (url.endsWith('/messages')) {
+          const message = { id: 'u', role: 'user', text: 'Question' }
+          return envelope({ thread, message, seq: 1 })
+        }
+        if (url === `/api/assistant/threads/${thread.id}`) return envelope(thread)
+        return undefined
+      },
     })
     go('#/overview')
     const wrapper = mount(App)
@@ -726,11 +741,41 @@ describe('App', () => {
     await wrapper.get('[data-test="assistant-toggle"]').trigger('click')
     expect(wrapper.get('[data-test="assistant-toggle"]').attributes('aria-pressed')).toBe('true')
     expect(wrapper.find('[data-test="assistant-context"]').exists()).toBe(false)
+    await wrapper.get('[data-test="assistant-input"]').setValue('Question')
+    await wrapper.get('[data-test="assistant-panel"] form').trigger('submit')
+    await flushPromises()
+    const answer = { id: 'a', role: 'assistant', text: 'Earlier answer' }
+    FakeEventSource.latest().emit('done', { seq: 2, message: answer })
+    thread.messages = [{ id: 'u', role: 'user', text: 'Question' }, answer]
     go('#/r/haifa/backlog')
     await flushPromises()
-    expect(wrapper.find('[data-test="assistant-panel"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Earlier answer')
     expect(wrapper.get('[data-test="assistant-context"]').text()).toBe('repo haifa')
-    await wrapper.get('[data-test="assistant-close"]').trigger('click')
-    expect(wrapper.find('[data-test="assistant-panel"]').exists()).toBe(false)
+    await wrapper.get('[data-test="assistant-toggle"]').trigger('click')
+    expect(wrapper.get('[data-test="assistant-toggle"]').attributes('aria-pressed')).toBe('false')
+    await wrapper.get('[data-test="assistant-toggle"]').trigger('click')
+    expect(wrapper.find('[data-test="assistant-user"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="assistant-answer"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-test="assistant-suggestion"]')).toHaveLength(3)
+    await wrapper.get('[data-test="assistant-threads"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="assistant-thread-item"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Earlier answer')
+  })
+
+  it('restores the selected thread on a page reload with the panel open', async () => {
+    resetAssistantForTests()
+    sessionStorage.setItem('haifa.assistant.open', '1')
+    sessionStorage.setItem('haifa.assistant.thread', 'aaaaaaaaaaaa')
+    stubApi({ handler: (url) => url === '/api/assistant/threads/aaaaaaaaaaaa' ? envelope({
+      id: 'aaaaaaaaaaaa', harness: 'claude', model: 'opus', busy: false,
+      messages: [{ id: 'a', role: 'assistant', text: 'Restored answer' }], seq: 0,
+    }) : undefined })
+    go('#/overview')
+    const wrapper = mount(App)
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-toggle"]').attributes('aria-pressed')).toBe('true')
+    expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Restored answer')
   })
 })

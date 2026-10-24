@@ -11,6 +11,12 @@ import {
   linkify,
   outcomeText,
   resetAssistantForTests,
+  openThread,
+  restoreOpen,
+  setOpen,
+  toggleOpen,
+  send,
+  createThread,
   streamedAnswer,
   suggestions,
   type ProposedAction,
@@ -247,5 +253,99 @@ describe('streamedAnswer', () => {
     const text = 'SQL:\n```sql\nSELECT 1\n```\n```'
     expect(streamedAnswer(text)).toEqual({ text, pending: 0 })
     expect(streamedAnswer('```py\nx = 1')).toEqual({ text: '```py\nx = 1', pending: 0 })
+  })
+})
+
+describe('opening the guide', () => {
+  const detail = {
+    id: 'aaaaaaaaaaaa', title: 'Earlier', harness: 'claude', model: 'opus',
+    created_at: '', updated_at: '', busy: false, seq: 0,
+    messages: [{ id: 'u', role: 'user' as const, text: 'Earlier question' }],
+  }
+  const respond = (data: unknown) => new Response(JSON.stringify({ ok: true, data }))
+
+  afterEach(() => {
+    resetAssistantForTests()
+    vi.unstubAllGlobals()
+  })
+
+  it('opens empty every time, without fetching the stored thread or creating one', async () => {
+    const fetchMock = vi.fn(async () => respond(detail))
+    vi.stubGlobal('fetch', fetchMock)
+    sessionStorage.setItem('haifa.assistant.thread', detail.id)
+    setOpen(true)
+    expect(assistant.thread).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+    await openThread(detail.id)
+    assistant.listing = true
+    assistant.streaming = { text: 'Old answer', tools: [] }
+    toggleOpen()
+    expect(assistant.open).toBe(false)
+    toggleOpen()
+    expect(assistant.open).toBe(true)
+    expect(assistant.thread).toBeNull()
+    expect(assistant.listing).toBe(false)
+    expect(assistant.streaming).toBeNull()
+    expect(sessionStorage.getItem('haifa.assistant.thread')).toBeNull()
+    restoreOpen()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it.each(['0', '1'])('restores a saved thread only when the panel was open (%s)', async (open) => {
+    const fetchMock = vi.fn(async () => respond(detail))
+    vi.stubGlobal('fetch', fetchMock)
+    sessionStorage.setItem('haifa.assistant.thread', detail.id)
+    sessionStorage.setItem('haifa.assistant.open', open)
+    restoreOpen()
+    await vi.waitFor(() => expect(assistant.loading).toBe(false))
+    expect(assistant.open).toBe(open === '1')
+    expect(assistant.thread?.id ?? null).toBe(open === '1' ? detail.id : null)
+    restoreOpen()
+    expect(fetchMock).toHaveBeenCalledTimes(open === '1' ? 1 : 0)
+  })
+
+  it('restores an open empty panel without a request', () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    sessionStorage.setItem('haifa.assistant.open', '1')
+    restoreOpen()
+    expect(assistant.open).toBe(true)
+    expect(assistant.thread).toBeNull()
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('ignores a late old thread response and clears loading on a new opening', async () => {
+    let resolve!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((done) => { resolve = done })))
+    const pending = openThread(detail.id)
+    expect(assistant.loading).toBe(true)
+    setOpen(true)
+    expect(assistant.loading).toBe(false)
+    resolve(respond(detail))
+    await pending
+    expect(assistant.thread).toBeNull()
+  })
+
+  it.each([null, {}, { repo: 'haifa', task: 'P01-S01-T01' }])('creates with effective screen %j only on the first send', async (screen) => {
+    const bodies: unknown[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      bodies.push(JSON.parse(String(init?.body)))
+      if (url === '/api/assistant/threads') return respond({ ...detail, messages: [] })
+      return respond({ thread: detail, message: detail.messages[0], seq: 1 })
+    }))
+    setOpen(true)
+    expect(await send('Question', screen)).toBe(true)
+    expect(bodies[0]).toEqual(screen && Object.keys(screen).length ? { screen } : {})
+    expect(bodies[1]).toEqual(screen && Object.keys(screen).length ? { text: 'Question', screen } : { text: 'Question' })
+    assistant.thread!.busy = false
+    expect(await send('Again', screen)).toBe(true)
+    expect(bodies).toHaveLength(3)
+  })
+
+  it('keeps createThread compatible without a screen', async () => {
+    const fetchMock = vi.fn(async () => respond(detail))
+    vi.stubGlobal('fetch', fetchMock)
+    await createThread()
+    expect(fetchMock).toHaveBeenCalledWith('/api/assistant/threads', expect.objectContaining({ body: '{}' }))
   })
 })
