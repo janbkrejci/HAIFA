@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from backlog_fixture import A2, A3, A4, B1, B2, B3, make_backlog_repo
+import pytest
+from backlog_fixture import A1, A2, A3, A4, B1, B2, B3, make_backlog_repo
 from starlette.testclient import TestClient
 
 from aifactory.run.store import TaskRunStore
@@ -153,3 +154,94 @@ def test_cancelling_a_task_drops_its_priority(tmp_path: Path) -> None:
     data = _check(client.post(url, json={"status": "cancelled"}), 200)["data"]
     assert data["task"]["board_state"] == "cancelled"
     assert [p.task_id for p in _prefs(root).priority] == [B2]
+
+
+def test_archive_round_trip_without_backlog_edits(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    before = {p: p.read_bytes() for p in (root / "backlog").rglob("*.md")}
+    data = _check(client.get("/api/backlog"), 200)["data"]
+    tasks = {t["id"]: t for t in data["tasks"]}
+    assert tasks[A1]["archived"] is False
+    assert tasks[A4]["archived"] is True
+    assert tasks[B1]["archived"] is False
+    assert not (root / ".factory" / "trace.db").exists()
+    for archived in (True, False):
+        body = _check(
+            client.post(f"/api/backlog/tasks/{A1}/archive", json={"archived": archived}), 200
+        )
+        assert body["data"] == {"task_id": A1, "archived": archived}
+        assert _prefs(root).archived == (frozenset({A1}) if archived else frozenset())
+        data = _check(client.get("/api/backlog"), 200)["data"]
+        tasks = {t["id"]: t for t in data["tasks"]}
+        assert tasks[A1]["archived"] is archived
+        assert tasks[A4]["archived"] is True
+        detail = _check(client.get(f"/api/backlog/tasks/{A1}"), 200)["data"]
+        assert detail["task"]["archived"] is archived
+    store = TaskRunStore(root / ".factory" / "trace.db")
+    try:
+        store.set_archived(B1, True)
+    finally:
+        store.close()
+    data = _check(client.get("/api/backlog"), 200)["data"]
+    assert next(t for t in data["tasks"] if t["id"] == B1)["archived"] is False
+    assert {p: p.read_bytes() for p in (root / "backlog").rglob("*.md")} == before
+
+
+@pytest.mark.parametrize("task_id", [B1, A4, "M09-S01-T01", "M01-S01"])
+@pytest.mark.parametrize("archived", [True, False])
+def test_archive_rejects_unknown_and_unfinished_tasks(
+    tmp_path: Path, task_id: str, archived: bool
+) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    status, code = (400, "invalid_value") if task_id in (B1, A4) else (404, "unknown_task")
+    body = _check(
+        client.post(f"/api/backlog/tasks/{task_id}/archive", json={"archived": archived}), status
+    )
+    assert body["error"]["code"] == code
+    assert not (root / ".factory" / "trace.db").exists()
+
+
+@pytest.mark.parametrize(
+    "payload,code",
+    [
+        ({}, "invalid_value"),
+        ({"archived": None}, "invalid_value"),
+        ({"archived": 1}, "invalid_value"),
+        ({"archived": "true"}, "invalid_value"),
+        ({"archived": True, "extra": True}, "usage_error"),
+    ],
+)
+def test_archive_validates_body(tmp_path: Path, payload: dict[str, Any], code: str) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    body = _check(client.post(f"/api/backlog/tasks/{A1}/archive", json=payload), 400)
+    assert body["error"]["code"] == code
+    assert not (root / ".factory" / "trace.db").exists()
+
+
+@pytest.mark.parametrize(
+    "kwargs,status,code",
+    [
+        (
+            {"json": {"archived": True}, "headers": {"Origin": "http://evil.test"}},
+            403,
+            "cross_origin",
+        ),
+        (
+            {"json": {"archived": True}, "headers": {"Sec-Fetch-Site": "cross-site"}},
+            403,
+            "cross_origin",
+        ),
+        ({"content": '{"archived": true}'}, 415, "unsupported_media_type"),
+    ],
+)
+def test_archive_uses_write_guard(
+    tmp_path: Path, kwargs: dict[str, Any], status: int, code: str
+) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    body = _check(client.post(f"/api/backlog/tasks/{A1}/archive", **kwargs), status)
+    assert body["error"]["code"] == code
+    assert not (root / ".factory" / "trace.db").exists()
