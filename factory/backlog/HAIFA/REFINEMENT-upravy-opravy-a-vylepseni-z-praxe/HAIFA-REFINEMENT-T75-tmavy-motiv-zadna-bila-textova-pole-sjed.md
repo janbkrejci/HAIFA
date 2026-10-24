@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T75
 title: "Tmavý motiv: žádná bílá textová pole, sjednocený styl formulářových polí"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/, aifactory/src/aifactory/web/static/, aifactory/tests/e2e/test_theme_forms_browser.py, aifactory/src/aifactory/seed/agents/tester/user.md]
@@ -31,3 +31,4 @@ Redesign barevné palety, nové motivy, změny chování formulářů. Checkboxy
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-24 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/155 · náklady $0.00

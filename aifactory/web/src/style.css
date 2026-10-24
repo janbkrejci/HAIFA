@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark;
   --bg: #06080f;
   --panel: #0d1119;
   --panel-2: #131a26;
@@ -46,6 +47,23 @@ button:focus-visible, input[type='checkbox']:focus-visible, input[type='radio']:
   outline-offset: 3px;
 }
 :where(button:disabled) { opacity: .45; cursor: not-allowed; }
+
+/* Include inputs without a type: HTML treats them as text fields. */
+:where(textarea, input:not([type]), input[type='text'], input[type='search'], input[type='number'], input[type='url'], input[type='password'], input[type='email'], input[type='tel'], select) {
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font: inherit;
+}
+:where(textarea, input)::placeholder {
+  color: var(--faint);
+  opacity: 1;
+}
+:where(textarea, input:not([type]), input[type='text'], input[type='search'], input[type='number'], input[type='url'], input[type='password'], input[type='email'], input[type='tel'], select):focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
+}
 
 input[type='checkbox'], input[type='radio'] {
   appearance: none;
@@ -107,6 +125,7 @@ input[type='checkbox'].switch:checked::after { left: 19px; background: var(--pan
 }
 
 [data-theme="light"] {
+  color-scheme: light;
   --bg: #f5f7fb;
   --panel: #ffffff;
   /* Inset depth has to be re-tuned per theme, not mirrored. On the dark ground
