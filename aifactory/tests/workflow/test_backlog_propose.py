@@ -529,3 +529,124 @@ def test_resolve_and_refinement_in_auto_placement() -> None:
     assert '"kind": "auto"' in text and "existing_step" in text
     text = refinement_prompt("Export", Target(step="P01-S01"), Refinement("kratší", step))
     assert "automatic placement" not in text
+
+
+@pytest.mark.parametrize("target", ["project", "step", "inherited", "switched", "auto"])
+def test_cli_context_binding(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], target: str
+) -> None:
+    from intent_fixture import computer_binding, container_binding, install_fake
+
+    binding = "harness: codex\nmodel: gpt-5.5\nthinking: low\n"
+    if target == "auto":
+        container_binding(repo, "backlog/P01/index.md", "harness: claude\nmodel: sonnet\n")
+    elif target == "step":
+        container_binding(repo, "backlog/P01/S01/index.md", binding)
+    elif target == "switched":
+        container_binding(repo, "backlog/P01/index.md", "harness: claude\nmodel: sonnet\n")
+        container_binding(repo, "backlog/P01/S01/index.md", "harness: codex\nthinking: low\n")
+    else:
+        container_binding(repo, "backlog/P01/index.md", binding)
+    computer_binding()
+    answer = (
+        new_step()
+        if target == "project"
+        else {"status": "success", "summary": "Task", "tasks": [_task("T02", "Druhý")]}
+    )
+    if target == "auto":
+        answer.update(existing_step="P01-S01", placement_reason="Patří sem.")
+    seen = install_fake(monkeypatch, [answer], "codex")
+    checked: list[str] = []
+
+    def check(name: str) -> HarnessStatus:
+        checked.append(name)
+        return HarnessStatus(name, "fake", "fake", "1")
+
+    monkeypatch.setattr("aifactory.workflow.propose.check_harness", check)
+    args = (
+        []
+        if target == "auto"
+        else (["--project", "P01"] if target == "project" else ["--step", "P01-S01"])
+    )
+    assert main(_propose(repo, *args, "--json")) == 0
+    assert json.loads(capsys.readouterr().out)["ok"] is True
+    assert checked == ["codex"]
+    assert seen[0].model == ("gpt-6.1-sol" if target in {"auto", "switched"} else "gpt-5.5")
+    assert seen[0].thinking == ("high" if target == "auto" else "low")
+
+
+def test_codex_correction_and_refinement_keep_binding(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from aifactory.workflow.propose import run_proposer
+    from intent_fixture import computer_binding, install_fake
+
+    computer_binding()
+    seen = install_fake(monkeypatch, [new_step(workflow="missing"), new_step()], "codex")
+    selections: list[dict[str, str]] = []
+    workdir = tmp_path / "job"
+    proposal, _, _ = run_proposer(
+        repo,
+        "Export",
+        Target(project="P01"),
+        job_id="stable",
+        workdir=workdir,
+        on_agent=selections.append,
+    )
+    computer_binding("claude")
+    run_proposer(
+        repo,
+        "Export",
+        Target(project="P01"),
+        job_id="stable",
+        workdir=workdir,
+        refinement=Refinement("Znovu", proposal),
+        on_agent=selections.append,
+    )
+    assert len(seen) == 3
+    assert len({r.session_id for r in seen}) == 1
+    assert len({r.cwd for r in seen}) == 1
+    assert {(r.model, r.thinking) for r in seen} == {("gpt-6.1-sol", "high")}
+    assert selections == [{"harness": "codex", "model": "gpt-6.1-sol", "thinking": "high"}] * 2
+
+
+@pytest.mark.parametrize("failure", ["disabled", "unavailable", "override"])
+def test_selected_harness_failures_are_structured(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str], failure: str
+) -> None:
+    from aifactory.run.errors import TaskRunError
+    from intent_fixture import computer_binding, container_binding
+
+    container_binding(repo, "backlog/P01/index.md", "harness: codex\n")
+    computer_binding("claude", enabled=failure != "disabled")
+    if failure == "unavailable":
+        monkeypatch.setattr(
+            "aifactory.workflow.propose.check_harness",
+            lambda name: HarnessStatus(name, "fake", error="missing"),
+        )
+    if failure == "override":
+
+        def reject(*args: Any) -> Any:
+            raise TaskRunError("invalid_override", "invalid model")
+
+        monkeypatch.setattr("aifactory.workflow.propose.apply_agents_override", reject)
+    assert main(_propose(repo, "--project", "P01", "--json")) == 2
+    error = json.loads(capsys.readouterr().out)["error"]
+    assert error["code"] == ("invalid_override" if failure == "override" else "agent_unavailable")
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_roster_fallback_reports_actual_selection(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, configured: bool
+) -> None:
+    from aifactory.workflow.propose import run_proposer
+    from intent_fixture import computer_binding, install_fake
+
+    if configured:
+        computer_binding(None)
+    seen = install_fake(monkeypatch, [new_step()])
+    selections: list[dict[str, str]] = []
+    run_proposer(repo, "Export", Target(project="P01"), on_agent=selections.append)
+    assert selections == [
+        {"harness": "claude", "model": seen[0].model, "thinking": seen[0].thinking}
+    ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -49,8 +50,10 @@ def placed(answer: dict[str, Any], reason: str, **placement: Any) -> dict[str, A
     return {**answer, "placement_reason": reason, **placement}
 
 
-def install_fake(monkeypatch: pytest.MonkeyPatch, answers: list[Answer]) -> list[Any]:
-    """Make the claude harness answer ``answers`` in order (the last one repeats); return
+def install_fake(
+    monkeypatch: pytest.MonkeyPatch, answers: list[Answer], harness: str = "claude"
+) -> list[Any]:
+    """Make the selected harness answer ``answers`` in order (the last one repeats); return
     the requests it saw."""
     seen: list[Any] = []
     monkeypatch.setattr(
@@ -64,5 +67,27 @@ def install_fake(monkeypatch: pytest.MonkeyPatch, answers: list[Answer]) -> list
         value = answer(request) if callable(answer) else answer
         return AgentResult(text=json.dumps(value), returncode=0)
 
-    monkeypatch.setattr(agents.INTERFACES["claude"], "run", run)
+    monkeypatch.setattr(agents.INTERFACES[harness], "run", run)
     return seen
+
+
+def container_binding(repo: Path, path: str, values: str) -> None:
+    file = repo / path
+    text = file.read_text(encoding="utf-8")
+    file.write_text(text.replace("---\n", f"---\n{values}", 1), encoding="utf-8")
+
+
+def computer_binding(default: str | None = "codex", *, enabled: bool = True) -> None:
+    from aifactory.harness.settings import HarnessChoice, HarnessSettings, path
+
+    settings = HarnessSettings(
+        default_harness=default,
+        harnesses={
+            "claude": HarnessChoice(model="sonnet", thinking="medium"),
+            "codex": HarnessChoice(enabled=enabled, model="gpt-6.1-sol", thinking="high"),
+            "pi": HarnessChoice(),
+        },
+    )
+    file = path()
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text(settings.model_dump_json(), encoding="utf-8")
