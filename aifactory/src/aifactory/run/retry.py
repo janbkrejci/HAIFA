@@ -183,6 +183,24 @@ def plan_retry(
         limit = _accept_target(journal, workflow)
     else:
         limit = len(entries)
+    # Older journals contain implicit plan reviews/triage. Replan from the first
+    # test plan rather than replaying an obsolete plan or rebuilding finished work.
+    explicit = {leaf.key for leaf in walk(workflow.steps)}
+    legacy = any(
+        (entry.step == PLAN_REVIEW_PHASE and entry.step not in explicit)
+        or entry.phase.startswith(("plan_revision", "triage", "test_fix"))
+        for entry in entries[:limit]
+    )
+    if legacy:
+        first_plan = next(
+            (i for i, entry in enumerate(entries[:limit]) if entry.output == "TestPlanOutput"),
+            None,
+        )
+        if first_plan is not None:
+            limit = first_plan
+            warnings.append(
+                "legacy test-planning phases removed; continuing with a fresh test plan"
+            )
     current = journal.current or {}
     resume: str | None
     step: str | None

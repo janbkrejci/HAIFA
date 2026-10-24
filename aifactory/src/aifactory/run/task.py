@@ -98,6 +98,7 @@ from aifactory.run.store import (
 )
 from aifactory.run.unchanged import finish_unchanged, only_spec_changes, unchanged
 from aifactory.run.workdir import agent_workdir, project_workdir, validate_base_dirs
+from aifactory.testing.profile import ProfileCache
 from aifactory.workflow import (
     DEFAULT_WORKFLOWS_DIR,
     JOURNAL_FILE,
@@ -900,6 +901,10 @@ def _execute(
         "repo_root": worktree,
         "label": row.task_id,
         "test_timeout": job.test_timeout,
+        "test_profile": ProfileCache(
+            data_dir(main, rc) / "test_profiles",
+            f"{main.resolve()}:{ancestors(job.task)[-1].path}",
+        ),
         "test_slots": TestSlots(default_slots_dir(), settings.test_slots),
         "phase_gate": PauseGate(store, row.run_id),
     }

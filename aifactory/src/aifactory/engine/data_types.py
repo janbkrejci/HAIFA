@@ -351,12 +351,11 @@ class TestPlanOutput(EnvelopeBase):
     reason: str = Field(min_length=1)
     checks: list[Check] = Field(default_factory=list)
     dropped: list[Dropped] = Field(default_factory=list)
-    # Set only when the tester triages failed checks: `plan` (the checks themselves
-    # were wrong; this envelope is the corrected plan) or `code` (the plan stands).
+    # aifactory 3.7: reusable project knowledge, not the checks of this particular diff.
+    testing_profile: str = Field(default="", max_length=12_000)
+    # aifactory 3.7: legacy fields retained for stored envelopes and custom prompts.
+    # New workflows send failures to the builder without implicit test triage/review.
     failure_cause: Literal["", "code", "plan"] = ""
-    # aifactory 3.1: tests the test reviewer requires that the repo does not have yet.
-    # The tester cannot write them; the workflow hands the review to the builder
-    # (phase `test_fix`) and asks the tester for a new plan. Empty for every other plan.
     missing_tests: list[str] = Field(default_factory=list)
 
     @model_validator(mode="after")

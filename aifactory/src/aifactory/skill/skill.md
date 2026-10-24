@@ -386,14 +386,18 @@ library (without a library the packaged workflows: {{workflows}}).
   a `test` repeats the plan's coverage, so conditions can read `test.coverage == "full"`.
   The packaged `heal` workflow runs the whole suite, repairs until it is green (each repair
   checked scoped, then confirmed on the whole suite) and commits only on a green full run.
-- A red `test` goes to the tester first (phase `triage`): `failure_cause: plan` (the
-  checks themselves were wrong) replaces the plan and runs the test again without a
-  repair round and without the builder, at most twice per run; `code` leaves the
-  failure for `fix`.
-- A test review (`test_review`) that requires tests the repo does not have yet: the
-  revised plan (`plan_revision`) lists them in `missing_tests`, the builder writes them
-  (phase `test_fix`, role `fix`, with the review as `previous_envelope`), the tester
-  plans again and the new plan is reviewed; at most twice per run, then the run stops.
+- A red `test` goes directly to the builder's `fix` with the failed commands
+  and their verbatim output. There are no implicit triage or test-plan review calls.
+  The final code reviewer requests missing regression tests directly from the builder.
+- Task runs share a local testing profile per repository and backlog project, under
+  the configured data directory's `test_profiles/`. The tester receives it in
+  the `testing_profile` prompt variable and returns reusable runner commands, test locations and
+  diff-selection rules in the `testing_profile` field (at most 12000 characters).
+  Configuration/runner/dependency or test-layout changes mark it stale; the same
+  tester call refreshes it while selecting checks for the actual diff. Measured check
+  durations are included as `observed_seconds` for this machine. Profiles are hints,
+  never cached test verdicts or a replacement for reading the diff. An unavailable
+  cache does not prevent ordinary test planning; no agent writes outside its worktree.
 - A `test` step (also under another `id`, e.g. `retest`) runs the checks of the latest
   `test_plan` in order, without a shell, and runs every check even after one fails (only
   a failed check with `stop_on_fail: true` or an exhausted time limit stops the rest,

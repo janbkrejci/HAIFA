@@ -18,7 +18,6 @@ from typing import Any
 
 import pytest
 from run_repo import (
-    PLAN_APPROVED,
     T01,
     USER_PROMPT,
     Script,
@@ -109,7 +108,6 @@ def build(script: Script, text: str = "NAME = 'one'\n") -> None:
 
 def test_plan(script: Script) -> None:
     script.add("tester", plan_envelope(sys.executable, "-c", "pass"))
-    script.add("test-reviewer", dict(PLAN_APPROVED))
 
 
 def review(script: Script, approved: bool) -> None:
@@ -629,8 +627,46 @@ def test_journal_records_every_finished_phase(repo: Path, script: Script) -> Non
     session = repo / ".factory" / "data" / "sessions" / first.run.run_id
     data = json.loads((session / "workflow_journal.json").read_text(encoding="utf-8"))
     names = [e["phase"] for e in data["entries"]]
-    assert names[:3] == ["build", "test_plan", "test_review"]
+    assert names[:3] == ["build", "test_plan", "test_1"]
     assert "review_2" in names and data["current"] is None
+
+
+def test_task_run_stores_project_profile_outside_the_product(repo: Path, script: Script) -> None:
+    build(script)
+    script.add(
+        "tester",
+        {**plan_envelope(sys.executable, "-c", "pass"), "testing_profile": "Project checks"},
+    )
+    review(script, approved=True)
+    result = run_task(repo, T01, code=GitCode([True]))
+    assert result.ok, result.run.error
+    profiles = list((repo / ".factory/data/test_profiles").glob("*.json"))
+    assert len(profiles) == 1
+    assert json.loads(profiles[0].read_text())["knowledge"] == "Project checks"
+    assert git(Path(result.run.worktree), "status", "--porcelain") == ""
+
+
+def test_legacy_plan_review_journal_replans_without_repeating_build() -> None:
+    from workflow_fakes import workflow
+
+    previous = Journal(
+        None,
+        entries=[
+            JournalEntry("build", "build", "agent", "build", output="BuildOutput"),
+            JournalEntry("test_plan", "test_plan", "agent", "test_plan", output="TestPlanOutput"),
+            JournalEntry("test_review", "test_review", "agent", "test_plan", output="ReviewOutput"),
+            JournalEntry(
+                "plan_revision", "test_plan", "agent", "test_plan", output="TestPlanOutput"
+            ),
+        ],
+        current={"phase": "test", "step": "test"},
+    )
+    current = workflow(
+        "name: t\ndescription: Continue without plan reviews\nsteps: [build, test_plan, test]\n"
+    )
+    chosen = plan_retry(previous, current, run_id="r", error="stopped")
+    assert chosen.limit == 1 and chosen.resume == "test_plan"
+    assert chosen.warnings and "fresh test plan" in chosen.warnings[0]
 
 
 def test_retry_plan_honors_from_and_warns_when_the_failed_step_is_removed() -> None:

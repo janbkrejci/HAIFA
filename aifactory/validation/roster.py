@@ -29,7 +29,6 @@ REQUIRED_AGENTS = (
     "planner",
     "builder",
     "tester",
-    "test-reviewer",
     "reviewer",
     "documenter",
 )

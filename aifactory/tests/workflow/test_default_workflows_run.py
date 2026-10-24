@@ -17,7 +17,6 @@ from workflow_fakes import (  # noqa: F401
     FakeCodeRunner,
     ok,
     plan_envelope,
-    triage_envelope,
     workflow_env_fixture,
 )
 
@@ -47,7 +46,6 @@ REJECT = ok(summary="missing X", approved=False, blocking=["missing X"])
 DOCUMENT = ok(summary="documented", commit_message="Document the feature")
 SCOUT = ok(summary="found it")
 TEST_PLAN = plan_envelope()
-CODE_FAULT = triage_envelope("code")
 # Keeps the first plan's check (gate plan_keeps_checks) and adds one.
 REPLAN = ok(
     coverage="scoped",
@@ -77,10 +75,6 @@ def _revise(i: int) -> tuple[str, str, str]:
 
 def _replan(i: int, name: str = "test_plan") -> tuple[str, str, str]:
     return (f"{name}_{i}", "agent", "tester")
-
-
-def _triage(i: int) -> tuple[str, str, str]:
-    return (f"triage_{i}", "agent", "tester")
 
 
 def _retest(i: int) -> tuple[str, str, str]:
@@ -179,7 +173,7 @@ def test_plan_build_test_fixed_once(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX],
-        tester=[TEST_PLAN, CODE_FAULT, TEST_PLAN],
+        tester=[TEST_PLAN, TEST_PLAN],
     )
     result, code = _run(workflow_env, "plan-build-test", [False, True])
     assert _phases(result) == [
@@ -188,7 +182,6 @@ def test_plan_build_test_fixed_once(workflow_env: EngineEnv) -> None:
         BUILD_PHASE,
         TEST_PLAN_PHASE,
         _test(1),
-        _triage(1),
         _fix(1),
         _replan(1),
         _test(2),
@@ -206,7 +199,7 @@ def test_plan_build_test_never_green(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX, FIX],
-        tester=[TEST_PLAN, CODE_FAULT, TEST_PLAN, CODE_FAULT, TEST_PLAN, CODE_FAULT],
+        tester=[TEST_PLAN, TEST_PLAN, TEST_PLAN],
     )
     result, code = _run(workflow_env, "plan-build-test", [False, False, False])
     assert _phases(result) == [
@@ -215,15 +208,12 @@ def test_plan_build_test_never_green(workflow_env: EngineEnv) -> None:
         BUILD_PHASE,
         TEST_PLAN_PHASE,
         _test(1),
-        _triage(1),
         _fix(1),
         _replan(1),
         _test(2),
-        _triage(2),
         _fix(2),
         _replan(2),
         _test(3),
-        _triage(3),
     ]
     assert (result.exit_code, result.accepted) == (1, False)
     assert code.commits == []
@@ -261,7 +251,7 @@ def test_simple_sdlc_tests_fail_once(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX],
-        tester=[TEST_PLAN, CODE_FAULT, TEST_PLAN],
+        tester=[TEST_PLAN, TEST_PLAN],
         reviewer=[APPROVE],
         documenter=[DOCUMENT],
     )
@@ -269,7 +259,6 @@ def test_simple_sdlc_tests_fail_once(workflow_env: EngineEnv) -> None:
     assert _phases(result) == [
         *HEAD,
         _test(1),
-        _triage(1),
         _fix(1),
         _replan(1),
         _test(2),
@@ -277,10 +266,10 @@ def test_simple_sdlc_tests_fail_once(workflow_env: EngineEnv) -> None:
         *TAIL,
     ]
     assert (result.exit_code, result.accepted) == (0, True)
-    fix_call = workflow_env.script.calls[4]
+    fix_call = workflow_env.script.calls[3]
     assert fix_call.agent == "builder"
     assert '"passed": false' in fix_call.previous()  # the fixer reads the failing suite
-    review_call = workflow_env.script.calls[6]
+    review_call = workflow_env.script.calls[5]
     assert review_call.agent == "reviewer"
     assert "fixed" in review_call.previous()  # the reviewer reads the latest code
     assert code.commits[1] == "Fix the failing test"
@@ -360,22 +349,19 @@ def test_simple_sdlc_tests_never_pass(workflow_env: EngineEnv) -> None:
         workflow_env,
         planner=[PLAN],
         builder=[BUILD, FIX, FIX],
-        tester=[TEST_PLAN, CODE_FAULT, TEST_PLAN, CODE_FAULT, TEST_PLAN, CODE_FAULT],
+        tester=[TEST_PLAN, TEST_PLAN, TEST_PLAN],
         reviewer=[APPROVE],
     )
     result, code = _run(workflow_env, "simple-sdlc", [False, False, False])
     assert _phases(result) == [
         *HEAD,
         _test(1),
-        _triage(1),
         _fix(1),
         _replan(1),
         _test(2),
-        _triage(2),
         _fix(2),
         _replan(2),
         _test(3),
-        _triage(3),
         _review(1),
     ]
     assert (result.exit_code, result.accepted) == (1, False)
@@ -387,8 +373,6 @@ def test_simple_sdlc_tests_never_pass(workflow_env: EngineEnv) -> None:
 
 FULL = plan_envelope(coverage="full")
 SCOPED = plan_envelope()
-FULL_TRIAGE = {**triage_envelope("code"), "coverage": "full"}  # triage of a full plan step
-SCOPED_TRIAGE = triage_envelope("code")
 COVERAGE_START, COVERAGE_END = "COVERAGE<<", ">>COVERAGE"
 
 
@@ -433,9 +417,9 @@ def _round(i: int, confirmed: bool | None) -> list[tuple[str, str, str]]:
     """One heal round; ``confirmed`` None means the scoped test was red (no confirm)."""
     phases = [_fix(i), ("repair_plan_" + str(i), "agent", "tester"), _test(i)]
     if confirmed is None:
-        return [*phases, _triage(i)]
+        return phases
     phases += [(f"confirm_plan_{i}", "agent", "tester"), (f"confirm_{i}", "code", "quality")]
-    return phases if confirmed else [*phases, _triage(i)]
+    return phases
 
 
 HEAL_HEAD = [REQUEST, ("full_plan", "agent", "tester"), ("full_test", "code", "quality")]
@@ -457,20 +441,19 @@ def test_heal_repairs_and_confirms_on_the_full_suite(
 ) -> None:
     _script(
         workflow_env,
-        tester=[FULL, FULL_TRIAGE, SCOPED, FULL],
+        tester=[FULL, SCOPED, FULL],
         builder=[FIX],
     )
     result, code = _heal(workflow_env, [False, True, True], tmp_path)
     assert _phases(result) == [
         *HEAL_HEAD,
-        ("triage", "agent", "tester"),
         *_round(1, confirmed=True),
         COMMIT,
     ]
     assert (result.exit_code, result.accepted) == (0, True)
     assert [plan.coverage for plan in code.plans] == ["full", "scoped", "full"]
-    # The triage copies the full plan step, so it is asked for `full` too.
-    assert _required(workflow_env) == ["full", "full", "scoped", "full"]
+    # Only explicit test-plan steps call the tester.
+    assert _required(workflow_env) == ["full", "scoped", "full"]
     assert code.commits == ["Fix the failing test"]
     _assert_done(workflow_env, code)
 
@@ -480,13 +463,12 @@ def test_heal_red_confirmation_starts_the_next_round(
 ) -> None:
     _script(
         workflow_env,
-        tester=[FULL, FULL_TRIAGE, SCOPED, FULL, FULL_TRIAGE, SCOPED, FULL],
+        tester=[FULL, SCOPED, FULL, SCOPED, FULL],
         builder=[FIX, FIX],
     )
     result, code = _heal(workflow_env, [False, True, False, True, True], tmp_path)
     assert _phases(result) == [
         *HEAL_HEAD,
-        ("triage", "agent", "tester"),
         *_round(1, confirmed=False),
         *_round(2, confirmed=True),
         COMMIT,
@@ -500,11 +482,11 @@ def test_heal_never_healed(workflow_env: EngineEnv, tmp_path: Path) -> None:
     rounds = 6
     _script(
         workflow_env,
-        tester=[FULL, FULL_TRIAGE] + [SCOPED, SCOPED_TRIAGE] * rounds,
+        tester=[FULL] + [SCOPED] * rounds,
         builder=[FIX] * rounds,
     )
     result, code = _heal(workflow_env, [False] * (1 + rounds), tmp_path)
-    expected = [*HEAL_HEAD, ("triage", "agent", "tester")]
+    expected = [*HEAL_HEAD]
     for i in range(1, rounds + 1):
         expected += _round(i, confirmed=None)
     assert _phases(result) == expected
@@ -553,15 +535,13 @@ def _review_modes(env: EngineEnv, tmp_path: Path, name: str, code: FakeCodeRunne
     ]
 
 
-def test_test_review_mode_is_resolve_in_a_resolve_run(
-    workflow_env: EngineEnv, tmp_path: Path
-) -> None:
-    _script(workflow_env, tester=[TEST_PLAN], **{"test-reviewer": [APPROVE]})
+def test_resolve_has_no_implicit_plan_reviewer(workflow_env: EngineEnv, tmp_path: Path) -> None:
+    _script(workflow_env, tester=[TEST_PLAN], **{})
     modes = _review_modes(workflow_env, tmp_path, "resolve", CleanRebase([True]))
-    assert modes == ["resolve"]
+    assert modes == []
 
 
-def test_test_review_mode_is_task_in_a_task_run(workflow_env: EngineEnv, tmp_path: Path) -> None:
-    _script(workflow_env, builder=[BUILD], tester=[TEST_PLAN], **{"test-reviewer": [APPROVE]})
+def test_task_has_no_implicit_plan_reviewer(workflow_env: EngineEnv, tmp_path: Path) -> None:
+    _script(workflow_env, builder=[BUILD], tester=[TEST_PLAN], **{})
     modes = _review_modes(workflow_env, tmp_path, "build-test", FakeCodeRunner([True]))
-    assert modes == ["task"]
+    assert modes == []

@@ -50,6 +50,7 @@ class Run:
         self.phases: list[Phase] = []
         self.tokens = 0
         self.cost = 0.0
+        self.test_profile: Any = None  # aifactory 3.7: advisory per-project testing knowledge
         self._seq = tracer.max_phase_seq(adw_id)   # a joined run continues the sequence
         self.repo_root = git_helper.repo_root()    # where every agent is spawned to work
         self.session_dir = ensure_dir(Path(cfg.defaults.data_dir) / "sessions" / adw_id)

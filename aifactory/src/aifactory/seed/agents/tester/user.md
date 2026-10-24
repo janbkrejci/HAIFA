@@ -1,94 +1,68 @@
-# Test Plan Task
+# Choose checks for this change
 
-## Variables
-
-### prompt
+## Task and project
 
 {{prompt}}
 
-### baseline
+## Baseline
 
 {{baseline}}
 
-### previous_envelope
-
-The step before you: the build, a fix or a revision (with the files it changed, also tests the builder just wrote for a test review), or a review whose findings concern the test plan:
+## Build, fix or revision
 
 {{previous_envelope}}
 
-### required_coverage
+## Reusable testing profile
 
-`full`, `scoped` or `any` (your choice):
+{{testing_profile}}
 
-{{required_coverage}}
+Use the profile to avoid rediscovering runners and test locations. Check it against the
+current project and diff; refresh it when missing, stale or incomplete. Return concise
+reusable knowledge in `testing_profile`, distinct from this run's selected checks.
 
-### test_timeout
+## Required coverage and shared test time limit
 
-Seconds the test step has for all its checks together:
+Coverage: {{required_coverage}} (`full`, `scoped` or `any`).
+Time limit for all checks together: {{test_timeout}} seconds.
 
-{{test_timeout}}
-
-### previous_test_plan
-
-The plan the last test ran, `(none)` for the first plan of the run. Keep each of its checks or name it in `dropped`:
+## Previous plan and latest test evidence
 
 {{previous_test_plan}}
 
-### failed_test
-
-`(none)` when you plan. Otherwise you triage: the test that just failed (its checks, exit codes and logs). Decide whether the plan or the code is at fault:
-
-{{failed_test}}
-
-### test_result
-
-The latest test result, `(none)` before any test ran:
-
 {{test_result}}
 
-### context_handoff_dir
+Keep earlier checks or name them in `dropped` with a reason. Correct a broken command
+when necessary; never weaken a check because it caught a real defect.
+
+## Handoff directory
 
 {{context_handoff_dir}}
 
-`<context_handoff_dir>` is an absolute path outside the repo. Write handoff files at exactly that path; never create a directory of the same name inside the repo or the worktree.
-
-## Task
-
-1. Read the whole change: `git diff {{baseline}}` and untracked files.
-2. Find how this repo runs its tests and static checks.
-3. Choose the checks: enough to trust the change, nothing beyond it.
-4. Write the reasoning to `<context_handoff_dir>/test-plan.md`, then emit your `Report` JSON.
+An absolute path outside the repo. Write a short `test-plan.md` there, not inside the
+worktree. Change nothing in the repository and do not run the checks yourself.
 
 ## Report
 
-Respond with ONLY valid JSON matching `TestPlanOutput` — no prose before or after:
+Return only JSON matching `TestPlanOutput`:
 
 ```json
 {
   "status": "success",
-  "summary": "<one sentence: what the checks cover>",
+  "summary": "Checks covering this change",
   "coverage": "scoped",
-  "reason": "<why these checks are enough, and why nothing wider is needed>",
-  "failure_cause": "",
-  "missing_tests": [],
+  "reason": "Why these checks cover the diff and its direct callers",
+  "testing_profile": "Reusable runner commands, test locations and selection rules for this project",
   "checks": [
-    { "name": "api-tests", "argv": ["uv", "run", "pytest", "tests/api", "-q"] },
-    { "name": "types", "argv": ["npm", "run", "typecheck"], "timeout": 300 }
+    {"name": "targeted-tests", "argv": ["uv", "run", "pytest", "tests/test_example.py"]}
   ],
-  "dropped": [
-    { "name": "old-check", "reason": "<why it no longer applies: reverted code, or the reviewer's finding>" }
-  ],
+  "dropped": [],
   "artifacts": ["<context_handoff_dir>/test-plan.md"],
-  "follow_ups": [],
-  "blocked_by": [],
   "notes_for_next_agent": ""
 }
 ```
 
-`needs_writes` lists the paths this task must change that its allowed paths do not cover, each `{"path": "...", "reason": "..."}` (see "Unfinished work"). A test the review requires, or a broken test, outside the allowed paths is such a path. When you cannot finish without them, report `"status": "fail"` with `"fail_kind": "needs_writes"` and the paths in `needs_writes`, and no follow-up for them. Otherwise leave `needs_writes` out.
-
-`follow_ups` and `blocked_by` are empty unless you found work this task does not finish (see "Unfinished work"). A follow-up is `{"title": "...", "reason": "...", "details": "...", "blocks_task": false, "writes": null, "for_human": false, "workflow": null}`; `blocked_by` holds ids of existing backlog tasks.
-
-Order the checks from the fastest to the slowest. `stop_on_fail` (optional, default `false`) is only for a prerequisite such as a build or an install whose failure makes the remaining checks pointless: `{ "name": "build", "argv": ["npm", "run", "build"], "stop_on_fail": true }`.
-
-`coverage` is `full`, `scoped` or `none`; `none` has an empty `checks` list, the others at least one. Check names are unique and contain no `/`. `timeout` (seconds) is optional. `dropped` is empty for a first plan. `failure_cause` is `""` when you plan, `"plan"` or `"code"` when you triage. `missing_tests` lists the tests a test review requires that the repo does not have yet (the builder writes them, then you plan again); otherwise it is `[]`.
+Every argv runs from the repository root without a shell. Order checks from fastest to
+slowest. Optional `timeout` is seconds; explicit timeouts must fit the shared limit.
+Use `stop_on_fail: true` only for prerequisites such as a build or install.
+`coverage: none` has no checks and needs a reason; full/scoped require checks.
+Use `follow_ups`, `blocked_by` and `needs_writes` as described in your system instructions.

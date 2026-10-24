@@ -24,7 +24,7 @@ roles:
     gates: [checks_runnable, plan_keeps_checks, coverage_required, checks_fit_budget]
     description: Choose the checks that verify this change, enough to trust it and nothing beyond
     retries: 1
-  # aifactory 3.0: every new test plan is reviewed before its checks run (interpreter).
+  # aifactory 3.7: optional explicit role for custom workflows; never inserted automatically.
   test_review:
     agent: test-reviewer
     output_type: ReviewOutput

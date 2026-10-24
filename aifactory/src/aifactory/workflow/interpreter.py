@@ -16,27 +16,10 @@ a tester can diff the whole change, and ``{{previous_test_plan}}``, the latest
 test plan (``(none)`` before the first), which a new plan must keep or say why
 it drops a check (gate ``plan_keeps_checks``).
 
-A red ``test`` goes to the tester first (phase ``triage``, ``{{failed_test}}`` set):
-``failure_cause: plan`` means the checks themselves were wrong (a bad path, an
-unknown option, no tests collected); the corrected plan replaces the old one and
-the test runs again, which is no repair round and never reaches the builder. At
-most ``MAX_PLAN_REPAIRS`` corrections per run, then the run stops. ``code`` leaves
-the red result for the builder.
-
-A plan review (``test_review``) that requires tests the repo does not have yet is
-answered by a revised plan with ``missing_tests``: the tester cannot write them, so
-the builder gets the review (phase ``test_fix``, registry role ``fix``), then the
-tester plans again (``plan_revision`` from the builder's result) and the new plan is
-reviewed. At most ``MAX_TEST_FIXES`` such rounds per run, then the run stops.
-
-A resolve run (a workflow with a ``rebase`` step) may change only the conflicted
-files, so it never sends missing tests to the builder: the test reviewer gets
-``{{review_mode}}`` ``resolve`` and judges only whether the plan covers both sides of
-the rebase; a test still reported missing becomes a follow-up of the task (filed in
-the project's TODO step) and the revised plan runs. When the write guard allows no
-file (``allows_writes()`` is false: the conflicts were only in generated outputs),
-a ``fix`` or ``test_fix`` step does not run: the run stops with that reason instead
-of an agent writing a file the guard would roll back.
+A red ``test`` goes directly to the builder through the workflow's repair loop.
+There are no implicit plan reviews or triage calls. Testing profiles are local,
+advisory knowledge per project; the tester refreshes them while selecting checks.
+A resolve run may change only conflicted files; a repair stops if none are writable.
 
 Inputs of a role step: ``{{previous_envelope}}`` is the latest result of the
 steps in ``input:`` (any step without it). An ``input:`` mapping adds further
@@ -69,8 +52,8 @@ evidence; a task run without commits then marks the task done without changes.
 
 from __future__ import annotations
 
-import dataclasses
 import json
+import subprocess
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -84,6 +67,7 @@ from aifactory.engine import quality as engine_quality
 from aifactory.engine.role_registry import RAN_FIELD, Issue
 from aifactory.failure import InvalidOutput, RunFailure
 from aifactory.harness.override import effective_agent, step_override
+from aifactory.testing.profile import ProfileCache
 from aifactory.workflow.check import check_agents
 from aifactory.workflow.conditions import truthy
 from aifactory.workflow.journal import Journal, JournalEntry
@@ -110,24 +94,13 @@ PREVIOUS_PLAN_VARIABLE = "previous_test_plan"
 FAILED_TEST_VARIABLE = "failed_test"
 REQUIRED_COVERAGE_VARIABLE = "required_coverage"
 TEST_TIMEOUT_VARIABLE = "test_timeout"
-TRIAGE_PHASE = "triage"
-TRIAGE_DESCRIPTION = (
-    "Decide whether the failed checks are wrong themselves or caught a fault in the code"
-)
-MAX_PLAN_REPAIRS = 2
-PLAN_REVIEW_PHASE = "test_review"
-PLAN_REVISION_PHASE = "plan_revision"
-PLAN_REVISION_DESCRIPTION = "Rework the test plan from the test reviewer's findings"
-MAX_PLAN_REVIEWS = 3  # a review, and up to two more after revisions
-TEST_FIX_PHASE = "test_fix"
-TEST_FIX_DESCRIPTION = "Write the tests the test reviewer requires and the repo does not have"
-MAX_TEST_FIXES = 2  # builder rounds for tests a plan review finds missing
+PLAN_REVIEW_PHASE = "test_review"  # legacy journals: retry can still identify old reviews
 REVIEW_MODE_VARIABLE = "review_mode"
 REVIEW_MODE_TASK = "task"
 REVIEW_MODE_RESOLVE = "resolve"  # judge only that the plan covers both sides of a rebase
 FIX_STEP = "fix"
 # agent steps that only repair; they do not run when the write guard allows no file
-REPAIR_STEPS = frozenset({FIX_STEP, TEST_FIX_PHASE})
+REPAIR_STEPS = frozenset({FIX_STEP})
 NOTHING_WRITABLE = "nothing_writable"
 NO_INPUT = "(none)"
 # the envelope a code step stores, by action (a commit stores a plain result)
@@ -339,12 +312,6 @@ class _Interpreter:
         )
         self.records: list[StepRecord] = []
         self.used: set[str] = set()
-        self.plan_step: RoleStep | None = None  # the latest test plan step, for triage
-        self.failed_test = ""  # the red test a triage call judges
-        self.red_test: dict[str, Any] | None = None
-        self.plan_repairs = 0
-        self.test_fixes = 0
-        self.reviewing_plan = False
         # a resolve run: may change only the conflicted files, never writes missing tests
         self.resolving = any(
             isinstance(leaf, CodeStep) and leaf.action == "rebase" for leaf in walk(workflow.steps)
@@ -412,7 +379,10 @@ class _Interpreter:
             TEST_RESULT_VARIABLE: self.render_input(self.test_keys),
             BASELINE_VARIABLE: self.baseline or NO_INPUT,
             PREVIOUS_PLAN_VARIABLE: self.latest_plan_json(),
-            FAILED_TEST_VARIABLE: self.failed_test or NO_INPUT,
+            FAILED_TEST_VARIABLE: NO_INPUT,  # legacy prompt variable; no implicit triage
+            "testing_profile": (
+                self.profile_context() if step.role.output_type is dt.TestPlanOutput else NO_INPUT
+            ),
             REQUIRED_COVERAGE_VARIABLE: step.coverage or "any",
             REVIEW_MODE_VARIABLE: REVIEW_MODE_RESOLVE if self.resolving else REVIEW_MODE_TASK,
             TEST_TIMEOUT_VARIABLE: str(
@@ -539,13 +509,8 @@ class _Interpreter:
         if self.gate is not None:
             self.gate()
 
-    def role(self, step: RoleStep, suffix: tuple[int, ...], *, keep: bool = True) -> Any:
-        """Run one agent phase; ``keep=False`` leaves its envelope out of the results."""
-        if step.role.output_type is dt.TestPlanOutput and step.phase_id not in (
-            TRIAGE_PHASE,
-            PLAN_REVISION_PHASE,
-        ):
-            self.plan_step = step
+    def role(self, step: RoleStep, suffix: tuple[int, ...]) -> Any:
+        """Run or replay one agent phase and store its result."""
         if step.name in REPAIR_STEPS and self.writes_nothing():
             self.stop_nothing_writable(step)
         name = self.phase_name(step.phase_id, suffix)
@@ -554,16 +519,15 @@ class _Interpreter:
         if entry is not None:
             envelope = role.output_type.model_validate(entry.envelope or {})
             self.records.append(StepRecord(name, step.name, "agent", role.agent))
-            if keep and isinstance(envelope, dt.BuildOutput):
+            if isinstance(envelope, dt.BuildOutput):
                 self.check_empty_first_build(envelope, step)
         else:
-            envelope = self.call_agent(step, name, keep)
-        if keep:
-            self.store(step.key, envelope)
-            if isinstance(envelope, dt.TestPlanOutput):
-                self.review_plan(suffix)
-            if isinstance(envelope, dt.BuildOutput) and envelope.already_done is not None:
-                self.stop_if_first_build(envelope.already_done)
+            envelope = self.call_agent(step, name)
+        self.store(step.key, envelope)
+        if isinstance(envelope, dt.TestPlanOutput) and entry is None:
+            self.save_profile(envelope.testing_profile)
+        if isinstance(envelope, dt.BuildOutput) and envelope.already_done is not None:
+            self.stop_if_first_build(envelope.already_done)
         return envelope
 
     def check_empty_first_build(self, envelope: dt.BuildOutput, step: RoleStep) -> None:
@@ -616,7 +580,7 @@ class _Interpreter:
         if len(builds) == 1:
             raise _AlreadyDone(done)
 
-    def call_agent(self, step: RoleStep, name: str, keep: bool) -> Any:
+    def call_agent(self, step: RoleStep, name: str) -> Any:
         """The live agent phase `name` of `step`; its envelope goes into the journal."""
         self.journal_begin(name, step.key)
         self.before_phase()
@@ -657,7 +621,7 @@ class _Interpreter:
                         variables=self.variables(step),
                     )
                 )
-                if keep and isinstance(envelope, dt.BuildOutput):
+                if isinstance(envelope, dt.BuildOutput):
                     self.check_empty_first_build(envelope, step)
         self.journal_done(
             JournalEntry(
@@ -668,164 +632,30 @@ class _Interpreter:
                 output=type(envelope).__name__,
                 envelope=envelope.model_dump(mode="json"),
                 summary=str(envelope.summary),
-                kept=keep,
             )
         )
         return envelope
 
-    def review_plan(self, suffix: tuple[int, ...]) -> None:
-        """The test reviewer judges a new plan before its checks run; the tester reworks it.
-
-        At most ``MAX_PLAN_REVIEWS`` reviews; a plan still rejected after that runs anyway,
-        with a warning, and the final reviewer judges it with the code. A workflow whose
-        registry has no ``test_review`` role, or a roster without its agent, skips this.
-        """
-        review_role = self.workflow.plan_review
-        plan_step = self.plan_step
-        if self.reviewing_plan or review_role is None or plan_step is None:
-            return
-        if review_role.agent not in {agent.name for agent in self.run.cfg.agents}:
-            return
-        review_step = RoleStep(
-            name=PLAN_REVIEW_PHASE,
-            role=review_role,
-            phase_id=PLAN_REVIEW_PHASE,
-            description=review_role.description,
-            path=plan_step.path,
-        )
-        revision = dataclasses.replace(
-            plan_step,
-            phase_id=PLAN_REVISION_PHASE,
-            description=PLAN_REVISION_DESCRIPTION,
-            when=None,
-            inputs=(PLAN_REVIEW_PHASE,),
-            variables=(),
-        )
-        self.reviewing_plan = True
+    def profile_context(self) -> str:
+        cache = getattr(self.run, "test_profile", None)
+        if cache is None:
+            return NO_INPUT
         try:
-            attempt = 0
-            while True:
-                attempt += 1
-                review = self.role(review_step, suffix)
-                if review.approved:
-                    return
-                if attempt == MAX_PLAN_REVIEWS:
-                    self.run.console.note(
-                        f"test plan still rejected after {MAX_PLAN_REVIEWS} reviews; "
-                        "running it, the final review judges it with the code"
-                    )
-                    return
-                revised = self.role(revision, suffix)
-                if revised.missing_tests and self.resolving:
-                    self.report_missing_tests(revision, revised)
-                    return
-                if revised.missing_tests:
-                    self.write_missing_tests(revision, revised, suffix)
-                    attempt = 0  # a new plan for changed code: its reviews count anew
-        finally:
-            self.reviewing_plan = False
+            return str(cache.context(Path(self.run.repo_root)))
+        except (OSError, ValueError, subprocess.SubprocessError) as error:
+            self.run.console.note(f"testing profile unavailable: {error}")
+            return NO_INPUT
 
-    def report_missing_tests(self, revision: RoleStep, revised: Any) -> None:
-        """A resolve run files the missing tests as follow-ups; the revised plan runs.
-
-        The follow-ups go on the revised plan's envelope, where the task run collects
-        every follow-up of the run (``run.followups``).
-        """
-        reason = (
-            "Revize testovacího plánu v běhu resolve (rebase na base) požaduje test, "
-            "který repo nemá. Resolve smí měnit jen konfliktní soubory, proto ho nezapsal."
-        )
-        for missing in revised.missing_tests:
-            text = " ".join(str(missing).split())
-            title = f"Doplnit chybějící test: {text}"
-            if len(title) > 120:
-                title = title[:119].rstrip() + "…"
-            revised.follow_ups.append(
-                dt.FollowUp(
-                    title=title,
-                    reason=reason,
-                    details=f"Napiš test, který revize testů při resolve požadovala: {text}",
-                )
-            )
-        self.results[revision.key] = {**revised.model_dump(), RAN_FIELD: True}
-        self.run.console.note(
-            "resolve: the test review requires tests the repo does not have; filed as "
-            f"follow-ups, the plan runs as it is: {'; '.join(revised.missing_tests)}"
-        )
-
-    def write_missing_tests(
-        self, revision: RoleStep, revised: Any, suffix: tuple[int, ...]
-    ) -> None:
-        """The builder writes the tests the review requires; the tester plans again.
-
-        The builder gets the review as ``previous_envelope`` (phase ``test_fix``); the
-        new plan reads the builder's result. At most ``MAX_TEST_FIXES`` rounds per run.
-        """
-        missing = "; ".join(revised.missing_tests)
-        fix_role = self.workflow.test_fix
-        if fix_role is None or fix_role.agent not in {a.name for a in self.run.cfg.agents}:
-            raise RuntimeError(
-                f"the test review requires tests the repo does not have and no builder "
-                f"can write them: {missing}"
-            )
-        if self.test_fixes >= MAX_TEST_FIXES:
-            raise RuntimeError(
-                f"the test review still requires missing tests after {MAX_TEST_FIXES} "
-                f"builder rounds: {missing}"
-            )
-        self.test_fixes += 1
-        fix_step = RoleStep(
-            name=TEST_FIX_PHASE,
-            role=fix_role,
-            phase_id=TEST_FIX_PHASE,
-            description=TEST_FIX_DESCRIPTION,
-            path=revision.path,
-            inputs=(PLAN_REVIEW_PHASE,),
-        )
-        self.role(fix_step, suffix)
-        self.role(dataclasses.replace(revision, inputs=(TEST_FIX_PHASE,)), suffix)
-
-    def triage(self, step: CodeStep, suffix: tuple[int, ...], report: dict[str, Any]) -> bool:
-        """Ask the tester whether a red ``test`` is the plan's fault; True after a plan repair.
-
-        A corrected plan replaces the old one and the test runs again: not a repair
-        round, nothing reaches the builder. After ``MAX_PLAN_REPAIRS`` corrected plans
-        that still fail by their own fault the run stops.
-        """
-        if self.plan_step is None:
-            return False
-        check = dataclasses.replace(
-            self.plan_step,
-            phase_id=TRIAGE_PHASE,
-            description=TRIAGE_DESCRIPTION,
-            when=None,
-            inputs=(),
-            variables=(),
-        )
-        self.failed_test = json.dumps(report, indent=2)
-        try:
-            envelope = self.role(check, suffix, keep=False)
-        finally:
-            self.failed_test = ""
-        if envelope.failure_cause != "plan":
-            return False
-        if self.plan_repairs >= MAX_PLAN_REPAIRS:
-            raise RuntimeError(
-                f"the test plan still cannot run after {MAX_PLAN_REPAIRS} corrections: "
-                f"{envelope.reason}"
-            )
-        self.plan_repairs += 1
-        self.store(self.plan_step.key, envelope)
-        self.review_plan(suffix)
-        return True
+    def save_profile(self, knowledge: str, durations: dict[str, float] | None = None) -> None:
+        cache = getattr(self.run, "test_profile", None)
+        if cache is not None:
+            try:
+                cache.save(Path(self.run.repo_root), knowledge, durations)
+            except (OSError, ValueError, subprocess.SubprocessError) as error:
+                self.run.console.note(f"testing profile not saved: {error}")
 
     def code_step(self, step: CodeStep, suffix: tuple[int, ...]) -> None:
         self.run_code_step(step, suffix)
-        while step.action == "test" and self.red_test is not None:
-            report, self.red_test = self.red_test, None
-            if not self.triage(step, suffix, report):
-                break
-            self.run_code_step(step, suffix)
 
     def run_code_step(self, step: CodeStep, suffix: tuple[int, ...]) -> None:
         name = self.phase_name(step.phase_id, suffix)
@@ -861,8 +691,6 @@ class _Interpreter:
         if step.action in ("test", "command") and entry.report is not None:
             self.reports[len(self.history)] = dict(entry.report)
         self.store(step.key, envelope)
-        if step.action == "test" and not getattr(envelope, "passed", True):
-            self.red_test = dict(entry.report or {})
 
     def live_code_step(self, step: CodeStep, name: str) -> None:
         with self.run.phase(self.params(name, "code", step.owner, step.description)) as ph:
@@ -881,8 +709,12 @@ class _Interpreter:
                 report = self.report(name, step.key, result)
                 self.reports[len(self.history)] = report
                 self.store(step.key, engine_quality.as_envelope(result, what))
-                if step.action == "test" and not result.passed:
-                    self.red_test = report
+                if step.action == "test":
+                    plan = self.test_plan()
+                    self.save_profile(
+                        plan.testing_profile,
+                        {check.command: check.duration_seconds for check in result.checks},
+                    )
             elif step.action == "commit":
                 message = self.commit_message()
                 # "" means the tree was already clean — a real outcome, not a failure.
@@ -942,6 +774,7 @@ def run_workflow(
     prompt_variables: Mapping[str, str] | None = None,
     label: str | None = None,
     test_timeout: int | None = None,
+    test_profile: ProfileCache | None = None,
     generated: Sequence[Generated] = (),
     test_slots: Any = None,
     phase_gate: Callable[[], None] | None = None,
@@ -956,6 +789,7 @@ def run_workflow(
     ``prompt_variables`` (extra ``{{...}}`` values for the agent prompts) and
     ``label`` (the task id, used in the fallback commit message),
     ``test_timeout`` (time limit in seconds of every ``test`` step; default 600) and
+    ``test_profile`` (optional local advisory knowledge shared by a project's runs),
     ``generated`` (the outputs a ``rebuild`` step may rebuild; default none) and
     ``test_slots`` (an ``engine.slots.TestSlots`` every ``test`` step waits for; the wait
     does not count into ``test_timeout``; None means no wait) and
@@ -975,6 +809,7 @@ def run_workflow(
     run.write_guard = write_guard
     run.prompt_variables = dict(prompt_variables or {})
     run.test_timeout = test_timeout
+    run.test_profile = test_profile
     run.generated = tuple(generated)
     run.test_slots = test_slots
     interp = _Interpreter(workflow, prompt, run, runner, label, phase_gate, journal)

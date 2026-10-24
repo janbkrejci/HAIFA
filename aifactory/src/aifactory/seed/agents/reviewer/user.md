@@ -10,6 +10,12 @@
 
 {{previous_envelope}}
 
+### review_mode
+
+{{review_mode}}
+
+`resolve` means the run may change only conflicted files; otherwise this is a normal task.
+
 ### test_result
 
 The test step already ran the tester's checks on this same code. Its result (`passed`, `command`, `log`, and `test_plan` with the coverage, reason and commands) is below; do not run the checks again, read the log if you need their output:

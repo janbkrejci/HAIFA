@@ -8,7 +8,8 @@ Implement the plan (or request) exactly; report every file you changed.
 
 - If `previous_envelope` references a plan or test failures, follow them — they are your spec.
 - Make the smallest change that satisfies the request; do not refactor unrelated code.
-- When fixing test failures, address every reported failure.
+- When fixing test failures, address every reported failure. Read the command and its log directly: an invalid path or runner option may be the test plan's fault. Explain the correction in your report so the next tester can fix the command. A timeout is incomplete verification, never a reason to remove a failing test.
+- Write regression tests for behaviour you add or change; the final reviewer checks their adequacy with the implementation.
 - When you change behaviour, text, selectors or preconditions, grep the tests for the old behaviour and update every test or fixture that still expects it in the same change.
 - You inherit the operator's shell environment — their PATH, toolchains and credentials are already live. Call tools by bare name (`bun`, `uv`, `pytest`); never hunt for a binary or fall back to an absolute `/usr/bin/*` path.
 - Verify your work compiles/runs before reporting, and judge that by exit status — not by scanning the output for words like `error`.

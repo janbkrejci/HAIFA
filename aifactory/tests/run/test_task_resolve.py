@@ -24,7 +24,6 @@ from run_repo import (
     make_run_repo,
     ok,
     scripted_plan,
-    triage_envelope,
     write,
 )
 from workflow_fakes import FakeCodeRunner
@@ -88,11 +87,6 @@ def run_both(repo: Path, script: Script, second: tuple[str, str] = (MODEL, "VALU
 def tester(script: Script) -> None:
     """A reviewed tester plan for the resolve run (one check; the suite result is scripted)."""
     scripted_plan(script)
-
-
-def triage(script: Script) -> None:
-    """The tester's verdict on a red test: the code's fault, so the builder repairs it."""
-    script.add("tester", triage_envelope("code"))
 
 
 def resolver(script: Script, *effects: Callable[[Path], object], **fields: Any) -> None:
@@ -247,10 +241,8 @@ def test_red_suite_restores_branch(repo: Path, script: Script) -> None:
     for value in (4, 5):  # fix_1, fix_2: the suite stays red, test_3 ends the loop
         resolver(script, _writer(f"VALUE = {value}\n"), changed_files=[MODEL])
     tester(script)
-    for _ in range(2):  # triage of test_1 and test_2, then the plan after the fix
-        triage(script)
+    for _ in range(2):  # replan after each fix
         tester(script)
-    triage(script)  # test_3
 
     result = resolve_task(repo, T02, code=ResolveCode([False, False, False]))
 
@@ -263,8 +255,6 @@ def test_clean_rebase_red_suite_restores_branch(repo: Path, script: Script) -> N
     before = tip(repo)
 
     tester(script)
-    for _ in range(3):  # every red test goes to triage; no conflict, so no fix
-        triage(script)
     result = resolve_task(repo, T02, code=ResolveCode([False, False, False]))
 
     assert builder_calls(script) == []
@@ -295,7 +285,6 @@ def test_fix_repairs_what_resolve_broke(repo: Path, script: Script) -> None:
         commit_message="Fix model",
     )
     tester(script)
-    triage(script)  # test_1 is red by the code
     tester(script)  # the plan after the fix
 
     result = resolve_task(repo, T02, code=SuiteCode([]))
@@ -310,13 +299,10 @@ def test_fix_repairs_what_resolve_broke(repo: Path, script: Script) -> None:
         "rebase",
         "resolve",
         "test_plan",
-        "test_review",
         "rebuild_1",
         "test_1",
-        "triage_1",
         "fix_1",
         "test_plan_1",
-        "test_review_1",
         "rebuild_2",
         "test_2",
     ], names

@@ -107,9 +107,8 @@ def files(harness: str) -> dict[str, str]:
 
 
 def scripted_plan(script: Script, *argv: str) -> None:
-    """A tester plan with the single check `argv` and the test-reviewer's approval of it."""
+    """A tester plan with the single check `argv`; there is no implicit review."""
     script.add("tester", plan_envelope(*argv))
-    script.add("test-reviewer", dict(PLAN_APPROVED))
 
 
 def git(repo: Path, *args: str) -> str:

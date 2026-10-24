@@ -415,7 +415,7 @@ def test_a_failing_plan_reaches_the_fixer_and_the_retest_passes(
     workflow_env.script.on("builder", lambda root: (root / "fixed.py").write_text("pass"))
     result = run_workflow(workflow(text), "fix it", workflow_env.cfg, repo_root=workflow_env.repo)
     assert result.accepted
-    assert [call.agent for call in workflow_env.script.calls] == ["tester", "tester", "builder"]
+    assert [call.agent for call in workflow_env.script.calls] == ["tester", "builder"]
     evidence = result.results["test"]["test_plan"]
     assert (evidence["coverage"], evidence["executed"]) == ("scoped", 1)
     assert evidence["commands"] and "fixed.py" in evidence["commands"][0]
@@ -462,121 +462,41 @@ def test_a_replan_that_drops_a_check_silently_is_sent_back(workflow_env: EngineE
     assert code.plans[0].checks[0].argv == python("print('first')")
 
 
-# ── triage of a red test ────────────────────────────────────────────────────
-
-LOOP = HEADER + (
-    "steps:\n  - test_plan\n  - repeat: {max: MAX, until: test.passed}\n    steps: [test, fix]\n"
-    "accept: test.passed\n"
-)
+# Failures go straight to the builder, with no implicit tester call.
 
 
-def corrected(*argv: str) -> dict[str, Any]:
-    """A triage verdict `plan` whose corrected check replaces the first plan's."""
-    return {
-        **triage_envelope("plan", *argv),
-        "dropped": [{"name": "check", "reason": "it pointed at a file that does not exist"}],
-    }
-
-
-def _phase_names(result: Any) -> list[str]:
-    return [name for name, _, _ in result.phases if name != "request"]
-
-
-def test_triage_code_sends_the_red_test_to_the_fixer(workflow_env: EngineEnv) -> None:
-    workflow_env.script.add("tester", plan_envelope(), triage_envelope("code"))
+def test_failed_checks_go_directly_to_the_builder(workflow_env: EngineEnv) -> None:
+    text = HEADER + (
+        "steps:\n  - test_plan\n  - repeat: {max: 2, until: test.passed}\n"
+        "    steps: [test, fix, test_plan]\naccept: test.passed\n"
+    )
+    workflow_env.script.add("tester", plan_envelope(), plan_envelope())
     workflow_env.script.add("builder", ok(summary="fixed", changed_files=[]))
     code = FakeCodeRunner([False, True])
-    result = run_workflow(workflow(LOOP.replace("MAX", "2")), "do it", workflow_env.cfg, code=code)
+    result = run_workflow(workflow(text), "do it", workflow_env.cfg, code=code)
     assert result.accepted
-    assert _phase_names(result) == ["test_plan", "test_1", "triage_1", "fix_1", "test_2"]
-    triage, fix = workflow_env.script.calls[1], workflow_env.script.calls[2]
-    assert json.loads(triage.previous())["passed"] is False  # the tester judges the red test
-    assert json.loads(fix.previous())["passed"] is False  # the verdict is not stored
-    assert result.results["test_plan"]["failure_cause"] == ""  # still the first plan
-    assert len(code.plans) == 2 and code.plans[0] is code.plans[1]
-
-
-def test_triage_plan_reruns_the_test_with_the_corrected_plan(workflow_env: EngineEnv) -> None:
-    # max 1: a plan repair does not use up the round, and no builder is called.
-    workflow_env.script.add(
-        "tester", plan_envelope(*python("print('bad')")), corrected(*python("print('good')"))
-    )
-    code = FakeCodeRunner([False, True])
-    result = run_workflow(workflow(LOOP.replace("MAX", "1")), "do it", workflow_env.cfg, code=code)
-    assert result.accepted
-    assert _phase_names(result) == ["test_plan", "test_1", "triage_1", "test_1_2"]
-    assert [c.agent for c in workflow_env.script.calls] == ["tester", "tester"]
-    assert [p.checks[0].argv for p in code.plans] == [
-        python("print('bad')"),
-        python("print('good')"),
+    assert [c.agent for c in workflow_env.script.calls] == ["tester", "builder", "tester"]
+    fixer = workflow_env.script.calls[1]
+    assert json.loads(fixer.previous())["passed"] is False
+    assert [name for name, _, _ in result.phases] == [
+        "request",
+        "test_plan",
+        "test_1",
+        "fix_1",
+        "test_plan_1",
+        "test_2",
     ]
-    assert result.results["test_plan"]["failure_cause"] == "plan"
 
 
-def test_plan_repairs_are_capped(workflow_env: EngineEnv) -> None:
-    workflow_env.script.add(
-        "tester",
-        plan_envelope(*python("print('bad')")),
-        corrected(*python("print('a')")),
-        triage_envelope("plan", *python("print('a')")),
-        {**triage_envelope("plan", *python("print('a')")), "reason": "still the wrong path"},
+def test_last_red_test_has_no_triage_or_unverified_fix(workflow_env: EngineEnv) -> None:
+    text = HEADER + (
+        "steps:\n  - test_plan\n  - repeat: {max: 1, until: test.passed}\n"
+        "    steps: [test, fix, test_plan]\naccept: test.passed\n"
     )
-    code = FakeCodeRunner([False, False, False])
-    with pytest.raises(RuntimeError, match="still cannot run after 2 corrections"):
-        run_workflow(workflow(LOOP.replace("MAX", "3")), "do it", workflow_env.cfg, code=code)
-    assert not any(call.agent == "builder" for call in workflow_env.script.calls)
-    assert len(code.plans) == 3
-
-
-def test_failed_test_is_rendered_only_in_triage(workflow_env: EngineEnv, tmp_path: Path) -> None:
-    user = tmp_path / "user.md"
-    user.write_text(
-        "{{prompt}}\nPREV<<{{previous_envelope}}>>PREV\nFAILED<<{{failed_test}}>>FAILED\n",
-        encoding="utf-8",
-    )
-    for agent in workflow_env.cfg.agents:
-        if agent.name in ("tester", "builder"):
-            agent.prompt_engineering.user = str(user)
-    workflow_env.script.add("tester", plan_envelope(), triage_envelope("code"))
-    workflow_env.script.add("builder", ok(summary="fixed", changed_files=[]))
-    run_workflow(
-        workflow(LOOP.replace("MAX", "2")),
-        "do it",
-        workflow_env.cfg,
-        code=FakeCodeRunner([False, True]),
-    )
-    failed = {
-        call.agent + str(i): call.prompt.split("FAILED<<")[1].split(">>FAILED")[0]
-        for i, call in enumerate(workflow_env.script.calls)
-    }
-    assert failed["tester0"] == "(none)"  # the first plan
-    assert failed["builder2"] == "(none)"  # the fixer
-    report = json.loads(failed["tester1"])  # the triage
-    assert (report["step"], report["phase"], report["passed"]) == ("test", "test_1", False)
-
-
-def test_triage_gets_every_failed_check(workflow_env: EngineEnv, tmp_path: Path) -> None:
-    user = tmp_path / "user.md"
-    user.write_text("{{prompt}}\nFAILED<<{{failed_test}}>>FAILED\n", encoding="utf-8")
-    for agent in workflow_env.cfg.agents:
-        if agent.name == "tester":
-            agent.prompt_engineering.user = str(user)
-    checks = [
-        {"name": "lint", "argv": python("raise SystemExit(1)")},
-        {"name": "types", "argv": python("raise SystemExit(2)")},
-        {"name": "tests", "argv": python("print('ok')")},
-    ]
-    first = ok(coverage="scoped", reason="covers the change", checks=checks)
-    workflow_env.script.add("tester", first, {**first, "failure_cause": "code"})
-    workflow_env.script.add("builder", ok(summary="fixed", changed_files=[]))
-    run_workflow(workflow(LOOP.replace("MAX", "1")), "do it", workflow_env.cfg)
-    triage = workflow_env.script.calls[1]
-    report = json.loads(triage.prompt.split("FAILED<<")[1].split(">>FAILED")[0])
-    assert [(c["name"], c["returncode"]) for c in report["failed_checks"]] == [
-        ("lint", 1),
-        ("types", 2),
-    ]
-    assert report["failures"] == 2 and report["test_plan"]["executed"] == 3
+    workflow_env.script.add("tester", plan_envelope())
+    result = run_workflow(workflow(text), "do it", workflow_env.cfg, code=FakeCodeRunner([False]))
+    assert not result.accepted
+    assert [c.agent for c in workflow_env.script.calls] == ["tester"]
 
 
 # ── required coverage ───────────────────────────────────────────────────────

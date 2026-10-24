@@ -289,13 +289,13 @@ def test_every_scripted_run_revises_the_first_written_file(repo: Path) -> None:
         script = fake_scripts.script_for(task_id, variant)
         agents = script["agents"]
         assert [r["envelope"]["approved"] for r in agents["reviewer"]] == [False, True]
-        # test_plan, a triage (cause code) and a plan per fix, replan_1 after the revision
+        # test_plan, a plan per fix, replan_1 after the revision
         tester = agents["tester"]
         assert [p["envelope"]["checks"] for p in tester] == [[fake_scripts.TEST_CHECK]] * len(
             tester
         )
         causes = [p["envelope"].get("failure_cause", "") for p in tester]
-        fixes = ["code", ""] if variant == "slugify_with_repair" else []
+        fixes = [""] if variant == "slugify_with_repair" else []
         assert causes == ["", *fixes, ""]
         revise = agents["builder"][-1]
         assert revise["edits"] == [fake_scripts.revise_edit(revise["envelope"]["changed_files"][0])]

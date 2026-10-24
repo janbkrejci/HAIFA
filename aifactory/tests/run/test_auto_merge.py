@@ -916,12 +916,7 @@ def test_conflict_is_resolved_reviewed_and_merged(repo: Path, script: Script) ->
     assert git(repo, "show", "main:src/app/one.py") == "NAME = 'both'"
     row = pr_row(repo, T01)
     assert row is not None and row.state == "merged" and not row.auto_merge_error
-    assert [c.agent for c in script.calls][-4:] == [
-        "builder",
-        "tester",
-        "test-reviewer",
-        "reviewer",
-    ]
+    assert [c.agent for c in script.calls][-3:] == ["builder", "tester", "reviewer"]
 
 
 def test_rejected_resolution_keeps_the_pr_open(repo: Path, script: Script) -> None:

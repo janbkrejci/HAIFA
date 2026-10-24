@@ -4,11 +4,13 @@ Workflow je YAML se jménem, popisem, kroky a podmínkou přijetí `accept`. Vla
 
 ## Kroky
 
-**Kroky agentů** (role z registru rolí): `plan` (planner), `scout` (scout), `build`, `fix`, `revise`, `ask` a `resolve` (builder), `test_plan` (tester), `test_review` (test-reviewer), `review` (reviewer) a `document` (documenter). Krok může mít `agent`, `harness`, `model`, `thinking`, `when`, `id`, `description` a `input` (výstupy kterých kroků dostane).
+**Kroky agentů**: `plan`, `scout`, `build`, `fix`, `revise`, `ask`, `resolve`, `test_plan`, `review`, `document`. Volby: `agent`, `harness`, `model`, `thinking`, `when`, `id`, `description`, `input`.
 
-**Kódové kroky** běží bez modelu: `test` (spustí kontroly vybrané testerem, všechny i po prvním selhání), `commit`, `changes` (diff běhu pro dokumentaci), `command` (`id`, `argv`, `timeout`), `rebase` a `rebuild` (přegenerování `generated`).
+**Kódové kroky**: `test` (vykoná plán testera), `commit`, `changes`, `command` (`id`, `argv`, `timeout`), `rebase`, `rebuild`.
 
-`coverage` je volba kroku `test_plan`: `full` žádá plán celé sady testů, `scoped` jen kontroly změny. Plán jiného rozsahu gate odmítne.
+Tester používá lokální profil projektu s příkazy, pravidly výběru a naměřenými časy; při změně konfigurace ho obnoví. Selhání řeší builder, chybějící testy závěrečný reviewer. Automatická revize plánu ani triáž neběží; `test_review` lze uvést explicitně.
+
+`test_plan.coverage`: `full` žádá celou sadu, `scoped` kontroly změny; jiný odmítne.
 
 ## Podmínky a smyčky
 
@@ -34,6 +36,11 @@ steps:
       - review:
           input: [build, fix, revise]
       - revise
+      - test_plan:
+          id: replan
+          input: [review]
+      - test:
+          id: retest
   - commit:
       when: test.passed and review.approved
 accept: test.passed and review.approved
