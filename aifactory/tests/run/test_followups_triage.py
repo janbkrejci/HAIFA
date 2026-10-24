@@ -59,14 +59,14 @@ def apply(
     blocking: bool = True,
     run_id: str = "run-1",
 ) -> FollowUpOutcome:
-    def ask(*args: object) -> list[Decision]:
+    def ask(*args: object, **kwargs: object) -> list[Decision]:
         if isinstance(choices, Exception):
             raise choices
         return choices
 
     monkeypatch.setattr(triage, "ask_triager", ask)
     with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
-        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, run_id=run_id))
+        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, note=None, run_id=run_id))
         result, warnings, blockers = _record_follow_ups(
             repo,
             store,
@@ -172,7 +172,9 @@ def test_rechecks_fresh_target_under_lock(
         assert depth > 0
         return object() if change == "running" and task_id == TARGET else None
 
-    def ask(root: Path, reported: Sequence[Reported], backlog: Backlog) -> list[Decision]:
+    def ask(
+        root: Path, reported: Sequence[Reported], backlog: Backlog, **kwargs: object
+    ) -> list[Decision]:
         assert depth == 0
         if change == "cancelled":
             edit_task(root, TARGET, status="cancelled")
@@ -190,7 +192,7 @@ def test_rechecks_fresh_target_under_lock(
     monkeypatch.setattr(TaskRunStore, "running", running)
     monkeypatch.setattr(triage, "ask_triager", ask)
     with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
-        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, run_id="r"))
+        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, note=None, run_id="r"))
         result, warnings, _ = _record_follow_ups(
             repo,
             store,
@@ -226,12 +228,12 @@ def test_unavailable_triage_preserves_legacy_fallback(
     link_task(repo, T01, depends_on=[TARGET])
     commit_all(repo, "Existing blocker")
 
-    def ask(*args: object) -> list[Decision]:
+    def ask(*args: object, **kwargs: object) -> list[Decision]:
         raise error
 
     monkeypatch.setattr(triage, "ask_triager", ask)
     with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
-        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, run_id="r"))
+        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, note=None, run_id="r"))
         result, warnings, blockers = _record_follow_ups(
             repo,
             store,
@@ -256,7 +258,7 @@ def test_no_followups_never_calls_agent(repo: Path, monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(triage, "ask_triager", unexpected)
     with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
-        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, run_id="r"))
+        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, note=None, run_id="r"))
         result, warnings, blockers = _record_follow_ups(repo, store, row, workflow_run())
     assert result is not None and not result.created and not warnings and not blockers
 
@@ -447,7 +449,9 @@ def test_explicit_empty_writes_survive_collection_and_allow_no_file_extension(
     seen: list[tuple[str, ...] | None] = []
     addition = "Also explain the acceptance criteria without changing files."
 
-    def ask(root: Path, reported: Sequence[Reported], backlog: Backlog) -> list[Decision]:
+    def ask(
+        root: Path, reported: Sequence[Reported], backlog: Backlog, **kwargs: object
+    ) -> list[Decision]:
         [report] = reported
         seen.append(report.writes)
         assert report.writes == expected_writes
@@ -466,7 +470,9 @@ def test_explicit_empty_writes_survive_collection_and_allow_no_file_extension(
     path = repo / task_of(repo, TARGET).path
     before = path.read_bytes()
     with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
-        row = cast(TaskRunRow, SimpleNamespace(task_id=T01, run_id="read-only-follow-up"))
+        row = cast(
+            TaskRunRow, SimpleNamespace(task_id=T01, note=None, run_id="read-only-follow-up")
+        )
         result, warnings, blockers = _record_follow_ups(
             repo, store, row, workflow_run(follow_ups=[item])
         )
@@ -485,3 +491,84 @@ def test_explicit_empty_writes_survive_collection_and_allow_no_file_extension(
         assert not created.existed and path.read_bytes() == before
         assert any("explicitly read-only reported writes=[]" in warning for warning in warnings)
     assert check_backlog(load_backlog(repo)) == []
+
+
+@pytest.mark.parametrize("saved", [False, True])
+def test_record_passes_run_binding(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, saved: bool
+) -> None:
+    from aifactory.run.task import override_note
+
+    binding = {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+    seen: list[dict[str, Any]] = []
+
+    def ask(*args: object, **kwargs: Any) -> list[Decision]:
+        seen.append(kwargs)
+        return [choice("covered")]
+
+    monkeypatch.setattr(triage, "ask_triager", ask)
+    with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
+        row = cast(
+            TaskRunRow,
+            SimpleNamespace(
+                task_id=T01, run_id="r", note=override_note("retry", binding) if saved else "retry"
+            ),
+        )
+        result, warnings, _ = _record_follow_ups(
+            repo, store, row, workflow_run(follow_ups=[follow_up()])
+        )
+    assert result is not None and not warnings
+    assert seen == [{"task_id": T01, "binding": binding if saved else None}]
+
+
+def test_triager_uses_binding_after_quota_switch(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import json
+
+    from aifactory.engine import agents
+    from aifactory.engine.data_types import AgentResult
+    from aifactory.harness import thinking
+    from aifactory.harness.check import HarnessStatus
+    from aifactory.run.task import override_note
+
+    path = repo / task_of(repo, T01).path
+    path.write_text(
+        path.read_text().replace(
+            "status: todo", "status: todo\nharness: claude\nmodel: sonnet\nthinking: medium", 1
+        )
+    )
+    commit_all(repo, "Original task harness")
+    monkeypatch.setattr(thinking, "codex_models", lambda: [])
+    monkeypatch.setattr(
+        triage, "check_harness", lambda name: HarnessStatus(name, "fake", "fake", "1")
+    )
+    seen: list[Any] = []
+
+    def codex(request: Any, **kwargs: Any) -> AgentResult:
+        seen.append(request)
+        return AgentResult(
+            text=json.dumps(
+                {
+                    "status": "success",
+                    "summary": "Covered",
+                    "decisions": [choice("covered").model_dump()],
+                }
+            ),
+            returncode=0,
+        )
+
+    monkeypatch.setattr(agents.INTERFACES["codex"], "run", codex)
+    binding = {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+    with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
+        row = cast(
+            TaskRunRow,
+            SimpleNamespace(task_id=T01, run_id="switched", note=override_note(None, binding)),
+        )
+        result, warnings, _ = _record_follow_ups(
+            repo, store, row, workflow_run(follow_ups=[follow_up()])
+        )
+    assert result is not None and not warnings
+    assert result.created[0].decision == "covered"
+    [request] = seen
+    assert request.model == "gpt-5.5" and request.thinking == "high"

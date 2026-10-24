@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T71
 title: Triáž follow-upů s harnessem běhu tasku a lekce s výchozím nastavením počítače
-status: todo
+status: done
 workflow: plan-build-test
 depends_on: [HAIFA-REFINEMENT-T69]
 writes: [aifactory/src/aifactory/run/triage.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/learn/scan.py, aifactory/tests/run/test_triage.py, aifactory/tests/run/test_followups_triage.py, aifactory/tests/learn/test_learn_scan.py, aifactory/tests/run/test_followups_queue.py]
@@ -23,3 +23,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-24 · workflow plan-build-test · PR https://github.com/janbkrejci/HAIFA/pull/150 · náklady $0.00

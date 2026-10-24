@@ -43,6 +43,7 @@ from aifactory.engine.tracer import Tracer
 from aifactory.failure import AgentReportedFail, InvalidOutput
 from aifactory.harness import canonical, install
 from aifactory.harness.check import check_harness
+from aifactory.harness.settings import effective_override
 from aifactory.learn.collect import Objection, collect
 from aifactory.learn.store import (
     ACCEPTED,
@@ -54,7 +55,7 @@ from aifactory.learn.store import (
 )
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.scope import TaskScope
-from aifactory.run.task import _main_ignored, prepare_cfg
+from aifactory.run.task import _main_ignored, apply_agents_override, prepare_cfg
 from aifactory.workflow.propose import _isolated
 
 install()
@@ -152,6 +153,7 @@ def _ask_learner(repo: Path, payload: dict[str, Any], known: set[str]) -> Lesson
     """One call of the agent ``learner`` (one correction for unknown objection ids)."""
     job_id = f"learn-{secrets.token_hex(4)}"
     rc = load_run_config(repo)
+    rc = apply_agents_override(rc, effective_override({}, None))
     with _isolated(repo, rc.commit, None) as isolated:
         runtime = repo / ".factory/data/learn" / job_id
         runtime.mkdir(parents=True, exist_ok=True)

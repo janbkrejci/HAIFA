@@ -467,3 +467,88 @@ def test_context_step_fallback_and_no_candidate_limit(backlog: Backlog) -> None:
     assert len(payload["follow_ups"]) == len(payload["backlog"]) == 450
     assert payload["backlog"][-1]["step"] == {"id": "S", "title": "Step"}
     assert payload["backlog"][-1]["body_truncated"] is False
+
+
+@pytest.mark.parametrize("source", ["binding", "task", "computer"])
+def test_triager_context_binding(
+    repo: Path,
+    backlog: Backlog,
+    fake: tuple[list[Any], list[Any]],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    source: str,
+) -> None:
+    from aifactory.harness import settings, thinking
+
+    monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(thinking, "codex_models", lambda: [])
+    settings.write(
+        {
+            "default_harness": "claude",
+            "harnesses": {
+                "pi": {"enabled": False},
+                "claude": {"enabled": True, "model": "sonnet", "thinking": "high"},
+                "codex": {"enabled": True, "model": "gpt-5.5", "thinking": "medium"},
+            },
+        },
+        tmp_path / "home",
+    )
+    parent = backlog.containers[0]
+    step = parent.children[0]
+    task = step.tasks[1]  # The source may already be done.
+    parent.defaults["harness"] = "codex" if source == "task" else "claude"
+    step.defaults["model"] = "gpt-5.5" if source == "task" else "sonnet"
+    task.own["thinking"] = "high"
+    if source == "computer":
+        parent.defaults.pop("harness")
+        step.defaults.pop("model")
+        settings.write(
+            {
+                "default_harness": "codex",
+                "harnesses": {
+                    "claude": {"enabled": True, "model": "sonnet"},
+                    "pi": {"enabled": False},
+                    "codex": {"enabled": True, "model": "gpt-5.5", "thinking": "medium"},
+                },
+            },
+            tmp_path / "home",
+        )
+    seen, _ = fake
+    codex_seen: list[Any] = []
+
+    def codex(request: Any, **kwargs: Any) -> AgentResult:
+        codex_seen.append(request)
+        return AgentResult(text=json.dumps(output(choice())), returncode=0)
+
+    monkeypatch.setattr(agents.INTERFACES["codex"], "run", codex)
+    binding = {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+    assert (
+        ask_triager(
+            repo,
+            [report()],
+            backlog,
+            task_id=task.id,
+            binding=binding if source == "binding" else None,
+        )[0].action
+        == "covered"
+    )
+    assert not seen
+    [request] = codex_seen
+    assert request.model == "gpt-5.5" and request.thinking == "high"
+    assert Path(request.cwd) != repo and not Path(request.cwd).exists()
+
+
+@pytest.mark.parametrize("binding", [None, {}])
+def test_triager_roster_without_context_or_with_empty_binding(
+    repo: Path, backlog: Backlog, fake: tuple[list[Any], list[Any]], binding: Any
+) -> None:
+    seen, answers = fake
+    answers.append(output(choice()))
+    backlog.containers[0].defaults["harness"] = "codex"
+    ask_triager(repo, [report()], backlog, task_id="T1" if binding == {} else None, binding=binding)
+    assert len(seen) == 1 and seen[0].model == "sonnet"
+
+
+def test_triager_unknown_source_task(repo: Path, backlog: Backlog) -> None:
+    with pytest.raises(TriageUnavailable, match="Unknown source task"):
+        ask_triager(repo, [report()], backlog, task_id="missing")

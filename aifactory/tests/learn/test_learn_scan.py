@@ -157,3 +157,52 @@ def test_bad_since_and_unknown_lesson(repo: Path, capsys: pytest.CaptureFixture[
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "invalid_value"
     assert main(["learn", "dismiss", "L00000000", "--repo", str(repo), "--json"]) == 2
     assert json.loads(capsys.readouterr().out)["error"]["code"] == "unknown_lesson"
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_learner_computer_binding(
+    repo: Path,
+    fake: tuple[list[Any], list[dict[str, Any]]],
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    configured: bool,
+) -> None:
+    from aifactory.engine import agents
+    from aifactory.engine.data_types import AgentResult
+    from aifactory.harness import settings, thinking
+
+    monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(thinking, "codex_models", lambda: [])
+    if configured:
+        settings.write(
+            {
+                "default_harness": "codex",
+                "harnesses": {
+                    "claude": {"enabled": True, "model": "sonnet"},
+                    "pi": {"enabled": False},
+                    "codex": {"enabled": True, "model": "gpt-5.5", "thinking": "high"},
+                },
+            },
+            tmp_path / "home",
+        )
+    seen, answers = fake
+    answers.append(_lessons(TESTS_LESSON))
+    codex_seen: list[Any] = []
+
+    def codex(request: Any, **kwargs: Any) -> AgentResult:
+        codex_seen.append(request)
+        return AgentResult(text=json.dumps(_lessons(TESTS_LESSON)), returncode=0)
+
+    monkeypatch.setattr(agents.INTERFACES["codex"], "run", codex)
+    [lesson] = _scan(capsys, repo)["lessons"]
+    assert lesson["rule"] == TESTS_RULE and lesson["occurrences"] == 2
+    if configured:
+        assert not seen
+        [request] = codex_seen
+        assert request.model == "gpt-5.5" and request.thinking == "high"
+    else:
+        assert not codex_seen
+        [request] = seen
+        assert request.model == "sonnet"
+    assert Path(request.cwd) != repo and not Path(request.cwd).exists()
