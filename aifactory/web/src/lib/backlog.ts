@@ -251,6 +251,8 @@ export function blockedTooltip(blockedBy: readonly Unmet[] | undefined, names: C
 }
 
 export interface TaskNode {
+  /** Archived in the kanban; missing means false. */
+  archived?: boolean
   kind: 'task'
   id: string
   title: string
@@ -703,6 +705,11 @@ export function setAutoExcluded(taskId: string, excluded: boolean): Promise<{ ta
   return postApi<{ task_id: string; excluded: boolean }>(`${taskPath(taskId)}/auto-exclude`, { excluded })
 }
 
+/** Archive a completed task or restore it to the kanban. */
+export function setArchived(taskId: string, archived: boolean): Promise<{ task_id: string; archived: boolean }> {
+  return postApi<{ task_id: string; archived: boolean }>(`${taskPath(taskId)}/archive`, { archived })
+}
+
 /** Take the priority of a blocked task (or of its blocker) away; returns the cleared records. */
 export function clearPriority(taskId: string): Promise<{ task_id: string; cleared: string[] }> {
   return deleteApi<{ task_id: string; cleared: string[] }>(`${taskPath(taskId)}/priority`)
@@ -914,6 +921,7 @@ export function resetTreeForTests(): void {
   revealing.value = null
   scrolling = null
   resetHideDoneForTests()
+  resetShowArchivedForTests()
 }
 
 // ── Kanban filter by project and step ────────────────────────────────────────
@@ -1018,6 +1026,41 @@ export function setHideDone(on: boolean): void {
 /** Test helper: read the switch from localStorage again on next use. */
 export function resetHideDoneForTests(): void {
   hideDoneState.value = null
+}
+
+/** Browser preferences for archived cards, independent for each terminal column. */
+export const SHOW_ARCHIVED_KEYS = {
+  done: 'haifa.backlog.showArchived.done',
+  cancelled: 'haifa.backlog.showArchived.cancelled',
+} as const
+
+type ArchiveColumn = keyof typeof SHOW_ARCHIVED_KEYS
+const showArchivedState = ref<Record<ArchiveColumn, boolean | null>>({ done: null, cancelled: null })
+
+export function showArchived(column: ArchiveColumn): boolean {
+  if (showArchivedState.value[column] === null) {
+    try {
+      showArchivedState.value[column] = typeof localStorage !== 'undefined'
+        && localStorage.getItem(SHOW_ARCHIVED_KEYS[column]) === '1'
+    } catch {
+      showArchivedState.value[column] = false
+    }
+  }
+  return showArchivedState.value[column] ?? false
+}
+
+export function setShowArchived(column: ArchiveColumn, on: boolean): void {
+  showArchivedState.value[column] = on
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(SHOW_ARCHIVED_KEYS[column], on ? '1' : '0')
+  } catch {
+    // storage unavailable: the choice lasts for this visit only
+  }
+}
+
+/** Test helper: read both column preferences from storage again on next use. */
+export function resetShowArchivedForTests(): void {
+  showArchivedState.value = { done: null, cancelled: null }
 }
 
 /** Is the task hidden by the „Skrýt hotové“ switch? */

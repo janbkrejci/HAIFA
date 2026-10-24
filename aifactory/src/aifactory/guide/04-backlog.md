@@ -4,9 +4,11 @@ Backlog je strom markdown souborů pod `<docs_root>/backlog/`: **projekt**, **st
 
 ## Strom a kanban
 
-**Strom** ukazuje projekty a stepy s počty tasků, grafem závislostí a panelem **Nastavení** (posuvníky na řádku): auto-continue, auto-merge a klíče `index.md`.
+Zrušené tasky se archivují rovnou, hotové tlačítkem **Archivovat**; archivované ukáže přepínač Zobrazit archivované v záhlaví sloupce a archivace se necommituje.
 
-**Kanban** má sloupec pro každý stav. **Připraveno** je fronta auto-continue shora dolů: pořadí měníš přetažením nebo šipkami. Přetažením do **Odloženo** (nebo **Vyloučit z auto continue**) task z fronty vyřadíš; ručně spustit jde. Pořadí a odložení se necommitují.
+**Strom**: projekty, stepy, počty tasků, graf závislostí a **Nastavení** (posuvníky): auto-continue, auto-merge a klíče `index.md`.
+
+**Kanban** seskupuje stavy; **Připraveno** řadí auto-continue shora dolů přetažením či šipkami. **Odloženo** (přetažením nebo **Vyloučit z auto continue**) vyřadí task z fronty; ručně spustit jde. Pořadí a odložení se necommitují.
 
 ## Stavy tasku
 

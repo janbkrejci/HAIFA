@@ -1,7 +1,7 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import KanbanBoard from './KanbanBoard.vue'
-import { BOARD_STATES, kanbanColumns, presentStates } from '@/lib/backlog'
+import { BOARD_STATES, kanbanColumns, presentStates, resetShowArchivedForTests } from '@/lib/backlog'
 import { backlogData, taskNode } from '@/test/backlogFixtures'
 
 function readyTasks() {
@@ -29,7 +29,65 @@ function dataTransfer() {
 const cards = (wrapper: ReturnType<typeof mount>, column: string) =>
   wrapper.find(`[data-column="${column}"]`).findAll('[data-card]').map((c) => c.attributes('data-card'))
 
+beforeEach(() => {
+  localStorage.clear()
+  resetShowArchivedForTests()
+})
+
+afterEach(() => {
+  localStorage.clear()
+  resetShowArchivedForTests()
+})
+
 describe('KanbanBoard', () => {
+  it('hides archived cards and toggles each terminal column with visible counts', async () => {
+    const tasks = [
+      taskNode({ id: 'done', path: 'done.md', board_state: 'done' }),
+      taskNode({ id: 'archived', path: 'archived.md', board_state: 'done', archived: true }),
+      taskNode({ id: 'cancelled', path: 'cancelled.md', board_state: 'cancelled', archived: true }),
+      taskNode({ id: 'ready', path: 'ready.md' }),
+    ]
+    const wrapper = mount(KanbanBoard, { props: { tasks, states: BOARD_STATES } })
+    const column = (id: string) => wrapper.get(`[data-column="${id}"]`)
+    const toggle = (id: string) => column(id).get('[data-test="show-archived"]')
+    expect(wrapper.findAll('[data-test="show-archived"]')).toHaveLength(2)
+    expect(cards(wrapper, 'ready')).toEqual(['ready'])
+    expect(cards(wrapper, 'done')).toEqual(['done'])
+    expect(cards(wrapper, 'cancelled')).toEqual([])
+    expect(column('done').get('[data-test="count"]').text()).toBe('1')
+    expect(column('cancelled').get('[data-test="count"]').text()).toBe('0')
+    expect(toggle('done').attributes('aria-label')).toBe('Zobrazit archivované (1)')
+    expect(toggle('cancelled').text()).toBe('1')
+    expect(toggle('done').attributes('aria-pressed')).toBe('false')
+    await toggle('done').trigger('click')
+    expect(cards(wrapper, 'done')).toEqual(['done', 'archived'])
+    expect(column('done').get('[data-test="count"]').text()).toBe('2')
+    expect(wrapper.get('[data-item="archived"]').classes()).toContain('archived')
+    expect(cards(wrapper, 'cancelled')).toEqual([])
+    await toggle('cancelled').trigger('click')
+    expect(toggle('cancelled').attributes('aria-pressed')).toBe('true')
+    expect(cards(wrapper, 'cancelled')).toEqual(['cancelled'])
+    expect(wrapper.get('[data-item="cancelled"]').classes()).toContain('archived')
+    expect(wrapper.find('[data-item="cancelled"] [data-test="archive-toggle"]').exists()).toBe(false)
+    const archive = wrapper.get('[data-item="done"] [data-test="archive-toggle"]')
+    const restore = wrapper.get('[data-item="archived"] [data-test="archive-toggle"]')
+    expect(archive.attributes('aria-label')).toBe('Archivovat')
+    expect(restore.attributes('aria-label')).toBe('Obnovit')
+    await archive.trigger('click')
+    await restore.trigger('click')
+    expect(wrapper.emitted('archive')).toEqual([['done', true], ['archived', false]])
+    await wrapper.setProps({ busy: true })
+    expect(archive.attributes('disabled')).toBeDefined()
+    expect(restore.attributes('disabled')).toBeDefined()
+    await archive.trigger('click')
+    await restore.trigger('click')
+    expect(wrapper.emitted('archive')).toHaveLength(2)
+    await toggle('done').trigger('click')
+    expect(cards(wrapper, 'done')).toEqual(['done'])
+    expect(cards(wrapper, 'cancelled')).toEqual(['cancelled'])
+    wrapper.unmount()
+  })
+
   it('shows the approved column only while a task is waiting for CI', () => {
     const task = taskNode({ board_state: 'approved' })
     const wrapper = mount(KanbanBoard, { props: { tasks: [task], states: presentStates(BOARD_STATES, { approved: 1 }) } })

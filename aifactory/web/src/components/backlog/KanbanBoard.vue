@@ -5,7 +5,7 @@
 // drop or its switch (`exclude`). Tasks with priority (blocked during a run, and their
 // blockers) are on top of their column with the label „přednostně“; `clearPriority` takes it away.
 import { computed, ref } from 'vue'
-import { ArrowDown, ArrowUp, ChevronsDown, PauseCircle, PlayCircle } from 'lucide-vue-next'
+import { Archive, ArchiveRestore, ArrowDown, ArrowUp, ChevronsDown, PauseCircle, PlayCircle } from 'lucide-vue-next'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import {
   COLUMN_LABELS,
@@ -15,6 +15,8 @@ import {
   kanbanColumn,
   kanbanColumns,
   prioritySorted,
+  showArchived,
+  setShowArchived,
   type BoardState,
   type KanbanColumn,
   type TaskNode,
@@ -30,6 +32,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   reorder: [ids: string[]]
+  archive: [id: string, archived: boolean]
   exclude: [id: string, excluded: boolean]
   clearPriority: [id: string]
 }>()
@@ -40,10 +43,18 @@ const COLUMN_TOOLTIPS: Partial<Record<KanbanColumn, string>> = {
 }
 
 const columns = computed(() =>
-  kanbanColumns(props.states).map((column) => ({
-    column,
-    tasks: prioritySorted(props.tasks.filter((t) => kanbanColumn(t) === column)),
-  })),
+  kanbanColumns(props.states).map((column) => {
+    const tasks = props.tasks.filter((t) => kanbanColumn(t) === column)
+    const archiveColumn = column === 'done' || column === 'cancelled' ? column : null
+    const showingArchived = archiveColumn ? showArchived(archiveColumn) : false
+    return {
+      column,
+      archiveColumn,
+      showingArchived,
+      archivedCount: tasks.filter((t) => t.archived).length,
+      tasks: prioritySorted(tasks.filter((t) => !archiveColumn || showingArchived || !t.archived)),
+    }
+  }),
 )
 
 const readyIds = computed(() =>
@@ -159,6 +170,18 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
           <span class="label hint" tabindex="0" data-test="column-tip">{{ COLUMN_LABELS[col.column] ?? col.column }}</span>
         </Tooltip>
         <span v-else class="label">{{ COLUMN_LABELS[col.column] ?? col.column }}</span>
+        <Tooltip v-if="col.archiveColumn" :text="`Zobrazit archivované (${col.archivedCount})`">
+          <button
+            type="button"
+            class="icon"
+            data-test="show-archived"
+            :aria-label="`Zobrazit archivované (${col.archivedCount})`"
+            :aria-pressed="col.showingArchived"
+            @click="setShowArchived(col.archiveColumn, !col.showingArchived)"
+          >
+            <Archive :size="14" /> {{ col.archivedCount }}
+          </button>
+        </Tooltip>
         <span class="count" data-test="count">{{ col.tasks.length }}</span>
       </h2>
       <p v-if="!col.tasks.length" class="faint empty">—</p>
@@ -166,7 +189,7 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
         v-for="(task, index) in col.tasks"
         :key="task.path"
         class="item"
-        :class="{ dragging: dragged?.id === task.id }"
+        :class="{ dragging: dragged?.id === task.id, archived: col.archiveColumn && task.archived }"
         :data-item="task.id"
         :draggable="canDrag(task) && !busy"
         @dragstart="onDragStart($event, task)"
@@ -187,7 +210,20 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
             <span class="priority" data-test="priority">přednostně</span>
           </Tooltip>
         </a>
-        <div v-if="canExclude(task) || hasPriority(task)" class="tools">
+        <div v-if="canExclude(task) || hasPriority(task) || task.board_state === 'done'" class="tools">
+          <Tooltip v-if="task.board_state === 'done'" :text="task.archived ? 'Obnovit' : 'Archivovat'">
+            <button
+              type="button"
+              class="icon"
+              data-test="archive-toggle"
+              :aria-label="task.archived ? 'Obnovit' : 'Archivovat'"
+              :disabled="busy"
+              @click="emit('archive', task.id, !task.archived)"
+            >
+              <ArchiveRestore v-if="task.archived" :size="14" />
+              <Archive v-else :size="14" />
+            </button>
+          </Tooltip>
           <Tooltip v-if="hasPriority(task)" text="Zrušit přednost">
             <button
               type="button"
@@ -279,6 +315,9 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
 h2 {
   display: flex;
   justify-content: space-between;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
   margin: 0 0 10px;
   font-size: 15px;
   font-weight: 600;
@@ -311,6 +350,10 @@ h2 {
 
 .item:hover {
   border-color: var(--border);
+}
+
+.item.archived {
+  opacity: 0.6;
 }
 
 .item.dragging {
