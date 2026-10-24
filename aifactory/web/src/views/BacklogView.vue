@@ -51,6 +51,7 @@ import {
   mergeQueueOrder,
   clearPriority,
   setAutoExcluded,
+  setArchived,
   setQueueOrder,
   startRun,
   type AddContainerInput,
@@ -388,6 +389,11 @@ async function onExclude(id: string, excluded: boolean) {
       if (before && detail.value?.task.id === id) detail.value = before
     },
   )
+}
+
+async function onArchive(id: string, archived: boolean) {
+  const undo = optimistic((list) => list.map((t) => (t.id === id ? { ...t, archived } : t)))
+  await queueWrite(() => setArchived(id, archived), undo)
 }
 
 /** Take the priority of a blocked task (or of its blocker) away, from the kanban. */
@@ -831,6 +837,7 @@ watch(
           :tasks="kanbanTasks"
           :states="kanbanStates"
           :busy="queueBusy"
+          @archive="onArchive"
           @reorder="onReorder"
           @exclude="onExclude"
           @clear-priority="onClearPriority"

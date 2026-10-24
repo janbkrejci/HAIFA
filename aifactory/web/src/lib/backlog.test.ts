@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from './api'
 import {
+  SHOW_ARCHIVED_KEYS,
+  showArchived,
+  setShowArchived,
+  resetShowArchivedForTests,
+  setArchived,
   hasOpenPr,
   taskInProgress,
   canStackDependencies,
@@ -327,5 +332,60 @@ describe('open PR guards', () => {
     expect(canStackDependencies(blocked, [approved, { ...approved, id: 'B', state: 'in review' }])).toBe(true)
     expect(canStackDependencies(blocked, [approved, { ...approved, id: 'B', state: 'running' }])).toBe(false)
     expect(canStackDependencies(blocked, [approved])).toBe(false)
+  })
+})
+
+describe('archived card preferences', () => {
+  afterEach(() => {
+    localStorage.clear()
+    resetShowArchivedForTests()
+    resetHideDoneForTests()
+  })
+
+  it('remembers each column independently across a refresh and hide-done changes', () => {
+    localStorage.clear()
+    resetShowArchivedForTests()
+    expect(showArchived('done')).toBe(false)
+    expect(showArchived('cancelled')).toBe(false)
+    setShowArchived('done', true)
+    setHideDone(true)
+    expect(showArchived('cancelled')).toBe(false)
+    expect(localStorage.getItem(SHOW_ARCHIVED_KEYS.done)).toBe('1')
+    resetShowArchivedForTests()
+    expect(showArchived('done')).toBe(true)
+    expect(showArchived('cancelled')).toBe(false)
+    setShowArchived('cancelled', true)
+    setShowArchived('done', false)
+    resetShowArchivedForTests()
+    expect(showArchived('done')).toBe(false)
+    expect(showArchived('cancelled')).toBe(true)
+    expect(localStorage.getItem(SHOW_ARCHIVED_KEYS.done)).toBe('0')
+    expect(hideDone()).toBe(true)
+  })
+
+  it('treats invalid storage as off and works in memory when storage is unavailable', () => {
+    localStorage.setItem(SHOW_ARCHIVED_KEYS.done, 'true')
+    resetShowArchivedForTests()
+    expect(showArchived('done')).toBe(false)
+    vi.stubGlobal('localStorage', {
+      getItem: () => { throw new Error('unavailable') },
+      setItem: () => { throw new Error('unavailable') },
+    })
+    resetShowArchivedForTests()
+    expect(showArchived('done')).toBe(false)
+    setShowArchived('done', true)
+    expect(showArchived('done')).toBe(true)
+    expect(showArchived('cancelled')).toBe(false)
+    vi.unstubAllGlobals()
+  })
+
+  it('posts both archive values to the encoded task endpoint', async () => {
+    const fetchMock = stubFetch(() => ok({}))
+    for (const archived of [true, false]) {
+      await setArchived('a/b', archived)
+      expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/a%2Fb/archive', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ archived }),
+      })
+    }
   })
 })

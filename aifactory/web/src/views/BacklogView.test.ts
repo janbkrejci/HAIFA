@@ -56,6 +56,69 @@ afterEach(() => {
 })
 
 describe('BacklogView', () => {
+  it('archives and restores completed cards through the API and reloads server data', async () => {
+    go('#/r/haifa/backlog')
+    let archived = false
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/archive')) {
+        archived = JSON.parse(init?.body as string).archived
+        return ok({ task_id: 'finished', archived })
+      }
+      return ok(backlogData({ tasks: [
+        taskNode({ id: 'finished', path: 'finished.md', board_state: 'done', archived }),
+        taskNode({ id: 'cancelled', path: 'cancelled.md', board_state: 'cancelled', archived: true }),
+      ] }))
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await wrapper.get('[data-test="mode-kanban"]').trigger('click')
+    const listGets = () => fetchMock.mock.calls.filter(([url]) => url === '/api/repos/haifa/backlog').length
+    const before = listGets()
+    await wrapper.get('[data-item="finished"] [data-test="archive-toggle"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/tasks/finished/archive',
+      expect.objectContaining({ method: 'POST', body: '{"archived":true}' }))
+    expect(listGets()).toBeGreaterThan(before)
+    expect(wrapper.find('[data-item="finished"]').exists()).toBe(false)
+    await wrapper.get('[data-column="done"] [data-test="show-archived"]').trigger('click')
+    await wrapper.get('[data-column="cancelled"] [data-test="show-archived"]').trigger('click')
+    expect(wrapper.get('[data-item="finished"]').classes()).toContain('archived')
+    await wrapper.get<HTMLInputElement>('[data-test="hide-done"]').setValue(true)
+    expect(wrapper.find('[data-column="done"]').exists()).toBe(false)
+    expect(wrapper.find('[data-column="cancelled"]').exists()).toBe(false)
+    await wrapper.get<HTMLInputElement>('[data-test="hide-done"]').setValue(false)
+    expect(wrapper.find('[data-item="finished"]').exists()).toBe(true)
+    expect(wrapper.find('[data-item="cancelled"]').exists()).toBe(true)
+    const beforeRestore = listGets()
+    await wrapper.get('[data-item="finished"] [data-test="archive-toggle"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/tasks/finished/archive',
+      expect.objectContaining({ method: 'POST', body: '{"archived":false}' }))
+    expect(listGets()).toBeGreaterThan(beforeRestore)
+    expect(wrapper.get('[data-item="finished"]').classes()).not.toContain('archived')
+  })
+
+  it('waits during archive writes and rolls back failed writes for retry', async () => {
+    go('#/r/haifa/backlog')
+    const pending = deferred<Response>()
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/archive') ? pending.promise : ok(backlogData({
+      tasks: [taskNode({ id: 'finished', path: 'finished.md', board_state: 'done' })],
+    }))))
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await wrapper.get('[data-test="mode-kanban"]').trigger('click')
+    await wrapper.get('[data-column="done"] [data-test="show-archived"]').trigger('click')
+    await wrapper.get('[data-test="archive-toggle"]').trigger('click')
+    expect(wrapper.get('[data-test="archive-toggle"]').attributes('disabled')).toBeDefined()
+    pending.resolve(fail('unavailable', 'offline', 503))
+    await flushPromises()
+    expect(wrapper.get('[data-test="error"]').text()).toContain('Frontu se nepodařilo uložit: offline')
+    expect(wrapper.get('[data-test="archive-toggle"]').attributes('disabled')).toBeUndefined()
+    expect(wrapper.get('[data-test="archive-toggle"]').attributes('aria-label')).toBe('Archivovat')
+    expect(wrapper.get('[data-item="finished"]').classes()).not.toContain('archived')
+  })
+
   it('saves generated advice from task detail, refreshes catalog, detail and the config banner', async () => {
     go('#/r/haifa/backlog/M01-S01-T02')
     vi.stubGlobal('EventSource', FakeEventSource)
