@@ -162,6 +162,7 @@ class Thread:
             "title": self.title,
             "harness": self.harness,
             "model": self.model,
+            "thinking": self.thinking,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
             "messages": len(self.messages),

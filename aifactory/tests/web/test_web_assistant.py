@@ -671,6 +671,12 @@ def test_create_inherits_project_binding_and_applies_guide_limit(
     expected = ("codex", "context-model", "high") if allow_codex else ("claude", "sonnet", "medium")
     stored = stored_thread(thread_id)
     assert tuple(stored[k] for k in ("harness", "model", "thinking")) == expected
+    assert tuple(data[k] for k in ("harness", "model", "thinking")) == expected
+    listed = client.get("/api/assistant/threads").json()["data"]["threads"]
+    assert listed[0]["id"] == thread_id
+    assert listed[0]["thinking"] == stored["thinking"]
+    detail = client.get(f"/api/assistant/threads/{thread_id}").json()["data"]
+    assert detail["thinking"] == stored["thinking"]
     manager = client.app.state.assistant  # type: ignore[attr-defined]
     assert manager.threads[thread_id].thinking == expected[2]
     ask(client, thread_id, "Ahoj")
@@ -707,6 +713,8 @@ def test_context_binding_survives_messages_and_restart(
     restarted = AssistantManager(haifa_home(), lambda: [(repo_id, repo)])
     try:
         assert restarted.get(thread_id)["model"] == "context-model"
+        assert restarted.get(thread_id)["thinking"] == stored["thinking"]
+        assert restarted.summaries()[0]["thinking"] == stored["thinking"]
         thread = restarted.threads[thread_id]
         assert (thread.harness, thread.thinking, thread.session_id) == (
             "claude",
