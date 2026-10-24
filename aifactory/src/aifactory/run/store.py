@@ -32,9 +32,9 @@ ended chain (its runs stay).
 
 ``task_queue`` holds the operator's queue preferences from the kanban: the order of
 ready tasks auto-continue takes them in (``rank``, NULL without a manual order) and
-the tasks auto-continue never starts (``excluded``). They are operating preferences,
-not task content, so they live here and need no backlog commit (``queue_prefs``,
-``set_queue_order``, ``set_excluded``).
+the tasks auto-continue never starts (``excluded``), plus archived tasks (``archived``).
+They are operating preferences, not task content, so they live here and need no backlog
+commit (``queue_prefs``, ``set_queue_order``, ``set_excluded``, ``set_archived``).
 
 ``task_priority`` holds the tasks that ended blocked during a run and their blockers
 (``failure_kind`` ``blocked``, including existing tasks from ``blocked_by``): ``finish`` of a
@@ -206,6 +206,7 @@ CREATE TABLE IF NOT EXISTS task_queue (
   task_id TEXT PRIMARY KEY,
   rank INTEGER,
   excluded INTEGER NOT NULL DEFAULT 0,
+  archived INTEGER NOT NULL DEFAULT 0,
   updated_at TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS task_priority (
@@ -688,7 +689,7 @@ class Priority:
 
 @dataclass(frozen=True)
 class QueuePrefs:
-    """Kanban preferences for auto-continue: manual order and excluded tasks.
+    """Kanban preferences for auto-continue: manual order, excluded and archived tasks.
 
     ``priority``: the blocked tasks with their blockers (``task_priority``), oldest first.
     """
@@ -696,6 +697,7 @@ class QueuePrefs:
     order: tuple[str, ...] = ()
     excluded: frozenset[str] = frozenset()
     priority: tuple[Priority, ...] = ()
+    archived: frozenset[str] = frozenset()
 
 
 class TaskRunStore:
@@ -711,6 +713,7 @@ class TaskRunStore:
         _add_columns(self.conn, "task_prs", _PR_ADDED_COLUMNS)
         _add_columns(self.conn, "task_runs", _RUN_ADDED_COLUMNS)
         _add_columns(self.conn, "task_chains", _CHAIN_ADDED_COLUMNS)
+        _add_columns(self.conn, "task_queue", {"archived": "INTEGER NOT NULL DEFAULT 0"})
         if database.is_remote(db_path):
             self.conn.execute(
                 "CREATE TABLE IF NOT EXISTS haifa_owners "
@@ -1383,15 +1386,18 @@ class TaskRunStore:
     # -- task_queue --
 
     def queue_prefs(self) -> QueuePrefs:
-        """The manual order of tasks for auto-continue and the excluded tasks."""
+        """The manual order, exclusions and archive preferences of tasks."""
         if not self._has_table("task_queue"):
             return QueuePrefs(priority=self.priorities())
         rows = self.conn.execute(
-            "SELECT task_id, rank, excluded FROM task_queue ORDER BY rank, task_id"
+            "SELECT task_id, rank, excluded, archived FROM task_queue ORDER BY rank, task_id"
         ).fetchall()
         order = tuple(str(r[0]) for r in rows if r[1] is not None)
         excluded = frozenset(str(r[0]) for r in rows if r[2])
-        return QueuePrefs(order, excluded, self.priorities())
+        archived = frozenset(str(r[0]) for r in rows if r[3])
+        return QueuePrefs(
+            order=order, excluded=excluded, priority=self.priorities(), archived=archived
+        )
 
     def set_queue_order(self, task_ids: Sequence[str]) -> None:
         """Rank `task_ids` in this order; every other task loses its manual rank."""
@@ -1447,8 +1453,23 @@ class TaskRunStore:
             )
             self._prune_queue()
 
+    def set_archived(self, task_id: str, archived: bool) -> None:
+        """Archive `task_id` on the kanban (or show it again)."""
+        now = _now()
+        with self._txn():
+            self.conn.execute(
+                "INSERT INTO task_queue (task_id, rank, excluded, archived, updated_at) "
+                "VALUES (?, NULL, 0, ?, ?) "
+                "ON CONFLICT(task_id) DO UPDATE SET archived = excluded.archived, "
+                "updated_at = excluded.updated_at",
+                (task_id, int(archived), now),
+            )
+            self._prune_queue()
+
     def _prune_queue(self) -> None:
-        self.conn.execute("DELETE FROM task_queue WHERE rank IS NULL AND excluded = 0")
+        self.conn.execute(
+            "DELETE FROM task_queue WHERE rank IS NULL AND excluded = 0 AND archived = 0"
+        )
 
     # -- task_priority --
 

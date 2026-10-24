@@ -140,3 +140,71 @@ def test_queue_front_rolls_back_the_whole_batch(tmp_path: Path) -> None:
         assert store.queue_prefs().order == ("A", "B")
     finally:
         store.close()
+
+
+def test_archive_persists_and_preserves_other_preferences(tmp_path: Path) -> None:
+    store = _store(tmp_path)
+    try:
+        store.set_queue_order(["A", "B"])
+        store.set_excluded("B", True)
+        for task_id in ("A", "B", "X"):
+            store.set_archived(task_id, True)
+            store.set_archived(task_id, True)
+        assert store.queue_prefs() == QueuePrefs(
+            order=("A", "B"), excluded=frozenset({"B"}), archived=frozenset({"A", "B", "X"})
+        )
+    finally:
+        store.close()
+    store = _store(tmp_path)
+    try:
+        assert store.queue_prefs().archived == frozenset({"A", "B", "X"})
+        store.set_queue_order([])
+        store.set_queue_order(["B", "C"])
+        store.queue_front(["A"])
+        store.set_excluded("X", True)
+        store.set_excluded("X", False)
+        assert store.queue_prefs() == QueuePrefs(
+            order=("A", "B", "C"),
+            excluded=frozenset({"B"}),
+            archived=frozenset({"A", "B", "X"}),
+        )
+        for task_id in ("A", "B", "X"):
+            store.set_archived(task_id, False)
+        assert store.queue_prefs() == QueuePrefs(order=("A", "B", "C"), excluded=frozenset({"B"}))
+        rows = store.conn.execute("SELECT task_id FROM task_queue ORDER BY task_id").fetchall()
+        assert [r[0] for r in rows] == ["A", "B", "C"]
+        store.set_queue_order([])
+        store.set_archived("B", True)
+        store.set_archived("B", False)
+        assert store.queue_prefs().excluded == frozenset({"B"})
+    finally:
+        store.close()
+
+
+def test_old_queue_table_gets_archive_column(tmp_path: Path) -> None:
+    db = tmp_path / "trace.db"
+    with sqlite3.connect(db) as conn:
+        conn.execute(
+            "CREATE TABLE task_queue (task_id TEXT PRIMARY KEY, rank INTEGER, "
+            "excluded INTEGER NOT NULL DEFAULT 0, updated_at TEXT NOT NULL)"
+        )
+        conn.executemany(
+            "INSERT INTO task_queue VALUES (?, ?, ?, ?)",
+            [("A", 0, 0, "old"), ("B", None, 1, "old")],
+        )
+    store = TaskRunStore(db)
+    try:
+        columns = {r[1]: r for r in store.conn.execute("PRAGMA table_info(task_queue)")}
+        assert columns["archived"][2:5] == ("INTEGER", 1, "0")
+        assert store.queue_prefs() == QueuePrefs(order=("A",), excluded=frozenset({"B"}))
+        assert store.conn.execute("SELECT archived FROM task_queue").fetchall() == [(0,), (0,)]
+        store.set_archived("A", True)
+    finally:
+        store.close()
+    store = TaskRunStore(db)
+    try:
+        assert store.queue_prefs() == QueuePrefs(
+            order=("A",), excluded=frozenset({"B"}), archived=frozenset({"A"})
+        )
+    finally:
+        store.close()
