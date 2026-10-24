@@ -4,7 +4,7 @@ title: "Tmavý motiv: žádná bílá textová pole, sjednocený styl formulář
 status: todo
 workflow: build-test-review
 depends_on: []
-writes: [aifactory/web/src/, aifactory/src/aifactory/web/static/]
+writes: [aifactory/web/src/, aifactory/src/aifactory/web/static/, aifactory/tests/e2e/test_theme_forms_browser.py]
 ---
 
 ## Zadání
