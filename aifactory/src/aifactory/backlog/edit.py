@@ -454,11 +454,24 @@ def edit_task(
     parameters: dict[str, object] | None = None,
     assignee: str | None = None,
     clear_assignee: bool = False,
+    archived: bool | None = None,
 ) -> WriteResult:
     """Change header fields of a task: title, status (todo|cancelled), workflow, writes,
     auto_merge (``clear_auto_merge`` removes the task's own value, so it inherits again),
-    assignee. ``status: done`` is set here only for a person's task (``assignee: human``)."""
-    given = (title, status, workflow, writes, body, depends_on, related, parameters, assignee)
+    assignee, archived. ``status: done`` is set here only for a person's task
+    (``assignee: human``)."""
+    given = (
+        title,
+        status,
+        workflow,
+        writes,
+        body,
+        depends_on,
+        related,
+        parameters,
+        assignee,
+        archived,
+    )
     if all(v is None for v in given) and not clear_assignee:
         if not clear_workflow and not clear_writes and auto_merge is None and not clear_auto_merge:
             raise TaskEditError("no_changes", "nothing to change, give at least one option")
@@ -503,6 +516,15 @@ def edit_task(
                 id=task_id,
             )
         text = _apply(text, "set", "status", status)
+    if archived is not None:
+        if not isinstance(archived, bool):
+            raise TaskEditError("invalid_value", "'archived' must be true or false", id=task_id)
+        if (status or task.status) not in ("done", "cancelled"):
+            raise TaskEditError(
+                "invalid_value", "only done or cancelled tasks can be archived", id=task_id
+            )
+        default = (status or task.status) == "cancelled"
+        text = _apply(text, "remove" if archived == default else "set", "archived", archived)
     if workflow is not None:
         if not workflow.strip():
             raise TaskEditError("invalid_value", "workflow must not be empty", id=task_id)

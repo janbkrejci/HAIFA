@@ -232,6 +232,10 @@ class _Loader:
                     path,
                     task_id,
                 )
+        archived = data.get("archived", status == "cancelled")
+        if not isinstance(archived, bool):
+            self.issue("invalid_field", _flag_message("archived"), path, task_id)
+            archived = status == "cancelled"
         lists: dict[str, list[str]] = {}
         own = {k: v for k, v in data.items() if k in INHERITED_KEYS}
         for key in FLAG_KEYS:
@@ -287,6 +291,7 @@ class _Loader:
             related=lists["related"],
             writes=lists["writes"],
             follows=follows,
+            archived=archived,
             body=body,
         )
 

@@ -210,8 +210,8 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
             <span class="priority" data-test="priority">přednostně</span>
           </Tooltip>
         </a>
-        <div v-if="canExclude(task) || hasPriority(task) || task.board_state === 'done'" class="tools">
-          <Tooltip v-if="task.board_state === 'done'" :text="task.archived ? 'Obnovit' : 'Archivovat'">
+        <div v-if="canExclude(task) || hasPriority(task) || col.archiveColumn" class="tools">
+          <Tooltip v-if="col.archiveColumn" :text="task.archived ? 'Obnovit' : 'Archivovat'">
             <button
               type="button"
               class="icon"

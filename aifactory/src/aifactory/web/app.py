@@ -60,9 +60,8 @@ order of ready tasks and ``POST /api/backlog/tasks/{task_id}/auto-exclude``
 (``{excluded: bool}``) keeps a task out of auto-continue; ``GET /api/backlog`` returns
 ``queue_rank`` and ``auto_excluded`` of each task and lists the tasks in queue order.
 ``POST /api/backlog/tasks/{task_id}/archive`` (``{archived: bool}``) saves an archive
-preference in the trace DB for done tasks only. Each task JSON includes ``archived``:
-cancelled tasks always return true, done tasks use the saved preference, and other
-statuses return false.
+flag in the task front matter for done or cancelled tasks. Each task JSON includes
+``archived``: absent flags default to true for cancelled tasks and false otherwise.
 Tasks blocked during a run and their blockers go first (``task_priority``,
 ``queue.priority_order``): ``GET /api/backlog`` returns ``priority_rank``, ``priority_of``
 and ``priority_blockers`` of each task and the records (``priority``, ``priority_order``);

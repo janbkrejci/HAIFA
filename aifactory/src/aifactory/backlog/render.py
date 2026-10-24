@@ -85,6 +85,7 @@ def task_to_json(backlog: Backlog, task: Task, reverse: dict[str, list[str]]) ->
         "level": task.level,
         "path": task.path,
         "status": task.status,
+        "archived": task.archived,
         "state": derived_state(backlog, task),
         "workflow": _jsonable(effective_workflow(task)),
         "effective": _jsonable(effective(task)),
