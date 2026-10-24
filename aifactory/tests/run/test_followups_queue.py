@@ -25,7 +25,7 @@ from aifactory.run.task import _record_follow_ups
 def offline_triage(monkeypatch: pytest.MonkeyPatch) -> None:
     from aifactory.run import triage
 
-    def unavailable(*args: object) -> None:
+    def unavailable(*args: object, **kwargs: object) -> None:
         raise triage.TriageUnavailable("Offline legacy follow-up scenario")
 
     monkeypatch.setattr(triage, "ask_triager", unavailable)
@@ -250,7 +250,7 @@ def test_mixed_triage_only_queues_new_agent_tasks(
         Decision(follow_up_id="f5", action="new", reason="Human work"),
     ]
     # Recommendations are keyed by fN, independently of their return order.
-    monkeypatch.setattr(triage, "ask_triager", lambda *args: list(reversed(choices)))
+    monkeypatch.setattr(triage, "ask_triager", lambda *args, **kwargs: list(reversed(choices)))
     store = queue_store(repo)
     try:
         store.set_queue_order([T01, T02])

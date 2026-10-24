@@ -13,5 +13,7 @@ Learner pracuje nad celým repozitářem a před výběrem agenta aplikuje `effe
 - `just pytest tests/run/test_task_run.py tests/run/test_task_retry.py tests/run/test_quota_fallback.py tests/run/test_quota_chain.py`: 77 prošlo.
 - `MYPYPATH=tests:tests/workflow uv run mypy` s explicitním seznamem šesti změněných Python souborů (z `aifactory/`): prošlo bez chyb. Cesty zpřístupňují sdílené testovací helpery při cílené kontrole.
 - Ruff lint a kontrola formátování všech šesti změněných Python souborů: prošly.
+- Po rebase byly oba stuby triageru v testech fronty upraveny pro keyword argumenty `task_id` a `binding`; aserce rozhodnutí a pořadí fronty zůstaly zachované. `HAIFA_HOME="$PWD/.factory/data/t71-queue-check-home" just pytest tests/run/test_followups_queue.py`: 8 prošlo. Oddělený home zabránil kolizi kontroly izolace se souběžným zápisem jiného procesu do reálného HAIFA home, který způsobil chybu při úklidu prvního cíleného běhu.
+- Ruff lint, kontrola formátování a `MYPYPATH=tests:tests/workflow uv run mypy tests/run/test_followups_queue.py` (z `aifactory/`): prošly.
 
 Testy nepoužívají živé modely ani služby. Změna v `task.py` obsahuje pouze nezbytný import parseru a předání kontextu do `ask_triager`.
