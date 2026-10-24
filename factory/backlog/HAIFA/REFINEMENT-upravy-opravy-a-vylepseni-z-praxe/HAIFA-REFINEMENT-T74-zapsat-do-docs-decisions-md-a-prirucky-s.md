@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T74
 title: "Zapsat do docs/decisions.md a příručky, s jakým harnessem běží pomocní AI agenti"
-status: todo
+status: done
 workflow: build-test
 depends_on: [HAIFA-REFINEMENT-T70, HAIFA-REFINEMENT-T71, HAIFA-REFINEMENT-T73]
 writes: [docs/decisions.md, aifactory/src/aifactory/guide/]
@@ -22,3 +22,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-24 · workflow build-test · PR https://github.com/janbkrejci/HAIFA/pull/156 · náklady $0.00
