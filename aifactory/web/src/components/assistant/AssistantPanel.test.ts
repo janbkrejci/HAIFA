@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import AssistantPanel from './AssistantPanel.vue'
-import { assistant, resetAssistantForTests, setOpen } from '@/lib/assistant'
+import { assistant, openThread, resetAssistantForTests, restoreOpen, setOpen } from '@/lib/assistant'
 import { FakeEventSource } from '@/test/fakeEventSource'
 
 function envelope(data: unknown, status = 200) {
@@ -17,6 +17,7 @@ const THREAD = {
   title: '',
   harness: 'claude',
   model: 'claude-opus-5-5',
+  thinking: 'medium',
   created_at: '2026-10-16T10:00:00+00:00',
   updated_at: '2026-10-16T10:00:00+00:00',
   busy: false,
@@ -127,10 +128,11 @@ describe('AssistantPanel', () => {
     await flushPromises()
 
     expect(sent.map((s) => s.url)).toEqual(['/api/assistant/threads', '/api/assistant/threads/a1b2c3d4e5f6/messages'])
+    expect(sent[0]!.body).toEqual({ screen: { repo: 'haifa', run: '740183f7' } })
     expect(sent[1]!.body).toEqual({ text: 'Proč tenhle běh selhal?', screen: { repo: 'haifa', run: '740183f7' } })
     const stream = FakeEventSource.latest()
     expect(stream.url).toBe('/api/assistant/threads/a1b2c3d4e5f6/stream?after=1')
-    expect(wrapper.get('[data-test="assistant-harness"]').text()).toBe('claude · claude-opus-5-5')
+    expect(wrapper.get('[data-test="assistant-harness"]').text()).toBe('claude · claude-opus-5-5 · medium')
 
     stream.emit('tool', { seq: 2, label: './guide sql haifa "SELECT …"' })
     stream.emit('text', { seq: 3, text: 'Task **P01-S01-T01** selhal v testech.' })
@@ -209,6 +211,7 @@ describe('AssistantPanel', () => {
     await wrapper.get('[data-test="assistant-input"]').setValue('Co dál?')
     await wrapper.get('[data-test="assistant-input"]').trigger('keydown', { key: 'Enter' })
     await flushPromises()
+    expect(sent[0]!.body).toEqual({})
     expect(sent[1]!.body).toEqual({ text: 'Co dál?' })
     // another screen brings its own chip back
     go('#/r/haifa/backlog/P01-S01-T02')
@@ -216,8 +219,25 @@ describe('AssistantPanel', () => {
     expect(wrapper.get('[data-test="assistant-context"]').text()).toContain('P01-S01-T02')
   })
 
-  it('lists older threads and opens one', async () => {
-    const older = { ...THREAD, id: 'ffffffffffff', title: 'Co běží?', harness: 'codex', model: 'gpt-5.5', messages: 2 }
+  it.each([
+    ['#/overview', null],
+    ['#/r/haifa/backlog/P01-S01-T01', { repo: 'haifa', task: 'P01-S01-T01' }],
+  ])('creates a thread with the effective context on %s', async (hash, screen) => {
+    const { sent } = stubApi()
+    go(hash)
+    const wrapper = await openPanel()
+    await wrapper.get('[data-test="assistant-input"]').setValue('Co dál?')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(sent[0]!.body).toEqual(screen ? { screen } : {})
+    expect(sent[1]!.body).toEqual(screen ? { text: 'Co dál?', screen } : { text: 'Co dál?' })
+  })
+
+  it.each([undefined, null, 'high'])('lists older threads and opens one with thinking %s', async (thinking) => {
+    const older = {
+      ...THREAD, id: 'ffffffffffff', title: 'Co běží?', harness: 'codex', model: 'gpt-5.5', thinking, messages: 2,
+    }
+    const label = thinking ? `codex · gpt-5.5 · ${thinking}` : 'codex · gpt-5.5'
     const detail = {
       ...older,
       messages: [
@@ -233,11 +253,11 @@ describe('AssistantPanel', () => {
     await flushPromises()
     const items = wrapper.findAll('[data-test="assistant-thread-item"]')
     expect(items).toHaveLength(1)
-    expect(items[0]!.text()).toContain('codex · gpt-5.5')
+    expect(items[0]!.text()).toContain(label)
     await items[0]!.trigger('click')
     await flushPromises()
     expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Nic neběží.')
-    expect(wrapper.get('[data-test="assistant-harness"]').text()).toBe('codex · gpt-5.5')
+    expect(wrapper.get('[data-test="assistant-harness"]').text()).toBe(label)
     expect(assistant.thread?.id).toBe('ffffffffffff')
 
     await wrapper.get('[data-test="assistant-new"]').trigger('click')
@@ -260,7 +280,8 @@ describe('AssistantPanel', () => {
     const wrapper = await openPanel()
     resetAssistantForTests()
     sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
-    setOpen(true)
+    sessionStorage.setItem('haifa.assistant.open', '1')
+    restoreOpen()
     await flushPromises()
     expect(FakeEventSource.latest().url).toBe('/api/assistant/threads/a1b2c3d4e5f6/stream?after=0')
     FakeEventSource.latest().emit('error', { seq: 4, message: { id: 'e', role: 'assistant', text: '', error: 'agent exited 1' } })
@@ -269,10 +290,11 @@ describe('AssistantPanel', () => {
   })
 
   it('shows a proposed action as a card and writes only after Provést', async () => {
-    window.sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
     const { sent } = stubApi({ detail: structuredClone(WITH_PROPOSAL) })
     go('#/r/haifa/backlog')
     const wrapper = await openPanel()
+    await openThread(THREAD.id)
+    await flushPromises()
     const card = wrapper.get('[data-test="assistant-action"]')
     expect(card.get('[data-test="assistant-action-title"]').text()).toBe('Upravit task P01-S01-T01')
     expect(card.get('[data-test="assistant-action-preview"]').text()).toContain('src/, docs/')
@@ -293,10 +315,11 @@ describe('AssistantPanel', () => {
   })
 
   it('dismisses a proposal without calling the write API', async () => {
-    window.sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
     const { sent } = stubApi({ detail: structuredClone(WITH_PROPOSAL) })
     go('#/r/haifa/backlog')
     const wrapper = await openPanel()
+    await openThread(THREAD.id)
+    await flushPromises()
     await wrapper.get('[data-test="assistant-action-dismiss"]').trigger('click')
     await flushPromises()
     expect(sent.map((s) => s.url)).toEqual([`/api/assistant/threads/${THREAD.id}/actions/p1`])
@@ -329,11 +352,12 @@ describe('AssistantPanel', () => {
   })
 
   it('leaves a deleted open thread for an empty one', async () => {
-    window.sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
     const detail = { ...THREAD, title: 'Otevřené', messages: [{ id: 'u', role: 'user', text: 'Ahoj', screen: {} }] }
     const { deleted } = stubApi({ threads: [{ ...THREAD, title: 'Otevřené', messages: 1 }], detail })
     go('#/overview')
     const wrapper = await openPanel()
+    await openThread(THREAD.id)
+    await flushPromises()
     expect(assistant.thread?.id).toBe(THREAD.id)
     await wrapper.get('[data-test="assistant-threads"]').trigger('click')
     await flushPromises()

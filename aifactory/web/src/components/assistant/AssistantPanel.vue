@@ -83,11 +83,11 @@ const thread = computed(() => assistant.thread)
 const messages = computed<AssistantMessage[]>(() => thread.value?.messages ?? [])
 const busy = computed(() => !!thread.value?.busy || assistant.sending)
 const empty = computed(() => !assistant.loading && messages.value.length === 0 && !busy.value)
-const answering = computed(() => harnessLabel(thread.value?.harness, thread.value?.model))
+const answering = computed(() => harnessLabel(thread.value?.harness, thread.value?.model, thread.value?.thinking))
 
-function harnessLabel(harness?: string, model?: string): string {
+function harnessLabel(harness?: string, model?: string, thinking?: string | null): string {
   if (!harness) return ''
-  return model ? `${harness} · ${model}` : harness
+  return [harness, model, thinking].filter(Boolean).join(' · ')
 }
 
 /** The repository the links of a message point to: its question's screen, else the only one. */
@@ -194,7 +194,7 @@ watch(
           >
             <span class="thread-title">{{ item.title || 'Bez názvu' }}</span>
             <span class="thread-meta faint">
-              {{ fmtDayTime(item.updated_at) }} · {{ item.messages }} zpráv · {{ harnessLabel(item.harness, item.model) }}
+              {{ fmtDayTime(item.updated_at) }} · {{ item.messages }} zpráv · {{ harnessLabel(item.harness, item.model, item.thinking) }}
               <template v-if="item.busy"> · odpovídá</template>
             </span>
           </button>

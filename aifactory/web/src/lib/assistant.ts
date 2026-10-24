@@ -67,6 +67,7 @@ export interface ThreadSummary {
   title: string
   harness: string
   model: string
+  thinking?: string | null
   created_at: string
   updated_at: string
   messages: number
@@ -95,8 +96,8 @@ export function fetchThread(id: string): Promise<ThreadDetail> {
   return getGlobal<ThreadDetail>(`${THREADS}/${encodeURIComponent(id)}`)
 }
 
-export function createThread(): Promise<ThreadDetail> {
-  return postGlobal<ThreadDetail>(THREADS, {})
+export function createThread(screen: ScreenContext | null = null): Promise<ThreadDetail> {
+  return postGlobal<ThreadDetail>(THREADS, screen && Object.keys(screen).length ? { screen } : {})
 }
 
 /** Delete a thread for good (HTTP 409 `busy` while the guide answers in it). */
@@ -743,6 +744,7 @@ export function newThread(): void {
   generation++
   closeStream()
   assistant.thread = null
+  assistant.loading = false
   assistant.listing = false
   assistant.streaming = null
   assistant.error = null
@@ -790,11 +792,8 @@ export function showThreads(show = true): void {
 export function setOpen(open: boolean): void {
   assistant.open = open
   storage()?.setItem(STORE_OPEN, open ? '1' : '0')
-  if (open && !restored) {
-    restored = true
-    const id = storage()?.getItem(STORE_THREAD)
-    if (id && !assistant.thread) void openThread(id)
-  }
+  restored = true
+  if (open) newThread()
 }
 
 export function toggleOpen(): void {
@@ -803,7 +802,13 @@ export function toggleOpen(): void {
 
 /** The panel was open in this tab before a reload. */
 export function restoreOpen(): void {
-  if (storage()?.getItem(STORE_OPEN) === '1') setOpen(true)
+  if (restored) return
+  restored = true
+  const store = storage()
+  if (store?.getItem(STORE_OPEN) !== '1') return
+  const id = store.getItem(STORE_THREAD)
+  assistant.open = true
+  if (id) void openThread(id)
 }
 
 /** Send `text` with the screen context; creates the thread when it is new. */
@@ -815,7 +820,7 @@ export async function send(text: string, screen: ScreenContext | null): Promise<
   assistant.error = null
   try {
     if (!assistant.thread) {
-      const created = await createThread()
+      const created = await createThread(screen)
       if (mine !== generation) return false
       assistant.thread = created
       remember()
