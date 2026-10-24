@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T25
 title: Vrátit uložené thinking v API vláken průvodce
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T73]
 writes: [aifactory/src/aifactory/web/assistant.py, aifactory/tests/web/test_web_assistant.py]
@@ -19,3 +19,4 @@ Důvod: Thread.stored() thinking obsahuje, ale Thread.summary() ani detail() v a
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-24 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/153 · náklady $0.00
