@@ -123,6 +123,19 @@ def ci_report(failing: tuple[str, ...], logs: dict[str, str]) -> str:
     return "\n".join([*head, *parts, *tail])[:CI_REPORT_LIMIT]
 
 
+def billing_block(logs: dict[str, str]) -> str | None:
+    """A hosting refusal that a code repair cannot resolve."""
+    marker = (
+        "check annotation: The job was not started because recent account payments "
+        "have failed or your spending limit needs to be increased"
+    )
+    for name, log in logs.items():
+        for line in log.splitlines():
+            if line.startswith(marker):
+                return f"{name}: {line.removeprefix('check annotation: ')}"
+    return None
+
+
 def run_ci_fix(
     repo: Path,
     task_id: str,

@@ -461,6 +461,9 @@ def _approve_gated(
             logs = ctx.provider.check_logs(row.request(), checks.failing)
         except ProviderError as exc:
             logs = {name: f"log unavailable: {exc.code}: {exc.message}" for name in checks.failing}
+        billing = ci.billing_block(logs)
+        if billing is not None:
+            raise stop("checks_unavailable", billing)
         if prepared.temp is not None:
             _remove(ctx, prepared.temp, [], [])
         _free_branch(ctx, row)
