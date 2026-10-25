@@ -39,7 +39,14 @@ def _enabled(request: Request) -> bool:
 
 async def terminal_get(request: Request) -> Response:
     return JSONResponse(
-        envelope_ok({"enabled": _enabled(request), "cwd": str(Path.home()), "shell": _shell()})
+        envelope_ok(
+            {
+                "enabled": _enabled(request),
+                "cwd": str(Path.home()),
+                "shell": _shell(),
+                "pty": os.name == "posix",
+            }
+        )
     )
 
 

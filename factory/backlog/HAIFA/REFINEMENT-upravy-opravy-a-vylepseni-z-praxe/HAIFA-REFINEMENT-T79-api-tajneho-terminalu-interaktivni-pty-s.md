@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T79
 title: "API tajného terminálu: interaktivní PTY sezení (POSIX)"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/terminal.py, aifactory/src/aifactory/web/terminal_pty.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_terminal_pty.py, aifactory/tests/web/test_web_terminal.py, docs/decisions.md]
@@ -45,3 +45,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-25 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/168 · náklady $0.00
