@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T26
 title: Hlídač zápisů hlásí writes_violation u nového souboru ve writes pod .factory/
-status: todo
+status: done
 depends_on: []
 ---
 
@@ -23,3 +23,4 @@ Mimo rozsah: pravidlo lekce `L328f600c` (HAIFA-LEARN-T07).
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-25 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/163 · náklady $0.00
