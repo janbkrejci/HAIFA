@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T78
 title: Prohlížečový test tajného terminálu
 status: done
+archived: true
 workflow: build-test
 depends_on: [HAIFA-REFINEMENT-T76, HAIFA-REFINEMENT-T77]
 writes: [aifactory/tests/e2e/test_terminal_browser.py]
