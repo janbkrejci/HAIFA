@@ -1,9 +1,11 @@
 """What a task run may change: the task's `writes` plus its two named outputs.
 
 The engine checks every agent phase against the agent's own `writes` and the
-protected files (``permissions.permitted``). A task narrows that further: during
-a task run a path inside the worktree must be allowed both by the agent **and**
-by the task scope. The scope is an intersection, never a union. The session
+protected files (``permissions.permitted``). During a task run a path inside the
+worktree must be allowed both by the agent's `writes` **and** by the task scope.
+Explicit task `writes` (including inherited declarations) unlock protected paths
+for an unrestricted agent; the implicit default does not (``guard.py``).
+The scope is an intersection, never a union. The session
 runtime (``permissions.always_writable``) stays writable, as in the engine.
 
 The task scope is ``effective_writes(task)`` plus exactly two files, the spec
@@ -25,7 +27,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from aifactory.backlog import Task, effective_writes, slugify
+from aifactory.backlog import Task, effective, effective_writes, slugify
 from aifactory.backlog.derived import ancestors
 from aifactory.config import ProjectSettings
 from aifactory.engine import permissions
@@ -62,6 +64,7 @@ class TaskScope:
     task_id: str
     writes: tuple[str, ...]
     outputs: tuple[str, ...]
+    writes_declared: bool = True  # False for the implicit backlog default only.
 
     @property
     def paths(self) -> tuple[str, ...]:
@@ -119,7 +122,12 @@ def effective_task_writes(task: Task) -> tuple[str, ...]:
 
 def task_scope(task: Task, outputs: OutputPaths) -> TaskScope:
     writes = effective_task_writes(task)
-    return TaskScope(task_id=task.id, writes=writes, outputs=(outputs.spec, outputs.doc))
+    return TaskScope(
+        task_id=task.id,
+        writes=writes,
+        outputs=(outputs.spec, outputs.doc),
+        writes_declared="writes" in effective(task),
+    )
 
 
 # -- overlap of write paths (auto-continue with parallel runs, ``queue.Occupancy``) --
