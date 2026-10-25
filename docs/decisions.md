@@ -59,6 +59,7 @@ mimo spec daného tasku. Ostatním PR zůstává původní důvod odmítnutí.
 ## Dashboard a distribuce
 
 - **Více repozitářů:** jeden `factory obs` obsluhuje repozitáře z registru `dashboard.yaml` v domově HAIFA. Port je jen v registru. `.factory/`, backlog a trace DB zůstávají v repu.
+- **Tajný terminál:** globální `GET /api/terminal` vrací dostupnost, domovský adresář a shell; `POST /api/terminal/exec` streamuje NDJSON výstup a návratový kód. Bez přihlášení, dostupný pouze při loopback `allowed_hosts` i loopback adrese klienta; síťový dashboard jej nikdy nepovolí. Platí běžná ochrana Origin, Sec-Fetch-Site a JSON. Příkazy ani výstup se neukládají do repa či trace DB. Samostatné `cd` řeší server, cwd drží klient. Odpojení nebo limit 600 s ukončí skupinu procesů; bez TTY a stdin.
 - **AI průvodce z topbaru:** každé otevření začne nové vlákno; minulá vlákna zůstávají dostupná v historii.
 - **Limity harnessů:** dashboard ukazuje poslední hodnoty, které harness sám vrátil při běhu (Claude ve stream-json, Codex v session logu). Žádné vlastní dotazy na API ani app-server.
 - **Distribuce:** GitHub Actions po zeleném CI na `main` vydá release `haifa-<verze>.zip` s verzí `<major>.<minor>.<číslo běhu>`. Commit ani PR, který mění jen `factory/` (backlog, specy, dokumentace tasků), `docs/` nebo `.factory/`, CI ani release nespouští. Approve a auto-merge takový PR bez checků mergnou.

@@ -336,6 +336,11 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("port_in_use", "2", "the dashboard port is already taken (factory obs --port N)"),
     ("not_found", "2", "dashboard API: no such endpoint (HTTP 404)"),
     (
+        "terminal_disabled",
+        "2",
+        "dashboard API: the terminal requires a loopback server and client (HTTP 403)",
+    ),
+    (
         "cross_origin",
         "2",
         "dashboard API: a write from another origin (Origin or Sec-Fetch-Site) was rejected"

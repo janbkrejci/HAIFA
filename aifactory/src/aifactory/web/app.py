@@ -198,6 +198,16 @@ tasks into the free ``max_parallel_runs`` slots, HTTP 200 also when nothing star
 ``.../control/pause`` and ``.../control/resume`` (every running run) and
 ``.../control/stop`` (every running run, in the background; HTTP 202, the progress is in
 the overview's ``factory.control``).
+The hidden terminal (``terminal.py``, multi-repository app only):
+``GET /api/terminal`` returns ``{enabled, cwd, shell}`` in the JSON envelope;
+``POST /api/terminal/exec`` (``{command, cwd?}``) streams NDJSON ``out`` (stream, text)
+and ``exit`` (code, cwd) events. The default cwd is the user's home. Standalone ``cd``
+changes the client's cwd without launching a shell. Commands run without stdin or TTY;
+disconnect or a 600 s timeout kills the process group. No commands or output are stored.
+There is no login: both allowed server hosts and the request client must be loopback
+(``server.LOOPBACK``), otherwise GET reports disabled and POST returns HTTP 403
+``terminal_disabled``. The normal Origin, Sec-Fetch-Site and JSON write guard applies.
+
 The guide (``assistant.py``, multi-repository app only) reads, never writes:
 ``GET /api/assistant/threads`` (newest first), ``POST /api/assistant/threads``
 (``{title?, screen?: {repo?, task?, run?}}``, HTTP 201; task/run context selects the binding,
@@ -288,6 +298,7 @@ from aifactory.web.repos import (
     remove_repo,
     repo_status,
 )
+from aifactory.web.terminal import terminal_exec, terminal_get
 from aifactory.web.updates import Updates
 from aifactory.web.workflow_advice import AdviceManager
 from aifactory.workflow.adaptive import cleanup_orphans
@@ -2660,6 +2671,8 @@ def create_multi_app(
         "/api",
         routes=[
             Route("/health", multi_health, methods=["GET"]),
+            Route("/terminal", terminal_get, methods=["GET"]),
+            Route("/terminal/exec", terminal_exec, methods=["POST"]),
             Route("/machine/check", machine_check, methods=["GET"]),
             Route("/machine/harnesses", machine_harnesses, methods=["GET", "POST"]),
             Route("/machine/harnesses/test", machine_harness_test, methods=["POST"]),
@@ -2761,6 +2774,7 @@ def create_multi_app(
     app.state.task_advice = AdviceManager(task_parameters=True)
     app.state.intent = IntentManager()
     app.state.learn = LearnManager()
+    app.state.terminal_enabled = bool(allowed_hosts) and set(allowed_hosts) <= web_server.LOOPBACK
     app.state.library = machine.GlobalState()
     app.state.home = home_dir
     app.state.served_port = port
