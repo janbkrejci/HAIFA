@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import TerminalOverlay from './components/terminal/TerminalOverlay.vue'
+import { createSecretKeys } from './lib/secretKeys'
 import { errorText } from './lib/format'
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { BookOpen, Sparkles, Trash2 } from 'lucide-vue-next'
@@ -41,6 +43,12 @@ import RepoSwitcher from './components/RepoSwitcher.vue'
 import RemoveRepoDialog from './components/repos/RemoveRepoDialog.vue'
 import Spinner from './components/ui/Spinner.vue'
 import Tooltip from './components/ui/Tooltip.vue'
+
+const terminalOpen = ref(false)
+const secretKeys = createSecretKeys()
+function terminalKeydown(event: KeyboardEvent) {
+  if (secretKeys(event)) terminalOpen.value = !terminalOpen.value
+}
 
 const route = useRoute()
 const readiness = provideReadiness()
@@ -127,6 +135,7 @@ const configStatus = useConfigStatus()
 const commitConfig = () => openConfigCommit(repoId.value ?? '')
 
 onMounted(async () => {
+  window.addEventListener('keydown', terminalKeydown, true)
   window.addEventListener('harness-settings-open', openHarnesses)
   window.addEventListener('focus', reloadRepos)
   window.addEventListener('factory-applied', reloadRepos)
@@ -140,6 +149,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', terminalKeydown, true)
   window.removeEventListener('harness-settings-open', openHarnesses)
   window.removeEventListener('focus', reloadRepos)
   window.removeEventListener('factory-applied', reloadRepos)
@@ -285,6 +295,7 @@ onBeforeUnmount(() => {
   </div>
   <MachineHarnessesDialog :open="harnessDialog" @close="harnessDialog = false" @saved="limits.refresh(); readiness.refresh(true)" @tested="limits.refresh(); readiness.refresh(true)" />
   <AssistantPanel :repos="repoIds" />
+  <TerminalOverlay v-if="terminalOpen" @close="terminalOpen = false" />
   <ConfirmDialog v-bind="leaveDialog" @confirm="confirmLeave" @cancel="cancelLeave" />
 </template>
 
