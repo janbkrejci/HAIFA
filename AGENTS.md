@@ -14,6 +14,8 @@ The whole suite takes about 30 minutes on Windows. CI runs it on every pull requ
 
 Select only tests that exercise the changed behavior; narrow file or directory selections to relevant tests, omit tests justified only by imports of a changed module, and add browser or layout tests only for a changed screen.
 
+Regardless of these selection limits, run every test file edited by the change in at least one check of the test plan, including browser tests under `tests/e2e/`.
+
 Measured on the Windows factory machine (set check timeouts with margin): `just lint` 1 s, `just typecheck` 10 s, `just web-test` 90 s (bun install, vue-tsc, vitest), one browser test file 60–200 s, `just pytest` of one test directory 1–5 min.
 
 Outside a factory run, `just check` and `just e2e` are the full gate.
