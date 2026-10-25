@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T76
 title: "API tajného terminálu: spouštění příkazů na stroji dashboardu jen přes loopback"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/terminal.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_terminal.py, docs/decisions.md, aifactory/src/aifactory/skill/codes.py]
@@ -37,3 +37,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-25 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/165 · náklady $0.00
