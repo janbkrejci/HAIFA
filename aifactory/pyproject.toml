@@ -10,6 +10,7 @@ dependencies = [
     "pydantic>=2.13.5,<3",
     "python-dotenv>=1.2.3,<2",
     "pyyaml>=6.0.3,<7",
+    "pywinpty>=2,<4; sys_platform == 'win32'",
     "rich>=15.0.0,<16",
     "ruamel-yaml>=0.18.10,<0.19",
     "starlette>=1.7.0,<2",

@@ -54,7 +54,7 @@ def test_get_and_echo(tmp_path: Path) -> None:
             "enabled": True,
             "cwd": str(Path.home()),
             "shell": terminal._shell(),
-            "pty": sys.platform != "win32",
+            "pty": True,
         }
         events = _events(client, "echo terminal-output")
     assert "terminal-output" in "".join(e["text"] for e in events if e["type"] == "out")
@@ -276,3 +276,22 @@ def test_shell_environment_and_fallback(monkeypatch: pytest.MonkeyPatch) -> None
     assert terminal._shell() == "/bin/custom-shell"
     monkeypatch.delenv("SHELL")
     assert terminal._shell() == "/bin/sh"
+
+
+@pytest.mark.parametrize("available", [False, True])
+def test_windows_capabilities(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, available: bool
+) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    # Replace the module reference, without changing the platform for Starlette/asyncio.
+    monkeypatch.setattr(terminal, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setitem(sys.modules, "winpty", SimpleNamespace() if available else None)
+    assert terminal._shell() == r"C:\Windows\System32\cmd.exe"
+    with _client(tmp_path) as client:
+        info = client.get("/api/terminal").json()["data"]
+    assert info["pty"] is available
+    assert info["shell"] == r"C:\Windows\System32\cmd.exe"
+    monkeypatch.delenv("COMSPEC")
+    assert terminal._shell() == "cmd.exe"

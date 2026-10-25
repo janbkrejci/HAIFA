@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import sys
 from pathlib import Path
 from typing import Any, cast
 
@@ -431,3 +432,117 @@ def test_resize_racing_delete_does_not_touch_closed_fd(tmp_path: Path) -> None:
 
         assert client.portal is not None
         client.portal.call(scenario)
+
+
+def test_windows_backend_with_threaded_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Exercise Windows dispatch and blocking transport on POSIX without winpty installed."""
+    import socket
+    import threading
+    from types import SimpleNamespace
+
+    from aifactory.web.terminal import _shell
+
+    async def scenario() -> None:
+        fileobj, peer = socket.socketpair()
+        server = socket.socket()
+        exited = threading.Event()
+        calls: list[Any] = []
+
+        class Process:
+            pid = 12345
+            _server = server
+
+            def __init__(self) -> None:
+                self.fileobj = fileobj
+
+            def read(self, size: int) -> str:
+                assert threading.current_thread() is not threading.main_thread()
+                data = fileobj.recv(size)
+                if not data:
+                    raise EOFError
+                return data.decode()
+
+            def wait(self) -> None:
+                exited.wait()
+
+            def write(self, text: str) -> None:
+                peer.sendall(text.encode())
+
+            def setwinsize(self, rows: int, cols: int) -> None:
+                calls.append((rows, cols))
+
+            def terminate(self, *, force: bool) -> None:
+                calls.append(("terminate", force))
+                exited.set()
+
+            def close(self, *, force: bool) -> None:
+                calls.append(("close", force))
+
+        def spawn(argv: list[str], **kwargs: Any) -> Process:
+            calls.append((argv, kwargs))
+            return Process()
+
+        def kill_group(pid: int, *, force: bool) -> None:
+            calls.append(("kill", pid, force))
+
+        monkeypatch.setattr(terminal_pty, "sys", SimpleNamespace(platform="win32"))
+        monkeypatch.setitem(
+            sys.modules,
+            "winpty",
+            SimpleNamespace(PtyProcess=SimpleNamespace(spawn=spawn)),
+        )
+        monkeypatch.setattr(oscompat, "kill_group", kill_group)
+        with _client(tmp_path) as client:
+            # All async operations use this loop, including creation and cleanup.
+            app = cast(Starlette, client.app)
+            token = ""
+
+            async def call(suffix: str, body: Any = None, method: str = "POST") -> Response:
+                async def receive() -> Message:
+                    return {"type": "http.request", "body": json.dumps(body).encode()}
+
+                return await terminal_pty.terminal_session(
+                    Request(
+                        {
+                            "type": "http",
+                            "app": app,
+                            "client": ("127.0.0.1", 1),
+                            "path": BASE + suffix,
+                            "headers": [],
+                            "method": method,
+                            "path_params": {"id": token} if token else {},
+                        },
+                        receive,
+                    )
+                )
+
+            created = await call("", {"cols": 90, "rows": 30, "cwd": str(tmp_path)})
+            assert isinstance(created, JSONResponse)
+            token = json.loads(bytes(created.body))["data"]["id"]
+            session = app.state.terminal_sessions[token]
+            try:
+                argv, config = calls[0]
+                assert argv == [_shell()]
+                assert config["cwd"] == str(tmp_path.resolve())
+                assert config["dimensions"] == (30, 90)
+                assert config["backend"] == "0"
+                assert config["env"]["TERM"] == "xterm-256color"
+                assert (await call("/input", {"data": "žluťoučký"})).status_code == 200
+                stream = session.stream()
+                assert await asyncio.wait_for(anext(stream), 5) == "žluťoučký".encode()
+                assert (await call("/resize", {"cols": 100, "rows": 40})).status_code == 200
+                assert (40, 100) in calls
+                assert (await call("", method="DELETE")).status_code == 200
+                assert await asyncio.wait_for(anext(stream, None), 5) is None
+                await asyncio.wait_for(session.watcher, 5)
+                assert calls[-3:] == [("kill", 12345, True), ("terminate", True), ("close", True)]
+                assert session.reader.done()
+                assert fileobj.fileno() == server.fileno() == -1
+                assert token not in app.state.terminal_sessions
+            finally:
+                await session.close(app.state.terminal_sessions, token)
+                peer.close()
+
+    asyncio.run(scenario())
