@@ -2,6 +2,7 @@
 id: HAIFA-S03-T22
 title: sdílená remote databáze
 status: done
+archived: true
 depends_on: []
 ---
 
