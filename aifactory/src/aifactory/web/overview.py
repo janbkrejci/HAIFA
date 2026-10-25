@@ -755,6 +755,7 @@ class Overview:
         self.registry = registry
         self.control = control
         self.timeout = timeout
+        self._layouts = ConfigCache(clock)
         self._configs = ConfigCache(clock)
         self._tasks = _TtlCache(clock)
         # Own threads: a repository stuck past the limit never blocks the loop's executor, and
@@ -768,11 +769,11 @@ class Overview:
         path = Path(entry.path)
         if not path.is_dir():
             return _stub(entry, "missing", [f"the folder {entry.path} is missing"])
-        layout = repo_layout(path)
+        key = (entry.id, entry.path)
+        layout = self._layouts.get(key, path, lambda: repo_layout(path))
         if layout is None or layout.toplevel is None:
             return _stub(entry, "not_git", [f"{entry.path} is not a git working tree"])
         root = layout.toplevel
-        key = (entry.id, entry.path)
         config, config_warnings = self._configs.get(key, root, lambda: _config_view(root))
         tasks, task_warnings = self._tasks.get(key, TASKS_TTL, lambda: _task_index(root))
         trace, trace_warnings = _trace_view(trace_db_of(root))
@@ -820,6 +821,7 @@ class Overview:
         """``({repos, totals}, registry warnings)`` for every registered repository."""
         state, warnings = await asyncio.to_thread(self.registry.snapshot)
         keep: set[object] = {(e.id, e.path) for e in state.repos}
+        self._layouts.prune(keep)
         self._configs.prune(keep)
         self._tasks.prune(keep)
         with self._inflight_lock:

@@ -125,6 +125,23 @@ def test_new_trace_rows_are_an_event(repo: Path) -> None:
         watcher.close()
 
 
+def test_baseline_does_not_read_historical_event_rows(repo: Path) -> None:
+    watcher = LiveWatcher(repo)
+    queries: list[str] = []
+    try:
+        conn = watcher._connect()
+        assert conn is not None
+        conn.set_trace_callback(queries.append)
+        assert watcher.poll() == []
+        assert not any("SELECT DISTINCT adw_id" in query for query in queries)
+        _insert_event(repo, "e-after-baseline", "r-run", "p3")
+        [event] = watcher.poll()
+        assert event.data["run_ids"] == ["r-run"]
+        assert any("SELECT DISTINCT adw_id" in query for query in queries)
+    finally:
+        watcher.close()
+
+
 def test_phase_leaving_running_is_an_event(repo: Path) -> None:
     watcher = LiveWatcher(repo)
     try:

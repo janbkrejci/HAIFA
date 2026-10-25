@@ -243,12 +243,13 @@ class LiveWatcher:
         max_events = self._max_rowid(conn, "events")
         max_phases = self._max_rowid(conn, "phases")
         run_ids: set[str] = set()
-        if max_events > self._max_events and _has_table(conn, "events"):
+        # The baseline only needs cursors; historical rows are never published.
+        if self._trace_ready and max_events > self._max_events and _has_table(conn, "events"):
             rows = conn.execute(
                 "SELECT DISTINCT adw_id FROM events WHERE rowid > ?", (self._max_events,)
             ).fetchall()
             run_ids.update(str(r[0]) for r in rows if r[0] is not None)
-        if max_phases > self._max_phases and _has_table(conn, "phases"):
+        if self._trace_ready and max_phases > self._max_phases and _has_table(conn, "phases"):
             rows = conn.execute(
                 "SELECT DISTINCT adw_id FROM phases WHERE rowid > ?", (self._max_phases,)
             ).fetchall()

@@ -447,7 +447,8 @@ def test_broken_repo_gives_an_error_and_the_others_answer(
 def test_config_and_task_caches_per_repo(
     repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    counts = {"config": 0, "tasks": 0}
+    counts = {"config": 0, "tasks": 0, "layout": 0}
+    real_layout = getattr(overview, "repo_layout")  # noqa: B009
     real_state = getattr(overview, "repo_state")  # noqa: B009
     real_load = getattr(overview, "load_for_edit")  # noqa: B009
 
@@ -459,6 +460,11 @@ def test_config_and_task_caches_per_repo(
         counts["tasks"] += 1
         return real_load(*args, **kwargs)
 
+    def count_layout(*args: Any, **kwargs: Any) -> Any:
+        counts["layout"] += 1
+        return real_layout(*args, **kwargs)
+
+    monkeypatch.setattr(overview, "repo_layout", count_layout)
     monkeypatch.setattr(overview, "repo_state", count_state)
     monkeypatch.setattr(overview, "load_for_edit", count_load)
     now = [1000.0]
@@ -468,13 +474,17 @@ def test_config_and_task_caches_per_repo(
     ov.repo(entry)
     now[0] += CONFIG_TTL - 1
     ov.repo(entry)
-    assert counts == {"config": 1, "tasks": 1}
+    assert counts == {"config": 1, "tasks": 1, "layout": 1}
     now[0] += 2  # 16 s after the first
     ov.repo(entry)
-    assert counts == {"config": 2, "tasks": 1}
+    assert counts == {"config": 2, "tasks": 1, "layout": 2}
     now[0] += TASKS_TTL - 16 + 1  # 61 s after the first
     ov.repo(entry)
-    assert counts == {"config": 3, "tasks": 2}
+    assert counts == {"config": 3, "tasks": 2, "layout": 3}
+
+    (repo_a / ".git" / "HEAD").write_text("ref: refs/heads/other\n", encoding="utf-8")
+    ov.repo(entry)
+    assert counts["layout"] == 4  # Metadata changes invalidate the layout before the TTL.
 
 
 def test_invalid_config_in_base_and_uncommitted_config(tmp_path: Path) -> None:
