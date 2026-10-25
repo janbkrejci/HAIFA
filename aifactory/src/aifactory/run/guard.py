@@ -5,7 +5,8 @@ phase, agent, before)`` after it, also when the phase fails (harness error,
 invalid JSON, a gate that stays red). ``TaskWriteGuard`` looks at two trees:
 
 * **the worktree of the run.** A changed path must be allowed by the agent's
-  own `writes` and protected files *and* by the task scope (``scope.py``). A
+  own `writes` *and* by the task scope (``scope.py``). Explicit task `writes`
+  unlock protected files for an agent with unrestricted `writes`. A
   commit the agent made itself is undone with ``git reset --soft`` to the
   commit before the phase, so the committed files are checked like any other
   change; the move is reported as ``HEAD``. The two outputs of the task (spec
@@ -72,7 +73,7 @@ from typing import Any
 from aifactory.engine import permissions
 from aifactory.failure import OTHER
 from aifactory.run import backup, basemoves, gitops, mainwrites
-from aifactory.run.scope import TaskScope
+from aifactory.run.scope import TaskScope, matches
 
 WORKTREE = "worktree"
 MAIN = "main checkout"
@@ -131,6 +132,14 @@ class TaskWriteGuard:
             return True
         if not self.scope.permits(path):
             return False
+        # Explicit task writes unlock protected paths, just like agent writes do.
+        # Keep an agent's own restrictions (including read-only writes: []).
+        if (
+            agent.writes is None
+            and self.scope.writes_declared
+            and any(matches(path, p) for p in self.scope.writes)
+        ):
+            return True
         if permissions.permitted(path, agent, cfg):
             return True
         # docs/decisions.md, "Výstupy tasku": the two outputs of the task are
