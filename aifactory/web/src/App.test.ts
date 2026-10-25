@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import App from './App.vue'
+vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./components/terminal/xtermMock')).MockTerminal }))
+vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./components/terminal/xtermMock')).MockFitAddon }))
 import MachineHarnessesDialog from './components/MachineHarnessesDialog.vue'
 import { resetConfigStatusForTests } from './lib/configStatus'
 import { CLEAN_STATUS, DIRTY_STATUS } from './test/settingsFixtures'
@@ -79,8 +81,14 @@ afterEach(() => {
 })
 
 describe('App', () => {
-  it('toggles the terminal from a focused text field and removes the listener', async () => {
-    stubApi({ handler: url => url === '/api/terminal' ? envelope({ enabled: true, cwd: '/home/me', shell: 'sh' }) : undefined })
+  it('toggles from the xterm textarea even when bubbling stops and removes the listener', async () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    stubApi({ handler: url => {
+      if (url === '/api/terminal') return envelope({ enabled: true, pty: true, cwd: '/home/me', shell: 'sh' })
+      if (url.endsWith('/stream')) return new Response(new ReadableStream())
+      if (url === '/api/terminal/sessions') return envelope({ id: 'app-test' })
+      return undefined
+    } })
     const wrapper = mount(App, { attachTo: document.body })
     await flushPromises()
     const field = document.createElement('input')
@@ -94,6 +102,9 @@ describe('App', () => {
     }
     expect(wrapper.find('[data-test="terminal-overlay"]').exists()).toBe(false)
     await sequence()
+    expect(wrapper.find('[data-test="terminal-overlay"]').exists()).toBe(true)
+    expect(document.activeElement).toBe(wrapper.get('.xterm-helper-textarea').element)
+    await wrapper.get('.xterm-helper-textarea').trigger('keydown', { key: 'Escape' })
     expect(wrapper.find('[data-test="terminal-overlay"]').exists()).toBe(true)
     await sequence()
     expect(wrapper.find('[data-test="terminal-overlay"]').exists()).toBe(false)

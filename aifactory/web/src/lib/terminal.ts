@@ -8,52 +8,62 @@ async function readEnvelope<T>(response: Response): Promise<T> {
   return envelope.data
 }
 
-export interface TerminalInfo { enabled: boolean; cwd: string; shell: string }
-export type TerminalEvent =
-  | { type: 'out'; stream: 'stdout' | 'stderr'; text: string }
-  | { type: 'exit'; code: number; cwd: string }
+export interface TerminalInfo { enabled: boolean; cwd: string; shell: string; pty: boolean }
+export interface TerminalSize { cols: number; rows: number }
+const sessions = '/api/terminal/sessions'
+const sessionUrl = (id: string) => `${sessions}/${encodeURIComponent(id)}`
 
 export async function fetchTerminal(signal?: AbortSignal): Promise<TerminalInfo> {
   return readEnvelope<TerminalInfo>(await fetch('/api/terminal', { signal }))
 }
 
-/** The caller owns the controller so closing the overlay also disconnects the process. */
-export async function execTerminal(
-  command: string, cwd: string, signal: AbortSignal, onEvent: (event: TerminalEvent) => void,
-): Promise<void> {
-  const response = await fetch('/api/terminal/exec', {
+export async function createTerminalSession(size: TerminalSize, cwd: string): Promise<{ id: string }> {
+  // Do not abort creation: even a late response must be deleted by the owner.
+  return readEnvelope(await fetch(sessions, {
     method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ command, cwd }), signal,
-  })
+    body: JSON.stringify({ ...size, cwd }), keepalive: true,
+  }))
+}
+
+export async function inputTerminal(id: string, data: string, signal?: AbortSignal): Promise<void> {
+  await readEnvelope(await fetch(`${sessionUrl(id)}/input`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ data }), signal,
+  }))
+}
+
+export async function resizeTerminal(id: string, size: TerminalSize, signal?: AbortSignal): Promise<void> {
+  await readEnvelope(await fetch(`${sessionUrl(id)}/resize`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(size), signal,
+  }))
+}
+
+export async function deleteTerminalSession(id: string): Promise<void> {
+  await readEnvelope(await fetch(sessionUrl(id), { method: 'DELETE', keepalive: true }))
+}
+
+/** Preserve raw UTF-8/VT bytes, including sequences split between chunks. */
+export async function streamTerminal(
+  id: string, signal: AbortSignal, onBytes: (bytes: Uint8Array) => void,
+): Promise<void> {
+  const response = await fetch(`${sessionUrl(id)}/stream`, { signal })
   if (!response.ok) {
     await readEnvelope(response)
     throw new Error(`Terminál: HTTP ${response.status}`)
   }
   if (!response.body) throw new Error('Terminál neposlal výstupní stream.')
   const reader = response.body.getReader()
-  const decoder = new TextDecoder()
-  let pending = ''
-  let exited = false
-  function line(text: string) {
-    if (!text.trim()) return
-    const event = JSON.parse(text) as TerminalEvent
-    if (event.type === 'exit') exited = true
-    onEvent(event)
-  }
+  const cancel = () => { void reader.cancel().catch(() => {}) }
+  signal.addEventListener('abort', cancel, { once: true })
   try {
-    while (true) {
+    while (!signal.aborted) {
       const { done, value } = await reader.read()
-      pending += decoder.decode(value, { stream: !done })
-      let end: number
-      while ((end = pending.indexOf('\n')) !== -1) {
-        line(pending.slice(0, end))
-        pending = pending.slice(end + 1)
-      }
-      if (done) break
+      if (done || signal.aborted) break
+      onBytes(value)
     }
-    line(pending)
-    if (!exited) throw new Error('Spojení s terminálem skončilo bez návratového kódu.')
   } finally {
+    signal.removeEventListener('abort', cancel)
     await reader.cancel().catch(() => {})
     reader.releaseLock()
   }
