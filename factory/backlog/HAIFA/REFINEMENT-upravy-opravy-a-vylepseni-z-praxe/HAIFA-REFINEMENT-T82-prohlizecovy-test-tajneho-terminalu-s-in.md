@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T82
 title: Prohlížečový test tajného terminálu s interaktivním programem
-status: todo
+status: done
 workflow: build-test
 depends_on: [HAIFA-REFINEMENT-T81]
 writes: [aifactory/tests/e2e/test_terminal_browser.py]
@@ -27,3 +27,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-25 · workflow build-test · PR https://github.com/janbkrejci/HAIFA/pull/171 · náklady $0.00
