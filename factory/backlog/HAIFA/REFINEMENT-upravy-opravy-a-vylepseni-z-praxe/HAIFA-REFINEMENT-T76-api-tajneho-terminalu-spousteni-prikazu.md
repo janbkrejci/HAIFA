@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T76
 title: "API tajného terminálu: spouštění příkazů na stroji dashboardu jen přes loopback"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/terminal.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_terminal.py, docs/decisions.md, aifactory/src/aifactory/skill/codes.py]

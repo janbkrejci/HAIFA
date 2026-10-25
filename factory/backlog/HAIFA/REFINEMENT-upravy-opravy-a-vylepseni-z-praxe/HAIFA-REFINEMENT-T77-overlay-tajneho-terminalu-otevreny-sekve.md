@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T77
 title: "Overlay tajného terminálu otevřený sekvencí Ctrl, Shift, Ctrl, Shift"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T76]
 writes: [aifactory/web/src/lib/secretKeys.ts, aifactory/web/src/lib/secretKeys.test.ts, aifactory/web/src/lib/terminal.ts, aifactory/web/src/lib/terminal.test.ts, aifactory/web/src/components/terminal/, aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/src/aifactory/web/static/]
