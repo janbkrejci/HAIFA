@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T80
 title: "Tajný terminál: PTY sezení i na Windows (ConPTY přes pywinpty)"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T79]
 writes: [aifactory/pyproject.toml, aifactory/uv.lock, aifactory/src/aifactory/web/terminal.py, aifactory/src/aifactory/web/terminal_pty.py, aifactory/tests/web/test_web_terminal_pty_windows.py, aifactory/tests/web/test_web_terminal_pty.py, docs/decisions.md, aifactory/tests/web/test_web_terminal.py]
