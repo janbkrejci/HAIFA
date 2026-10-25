@@ -148,6 +148,80 @@ def test_timeout(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert not oscompat.alive(killed[0])
 
 
+def test_timeout_kills_parent_and_child_before_blocked_send(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(terminal, "TERMINAL_TIMEOUT_S", 2)
+
+    def stopped(pid: int) -> bool:
+        if not oscompat.alive(pid):
+            return True
+        if sys.platform == "win32":
+            return False
+        # An orphan killed with its parent may await reaping by the system's init.
+        result = subprocess.run(
+            ["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True, check=False
+        )
+        return not result.stdout.strip() or result.stdout.strip().startswith("Z")
+
+    async def scenario() -> None:
+        disconnect = asyncio.Event()
+        sending_timeout = asyncio.Event()
+        release_send = asyncio.Event()
+        pids: list[int] = []
+        stdout = ""
+
+        async def receive() -> Message:
+            await disconnect.wait()
+            return {"type": "http.disconnect"}
+
+        async def send(message: Message) -> None:
+            nonlocal stdout
+            if message["type"] != "http.response.body" or not message.get("body"):
+                return
+            event = json.loads(message["body"])
+            if event.get("stream") == "stdout":
+                stdout += event["text"]
+                if "\n" in stdout:
+                    pids[:] = json.loads(stdout)
+            if "timed out" in event.get("text", ""):
+                sending_timeout.set()
+                await release_send.wait()
+
+        command = _python(
+            "import json, os, subprocess, sys; "
+            "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(60)']); "
+            "print(json.dumps([os.getpid(), child.pid]), flush=True); child.wait()"
+        )
+
+        async def body() -> Message:
+            return {"type": "http.request", "body": json.dumps({"command": command}).encode()}
+
+        request = Request(
+            {"type": "http", "app": _client(tmp_path).app, "client": ("127.0.0.1", 12345)},
+            body,
+        )
+        response = await terminal.terminal_exec(request)
+        task = asyncio.create_task(
+            response({"type": "http", "asgi": {"spec_version": "2.0"}}, receive, send)
+        )
+        try:
+            await asyncio.wait_for(sending_timeout.wait(), timeout=10)
+            assert len(pids) == 2, stdout
+            for _ in range(100):
+                if all(stopped(pid) for pid in pids):
+                    break
+                await asyncio.sleep(0.01)
+            assert all(stopped(pid) for pid in pids)
+            assert not release_send.is_set()
+            assert not disconnect.is_set()
+        finally:
+            disconnect.set()
+            await asyncio.wait_for(task, timeout=5)
+
+    asyncio.run(scenario())
+
+
 @pytest.mark.parametrize("blocked_send", [False, True])
 def test_disconnect_streams_and_kills_group(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, blocked_send: bool

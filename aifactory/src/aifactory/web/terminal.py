@@ -100,6 +100,7 @@ async def _run(command: str, cwd: Path, shell: str) -> AsyncGenerator[str, None]
         asyncio.create_task(read(process.stderr, "stderr")),
     ]
     code = 124
+    timed_out = False
     try:
         try:
             async with asyncio.timeout(TERMINAL_TIMEOUT_S):
@@ -112,7 +113,7 @@ async def _run(command: str, cwd: Path, shell: str) -> AsyncGenerator[str, None]
                         yield _line(event)
                 code = await process.wait()
         except TimeoutError:
-            yield _line({"type": "out", "stream": "stderr", "text": "Command timed out.\n"})
+            timed_out = True
     finally:
         # StreamingResponse cancels its iterator on disconnect. Shield reaping from that
         # cancellation, and kill the group even if the shell left children behind.
@@ -125,6 +126,8 @@ async def _run(command: str, cwd: Path, shell: str) -> AsyncGenerator[str, None]
                 reader.cancel()
             await asyncio.gather(*readers, return_exceptions=True)
             await process.wait()
+    if timed_out:
+        yield _line({"type": "out", "stream": "stderr", "text": "Command timed out.\n"})
     yield _line({"type": "exit", "code": code, "cwd": str(cwd)})
 
 
