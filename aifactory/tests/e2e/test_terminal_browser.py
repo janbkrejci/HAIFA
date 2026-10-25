@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import shutil
 import sys
 from collections.abc import Iterator
@@ -28,6 +29,12 @@ def terminal_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[P
         try:
             page = browser.new_page()
             page.set_default_timeout(15000)
+            info = page.request.get(f"{url}/api/terminal")
+            assert info.ok, info.text()
+            capabilities = info.json()
+            assert capabilities["ok"], capabilities
+            if sys.platform == "win32" and not capabilities["data"]["pty"]:
+                pytest.skip("GET /api/terminal reports pty: false on Windows")
             page.goto(f"{url}/#/r/{identifier}/runs")
             expect(page.locator('[data-test="assistant-toggle"]')).to_be_visible()
             expect(page.locator('[data-test="terminal-overlay"]')).to_have_count(0)
@@ -42,6 +49,7 @@ def test_terminal_commands_browser(terminal_page: Page, tmp_path: Path) -> None:
         page.keyboard.press(key)
     overlay = page.get_by_role("dialog", name="Terminál", exact=True)
     expect(overlay).to_be_visible()
+    expect(overlay.locator(".xterm")).to_be_visible()
     terminal = overlay.locator(".xterm-helper-textarea")
     expect(terminal).to_be_focused()
     screen = overlay.locator(".xterm-rows")
@@ -63,8 +71,48 @@ def test_terminal_commands_browser(terminal_page: Page, tmp_path: Path) -> None:
     page.keyboard.press("Enter")
     expect(screen).to_contain_text(f"haifa-cwd-{target}")
 
+    python = f'"{sys.executable}"' if sys.platform == "win32" else shlex.quote(sys.executable)
+    page.keyboard.insert_text(f"{python} -c \"import sys;print('tty', sys.stdin.isatty())\"")
+    page.keyboard.press("Enter")
+    expect(screen).to_contain_text("tty True")
+
+    # Keep output markers out of command echo, and wait until each input() is ready.
+    script = target / "interactive.py"
+    script.write_text(
+        'value = input("haifa-" + "input-ready:")\n'
+        'print("haifa-" + "input-result", value, flush=True)\n'
+        'value = input("haifa-" + "escape-ready:")\n'
+        'print("haifa-" + "escape-result", ord(value), flush=True)\n',
+        encoding="utf-8",
+    )
+    page.keyboard.insert_text(f'{python} "{script}"')
+    page.keyboard.press("Enter")
+    expect(screen).to_contain_text("haifa-input-ready:")
+    page.keyboard.press("q")
+    page.keyboard.press("Enter")
+    expect(screen).to_contain_text("haifa-input-result q")
+    expect(screen).to_contain_text("haifa-escape-ready:")
     page.keyboard.press("Escape")
     expect(overlay).to_be_visible()
+    page.keyboard.press("Enter")
+    expect(screen).to_contain_text("haifa-escape-result 27")
+
+    # Windows has no standard sleep command; use the same interpreter there.
+    sleep = (
+        f"{python} -c \"import time;print('haifa-' + 'sleep-ready', flush=True);time.sleep(100)\""
+        if sys.platform == "win32"
+        else 'echo haifa-"sleep-ready"; sleep 100'
+    )
+    page.keyboard.insert_text(sleep)
+    page.keyboard.press("Enter")
+    expect(screen).to_contain_text("haifa-sleep-ready")
+    page.keyboard.press("Control+c")
+    page.keyboard.insert_text(
+        "echo haifa-^after-interrupt" if sys.platform == "win32" else 'echo haifa-"after-interrupt"'
+    )
+    page.keyboard.press("Enter")
+    expect(screen).to_contain_text("haifa-after-interrupt")
+
     for key in ("Control", "Shift", "Control", "Shift"):
         page.keyboard.press(key)
     expect(overlay).to_have_count(0)
