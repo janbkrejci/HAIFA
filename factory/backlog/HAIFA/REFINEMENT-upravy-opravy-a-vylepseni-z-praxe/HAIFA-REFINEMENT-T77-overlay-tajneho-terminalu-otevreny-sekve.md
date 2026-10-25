@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T77
 title: "Overlay tajného terminálu otevřený sekvencí Ctrl, Shift, Ctrl, Shift"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T76]
 writes: [aifactory/web/src/lib/secretKeys.ts, aifactory/web/src/lib/secretKeys.test.ts, aifactory/web/src/lib/terminal.ts, aifactory/web/src/lib/terminal.test.ts, aifactory/web/src/components/terminal/, aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/src/aifactory/web/static/]
@@ -28,3 +28,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-25 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/166 · náklady $0.00
