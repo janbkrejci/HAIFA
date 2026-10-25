@@ -199,7 +199,7 @@ tasks into the free ``max_parallel_runs`` slots, HTTP 200 also when nothing star
 ``.../control/stop`` (every running run, in the background; HTTP 202, the progress is in
 the overview's ``factory.control``).
 The hidden terminal (``terminal.py``, multi-repository app only):
-``GET /api/terminal`` returns ``{enabled, cwd, shell}`` in the JSON envelope;
+``GET /api/terminal`` returns ``{enabled, cwd, shell, pty}`` in the JSON envelope;
 ``POST /api/terminal/exec`` (``{command, cwd?}``) streams NDJSON ``out`` (stream, text)
 and ``exit`` (code, cwd) events. The default cwd is the user's home. Standalone ``cd``
 changes the client's cwd without launching a shell. Commands run without stdin or TTY;
@@ -207,6 +207,15 @@ disconnect or a 600 s timeout kills the process group. No commands or output are
 There is no login: both allowed server hosts and the request client must be loopback
 (``server.LOOPBACK``), otherwise GET reports disabled and POST returns HTTP 403
 ``terminal_disabled``. The normal Origin, Sec-Fetch-Site and JSON write guard applies.
+``POST /api/terminal/sessions`` (``{cols, rows, cwd?}``) creates a POSIX login/interactive
+PTY shell and returns ``{id}``; Windows returns 501 ``terminal_pty_unsupported``.
+``GET /api/terminal/sessions/{id}/stream`` streams raw bytes to one client (409 if attached).
+``POST .../{id}/input`` (``{data}``) writes UTF-8 and ``POST .../{id}/resize``
+(``{cols, rows}``) resizes the PTY, notifying its foreground group via SIGWINCH.
+``DELETE /api/terminal/sessions/{id}``, disconnect and shell exit kill the process group
+and remove the session. All session routes require loopback server and client (403).
+At most four sessions run (429); dimensions are 1–1000. TERM is xterm-256color,
+COLORTERM truecolor, default cwd is home. Sessions have no time limit or persistence.
 
 The guide (``assistant.py``, multi-repository app only) reads, never writes:
 ``GET /api/assistant/threads`` (newest first), ``POST /api/assistant/threads``
@@ -299,6 +308,7 @@ from aifactory.web.repos import (
     repo_status,
 )
 from aifactory.web.terminal import terminal_exec, terminal_get
+from aifactory.web.terminal_pty import close_sessions, terminal_session
 from aifactory.web.updates import Updates
 from aifactory.web.workflow_advice import AdviceManager
 from aifactory.workflow.adaptive import cleanup_orphans
@@ -2673,6 +2683,11 @@ def create_multi_app(
             Route("/health", multi_health, methods=["GET"]),
             Route("/terminal", terminal_get, methods=["GET"]),
             Route("/terminal/exec", terminal_exec, methods=["POST"]),
+            Route("/terminal/sessions", terminal_session, methods=["POST"]),
+            Route("/terminal/sessions/{id}/stream", terminal_session, methods=["GET"]),
+            Route("/terminal/sessions/{id}/input", terminal_session, methods=["POST"]),
+            Route("/terminal/sessions/{id}/resize", terminal_session, methods=["POST"]),
+            Route("/terminal/sessions/{id}", terminal_session, methods=["DELETE"]),
             Route("/machine/check", machine_check, methods=["GET"]),
             Route("/machine/harnesses", machine_harnesses, methods=["GET", "POST"]),
             Route("/machine/harnesses/test", machine_harness_test, methods=["POST"]),
@@ -2762,6 +2777,7 @@ def create_multi_app(
             for check in checks:
                 check.cancel()
             await asyncio.gather(*checks, return_exceptions=True)
+            await close_sessions(app.state.terminal_sessions)
             await run_in_threadpool(app.state.workflow_advice.close)
             await run_in_threadpool(app.state.task_advice.close)
             await run_in_threadpool(app.state.intent.close)
@@ -2774,6 +2790,8 @@ def create_multi_app(
     app.state.task_advice = AdviceManager(task_parameters=True)
     app.state.intent = IntentManager()
     app.state.learn = LearnManager()
+    app.state.terminal_sessions = {}
+    app.state.terminal_session_lock = asyncio.Lock()
     app.state.terminal_enabled = bool(allowed_hosts) and set(allowed_hosts) <= web_server.LOOPBACK
     app.state.library = machine.GlobalState()
     app.state.home = home_dir

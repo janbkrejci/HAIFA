@@ -54,6 +54,7 @@ def test_get_and_echo(tmp_path: Path) -> None:
             "enabled": True,
             "cwd": str(Path.home()),
             "shell": terminal._shell(),
+            "pty": sys.platform != "win32",
         }
         events = _events(client, "echo terminal-output")
     assert "terminal-output" in "".join(e["text"] for e in events if e["type"] == "out")
