@@ -1,7 +1,7 @@
 ---
 id: HAIFA-LEARN-T07
 title: "Lekce: In a factory run, do not demand the full `just check` or `just e2e` even when the…"
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [HAIFA-S10-T03, HAIFA-S10-T04]
@@ -31,3 +31,4 @@ Výtky z 2 běhů, ze kterých lekce vznikla:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-25 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/164 · náklady $0.00
