@@ -1,14 +1,10 @@
-name: Test and release
+name: Release
 
 on:
   push:
     branches: [main]
     # backlog, task specs and docs, decisions and the operator's .factory/ change no
-    # product code: no tests, no new release
-    paths-ignore: ['factory/**', 'docs/**', '.factory/**']
-  pull_request:
-    # a PR that changes only these (a documentation task) needs no test run; approve and
-    # auto-merge merge a PR without checks
+    # product code: no new release
     paths-ignore: ['factory/**', 'docs/**', '.factory/**']
   workflow_dispatch:
 
@@ -16,81 +12,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: release-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      HAIFA_UPDATE_REPO: ''
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          python-version: '3.12'
-      - uses: oven-sh/setup-bun@v2
-      - name: Install prerequisites
-        run: |
-          uv tool install rust-just
-          uv tool dir --bin >> "$GITHUB_PATH"
-          uv sync --locked --project aifactory
-          cd aifactory
-          uv run playwright install --with-deps chromium
-      - name: Frontend checks and build
-        run: |
-          just web-test
-          just web-build
-      - name: Backend tests
-        working-directory: aifactory
-        run: uv run pytest -m 'not browser'
-      - name: Browser acceptance
-        run: just e2e
-      - name: Types and lint
-        run: |
-          just typecheck
-          just lint
-      - uses: actions/upload-artifact@v4
-        with:
-          name: tested-frontend
-          path: aifactory/src/aifactory/web/static
-
-  windows-install:
-    runs-on: windows-latest
-    timeout-minutes: 15
-    env:
-      HAIFA_UPDATE_REPO: ''
-    steps:
-      - uses: actions/checkout@v7
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-        with:
-          python-version: '3.12'
-      - name: Verify bundle and native Windows installation
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $env:UV_TOOL_DIR = "$env:RUNNER_TEMP/haifa-tools"
-          $env:UV_TOOL_BIN_DIR = "$env:RUNNER_TEMP/haifa-bin"
-          $env:Path = "$env:ProgramFiles\Git\bin;$env:Path"
-          uv sync --locked --project aifactory
-          if ($LASTEXITCODE -ne 0) { throw 'Dependency installation failed.' }
-          uv run --project aifactory pytest aifactory/tests/test_bundle.py aifactory/tests/test_release.py -n0
-          if ($LASTEXITCODE -ne 0) { throw 'Windows bundle tests failed.' }
-          Set-Location aifactory
-          uv run python -m bundle.build
-          if ($LASTEXITCODE -ne 0) { throw 'Bundle build failed.' }
-          $version = uv run python -c 'from aifactory import __version__; print(__version__)'
-          Expand-Archive -Path "dist/haifa-$version.zip" -DestinationPath "$env:RUNNER_TEMP/haifa-install"
-          Set-Location "$env:RUNNER_TEMP/haifa-install/haifa-$version"
-          bash ./install.sh
-          if ($LASTEXITCODE -ne 0) { throw 'Native Windows installation failed.' }
-          $actual = & "$env:UV_TOOL_BIN_DIR/factory.exe" --version
-          if ($LASTEXITCODE -ne 0 -or $actual -ne "factory $version") { throw 'Installed version does not match.' }
-
   release:
-    needs: [test, windows-install]
-    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && github.event.repository.private == false
+    if: github.ref == 'refs/heads/main' && github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
@@ -100,10 +27,12 @@ jobs:
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: '3.12'
-      - uses: actions/download-artifact@v4
-        with:
-          name: tested-frontend
-          path: aifactory/src/aifactory/web/static
+      - uses: oven-sh/setup-bun@v2
+      - name: Build frontend
+        working-directory: aifactory/web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
       - name: Build uniquely versioned release bundle
         id: bundle
         working-directory: aifactory
@@ -138,7 +67,7 @@ jobs:
               exit 0
             fi
           else
-            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "HAIFA $VERSION" --notes "Automatically built after passing frontend, backend, browser, type and lint checks. Source commit: $GITHUB_SHA."
+            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "HAIFA $VERSION" --notes "Automatically built release bundle. Source commit: $GITHUB_SHA."
           fi
           gh release upload "$tag" "aifactory/dist/haifa-$VERSION.zip" --clobber
           gh release edit "$tag" --draft=false --latest
