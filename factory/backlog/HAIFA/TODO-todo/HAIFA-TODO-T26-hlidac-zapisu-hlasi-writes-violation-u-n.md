@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T26
 title: Hlídač zápisů hlásí writes_violation u nového souboru ve writes pod .factory/
 status: done
+archived: true
 depends_on: []
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-LEARN-T07
 title: "Lekce: In a factory run, do not demand the full `just check` or `just e2e` even when the…"
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HAIFA-S10-T03, HAIFA-S10-T04]
