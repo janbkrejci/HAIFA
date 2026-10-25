@@ -1,7 +1,7 @@
 ---
 id: HAIFA-LEARN-T05
 title: "Lekce: Run every test file the change itself edits, including browser tests under `tests/…"
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T10, HAIFA-S10-T03, HAIFA-S10-T04]
@@ -32,3 +32,4 @@ Výtky z 3 běhů, ze kterých lekce vznikla:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-25 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/161 · náklady $0.00
