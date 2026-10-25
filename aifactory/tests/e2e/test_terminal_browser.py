@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import shutil
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 
@@ -16,7 +18,10 @@ pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
 
 
 @pytest.fixture
-def terminal_page(tmp_path: Path) -> Iterator[Page]:
+def terminal_page(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Iterator[Page]:
+    if sys.platform != "win32":
+        # Avoid user shell plugins and startup services in this isolated browser test.
+        monkeypatch.setenv("SHELL", "/bin/sh")
     repo = make_repo(tmp_path / "repo")
     with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
@@ -37,22 +42,67 @@ def test_terminal_commands_browser(terminal_page: Page, tmp_path: Path) -> None:
         page.keyboard.press(key)
     overlay = page.get_by_role("dialog", name="Terminál", exact=True)
     expect(overlay).to_be_visible()
-    command = overlay.get_by_role("textbox", name="Příkaz", exact=True)
-    expect(command).to_be_focused()
+    terminal = overlay.locator(".xterm-helper-textarea")
+    expect(terminal).to_be_focused()
+    screen = overlay.locator(".xterm-rows")
 
-    command.fill("echo haifa-terminal")
-    command.press("Enter")
-    # Check stdout alone: the command transcript also contains the sentinel.
-    expect(overlay.get_by_role("log").locator(".stdout")).to_have_text("haifa-terminal")
-    expect(command).not_to_have_attribute("readonly", "")
+    # The marker is absent from the command's echo, so only shell output satisfies this.
+    page.keyboard.insert_text(
+        "echo haifa-^terminal" if sys.platform == "win32" else 'echo haifa-"terminal"'
+    )
+    page.keyboard.press("Enter")
+    expect(screen).to_contain_text("haifa-terminal")
 
     target = (tmp_path / "terminal cwd").resolve()
     target.mkdir()
-    command.fill(f'cd "{target}"')
-    command.press("Enter")
-    expect(overlay.locator('label[for="terminal-command"]')).to_have_text(f"{target} $")
+    page.keyboard.insert_text(f'cd "{target}"')
+    page.keyboard.press("Enter")
+    page.keyboard.insert_text(
+        "echo haifa-cwd-%CD%" if sys.platform == "win32" else 'echo haifa-cwd-"$PWD"'
+    )
+    page.keyboard.press("Enter")
+    expect(screen).to_contain_text(f"haifa-cwd-{target}")
 
     page.keyboard.press("Escape")
+    expect(overlay).to_be_visible()
+    for key in ("Control", "Shift", "Control", "Shift"):
+        page.keyboard.press(key)
+    expect(overlay).to_have_count(0)
+
+
+def test_terminal_vim_browser(terminal_page: Page, tmp_path: Path) -> None:
+    if not shutil.which("vim"):
+        pytest.skip("vim is not installed on this machine")
+    page = terminal_page
+    for key in ("Control", "Shift", "Control", "Shift"):
+        page.keyboard.press(key)
+    overlay = page.get_by_role("dialog", name="Terminál", exact=True)
+    expect(overlay.locator(".xterm-helper-textarea")).to_be_focused()
+    target = tmp_path / "vim-screen.txt"
+    target.write_text("haifa-vim-screen\n", encoding="utf-8")
+    separator = "&" if sys.platform == "win32" else ";"
+    after_vim = "echo haifa-^after-vim" if sys.platform == "win32" else 'echo haifa-"after-vim"'
+    # Let the shell emit the marker after vim exits. Typing a new command immediately
+    # after :q can race with vim restoring terminal modes and flushing pending input.
+    page.keyboard.insert_text(f'vim -Nu NONE -n "{target}" {separator} {after_vim}')
+    page.keyboard.press("Enter")
+    screen = overlay.locator(".xterm-rows")
+    expect(screen).to_contain_text("haifa-vim-screen")
+    viewport = overlay.locator(".terminal-viewport").bounding_box()
+    assert viewport is not None
+    page_size = page.viewport_size
+    assert page_size is not None
+    assert viewport["height"] > page_size["height"] * 0.7
+    page.keyboard.press("i")
+    expect(screen).to_contain_text("INSERT")
+    page.keyboard.press("Escape")
+    expect(overlay).to_be_visible()
+    page.keyboard.insert_text(":q")
+    page.keyboard.press("Enter")
+    # The marker is not present literally in the command echo; the shell must run it.
+    expect(screen).to_contain_text("haifa-after-vim")
+    for key in ("Control", "Shift", "Control", "Shift"):
+        page.keyboard.press(key)
     expect(overlay).to_have_count(0)
 
 
