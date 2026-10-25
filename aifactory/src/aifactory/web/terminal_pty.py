@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets
+import socket
 import struct
 import sys
 from collections.abc import AsyncIterator
@@ -18,9 +19,9 @@ from starlette.types import Receive, Scope, Send
 
 from aifactory import oscompat
 from aifactory.skill.envelope import envelope_fail, envelope_ok
-from aifactory.web.terminal import _enabled, _shell
+from aifactory.web.terminal import _enabled, _pty_supported, _shell
 
-SUPPORTED = os.name == "posix"
+SUPPORTED = _pty_supported()
 # setsid is performed by the subprocess launcher before this code claims fd 0.
 _BOOTSTRAP = (
     "import fcntl, os, sys, termios; "
@@ -75,7 +76,8 @@ class Session:
                 # Job control gives a foreground program its own process group.
                 groups = {self.process.pid}
                 try:
-                    groups.add(os.tcgetpgrp(self.fd))
+                    if sys.platform != "win32":
+                        groups.add(os.tcgetpgrp(self.fd))
                 except OSError:
                     pass
                 for group in groups:
@@ -133,6 +135,83 @@ class Session:
                         ready.cancel()
 
 
+class WindowsSession(Session):
+    """ConPTY transports Unicode; HTTP input and output remain UTF-8 bytes."""
+
+    process: Any
+
+    def __init__(self, process: Any) -> None:
+        self.process = process
+        self.attached = False
+        self.closed = False
+        self.output = asyncio.Queue()
+        self.write_lock = asyncio.Lock()
+        self.close_lock = asyncio.Lock()
+        self.slots = asyncio.Semaphore(16)
+        self.reader = asyncio.create_task(self.read_output())
+
+    async def read_output(self) -> None:
+        try:
+            while True:
+                await self.slots.acquire()
+                data = await asyncio.to_thread(self.process.read, 65536)
+                if data:
+                    self.output.put_nowait(data.encode("utf-8"))
+                else:
+                    self.slots.release()
+        except (EOFError, OSError):
+            pass
+
+    async def watch(self, sessions: dict[str, Session], token: str) -> None:
+        await asyncio.to_thread(self.process.wait)
+        if not self.closed:
+            # Drain final output without letting a detached/full stream prevent reaping.
+            await asyncio.wait([self.reader], timeout=1)
+        await self.close(sessions, token)
+
+    async def close(self, sessions: dict[str, Session], token: str) -> None:
+        with anyio.CancelScope(shield=True):
+            async with self.close_lock:
+                if self.closed:
+                    return
+                self.closed = True
+                try:
+                    try:
+                        # Kill descendants before terminating their parent loses the tree.
+                        await asyncio.to_thread(oscompat.kill_group, self.process.pid, force=True)
+                    except ProcessLookupError:
+                        pass
+                    await asyncio.to_thread(self.process.terminate, force=True)
+                finally:
+                    # Unblock reads even if ConPTY does not deliver EOF after process exit.
+                    try:
+                        self.process.fileobj.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                    self.reader.cancel()
+                    await asyncio.gather(self.reader, return_exceptions=True)
+                    await asyncio.to_thread(self.process.close, force=True)
+                    # isalive() can mark pywinpty closed before close() frees its sockets.
+                    self.process.fileobj.close()
+                    self.process._server.close()
+                    self.output.put_nowait(None)
+                    sessions.pop(token, None)
+
+    async def stream(self) -> AsyncIterator[bytes]:
+        while (data := await self.output.get()) is not None:
+            self.slots.release()
+            yield data
+
+    async def write(self, data: bytes) -> None:
+        async with self.write_lock:
+            if self.closed:
+                raise OSError("Session has ended.")
+            try:
+                await asyncio.to_thread(self.process.write, data.decode("utf-8"))
+            except EOFError as error:
+                raise OSError("Session has ended.") from error
+
+
 class _Response(StreamingResponse):
     def __init__(self, session: Session, sessions: dict[str, Session], token: str) -> None:
         self.session, self.sessions, self.token = session, sessions, token
@@ -162,7 +241,9 @@ async def _dispatch(request: Request) -> Response:
     if not _enabled(request):
         return _error("terminal_disabled", "Terminal requires a loopback server and client.", 403)
     if not SUPPORTED:
-        return _error("terminal_pty_unsupported", "PTY sessions require POSIX.", 501)
+        return _error(
+            "terminal_pty_unsupported", "PTY sessions require POSIX or pywinpty on Windows.", 501
+        )
     sessions: dict[str, Session] = request.app.state.terminal_sessions
     token = str(request.path_params.get("id", ""))
     session = sessions.get(token) if token else None
@@ -191,11 +272,15 @@ async def _dispatch(request: Request) -> Response:
             assert session is not None
             await session.write(data.encode("utf-8"))
         else:
-            import fcntl
-            import termios
-
             size = _size(body)
             if session is not None:
+                if sys.platform == "win32":
+                    assert isinstance(session, WindowsSession)
+                    await asyncio.to_thread(session.process.setwinsize, body["rows"], body["cols"])
+                    return JSONResponse(envelope_ok({}))
+                import fcntl
+                import termios
+
                 # The kernel sends SIGWINCH to the foreground process group.
                 fcntl.ioctl(session.fd, termios.TIOCSWINSZ, size)
             else:
@@ -207,6 +292,27 @@ async def _dispatch(request: Request) -> Response:
                     raise ValueError("cwd does not exist or is not a directory.")
                 if len(sessions) >= 4:
                     return _error("terminal_busy", "At most four sessions may run.", 429)
+                if sys.platform == "win32":
+                    import winpty  # type: ignore[import-not-found,import-untyped,unused-ignore]
+
+                    # Shield startup so cancellation cannot orphan the spawned shell.
+                    with anyio.CancelScope(shield=True):
+                        process_windows = await asyncio.to_thread(
+                            winpty.PtyProcess.spawn,
+                            [_shell()],
+                            cwd=str(directory),
+                            env={**os.environ, "TERM": "xterm-256color", "COLORTERM": "truecolor"},
+                            dimensions=(body["rows"], body["cols"]),
+                            backend="0",  # ConPTY; avoid pywinpty's falsey-zero env fallback.
+                        )
+                        token = secrets.token_urlsafe()
+                        session = WindowsSession(process_windows)
+                        sessions[token] = session
+                        session.watcher = asyncio.create_task(session.watch(sessions, token))
+                    return JSONResponse(envelope_ok({"id": token}))
+                import fcntl
+                import termios
+
                 master, slave = os.openpty()
                 token = secrets.token_urlsafe()
                 try:

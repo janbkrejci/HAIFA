@@ -26,7 +26,9 @@ TERMINAL_TIMEOUT_S = 600.0
 
 
 def _shell() -> str:
-    return "cmd" if sys.platform == "win32" else os.environ.get("SHELL") or "/bin/sh"
+    if sys.platform == "win32":
+        return os.environ.get("COMSPEC") or "cmd.exe"
+    return os.environ.get("SHELL") or "/bin/sh"
 
 
 def _enabled(request: Request) -> bool:
@@ -37,6 +39,16 @@ def _enabled(request: Request) -> bool:
     )
 
 
+def _pty_supported() -> bool:
+    if sys.platform == "win32":
+        try:
+            import winpty  # type: ignore[import-not-found,import-untyped,unused-ignore]  # noqa: F401
+        except ImportError:
+            return False
+        return True
+    return os.name == "posix"
+
+
 async def terminal_get(request: Request) -> Response:
     return JSONResponse(
         envelope_ok(
@@ -44,7 +56,7 @@ async def terminal_get(request: Request) -> Response:
                 "enabled": _enabled(request),
                 "cwd": str(Path.home()),
                 "shell": _shell(),
-                "pty": os.name == "posix",
+                "pty": _pty_supported(),
             }
         )
     )
