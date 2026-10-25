@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T81
 title: Overlay tajného terminálu jako skutečný terminál (xterm.js nad PTY sezením)
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T79]
 writes: [aifactory/web/package.json, aifactory/web/bun.lock, aifactory/web/src/lib/terminal.ts, aifactory/web/src/lib/terminal.test.ts, aifactory/web/src/lib/secretKeys.ts, aifactory/web/src/lib/secretKeys.test.ts, aifactory/web/src/components/terminal/, aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/src/aifactory/web/static/, THIRD_PARTY_NOTICES, aifactory/THIRD_PARTY_NOTICES, aifactory/tests/e2e/test_terminal_browser.py]
