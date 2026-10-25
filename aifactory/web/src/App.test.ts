@@ -79,6 +79,32 @@ afterEach(() => {
 })
 
 describe('App', () => {
+  it('toggles the terminal from a focused text field and removes the listener', async () => {
+    stubApi({ handler: url => url === '/api/terminal' ? envelope({ enabled: true, cwd: '/home/me', shell: 'sh' }) : undefined })
+    const wrapper = mount(App, { attachTo: document.body })
+    await flushPromises()
+    const field = document.createElement('input')
+    document.body.append(field)
+    field.focus()
+    const sequence = async () => {
+      for (const key of ['Control', 'Shift', 'Control', 'Shift']) {
+        document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
+      }
+      await flushPromises()
+    }
+    expect(wrapper.find('[data-test="terminal-overlay"]').exists()).toBe(false)
+    await sequence()
+    expect(wrapper.find('[data-test="terminal-overlay"]').exists()).toBe(true)
+    await sequence()
+    expect(wrapper.find('[data-test="terminal-overlay"]').exists()).toBe(false)
+    expect(document.activeElement).toBe(field)
+    const remove = vi.spyOn(window, 'removeEventListener')
+    wrapper.unmount()
+    expect(remove).toHaveBeenCalledWith('keydown', expect.any(Function), true)
+    remove.mockRestore()
+    field.remove()
+  })
+
   it('returns home through the hash router and preserves readiness across navigation', async () => {
     const fetchMock = stubApi()
     go('#/r/haifa/backlog')
