@@ -261,6 +261,26 @@ def test_red_checks_are_repaired_on_the_same_branch(repo: Path, script: Script, 
 
 
 @MODES
+def test_billing_block_keeps_the_pr_open_without_starting_a_repair(
+    repo: Path, script: Script, auto: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = first_run(repo, script)
+    provider = CiProvider(repo, [RED])
+    message = (
+        "The job was not started because recent account payments have failed or your "
+        "spending limit needs to be increased. Please check Billing & plans."
+    )
+    monkeypatch.setattr(
+        provider, "check_logs", lambda pr, failing: {"unit tests": f"check annotation: {message}"}
+    )
+    merged, code, fixes = approve(repo, first, provider, auto)
+    assert (merged, code, fixes) == (False, "checks_unavailable", [])
+    row = pr(repo)
+    assert row.state == "open" and message in (row.auto_merge_error or "")
+    assert [r.workflow for r in runs(repo)] == ["plan-review-commit"]
+
+
+@MODES
 def test_checks_red_after_every_repair_keep_the_pr_open(
     repo: Path, script: Script, auto: bool
 ) -> None:

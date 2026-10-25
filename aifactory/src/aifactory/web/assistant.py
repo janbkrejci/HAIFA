@@ -20,9 +20,9 @@ DBs. claude runs with ``--permission-mode dontAsk`` and allow rules for that com
 repository's ``.env``) and pi (no command limit at all) cannot enforce that limit, so the guide
 runs on claude only: a codex or pi selection falls back to claude, and without an enabled
 claude (or for a thread created on codex or pi) the guide refuses with ``harness_unavailable``.
-Whatever the harness, every
-registered repository's main checkout is guarded like a task run's main checkout
-(``run.guard.TaskWriteGuard`` with ``writes: []``): a write is undone and the answer fails.
+Threads created in a repository are restricted to that repository; threads created on the
+dashboard can read all registered repositories. Checkout changes during an answer are
+reported without rolling them back: they may belong to a concurrent editor or factory run.
 
 The first message of a session carries the context: ``factory --skill``, the guide chapters
 and the registered repositories. Every message may carry the screen the user is looking at
@@ -135,6 +135,7 @@ class Thread:
     created_at: str
     updated_at: str
     title: str = ""
+    repo_id: str | None = None
     context_sent: bool = False
     messages: list[dict[str, Any]] = field(default_factory=list)
     # in memory: the events of the current answer, for the stream
@@ -146,6 +147,7 @@ class Thread:
         return {
             "id": self.id,
             "title": self.title,
+            "repo_id": self.repo_id,
             "harness": self.harness,
             "model": self.model,
             "thinking": self.thinking,
@@ -160,6 +162,7 @@ class Thread:
         return {
             "id": self.id,
             "title": self.title,
+            "repo_id": self.repo_id,
             "harness": self.harness,
             "model": self.model,
             "thinking": self.thinking,
@@ -463,21 +466,22 @@ def _sh_quote(value: str) -> str:
     return "'" + value.replace("'", "'\"'\"'") + "'"
 
 
-def prepare_workdir(work: Path, home: Path) -> None:
+def prepare_workdir(work: Path, home: Path, repo_id: str | None = None) -> None:
     """An empty git repository with only the ``guide`` script (the guard needs a commit)."""
     import sys
 
     script = work / "guide"
-    if (work / ".git").is_dir() and script.is_file():
-        return
-    work.mkdir(parents=True, exist_ok=True)
-    script.write_text(
+    content = (
         "#!/bin/sh\n"
-        f"HAIFA_HOME={_sh_quote(str(home))} exec {_sh_quote(sys.executable)} "
-        '-m aifactory.web.assistant_gate "$@"\n',
-        encoding="utf-8",
-        newline="\n",
+        f"HAIFA_HOME={_sh_quote(str(home))} "
+        f"HAIFA_GUIDE_REPO={_sh_quote(repo_id or '')} exec {_sh_quote(sys.executable)} "
+        '-m aifactory.web.assistant_gate "$@"\n'
     )
+    if (work / ".git").is_dir() and script.is_file():
+        if script.read_text(encoding="utf-8") == content:
+            return
+    work.mkdir(parents=True, exist_ok=True)
+    script.write_text(content, encoding="utf-8", newline="\n")
     script.chmod(0o755)
     if not (work / ".git").is_dir():
         _git(work, "init", "-q")
@@ -509,7 +513,7 @@ def main_ignored(root: Path) -> tuple[str, ...]:
 
 
 class RepoGuard:
-    """Every registered repository's main checkout must be unchanged after an answer."""
+    """Observe checkout changes without overwriting concurrent work."""
 
     def __init__(self, repos: list[tuple[str, Path]], work: Path, turn: Path, run_id: str):
         from aifactory.run.guard import TaskWriteGuard
@@ -524,7 +528,6 @@ class RepoGuard:
                 defaults=SimpleNamespace(data_dir=".guide-data", protected_files=[])
             ),
         )
-        self.agent = SimpleNamespace(name=GUIDE_AGENT, writes=[])
         self.guards = [
             TaskWriteGuard(path, work, TaskScope(run_id, (), ()), main_ignored(path))
             for _, path in repos
@@ -536,15 +539,14 @@ class RepoGuard:
         self.before = [guard.snapshot(self.run) for guard in self.guards]
 
     def enforce(self) -> list[str]:
-        """What the agent wrote (already undone); empty when nothing."""
-        from aifactory.engine.permissions import PermissionBreach
+        """Changed checkouts; a snapshot cannot identify which process wrote them."""
+        from aifactory.run import backup
 
         problems: list[str] = []
         for guard, before in zip(self.guards, self.before, strict=True):
-            try:
-                guard.enforce(self.run, None, self.agent, before)
-            except PermissionBreach as breach:
-                problems.append(str(breach))
+            paths = backup.verify(before["main_backup"], guard.main_ignored)
+            if paths:
+                problems.append(f"{guard.main_root}: {', '.join(paths)}")
         return problems
 
 
@@ -598,6 +600,14 @@ class AssistantManager:
             except (OSError, ValueError, TypeError, KeyError):
                 continue
             if THREAD_ID.match(thread.id) and thread.id == path.parent.name:
+                if "repo_id" not in data:
+                    first = next((m for m in thread.messages if m.get("role") == "user"), {})
+                    thread.repo_id = first.get("screen", {}).get("repo")
+                    if thread.repo_id:
+                        # Old sessions may contain context from other repositories.
+                        thread.session_id = f"guide-{thread.id}-{uuid.uuid4().hex[:6]}"
+                        thread.context_sent = False
+                    self._save(thread)
                 self.threads[thread.id] = thread
 
     def _save(self, thread: Thread) -> None:
@@ -681,7 +691,8 @@ class AssistantManager:
         title = body.get("title") or ""
         if not isinstance(title, str) or len(title) > 200:
             raise AssistantError("usage_error", "title must be a string of at most 200 characters")
-        values = self._context_values(parse_screen(body.get("screen")))
+        screen = parse_screen(body.get("screen"))
+        values = self._context_values(screen)
         try:
             selection = harness_settings.context_binding(values)
         except ValueError as exc:
@@ -702,6 +713,7 @@ class AssistantManager:
             created_at=now,
             updated_at=now,
             title=title.strip(),
+            repo_id=screen.get("repo"),
         )
         with self.lock:
             self._load()
@@ -713,6 +725,11 @@ class AssistantManager:
         text, screen = parse_message(body)
         with self.lock:
             thread = self._thread(thread_id)
+            if thread.repo_id and screen.get("repo") not in (None, thread.repo_id):
+                raise AssistantError(
+                    "usage_error",
+                    f"Toto vlákno je omezené na repozitář {thread.repo_id}. Založ nové vlákno.",
+                )
             if self.closed:
                 raise AssistantError("busy", "the dashboard is stopping", 409)
             if thread.busy:
@@ -859,9 +876,13 @@ class AssistantManager:
         except ValueError as exc:
             raise AssistantError("harness_unavailable", str(exc), 409) from exc
         repos = [(rid, path) for rid, path in self.repos() if path.is_dir()]
+        if thread.repo_id:
+            repos = [(rid, path) for rid, path in repos if rid == thread.repo_id]
+            if not repos:
+                raise AssistantError("usage_error", f"unknown repository {thread.repo_id!r}")
         folder = self.root / thread.id
         work = folder / "work"
-        prepare_workdir(work, self.home)
+        prepare_workdir(work, self.home, thread.repo_id)
         turn = folder / "turns" / f"{sum(m['role'] == 'user' for m in thread.messages):03d}"
         turn.mkdir(parents=True, exist_ok=True)
         hidden = gate.secrets([path for _, path in repos], self.home)
@@ -928,9 +949,9 @@ class AssistantManager:
         problems = guard.enforce()
         if problems:
             raise AssistantError(
-                "writes_violation",
-                "Průvodce se pokusil zapsat do repozitáře, změny byly vráceny:\n"
-                + "\n".join(problems),
+                "repositories_changed",
+                "Během odpovědi se změnily repozitáře. Změny byly zachovány; "
+                "nelze určit, který proces je provedl. Zopakuj dotaz:\n" + "\n".join(problems),
             )
         if failure is not None:
             raise failure

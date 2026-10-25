@@ -128,7 +128,8 @@ def registered(home: Path | None = None) -> dict[str, Path]:
     from aifactory.web.registry import Registry
 
     state = Registry(home if home is not None else haifa_home()).snapshot()[0]
-    return {entry.id: Path(entry.path) for entry in state.repos}
+    scope = os.environ.get("HAIFA_GUIDE_REPO")
+    return {entry.id: Path(entry.path) for entry in state.repos if not scope or entry.id == scope}
 
 
 def _repo(repos: dict[str, Path], repo_id: str) -> Path:

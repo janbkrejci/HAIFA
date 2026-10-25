@@ -601,6 +601,44 @@ def test_check_logs_reads_the_failed_job_log(
     assert _pr_calls(log, "pr checks") == [["pr", "checks", "7", "--json", "name,bucket,link"]]
 
 
+@pytest.mark.parametrize("log_error", [False, True])
+def test_check_logs_reads_annotations_when_the_job_never_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, log_error: bool
+) -> None:
+    message = (
+        "The job was not started because recent account payments have failed or your "
+        "spending limit needs to be increased. Please check Billing & plans."
+    )
+    check_url = "https://api.github.com/repos/o/r/check-runs/44"
+    log = install_fake_gh(
+        tmp_path,
+        monkeypatch,
+        {
+            "pr checks": reply(
+                [
+                    {
+                        "name": "ci",
+                        "bucket": "fail",
+                        "link": "https://github.com/o/r/actions/runs/11/job/22",
+                    }
+                ]
+            ),
+            "run view": reply(exit=1, stderr="log not found") if log_error else reply(""),
+            "api repos/{owner}/{repo}/actions/jobs/22": reply({"check_run_url": check_url}),
+            f"api {check_url}/annotations": reply(
+                [
+                    {"annotation_level": "failure", "message": message},
+                    {"annotation_level": "notice", "message": "Runner image migration"},
+                ]
+            ),
+        },
+    )
+    logs = _provider(tmp_path, []).check_logs(PR, ("ci",))
+    assert f"check annotation: {message}" in logs["ci"]
+    assert "Runner image migration" not in logs["ci"]
+    assert ["api", f"{check_url}/annotations"] in log.argvs()
+
+
 def test_check_logs_without_red_checks_asks_nothing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

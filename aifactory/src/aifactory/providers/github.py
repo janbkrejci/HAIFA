@@ -385,9 +385,30 @@ class GitHubProvider(GitProvider):
             except ProviderError as exc:
                 detail = (getattr(exc, "stderr", "") or exc.message).strip().splitlines()
                 logs[name] = f"log unavailable: {detail[0] if detail else exc.code} ({link})"
-                continue
-            lines = out.splitlines()[-CHECK_LOG_LINES:]
-            logs[name] = "\n".join(lines) if lines else f"log empty ({link})"
+            else:
+                lines = out.splitlines()[-CHECK_LOG_LINES:]
+                logs[name] = "\n".join(lines) if lines else f"log empty ({link})"
+                if lines:
+                    continue
+            # Jobs rejected before starting (e.g. billing) have no step logs.
+            try:
+                job = self._read("api", f"repos/{{owner}}/{{repo}}/actions/jobs/{match.group(1)}")
+                check_url = job.get("check_run_url") if isinstance(job, dict) else None
+                if not check_url:
+                    continue
+                annotations = self._read("api", f"{check_url}/annotations")
+                if isinstance(annotations, list):
+                    messages = [
+                        f"check annotation: {item['message']}"
+                        for item in annotations
+                        if isinstance(item, dict)
+                        and item.get("annotation_level") == "failure"
+                        and item.get("message")
+                    ]
+                    if messages:
+                        logs[name] += "\n" + "\n".join(messages)
+            except ProviderError:
+                pass  # Keep the original diagnostic when annotations are unavailable.
         return logs
 
     def merge(
