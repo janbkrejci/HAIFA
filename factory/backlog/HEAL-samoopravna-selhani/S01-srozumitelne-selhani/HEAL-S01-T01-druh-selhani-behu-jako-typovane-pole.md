@@ -2,6 +2,7 @@
 id: HEAL-S01-T01
 title: Druh selhání běhu jako typované pole
 status: done
+archived: true
 depends_on: []
 ---
 

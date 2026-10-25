@@ -2,6 +2,7 @@
 id: GUIDE-S01-T04
 title: Nastavení projektu a stepu - reorganizace
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 ---

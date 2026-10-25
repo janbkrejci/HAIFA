@@ -2,6 +2,7 @@
 id: HAIFA-S01-T40
 title: "Položka backlogu, spec a dokumentace v detailu tasku nepotřebují záložky Zdroj"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T42, HAIFA-REFINEMENT-T45, HAIFA-S01-T04, HAIFA-REFINEMENT-T25]

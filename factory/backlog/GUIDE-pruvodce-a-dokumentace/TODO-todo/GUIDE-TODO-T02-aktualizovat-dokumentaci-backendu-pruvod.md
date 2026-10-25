@@ -2,6 +2,7 @@
 id: GUIDE-TODO-T02
 title: "Aktualizovat dokumentaci backendu průvodce: panel už existuje"
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [GUIDE-S02-T02]

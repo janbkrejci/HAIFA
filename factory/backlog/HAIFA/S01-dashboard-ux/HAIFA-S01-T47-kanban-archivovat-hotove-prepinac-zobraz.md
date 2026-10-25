@@ -2,6 +2,7 @@
 id: HAIFA-S01-T47
 title: "Kanban: archivovat hotové, přepínač Zobrazit archivované v Hotovo a Zrušeno"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S01-T46]
 writes: [aifactory/web/src/lib/backlog.ts, aifactory/web/src/lib/backlog.test.ts, aifactory/web/src/components/backlog/KanbanBoard.vue, aifactory/web/src/components/backlog/KanbanBoard.test.ts, aifactory/web/src/views/BacklogView.vue, aifactory/web/src/views/BacklogView.test.ts, aifactory/src/aifactory/guide/04-backlog.md, aifactory/src/aifactory/web/static/]

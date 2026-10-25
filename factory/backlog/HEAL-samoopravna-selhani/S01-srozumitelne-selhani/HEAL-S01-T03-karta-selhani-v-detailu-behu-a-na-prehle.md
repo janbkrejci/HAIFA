@@ -2,6 +2,7 @@
 id: HEAL-S01-T03
 title: Karta selhání v detailu běhu a na Přehledu
 status: done
+archived: true
 depends_on: [HEAL-S01-T01, HEAL-S01-T02]
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T44
 title: "Backlog: tlačítko Nový záměr úplně vlevo"
 status: done
+archived: true
 depends_on: []
 ---
 

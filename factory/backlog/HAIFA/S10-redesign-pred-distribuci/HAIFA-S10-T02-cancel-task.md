@@ -2,6 +2,7 @@
 id: HAIFA-S10-T02
 title: Cancel task
 status: done
+archived: true
 depends_on: []
 ---
 

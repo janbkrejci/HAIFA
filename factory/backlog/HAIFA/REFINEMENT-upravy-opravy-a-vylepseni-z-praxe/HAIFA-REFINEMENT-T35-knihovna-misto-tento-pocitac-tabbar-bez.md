@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T35
 title: "Knihovna místo „Tento počítač“, tabbar bez scrollbaru, dialogy knihovny a obnova knihovny při instalaci nové verze"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-REFINEMENT-T24, HAIFA-REFINEMENT-T27, HAIFA-REFINEMENT-T32, HAIFA-S10-T04, HAIFA-S10-T05, HAIFA-S05-T17, HAIFA-S04-T02, HAIFA-S04-T04, HAIFA-S01-T15]

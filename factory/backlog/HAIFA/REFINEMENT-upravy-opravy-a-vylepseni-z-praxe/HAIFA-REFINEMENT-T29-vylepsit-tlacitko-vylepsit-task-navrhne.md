@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T29
 title: "Vylepšit tlačítko Vylepšit task: navrhne i workflow"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T07, HAIFA-REFINEMENT-T18, HAIFA-S01-T38, HAIFA-S03-T21]

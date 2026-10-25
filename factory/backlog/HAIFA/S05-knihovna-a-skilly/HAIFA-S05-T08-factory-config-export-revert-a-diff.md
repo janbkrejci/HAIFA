@@ -2,6 +2,7 @@
 id: HAIFA-S05-T08
 title: "`factory config export`, `revert` a `diff`"
 status: done
+archived: true
 depends_on: [HAIFA-S05-T07, HAIFA-S05-T06]
 ---
 

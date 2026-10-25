@@ -2,6 +2,7 @@
 id: HAIFA-S07-T06
 title: uživatelská a administrčaní příručka
 status: done
+archived: true
 depends_on: []
 ---
 

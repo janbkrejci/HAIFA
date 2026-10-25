@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T24
 title: "Sloučit stránky Factory, Tento počítač a Knihovna a posoudit stránku Nastavení"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-REFINEMENT-T01, HAIFA-REFINEMENT-T03, HAIFA-REFINEMENT-T20, HAIFA-REFINEMENT-T10, HAIFA-S05-T13, HAIFA-S05-T14, HAIFA-S05-T16, HAIFA-S10-T05]

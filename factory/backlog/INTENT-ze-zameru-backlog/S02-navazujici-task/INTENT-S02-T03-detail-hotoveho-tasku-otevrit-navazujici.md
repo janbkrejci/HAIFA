@@ -2,6 +2,7 @@
 id: INTENT-S02-T03
 title: "Detail hotového tasku: Otevřít navazující task"
 status: done
+archived: true
 depends_on: [INTENT-S02-T01]
 ---
 

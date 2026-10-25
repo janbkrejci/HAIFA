@@ -2,6 +2,7 @@
 id: HAIFA-S01-T38
 title: návrh ostatních parametrů tasku
 status: done
+archived: true
 depends_on: []
 ---
 

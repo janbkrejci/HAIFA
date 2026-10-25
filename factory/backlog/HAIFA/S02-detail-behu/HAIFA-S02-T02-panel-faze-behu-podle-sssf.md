@@ -2,6 +2,7 @@
 id: HAIFA-S02-T02
 title: Panel fáze běhu podle sssf
 status: done
+archived: true
 depends_on: [HAIFA-S01-T05, HAIFA-S02-T01]
 ---
 

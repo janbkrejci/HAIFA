@@ -2,6 +2,7 @@
 id: HAIFA-S01-T35
 title: "Dashboard a běhy poznají, že se pod nimi změnil kód HAIFA"
 status: done
+archived: true
 depends_on: []
 ---
 

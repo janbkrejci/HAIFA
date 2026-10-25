@@ -2,6 +2,7 @@
 id: HAIFA-S01-T14
 title: factory update z knihovny s migracemi
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S05-T07, HAIFA-S01-T12]
 ---

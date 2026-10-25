@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T14
 title: Povolit docs/decisions.md v HAIFA-TODO-T08
 status: done
+archived: true
 assignee: human
 depends_on: []
 related: [HAIFA-TODO-T08]

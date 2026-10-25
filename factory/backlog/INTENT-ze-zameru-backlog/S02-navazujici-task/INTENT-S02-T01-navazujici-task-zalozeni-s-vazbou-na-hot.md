@@ -2,6 +2,7 @@
 id: INTENT-S02-T01
 title: "Navazující task: založení s vazbou na hotový task"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/, docs/decisions.md]
 ---

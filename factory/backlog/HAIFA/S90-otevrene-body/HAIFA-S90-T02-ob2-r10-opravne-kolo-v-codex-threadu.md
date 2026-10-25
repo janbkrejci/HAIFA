@@ -2,6 +2,7 @@
 id: HAIFA-S90-T02
 title: OB2 R10 opravné kolo v Codex threadu
 status: done
+archived: true
 workflow: manual-r10-validation
 depends_on: []
 writes: [aifactory/validation/results/]

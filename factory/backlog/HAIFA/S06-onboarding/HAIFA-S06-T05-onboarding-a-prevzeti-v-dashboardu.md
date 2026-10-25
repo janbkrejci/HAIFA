@@ -2,6 +2,7 @@
 id: HAIFA-S06-T05
 title: Onboarding a převzetí v dashboardu
 status: done
+archived: true
 depends_on: [HAIFA-S05-T14]
 ---
 

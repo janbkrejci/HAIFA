@@ -2,6 +2,7 @@
 id: HAIFA-S07-T04
 title: "Návod pro tým a postupy ve `factory --skill`"
 status: done
+archived: true
 depends_on: [HAIFA-S07-T02, HAIFA-S07-T03, HAIFA-S05-T10, HAIFA-S04-T02, HAIFA-S07-T05, HAIFA-REFINEMENT-T10, HAIFA-S10-T04]
 related: [HAIFA-S06-T02, HAIFA-S06-T04, HAIFA-S05-T09, HAIFA-S07-T06]
 ---

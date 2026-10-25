@@ -2,6 +2,7 @@
 id: GUIDE-S02-T01
 title: "Backend AI průvodce: read-only konverzace nad všemi repy"
 status: done
+archived: true
 depends_on: []
 related: [GUIDE-S02-T02, GUIDE-S02-T03, GUIDE-S01-T01]
 writes: [aifactory/src/aifactory/web/, aifactory/src/aifactory/harness/, aifactory/src/aifactory/engine/, aifactory/src/aifactory/seed/, aifactory/src/aifactory/library/, aifactory/tests/]

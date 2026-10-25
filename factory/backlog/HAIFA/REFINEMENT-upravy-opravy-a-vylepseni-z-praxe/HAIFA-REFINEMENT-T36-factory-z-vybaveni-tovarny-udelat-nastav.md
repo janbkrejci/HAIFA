@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T36
 title: "Factory: z „Vybavení továrny“ udělat „Nastavení agentů“, sjednotit a sbalovat sekce stránky"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-TODO-T09]
 related: [HAIFA-REFINEMENT-T27, HAIFA-REFINEMENT-T24, HAIFA-REFINEMENT-T35, HAIFA-REFINEMENT-T03]

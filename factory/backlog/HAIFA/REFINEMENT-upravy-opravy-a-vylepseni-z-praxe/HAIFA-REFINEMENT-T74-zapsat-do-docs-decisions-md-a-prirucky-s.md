@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T74
 title: "Zapsat do docs/decisions.md a příručky, s jakým harnessem běží pomocní AI agenti"
 status: done
+archived: true
 workflow: build-test
 depends_on: [HAIFA-REFINEMENT-T70, HAIFA-REFINEMENT-T71, HAIFA-REFINEMENT-T73]
 writes: [docs/decisions.md, aifactory/src/aifactory/guide/]

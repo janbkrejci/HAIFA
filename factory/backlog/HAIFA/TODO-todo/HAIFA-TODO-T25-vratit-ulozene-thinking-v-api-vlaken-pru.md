@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T25
 title: Vrátit uložené thinking v API vláken průvodce
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T73]
 writes: [aifactory/src/aifactory/web/assistant.py, aifactory/tests/web/test_web_assistant.py]

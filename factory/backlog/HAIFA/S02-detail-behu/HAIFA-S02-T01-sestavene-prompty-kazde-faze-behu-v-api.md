@@ -2,6 +2,7 @@
 id: HAIFA-S02-T01
 title: Sestavené prompty každé fáze běhu v API
 status: done
+archived: true
 depends_on: []
 ---
 

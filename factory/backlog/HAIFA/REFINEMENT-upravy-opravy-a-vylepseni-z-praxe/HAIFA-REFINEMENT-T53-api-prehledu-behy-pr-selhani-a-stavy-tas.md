@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T53
 title: "API přehledu: běhy, PR, selhání a stavy tasků po projektech"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/web/overview_fixture.py]

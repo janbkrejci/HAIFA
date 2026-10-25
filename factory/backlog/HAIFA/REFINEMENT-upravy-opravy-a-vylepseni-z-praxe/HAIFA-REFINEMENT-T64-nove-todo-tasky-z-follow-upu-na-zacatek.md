@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T64
 title: Nové TODO tasky z follow-upů na začátek fronty
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/run/store.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/run/followups.py, aifactory/tests/run/test_queue_prefs.py, aifactory/tests/run/test_followups_queue.py, aifactory/tests/run/test_followups.py, docs/decisions.md]

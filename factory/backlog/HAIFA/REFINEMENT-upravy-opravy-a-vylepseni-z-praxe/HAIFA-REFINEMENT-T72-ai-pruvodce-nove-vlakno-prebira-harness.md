@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T72
 title: "AI průvodce: nové vlákno přebírá harness, model a thinking z kontextu obrazovky"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-REFINEMENT-T69]
 writes: [aifactory/src/aifactory/web/assistant.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_assistant.py]

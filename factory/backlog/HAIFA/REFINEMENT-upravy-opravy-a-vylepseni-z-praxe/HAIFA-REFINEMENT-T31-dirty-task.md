@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T31
 title: Dirty task
 status: done
+archived: true
 depends_on: []
 ---
 

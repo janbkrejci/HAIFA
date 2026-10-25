@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T10
 title: Přegenerovat statický build dashboardu po T38
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T38]
 ---

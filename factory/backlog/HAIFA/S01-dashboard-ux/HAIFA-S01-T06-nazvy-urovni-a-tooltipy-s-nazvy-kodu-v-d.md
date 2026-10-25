@@ -2,6 +2,7 @@
 id: HAIFA-S01-T06
 title: Názvy úrovní a tooltipy s názvy kódů v dashboardu
 status: done
+archived: true
 depends_on: [HAIFA-S03-T02, HAIFA-S02-T03]
 ---
 

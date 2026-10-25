@@ -2,6 +2,7 @@
 id: HAIFA-S07-T01
 title: "Verze, meze závislostí, obsah balíčku a prostředí"
 status: done
+archived: true
 depends_on: [HAIFA-S01-T09]
 ---
 

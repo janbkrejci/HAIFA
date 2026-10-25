@@ -2,6 +2,7 @@
 id: HAIFA-S03-T20
 title: adaptivní testování
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 ---

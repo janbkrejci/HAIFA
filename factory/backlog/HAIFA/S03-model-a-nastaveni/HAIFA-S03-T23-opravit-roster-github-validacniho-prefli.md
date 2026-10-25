@@ -2,6 +2,7 @@
 id: HAIFA-S03-T23
 title: Opravit validační preflight a izolovat onboardingové testy
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S90-T02]

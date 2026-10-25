@@ -2,6 +2,7 @@
 id: HAIFA-S06-T02
 title: "Stav repa pro onboarding a převzetí onboardovaného repa (`factory adopt`)"
 status: done
+archived: true
 depends_on: [HAIFA-S05-T06, HAIFA-S05-T04, HAIFA-S01-T10]
 ---
 

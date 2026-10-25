@@ -2,6 +2,7 @@
 id: HAIFA-S01-T19
 title: Obrazovka Přehled a čísla v přepínači repozitářů
 status: done
+archived: true
 depends_on: [HAIFA-S01-T16, HAIFA-S01-T18, HAIFA-S01-T01, HAIFA-S01-T03]
 ---
 

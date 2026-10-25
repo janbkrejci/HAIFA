@@ -2,6 +2,7 @@
 id: HAIFA-S01-T09
 title: Běhy z dashboardu jako samostatné procesy factory task
 status: done
+archived: true
 depends_on: []
 ---
 

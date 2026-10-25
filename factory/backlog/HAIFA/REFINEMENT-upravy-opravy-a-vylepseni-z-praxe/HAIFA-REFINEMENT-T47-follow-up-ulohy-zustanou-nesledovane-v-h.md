@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T47
 title: Follow-up úlohy zůstanou nesledované v hlavním checkoutu a zablokují pull
 status: done
+archived: true
 depends_on: []
 ---
 

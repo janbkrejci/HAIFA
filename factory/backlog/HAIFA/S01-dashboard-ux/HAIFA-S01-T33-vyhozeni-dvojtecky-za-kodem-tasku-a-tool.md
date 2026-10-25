@@ -2,6 +2,7 @@
 id: HAIFA-S01-T33
 title: Vyhození dvojtečky za kódem tasku a tooltipu nad ním
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 ---

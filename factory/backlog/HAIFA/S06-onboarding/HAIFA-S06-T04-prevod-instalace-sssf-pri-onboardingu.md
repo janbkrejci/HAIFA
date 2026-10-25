@@ -2,6 +2,7 @@
 id: HAIFA-S06-T04
 title: Převod instalace sssf při onboardingu
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S06-T03, HAIFA-S06-T01, HAIFA-S05-T05]
 ---

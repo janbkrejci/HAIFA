@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T75
 title: "Tmavý motiv: žádná bílá textová pole, sjednocený styl formulářových polí"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/, aifactory/src/aifactory/web/static/, aifactory/tests/e2e/test_theme_forms_browser.py, aifactory/src/aifactory/seed/agents/tester/user.md]

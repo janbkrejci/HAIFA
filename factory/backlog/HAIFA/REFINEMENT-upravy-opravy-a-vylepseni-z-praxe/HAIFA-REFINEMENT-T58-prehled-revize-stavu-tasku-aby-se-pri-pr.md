@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T58
 title: "Přehled: revize stavů tasku, aby se při přechodech (běží → automerge, merge a další) na chvíli neukázal jako Ready"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/web/test_web_backlog.py]

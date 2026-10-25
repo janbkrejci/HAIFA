@@ -2,6 +2,7 @@
 id: HAIFA-S03-T07
 title: Samostatné kořeny backlogu pro projekty
 status: done
+archived: true
 depends_on: [HAIFA-S03-T04]
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-S03-T15
 title: "Schválení: opakovat merge, dokud GitHub počítá mergeabilitu"
 status: done
+archived: true
 depends_on: []
 ---
 

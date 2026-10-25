@@ -2,6 +2,7 @@
 id: HAIFA-S05-T17
 title: Výchozí knihovna HAIFA-LIBRARY při instalaci a změny knihovny jen přes PR
 status: done
+archived: true
 depends_on: []
 ---
 

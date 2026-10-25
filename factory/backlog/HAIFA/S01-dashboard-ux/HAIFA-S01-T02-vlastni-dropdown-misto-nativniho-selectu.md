@@ -2,6 +2,7 @@
 id: HAIFA-S01-T02
 title: Vlastní dropdown místo nativního selectu
 status: done
+archived: true
 depends_on: [HAIFA-S01-T01]
 ---
 

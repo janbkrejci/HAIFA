@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T45
 title: "Detail tasku: odstranit nadpis Zadání nad kartou se záložkami"
 status: done
+archived: true
 depends_on: []
 ---
 

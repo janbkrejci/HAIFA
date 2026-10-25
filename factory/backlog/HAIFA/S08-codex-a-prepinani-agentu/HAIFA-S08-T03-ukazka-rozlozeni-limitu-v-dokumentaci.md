@@ -2,6 +2,7 @@
 id: HAIFA-S08-T03
 title: Ukázka rozložení limitů v dokumentaci
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-S08-T01]
 writes: [factory/docs/]

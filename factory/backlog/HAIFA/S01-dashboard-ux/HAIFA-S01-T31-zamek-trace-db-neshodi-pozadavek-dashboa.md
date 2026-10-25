@@ -2,6 +2,7 @@
 id: HAIFA-S01-T31
 title: Zámek trace.db neshodí požadavek dashboardu
 status: done
+archived: true
 depends_on: []
 ---
 

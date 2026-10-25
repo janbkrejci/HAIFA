@@ -2,6 +2,7 @@
 id: HAIFA-S07-T03
 title: "`factory upgrade`"
 status: done
+archived: true
 depends_on: [HAIFA-S07-T01, HAIFA-S05-T06, HAIFA-S07-T05]
 ---
 

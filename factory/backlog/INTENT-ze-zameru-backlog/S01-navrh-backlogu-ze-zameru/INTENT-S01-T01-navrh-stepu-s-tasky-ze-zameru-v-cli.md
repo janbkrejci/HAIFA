@@ -2,6 +2,7 @@
 id: INTENT-S01-T01
 title: Návrh stepu s tasky ze záměru v CLI
 status: done
+archived: true
 depends_on: []
 related: [INTENT-S01-T02, INTENT-S01-T03, HAIFA-REFINEMENT-T29, HAIFA-REFINEMENT-T18]
 writes: [aifactory/src/aifactory/cli.py, aifactory/src/aifactory/backlog/, aifactory/src/aifactory/workflow/, aifactory/src/aifactory/seed/, aifactory/src/aifactory/library/, aifactory/src/aifactory/skill/, aifactory/tests/]

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T01
 title: Vlastní modální dialog a tooltip místo systémových
 status: done
+archived: true
 depends_on: []
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T04
 title: Ukládat merged_at podle času merge od providera
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T33]
 ---

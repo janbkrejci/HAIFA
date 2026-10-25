@@ -2,6 +2,7 @@
 id: HAIFA-S05-T18
 title: "Knihovna: položky všech připojených repo a ignore list pro repo"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/, justfile, docs/]
 ---

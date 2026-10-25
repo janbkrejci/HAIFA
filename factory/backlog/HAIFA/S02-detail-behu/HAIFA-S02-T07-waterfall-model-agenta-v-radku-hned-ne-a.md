@@ -2,6 +2,7 @@
 id: HAIFA-S02-T07
 title: "Waterfall: model agenta v řádku hned, ne až po refreshi"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-S02-T03]
 writes: [aifactory/web/src/lib/waterfall.ts, aifactory/web/src/lib/waterfall.test.ts, aifactory/web/src/lib/runs.ts, aifactory/web/src/lib/runs.test.ts, aifactory/web/src/views/RunsView.vue, aifactory/web/src/views/RunsView.test.ts, aifactory/web/src/components/runs/RunWaterfall.test.ts, aifactory/src/aifactory/web/runs.py, aifactory/tests/web/test_web_runs.py, aifactory/src/aifactory/web/static/]

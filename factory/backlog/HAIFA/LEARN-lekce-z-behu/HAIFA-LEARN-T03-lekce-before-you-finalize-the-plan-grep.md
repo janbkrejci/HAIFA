@@ -2,6 +2,7 @@
 id: HAIFA-LEARN-T03
 title: "Lekce: Before you finalize the plan, grep aifactory/tests for every changed module, class…"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S07-T04, HAIFA-REFINEMENT-T19, HAIFA-REFINEMENT-T22, HAIFA-REFINEMENT-T26, HAIFA-REFINEMENT-T23, HAIFA-REFINEMENT-T28, HAIFA-REFINEMENT-T35, HAIFA-REFINEMENT-T41, HAIFA-REFINEMENT-T36, HEAL-S02-T04, INTENT-S01-T03, HAIFA-S08-T04, HAIFA-S01-T43]

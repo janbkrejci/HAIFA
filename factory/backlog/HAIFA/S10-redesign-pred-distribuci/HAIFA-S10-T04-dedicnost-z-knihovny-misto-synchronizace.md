@@ -2,6 +2,7 @@
 id: HAIFA-S10-T04
 title: Dědičnost z knihovny místo synchronizace
 status: done
+archived: true
 depends_on: []
 ---
 

@@ -2,6 +2,7 @@
 id: HEAL-S02-T01
 title: "Zápis mimo writes: rozšířit writes a pokračovat"
 status: done
+archived: true
 depends_on: [HEAL-S01-T03]
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T34
 title: "Auto continue: pokračovat po zablokovaném tasku (přednostně blokátorem) a jen v rámci projektu"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S03-T16, HAIFA-S02-T06, HAIFA-TODO-T03]

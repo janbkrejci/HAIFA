@@ -2,6 +2,7 @@
 id: HEAL-S02-T02
 title: Builder bez práce ukončí běh jako hotový bez změn
 status: done
+archived: true
 depends_on: [HEAL-S01-T01]
 ---
 

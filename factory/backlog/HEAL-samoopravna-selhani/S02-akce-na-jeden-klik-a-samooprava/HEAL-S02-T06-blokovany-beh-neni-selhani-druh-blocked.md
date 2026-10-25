@@ -2,6 +2,7 @@
 id: HEAL-S02-T06
 title: "Blokovaný běh není selhání: druh blocked, Přehled a Běhy"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/, docs/decisions.md]
 ---

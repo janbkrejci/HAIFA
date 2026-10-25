@@ -2,6 +2,7 @@
 id: HAIFA-S04-T03
 title: "`factory init` navrhne testovací příkaz podle technologie"
 status: done
+archived: true
 depends_on: [HAIFA-S04-T01]
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T23
 title: Zpřesnit diagnostiku retry a pokrýt jeho souběžný životní cyklus
 status: done
+archived: true
 depends_on: []
 follows: HAIFA-TODO-T21
 writes: [aifactory/src/aifactory/run/store.py, aifactory/src/aifactory/run/members.py, aifactory/src/aifactory/run/retry.py, aifactory/src/aifactory/web/launcher.py, aifactory/src/aifactory/web/runs.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_launcher.py, aifactory/tests/web/test_web_runs.py, aifactory/tests/run/test_task_operation_store.py, aifactory/tests/run/test_task_retry.py, aifactory/tests/e2e/test_retry_browser.py]

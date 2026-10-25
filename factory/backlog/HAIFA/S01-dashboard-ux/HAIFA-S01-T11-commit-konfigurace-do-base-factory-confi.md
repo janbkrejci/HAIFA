@@ -2,6 +2,7 @@
 id: HAIFA-S01-T11
 title: "Commit konfigurace do base: factory config commit a pull"
 status: done
+archived: true
 depends_on: [HAIFA-S01-T10]
 ---
 

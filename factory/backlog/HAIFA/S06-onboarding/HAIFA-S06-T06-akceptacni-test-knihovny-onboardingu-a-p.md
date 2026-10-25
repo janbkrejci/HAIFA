@@ -2,6 +2,7 @@
 id: HAIFA-S06-T06
 title: "Akceptační test knihovny, onboardingu a převzetí"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S06-T05]
 ---

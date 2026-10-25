@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T16
 title: "přidání a odebrání repo - vylepšení, zjednodušení"
 status: done
+archived: true
 depends_on: []
 ---
 

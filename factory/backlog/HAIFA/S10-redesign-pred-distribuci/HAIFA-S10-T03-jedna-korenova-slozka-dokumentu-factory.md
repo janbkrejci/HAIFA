@@ -2,6 +2,7 @@
 id: HAIFA-S10-T03
 title: Jedna kořenová složka dokumentů factory
 status: done
+archived: true
 depends_on: []
 ---
 

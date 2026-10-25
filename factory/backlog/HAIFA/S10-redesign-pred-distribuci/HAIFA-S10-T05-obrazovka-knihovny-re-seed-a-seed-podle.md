@@ -2,6 +2,7 @@
 id: HAIFA-S10-T05
 title: "Obrazovka knihovny, re-seed a seed podle sssf"
 status: done
+archived: true
 depends_on: [HAIFA-S10-T04]
 ---
 

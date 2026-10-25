@@ -2,6 +2,7 @@
 id: HAIFA-S05-T09
 title: Kde se položka používá a operace ve více repech
 status: done
+archived: true
 depends_on: [HAIFA-S01-T14, HAIFA-S01-T13]
 ---
 

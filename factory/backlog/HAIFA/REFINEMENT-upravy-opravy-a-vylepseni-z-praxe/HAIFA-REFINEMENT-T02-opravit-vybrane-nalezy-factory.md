@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T02
 title: Opravit vybrané nálezy Factory
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 ---

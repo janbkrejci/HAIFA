@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T25
 title: Markdown browser a viewer pro task
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T21, HAIFA-REFINEMENT-T11, HAIFA-S01-T04, HAIFA-S10-T03]
 writes: [aifactory/]

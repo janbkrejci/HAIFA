@@ -2,6 +2,7 @@
 id: HAIFA-S05-T03
 title: "Knihovna v domově: založení ze semínka, výpis, detail a import"
 status: done
+archived: true
 depends_on: [HAIFA-S05-T01, HAIFA-S01-T09, HAIFA-S01-T11]
 ---
 

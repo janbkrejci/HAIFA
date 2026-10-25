@@ -2,6 +2,7 @@
 id: HAIFA-S03-T09
 title: "Souběžné běhy: úpravy backlogu přes factory během běhu"
 status: done
+archived: true
 depends_on: [HAIFA-S03-T08]
 ---
 

@@ -2,6 +2,7 @@
 id: LEARN-S01-T03
 title: Lekce v dashboardu a jejich účinek
 status: done
+archived: true
 depends_on: [LEARN-S01-T02]
 ---
 

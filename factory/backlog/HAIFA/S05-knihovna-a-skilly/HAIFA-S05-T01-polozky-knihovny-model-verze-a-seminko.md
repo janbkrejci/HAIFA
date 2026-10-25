@@ -2,6 +2,7 @@
 id: HAIFA-S05-T01
 title: "Položky knihovny: model, verze a semínko"
 status: done
+archived: true
 depends_on: []
 ---
 

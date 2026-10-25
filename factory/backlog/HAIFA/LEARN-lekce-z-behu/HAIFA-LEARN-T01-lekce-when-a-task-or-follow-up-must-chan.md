@@ -2,6 +2,7 @@
 id: HAIFA-LEARN-T01
 title: "Lekce: When a task or follow-up must change docs/decisions.md, aifactory/web/src/ or any…"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S03-T18, HAIFA-TODO-T01, HAIFA-TODO-T05, HAIFA-TODO-T07, HAIFA-TODO-T08]

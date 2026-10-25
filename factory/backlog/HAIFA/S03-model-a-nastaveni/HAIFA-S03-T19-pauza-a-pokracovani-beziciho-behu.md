@@ -2,6 +2,7 @@
 id: HAIFA-S03-T19
 title: Pauza a pokračování běžícího běhu
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/run/, aifactory/src/aifactory/workflow/, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/web/, aifactory/web/src/, aifactory/src/aifactory/skill/, aifactory/tests/]

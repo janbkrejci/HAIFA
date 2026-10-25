@@ -2,6 +2,7 @@
 id: HAIFA-S01-T25
 title: "Běhy: skrýt dokončené běhy"
 status: done
+archived: true
 depends_on: [HAIFA-S02-T03]
 ---
 

@@ -2,6 +2,7 @@
 id: GUIDE-S02-T05
 title: "Navazuje na GUIDE-S02-T03: skrýt surový blok haifa-action během streamování"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [GUIDE-S02-T03]
 writes: [aifactory/web/src/lib/assistant.ts, aifactory/web/src/lib/assistant.test.ts, aifactory/web/src/components/assistant/, aifactory/tests/e2e/test_assistant_browser.py, aifactory/src/aifactory/web/static/]

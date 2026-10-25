@@ -2,6 +2,7 @@
 id: GUIDE-S01-T03
 title: "Test, který hlídá soulad příručky s UI a CLI"
 status: done
+archived: true
 depends_on: [GUIDE-S01-T01]
 ---
 

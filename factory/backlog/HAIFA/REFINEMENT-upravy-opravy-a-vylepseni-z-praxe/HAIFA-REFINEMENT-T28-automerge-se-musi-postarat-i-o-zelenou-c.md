@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T28
 title: Automerge se musí postarat i o zelenou CI pipeline
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S03-T11, HAIFA-S02-T04, HAIFA-S03-T17, HAIFA-S03-T15, HAIFA-S02-T06, HAIFA-S09-T01]

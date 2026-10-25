@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T42
 title: sjednotit karty Zadání a Dokumenty na detailu tasku
 status: done
+archived: true
 depends_on: []
 ---
 

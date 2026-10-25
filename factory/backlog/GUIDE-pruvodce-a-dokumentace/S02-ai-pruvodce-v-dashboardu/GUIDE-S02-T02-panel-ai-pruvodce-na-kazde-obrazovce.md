@@ -2,6 +2,7 @@
 id: GUIDE-S02-T02
 title: Panel AI průvodce na každé obrazovce
 status: done
+archived: true
 depends_on: [GUIDE-S02-T01]
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T13
 title: Registr repozitářů v domově a API pro více repozitářů
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S01-T08, HAIFA-S01-T09, HAIFA-S06-T02]
 ---

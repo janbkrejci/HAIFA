@@ -2,6 +2,7 @@
 id: HAIFA-S03-T04
 title: "Zakládání a úprava projektu a stepu (CLI, API)"
 status: done
+archived: true
 depends_on: [HAIFA-S03-T02, HAIFA-S01-T06, HAIFA-S03-T03]
 ---
 

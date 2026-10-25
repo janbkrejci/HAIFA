@@ -2,6 +2,7 @@
 id: HAIFA-S07-T02
 title: "Kontrola stroje, knihovny a položek ve `factory check`"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S01-T10, HAIFA-S05-T06, HAIFA-S05-T04, HAIFA-S05-T05, HAIFA-S07-T01, HAIFA-S06-T02]
 ---

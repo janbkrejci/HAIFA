@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T52
 title: Po pr_failed task publish dokončí auto-merge a auto-continue
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/providers/git.py, aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/review/automerge.py, aifactory/src/aifactory/run/queue.py, aifactory/src/aifactory/web/runs.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/web/launcher.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/skill/skill.md, docs/decisions.md, aifactory/tests/providers/test_push_retry.py, aifactory/tests/run/test_task_publish.py, aifactory/tests/web/test_web_runs.py, aifactory/tests/web/test_web_launcher.py, aifactory/tests/web/thread_launcher.py]

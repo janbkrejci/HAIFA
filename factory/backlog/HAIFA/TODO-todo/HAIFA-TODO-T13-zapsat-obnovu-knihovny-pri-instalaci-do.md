@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T13
 title: Zapsat obnovu knihovny při instalaci do docs/decisions.md
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HAIFA-TODO-T08]

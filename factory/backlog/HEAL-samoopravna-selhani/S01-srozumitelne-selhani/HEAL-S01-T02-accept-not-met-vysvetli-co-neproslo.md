@@ -2,6 +2,7 @@
 id: HEAL-S01-T02
 title: "Accept not met vysvětlí, co neprošlo"
 status: done
+archived: true
 depends_on: [HEAL-S01-T01]
 ---
 

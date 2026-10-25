@@ -2,6 +2,7 @@
 id: HAIFA-S05-T16
 title: Opravit nálezy na stránce factory
 status: done
+archived: true
 depends_on: []
 ---
 

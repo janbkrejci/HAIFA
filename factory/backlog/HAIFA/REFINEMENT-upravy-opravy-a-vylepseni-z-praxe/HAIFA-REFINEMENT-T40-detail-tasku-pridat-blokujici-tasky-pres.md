@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T40
 title: "Detail tasku: přidat blokující tasky přes modální výběr s hledáním a opravit přetékání ve Writes"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T21, HAIFA-REFINEMENT-T11, HAIFA-REFINEMENT-T23]

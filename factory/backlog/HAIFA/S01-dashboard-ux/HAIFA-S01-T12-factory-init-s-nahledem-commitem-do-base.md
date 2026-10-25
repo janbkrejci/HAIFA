@@ -2,6 +2,7 @@
 id: HAIFA-S01-T12
 title: "factory init s náhledem, commitem do base a vazbami po agentech"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S01-T11, HAIFA-S04-T01]
 ---

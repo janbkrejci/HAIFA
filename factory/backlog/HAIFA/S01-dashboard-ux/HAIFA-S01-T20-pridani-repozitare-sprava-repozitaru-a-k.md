@@ -2,6 +2,7 @@
 id: HAIFA-S01-T20
 title: "Přidání repozitáře, správa repozitářů a kontrola factory v UI"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S01-T15, HAIFA-S01-T17, HAIFA-S01-T19, HAIFA-S06-T02, HAIFA-S01-T01, HAIFA-S01-T02, HAIFA-S01-T03]
 ---

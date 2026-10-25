@@ -2,6 +2,7 @@
 id: HAIFA-S90-T01
 title: OB1 R1 se třemi harnessy
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 ---

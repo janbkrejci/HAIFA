@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T73
 title: "Průvodce z topbaru vždy otevře nové vlákno s kontextem obrazovky, minulá jsou v historii"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-REFINEMENT-T72]
 writes: [aifactory/web/src/lib/assistant.ts, aifactory/web/src/lib/assistant.test.ts, aifactory/web/src/components/assistant/, aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/tests/e2e/test_assistant_browser.py, aifactory/src/aifactory/web/static/]

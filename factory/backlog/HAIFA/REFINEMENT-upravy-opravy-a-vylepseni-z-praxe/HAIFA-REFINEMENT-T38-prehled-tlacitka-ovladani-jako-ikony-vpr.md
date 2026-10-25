@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T38
 title: "Přehled: tlačítka ovládání jako ikony vpravo nahoře, aktivita dole, jednotné pozadí karet, cesta v tooltipu"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T30, HAIFA-REFINEMENT-T20, HAIFA-REFINEMENT-T37, HAIFA-REFINEMENT-T13]

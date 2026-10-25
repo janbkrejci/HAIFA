@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T54
 title: "Přehled: dlaždice repa po projektech (přepínač, výchozí zapnuto)"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T53]
 writes: [aifactory/web/src/components/overview/, aifactory/web/src/lib/overview.ts, aifactory/web/src/lib/overview.test.ts, aifactory/web/src/lib/api.ts, aifactory/web/src/views/OverviewView.vue, aifactory/web/src/views/OverviewView.test.ts, aifactory/web/src/test/overviewFixtures.ts, aifactory/src/aifactory/web/static/, aifactory/web/src/views/BacklogView.test.ts]

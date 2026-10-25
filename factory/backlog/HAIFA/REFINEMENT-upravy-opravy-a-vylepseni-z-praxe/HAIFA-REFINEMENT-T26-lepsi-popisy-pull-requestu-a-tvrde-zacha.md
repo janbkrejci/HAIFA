@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T26
 title: Lepší popisy pull requestů a tvrdé zacházení s nedodělky
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S10-T01, HAIFA-S03-T09, HAIFA-S03-T04, HAIFA-S03-T11]

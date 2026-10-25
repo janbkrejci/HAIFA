@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T09
 title: Přepsat browser test přesunu do knihovny na stránku Knihovna
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T36]
 ---

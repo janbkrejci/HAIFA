@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T12
 title: Povolit HAIFA-TODO-T07 zápis do docs/decisions.md a zrušit duplicitní HAIFA-TODO-T08
 status: done
+archived: true
 assignee: human
 workflow: build-review
 depends_on: []

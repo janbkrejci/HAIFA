@@ -2,6 +2,7 @@
 id: HAIFA-S05-T11
 title: API knihovny a kontroly stroje
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S01-T13, HAIFA-S07-T02, HAIFA-S05-T06, HAIFA-S05-T09, HAIFA-S05-T10]
 ---

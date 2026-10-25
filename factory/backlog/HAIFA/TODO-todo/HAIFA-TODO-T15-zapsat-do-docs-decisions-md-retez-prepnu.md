@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T15
 title: Zapsat do docs/decisions.md řetěz přepnutí harnessu projektu (quota_switch) a jeho přednost
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HAIFA-S08-T04]

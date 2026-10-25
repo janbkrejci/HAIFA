@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T33
 title: Přehled ukazuje v review PR sloučené mimo factory
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-REFINEMENT-T24, HAIFA-REFINEMENT-T20]

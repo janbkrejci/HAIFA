@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T05
 title: Opravit synchronizaci zruseni onboardingu v browser testu
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S90-T06]

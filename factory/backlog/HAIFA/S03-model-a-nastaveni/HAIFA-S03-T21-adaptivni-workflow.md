@@ -2,6 +2,7 @@
 id: HAIFA-S03-T21
 title: adaptivní workflow
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 ---

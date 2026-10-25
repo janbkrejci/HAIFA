@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T01
 title: "Refaktoring web UI: ergonomie, úklid a řízení výroby"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S03-T16, HAIFA-S08-T01, HAIFA-S08-T02, HAIFA-S01-T34, HAIFA-S06-T05, HAIFA-S05-T14, HAIFA-S05-T16, HAIFA-S01-T37, HAIFA-S01-T38]

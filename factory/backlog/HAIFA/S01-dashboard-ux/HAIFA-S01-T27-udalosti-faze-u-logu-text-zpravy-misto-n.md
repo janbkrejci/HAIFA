@@ -2,6 +2,7 @@
 id: HAIFA-S01-T27
 title: "Události fáze: u logu text zprávy místo názvu fáze"
 status: done
+archived: true
 depends_on: [HAIFA-S02-T02]
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T67
 title: "Přehled: chip Běží na prvním místě"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/lib/overview.ts, aifactory/web/src/lib/overview.test.ts, aifactory/web/src/views/OverviewView.test.ts, aifactory/web/src/components/overview/RepoControls.test.ts, aifactory/web/src/components/overview/RepoCard.test.ts, aifactory/src/aifactory/web/static/]

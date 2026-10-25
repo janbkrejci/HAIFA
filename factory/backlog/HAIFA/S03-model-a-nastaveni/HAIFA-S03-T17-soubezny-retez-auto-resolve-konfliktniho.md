@@ -2,6 +2,7 @@
 id: HAIFA-S03-T17
 title: "Souběžný řetěz: auto-resolve konfliktního PR"
 status: done
+archived: true
 depends_on: []
 ---
 

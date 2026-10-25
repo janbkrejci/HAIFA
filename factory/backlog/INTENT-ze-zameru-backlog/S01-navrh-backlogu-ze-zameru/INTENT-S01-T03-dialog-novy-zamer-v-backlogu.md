@@ -2,6 +2,7 @@
 id: INTENT-S01-T03
 title: Dialog Nový záměr v Backlogu
 status: done
+archived: true
 depends_on: [INTENT-S01-T01, INTENT-S01-T02]
 ---
 

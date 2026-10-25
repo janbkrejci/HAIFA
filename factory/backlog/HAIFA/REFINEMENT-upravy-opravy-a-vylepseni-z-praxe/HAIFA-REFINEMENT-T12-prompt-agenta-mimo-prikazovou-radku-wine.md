@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T12
 title: Prompt agenta mimo příkazovou řádku (WinError 206 u návrhu parametrů)
 status: done
+archived: true
 depends_on: []
 ---
 

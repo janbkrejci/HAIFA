@@ -2,6 +2,7 @@
 id: GUIDE-S02-T06
 title: Follow-up tasku v dashboardu a akce průvodce follow_up
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [GUIDE-S02-T03]
 ---

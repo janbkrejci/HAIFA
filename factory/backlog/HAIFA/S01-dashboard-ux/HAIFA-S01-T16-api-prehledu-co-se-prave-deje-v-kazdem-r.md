@@ -2,6 +2,7 @@
 id: HAIFA-S01-T16
 title: "API přehledu: co se právě děje v každém repu"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S01-T13]
 ---

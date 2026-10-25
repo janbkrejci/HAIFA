@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T55
 title: "Test: závislosti mezi projekty v jednom repu"
 status: done
+archived: true
 workflow: build-test
 depends_on: []
 writes: [aifactory/tests/backlog/test_cross_project_deps.py]

@@ -2,6 +2,7 @@
 id: HAIFA-S90-T04
 title: OB4 Azure DevOps proti skutečnému repu
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S09-T01, HAIFA-S09-T02]

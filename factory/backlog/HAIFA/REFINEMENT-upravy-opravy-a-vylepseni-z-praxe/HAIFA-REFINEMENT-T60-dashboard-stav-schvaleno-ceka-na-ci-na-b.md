@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T60
 title: "Dashboard: stav „Schváleno, čeká na CI“ na Backlogu, Přehledu a v Review"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T59]
 writes: [aifactory/web/src/, aifactory/src/aifactory/web/static/, aifactory/src/aifactory/guide/, aifactory/tests/test_guide_consistency.py, aifactory/tests/e2e/test_f3_browser.py, aifactory/tests/e2e/test_multi_repo_browser.py]

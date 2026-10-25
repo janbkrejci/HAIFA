@@ -2,6 +2,7 @@
 id: GUIDE-S01-T01
 title: Přepsat příručku na minimum a opravit nepřesnosti
 status: done
+archived: true
 depends_on: []
 ---
 

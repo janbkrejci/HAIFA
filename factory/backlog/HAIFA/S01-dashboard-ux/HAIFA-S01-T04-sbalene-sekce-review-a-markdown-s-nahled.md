@@ -2,6 +2,7 @@
 id: HAIFA-S01-T04
 title: Sbalené sekce Review a markdown s náhledem a zdrojem
 status: done
+archived: true
 depends_on: [HAIFA-S01-T03]
 ---
 

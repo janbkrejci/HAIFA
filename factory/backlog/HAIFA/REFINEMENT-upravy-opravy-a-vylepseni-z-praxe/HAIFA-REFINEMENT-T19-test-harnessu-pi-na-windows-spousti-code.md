@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T19
 title: Test harnessu pi na Windows spouští codex.exe a pi bez PI_PATH nevidí modely
 status: done
+archived: true
 depends_on: []
 ---
 

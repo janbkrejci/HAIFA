@@ -2,6 +2,7 @@
 id: HAIFA-S02-T04
 title: auto merge PR oprava
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 ---

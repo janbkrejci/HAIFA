@@ -2,6 +2,7 @@
 id: HAIFA-S06-T03
 title: "Jednorázový onboarding (`factory onboard`) a `.factory/` z doby před knihovnou"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S06-T02, HAIFA-S05-T08, HAIFA-S01-T12]
 ---

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T21
 title: "Instalace, aktualizace z knihovny a commit konfigurace z dashboardu"
 status: done
+archived: true
 workflow: finish-test-review
 depends_on: [HAIFA-S01-T20, HAIFA-S01-T01, HAIFA-S01-T02, HAIFA-S01-T03, HAIFA-S03-T05]
 auto_merge: false

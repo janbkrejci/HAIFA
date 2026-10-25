@@ -2,6 +2,7 @@
 id: GUIDE-S02-T03
 title: "Průvodce navrhne akci, člověk ji potvrdí"
 status: done
+archived: true
 depends_on: [GUIDE-S02-T02]
 ---
 

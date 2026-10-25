@@ -2,6 +2,7 @@
 id: HAIFA-S08-T04
 title: "Nastavení projektu: automatické přepnutí harnessu při vyčerpání kvóty (řetěz a návrat)"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HEAL-S02-T03, HAIFA-S08-T01, HAIFA-REFINEMENT-T03]

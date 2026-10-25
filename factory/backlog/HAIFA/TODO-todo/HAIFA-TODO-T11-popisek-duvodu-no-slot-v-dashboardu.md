@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T11
 title: Popisek důvodu no_slot v dashboardu
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T39]
 ---

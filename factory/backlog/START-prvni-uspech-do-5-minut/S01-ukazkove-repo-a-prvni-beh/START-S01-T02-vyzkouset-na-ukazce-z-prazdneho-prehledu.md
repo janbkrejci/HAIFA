@@ -2,6 +2,7 @@
 id: START-S01-T02
 title: Vyzkoušet na ukázce z prázdného Přehledu
 status: done
+archived: true
 depends_on: [START-S01-T01]
 ---
 

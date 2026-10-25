@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T39
 title: Task čekající na review neuvolňuje slot pro paralelní běhy
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S03-T16, HAIFA-REFINEMENT-T34, HAIFA-REFINEMENT-T30, HAIFA-S03-T14]

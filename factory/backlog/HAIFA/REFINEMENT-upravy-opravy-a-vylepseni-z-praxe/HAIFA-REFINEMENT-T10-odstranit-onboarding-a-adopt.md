@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T10
 title: "Odstranit onboarding (sssf, pre_library) a factory adopt"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 writes: [aifactory/, docs/sssf/]

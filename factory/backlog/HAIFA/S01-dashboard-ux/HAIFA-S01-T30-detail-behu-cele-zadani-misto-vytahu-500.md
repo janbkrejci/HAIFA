@@ -2,6 +2,7 @@
 id: HAIFA-S01-T30
 title: "Detail běhu: celé zadání místo výtahu 500 znaků"
 status: done
+archived: true
 depends_on: []
 ---
 

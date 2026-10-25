@@ -2,6 +2,7 @@
 id: HAIFA-S01-T29
 title: "Detail tasku a PR: po kliknutí hned nová položka, ne předchozí"
 status: done
+archived: true
 depends_on: [HAIFA-S03-T11]
 related: [HAIFA-S01-T28]
 ---

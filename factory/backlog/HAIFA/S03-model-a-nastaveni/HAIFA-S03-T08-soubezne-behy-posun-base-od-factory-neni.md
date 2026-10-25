@@ -2,6 +2,7 @@
 id: HAIFA-S03-T08
 title: "Souběžné běhy: posun base od factory není porušení hlídače"
 status: done
+archived: true
 depends_on: []
 ---
 

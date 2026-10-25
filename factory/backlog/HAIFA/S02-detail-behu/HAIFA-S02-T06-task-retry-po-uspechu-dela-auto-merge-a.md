@@ -2,6 +2,7 @@
 id: HAIFA-S02-T06
 title: task retry po úspěchu dělá auto-merge a auto-continue jako task run
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S02-T05]
 ---

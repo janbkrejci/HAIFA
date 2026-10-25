@@ -2,6 +2,7 @@
 id: HAIFA-S03-T01
 title: "Krok test podle `test` a `test_command`, ne vždy `just test`"
 status: done
+archived: true
 depends_on: []
 ---
 

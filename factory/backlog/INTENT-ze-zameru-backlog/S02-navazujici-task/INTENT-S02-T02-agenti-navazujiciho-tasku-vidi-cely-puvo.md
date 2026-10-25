@@ -2,6 +2,7 @@
 id: INTENT-S02-T02
 title: Agenti navazujícího tasku vidí celý původní task
 status: done
+archived: true
 depends_on: [INTENT-S02-T01]
 ---
 

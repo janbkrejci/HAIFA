@@ -2,6 +2,7 @@
 id: HAIFA-S05-T06
 title: Sdílení knihovny přes git remote
 status: done
+archived: true
 depends_on: [HAIFA-S05-T03]
 ---
 

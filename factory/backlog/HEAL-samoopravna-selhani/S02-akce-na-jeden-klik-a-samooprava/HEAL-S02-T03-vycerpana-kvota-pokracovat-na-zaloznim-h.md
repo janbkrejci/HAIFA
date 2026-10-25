@@ -2,6 +2,7 @@
 id: HEAL-S02-T03
 title: "Vyčerpaná kvóta: pokračovat na záložním harnessu"
 status: done
+archived: true
 depends_on: [HEAL-S01-T01]
 related: [HEAL-S02-T04, HAIFA-S02-T05]
 writes: [aifactory/, docs/decisions.md]

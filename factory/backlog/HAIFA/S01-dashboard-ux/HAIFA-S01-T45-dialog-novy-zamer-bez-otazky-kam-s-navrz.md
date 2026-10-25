@@ -2,6 +2,7 @@
 id: HAIFA-S01-T45
 title: "Dialog Nový záměr bez otázky Kam, s navrženým umístěním"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-S01-T44]
 writes: [aifactory/web/src/components/backlog/IntentDialog.vue, aifactory/web/src/components/backlog/IntentDialog.test.ts, aifactory/web/src/lib/intent.ts, aifactory/web/src/views/BacklogView.vue, aifactory/web/src/views/BacklogView.test.ts, aifactory/tests/e2e/test_intent_browser.py, aifactory/tests/intent_fixture.py, aifactory/src/aifactory/web/static/]

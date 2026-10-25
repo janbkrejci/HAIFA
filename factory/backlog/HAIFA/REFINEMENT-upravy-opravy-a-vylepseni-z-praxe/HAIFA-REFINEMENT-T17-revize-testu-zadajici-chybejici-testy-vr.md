@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T17
 title: Revize testů žádající chybějící testy vrací běh builderovi místo selhání
 status: done
+archived: true
 depends_on: []
 ---
 

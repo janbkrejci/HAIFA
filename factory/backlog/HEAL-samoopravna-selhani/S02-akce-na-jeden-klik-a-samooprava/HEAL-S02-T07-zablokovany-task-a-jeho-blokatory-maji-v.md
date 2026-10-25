@@ -2,6 +2,7 @@
 id: HEAL-S02-T07
 title: Zablokovaný task a jeho blokátory mají ve frontě přednost
 status: done
+archived: true
 depends_on: [HEAL-S02-T06]
 writes: [aifactory/, docs/decisions.md]
 ---

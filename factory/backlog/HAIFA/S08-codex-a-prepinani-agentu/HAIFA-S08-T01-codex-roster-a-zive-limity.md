@@ -2,6 +2,7 @@
 id: HAIFA-S08-T01
 title: "Codex GPT-6.1-Sol, přepínání rosteru a živé limity dashboardu"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/, factory/docs/]
 auto_merge: false

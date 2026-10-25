@@ -2,6 +2,7 @@
 id: HAIFA-S03-T16
 title: "Auto-continue: souběžné běhy s limitem a bez kolize zápisových cest"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 ---

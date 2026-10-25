@@ -2,6 +2,7 @@
 id: HAIFA-S01-T17
 title: "API záložky Factory: kontrola, plán, provedení a dorovnání base"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S01-T13, HAIFA-S01-T14]
 ---

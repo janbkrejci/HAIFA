@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T27
 title: "Factory – úpravy stránky Factory (Vybavení továrny, chip konfigurace, nálezy)"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-REFINEMENT-T24, HAIFA-REFINEMENT-T03, HAIFA-REFINEMENT-T01, HAIFA-S05-T14, HAIFA-S05-T16]

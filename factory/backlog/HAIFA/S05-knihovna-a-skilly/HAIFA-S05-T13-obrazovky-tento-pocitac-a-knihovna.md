@@ -2,6 +2,7 @@
 id: HAIFA-S05-T13
 title: Obrazovky Tento počítač a Knihovna
 status: done
+archived: true
 depends_on: [HAIFA-S05-T11, HAIFA-S05-T12, HAIFA-S01-T22]
 ---
 

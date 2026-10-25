@@ -2,6 +2,7 @@
 id: HAIFA-S01-T43
 title: Návrh ze záměru sám zvolí projekt a step
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-S01-T42]
 writes: [aifactory/src/aifactory/workflow/propose.py, aifactory/src/aifactory/workflow/propose_check.py, aifactory/src/aifactory/seed/agents/proposer/, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/skill/skill.md, aifactory/src/aifactory/skill/codes.py, aifactory/tests/workflow/test_backlog_propose.py, aifactory/tests/workflow/test_propose_check.py, aifactory/tests/intent_fixture.py, aifactory/tests/skill/]

@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T09
 title: "Builder pouští jen testovací soubory ke své změně, žádné adresáře"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/]

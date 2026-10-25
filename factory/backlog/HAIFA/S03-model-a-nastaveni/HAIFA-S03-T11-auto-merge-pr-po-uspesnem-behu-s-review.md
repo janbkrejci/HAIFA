@@ -2,6 +2,7 @@
 id: HAIFA-S03-T11
 title: Auto-merge PR po úspěšném běhu s review
 status: done
+archived: true
 depends_on: [HAIFA-S03-T08]
 ---
 

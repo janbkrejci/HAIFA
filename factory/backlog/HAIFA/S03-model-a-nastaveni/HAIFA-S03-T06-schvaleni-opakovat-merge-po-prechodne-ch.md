@@ -2,6 +2,7 @@
 id: HAIFA-S03-T06
 title: "Schválení: opakovat merge po přechodné chybě GitHubu"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: []
 ---

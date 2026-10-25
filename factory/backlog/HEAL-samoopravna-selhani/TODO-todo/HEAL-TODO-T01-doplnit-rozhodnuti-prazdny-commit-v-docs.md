@@ -2,6 +2,7 @@
 id: HEAL-TODO-T01
 title: Doplnit rozhodnutí „Prázdný commit“ v docs/decisions.md o already_done a Hotovo u nothing_to_do
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HEAL-S02-T02]

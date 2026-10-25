@@ -2,6 +2,7 @@
 id: HAIFA-S01-T05
 title: "Tooltip u Blokováno, odkaz zpět na středu, „ID: Název“"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S01-T04]
 ---

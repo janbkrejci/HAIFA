@@ -2,6 +2,7 @@
 id: HAIFA-S01-T24
 title: "Backlog: skrýt hotové a stav Bez workflow"
 status: done
+archived: true
 depends_on: [HAIFA-S01-T07]
 ---
 

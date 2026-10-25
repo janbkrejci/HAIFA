@@ -2,6 +2,7 @@
 id: HAIFA-S01-T36
 title: HAIFA v topbaru odkazuje na domovskou stránku
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/App.vue]

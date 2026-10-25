@@ -2,6 +2,7 @@
 id: HAIFA-S01-T44
 title: "API Nového záměru bez cíle: umístění navrhne agent"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-S01-T43]
 writes: [aifactory/src/aifactory/web/intent.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_intent.py]

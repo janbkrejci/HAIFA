@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T03
 title: Nastavení per factory/repo/project
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S03-T03, HAIFA-S03-T04, HAIFA-S03-T05, HAIFA-S03-T07]
 writes: [aifactory/src/aifactory/config/, aifactory/src/aifactory/backlog/, aifactory/src/aifactory/run/, aifactory/src/aifactory/web/settings.py, aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/static/, "aifactory/web/src/views/SettingsView*", aifactory/web/src/components/settings/, "aifactory/web/src/lib/settings*", "aifactory/web/src/lib/backlog*", aifactory/web/src/test/settingsFixtures.ts, aifactory/tests/config/, aifactory/tests/backlog/, aifactory/tests/run/, aifactory/tests/web/test_web_settings.py, aifactory/tests/web/test_web_backlog_containers.py, aifactory/tests/onboard/]

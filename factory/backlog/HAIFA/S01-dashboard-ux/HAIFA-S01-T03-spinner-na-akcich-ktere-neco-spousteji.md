@@ -2,6 +2,7 @@
 id: HAIFA-S01-T03
 title: "Spinner na akcích, které něco spouštějí"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S01-T02]
 ---

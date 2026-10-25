@@ -2,6 +2,7 @@
 id: HAIFA-S90-T05
 title: OB5 Spolehlivý model na pi
 status: done
+archived: true
 depends_on: []
 ---
 

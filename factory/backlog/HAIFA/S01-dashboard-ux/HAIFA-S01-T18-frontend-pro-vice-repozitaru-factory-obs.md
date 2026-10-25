@@ -2,6 +2,7 @@
 id: HAIFA-S01-T18
 title: "Frontend pro více repozitářů, factory obs bez repa a port jen v registru"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S01-T13, HAIFA-S01-T01, HAIFA-S01-T02, HAIFA-S03-T05]
 ---

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T08
 title: "Ochrana zápisových požadavků API (Origin, Sec-Fetch-Site, JSON)"
 status: done
+archived: true
 depends_on: []
 ---
 

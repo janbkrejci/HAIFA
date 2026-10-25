@@ -2,6 +2,7 @@
 id: HAIFA-S01-T10
 title: "factory check: kontrola factory v repu a na stroji"
 status: done
+archived: true
 depends_on: [HAIFA-S03-T01]
 ---
 

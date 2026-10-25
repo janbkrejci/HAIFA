@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T06
 title: Opravit vybrané nálezy Factory
 status: done
+archived: true
 depends_on: []
 ---
 

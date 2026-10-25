@@ -2,6 +2,7 @@
 id: HAIFA-S03-T13
 title: "Resolve: přebuild generovaného bundlu po vyřešení konfliktu"
 status: done
+archived: true
 depends_on: []
 ---
 

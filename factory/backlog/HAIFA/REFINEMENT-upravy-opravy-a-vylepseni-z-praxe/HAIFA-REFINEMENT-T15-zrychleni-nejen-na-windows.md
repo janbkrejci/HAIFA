@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T15
 title: zrychlení nejen na windows
 status: done
+archived: true
 depends_on: []
 ---
 

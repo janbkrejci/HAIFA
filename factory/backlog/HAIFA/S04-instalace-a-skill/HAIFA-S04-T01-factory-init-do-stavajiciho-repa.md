@@ -2,6 +2,7 @@
 id: HAIFA-S04-T01
 title: "`factory init` do stávajícího repa z knihovny"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S03-T01, HAIFA-S03-T02, HAIFA-S05-T01, HAIFA-S05-T03, HAIFA-S05-T04]
 ---

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T41
 title: schovat Nový záměr z detailu tasku
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 ---

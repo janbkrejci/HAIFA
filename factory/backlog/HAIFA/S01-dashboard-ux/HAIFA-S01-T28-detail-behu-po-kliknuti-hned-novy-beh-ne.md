@@ -2,6 +2,7 @@
 id: HAIFA-S01-T28
 title: "Detail běhu: po kliknutí hned nový běh, ne předchozí"
 status: done
+archived: true
 depends_on: [HAIFA-S02-T02]
 ---
 

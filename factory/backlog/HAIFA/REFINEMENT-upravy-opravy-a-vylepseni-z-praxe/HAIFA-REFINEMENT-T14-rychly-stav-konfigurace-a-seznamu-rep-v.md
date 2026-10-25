@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T14
 title: Rychlý stav konfigurace a seznamu rep v dashboardu na Windows
 status: done
+archived: true
 depends_on: []
 ---
 

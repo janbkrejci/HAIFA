@@ -2,6 +2,7 @@
 id: HEAL-TODO-T02
 title: Zapsat rozhodnutí o samoopravě řetězu (auto_heal) do docs/decisions.md
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HEAL-S02-T04]

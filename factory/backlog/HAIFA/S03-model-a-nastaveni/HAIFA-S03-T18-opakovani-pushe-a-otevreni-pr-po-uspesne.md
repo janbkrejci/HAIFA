@@ -2,6 +2,7 @@
 id: HAIFA-S03-T18
 title: Opakování pushe a otevření PR po úspěšném běhu
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-S03-T15]

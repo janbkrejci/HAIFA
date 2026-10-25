@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T16
 title: "Update docs/decisions.md: the CI gate also waits for Azure DevOps"
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HAIFA-TODO-T02]

@@ -2,6 +2,7 @@
 id: HAIFA-S05-T04
 title: "Manifest repa, stavy položek a brána formátu"
 status: done
+archived: true
 depends_on: [HAIFA-S05-T03]
 ---
 

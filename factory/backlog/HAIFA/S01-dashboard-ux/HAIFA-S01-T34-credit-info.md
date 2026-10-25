@@ -2,6 +2,7 @@
 id: HAIFA-S01-T34
 title: Credit info
 status: done
+archived: true
 depends_on: []
 ---
 

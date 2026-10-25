@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T18
 title: Návrh workflow bez kopie celého repa a bez úniku dočasných adresářů
 status: done
+archived: true
 depends_on: []
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-LEARN-T02
 title: "Lekce: When you change behaviour, text, selectors or preconditions, grep the tests for th…"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T16, HAIFA-REFINEMENT-T22, HAIFA-REFINEMENT-T40, LEARN-S01-T01, HAIFA-REFINEMENT-T61]

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T22
 title: Akceptační test více repozitářů v prohlížeči
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S01-T21]
 ---

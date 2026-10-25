@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T20
 title: Opravit mock grafu nového projektu v testu BacklogView
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T54]
 writes: [aifactory/web/src/views/BacklogView.test.ts]

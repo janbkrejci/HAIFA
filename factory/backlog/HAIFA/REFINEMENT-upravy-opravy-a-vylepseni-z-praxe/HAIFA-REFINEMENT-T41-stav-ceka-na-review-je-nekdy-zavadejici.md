@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T41
 title: "Stav „Čeká na review“ je někdy zavádějící: rozlišit čekání na review a na automerge PR"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-REFINEMENT-T33, HAIFA-REFINEMENT-T37, HAIFA-REFINEMENT-T28, HAIFA-REFINEMENT-T39]

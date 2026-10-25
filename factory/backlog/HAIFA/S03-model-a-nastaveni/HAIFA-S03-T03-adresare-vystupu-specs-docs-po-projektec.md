@@ -2,6 +2,7 @@
 id: HAIFA-S03-T03
 title: "Adresáře výstupů (specs, docs) po projektech"
 status: done
+archived: true
 depends_on: [HAIFA-S03-T01]
 ---
 

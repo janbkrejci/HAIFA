@@ -2,6 +2,7 @@
 id: HAIFA-S05-T02
 title: "Krok `agent:` ve workflow a překryv `roles.yaml`"
 status: done
+archived: true
 depends_on: []
 ---
 

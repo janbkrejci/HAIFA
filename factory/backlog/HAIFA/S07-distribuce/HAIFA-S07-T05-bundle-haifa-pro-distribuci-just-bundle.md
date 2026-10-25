@@ -2,6 +2,7 @@
 id: HAIFA-S07-T05
 title: "Bundle HAIFA pro distribuci (`just bundle`)"
 status: done
+archived: true
 depends_on: [HAIFA-S07-T01]
 ---
 

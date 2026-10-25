@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T02
 title: Read CI checks on Azure DevOps (AzureProvider.checks / check_logs)
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T28]
 ---

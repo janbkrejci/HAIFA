@@ -2,6 +2,7 @@
 id: HAIFA-S05-T12
 title: "API položek repa, onboardingu a operací ve více repech"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-S01-T17, HAIFA-S05-T08, HAIFA-S05-T09, HAIFA-S06-T02, HAIFA-S06-T03, HAIFA-S06-T04]
 ---

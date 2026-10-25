@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T48
 title: task retry vrací run_failed i po úspěšném a mergnutém pokusu
 status: done
+archived: true
 depends_on: []
 ---
 

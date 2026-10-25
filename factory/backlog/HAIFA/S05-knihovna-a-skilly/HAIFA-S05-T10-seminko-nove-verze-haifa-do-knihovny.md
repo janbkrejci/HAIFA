@@ -2,6 +2,7 @@
 id: HAIFA-S05-T10
 title: Semínko nové verze HAIFA do knihovny
 status: done
+archived: true
 depends_on: [HAIFA-S05-T06]
 ---
 

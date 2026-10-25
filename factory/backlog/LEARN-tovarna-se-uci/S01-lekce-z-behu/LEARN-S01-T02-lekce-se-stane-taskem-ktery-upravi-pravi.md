@@ -2,6 +2,7 @@
 id: LEARN-S01-T02
 title: "Lekce se stane taskem, který upraví pravidla repa"
 status: done
+archived: true
 depends_on: [LEARN-S01-T01]
 ---
 

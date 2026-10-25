@@ -2,6 +2,7 @@
 id: HAIFA-S06-T01
 title: "Časový limit kroku test (`test_timeout`)"
 status: done
+archived: true
 depends_on: []
 ---
 

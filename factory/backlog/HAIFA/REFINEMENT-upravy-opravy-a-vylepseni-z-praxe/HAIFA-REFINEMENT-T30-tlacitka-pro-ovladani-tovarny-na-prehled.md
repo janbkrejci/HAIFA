@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T30
 title: Tlačítka pro ovládání továrny na Přehledu
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 related: [HAIFA-S01-T19, HAIFA-S03-T16, HAIFA-S03-T19, HAIFA-REFINEMENT-T20, HAIFA-S10-T02]

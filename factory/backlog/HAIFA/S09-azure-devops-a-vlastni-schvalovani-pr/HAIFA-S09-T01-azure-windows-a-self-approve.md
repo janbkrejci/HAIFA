@@ -2,6 +2,7 @@
 id: HAIFA-S09-T01
 title: Azure ve Windows a skutečný self-approve hlas před merge
 status: done
+archived: true
 depends_on: [HAIFA-S08-T01]
 writes: [aifactory/, factory/docs/]
 auto_merge: false

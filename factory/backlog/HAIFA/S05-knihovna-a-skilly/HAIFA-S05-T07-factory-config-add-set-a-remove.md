@@ -2,6 +2,7 @@
 id: HAIFA-S05-T07
 title: "`factory config add`, `set` a `remove`"
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S05-T04, HAIFA-S05-T05, HAIFA-S05-T02, HAIFA-S01-T12]
 ---

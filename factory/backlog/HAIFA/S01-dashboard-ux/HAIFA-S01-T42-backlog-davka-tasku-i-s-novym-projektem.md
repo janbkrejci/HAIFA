@@ -2,6 +2,7 @@
 id: HAIFA-S01-T42
 title: "Backlog: dávka tasků i s novým projektem"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/backlog/edit.py, aifactory/src/aifactory/backlog/__init__.py, aifactory/tests/backlog/test_backlog_batch.py]

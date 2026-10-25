@@ -2,6 +2,7 @@
 id: HAIFA-S01-T07
 title: "Backlog: skládání stromu, filtr kanbanu, klik na řádek"
 status: done
+archived: true
 depends_on: [HAIFA-S01-T06]
 ---
 

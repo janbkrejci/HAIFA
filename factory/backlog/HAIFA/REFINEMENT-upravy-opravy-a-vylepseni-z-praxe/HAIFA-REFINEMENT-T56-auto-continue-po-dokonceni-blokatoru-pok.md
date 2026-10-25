@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T56
 title: "Auto continue: po dokončení blokátoru pokračovat odblokovaným taskem z jiného projektu"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/run/queue.py, aifactory/tests/run/test_auto_continue.py, docs/decisions.md]

@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T65
 title: "Agent triager: porovná ohlášené follow-upy s neudělaným backlogem"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: []
 writes: [aifactory/src/aifactory/seed/agents/triager/, aifactory/src/aifactory/library/seed.py, aifactory/src/aifactory/run/triage.py, aifactory/tests/run/test_triage.py, aifactory/tests/library/test_library_seed.py, aifactory/tests/config/test_config_loader.py, aifactory/tests/validation/test_validation_template.py]

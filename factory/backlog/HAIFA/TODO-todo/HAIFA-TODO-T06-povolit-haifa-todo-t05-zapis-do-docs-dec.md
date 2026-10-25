@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T06
 title: Povolit HAIFA-TODO-T05 zápis do docs/decisions.md (writes v front matter)
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-TODO-T05]
 ---

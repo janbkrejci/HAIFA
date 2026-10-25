@@ -2,6 +2,7 @@
 id: HEAL-S02-T04
 title: Řetěz provede bezpečnou akci sám
 status: done
+archived: true
 depends_on: [HEAL-S02-T01, HEAL-S02-T02, HEAL-S02-T03]
 ---
 

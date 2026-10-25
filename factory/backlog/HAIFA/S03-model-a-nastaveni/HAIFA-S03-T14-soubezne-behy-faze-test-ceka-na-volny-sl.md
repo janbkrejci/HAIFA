@@ -2,6 +2,7 @@
 id: HAIFA-S03-T14
 title: "Souběžné běhy: fáze test čeká na volný slot"
 status: done
+archived: true
 depends_on: []
 ---
 

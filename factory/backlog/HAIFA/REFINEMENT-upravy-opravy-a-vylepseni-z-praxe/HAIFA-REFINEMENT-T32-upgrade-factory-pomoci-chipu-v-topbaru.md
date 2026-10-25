@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T32
 title: Upgrade factory pomocí chipu v topbaru
 status: done
+archived: true
 depends_on: []
 ---
 

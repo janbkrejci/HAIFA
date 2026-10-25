@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T17
 title: "Preflight validace má ověřit i modely rosteru, nejen harnessy"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S90-T04]
 writes: [aifactory/validation/runner.py, aifactory/tests/validation/]

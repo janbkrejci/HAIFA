@@ -2,6 +2,7 @@
 id: GUIDE-TODO-T01
 title: "Průvodce: vynutit allowlist a zákaz .env i pro harness codex a pi"
 status: done
+archived: true
 depends_on: []
 related: [GUIDE-S02-T01]
 ---

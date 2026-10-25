@@ -2,6 +2,7 @@
 id: GUIDE-S01-T02
 title: Zkrátit README na rozcestník
 status: done
+archived: true
 depends_on: [GUIDE-S01-T01]
 writes: [README.md]
 ---

@@ -2,6 +2,7 @@
 id: HAIFA-S03-T02
 title: "Úroveň module přejmenovaná na project (core, CLI, skill)"
 status: done
+archived: true
 depends_on: []
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T37
 title: New Step button
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 ---

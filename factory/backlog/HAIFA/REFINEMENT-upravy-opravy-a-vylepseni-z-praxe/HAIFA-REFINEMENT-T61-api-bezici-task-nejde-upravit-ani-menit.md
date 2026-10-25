@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T61
 title: "API: běžící task nejde upravit ani měnit jeho vazby, blokovaný task nejde spustit"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/web/workflow_advice.py, aifactory/tests/web/test_web_task_running_guard.py, aifactory/tests/web/test_web_task_run.py, aifactory/tests/web/test_web_launcher.py, aifactory/src/aifactory/skill/codes.py]

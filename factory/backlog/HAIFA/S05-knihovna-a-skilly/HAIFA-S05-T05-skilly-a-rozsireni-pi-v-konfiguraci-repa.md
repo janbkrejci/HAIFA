@@ -2,6 +2,7 @@
 id: HAIFA-S05-T05
 title: Harnessy načítají instrukce a skilly repa nativně
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S05-T01]
 ---

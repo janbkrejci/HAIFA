@@ -2,6 +2,7 @@
 id: INTENT-S01-T02
 title: Kontrola kvality navržených tasků
 status: done
+archived: true
 depends_on: [INTENT-S01-T01]
 ---
 

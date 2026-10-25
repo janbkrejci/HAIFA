@@ -2,6 +2,7 @@
 id: HAIFA-S02-T03
 title: Waterfall běhu podle sssf
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: [HAIFA-S02-T02]
 ---

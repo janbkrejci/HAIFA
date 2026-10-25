@@ -2,6 +2,7 @@
 id: HAIFA-S01-T32
 title: Skrytí hotových běhů
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 ---

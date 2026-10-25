@@ -2,6 +2,7 @@
 id: HAIFA-S03-T05
 title: Zakládání a nastavení projektu a stepu v dashboardu
 status: done
+archived: true
 depends_on: [HAIFA-S01-T07, HAIFA-S03-T04]
 ---
 

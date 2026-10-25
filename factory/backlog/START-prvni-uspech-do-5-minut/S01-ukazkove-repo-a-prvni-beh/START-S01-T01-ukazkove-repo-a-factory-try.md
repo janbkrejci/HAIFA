@@ -2,6 +2,7 @@
 id: START-S01-T01
 title: Ukázkové repo a factory try
 status: done
+archived: true
 depends_on: []
 ---
 

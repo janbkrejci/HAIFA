@@ -2,6 +2,7 @@
 id: GUIDE-S02-T04
 title: Možnost trvale smazat starší thready AI asistenta
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [GUIDE-S02-T02]
 related: [GUIDE-S02-T01]

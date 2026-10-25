@@ -2,6 +2,7 @@
 id: HEAL-S02-T05
 title: "Resolve nevrací builderovi chybějící testy, které nesmí zapsat"
 status: done
+archived: true
 depends_on: []
 ---
 

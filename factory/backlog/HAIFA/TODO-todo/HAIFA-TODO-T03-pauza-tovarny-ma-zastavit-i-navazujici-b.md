@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T03
 title: Pauza továrny má zastavit i navazující běhy řetězu
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T30]
 ---

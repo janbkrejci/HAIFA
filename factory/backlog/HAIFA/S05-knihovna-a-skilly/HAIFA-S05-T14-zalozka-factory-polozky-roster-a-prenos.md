@@ -2,6 +2,7 @@
 id: HAIFA-S05-T14
 title: "Záložka Factory: položky, roster a přenos mezi repy"
 status: done
+archived: true
 depends_on: [HAIFA-S05-T13]
 ---
 

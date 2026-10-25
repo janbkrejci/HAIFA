@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T66
 title: "Follow-upy: před založením TODO vyhodnotit backlog, nezužovat zadání bez člověka"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [HAIFA-REFINEMENT-T64, HAIFA-REFINEMENT-T65]
 writes: [aifactory/src/aifactory/run/followups.py, aifactory/src/aifactory/run/task.py, aifactory/tests/run/test_followups.py, aifactory/tests/run/test_followups_queue.py, aifactory/tests/run/test_followups_triage.py, docs/decisions.md]

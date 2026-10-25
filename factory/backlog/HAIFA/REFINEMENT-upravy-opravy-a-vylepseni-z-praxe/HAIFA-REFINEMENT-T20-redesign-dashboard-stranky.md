@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T20
 title: redesign dashboard stránky
 status: done
+archived: true
 depends_on: []
 ---
 

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T46
 title: "Backend: příznak archivovaný u hotového tasku (trace DB a API)"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: []
 writes: [aifactory/src/aifactory/run/store.py, aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/app.py, aifactory/tests/run/test_queue_prefs.py, aifactory/tests/web/test_web_backlog_queue.py]

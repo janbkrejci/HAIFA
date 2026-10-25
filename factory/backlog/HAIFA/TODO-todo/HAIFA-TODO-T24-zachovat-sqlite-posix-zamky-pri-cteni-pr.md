@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T24
 title: Zachovat SQLite POSIX zámky při čtení Přehledu
 status: done
+archived: true
 depends_on: []
 follows: HAIFA-TODO-T23
 writes: [aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/web/test_web_db_busy.py, aifactory/tests/e2e/test_retry_browser.py, aifactory/tests/e2e/test_multi_repo_browser.py]

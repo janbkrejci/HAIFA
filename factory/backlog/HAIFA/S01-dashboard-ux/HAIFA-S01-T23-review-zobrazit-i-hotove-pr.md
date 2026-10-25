@@ -2,6 +2,7 @@
 id: HAIFA-S01-T23
 title: "Review: zobrazit i hotové PR"
 status: done
+archived: true
 depends_on: [HAIFA-S01-T04]
 ---
 

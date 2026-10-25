@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T23
 title: Vyhodit zdroj a cíl z detailu tasku
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T11, HAIFA-REFINEMENT-T21, HAIFA-REFINEMENT-T07, HAIFA-S01-T38]

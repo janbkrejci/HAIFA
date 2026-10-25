@@ -2,6 +2,7 @@
 id: HAIFA-S03-T12
 title: "Agenti: zakázané příkazy a výsledek testu pro review"
 status: done
+archived: true
 depends_on: []
 ---
 

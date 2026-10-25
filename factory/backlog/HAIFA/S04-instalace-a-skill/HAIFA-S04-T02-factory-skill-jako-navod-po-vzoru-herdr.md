@@ -2,6 +2,7 @@
 id: HAIFA-S04-T02
 title: "`factory --skill` jako návod po vzoru herdr"
 status: done
+archived: true
 depends_on: [HAIFA-S03-T04, HAIFA-S04-T01, HAIFA-S01-T10, HAIFA-S01-T12, HAIFA-S06-T02, HAIFA-S06-T03]
 ---
 

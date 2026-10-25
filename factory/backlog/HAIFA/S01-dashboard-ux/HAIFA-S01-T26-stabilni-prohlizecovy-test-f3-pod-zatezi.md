@@ -2,6 +2,7 @@
 id: HAIFA-S01-T26
 title: Stabilní prohlížečový test F3 pod zátěží
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: []
 ---

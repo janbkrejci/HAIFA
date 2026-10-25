@@ -2,6 +2,7 @@
 id: LEARN-S01-T01
 title: Sběr opakovaných výtek z běhů
 status: done
+archived: true
 depends_on: []
 ---
 

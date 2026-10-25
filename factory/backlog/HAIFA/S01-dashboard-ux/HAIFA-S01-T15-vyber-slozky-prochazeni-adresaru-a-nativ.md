@@ -2,6 +2,7 @@
 id: HAIFA-S01-T15
 title: "Výběr složky: procházení adresářů a nativní dialog"
 status: done
+archived: true
 depends_on: [HAIFA-S01-T13]
 ---
 

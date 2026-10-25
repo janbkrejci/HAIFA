@@ -2,6 +2,7 @@
 id: HAIFA-S02-T05
 title: Pokračování selhaného nebo zastaveného běhu s kontextem agentů
 status: done
+archived: true
 depends_on: []
 ---
 

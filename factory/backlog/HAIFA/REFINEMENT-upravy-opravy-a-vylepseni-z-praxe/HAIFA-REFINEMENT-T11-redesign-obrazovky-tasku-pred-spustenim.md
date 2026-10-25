@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T11
 title: Redesign obrazovky Tasku před spuštěním
 status: done
+archived: true
 workflow: simple-sdlc
 depends_on: []
 ---

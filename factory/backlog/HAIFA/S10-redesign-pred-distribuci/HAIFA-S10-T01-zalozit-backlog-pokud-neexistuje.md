@@ -2,6 +2,7 @@
 id: HAIFA-S10-T01
 title: "Založit backlog, pokud neexistuje"
 status: done
+archived: true
 depends_on: []
 ---
 

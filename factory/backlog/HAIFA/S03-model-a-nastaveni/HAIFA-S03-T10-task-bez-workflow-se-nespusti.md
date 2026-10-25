@@ -2,6 +2,7 @@
 id: HAIFA-S03-T10
 title: Task bez workflow se nespustí
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S01-T24]
 ---
