@@ -2,6 +2,7 @@
 id: HAIFA-LEARN-T04
 title: "Lekce: Select only tests that exercise the changed behavior: drop whole files or director…"
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T69, HAIFA-S01-T46, HAIFA-REFINEMENT-T71, HAIFA-REFINEMENT-T72, HAIFA-S01-T47, HAIFA-REFINEMENT-T75, HAIFA-REFINEMENT-T74]

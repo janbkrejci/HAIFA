@@ -2,6 +2,7 @@
 id: HAIFA-LEARN-T06
 title: "Lekce: Find the direct callers of every changed function, module, seed file or test helpe…"
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T09, HAIFA-S10-T03, HAIFA-S10-T04, HAIFA-REFINEMENT-T69]

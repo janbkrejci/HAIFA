@@ -2,6 +2,7 @@
 id: HAIFA-LEARN-T05
 title: "Lekce: Run every test file the change itself edits, including browser tests under `tests/…"
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HAIFA-REFINEMENT-T10, HAIFA-S10-T03, HAIFA-S10-T04]
