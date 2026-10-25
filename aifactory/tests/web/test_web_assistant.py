@@ -6,6 +6,7 @@ import json
 import sqlite3
 import subprocess
 import sys
+import threading
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -197,16 +198,20 @@ def test_sql_reads_only(setup: tuple[TestClient, Path, str]) -> None:
     assert not (repo / "other.db").exists()
 
 
-def test_a_write_to_a_repo_fails_and_is_undone(
+def test_concurrent_edits_are_reported_without_rolling_them_back(
     setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     client, repo, _repo_id = setup
-    status_before = git(repo, "status", "--porcelain")
     head_before = git(repo, "rev-parse", "HEAD")
 
     def act(request: Any) -> str:
-        (repo / "README.md").write_text("changed by the guide\n", encoding="utf-8")
-        (repo / "new.txt").write_text("new\n", encoding="utf-8")
+        def edit() -> None:
+            (repo / "README.md").write_text("concurrent edit\n", encoding="utf-8")
+            (repo / "new.txt").write_text("new\n", encoding="utf-8")
+
+        editor = threading.Thread(target=edit)
+        editor.start()
+        editor.join()
         return "hotovo"
 
     fake_harness(monkeypatch, act)
@@ -215,10 +220,99 @@ def test_a_write_to_a_repo_fails_and_is_undone(
     answer = data["messages"][-1]
     assert "error" in answer
     assert "README.md" in answer["error"]
-    assert (repo / "README.md").read_text(encoding="utf-8") == "readme\n"
-    assert not (repo / "new.txt").exists()
-    assert git(repo, "status", "--porcelain") == status_before
+    assert "Změny byly zachovány" in answer["error"]
+    assert (repo / "README.md").read_text(encoding="utf-8") == "concurrent edit\n"
+    assert (repo / "new.txt").read_text(encoding="utf-8") == "new\n"
     assert git(repo, "rev-parse", "HEAD") == head_before
+
+
+def test_repo_thread_limits_context_commands_and_observation_to_its_repo(
+    setup: tuple[TestClient, Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.web.assistant import AssistantManager
+
+    client, repo, repo_id = setup
+    other = init_repo(tmp_path / "beta")
+    install(other)
+    other_id = register(client, other)["id"]
+    response = client.post("/api/assistant/threads", json={"screen": {"repo": repo_id}})
+    thread_id = response.json()["data"]["id"]
+
+    def act(request: Any) -> str:
+        assert str(repo) in request.system_prompt
+        assert str(other) not in request.system_prompt
+
+        def command(*args: str) -> subprocess.CompletedProcess[str]:
+            return subprocess.run(
+                [str(Path(request.cwd) / "guide"), *args],
+                cwd=request.cwd,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+
+        listed = command("repos")
+        assert listed.returncode == 0, listed.stderr
+        assert json.loads(listed.stdout)["data"] == [{"id": repo_id, "path": str(repo)}]
+        assert command("factory", other_id, "workflow", "show", "build").returncode == 2
+        assert command("sql", other_id, "SELECT 1").returncode == 2
+        assert command("factory", repo_id, "workflow", "show", "build").returncode == 0
+        # Work outside this thread's repository must not fail the answer or be reverted.
+        (other / "README.md").write_text("another editor\n", encoding="utf-8")
+        return "hotovo"
+
+    fake_harness(monkeypatch, act)
+    data = ask(client, thread_id, "Co běží?")
+    assert data["messages"][-1]["text"] == "hotovo", data["messages"][-1]
+    assert "error" not in data["messages"][-1]
+    assert (other / "README.md").read_text(encoding="utf-8") == "another editor\n"
+    restarted = AssistantManager(haifa_home(), lambda: [(repo_id, repo), (other_id, other)])
+    assert restarted.get(thread_id)["repo_id"] == repo_id
+    restarted.close()
+    rejected = client.post(
+        f"/api/assistant/threads/{thread_id}/messages",
+        json={"text": "Jiné repo", "screen": {"repo": other_id}},
+    )
+    assert rejected.status_code == 400
+
+
+def test_dashboard_thread_sees_all_registered_repositories(
+    setup: tuple[TestClient, Path, str], tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, repo, repo_id = setup
+    other = init_repo(tmp_path / "beta")
+    install(other)
+    other_id = register(client, other)["id"]
+    seen = fake_harness(monkeypatch)
+    thread_id = new_thread(client)
+    data = ask(client, thread_id, "Co běží?", screen={"repo": repo_id})
+    assert data["repo_id"] is None
+    assert str(repo) in seen[0].system_prompt and str(other) in seen[0].system_prompt
+    result = subprocess.run(
+        [str(Path(seen[0].cwd) / "guide"), "repos"], capture_output=True, text=True, check=True
+    )
+    assert {r["id"] for r in json.loads(result.stdout)["data"]} == {repo_id, other_id}
+
+
+def test_legacy_repo_thread_drops_its_global_session(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.web.assistant import AssistantManager
+
+    client, repo, repo_id = setup
+    fake_harness(monkeypatch)
+    thread_id = new_thread(client)
+    ask(client, thread_id, "Co běží?", screen={"repo": repo_id})
+    path = haifa_home() / "assistant" / "threads" / thread_id / "thread.json"
+    stored = json.loads(path.read_text(encoding="utf-8"))
+    stored.pop("repo_id")
+    path.write_text(json.dumps(stored), encoding="utf-8")
+    restarted = AssistantManager(haifa_home(), lambda: [(repo_id, repo)])
+    assert restarted.get(thread_id)["repo_id"] == repo_id
+    migrated = json.loads(path.read_text(encoding="utf-8"))
+    assert migrated["session_id"] != stored["session_id"]
+    assert migrated["context_sent"] is False
+    restarted.close()
 
 
 def test_secrets_never_reach_the_agent(
@@ -705,7 +799,7 @@ def test_context_binding_survives_messages_and_restart(
     project = repo / "backlog/P01/index.md"
     project.write_text(project.read_text().replace("context-model", "changed-model"))
     machine_settings(monkeypatch)
-    ask(client, thread_id, "Druhá", screen={"repo": "other", "task": "other"})
+    ask(client, thread_id, "Druhá", screen={"repo": repo_id, "task": "other"})
     assert [(r.model, r.thinking) for r in seen] == [("context-model", "high")] * 2
     assert seen[0].session_id == seen[1].session_id
     stored = stored_thread(thread_id)
