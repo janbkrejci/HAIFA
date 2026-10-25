@@ -12,6 +12,8 @@ The whole suite takes about 30 minutes on Windows. CI runs it on every pull requ
 - `just pytest <files or directories>` with the tests of the changed packages and of their direct callers. `aifactory/tests/<package>/` mirrors `aifactory/src/aifactory/<package>/`. Never the whole suite.
 - `just web-test` when `aifactory/web/` changed, and `just pytest tests/e2e/<file> -n0` only for the browser test of a changed screen.
 
+Find the direct callers of every changed function, module, seed file or test helper by searching all of `aifactory/tests/`, not only the mirrored package directory, and include the test files exercising those callers in the test plan.
+
 Select only tests that exercise the changed behavior; narrow file or directory selections to relevant tests, omit tests justified only by imports of a changed module, and add browser or layout tests only for a changed screen.
 
 Regardless of these selection limits, run every test file edited by the change in at least one check of the test plan, including browser tests under `tests/e2e/`.
