@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T86
 title: "retry --allow-writes při zastaralé lokální base nechá necommitnutou změnu v hlavním checkoutu"
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T63, HEAL-S02-T08]
 writes: [aifactory/src/aifactory/run/allow_writes.py, aifactory/src/aifactory/run/retry.py, aifactory/tests/]
@@ -30,3 +30,4 @@ writes: [aifactory/src/aifactory/run/allow_writes.py, aifactory/src/aifactory/ru
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-26 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/175 · náklady $0.00
