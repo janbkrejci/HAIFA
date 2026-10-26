@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T83
 title: "Navazující úlohy z běhů dostávají duplicitní ID"
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/src/aifactory/backlog/edit.py, aifactory/src/aifactory/run/followups.py, aifactory/tests/, docs/decisions.md, aifactory/src/aifactory/providers/publish.py, aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/review/automerge.py]
 ---
@@ -28,3 +28,4 @@ Dva souběžné nebo po sobě jdoucí běhy založí navazující úlohu (follow
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-26 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/173 · náklady $0.00
