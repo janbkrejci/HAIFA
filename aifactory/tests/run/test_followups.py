@@ -186,6 +186,7 @@ def test_record_does_not_reuse_closed_dependency(repo: Path, status: str) -> Non
         path.read_text(encoding="utf-8").replace("status: todo", f"status: {status}"),
         encoding="utf-8",
     )
+    git(repo, "commit", "-q", "-am", "Close dependency in target")
     outcome = record(repo, T02, "run-1", workflow_run(follow_ups=[follow_up("Schema")]))
     assert len(outcome.created) == 1 and not outcome.created[0].existed
 
@@ -199,6 +200,8 @@ def test_record_dependency_reuse_respects_assignee(
 ) -> None:
     # T02 depends on T01; the same title only covers work for the same assignee.
     edit_task(repo, T01, assignee="human" if dependency_human else "agent")
+    if dependency_human:
+        git(repo, "commit", "-q", "-am", "Assign dependency in target")
     item = follow_up("Schema").model_copy(update={"for_human": follow_up_human})
 
     outcome = record(repo, T02, "run-1", workflow_run(follow_ups=[item]))

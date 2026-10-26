@@ -109,7 +109,7 @@ def test_actions_and_blockers(
             assert "Drop the original" in filed.body and "Triage reason" in filed.body
     if action == "extend":
         assert path.read_bytes().startswith(before)
-        assert "### Doplnění z běhu run-1 tasku" in path.read_text()
+        assert "### Doplnění z běhu run-1 tasku" in path.read_text(encoding="utf-8")
     else:
         assert path.read_bytes() == before
     with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
@@ -202,7 +202,7 @@ def test_rechecks_fresh_target_under_lock(
     assert result is not None and result.created[0].decision == "new", warnings
     assert any("no longer applies" in w for w in warnings)
     if change != "deleted":
-        assert "extended-by" not in (repo / task_of(repo, TARGET).path).read_text()
+        assert "extended-by" not in (repo / task_of(repo, TARGET).path).read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("target", [T01, T02])
@@ -534,9 +534,10 @@ def test_triager_uses_binding_after_quota_switch(
 
     path = repo / task_of(repo, T01).path
     path.write_text(
-        path.read_text().replace(
+        path.read_text(encoding="utf-8").replace(
             "status: todo", "status: todo\nharness: claude\nmodel: sonnet\nthinking: medium", 1
-        )
+        ),
+        encoding="utf-8",
     )
     commit_all(repo, "Original task harness")
     monkeypatch.setattr(thinking, "codex_models", lambda: [])

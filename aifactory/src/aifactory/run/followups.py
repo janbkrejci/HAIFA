@@ -22,10 +22,11 @@ by the marker and title and creates nothing new.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
-import shutil
+import re
 import tempfile
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Literal
@@ -43,12 +44,13 @@ from aifactory.backlog import (
     is_human,
     iter_tasks,
     link_task,
+    load_backlog,
     load_for_edit,
 )
 from aifactory.backlog.derived import descendant_tasks
-from aifactory.backlog.edit import _write_checked, compose_id
+from aifactory.backlog.edit import _next_id, _write_checked, compose_id
 from aifactory.backlog.model import HUMAN
-from aifactory.backlog.roots import backlog_roots
+from aifactory.backlog.roots import owning_root
 from aifactory.config import ProjectSettings
 from aifactory.run.scope import literal_prefix
 from aifactory.workflow import WorkflowRun
@@ -321,6 +323,178 @@ def _can_block(backlog: Backlog, source: Task, target: Task) -> bool:
         source.depends_on = previous
 
 
+@contextlib.contextmanager
+def publication_lock(root: Path) -> Iterator[None]:
+    """Use the run store's reentrant cross-process lock, also before a store exists."""
+    from aifactory.config import load_local
+    from aifactory.run.store import _path_lock
+
+    db = load_local(root).trace_db_path(root)
+    if db.exists():
+        lock = db.with_name(db.name + ".lock")
+    else:
+        from aifactory.providers import git
+
+        common = Path(git.git(root, "rev-parse", "--path-format=absolute", "--git-common-dir"))
+        lock = common / "factory-followups.lock"
+    with _path_lock(lock).hold(600):
+        yield
+
+
+def current_target(root: Path, base: str, settings: ProjectSettings) -> str:
+    """Fetch before reading IDs; a failed fetch must never fall back to stale base."""
+    from aifactory.providers import ProviderError, git
+
+    if git.has_remote(root, settings.remote):
+        git.fetch(root, settings.remote, base)
+        target = git.remote_tip(root, settings.remote, base)
+    else:
+        target = git.rev_parse(root, f"refs/heads/{base}")
+    if target is None:
+        raise ProviderError("follow_up_collision", f"cannot read target branch {base}")
+    return target
+
+
+@contextlib.contextmanager
+def _snapshot(root: Path, sha: str, settings: ProjectSettings) -> Iterator[Path]:
+    from aifactory.run.gitops import extract_backlog
+
+    with tempfile.TemporaryDirectory(prefix="factory-followups-") as tmp:
+        stage = Path(tmp)
+        extract_backlog(root, sha, settings.backlog_patterns, stage)
+        yield stage
+
+
+def reconcile_ids(
+    root: Path, head: str, base: str, settings: ProjectSettings
+) -> tuple[str, dict[str, str]]:
+    """Repair newly added follow-ups, merge fresh base and validate the resulting backlog.
+
+    Only references changed on this branch are rewritten: a target task with the
+    colliding ID continues to mean that target task. Call under publication_lock.
+    The returned commit is unpublished; conflicts leave both branches untouched.
+    """
+    from aifactory.providers import ProviderError, git
+
+    target = current_target(root, base, settings)
+    ancestor = git.git(root, "merge-base", head, target)
+    changed = git.git(root, "diff", "--name-only", "-z", ancestor, head).split("\0")
+    if not any(
+        path.lower().endswith(".md") and owning_root(path, settings) is not None for path in changed
+    ):
+        return head, {}
+    with (
+        _snapshot(root, head, settings) as ours,
+        _snapshot(root, ancestor, settings) as old,
+        _snapshot(root, target, settings) as theirs,
+    ):
+        branch = load_backlog(ours, settings)
+        duplicates = [i for i in check_backlog(branch) if i.code == "duplicate_id"]
+        if duplicates:
+            raise ProviderError("follow_up_collision", "; ".join(i.message for i in duplicates))
+        previous = load_backlog(old, settings)
+        latest = load_backlog(theirs, settings)
+        additions = [t for t in iter_tasks(branch) if t.id not in previous.by_id]
+        if not additions:
+            return head, {}
+        reserved = set(branch.by_id) | set(latest.by_id)
+        renamed: dict[str, str] = {}
+        paths: dict[str, str] = {}
+        for task in additions:
+            taken = latest.by_id.get(task.id)
+            if taken is None:
+                continue
+            # The same follow-up already published by an earlier attempt is not a collision.
+            markers = re.findall(r"<!-- factory: follow-up-of=([^ ]+) -->", task.body)
+            same = (
+                isinstance(taken, Task)
+                and taken.path == task.path
+                and _norm(taken.title) == _norm(task.title)
+                and is_human(taken) == is_human(task)
+                and (markers and all(follow_up_marker(m) in taken.body for m in markers))
+            )
+            if same:
+                continue
+            if not markers and not task.follows:
+                raise ProviderError(
+                    "follow_up_collision", f"duplicate id {task.id}: not a follow-up"
+                )
+            step = task.parent.id
+            assert step is not None
+            new_id = _next_id(task.parent, step, reserved)
+            reserved.add(new_id)
+            renamed[task.id] = new_id
+            task_path = Path(task.path)
+            paths[task.path] = task_path.with_name(
+                task_path.name.replace(task.id, new_id, 1)
+            ).as_posix()
+
+        changes: list[git.TreeChange] = []
+        if renamed:
+            pattern = re.compile(
+                r"(?<![\w.-])(" + "|".join(re.escape(k) for k in renamed) + r")(?![\w.-])"
+            )
+            before = _contents(old)
+            for path, content in _contents(ours).items():
+                if before.get(path) == content:
+                    continue
+                rewritten = pattern.sub(lambda m: renamed[m.group()], content.decode("utf-8"))
+                destination = paths.get(path, path)
+                if destination != path:
+                    changes.append((path, None, None))
+                if destination != path or rewritten.encode("utf-8") != content:
+                    changes.append((destination, "100644", git.hash_blob(root, rewritten.encode())))
+        fixed = (
+            git.commit_tree_with(root, head, changes, "Renumber colliding follow-up IDs")
+            if changes
+            else head
+        )
+        if git.is_ancestor(root, target, fixed):
+            merged = fixed
+        else:
+            try:
+                tree = git.git(root, "merge-tree", "--write-tree", fixed, target).splitlines()[0]
+            except RuntimeError as exc:
+                raise ProviderError(
+                    "follow_up_collision", f"cannot merge follow-ups into {base}: {exc}"
+                ) from exc
+            merged = git.git(
+                root,
+                "commit-tree",
+                tree,
+                "-p",
+                fixed,
+                "-p",
+                target,
+                input="Merge current target and reconcile follow-up IDs\n",
+            )
+        with _snapshot(root, merged, settings) as combined:
+            baseline = {(i.code, i.path, i.message) for i in check_backlog(latest)}
+            problems = [
+                i
+                for i in check_backlog(load_backlog(combined, settings))
+                if i.code == "duplicate_id" or (i.code, i.path, i.message) not in baseline
+            ]
+            if problems:
+                raise ProviderError("follow_up_collision", "; ".join(i.message for i in problems))
+        return merged, renamed
+
+
+def advance_pr(root: Path, branch: str, old: str, new: str) -> None:
+    """Move a repaired PR branch without overwriting edits in a checked-out branch."""
+    from aifactory.providers import ProviderError, git
+
+    if git.rev_parse(root, f"refs/heads/{branch}") != old:
+        raise ProviderError("follow_up_collision", f"{branch} moved during ID reconciliation")
+    checkout = git.checked_out_in(root, branch)
+    if checkout is not None:
+        if git.git(checkout, "status", "--porcelain"):
+            raise ProviderError("follow_up_collision", f"{branch} has uncommitted changes")
+        git.git(checkout, "merge", "--ff-only", new)
+    else:
+        git.git(root, "update-ref", f"refs/heads/{branch}", new, old)
+
+
 def record(
     main: Path,
     task_id: str,
@@ -340,22 +514,58 @@ def record(
         return FollowUpOutcome()
     main = gitops.main_root(main)
     rc = load_run_config(main)
-    with tempfile.TemporaryDirectory(prefix="factory-followups-") as tmp:
-        stage = Path(tmp)
+    settings = rc.config.settings
+    with publication_lock(main):
+        target = current_target(main, rc.base, settings)
+        return _record_current(
+            main,
+            target,
+            rc.base,
+            settings,
+            task_id,
+            run_id,
+            wf,
+            blocking=blocking,
+            decisions=decisions,
+            running=running,
+        )
+
+
+def _record_current(
+    main: Path,
+    target: str,
+    base: str,
+    settings: ProjectSettings,
+    task_id: str,
+    run_id: str,
+    wf: WorkflowRun,
+    *,
+    blocking: bool,
+    decisions: dict[Reported, Decision] | None,
+    running: Callable[[str], object] | None,
+) -> FollowUpOutcome:
+    with _snapshot(main, target, settings) as stage:
         config = stage / ".factory/config.yaml"
         config.parent.mkdir()
         config.write_bytes((main / ".factory/config.yaml").read_bytes())
-        for directory in backlog_roots(main, load_for_edit(main).settings):
-            shutil.copytree(main / directory, stage / directory, dirs_exist_ok=True)
         before = _contents(stage)
+        # Keep checkout line endings for additive extensions, without importing
+        # uncommitted assignments or stale task state into the target snapshot.
+        for path, data in before.items():
+            local = main / path
+            if local.is_file():
+                checkout = local.read_bytes()
+                if checkout != data and checkout.replace(b"\r\n", b"\n") == data.replace(
+                    b"\r\n", b"\n"
+                ):
+                    (stage / path).write_bytes(checkout)
+                    before[path] = checkout
         outcome = _record(
             stage, task_id, run_id, wf, blocking=blocking, decisions=decisions, running=running
         )
         contents = {p: data for p, data in _contents(stage).items() if before.get(p) != data}
         if contents:
-            _publish(
-                main, rc.base, rc.commit, rc.config.settings, contents, task_id, run_id, outcome
-            )
+            _publish(main, base, target, settings, contents, task_id, run_id, outcome)
         return outcome
 
 
@@ -428,6 +638,12 @@ def _publish(
                 command="follow-ups",
             )
         outcome.committed = True
+        if result.renamed_ids:
+            outcome.created = [
+                replace(item, id=result.renamed_ids.get(item.id, item.id))
+                for item in outcome.created
+            ]
+            outcome.blocked_by = [result.renamed_ids.get(ref, ref) for ref in outcome.blocked_by]
         outcome.warnings += list(result.warnings)
     except (ProviderError, RuntimeError) as exc:
         outcome.warnings.append(f"follow-up changes not published: {exc}")

@@ -47,6 +47,7 @@ import re
 import shutil
 import tempfile
 import unicodedata
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -296,9 +297,13 @@ def compose_id(parent_id: str | None, code: str) -> str:
     return f"{parent_id}-{value}" if parent_id else value
 
 
-def _next_id(container: Container, step: str) -> str:
+def _next_id(container: Container, step: str, reserved_ids: Iterable[str] = ()) -> str:
     pattern = re.compile(rf"^{re.escape(step)}-T(\d+)$")
-    numbers = [m.group(1) for t in container.tasks if (m := pattern.match(t.id))]
+    numbers = [
+        m.group(1)
+        for task_id in [*(t.id for t in container.tasks), *reserved_ids]
+        if (m := pattern.match(task_id))
+    ]
     n = 1 + max((int(x) for x in numbers), default=0)
     width = max([2, *(len(x) for x in numbers)])
     return f"{step}-T{n:0{width}d}"
