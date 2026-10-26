@@ -1018,11 +1018,13 @@ def _execute(
         )
     ):
         evidence = wf.already_done.evidence if wf is not None and wf.already_done else ()
-        failure, notes = finish_unchanged(main, store, final, evidence)
+        reason = wf.already_done.reason if wf is not None and wf.already_done else ""
+        failure, notes = finish_unchanged(main, store, final, evidence, reason)
         result.warnings += tuple(notes)
         if failure is not None:
             result.pr_error = failure
             store.set_pr_error(final.run_id, failure)
+            result.run = store.get(final.run_id) or final
         else:
             result.done_without_pr = True
         return result

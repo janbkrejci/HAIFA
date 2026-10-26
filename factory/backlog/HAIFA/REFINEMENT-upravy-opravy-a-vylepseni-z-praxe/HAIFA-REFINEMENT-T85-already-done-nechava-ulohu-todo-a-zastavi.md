@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T85
 title: "already_done nechá úlohu todo a zastaví řetězec auto-continue"
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T68]
 writes: [aifactory/src/aifactory/run/unchanged.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/run/follows.py, aifactory/tests/, aifactory/src/aifactory/run/queue.py, aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/run/members.py]
@@ -29,3 +29,4 @@ Běh, ve kterém builder správně ohlásí `already_done` s evidencí, skončí
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-26 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/174 · náklady $0.00

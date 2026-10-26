@@ -1307,6 +1307,7 @@ def _sequential(
             if (
                 blocked is None
                 and not last.closed_by_heal
+                and not last.done_without_pr
                 and last.auto_merge is None
                 and auto_merge_enabled(after)
             ):
@@ -1545,7 +1546,7 @@ def _run_parallel(
             record.go_on()
             save()
         merge = result.auto_merge
-        closed = result.closed_by_heal
+        closed = result.closed_by_heal or result.done_without_pr
         if not closed and auto_merge_enabled(after) and (merge is None or not merge.merged):
             if merge is None or not _waits_for_stack(merge):
                 halt = STOP_NOT_MERGED if cont else STOP_DISABLED
