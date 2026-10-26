@@ -180,10 +180,14 @@ def test_dashboard_plan_and_action(repo: Path, script: Script, tmp_path: Path) -
     assert "README.md" in note and ".factory/x.md" in note and note.endswith("go")
     assert "README.md" in _writes_in_base(repo)
 
-    # the paths are allowed now: nothing left to add
+    # The permissions are already committed: retry without another backlog edit.
+    before = git(repo, "rev-parse", "main")
     again = client.post(f"/api/runs/{run_id}/allow-writes", json={})
-    assert again.status_code == 409
-    assert again.json()["error"]["code"] == "nothing_to_allow"
+    assert again.status_code == 202, again.json()
+    assert again.json()["data"]["allow_writes"]["commit"]["committed"] is False
+    assert git(repo, "rev-parse", "main") == before
+    assert len(launcher.calls) == 2
+    assert ".factory/x.md" in (launcher.calls[-1][2] or "")
 
 
 def test_allow_writes_with_base_changes_pr_waits_for_the_backlog_pr(
@@ -302,7 +306,10 @@ def test_all_commit_results_verify_effective_writes_in_base(
     )
 
 
-@pytest.mark.parametrize("remote_change", ["none", "unrelated", "writes"])
+@pytest.mark.parametrize(
+    "remote_change",
+    ["none", "unrelated", "writes", "synced-writes", "dirty-unrelated", "dirty-writes"],
+)
 def test_retry_updates_base_before_allowing_writes(
     repo: Path, script: Script, capsys: Capsys, tmp_path: Path, remote_change: str
 ) -> None:
@@ -317,15 +324,24 @@ def test_retry_updates_base_before_allowing_writes(
     git(tmp_path, "clone", "-q", str(bare), str(other))
     git(other, "config", "user.name", "Test")
     git(other, "config", "user.email", "test@example.test")
-    if remote_change == "writes":
+    if remote_change in ("writes", "synced-writes", "dirty-writes"):
         edit_task(other, T01, writes=["src/app/", "README.md"])
-    elif remote_change == "unrelated":
+    elif remote_change in ("unrelated", "dirty-unrelated"):
         write(other, "remote.txt", "remote change\n")
     if remote_change != "none":
         git(other, "add", "-A")
         git(other, "commit", "-q", "-m", "advance remote")
         git(other, "push", "-q", "origin", "main")
     remote_tip = git(other, "rev-parse", "HEAD")
+    if remote_change == "synced-writes":
+        git(repo, "pull", "--ff-only", "-q")
+    if remote_change.startswith("dirty-"):
+        write(repo, "README.md", "operator staged change\n")
+        git(repo, "add", "README.md")
+        write(repo, "README.md", "operator staged and unstaged change\n")
+    before_staged = git(repo, "diff", "--cached", "--", "README.md")
+    before_unstaged = git(repo, "diff", "--", "README.md")
+    before_readme = (repo / "README.md").read_bytes()
     script.on("planner", lambda wt: write(wt, "README.md", "allowed\n"))
     script.add("planner", ok())
     capsys.readouterr()
@@ -335,11 +351,15 @@ def test_retry_updates_base_before_allowing_writes(
     assert code == 0, data
     assert data["data"]["run"]["run_id"] == run_id
     assert data["data"]["run"]["state"] == SUCCEEDED
-    assert data["data"]["allow_writes"]["commit"]["committed"] == (remote_change != "writes")
-    if remote_change == "writes":
+    no_edit = remote_change in ("writes", "synced-writes", "dirty-writes")
+    assert data["data"]["allow_writes"]["commit"]["committed"] is not no_edit
+    if no_edit:
         assert git(repo, "rev-parse", "main") == remote_tip
     assert "README.md" in _writes_in_base(repo)
-    assert git(repo, "status", "--porcelain") == ""
+    assert git(repo, "diff", "--cached", "--", "README.md") == before_staged
+    assert git(repo, "diff", "--", "README.md") == before_unstaged
+    assert (repo / "README.md").read_bytes() == before_readme
+    assert git(repo, "status", "--porcelain", "--", "backlog") == ""
 
 
 @pytest.mark.parametrize("failure_point", ["edit", "commit"])

@@ -290,6 +290,10 @@ def allow_writes(
     """Add the allowed paths of the run's ``writes_violation`` or ``writes_needed`` to the
     task's writes in base (`ci_fix`: of the task's newest ``ci-fix`` run)."""
     plan = plan_allow_writes(repo, task_id, run_id, ci_fix=ci_fix)
+    # Already committed permissions still let the retry proceed. Protected,
+    # backlog and main-checkout paths keep their refusal even if writes cover them.
+    plan.allow.extend(r.path for r in plan.refused if r.reason == ALREADY_ALLOWED)
+    plan.refused = [r for r in plan.refused if r.reason != ALREADY_ALLOWED]
     if not plan.allow:
         why = "; ".join(f"{r.path}: {REASONS[r.reason]}" for r in plan.refused)
         raise TaskRunError(
@@ -301,7 +305,7 @@ def allow_writes(
     rc = load_run_config(main)
     store = TaskRunStore(rc.local.trace_db_path(main))
     try:
-        _pull_base(main, rc.config.settings, store)
+        _pull_base(main, rc.config.settings, store, preserve_local_changes=True)
     finally:
         store.close()
     rc = load_run_config(main)
