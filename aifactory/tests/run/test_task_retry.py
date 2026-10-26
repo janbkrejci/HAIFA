@@ -431,6 +431,54 @@ def test_retry_resolves_a_conflict_after_the_rebase(
     assert result.run.retry_list()[0]["rebased_onto"] == moved
 
 
+def test_retry_repairs_a_test_without_a_text_conflict(
+    repo: Path, script: Script, tmp_path: Path
+) -> None:
+    test_file = "tests/startup_test.py"
+    origin = add_origin(repo, tmp_path)
+    first = rejected_run(repo, script)
+    push_to_origin(origin, tmp_path, MODEL, "NAME = 'main'\n")
+    # Base adds a test and the operator grants its path after the original attempt.
+    other = tmp_path / "other"
+    write(other, test_file, "READY = False\n")
+    task_file = other / f"{CORE}/S01-model/{T01}-schema.md"
+    task_file.write_text(
+        task_file.read_text(encoding="utf-8").replace(
+            "status: todo", f"status: todo\nwrites: [src/app/, {test_file}]"
+        ),
+        encoding="utf-8",
+    )
+    moved = commit_all(other, "grant startup test repair in task writes")
+    git(other, "push", "-q", "origin", "main")
+
+    script.on("builder", lambda wt: write(wt, MODEL, "NAME = 'both'\n"))
+    script.add("builder", ok(changed_files=[MODEL], commit_message="Resolve"))
+    test_plan(script)
+    script.on("builder", lambda wt: write(wt, test_file, "READY = True\n"))
+    script.add("builder", ok(changed_files=[test_file], commit_message="Repair startup test"))
+    test_plan(script)
+    review(script, approved=True)
+
+    class StartupCode(GitCode):
+        def test(self, run: Any, plan: Any) -> Any:
+            self.plans.append(plan)
+            ready = (Path(run.repo_root) / test_file).read_text(encoding="utf-8")
+            return self._result("READY = True" in ready, "startup test")
+
+    code = StartupCode([])
+    result = retry_run(repo, T01, code=code)
+
+    assert result.ok, result.run.error
+    assert len(code.plans) == 3  # red after resolve, green after fix, then replayed task test
+    assert git(repo, "show", f"{first.run.branch}:{test_file}") == "READY = True"
+    assert git(repo, "merge-base", "--is-ancestor", moved, first.run.branch) == ""
+    assert git(Path(result.run.worktree), "status", "--porcelain") == ""
+    repair = calls(script, "builder")[-1]
+    assert "Files without text conflicts are allowed" in repair.prompt
+    assert "do not request needs_writes" in repair.prompt
+    assert result.run.run_id == first.run.run_id
+
+
 def test_retry_reads_changed_task_configuration_and_workflow_from_pulled_base(
     repo: Path,
     script: Script,

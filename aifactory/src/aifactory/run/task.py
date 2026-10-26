@@ -74,6 +74,7 @@ from aifactory.run.resolve import (
     RESOLVE_WORKFLOW,
     ConflictWriteGuard,
     ResolveSpec,
+    explain_allowed_repair_request,
     finish_resolve,
     resolve_prompt,
     restore,
@@ -630,11 +631,17 @@ def run_task(
                 onto=resolve_onto,
                 before=before,
                 base=rc.base,
+                repair_scope=scope,
                 generated=generated,
                 upstream=upstream,
             )
             prompt = resolve_prompt(
-                task, worktree, rc.base, resolve_onto, tuple(g.path for g in generated)
+                task,
+                worktree,
+                rc.base,
+                resolve_onto,
+                tuple(g.path for g in generated),
+                repair_paths=scope.paths,
             )
         else:
             followed = followed_task(
@@ -875,7 +882,9 @@ def _execute(
     resolve = job.resolve
     guard: TaskWriteGuard
     if resolve is not None:
-        guard = ConflictWriteGuard(main, worktree, row.task_id, ignored, resolve.generated)
+        guard = ConflictWriteGuard(
+            main, worktree, row.task_id, ignored, resolve.generated, repair_scope=scope
+        )
     else:
         guard = TaskWriteGuard(main, worktree, scope, ignored)
     variables = {
@@ -954,6 +963,9 @@ def _execute(
             else:
                 os.environ[basemoves.RUN_ENV] = saved_run_env
     except Exception as exc:
+        if resolve is not None or retry is not None:
+            command = f"factory task {'resolve' if resolve is not None else 'retry'} {row.task_id}"
+            exc = explain_allowed_repair_request(exc, scope, command)
         error = str(exc)[:2000] or type(exc).__name__
         failure_kind, failure_detail = failures.classify(exc)
     except BaseException as exc:

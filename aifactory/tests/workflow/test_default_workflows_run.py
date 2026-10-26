@@ -12,6 +12,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
+import pytest
 from workflow_fakes import (  # noqa: F401
     EngineEnv,
     FakeCodeRunner,
@@ -539,6 +540,28 @@ def test_resolve_has_no_implicit_plan_reviewer(workflow_env: EngineEnv, tmp_path
     _script(workflow_env, tester=[TEST_PLAN], **{})
     modes = _review_modes(workflow_env, tmp_path, "resolve", CleanRebase([True]))
     assert modes == []
+
+
+@pytest.mark.parametrize("reviewed", [False, True])
+def test_clean_rebase_can_repair_a_red_suite(workflow_env: EngineEnv, reviewed: bool) -> None:
+    name = "resolve-reviewed" if reviewed else "resolve"
+    _script(
+        workflow_env,
+        tester=[TEST_PLAN, TEST_PLAN],
+        builder=[FIX],
+        reviewer=[APPROVE] if reviewed else [],
+    )
+    code = CleanRebase([False, True])
+    workflow = load_workflow(DEFAULT_WORKFLOWS_DIR / f"{name}.yaml")
+
+    result = run_workflow(workflow, "repair after rebase", workflow_env.cfg, code=code)
+
+    assert (result.exit_code, result.accepted) == (0, True)
+    phases = _phases(result)
+    assert ("resolve", "agent", "builder") not in phases
+    assert ("fix_1", "agent", "builder") in phases
+    assert (("review", "agent", "reviewer") in phases) == reviewed
+    _assert_done(workflow_env, code)
 
 
 def test_task_has_no_implicit_plan_reviewer(workflow_env: EngineEnv, tmp_path: Path) -> None:

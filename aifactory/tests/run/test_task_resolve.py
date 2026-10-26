@@ -250,14 +250,115 @@ def test_red_suite_restores_branch(repo: Path, script: Script) -> None:
     assert_restored(repo, result, before)
 
 
-def test_clean_rebase_red_suite_restores_branch(repo: Path, script: Script) -> None:
-    run_both(repo, script, ("src/app/loader.py", "LOADER = 1\n"))
-    before = tip(repo)
-
+@pytest.mark.parametrize("conflict", [False, True])
+def test_repair_without_text_conflict_is_committed(
+    repo: Path, script: Script, conflict: bool
+) -> None:
+    run_both(
+        repo, script, (MODEL, "VALUE = 2\n") if conflict else ("src/app/loader.py", "LOADER = 1\n")
+    )
+    if conflict:
+        resolver(script, settle, changed_files=[MODEL])
     tester(script)
-    result = resolve_task(repo, T02, code=ResolveCode([False, False, False]))
+    repair_file = "src/app/startup_test.py"
+    resolver(
+        script, lambda wt: write(wt, repair_file, "READY = True\n"), changed_files=[repair_file]
+    )
+    tester(script)
 
-    assert builder_calls(script) == []
+    result = resolve_task(repo, T02, code=ResolveCode([False, True]))
+
+    assert result.ok, result.run.error
+    assert git(repo, "show", f"{BRANCH2}:{repair_file}") == "READY = True"
+    assert git(Path(result.run.worktree), "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("conflict", [False, True])
+@pytest.mark.parametrize("repair", [False, True])
+@pytest.mark.parametrize("staged", [False, True])
+def test_check_output_outside_writes_is_not_committed(
+    repo: Path, script: Script, conflict: bool, repair: bool, staged: bool
+) -> None:
+    run_both(
+        repo, script, (MODEL, "VALUE = 2\n") if conflict else ("src/app/loader.py", "LOADER = 1\n")
+    )
+    if conflict:
+        resolver(script, settle, changed_files=[MODEL])
+    tester(script)
+    repair_file = "src/app/startup_test.py"
+    if repair:
+        resolver(
+            script, lambda wt: write(wt, repair_file, "READY = True\n"), changed_files=[repair_file]
+        )
+        tester(script)
+    before_count = git(repo, "rev-list", "--count", f"main..{BRANCH2}")
+
+    class ReportCode(ResolveCode):
+        def test(self, run: Any, plan: Any) -> Any:
+            wt = Path(run.repo_root)
+            write(wt, "report.xml", "<report/>\n")
+            write(wt, "README.md", "changed by a check\n")
+            if staged:
+                git(wt, "add", "report.xml", "README.md")
+            return super().test(run, plan)
+
+    result = resolve_task(repo, T02, code=ReportCode([False, True] if repair else [True]))
+
+    assert result.ok, result.run.error
+    committed = git(repo, "ls-tree", "-r", "--name-only", BRANCH2).splitlines()
+    assert "report.xml" not in committed
+    assert git(repo, "show", f"{BRANCH2}:README.md") == git(repo, "show", "main:README.md")
+    assert (Path(result.run.worktree) / "report.xml").exists()
+    if repair:
+        assert git(repo, "show", f"{BRANCH2}:{repair_file}") == "READY = True"
+    elif not conflict:
+        assert git(repo, "rev-list", "--count", f"main..{BRANCH2}") == before_count
+
+
+def test_repair_outside_task_writes_restores_branch(repo: Path, script: Script) -> None:
+    run_both(repo, script)
+    before = tip(repo)
+    resolver(script, settle, changed_files=[MODEL])
+    tester(script)
+    resolver(
+        script, lambda wt: write(wt, "outside.py", "VALUE = 1\n"), changed_files=["outside.py"]
+    )
+
+    result = resolve_task(repo, T02, code=ResolveCode([False]))
+
+    assert result.run.failure_kind == "writes_violation"
+    assert "outside.py" in (result.run.error or "")
+    assert_restored(repo, result, before)
+
+
+@pytest.mark.parametrize("already_allowed", [False, True])
+def test_repair_request_for_existing_writes_explains_next_step(
+    repo: Path, script: Script, already_allowed: bool
+) -> None:
+    run_both(repo, script)
+    before = tip(repo)
+    resolver(script, settle, changed_files=[MODEL])
+    tester(script)
+    path = "src/app/startup_test.py" if already_allowed else "outside.py"
+    script.add(
+        "builder",
+        {
+            "status": "fail",
+            "summary": "Need test access",
+            "fail_kind": "needs_writes",
+            "needs_writes": [{"path": path, "reason": "Repair startup test"}],
+        },
+    )
+
+    result = resolve_task(repo, T02, code=ResolveCode([False]))
+
+    if already_allowed:
+        assert result.run.failure_kind == "invalid_output"
+        assert "already allowed" in (result.run.error or "")
+        assert f"factory task resolve {T02}" in (result.run.error or "")
+        assert "fix_N" in (result.run.error or "")
+    else:
+        assert result.run.failure_kind == "writes_needed"
     assert_restored(repo, result, before)
 
 

@@ -15,13 +15,11 @@ steps:
       - test:
           description: Run the checks on the rebased branch before it is pushed
       - fix:
-          when: rebase.conflict
-          description: Repair what the suite reported, from its verbatim output, only in the conflicted files
+          description: Repair what the suite reported, from its verbatim output, within the task writes, including files without conflicts
       - test_plan:
-          when: rebase.conflict
           description: Plan the checks again — the fix changed code, keep every earlier check
   - review:
-      when: resolve.ran and test.passed
+      when: (resolve.ran or fix.ran) and test.passed
       input: [resolve, fix]
       description: Confirm the resolved branch still does what the task asked and keeps what base now holds
-accept: test.passed and (not resolve.ran or review.approved)
+accept: test.passed and (not (resolve.ran or fix.ran) or review.approved)

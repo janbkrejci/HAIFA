@@ -138,11 +138,9 @@ def test_resolve_structure() -> None:
     assert isinstance(fix, RoleStep)
     assert fix.name == "fix"
     assert fix.role.agent == "builder"
-    assert fix.when is not None
-    assert fix.when.source == "rebase.conflict"
+    assert fix.when is None
     assert isinstance(replan, RoleStep)
     assert replan.name == "test_plan"
-    assert replan.when is not None
-    assert replan.when.source == "rebase.conflict"
+    assert replan.when is None
     assert workflow.accept is not None
     assert workflow.accept.source == "test.passed"
