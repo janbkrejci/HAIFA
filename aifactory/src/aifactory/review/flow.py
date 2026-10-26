@@ -435,6 +435,7 @@ def _approve_gated(
 ) -> ApproveResult:
     """``_prepare_approve``, the CI gate with its repair runs, then ``_finish_approve``."""
     fixes: list[str] = []
+    refreshes = 0
     while True:
         prepared = _prepare_approve(ctx, task_id)
         row = prepared.row
@@ -454,7 +455,15 @@ def _approve_gated(
             blocker = ci.checks_reason(checks, len(fixes))
             if blocker is not None:
                 raise stop(*blocker)
-            result = _finish_approve(ctx, prepared, merged_by)
+            try:
+                result = _finish_approve(ctx, prepared, merged_by)
+            except ReviewError as exc:
+                if exc.code == "follow_up_head_changed" and refreshes < 3:
+                    refreshes += 1
+                    if prepared.temp is not None:
+                        _remove(ctx, prepared.temp, [], [])
+                    continue  # The repaired head must pass CI again.
+                raise stop(exc.code, exc.message) from exc
             result.ci_fix_runs = fixes
             return result
         try:
@@ -521,17 +530,21 @@ class _Prepared:
 def _prepare_approve(ctx: _Ctx, task_id: str) -> _Prepared:
     """Check the PR, commit ``status: done`` on its branch and push; safe to call again."""
     row, status = _checked_pr(ctx, task_id)
-    if status.mergeability == CONFLICT:
+    settings = ctx.rc.config.settings
+    main, branch = ctx.main, row.branch
+    _refuse_blocked(main, settings, task_id)
+    worktree, temp = _branch_worktree(ctx, branch, "approve")
+
+    from aifactory.run.followups import publication_lock
+
+    with publication_lock(main):
+        repaired = _refresh_follow_up_ids(ctx, row, worktree)
+    if status.mergeability == CONFLICT and not repaired:
         raise ReviewError(
             "conflict",
             f"PR {row.url} does not merge into {row.base}; run `factory task resolve {task_id}` "
             f"to rebase it onto {row.base}",
         )
-
-    settings = ctx.rc.config.settings
-    main, branch = ctx.main, row.branch
-    _refuse_blocked(main, settings, task_id)
-    worktree, temp = _branch_worktree(ctx, branch, "approve")
 
     backlog = load_backlog(worktree, settings)
     node = backlog.by_id.get(task_id)
@@ -551,6 +564,30 @@ def _prepare_approve(ctx: _Ctx, task_id: str) -> _Prepared:
 
 
 def _finish_approve(ctx: _Ctx, prepared: _Prepared, merged_by: str) -> ApproveResult:
+    from aifactory.run.followups import publication_lock
+
+    with publication_lock(ctx.main):
+        if _refresh_follow_up_ids(ctx, prepared.row, prepared.worktree):
+            raise ReviewError(
+                "follow_up_head_changed",
+                "target changed; follow-up IDs reconciled, checks required for the new head",
+            )
+        return _finish_approve_current(ctx, prepared, merged_by)
+
+
+def _refresh_follow_up_ids(ctx: _Ctx, row: TaskPrRow, worktree: Path) -> bool:
+    from aifactory.run.followups import advance_pr, reconcile_ids
+
+    head = gitops.git(worktree, "rev-parse", "HEAD")
+    fixed, _ = reconcile_ids(ctx.main, head, row.base, ctx.rc.config.settings)
+    if fixed == head:
+        return False
+    advance_pr(ctx.main, row.branch, head, fixed)
+    ctx.provider.push(worktree, row.branch)
+    return True
+
+
+def _finish_approve_current(ctx: _Ctx, prepared: _Prepared, merged_by: str) -> ApproveResult:
     """Host approval, merge of ``prepared.head``, ``task_prs``, base caught up, cleanup."""
     row, head, temp = prepared.row, prepared.head, prepared.temp
     settings = ctx.rc.config.settings

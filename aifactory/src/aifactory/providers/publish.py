@@ -304,6 +304,7 @@ class PublishResult:
     pr: PullRequest | None = None
     warnings: tuple[str, ...] = ()
     merged: bool = False
+    renamed_ids: dict[str, str] = field(default_factory=dict)
 
 
 def uses_pr(settings: ProjectSettings, pr: bool = False) -> bool:
@@ -331,6 +332,34 @@ def finish_pr(
     materialize: bool = False,
     command: str = "config commit",
 ) -> PublishResult:
+    from aifactory.run.followups import publication_lock
+
+    with publication_lock(root):
+        return _finish_pr(
+            root,
+            provider=provider,
+            settings=settings,
+            plan=plan,
+            result=result,
+            message=message,
+            store=store,
+            materialize=materialize,
+            command=command,
+        )
+
+
+def _finish_pr(
+    root: Path,
+    *,
+    provider: GitProvider,
+    settings: ProjectSettings,
+    plan: PublishPlan,
+    result: PublishResult,
+    message: str,
+    store: TaskRunStore | None,
+    materialize: bool,
+    command: str,
+) -> PublishResult:
     """``base_pr_merge: auto``: approve and merge the PR `result` opened, then move base.
 
     The local provider's PR is its branch: base fast-forwards to the branch commit (pushed
@@ -340,30 +369,47 @@ def finish_pr(
     """
     if settings.base_pr_merge != "auto" or result.pr is None:
         return result
+    pr = result.pr
     base, remote = plan.base, settings.remote
     warnings = list(result.warnings)
     subject = message.strip().splitlines()[0] if message.strip() else result.pr.title
+    local_base = git.rev_parse(root, f"refs/heads/{base}")
+    repaired = False
     try:
+        from aifactory.run.followups import advance_pr, reconcile_ids
+
+        head, renamed = reconcile_ids(root, result.commit, base, settings)
+        if head != result.commit:
+            assert result.branch is not None
+            advance_pr(root, result.branch, result.commit, head)
+            provider.push(root, result.branch)
+            result = replace(result, commit=head, renamed_ids=renamed)
+            repaired = True
         if provider.name == "local":
             merged: str | None = result.commit
             if git.has_remote(root, remote):
                 git.push_ref(root, remote, result.commit, base)
         else:
-            provider.merge_own(result.pr, result.commit, subject)
+            provider.merge_own(pr, result.commit, subject)
             git.fetch(root, remote, base)
             merged = git.remote_tip(root, remote, base)
     except ProviderError as exc:
-        warnings.append(f"pull request {result.pr.url} stays open: {exc.message}")
+        warnings.append(f"pull request {pr.url} stays open: {exc.code}: {exc.message}")
         return replace(result, warnings=tuple(warnings))
     advanced = False
-    if merged is not None and _same_change(root, merged, plan, result.commit):
+    same = merged is not None and _same_change(root, merged, plan, result.commit)
+    if repaired and merged is not None:
+        same = git.rev_parse(root, f"{merged}^{{tree}}") == git.rev_parse(
+            root, f"{result.commit}^{{tree}}"
+        )
+    if same and merged is not None:
         try:
             warnings += _advance(
                 root,
                 base,
                 merged,
-                plan.base_sha,
-                plan.files,
+                local_base if repaired and local_base else plan.base_sha,
+                _pull_files(root, local_base, merged) if repaired and local_base else plan.files,
                 store,
                 materialize=materialize,
                 command=command,
@@ -487,10 +533,15 @@ def publish_direct(
     when base moves (``factory init``: nothing reaches the working tree before the push).
     """
     base, remote = plan.base, settings.remote
+    local_base = git.rev_parse(root, f"refs/heads/{base}")
+    followups = command == "follow-ups"
     sha = git.commit_tree_with(root, plan.base_sha, _changes(root, plan.files), message)
     pushed = False
     if git.has_remote(root, remote):
-        if git.rev_parse(root, f"refs/heads/{base}") != plan.base_sha:
+        if git.rev_parse(root, f"refs/heads/{base}") != local_base or (
+            local_base != plan.base_sha
+            and not (followups and local_base and git.is_ancestor(root, local_base, plan.base_sha))
+        ):
             raise ProviderError("base_moved", f"{base} moved since the plan; nothing pushed")
         git.push_ref(root, remote, sha, base)
         pushed = True
@@ -499,8 +550,8 @@ def publish_direct(
             root,
             base,
             sha,
-            plan.base_sha,
-            plan.files,
+            local_base if followups and local_base else plan.base_sha,
+            _pull_files(root, local_base, sha) if followups and local_base else plan.files,
             store,
             materialize=materialize,
             command=command,
