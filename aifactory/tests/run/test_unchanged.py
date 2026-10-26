@@ -190,6 +190,13 @@ def test_completion_problem_blocks_dashboard_and_stops_chain(
     task = next(t for t in response.json()["data"]["tasks"] if t["id"] == T01)
     assert task["board_state"] == "blocked"
     assert task["completion_error"] == result.pr_error
+    if problem == "pending-pr":
+        commit_all(repo, "Merge backlog completion")
+        response = client.get("/api/backlog")
+        assert response.status_code == 200
+        task = next(t for t in response.json()["data"]["tasks"] if t["id"] == T01)
+        assert task["board_state"] == "done"
+        assert task["completion_error"] is None
 
 
 @pytest.mark.parametrize("with_spec", [False, True])

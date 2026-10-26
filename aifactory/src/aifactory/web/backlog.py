@@ -8,7 +8,8 @@ before anything is written and only files under the backlog roots change. Nothin
 committed except by ``commit`` (``factory backlog commit``), which commits the backlog
 changes to ``base``.
 
-Board states (the kanban columns), first match wins: ``done``, ``cancelled``,
+Board states (the kanban columns), first match wins: ``cancelled``,
+``blocked`` (completion could not be recorded in base), ``done``,
 ``running`` (a running row or a successful run awaiting publication/completion),
 ``done`` (a merged PR not recorded in the reopened task's history),
 ``approved`` (a manually approved open PR waiting for CI),
@@ -241,7 +242,7 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
     """The kanban column of ``task`` (see the module docstring)."""
     if task.status == "cancelled":
         return "cancelled"
-    if task.id in rt.completion_errors:
+    if _completion_error(backlog, task, rt) is not None:
         return "blocked"
     if task.status == "done":
         return "done"
@@ -262,12 +263,31 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
     return "todo"
 
 
+def _completion_error(backlog: Backlog, task: Task, rt: _Runtime) -> str | None:
+    error = rt.completion_errors.get(task.id)
+    # A manually merged backlog PR closes the task even though its run retains
+    # the earlier warning. Until then complete_task's working-tree edit is not enough.
+    if (
+        error is not None
+        and error.startswith(f"{COMPLETION_ERROR_PREFIX}backlog PR awaits merge:")
+        and task.status == "done"
+    ):
+        try:
+            committed = gitops.git(backlog.root, "show", f"{backlog.settings.base}:{task.path}")
+            current = (backlog.root / task.path).read_text(encoding="utf-8").strip()
+        except (OSError, RuntimeError):
+            return error
+        if committed == current:
+            return None
+    return error
+
+
 def _task_json(
     backlog: Backlog, task: Task, reverse: dict[str, list[str]], rt: _Runtime
 ) -> JsonDict:
     data: JsonDict = dict(core.task_to_json(backlog, task, reverse))
     data["board_state"] = board_state(backlog, task, rt)
-    data["completion_error"] = rt.completion_errors.get(task.id)
+    data["completion_error"] = _completion_error(backlog, task, rt)
     own_workflow = task.own.get("workflow")
     data["own_workflow"] = None if own_workflow is None else str(own_workflow)
     own_merge = task.own.get("auto_merge")

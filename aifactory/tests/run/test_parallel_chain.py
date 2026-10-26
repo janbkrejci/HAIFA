@@ -33,8 +33,10 @@ from aifactory.run import (
     select_next,
 )
 from aifactory.run.followups import follow_up_marker
+from aifactory.run.members import member_result
 from aifactory.run.store import FAILED, SUCCEEDED
 from aifactory.run.task import blocked_reason
+from aifactory.run.unchanged import finish_unchanged
 
 CORE = "backlog/M01-core"
 STEP = "S01-model"
@@ -237,6 +239,48 @@ def started(runner: FakeRunner) -> list[str]:
 
 
 # ── limit and refill ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("auto_merge", [False, True])
+def test_completion_without_pr_refills_parallel_chain(repo: Path, auto_merge: bool) -> None:
+    setup_tasks(
+        repo,
+        [(T01, "src/app/"), (T02, "src/app/")],
+        step_extra=f"auto_continue: true\nauto_merge: {str(auto_merge).lower()}\n",
+    )
+
+    class DoneRunner(FakeRunner):
+        def wait_any(self) -> TaskRunResult:
+            task_id = next(iter(self.rows))
+            row = self.rows.pop(task_id)
+            store = self._store()
+            try:
+                store.finish(row.run_id, SUCCEEDED, "abc", None)
+                final = store.get(row.run_id)
+                assert final is not None
+                error, _ = finish_unchanged(repo, store, final, ["src/app/schema.py"])
+                assert error is None
+            finally:
+                store.close()
+            self.events.append(("end", task_id))
+            return member_result(
+                repo,
+                task_id,
+                final,
+                {"ok": True, "data": {"done_without_pr": True}},
+            )
+
+    runner = DoneRunner(repo)
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
+
+    assert chain.ok and chain.stop == STOP_EXHAUSTED
+    assert started(runner) == [T01, T02]
+    assert all(result.done_without_pr and result.pr is None for result in chain.runs)
+    backlog = load_backlog(repo)
+    for task_id in (T01, T02):
+        task = backlog.by_id[task_id]
+        assert isinstance(task, Task) and task.status == "done"
+        assert "už hotovo: src/app/schema.py" in task.body
 
 
 def test_limit_is_never_exceeded(repo: Path) -> None:

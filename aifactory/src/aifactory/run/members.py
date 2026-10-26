@@ -277,6 +277,7 @@ def member_result(
         trace_db=trace_db,
         pr=pr,
         pr_error=_text(data.get("pr_error")),
+        done_without_pr=data.get("done_without_pr") is True,
         auto_merge=AutoMergeResult.from_json(data.get("auto_merge")),
         resolve_run=_resolve_run(repo, data.get("resolve_run"), trace_db),
     )
