@@ -244,6 +244,7 @@ def test_reader_sends_a_pull_request_from_a_fork(
     assert _git(env.bare, "rev-parse", "main") == main
     fork = next(a for a in log.argvs() if a[:2] == ["repo", "fork"])
     assert fork[2] == "janbkrejci/HAIFA-LIBRARY" and "--clone=false" in fork
+    assert not any(arg.startswith("--remote") for arg in fork), fork
     create = next(a for a in log.argvs() if a[:2] == ["pr", "create"])
     assert create[create.index("--head") + 1] == f"ada:{pr['branch']}"
     assert create[create.index("--repo") + 1] == "janbkrejci/HAIFA-LIBRARY"

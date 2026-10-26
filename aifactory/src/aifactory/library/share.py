@@ -282,7 +282,7 @@ def propose(
         if permission.upper() in WRITE_PERMISSIONS:
             push_branch(root, REMOTE, sha, branch)
         else:
-            _gh_call(gh.run, "repo", "fork", proposal.repo, "--clone=false", "--remote=false")
+            _gh_call(gh.run, "repo", "fork", proposal.repo, "--clone=false")
             login = str(_gh_call(gh.run, "api", "user", "--jq", ".login")).strip()
             if not login:
                 raise LibraryStoreError("pr_failed", "gh api user returned no login")
