@@ -325,6 +325,7 @@ def _container_json(
         "effective_auto_continue": _effective_flag(container, "auto_continue"),
         "effective_auto_merge": _effective_flag(container, "auto_merge"),
         "can_toggle": container.index_path is not None,
+        "archived": container.archived,
         "kind": "container",
         "id": container.id,
         "title": container.title,
@@ -394,7 +395,10 @@ def backlog_view(repo: Path, *, status: str | None = None) -> tuple[JsonDict, li
         for c in backlog.containers
         if (node := _container_json(backlog, c, reverse, rt, keep, filtered)) is not None
     ]
-    all_tasks = sorted(core.iter_tasks(backlog), key=lambda t: t.path)
+    all_tasks = sorted(
+        (t for c in backlog.containers if not c.archived for t in _subtree_tasks(c)),
+        key=lambda t: t.path,
+    )
     step_level = backlog.settings.levels[-2] if len(backlog.settings.levels) > 1 else None
     steps: list[JsonDict] = []
     for c in core.iter_containers(backlog.containers):
@@ -1161,7 +1165,7 @@ def container_detail(repo: Path, container_id: str) -> tuple[JsonDict, list[str]
         "editable_keys": [
             key
             for key in core.CONTAINER_KEYS
-            if key not in core.HARNESS_KEYS or container.parent is None
+            if key != "archived" and (key not in core.HARNESS_KEYS or container.parent is None)
         ],
         "issues": own_issues,
     }

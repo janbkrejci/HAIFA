@@ -297,6 +297,7 @@ export interface TaskNode {
 }
 
 export interface ContainerNode {
+  archived?: boolean
   kind: 'container'
   id: string | null
   title: string | null
@@ -1190,6 +1191,7 @@ export interface AddContainerInput {
 }
 
 export interface EditContainerInput {
+  archived?: boolean
   harness?: string | null
   model?: string | null
   thinking?: string | null

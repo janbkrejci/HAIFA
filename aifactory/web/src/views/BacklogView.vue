@@ -223,12 +223,16 @@ const projectChoices = computed(() => projects.value.map((p) => ({
 })))
 /** The „Skrýt hotové“ switch: Hotovo and Zrušeno tasks leave the tree, kanban and graph. */
 const hideDone = ref(hideDoneSaved())
+const showArchivedProjects = ref(false)
 function onHideDone(on: boolean) {
   hideDone.value = on
   setHideDone(on)
 }
 const counts = computed(() => (data.value ? stateCounts(data.value) : null))
-const treeItems = computed(() => (hideDone.value ? pruneDone(items.value) : items.value))
+const treeItems = computed(() => {
+  const shown = items.value.filter((n) => n.kind !== 'container' || !n.archived || showArchivedProjects.value)
+  return hideDone.value ? pruneDone(shown) : shown
+})
 const kanbanTasks = computed(() => {
   const shown = filterKanban(tasks.value, items.value, filters.value)
   return hideDone.value ? shown.filter((t) => !isDoneState(t.board_state)) : shown
@@ -246,7 +250,7 @@ const problemsText = computed(() => {
   return `Backlog má ${n} ${plural(n, 'problém', 'problémy', 'problémů')}.`
 })
 /** The „Skrýt hotové“ switch hides every task of a non-empty tree. */
-const treeFiltered = computed(() => hideDone.value && items.value.length > 0 && treeItems.value.length === 0)
+const treeFiltered = computed(() => items.value.length > 0 && treeItems.value.length === 0)
 /** Codes of the containers beside the new project or step (the suggested code follows them). */
 const newSiblings = computed(() => childContainerIds(items.value, newParent.value))
 /** The graph's container holds tasks: its Nový task button preselects it. */
@@ -835,6 +839,10 @@ watch(
         @update:mode="mode = $event"
       />
       <template v-if="data">
+        <label v-if="mode === 'tree'" class="archive-projects">
+          <input v-model="showArchivedProjects" type="checkbox" data-test="show-archived-projects" />
+          Zobrazit archivované projekty
+        </label>
         <KanbanBoard
           v-if="mode === 'kanban'"
           :tasks="kanbanTasks"
@@ -852,7 +860,7 @@ watch(
           :filtered="treeFiltered"
           :workflows="workflows"
           @changed="reloadTree"
-          @clear-filter="onHideDone(false)"
+          @clear-filter="onHideDone(false); showArchivedProjects = true"
         />
       </template>
       <p v-else-if="loading" class="faint" data-test="list-loading">Načítám…</p>
@@ -861,6 +869,14 @@ watch(
 </template>
 
 <style scoped>
+.archive-projects {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0;
+  color: var(--dim);
+}
+
 .backlog-view {
   padding: 28px;
   max-width: 1600px;

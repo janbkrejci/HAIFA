@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 import yaml
 from backlog_fixture import git, make_backlog_repo
 from starlette.testclient import TestClient
@@ -15,6 +16,35 @@ from aifactory.web import create_app
 BASE = "http://127.0.0.1:4700"
 M01_INDEX = "backlog/M01-core/index.md"
 S01_INDEX = "backlog/M01-core/S01-model/index.md"
+
+
+def test_project_archive_round_trip_and_kanban(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    before = _snapshot(root)
+    original = _get(client, "/api/backlog")["data"]
+    for archived in (True, False):
+        result = _post(client, "/api/backlog/containers/M01/edit", {"archived": archived})
+        assert result["data"]["container"]["archived"] is archived
+        assert _header(root, M01_INDEX)["archived"] is archived
+        data = _get(client, "/api/backlog")["data"]
+        project = next(c for c in data["items"] if c["id"] == "M01")
+        assert project["archived"] is archived
+        assert project["children"]
+        expected = [t for t in original["tasks"] if not archived or not t["id"].startswith("M01-")]
+        assert data["tasks"] == expected
+        assert sum(data["state_counts"].values()) == len(expected)
+        assert {p: b for p, b in _snapshot(root).items() if p != M01_INDEX} == {
+            p: b for p, b in before.items() if p != M01_INDEX
+        }
+
+
+@pytest.mark.parametrize("node,value", [("M01-S01", True), ("M01", "true"), ("M01", 1)])
+def test_project_archive_rejects_invalid_writes(tmp_path: Path, node: str, value: object) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    before = _snapshot(root)
+    _post(_client(root, tmp_path), f"/api/backlog/containers/{node}/edit", {"archived": value}, 400)
+    assert _snapshot(root) == before
 
 
 def _client(root: Path, tmp_path: Path) -> TestClient:

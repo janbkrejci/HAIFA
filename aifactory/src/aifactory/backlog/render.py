@@ -120,6 +120,7 @@ def container_to_json(
     )
     return {
         "kind": "container",
+        "archived": container.archived,
         "id": container.id,
         "title": container.title,
         "level": container.level,
@@ -229,6 +230,7 @@ def container_detail_json(backlog: Backlog, container: Container) -> dict[str, o
         "level": container.level,
         "path": container.path,
         "index_path": container.index_path,
+        "archived": container.archived,
         "parent": container.parent.id if container.parent is not None else None,
         "children": [c.id for c in container.children if c.id is not None],
         "body": container.body,

@@ -676,6 +676,7 @@ def _set_container_flag(
 
 # keys of a container's index.md that ``edit_container`` sets or removes
 CONTAINER_KEYS: tuple[str, ...] = (
+    "archived",
     "harness",
     "model",
     "thinking",
@@ -855,7 +856,7 @@ def _check_container_value(key: str, value: object) -> str | list[str] | bool:
         return _dedupe([str(v) for v in value])
     if key == "quota_switch":
         return _check_chain(value)
-    if key in ("auto_continue", "auto_heal", "quota_switch_back"):
+    if key in ("auto_continue", "auto_heal", "quota_switch_back", "archived"):
         if not isinstance(value, bool):
             raise TaskEditError("invalid_value", f"'{key}' must be true or false")
         return value
@@ -899,6 +900,8 @@ def edit_container(
     backlog = load_for_edit(root)
     baseline = check_backlog(backlog)
     container = find_container(backlog, container_id, baseline)
+    if container.parent is not None and "archived" in values:
+        raise TaskEditError("invalid_value", "only projects can be archived", id=container_id)
     if container.parent is not None and any(k in values for k in HARNESS_KEYS):
         raise TaskEditError("invalid_value", "harness settings are only allowed on a project")
     rel = container.index_path

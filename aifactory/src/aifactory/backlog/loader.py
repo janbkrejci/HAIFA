@@ -157,8 +157,18 @@ class _Loader:
                 container.body = body
                 container.id = self.required_str(data, "id", index, None)
                 container.title = self.required_str(data, "title", index, container.id)
+                if "archived" in data:
+                    if parent is not None or not isinstance(data["archived"], bool):
+                        self.issue(
+                            "invalid_field",
+                            "'archived' must be true or false and is only allowed on a project",
+                            index,
+                            container.id,
+                        )
+                    else:
+                        container.archived = data["archived"]
                 for key, value in data.items():
-                    if key in ("id", "title"):
+                    if key in ("id", "title", "archived"):
                         continue
                     if key == "writes" and value is not None and _string_list(value) is None:
                         self.issue(

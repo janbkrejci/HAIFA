@@ -56,6 +56,60 @@ afterEach(() => {
 })
 
 describe('BacklogView', () => {
+  it('archives and restores projects from the tree without exposing their tasks in kanban', async () => {
+    go('#/r/haifa/backlog')
+    let archived = false
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith('/containers/M01/edit')) {
+        archived = JSON.parse(init?.body as string).archived
+        return ok({})
+      }
+      const data = backlogData()
+      data.items = data.items.map((n) => n.kind === 'container' && n.id === 'M01' ? { ...n, archived } : n)
+      if (archived) data.tasks = data.tasks.filter((t) => !t.id.startsWith('M01-'))
+      return ok(data)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await wrapper.get('[data-node="M01"] [data-test="project-archive-toggle"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/containers/M01/edit',
+      expect.objectContaining({ method: 'POST', body: '{"archived":true}' }))
+    expect(wrapper.find('[data-node="M01"]').exists()).toBe(false)
+    expect(wrapper.find('[data-node="M02"]').exists()).toBe(true)
+    await wrapper.get('[data-test="show-archived-projects"]').setValue(true)
+    expect(wrapper.get('[data-node="M01"]').text()).toContain('Archivováno')
+    await wrapper.get('[data-test="mode-kanban"]').trigger('click')
+    expect(wrapper.find('[data-item="M01-S01-T02"]').exists()).toBe(false)
+    expect(wrapper.find('[data-item="M02-S01-T01"]').exists()).toBe(true)
+    await wrapper.get('[data-test="mode-tree"]').trigger('click')
+    await wrapper.get('[data-node="M01"] [data-test="project-archive-toggle"]').trigger('click')
+    await flushPromises()
+    expect(archived).toBe(false)
+    await wrapper.get('[data-test="show-archived-projects"]').setValue(false)
+    expect(wrapper.find('[data-node="M01"]').exists()).toBe(true)
+    await wrapper.get('[data-test="mode-kanban"]').trigger('click')
+    expect(wrapper.find('[data-item="M01-S01-T02"]').exists()).toBe(true)
+  })
+
+  it('keeps a project visible and reports failed archive writes', async () => {
+    go('#/r/haifa/backlog')
+    const pending = deferred<Response>()
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => url.endsWith('/containers/M01/edit')
+      ? pending.promise : ok(backlogData())))
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    const button = wrapper.get('[data-node="M01"] [data-test="project-archive-toggle"]')
+    await button.trigger('click')
+    expect(button.attributes('disabled')).toBeDefined()
+    pending.resolve(fail('unavailable', 'offline', 503))
+    await flushPromises()
+    expect(wrapper.get('[data-test="project-archive-error"]').text()).toContain('offline')
+    expect(button.attributes('disabled')).toBeUndefined()
+    expect(wrapper.find('[data-node="M01"]').exists()).toBe(true)
+  })
+
   it('archives and restores completed cards through the API and reloads server data', async () => {
     go('#/r/haifa/backlog')
     let archived = false

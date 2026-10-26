@@ -4,10 +4,12 @@
 // settings under the row: the auto-continue and auto-merge switches and the keys of its
 // `index.md` (written to the working tree, the tree reloads). A click on a task row opens
 // the task detail.
-import { computed } from 'vue'
-import { ChevronRight, SlidersHorizontal } from 'lucide-vue-next'
+import { computed, ref } from 'vue'
+import { Archive, ArchiveRestore, ChevronRight, SlidersHorizontal } from 'lucide-vue-next'
 import {
   BOARD_STATES,
+  editContainer,
+  flattenIssues,
   isExpanded,
   isSettingsOpen,
   levelLabel,
@@ -44,6 +46,22 @@ const editable = computed(() =>
   props.node.kind === 'container' && props.node.id ? { ...props.node, id: props.node.id } : null,
 )
 
+const archiving = ref(false)
+const archiveError = ref<string | null>(null)
+async function toggleArchive() {
+  if (!canEdit.value || props.depth !== 0 || !props.node.id || archiving.value) return
+  archiving.value = true
+  archiveError.value = null
+  try {
+    await editContainer(props.node.id, { archived: !props.node.archived })
+    emit('changed')
+  } catch (e) {
+    archiveError.value = flattenIssues(e).message
+  } finally {
+    archiving.value = false
+  }
+}
+
 function openTask(event: MouseEvent) {
   if (props.node.kind !== 'task' || (event.target as Element | null)?.closest('a')) return
   window.location.hash = taskHref(props.node.id)
@@ -51,7 +69,7 @@ function openTask(event: MouseEvent) {
 </script>
 
 <template>
-  <li v-if="node.kind === 'container'" class="container" :data-node="node.id ?? node.path">
+  <li v-if="node.kind === 'container'" class="container" :class="{ archived: node.archived }" :data-node="node.id ?? node.path">
     <div
       class="row head clickable"
       :style="{ paddingLeft: `${depth * 20}px` }"
@@ -71,6 +89,7 @@ function openTask(event: MouseEvent) {
       <span class="level" data-test="level">{{ levelLabel(levels[depth] ?? node.level) }}</span>
       <CodeTip :code="node.id"><span class="id">{{ node.id ?? node.path }}</span></CodeTip>
       <span class="title">{{ node.title }}</span>
+      <span v-if="node.archived" class="level">Archivováno</span>
       <Tooltip v-if="node.auto_continue === true" text="auto-continue zapnuto">
         <span class="auto" data-test="auto-badge" tabindex="0">auto</span>
       </Tooltip>
@@ -88,6 +107,18 @@ function openTask(event: MouseEvent) {
         @click.stop
       >Graf</a>
       <button
+        v-if="canEdit && depth === 0"
+        type="button"
+        class="switch-button"
+        data-test="project-archive-toggle"
+        :disabled="archiving"
+        :aria-label="node.archived ? 'Obnovit projekt' : 'Archivovat projekt'"
+        @click.stop="toggleArchive"
+      >
+        <ArchiveRestore v-if="node.archived" :size="15" />
+        <Archive v-else :size="15" />
+      </button>
+      <button
         v-if="canEdit"
         type="button"
         class="switch-button"
@@ -99,6 +130,7 @@ function openTask(event: MouseEvent) {
         <SlidersHorizontal :size="15" />
       </button>
     </div>
+    <p v-if="archiveError" role="alert" data-test="project-archive-error">{{ archiveError }}</p>
     <TreeSettings
       v-if="settingsOpen && editable"
       :node="editable"
