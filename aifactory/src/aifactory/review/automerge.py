@@ -352,7 +352,9 @@ def _hosting_and_merge(
     except ProviderError as exc:
         return blocked("status_unavailable", f"{exc.code}: {exc.message}")
     hosting = hosting_blocker(status)
-    if hosting is not None:
+    # Approval reconciles colliding follow-up IDs before rejecting conflicts.
+    # Genuine conflicts still fail there, before the done commit or merge.
+    if hosting is not None and hosting[0] != "conflict":
         return blocked(*hosting)
     try:
         approved = approve_task(repo, task.id, provider=provider, merged_by=AUTO_MERGE, code=code)

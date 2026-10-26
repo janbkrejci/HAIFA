@@ -50,6 +50,7 @@ from aifactory.backlog import (
 from aifactory.backlog.derived import descendant_tasks
 from aifactory.backlog.edit import _next_id, _write_checked, compose_id
 from aifactory.backlog.model import HUMAN
+from aifactory.backlog.roots import owning_root
 from aifactory.config import ProjectSettings
 from aifactory.run.scope import literal_prefix
 from aifactory.workflow import WorkflowRun
@@ -377,6 +378,11 @@ def reconcile_ids(
 
     target = current_target(root, base, settings)
     ancestor = git.git(root, "merge-base", head, target)
+    changed = git.git(root, "diff", "--name-only", "-z", ancestor, head).split("\0")
+    if not any(
+        path.lower().endswith(".md") and owning_root(path, settings) is not None for path in changed
+    ):
+        return head, {}
     with (
         _snapshot(root, head, settings) as ours,
         _snapshot(root, ancestor, settings) as old,

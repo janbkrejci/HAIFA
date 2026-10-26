@@ -309,3 +309,57 @@ def test_unrepairable_task_pr_records_dashboard_reason(repo: Path, script: Scrip
         saved = store.pr_for_branch(branch)
         assert saved is not None and saved.state == "open"
         assert saved.auto_merge_error and "follow_up_collision" in saved.auto_merge_error
+
+
+def test_automerge_keeps_unrelated_conflict_open(repo: Path, script: Script) -> None:
+    provider = LocalProvider(repo, load_run_config(repo).config.settings)
+    script.on("planner", lambda wt: write(wt, SPEC, "# PR spec\n"))
+    script.add("planner", ok(artifacts=[SPEC], commit_message="Add spec"))
+    run = run_task(repo, T01, provider=provider)
+    assert run.ok and run.pr is not None
+    head = git(repo, "rev-parse", run.pr.branch)
+    write(repo, SPEC, "# Conflicting target spec\n")
+    before = commit_all(repo, "Concurrent target spec")
+    rc = load_run_config(repo)
+    task = load_backlog(repo).by_id[T01]
+    assert isinstance(task, Task)
+
+    outcome = _hosting_and_merge(repo, run.pr, task, provider, rc, repo)
+
+    assert not outcome.merged and outcome.code == "conflict"
+    assert git(repo, "rev-parse", "main") == before
+    assert git(repo, "rev-parse", run.pr.branch) == head
+    remaining = load_backlog(repo).by_id[T01]
+    assert isinstance(remaining, Task) and remaining.status == "todo"
+
+
+def test_unchanged_backlog_does_not_need_snapshots(
+    repo: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    rc = load_run_config(repo)
+    head = pgit.commit_tree_with(
+        repo,
+        rc.commit,
+        [("README.md", "100644", pgit.hash_blob(repo, b"Documentation change\n"))],
+        "Update documentation",
+    )
+
+    def unexpected(*args: object) -> None:
+        raise AssertionError("unchanged backlog must not be extracted")
+
+    monkeypatch.setattr("aifactory.run.followups._snapshot", unexpected)
+    with publication_lock(repo):
+        assert reconcile_ids(repo, head, "main", rc.config.settings) == (head, {})
+
+
+def test_modified_task_id_still_checks_for_duplicates(repo: Path) -> None:
+    rc = load_run_config(repo)
+    task = load_backlog(repo).by_id[T02]
+    assert isinstance(task, Task)
+    content = (repo / task.path).read_bytes().replace(T02.encode(), T01.encode(), 1)
+    head = pgit.commit_tree_with(
+        repo, rc.commit, [(task.path, "100644", pgit.hash_blob(repo, content))], "Duplicate ID"
+    )
+
+    with publication_lock(repo), pytest.raises(ProviderError, match="duplicate"):
+        reconcile_ids(repo, head, "main", rc.config.settings)
