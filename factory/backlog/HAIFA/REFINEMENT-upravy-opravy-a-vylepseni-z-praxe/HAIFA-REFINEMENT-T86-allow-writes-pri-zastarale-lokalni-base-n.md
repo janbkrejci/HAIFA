@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T86
 title: "retry --allow-writes při zastaralé lokální base nechá necommitnutou změnu v hlavním checkoutu"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T63, HEAL-S02-T08]
 writes: [aifactory/src/aifactory/run/allow_writes.py, aifactory/src/aifactory/run/retry.py, aifactory/tests/]

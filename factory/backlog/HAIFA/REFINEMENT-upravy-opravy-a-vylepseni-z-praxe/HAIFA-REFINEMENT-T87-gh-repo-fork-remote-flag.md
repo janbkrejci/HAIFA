@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T87
 title: "Sdílení knihovny přes fork padá: gh repo fork odmítá --remote"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/src/aifactory/library/share.py, aifactory/tests/library/test_library_share.py]
 ---

@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T83
 title: "Navazující úlohy z běhů dostávají duplicitní ID"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/src/aifactory/backlog/edit.py, aifactory/src/aifactory/run/followups.py, aifactory/tests/, docs/decisions.md, aifactory/src/aifactory/providers/publish.py, aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/review/automerge.py]
 ---

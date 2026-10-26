@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T84
 title: "Adresáře factory-advice-* v %TEMP% zůstávají a zaplní disk"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T18]
 writes: [aifactory/src/aifactory/web/workflow_advice.py, aifactory/src/aifactory/workflow/adaptive.py, aifactory/tests/]
