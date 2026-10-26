@@ -4,7 +4,7 @@ title: "already_done nechá úlohu todo a zastaví řetězec auto-continue"
 status: todo
 depends_on: []
 related: [HAIFA-REFINEMENT-T68]
-writes: [aifactory/src/aifactory/run/unchanged.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/run/follows.py, aifactory/tests/]
+writes: [aifactory/src/aifactory/run/unchanged.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/run/follows.py, aifactory/tests/, aifactory/src/aifactory/run/queue.py, aifactory/src/aifactory/web/backlog.py]
 ---
 
 ## Zadání
