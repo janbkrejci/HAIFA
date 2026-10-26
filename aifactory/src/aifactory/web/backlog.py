@@ -45,6 +45,7 @@ from aifactory.run.scope import effective_task_writes, output_paths
 from aifactory.run.stack import stack_point
 from aifactory.run.store import QueuePrefs, TaskRunStore, is_db_busy
 from aifactory.run.task import existing_store
+from aifactory.run.unchanged import COMPLETION_ERROR_PREFIX
 from aifactory.web.launcher import Launcher
 from aifactory.web.settings import config_status
 from aifactory.workflow import DEFAULT_WORKFLOWS_DIR
@@ -116,6 +117,7 @@ class _Runtime:
     approved: set[str] = field(default_factory=set)
     # tasks whose newest open PR has an auto_merge_error (auto-merge gave up on it)
     merge_blocked: set[str] = field(default_factory=set)
+    completion_errors: dict[str, str] = field(default_factory=dict)
     last_run: dict[str, str] = field(default_factory=dict)
     merged: dict[str, str] = field(default_factory=dict)
     queue: QueuePrefs = field(default_factory=QueuePrefs)
@@ -201,6 +203,8 @@ def _display_runtime(runs: list[sqlite3.Row], prs: list[sqlite3.Row]) -> _Runtim
         if task_id in rt.last_run:
             continue
         rt.last_run[task_id] = run["state"]
+        if (run["pr_error"] or "").startswith(COMPLETION_ERROR_PREFIX):
+            rt.completion_errors[task_id] = run["pr_error"]
         if run["state"] == "running" or (
             run["state"] == "succeeded"
             and not run["pr_error"]
@@ -235,10 +239,12 @@ def waits_for_automerge(task: Task | None, auto_merge_error: str | None) -> bool
 
 def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
     """The kanban column of ``task`` (see the module docstring)."""
-    if task.status == "done":
-        return "done"
     if task.status == "cancelled":
         return "cancelled"
+    if task.id in rt.completion_errors:
+        return "blocked"
+    if task.status == "done":
+        return "done"
     if task.id in rt.running:
         return "running"
     if task.id in rt.merged and _merged_unrecorded(backlog.root, task.path, rt.merged[task.id]):
@@ -261,6 +267,7 @@ def _task_json(
 ) -> JsonDict:
     data: JsonDict = dict(core.task_to_json(backlog, task, reverse))
     data["board_state"] = board_state(backlog, task, rt)
+    data["completion_error"] = rt.completion_errors.get(task.id)
     own_workflow = task.own.get("workflow")
     data["own_workflow"] = None if own_workflow is None else str(own_workflow)
     own_merge = task.own.get("auto_merge")

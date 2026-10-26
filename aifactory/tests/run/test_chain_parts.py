@@ -212,6 +212,22 @@ def test_member_result_from_envelope_and_store(tmp_path: Path) -> None:
     assert not lost.ok and lost.run.state == "failed" and "tail" in (lost.run.error or "")
 
 
+@pytest.mark.parametrize("done_without_pr", [False, True])
+def test_member_preserves_completion_without_pr(tmp_path: Path, done_without_pr: bool) -> None:
+    repo = make_run_repo(tmp_path / "repo")
+    row = TaskRunRow(
+        "r-done", T01, "factory/T-1", "wt", "main", "0", "abc", "succeeded", str(now_iso())
+    )
+    result = member_result(
+        repo,
+        T01,
+        row,
+        {"ok": True, "data": {"run": {"run_id": row.run_id}, "done_without_pr": done_without_pr}},
+    )
+    assert result.ok and result.pr is None
+    assert result.done_without_pr is done_without_pr
+
+
 @pytest.fixture(name="script")
 def script_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[Script]:
     yield from fake_env(monkeypatch)

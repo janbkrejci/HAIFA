@@ -28,6 +28,8 @@ from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
 from aifactory.run.store import TaskRunRow, TaskRunStore, already_running
 
+COMPLETION_ERROR_PREFIX = "task not marked done: "
+
 
 def unchanged(row: TaskRunRow) -> bool:
     """Whether the run's branch has no commit beyond the commit the run started from."""
@@ -82,13 +84,22 @@ def _complete(
 
 
 def finish_unchanged(
-    main: Path, store: TaskRunStore, row: TaskRunRow, evidence: Sequence[str] = ()
+    main: Path,
+    store: TaskRunStore,
+    row: TaskRunRow,
+    evidence: Sequence[str] = (),
+    reason: str = "",
 ) -> tuple[str | None, list[str]]:
     """Mark the task of `row` done in ``base``: (the error when it was not, warnings)."""
     try:
-        done = _complete(main, store, row, evidence, "")
+        done = _complete(main, store, row, evidence, reason)
     except TaskEditError as exc:
-        return f"task not marked done: {exc.code}: {exc.message}", []
+        return f"{COMPLETION_ERROR_PREFIX}{exc.code}: {exc.message}", []
+    if done.pr is not None and not done.merged:
+        return (
+            f"{COMPLETION_ERROR_PREFIX}backlog PR awaits merge: {done.pr['url']}",
+            list(done.warnings),
+        )
     return None, list(done.warnings)
 
 
