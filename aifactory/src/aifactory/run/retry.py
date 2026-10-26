@@ -309,14 +309,40 @@ def _refuse_done(store: TaskRunStore, task: Task | None, task_id: str) -> None:
         )
 
 
-def _pull_base(main: Path, settings: ProjectSettings, store: TaskRunStore) -> list[str]:
-    """Fast-forward local base to the remote like ``factory config pull``."""
+def _pull_base(
+    main: Path,
+    settings: ProjectSettings,
+    store: TaskRunStore,
+    *,
+    preserve_local_changes: bool = False,
+) -> list[str]:
+    """Fast-forward base; optionally let Git preserve non-conflicting local changes."""
     from aifactory.providers import publish
 
     if not provider_git.has_remote(main, settings.remote):
         return []
     try:
-        result = publish.pull_base(main, settings=settings, store=store)
+        try:
+            result = publish.pull_base(main, settings=settings, store=store)
+        except ProviderError as exc:
+            if exc.code != "dirty_base" or not preserve_local_changes:
+                raise
+            # pull_base conservatively refuses every dirty tracked file. Git's
+            # fast-forward checks can retain staged and unstaged changes outside
+            # the incoming diff, without stashing or committing the operator's work.
+            ours = provider_git.rev_parse(main, f"refs/heads/{settings.base}")
+            theirs = provider_git.remote_tip(main, settings.remote, settings.base)
+            if not ours or not theirs or not provider_git.is_ancestor(main, ours, theirs):
+                raise
+            with store.serialized():
+                if store.live_runs_locked():
+                    raise ProviderError(
+                        "run_in_progress", "a run is in progress; wait or stop it"
+                    ) from exc
+                provider_git.advance_branch(
+                    main, settings.base, theirs, ours, command="retry allow-writes pull"
+                )
+            return []
     except ProviderError as exc:
         raise TaskRunError(
             exc.code, f"base cannot be brought up to date: {exc.message}; nothing changed"
