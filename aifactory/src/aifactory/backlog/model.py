@@ -72,6 +72,9 @@ class Container:
     tasks: list[Task] = field(default_factory=list)
     body: str = ""
 
+    # Project visibility only; never inherited by its tasks.
+    archived: bool = False
+
 
 @dataclass
 class Task:

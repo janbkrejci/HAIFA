@@ -217,3 +217,20 @@ def test_archived_must_be_boolean(tmp_path: Path, value: str) -> None:
     (root / T02).write_text(task_md("M01-S01-T02", extra=f"archived: {value}\n"), encoding="utf-8")
     issues = check_backlog(load_backlog(root))
     assert any(i.code == "invalid_field" and "archived" in i.message for i in issues)
+
+
+@pytest.mark.parametrize("value", ["true", "false", "'true'", "1", "null"])
+def test_project_archive_frontmatter(tmp_path: Path, value: str) -> None:
+    root = sample_repo(tmp_path)
+    path = root / "backlog/M01-core/index.md"
+    path.write_text(
+        path.read_text(encoding="utf-8").replace("---\n", f"---\narchived: {value}\n", 1),
+        encoding="utf-8",
+    )
+    backlog = load_backlog(root)
+    project = next(c for c in backlog.containers if c.id == "M01")
+    assert project.archived is (value == "true")
+    assert "archived" not in project.defaults
+    assert bool([i for i in backlog.issues if "archived" in i.message]) is (
+        value not in ("true", "false")
+    )

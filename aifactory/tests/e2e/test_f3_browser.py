@@ -624,6 +624,33 @@ def _index(repo: Path, container_id: str) -> Path:
     raise AssertionError(f"no index.md of {container_id}")
 
 
+def test_project_archive_from_tree(page: Page, server: Server, net: Net) -> None:
+    page.goto(f"/#/r/{server.repo_id}/backlog")
+    task_id = _create_task(page, "Archive project task", "Keep this task unchanged.")
+    page.goto(f"/#/r/{server.repo_id}/backlog")
+    project = page.locator('[data-node="M01"]')
+    project.locator('[data-test="project-archive-toggle"]').click()
+    expect(project).to_have_count(0, timeout=SERVER_TIMEOUT_MS)
+    index = server.repo / "backlog/M01-core/index.md"
+    assert yaml.safe_load(index.read_text(encoding="utf-8").split("---")[1])["archived"] is True
+    page.locator('[data-test="show-archived-projects"]').check()
+    expect(project).to_contain_text("Archivováno")
+    page.locator('[data-test="mode-kanban"]').click()
+    expect(page.locator(f'[data-item="{task_id}"]')).to_have_count(0)
+    page.reload()
+    page.locator('[data-test="mode-tree"]').click()
+    expect(project).to_have_count(0)
+    page.locator('[data-test="show-archived-projects"]').check()
+    project.get_by_role("button", name="Obnovit projekt").click()
+    expect(project.get_by_role("button", name="Archivovat projekt")).to_be_visible()
+    page.locator('[data-test="show-archived-projects"]').uncheck()
+    expect(project).to_be_visible()
+    page.locator('[data-test="mode-kanban"]').click()
+    expect(page.locator(f'[data-item="{task_id}"]')).to_be_visible()
+    assert yaml.safe_load(index.read_text(encoding="utf-8").split("---")[1])["archived"] is False
+    assert net.aborted == []
+
+
 def test_project_and_step_from_dashboard(page: Page, server: Server, net: Net) -> None:
     """A project and a step are created on the Backlog screen, the step's workflow is set in
     its Nastavení panel in the backlog tree and a task is created in it; nothing is committed."""
