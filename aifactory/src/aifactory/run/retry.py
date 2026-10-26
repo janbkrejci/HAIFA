@@ -61,10 +61,11 @@ from aifactory.run.resolve import (
     INTERNAL_WORKFLOWS,
     ConflictWriteGuard,
     ResolveSpec,
+    explain_allowed_repair_request,
     resolve_prompt,
     restore,
 )
-from aifactory.run.scope import output_paths, task_scope
+from aifactory.run.scope import OutputPaths, output_paths, task_scope
 from aifactory.run.stack import open_stack
 from aifactory.run.store import MERGED_BY_AUTO, RUNNING, TaskRunRow, TaskRunStore, _now
 from aifactory.run.workdir import project_workdir
@@ -603,9 +604,10 @@ def rebase_for_retry(
 
     Uncommitted work is committed first as work in progress, so the rebase carries it.
     A conflict runs `workflow` (``resolve``) in the worktree, as ``factory task resolve``
-    does: the agent may change only the conflicted files, the suite runs, code commits
-    the resolution (``finish_resolve``). On any failure the branch and the worktree are
-    put back exactly as they were, uncommitted work included.
+    does: resolution changes only conflicted files, test repairs may change the task
+    writes, and code commits the resolution and repairs (``finish_resolve``). On any
+    failure the branch and worktree are put back exactly as they were, uncommitted
+    work included.
     """
     from aifactory.run.task import _finish_resolve
 
@@ -652,9 +654,12 @@ def rebase_for_retry(
         restore(worktree, tip)
     except (RuntimeError, OSError) as exc:
         return put_back(f"rebase onto {base} {onto[:7]} failed: {exc}")
-    spec = ResolveSpec(onto=onto, before=tip, base=base, generated=generated)
-    guard = ConflictWriteGuard(main, worktree, task.id, ignored, generated)
-    prompt = resolve_prompt(task, worktree, base, onto, tuple(g.path for g in generated))
+    scope = task_scope(task, OutputPaths(variables["spec_path"], variables["doc_path"]))
+    spec = ResolveSpec(onto=onto, before=tip, base=base, generated=generated, repair_scope=scope)
+    guard = ConflictWriteGuard(main, worktree, task.id, ignored, generated, repair_scope=scope)
+    prompt = resolve_prompt(
+        task, worktree, base, onto, tuple(g.path for g in generated), repair_paths=scope.paths
+    )
     prompt += prompt_suffix
     wf = None
     error: str | None = None
@@ -668,6 +673,7 @@ def rebase_for_retry(
             **run_kwargs,
         )
     except Exception as exc:
+        exc = explain_allowed_repair_request(exc, scope, f"factory task retry {task.id}")
         error = str(exc)[:2000] or type(exc).__name__
     except BaseException:
         put_back("resolve interrupted")

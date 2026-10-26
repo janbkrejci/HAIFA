@@ -25,7 +25,6 @@ from run_repo import (
     make_run_repo,
     ok,
     scripted_plan,
-    triage_envelope,
     write,
 )
 from workflow_fakes import FakeCodeRunner
@@ -228,8 +227,40 @@ def test_conflict_only_in_sources_builds_nothing(repo: Path, script: Script) -> 
     assert "rebuild" not in message
 
 
+@pytest.mark.parametrize("check_outputs", [False, True])
+def test_nonconflicting_bundle_from_rebase_is_committed(
+    repo: Path, script: Script, check_outputs: bool
+) -> None:
+    run_both(repo, script, {MODEL: "VALUE = 1\n"}, bundle(2, "two"))
+    resolver(script, (MODEL, "VALUE = 3\n"))
+    extra_asset = f"{STATIC}/assets/check-output.js"
+
+    class BundleCode(ResolveCode):
+        def test(self, run: Any, plan: Any) -> Any:
+            if check_outputs:
+                wt = Path(run.repo_root)
+                write(wt, "report.xml", "<report/>\n")
+                write(wt, extra_asset, "// check output\n")
+                git(wt, "add", "report.xml", extra_asset)
+            return super().test(run, plan)
+
+    code = BundleCode([True])
+    result = resolve_task(repo, T02, code=code)
+
+    assert result.ok, (result.run.error, result.pr_error)
+    assert code.rebuilds == [[MODEL]]
+    assert builds(result) == 0
+    assert git(repo, "show", f"{BRANCH2}:{MODEL}") == "VALUE = 3"
+    assert git(repo, "show", f"{BRANCH2}:{INDEX}") == "<script src=assets/index-two.js>"
+    assert branch_files(repo, f"{STATIC}/assets") == [f"{STATIC}/assets/index-two.js"]
+    assert git(repo, "show", f"{BRANCH2}:{STATIC}/assets/index-two.js") == "// 2"
+    assert "report.xml" not in branch_files(repo, "report.xml")
+    if not check_outputs:
+        assert git(Path(result.run.worktree), "status", "--porcelain") == ""
+
+
 # Both tasks change only the bundle: the conflict lies wholly in the generated output,
-# so the resolve run may change no file at all.
+# so the resolve phase may change no file; repairs may still change task sources.
 ONLY_BUNDLE_ONE = {INDEX: "<script src=assets/index-one.js>\n"}
 ONLY_BUNDLE_TWO = {INDEX: "<script src=assets/index-two.js>\n"}
 MISSING_TEST = "tests/run/test_chain_parts.py: the task_chains.events column is migrated"
@@ -255,17 +286,28 @@ def test_bundle_only_resolve_does_not_start_implicit_test_review(
     assert git(Path(result.run.worktree), "status", "--porcelain") == ""
 
 
-def test_red_suite_without_writable_files_stops_with_a_reason(repo: Path, script: Script) -> None:
+@pytest.mark.parametrize("repair_bundle", [False, True])
+def test_bundle_only_conflict_allows_source_repairs_but_protects_bundle(
+    repo: Path, script: Script, repair_bundle: bool
+) -> None:
     run_both(repo, script, ONLY_BUNDLE_ONE, ONLY_BUNDLE_TWO)
     before = tip(repo)
     script.add("builder", ok(changed_files=[]))
     scripted_plan(script)
-    script.add("tester", triage_envelope("code"))
+    script.on("builder", lambda wt: None)  # resolve changes no source
+    repair_file = INDEX if repair_bundle else MODEL
+    script.on("builder", lambda wt: write(wt, repair_file, "VALUE = 3\n"))
+    script.add("builder", ok(changed_files=[repair_file]))
+    if not repair_bundle:
+        scripted_plan(script)
 
-    result = resolve_task(repo, T02, code=ResolveCode([False]))
+    result = resolve_task(repo, T02, code=ResolveCode([False, True]))
 
-    assert result.run.state == "failed"
-    assert result.run.failure_kind != "writes_violation"
-    assert result.run.error is not None and "may change no file" in result.run.error
-    assert [c.agent for c in script.calls if c.agent == "builder"] == ["builder"]
-    assert tip(repo) == before
+    if repair_bundle:
+        assert result.run.failure_kind == "writes_violation"
+        assert INDEX in (result.run.error or "")
+        assert tip(repo) == before
+    else:
+        assert result.ok, result.run.error
+        assert git(repo, "show", f"{BRANCH2}:{MODEL}") == "VALUE = 3"
+        assert builds(result) == 2
