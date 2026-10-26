@@ -11,13 +11,13 @@ from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
-from run_repo import SPEC, T01, Script, commit_all, fake_env, git, make_run_repo, ok, write
+from run_repo import SPEC, T01, T02, Script, commit_all, fake_env, git, make_run_repo, ok, write
 from starlette.testclient import TestClient
 
 from aifactory import failure
 from aifactory.backlog import Task, load_backlog
 from aifactory.engine.data_types import BuildOutput
-from aifactory.run import TaskRunError, TaskRunStore, run_task
+from aifactory.run import STOP_EXHAUSTED, TaskRunError, TaskRunStore, run_chain, run_task
 from aifactory.run.retry import retry_run
 from aifactory.run.store import FAILED, SUCCEEDED
 from aifactory.run.unchanged import finish_nothing_to_do
@@ -103,6 +103,36 @@ def test_builder_already_done_ends_the_run_done_without_changes(repo: Path, scri
     assert "už hotovo: abc1234 Add schema, src/app/schema.py" in task.body
     subject = git(repo, "log", "-1", "--format=%s")
     assert subject == f"{T01}: hotovo bez změn (běh {result.run.run_id})"
+
+
+@pytest.mark.parametrize("auto_merge", [False, True])
+def test_already_done_continues_with_dependent_task(
+    repo: Path, script: Script, auto_merge: bool
+) -> None:
+    _use_workflow(repo, "build-test", BUILD_TEST)
+    index = repo / "backlog/M01-core/index.md"
+    index.write_text(
+        index.read_text(encoding="utf-8").replace(
+            "workflow: build-test",
+            f"workflow: build-test\nauto_continue: true\nauto_merge: {str(auto_merge).lower()}",
+        ),
+        encoding="utf-8",
+    )
+    commit_all(repo, "Enable automatic continuation")
+    script.add("builder", ok(already_done=ALREADY_DONE), ok(already_done=ALREADY_DONE))
+
+    chain = run_chain(repo, T01)
+
+    assert chain.stop == STOP_EXHAUSTED
+    assert [result.run.task_id for result in chain.runs] == [T01, T02]
+    assert all(result.ok and result.done_without_pr and result.pr is None for result in chain.runs)
+    assert [result.run.started_by for result in chain.runs] == ["manual", "auto-continue"]
+    backlog = load_backlog(repo)
+    for result in chain.runs:
+        task = backlog.by_id[result.run.task_id]
+        assert isinstance(task, Task) and task.status == "done"
+        assert f"bez změn, běh {result.run.run_id}" in task.body
+        assert "už hotovo: abc1234 Add schema, src/app/schema.py" in task.body
 
 
 @pytest.mark.parametrize("with_spec", [False, True])
