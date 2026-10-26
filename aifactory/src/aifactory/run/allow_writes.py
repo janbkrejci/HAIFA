@@ -15,6 +15,11 @@ too. ``plan_allow_writes`` sorts them the same way for both kinds:
   write outside the run's worktree), ``already_allowed`` (the task's ``writes`` or
   outputs cover it already, so the agent's own ``writes`` in ``agents.yaml`` forbade it).
 
+``allow_writes`` first fetches and fast-forwards base using the same safety checks as
+retry, then replans against the updated backlog. Paths brought by the remote need
+no edit or commit. A failed edit or commit restores the task file and index; an
+already committed change stays committed.
+
 ``allow_writes`` adds the ``allow`` paths to the task's own ``writes`` (the effective
 value plus the new paths, through ``backlog.edit``) and commits the backlog to ``base``
 (``commit_backlog``, by ``base_changes``). The caller then retries the run
@@ -37,6 +42,8 @@ and the commit are ``TaskEditError`` (``backlog_invalid``, ``not_on_base``, ``co
 from __future__ import annotations
 
 import tempfile
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -57,6 +64,7 @@ from aifactory.engine import permissions
 from aifactory.run import gitops
 from aifactory.run.errors import TaskRunError
 from aifactory.run.resolve import CI_FIX_WORKFLOW, INTERNAL_WORKFLOWS
+from aifactory.run.retry import _pull_base
 from aifactory.run.scope import effective_task_writes, matches, normalize, output_paths
 from aifactory.run.store import RETRYABLE, TaskRunRow, TaskRunStore, already_running
 
@@ -244,6 +252,38 @@ def plan_allow_writes(
     return AllowWritesPlan(row.run_id, task_id, writes, allow, refused)
 
 
+@contextmanager
+def _restore_failed_edit(main: Path, path: str) -> Iterator[None]:
+    """Undo our uncommitted edit, preserving the operator's file and index bytes.
+
+    If a commit already advanced HEAD, keep its version rather than introducing
+    a reverse edit of a committed (possibly pushed) change.
+    """
+    from aifactory.providers import git as provider_git
+
+    target = main / path
+    before = target.read_bytes()
+    head = gitops.head(main)
+    index = Path(gitops.git(main, "rev-parse", "--git-path", "index"))
+    if not index.is_absolute():
+        index = main / index
+    index_before = index.read_bytes() if index.exists() else None
+    try:
+        yield
+    except BaseException:
+        if gitops.head(main) == head:
+            target.write_bytes(before)
+            if index_before is not None:
+                index.write_bytes(index_before)
+            else:
+                index.unlink(missing_ok=True)
+        else:
+            committed = provider_git.run_bytes(main, ["show", f"HEAD:{path}"])
+            if committed.returncode == 0:
+                target.write_bytes(committed.stdout)
+        raise
+
+
 def allow_writes(
     repo: Path, task_id: str, run_id: str | None = None, *, ci_fix: bool = False
 ) -> AllowWritesResult:
@@ -257,37 +297,55 @@ def allow_writes(
             f"run {plan.run_id} of task {task_id} has no path writes can allow"
             + (f" ({why})" if why else ""),
         )
-    again = f"factory task approve {task_id}" if ci_fix else f"factory task retry {task_id}"
     main = gitops.main_root(repo)
-    new_writes = [*plan.writes, *plan.allow]
-    edit_task(main, task_id, writes=new_writes)
-    commit = commit_backlog(main, f"backlog: {task_id} writes += {', '.join(plan.allow)}")
-    if commit.pr is not None and not commit.merged:
-        raise TaskRunError(
-            "writes_in_pr",
-            f"the writes of {task_id} are extended in {commit.pr.get('url') or 'a pull request'}; "
-            f"run {again} after it is merged",
-        )
     rc = load_run_config(main)
-    settings = rc.config.settings
-    with tempfile.TemporaryDirectory(prefix="factory-base-") as tmp:
-        base_copy = Path(tmp)
-        try:
-            sha = gitops.git(main, "rev-parse", f"refs/heads/{rc.base}")
-            gitops.extract_backlog(main, sha, settings.backlog_patterns, base_copy)
-        except (OSError, RuntimeError) as exc:
-            raise TaskRunError("invalid_config", f"cannot read the backlog: {exc}") from exc
-        task = load_backlog(base_copy, settings).by_id.get(task_id)
-        committed_writes = effective_task_writes(task) if isinstance(task, Task) else ()
-    missing = [p for p in plan.allow if not any(matches(p, w) for w in committed_writes)]
-    if missing:
-        raise TaskRunError(
-            "writes_not_committed",
-            f"the backlog in base {rc.base} does not allow these paths for {task_id}: "
-            f"{', '.join(missing)}; commit the backlog to base "
-            f"(factory backlog commit), then run {again}",
-        )
-    return AllowWritesResult(plan, new_writes, commit)
+    store = TaskRunStore(rc.local.trace_db_path(main))
+    try:
+        _pull_base(main, rc.config.settings, store)
+    finally:
+        store.close()
+    rc = load_run_config(main)
+    refreshed = plan_allow_writes(main, task_id, plan.run_id, ci_fix=ci_fix)
+    new_writes = [*refreshed.writes, *refreshed.allow]
+    task = find_task(load_for_edit(main), task_id)
+    with _restore_failed_edit(main, task.path):
+        again = f"factory task approve {task_id}" if ci_fix else f"factory task retry {task_id}"
+        if refreshed.allow:
+            edit_task(main, task_id, writes=new_writes)
+            commit = commit_backlog(
+                main, f"backlog: {task_id} writes += {', '.join(refreshed.allow)}"
+            )
+        else:
+            commit = BacklogCommit(False, None, rc.base, [], False)
+        if commit.pr is not None and not commit.merged:
+            raise TaskRunError(
+                "writes_in_pr",
+                f"the writes of {task_id} are extended in "
+                f"{commit.pr.get('url') or 'a pull request'}; "
+                f"run {again} after it is merged",
+            )
+        rc = load_run_config(main)
+        settings = rc.config.settings
+        with tempfile.TemporaryDirectory(prefix="factory-base-") as tmp:
+            base_copy = Path(tmp)
+            try:
+                sha = gitops.git(main, "rev-parse", f"refs/heads/{rc.base}")
+                gitops.extract_backlog(main, sha, settings.backlog_patterns, base_copy)
+            except (OSError, RuntimeError) as exc:
+                raise TaskRunError("invalid_config", f"cannot read the backlog: {exc}") from exc
+            committed_task = load_backlog(base_copy, settings).by_id.get(task_id)
+            committed_writes = (
+                effective_task_writes(committed_task) if isinstance(committed_task, Task) else ()
+            )
+        missing = [p for p in plan.allow if not any(matches(p, w) for w in committed_writes)]
+        if missing:
+            raise TaskRunError(
+                "writes_not_committed",
+                f"the backlog in base {rc.base} does not allow these paths for {task_id}: "
+                f"{', '.join(missing)}; commit the backlog to base "
+                f"(factory backlog commit), then run {again}",
+            )
+        return AllowWritesResult(plan, new_writes, commit)
 
 
 def retry_note(result: AllowWritesResult, note: str | None = None) -> str:

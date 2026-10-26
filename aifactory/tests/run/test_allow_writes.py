@@ -221,6 +221,7 @@ def test_allow_writes_with_base_changes_pr_waits_for_the_backlog_pr(
     assert row is not None
     assert (row.state, row.attempt) == (FAILED, 1)
     assert len(script.calls) == calls  # no agent ran again
+    assert git(repo, "status", "--porcelain", "--", "backlog") == ""
 
 
 @pytest.mark.parametrize("result_kind", ["no-op", "committed", "merged-pr", "partial"])
@@ -269,6 +270,7 @@ def test_retry_refuses_writes_missing_from_base(
     assert row is not None
     assert (row.state, row.attempt) == (FAILED, 1)
     assert len(script.calls) == calls
+    assert git(repo, "status", "--porcelain", "--", "backlog") == ""
 
 
 @pytest.mark.parametrize("result_kind", ["no-op", "merged-pr"])
@@ -298,3 +300,107 @@ def test_all_commit_results_verify_effective_writes_in_base(
     assert "docs/" in _writes_in_base(repo) or "docs/" in git(
         repo, "show", "main:backlog/M01-core/S01-model/index.md"
     )
+
+
+@pytest.mark.parametrize("remote_change", ["none", "unrelated", "writes"])
+def test_retry_updates_base_before_allowing_writes(
+    repo: Path, script: Script, capsys: Capsys, tmp_path: Path, remote_change: str
+) -> None:
+    from aifactory.backlog import edit_task
+
+    bare = tmp_path / "origin.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
+    git(repo, "remote", "add", "origin", str(bare))
+    git(repo, "push", "-q", "-u", "origin", "main")
+    run_id = _failed_run(repo, script, "README.md")
+    other = tmp_path / "other"
+    git(tmp_path, "clone", "-q", str(bare), str(other))
+    git(other, "config", "user.name", "Test")
+    git(other, "config", "user.email", "test@example.test")
+    if remote_change == "writes":
+        edit_task(other, T01, writes=["src/app/", "README.md"])
+    elif remote_change == "unrelated":
+        write(other, "remote.txt", "remote change\n")
+    if remote_change != "none":
+        git(other, "add", "-A")
+        git(other, "commit", "-q", "-m", "advance remote")
+        git(other, "push", "-q", "origin", "main")
+    remote_tip = git(other, "rev-parse", "HEAD")
+    script.on("planner", lambda wt: write(wt, "README.md", "allowed\n"))
+    script.add("planner", ok())
+    capsys.readouterr()
+    code, data = run_json(
+        capsys, ["task", "retry", T01, "--allow-writes", "--json", "--repo", str(repo)]
+    )
+    assert code == 0, data
+    assert data["data"]["run"]["run_id"] == run_id
+    assert data["data"]["run"]["state"] == SUCCEEDED
+    assert data["data"]["allow_writes"]["commit"]["committed"] == (remote_change != "writes")
+    if remote_change == "writes":
+        assert git(repo, "rev-parse", "main") == remote_tip
+    assert "README.md" in _writes_in_base(repo)
+    assert git(repo, "status", "--porcelain") == ""
+
+
+@pytest.mark.parametrize("failure_point", ["edit", "commit"])
+def test_failed_allow_writes_restores_file_and_index(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, failure_point: str
+) -> None:
+    from importlib import import_module
+
+    module = import_module("aifactory.run.allow_writes")
+    _failed_run(repo, script, "README.md")
+    # Preserve an operator's pre-existing staged and unstaged task changes exactly.
+    task = repo / TASK_FILE
+    task.write_bytes(task.read_bytes() + b"\nOperator's staged note.\n")
+    git(repo, "add", TASK_FILE)
+    task.write_bytes(task.read_bytes() + b"Unstaged note.\n")
+    before = task.read_bytes()
+    staged = git(repo, "diff", "--cached")
+    original_edit = module.edit_task
+
+    def fail_edit(root: Path, task_id: str, *, writes: list[str]) -> None:
+        original_edit(root, task_id, writes=writes)
+        raise RuntimeError("edit failed")
+
+    def fail_commit(root: Path, message: str) -> None:
+        git(root, "add", TASK_FILE)
+        raise RuntimeError("commit failed")
+
+    monkeypatch.setattr(
+        module,
+        "edit_task" if failure_point == "edit" else "commit_backlog",
+        fail_edit if failure_point == "edit" else fail_commit,
+    )
+    with pytest.raises(RuntimeError, match="failed"):
+        allow_writes(repo, T01)
+    assert task.read_bytes() == before
+    assert git(repo, "diff", "--cached") == staged
+
+
+def test_behind_base_with_dirty_checkout_fails_before_edit(
+    repo: Path, script: Script, tmp_path: Path
+) -> None:
+    _failed_run(repo, script, "README.md")
+    bare = tmp_path / "origin.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(bare))
+    git(repo, "remote", "add", "origin", str(bare))
+    git(repo, "push", "-q", "-u", "origin", "main")
+    other = tmp_path / "other"
+    git(tmp_path, "clone", "-q", str(bare), str(other))
+    git(other, "config", "user.name", "Test")
+    git(other, "config", "user.email", "test@example.test")
+    write(other, "README.md", "remote edit\n")
+    git(other, "add", "README.md")
+    git(other, "commit", "-q", "-m", "remote edit")
+    git(other, "push", "-q", "origin", "main")
+    write(repo, "README.md", "operator edit\n")
+    before = (repo / TASK_FILE).read_bytes()
+    head = git(repo, "rev-parse", "HEAD")
+    status = git(repo, "status", "--porcelain")
+    with pytest.raises(TaskRunError) as caught:
+        allow_writes(repo, T01)
+    assert caught.value.code == "dirty_base"
+    assert (repo / TASK_FILE).read_bytes() == before
+    assert git(repo, "rev-parse", "HEAD") == head
+    assert git(repo, "status", "--porcelain") == status
