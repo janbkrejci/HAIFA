@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T93
 title: "Topbar: čipy jen jako ikona stavu s tooltipem"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/web/src/components/UpdateChip.vue, aifactory/web/src/components/OverviewReadiness.vue, aifactory/web/src/components/OverviewReadiness.test.ts, aifactory/web/src/components/LibraryChip.vue, aifactory/web/src/components/LibraryChip.test.ts, aifactory/web/src/components/UncommittedBanner.vue, aifactory/web/src/components/UncommittedBanner.test.ts, aifactory/web/src/components/LimitsBar.vue, aifactory/web/src/components/LimitsBar.test.ts, aifactory/web/src/components/ui/, aifactory/src/aifactory/guide/, aifactory/src/aifactory/web/static/]
