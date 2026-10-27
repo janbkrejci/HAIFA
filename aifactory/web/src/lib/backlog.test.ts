@@ -127,8 +127,9 @@ describe('backlog api', () => {
   })
 
   it('commits the backlog to base', async () => {
-    const fetchMock = stubFetch(() => ok({ committed: true }))
-    await commitBacklog()
+    const warnings = ['main not advanced: live run; run factory config pull later']
+    const fetchMock = stubFetch(() => ok({ committed: true, warnings }))
+    expect((await commitBacklog()).warnings).toEqual(warnings)
     expect(fetchMock.mock.lastCall?.[0]).toBe('/api/repos/haifa/backlog/commit')
     expect(fetchMock.mock.lastCall?.[1]?.method).toBe('POST')
     expect(fetchMock.mock.lastCall?.[1]?.body).toBe('{}')

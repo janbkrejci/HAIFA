@@ -618,3 +618,18 @@ def test_only_newest_open_pr_decides_approval(tmp_path: Path, newest_approved: b
         store.close()
     data = _get(_client(root, tmp_path), "/api/backlog")["data"]
     assert _states(data)[B3] == ("approved" if newest_approved else "in review")
+
+
+def test_commit_backlog_preserves_sync_warnings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.backlog.commit import BacklogCommit
+
+    root = make_backlog_repo(tmp_path / "repo")
+    warning = "main not advanced: live run; run factory config pull later"
+    result = BacklogCommit(True, "abc", "main", [], True, merged=True, warnings=(warning,))
+    monkeypatch.setattr(aifactory.backlog, "commit_backlog", lambda *args: result)
+    body = _post(_client(root, tmp_path), "/api/backlog/commit", {})
+    assert body["warnings"] == [warning]
+    assert body["data"]["warnings"] == [warning]
+    assert body["data"]["merged"] is True

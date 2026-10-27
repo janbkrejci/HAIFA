@@ -166,3 +166,19 @@ def test_untracked_file_deeper_than_the_windows_path_limit_is_saved_and_restored
     assert backup.verify(saved) == [rel]
     assert backup.restore(saved, (), [rel]) == {rel: "restored from backup"}
     assert (deep / "transcript.jsonl").read_text(encoding="utf-8") == "wip\n"
+
+
+def test_clean_crlf_file_is_expected_and_restored(repo: Path, dest: Path) -> None:
+    (repo / ".gitattributes").write_bytes(b"*.txt text eol=crlf\n")
+    git(repo, "add", ".gitattributes")
+    git(repo, "commit", "-qm", "Use CRLF checkout")
+    (repo / "a.txt").unlink()
+    git(repo, "checkout", "--", "a.txt")
+    assert (repo / "a.txt").read_bytes() == b"a\r\n"
+    saved = backup.capture(repo, dest)
+    assert "a.txt" not in saved.files
+    assert backup.expected(saved, "a.txt").same_content(backup.state_of(repo, "a.txt"))
+    (repo / "a.txt").write_bytes(b"unauthorized\r\n")
+    assert backup.verify(saved) == ["a.txt"]
+    backup.restore(saved, (), ["a.txt"])
+    assert (repo / "a.txt").read_bytes() == b"a\r\n"

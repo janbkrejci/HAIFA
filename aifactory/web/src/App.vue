@@ -178,6 +178,7 @@ onBeforeUnmount(() => {
           :status="backlogStatus.status.value"
           :committing="backlogStatus.committing.value"
           :commit-error="backlogStatus.commitError.value"
+          :commit-warnings="backlogStatus.commitWarnings.value"
           :pr="backlogStatus.pendingPr.value"
           @commit="commitBacklog"
         />

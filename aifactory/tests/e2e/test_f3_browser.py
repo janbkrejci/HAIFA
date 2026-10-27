@@ -856,3 +856,37 @@ def test_add_and_remove_repo_in_browser(
     assert git(second, "ls-tree", "-r", "--name-only", "HEAD", "backlog") != ""
     assert (second / ".factory").is_dir()
     assert net.aborted == []
+
+
+def test_backlog_commit_shows_deferred_base_warning(page: Page, server: Server, net: Net) -> None:
+    """A merged backlog PR can leave local base behind until the live run ends."""
+    warning = "main not advanced: live run; run factory config pull later"
+    status = {
+        "base": "main",
+        "commit": "abc",
+        "clean": False,
+        "changes": [{"path": "backlog/task.md", "status": "modified"}],
+    }
+    page.route(
+        f"{server.api}/backlog/status",
+        lambda route: route.fulfill(
+            json={"ok": True, "data": status, "error": None, "warnings": []}
+        ),
+    )
+    page.route(
+        f"{server.api}/backlog/commit",
+        lambda route: route.fulfill(
+            json={
+                "ok": True,
+                "error": None,
+                "warnings": [warning],
+                "data": {"committed": True, "merged": True, "warnings": [warning]},
+            }
+        ),
+    )
+    page.goto(f"/#/r/{server.repo_id}/backlog")
+    page.locator('[data-test="backlog-chip"]').click()
+    page.locator('[data-test="backlog-commit"]').click()
+    expect(page.locator('[data-test="backlog-commit-warning"]')).to_have_text(warning)
+    expect(page.locator('[data-test="backlog-panel"]')).to_be_visible()
+    assert net.aborted == []

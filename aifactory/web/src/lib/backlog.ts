@@ -676,6 +676,7 @@ export async function fetchBacklogStatus(): Promise<BacklogStatus | null> {
 }
 
 export interface BacklogCommitResult {
+  warnings?: string[]
   committed: boolean
   commit: string | null
   base: string

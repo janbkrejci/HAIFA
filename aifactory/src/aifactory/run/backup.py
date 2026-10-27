@@ -234,7 +234,7 @@ def supersede(backup: CheckoutBackup, path: str, data: bytes, mode: int) -> None
 
 
 def _head_entry(root: Path, head: str | None, path: str) -> tuple[str, bytes] | None:
-    """(mode, bytes) of `path` in commit `head`, or None when it is not there."""
+    """(mode, checkout bytes) of `path` in `head`, or None when absent."""
     if not head:
         return None
     listing = _z(root, "ls-tree", "-z", head, "--", path)
@@ -243,7 +243,10 @@ def _head_entry(root: Path, head: str | None, path: str) -> tuple[str, bytes] | 
     meta = listing[0].split("\t", 1)[0].split()
     if len(meta) < 3 or meta[1] != "blob":
         return None
-    proc = subprocess.run(["git", "cat-file", "blob", meta[2]], cwd=root, capture_output=True)
+    # Journal entries hash bytes on disk, including Git's checkout conversion
+    # (notably CRLF on Windows). Symlink targets are stored verbatim.
+    args = ["blob", meta[2]] if meta[0] == "120000" else ["--filters", f"--path={path}", meta[2]]
+    proc = subprocess.run(["git", "cat-file", *args], cwd=root, capture_output=True)
     if proc.returncode != 0:
         return None
     return meta[0], proc.stdout
