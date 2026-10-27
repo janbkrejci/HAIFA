@@ -38,15 +38,15 @@ def entry(path: Path) -> RepoEntry:
 
 
 @pytest.mark.parametrize(
-    "disk_free,disk_total,memory_free,memory_total,status",
+    "disk_free,disk_total,memory_free,memory_total,disk_status,status",
     [
-        (20 * GB, 100 * GB, 4 * GB, 16 * GB, "ok"),
-        (9 * GB, 20 * GB, 4 * GB, 16 * GB, "warning"),
-        (20 * GB, 300 * GB, 4 * GB, 16 * GB, "warning"),
-        (20 * GB, 100 * GB, GB - 1, 4 * GB, "warning"),
-        (20 * GB, 100 * GB, 2 * GB, 32 * GB, "warning"),
-        (10 * GB, 100 * GB, GB, 10 * GB, "ok"),
-        (20 * GB, 100 * GB, None, None, "ok"),
+        (20 * GB, 100 * GB, 4 * GB, 16 * GB, "ok", "ok"),
+        (9 * GB, 20 * GB, 4 * GB, 16 * GB, "warning", "warning"),
+        (20 * GB, 300 * GB, 4 * GB, 16 * GB, "warning", "warning"),
+        (20 * GB, 100 * GB, GB - 1, 4 * GB, "ok", "warning"),
+        (20 * GB, 100 * GB, 2 * GB, 32 * GB, "ok", "warning"),
+        (10 * GB, 100 * GB, GB, 10 * GB, "ok", "ok"),
+        (20 * GB, 100 * GB, None, None, "ok", "ok"),
     ],
 )
 def test_system_response(
@@ -57,6 +57,7 @@ def test_system_response(
     disk_total: int,
     memory_free: int | None,
     memory_total: int | None,
+    disk_status: str,
     status: str,
 ) -> None:
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(tmp_path))
@@ -70,6 +71,7 @@ def test_system_response(
     assert body["ok"]
     data = body["data"]
     assert data["status"] == status
+    assert data["disk"] == {"free": disk_free, "total": disk_total, "status": disk_status}
     assert len(data["volumes"]) == 1
     volume = data["volumes"][0]
     assert volume["free"] == disk_free and volume["total"] == disk_total
@@ -78,10 +80,20 @@ def test_system_response(
     assert data["memory"]["total"] == memory_total
 
 
-def test_volume_paths_and_devices(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("home_exists", [True, False])
+@pytest.mark.parametrize("home_free,repo_free", [(20 * GB, GB), (GB, 20 * GB)])
+def test_volume_paths_and_devices(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    home_exists: bool,
+    home_free: int,
+    repo_free: int,
+) -> None:
     home, repo, temp = [tmp_path / name for name in ("home", "repo", "temp")]
     for path in (home, repo, temp):
         path.mkdir()
+    if not home_exists:
+        home = home / "missing" / "nested"
     original = Path.stat
 
     def stat(path: Path, **kwargs: Any) -> Any:
@@ -91,13 +103,25 @@ def test_volume_paths_and_devices(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(Path, "stat", stat)
     monkeypatch.setattr(tempfile, "gettempdir", lambda: str(temp))
-    monkeypatch.setattr(
-        shutil, "disk_usage", lambda _: SimpleNamespace(free=20 * GB, total=100 * GB)
-    )
-    volumes = system.system_info(home, [entry(repo), entry(repo)])["volumes"]
+    inspected: list[Path] = []
+
+    def usage(path: Path) -> SimpleNamespace:
+        inspected.append(path)
+        return SimpleNamespace(free=repo_free if path == repo else home_free, total=100 * GB)
+
+    monkeypatch.setattr(shutil, "disk_usage", usage)
+    monkeypatch.setattr(system, "_memory", lambda: (4 * GB, 16 * GB))
+    data = system.system_info(home, [entry(repo), entry(repo)])
+    volumes = data["volumes"]
     assert len(volumes) == 2
     assert volumes[0]["paths"] == [str(home.resolve()), str(temp.resolve())]
     assert volumes[1]["paths"] == [str(repo.resolve())]
+    assert inspected == [tmp_path / "home", repo]
+    home_status = "ok" if home_free == 20 * GB else "warning"
+    assert data["disk"] == {"free": home_free, "total": 100 * GB, "status": home_status}
+    assert volumes[1]["free"] == repo_free
+    assert volumes[1]["status"] == ("ok" if repo_free == 20 * GB else "warning")
+    assert data["status"] == home_status
 
 
 def test_unavailable_resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -108,10 +132,10 @@ def test_unavailable_resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(Path, "read_text", unavailable)
     monkeypatch.setattr(shutil, "disk_usage", unavailable)
     assert system._memory() == (None, None)
-    assert all(
-        v["free"] is None and v["total"] is None
-        for v in system.system_info(tmp_path, [])["volumes"]
-    )
+    data = system.system_info(tmp_path, [])
+    assert data["disk"] == {"free": None, "total": None, "status": "ok"}
+    assert data["status"] == "ok"
+    assert all(v["free"] is None and v["total"] is None for v in data["volumes"])
     monkeypatch.setattr(adaptive, "cleanup_orphans", lambda: [])
     assert system.cleanup(tmp_path, [])["freed_bytes"] is None
 

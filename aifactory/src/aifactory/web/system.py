@@ -108,15 +108,18 @@ def _volumes(home: Path, repos: Sequence[RepoEntry]) -> list[dict[str, Any]]:
 
 
 def system_info(home: Path, repos: Sequence[RepoEntry]) -> dict[str, Any]:
-    """Describe unique volumes and physical memory; sizes are bytes."""
+    """Describe the home disk, unique volumes and physical memory in bytes."""
     volumes = _volumes(home, repos)
+    # _volumes visits home first, including its nearest existing ancestor.
+    disk = {key: volumes[0][key] for key in ("free", "total", "status")}
     free, total = _memory()
     memory = {"free": free, "total": total, "status": _status(free, total, MEMORY_MIN_FREE)}
     return {
         "volumes": volumes,
+        "disk": disk,
         "memory": memory,
         "status": "warning"
-        if any(item["status"] == "warning" for item in [*volumes, memory])
+        if any(item["status"] == "warning" for item in [disk, memory])
         else "ok",
     }
 
