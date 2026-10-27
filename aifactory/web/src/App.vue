@@ -32,6 +32,7 @@ import OverviewReadiness from './components/OverviewReadiness.vue'
 import UpdateChip from './components/UpdateChip.vue'
 import UncommittedBanner from './components/UncommittedBanner.vue'
 import LibraryChip from './components/LibraryChip.vue'
+import SystemInfoChip from './components/SystemInfoChip.vue'
 import { provideReadiness } from './lib/readiness'
 import ReposAddView from './views/ReposAddView.vue'
 import CodeStaleBanner from './components/CodeStaleBanner.vue'
@@ -196,6 +197,7 @@ onBeforeUnmount(() => {
         <UpdateChip />
         <OverviewReadiness chip />
         <LibraryChip />
+        <SystemInfoChip />
         <LimitsBar :providers="limits.providers.value" :loading="limits.loading.value" :usable="limits.usable.value" @open="harnessDialog = true" />
         <Tooltip text="AI průvodce: zeptej se na repa, tasky a běhy">
           <button
