@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T95
 title: "Topbar: čip System info s místem na disku, pamětí a úklidem"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T93, HAIFA-REFINEMENT-T94]
 writes: [aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/web/src/lib/system.ts, aifactory/web/src/components/SystemInfoChip.vue, aifactory/web/src/components/SystemInfoChip.test.ts, aifactory/src/aifactory/guide/08-aktualizace-a-reseni-problemu.md, aifactory/src/aifactory/web/static/]
@@ -28,3 +28,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-27 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/184 · náklady $0.00

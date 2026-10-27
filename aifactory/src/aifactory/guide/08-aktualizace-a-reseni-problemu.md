@@ -2,20 +2,22 @@
 
 ## Aktualizace
 
-Dashboard kontroluje vydání každou půlhodinu. Ikona s tooltipem **Je k dispozici aktualizace** stáhne, ověří, nainstaluje aktualizaci a restartuje dashboard. Tooltip **Aktualizace čeká na tasky**: po doběhnutí klikni znovu.
+Dashboard kontroluje vydání každou půlhodinu. Ikona **Je k dispozici aktualizace** ověří, nainstaluje aktualizaci a restartuje dashboard. **Aktualizace čeká na tasky**: po doběhnutí klikni znovu.
 
-Z příkazové řádky (soubor nebo `https` URL):
+CLI (soubor/`https`):
 
 ```bash
 factory upgrade --dry-run haifa-<verze>.zip
 factory upgrade haifa-<verze>.zip
 ```
 
-`factory upgrade` ověří `SHA256SUMS`, instaluje pouze novější verzi a obnoví knihovnu (`factory library seed --all`, [Knihovna a tým](#/guide/knihovna-a-tym/seminko)). Dashboard restartuj; na Windows ho předem zastav (`dashboard_running`).
+`factory upgrade` ověří `SHA256SUMS`, nainstaluje novější verzi, obnoví knihovnu (`factory library seed --all`, [Knihovna a tým](#/guide/knihovna-a-tym/seminko)). Dashboard restartuj; na Windows předem zastav (`dashboard_running`).
 
-Vydání: GitHub Actions po commitu do `main`, ručně `just bundle`.
+Vydání: GitHub Actions / `just bundle`.
 
 ## Řešení problémů
+
+Čip **System info**: tooltip ukazuje místo svazků, cesty a paměť v GB; nezjištěné hodnoty jako „nedostupné“. Obnova každou minutu, oranžová značí nedostatek. Potvrzením **Uklidit disk** odstraníš osiřelé návrhy, hotové worktrees a větve sloučených PR všech rep. Tooltip ukáže počty, uvolněné místo, varování či chybu; hodnoty se obnoví.
 
 Problémy hledá `factory check` (jen čte):
 
@@ -25,20 +27,20 @@ factory check --offline  # bez dotazů na hosting a přihlášení
 factory check --json     # strojově čitelný výstup
 ```
 
-Nález obsahuje kód, závažnost a radu `fix`: `error` blokuje, `warning` vyžaduje pozornost, `info` informuje. Nálezy: **Knihovna** (počítač, knihovna), **Factory** (repo), **Problémy a řešení**.
+Nálezy: `error` blokuje, `warning` varuje, `info` informuje; `fix` radí. Najdeš je v **Knihovna** (počítač, knihovna), **Factory** (repo), **Problémy a řešení**.
 
 ## Časté situace
 
-**Změna `.factory/` nebo backlogu se v běhu neprojevila.** Běhy čtou base. Commitni ji ikonou s tooltipem **Necommitnutá konfigurace** nebo **Necommitnutý backlog** (`factory config commit`, `factory backlog commit`).
+**Změna `.factory/` nebo backlogu se v běhu neprojevila.** Běhy čtou base. Commitni: **Necommitnutá konfigurace**, **Necommitnutý backlog** (`factory config commit`, `factory backlog commit`).
 
-**Task nejde spustit.** Nemá workflow (nastav ho v tasku, stepu nebo projektu), čeká na závislost, nebo je pro člověka.
+**Task nejde spustit.** Nastav workflow; ověř závislosti a určení pro člověka.
 
-**Harness chybí nebo není přihlášený.** Nainstaluj, přihlas (`claude`, `codex login`, `pi auth login`), spusť **Test** v **Harnessy tohoto počítače**, nebo přepni roster (`factory config roster set`).
+**Harness chybí nebo není přihlášený.** Přihlas (`claude`, `codex login`, `pi auth login`), spusť **Test** v **Harnessy tohoto počítače**, případně `factory config roster set`.
 
-**Běh selhal nebo se zasekl.** Prohlédni kartu selhání a události fáze. Zastav běh, pak **Pokračovat** (`factory task retry ID`).
+**Běh selhal nebo se zasekl.** Prohlédni události. Zastav běh, pak **Pokračovat** (`factory task retry ID`).
 
-**PR zůstal po schválení otevřený.** Detail PR: CI (`checks_failing`, `checks_pending`, `ci_fix_failed`), konflikt či závislost. Oprav, schval znovu.
+**PR zůstal po schválení otevřený.** Oprav CI, konflikt či závislost v detailu PR; schval znovu.
 
-**Knihovna je pozadu nebo se rozešla s remote.** `factory library pull`; při `library_diverged` vyřeš rozdíl přímo v adresáři knihovny.
+**Knihovna je pozadu nebo se rozešla s remote.** `factory library pull`; `library_diverged` vyřeš v knihovně.
 
-K hlášení přilož `factory check --json` a `factory --version`.
+K hlášení: `factory check --json`, `factory --version`.
