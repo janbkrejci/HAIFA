@@ -24,6 +24,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: '3.12'
@@ -55,9 +57,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.bundle.outputs.version }}
         run: |
-          current="$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)"
-          if [ "$current" != "$GITHUB_SHA" ]; then
-            echo "A newer commit is on main; skip publishing this older build."
+          git fetch --no-tags origin main
+          current="$(git rev-parse FETCH_HEAD)"
+          # Match paths-ignore above: a backlog-only push does not start a replacement build.
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" "$current"; then
+            echo "The build is no longer on main; skip publishing."
+            exit 0
+          fi
+          if ! git diff --quiet "$GITHUB_SHA" "$current" -- . \
+            ':(top,exclude)factory/**' ':(top,exclude)docs/**' ':(top,exclude).factory/**'; then
+            echo "Newer product changes are on main; skip publishing this older build."
             exit 0
           fi
           tag="v$VERSION"
