@@ -7,6 +7,7 @@ export interface ResourceInfo {
 }
 
 export interface SystemInfo {
+  disk: ResourceInfo
   volumes: (ResourceInfo & { id: string; paths: string[] })[]
   memory: ResourceInfo
   status: 'ok' | 'warning'
