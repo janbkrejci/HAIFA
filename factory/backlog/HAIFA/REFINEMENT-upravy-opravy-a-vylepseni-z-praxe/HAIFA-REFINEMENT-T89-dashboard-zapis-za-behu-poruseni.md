@@ -3,7 +3,7 @@ id: HAIFA-REFINEMENT-T89
 title: Úprava backlogu z dashboardu za běhu se přičte agentovi jako porušení
 status: todo
 depends_on: []
-writes: [aifactory/src/aifactory/run/, aifactory/src/aifactory/web/, aifactory/src/aifactory/backlog/, aifactory/tests/]
+writes: [aifactory/src/aifactory/run/, aifactory/src/aifactory/web/, aifactory/src/aifactory/backlog/, aifactory/tests/, aifactory/web/src/lib/backlog.ts, aifactory/web/src/lib/backlog.test.ts, aifactory/web/src/lib/backlogStatus.ts, aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/web/src/components/UncommittedBanner.vue, aifactory/web/src/components/UncommittedBanner.test.ts, aifactory/web/src/views/BacklogView.vue, aifactory/web/src/views/BacklogView.test.ts]
 ---
 
 ## Zadání
