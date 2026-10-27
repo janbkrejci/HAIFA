@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T96
 title: "API System info: jeden disk stroje, kde běží factory"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/system.py, aifactory/tests/web/test_web_system.py]
