@@ -11,7 +11,7 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
-from run_repo import SPEC, T01, T02, Script, fake_env, git, make_run_repo, ok, write
+from run_repo import SPEC, T01, T02, Script, commit_all, fake_env, git, make_run_repo, ok, write
 from starlette.testclient import TestClient
 from test_guard_base_moves import foreign
 
@@ -174,3 +174,42 @@ def test_cli_and_dashboard_writes_during_phase(repo: Path, script: Script, tmp_p
     text = (repo / T02_PATH).read_text(encoding="utf-8")
     assert "title: Loader v2" in text and T01 in text.split("related")[1]
     assert "auto_continue: true" in (repo / STEP_INDEX).read_text(encoding="utf-8")
+
+
+@pytest.mark.parametrize("move_head", [False, True])
+def test_dashboard_archive_crlf_during_phase(
+    repo: Path, script: Script, tmp_path: Path, move_head: bool
+) -> None:
+    # A clean Windows checkout has CRLF bytes, while its Git blob has LF.
+    text = (repo / T02_PATH).read_text(encoding="utf-8").replace("status: todo", "status: done")
+    write(repo, T02_PATH, text)
+    write(repo, ".gitattributes", "*.md text eol=crlf\n")
+    commit_all(repo, "Prepare completed task with CRLF checkout")
+    (repo / T02_PATH).unlink()
+    git(repo, "checkout", "--", T02_PATH)
+    assert b"\r\n" in (repo / T02_PATH).read_bytes()
+    assert git(repo, "status", "--porcelain") == ""
+
+    def effect(wt: Path) -> None:
+        with foreign():
+            client = TestClient(
+                create_app(repo, static_dir=tmp_path / "nostatic"),
+                base_url="http://127.0.0.1:4700",
+            )
+            response = client.post(f"/api/backlog/tasks/{T02}/archive", json={"archived": True})
+            assert response.status_code == 200, response.text
+            if move_head:
+                old = git(repo, "rev-parse", "HEAD")
+                tree = git(repo, "rev-parse", "HEAD^{tree}")
+                new = git(repo, "commit-tree", tree, "-p", old, "-m", "External move")
+                git(repo, "update-ref", "refs/heads/main", new, old)
+
+    _plan(script, effect)
+    result = run_task(repo, T01)
+    assert "archived: true" in (repo / T02_PATH).read_text(encoding="utf-8")
+    if move_head:
+        assert result.run.state == "failed"
+        assert "main checkout: HEAD" in (result.run.error or "")
+        assert T02_PATH not in (result.run.error or "")
+    else:
+        assert result.run.state == "succeeded", result.run.error

@@ -453,7 +453,7 @@ async function onRunCommit() {
   if (!id) return
   run.value = { ...run.value, busy: true, action: 'commit', error: null }
   try {
-    await commitBacklog()
+    backlogStatus.acceptCommit(await commitBacklog())
     void backlogStatus.refresh()
     const check = await fetchRunCheck(id)
     run.value = { ...run.value, busy: false, action: null, check }

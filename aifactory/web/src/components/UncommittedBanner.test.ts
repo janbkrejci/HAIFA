@@ -161,3 +161,14 @@ describe('UncommittedBanner', () => {
     expect(wrapper.find('[data-test="backlog-banner-error"]').exists()).toBe(false)
   })
 })
+
+
+it('opens the chip panel when a successful commit has warnings', async () => {
+  const wrapper = backlog()
+  expect(wrapper.get('[data-test="backlog-chip"]').attributes('aria-expanded')).toBe('false')
+  await wrapper.setProps({ commitWarnings: ['run factory config pull later'] })
+  await nextTick()
+  expect(wrapper.get('[data-test="backlog-chip"]').attributes('aria-expanded')).toBe('true')
+  expect(wrapper.get('[data-test="backlog-commit-warning"]').text()).toBe('run factory config pull later')
+  wrapper.unmount()
+})

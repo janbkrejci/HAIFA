@@ -16,6 +16,7 @@ import { FakeEventSource, filesEvent, traceEvent } from '@/test/fakeEventSource'
 import { chooseOption, openSelect, selectLabels } from '@/test/select'
 import { deferred, type Deferred } from '@/test/deferred'
 import { answerDialog } from '@/test/modal'
+import { useBacklogStatus } from '@/lib/backlogStatus'
 import { HIDE_DONE_KEY, resetTreeForTests } from '@/lib/backlog'
 
 enableAutoUnmount(afterEach)
@@ -998,8 +999,9 @@ describe('BacklogView', () => {
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (init?.method === 'POST' && url === '/api/repos/haifa/backlog/commit') {
         committed = true
-        return ok({ committed: true, commit: 'abc', base: 'main', paths: ['backlog/x.md'], pushed: false })
+        return ok({ committed: true, commit: 'abc', base: 'main', paths: ['backlog/x.md'], pushed: false, warnings: ['run factory config pull later'] })
       }
+      if (url.endsWith('/backlog/status')) return ok({ base: 'main', commit: 'old', clean: false, changes: [{ path: 'backlog/x.md', status: 'modified' }] })
       if (url.endsWith('/run-check')) return ok(runCheck({ in_base: committed }))
       if (url.startsWith('/api/repos/haifa/backlog/tasks/')) return ok(taskDetail())
       return ok(backlogData())
@@ -1014,6 +1016,7 @@ describe('BacklogView', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/commit', expect.objectContaining({ method: 'POST' }))
     const checks = fetchMock.mock.calls.filter(([url]) => url.endsWith('/run-check'))
+    expect(useBacklogStatus().commitWarnings.value).toEqual(['run factory config pull later'])
     expect(checks).toHaveLength(2)
     expect(wrapper.find('[data-test="not-in-base"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="run-start"]').attributes('disabled')).toBeUndefined()

@@ -822,7 +822,7 @@ def commit(repo: Path, body: JsonDict) -> tuple[JsonDict, list[str]]:
     _check_keys(body, COMMIT_KEYS)
     message = _opt_str(body, "message")
     result = core.commit_backlog(repo, message)
-    return result.to_json(), []
+    return {**result.to_json(), "warnings": list(result.warnings)}, list(result.warnings)
 
 
 # ── run a task, dependency graph, auto-continue, auto-merge ──────────────────

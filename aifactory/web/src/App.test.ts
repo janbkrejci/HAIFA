@@ -449,6 +449,35 @@ describe('App', () => {
     wrapper.unmount()
   })
 
+  it('opens the backlog warning after a merged PR leaves base waiting for config pull', async () => {
+    const warning = 'main not advanced: live run; run factory config pull later'
+    let clean = false
+    stubApi({ handler: url => {
+      if (url.endsWith('/backlog/status')) return envelope({
+        base: 'main', commit: 'abc', clean,
+        changes: clean ? [] : [{ path: 'backlog/task.md', status: 'modified' }],
+      })
+      if (url.endsWith('/backlog/commit')) return envelope({
+        committed: true, merged: true, pr: { url: 'https://example.com/pr/1', branch: 'factory-backlog/1' },
+        warnings: [warning],
+      })
+      return undefined
+    } })
+    const wrapper = mount(App)
+    await flushPromises()
+    await wrapper.get('[data-test="backlog-commit"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get('[data-test="backlog-commit-warning"]').text()).toBe(warning)
+    expect(wrapper.get('[data-test="backlog-panel"]').isVisible()).toBe(true)
+    expect(wrapper.find('[data-test="backlog-pr"]').exists()).toBe(false)
+    clean = true
+    const { useBacklogStatus } = await import('./lib/backlogStatus')
+    await useBacklogStatus().refresh()
+    await flushPromises()
+    expect(wrapper.find('[data-test="backlog-banner"]').exists()).toBe(false)
+    expect(useBacklogStatus().commitWarnings.value).toEqual([])
+  })
+
   it('reloads the names of codes on a live change of the backlog', async () => {
     let title = 'Schema'
     stubApi({

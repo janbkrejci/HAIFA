@@ -28,12 +28,13 @@ const props = withDefaults(
     committing?: boolean
     /** The last commit failed. */
     commitError?: string | null
+    commitWarnings?: string[]
     /** The status itself could not be read. */
     statusError?: string | null
     /** The changes wait in this pull request (`base_changes: pr`). */
     pr?: { url: string; branch: string } | null
   }>(),
-  { chip: false, chipText: undefined, panel: true, committing: false, commitError: null, statusError: null, pr: null },
+  { chip: false, chipText: undefined, panel: true, committing: false, commitError: null, commitWarnings: () => [], statusError: null, pr: null },
 )
 const emit = defineEmits<{ commit: [] }>()
 
@@ -98,6 +99,9 @@ watch(open, (on) => {
 watch(() => props.commitError, (error) => {
   if (error && props.chip && props.panel) open.value = true
 })
+watch(() => props.commitWarnings, (warnings) => {
+  if (warnings.length && props.chip && props.panel) open.value = true
+})
 watch(dirty, (value) => {
   if (!value) open.value = false
 })
@@ -142,6 +146,9 @@ onBeforeUnmount(() => {
       <p :data-test="`${kind}-summary`">Commitne se {{ changes }}.</p>
       <p v-if="pr" class="pr" :data-test="`${kind}-pr`">
         Změny čekají v pull requestu <a :href="pr.url" target="_blank" rel="noopener">{{ pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.
+      </p>
+      <p v-for="warning in commitWarnings" :key="warning" class="pr" :data-test="`${kind}-commit-warning`">
+        {{ warning }}
       </p>
       <p v-if="commitError" class="commit-error" :data-test="`${kind}-commit-error`">
         Commit se nepodařil: {{ commitError }}
@@ -190,6 +197,9 @@ onBeforeUnmount(() => {
     </ul>
     <p v-if="pr" class="pr" :data-test="`${kind}-pr`">
       Změny čekají v pull requestu <a :href="pr.url" target="_blank" rel="noopener">{{ pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.
+    </p>
+    <p v-for="warning in commitWarnings" :key="warning" class="pr" :data-test="`${kind}-commit-warning`">
+      {{ warning }}
     </p>
     <p v-if="commitError" class="commit-error" :data-test="`${kind}-commit-error`">
       Commit se nepodařil: {{ commitError }}
