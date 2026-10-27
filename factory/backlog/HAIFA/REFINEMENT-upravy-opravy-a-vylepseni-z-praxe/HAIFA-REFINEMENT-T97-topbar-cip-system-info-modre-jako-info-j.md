@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T97
 title: "Topbar: čip System info modře jako info, jen disk a RAM bez cest"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T96]
 writes: [aifactory/web/src/components/SystemInfoChip.vue, aifactory/web/src/components/SystemInfoChip.test.ts, aifactory/web/src/lib/system.ts, aifactory/web/src/App.test.ts, aifactory/src/aifactory/guide/08-aktualizace-a-reseni-problemu.md, aifactory/src/aifactory/web/static/]
