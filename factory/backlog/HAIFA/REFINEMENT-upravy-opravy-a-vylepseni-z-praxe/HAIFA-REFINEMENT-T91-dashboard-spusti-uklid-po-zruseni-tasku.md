@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T91
 title: Dashboard spustí úklid po zrušení tasku a pravidelně ve všech repech
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T90]
 writes: [aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_cleanup.py]

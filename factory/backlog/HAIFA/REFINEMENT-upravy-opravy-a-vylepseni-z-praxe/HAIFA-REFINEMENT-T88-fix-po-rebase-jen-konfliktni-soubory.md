@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T88
 title: "Oprava po rebase nesmí měnit soubory ze writes bez konfliktu, retry se zablokuje"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/src/aifactory/run/, aifactory/tests/, aifactory/src/aifactory/defaults/workflows/resolve.yaml, aifactory/src/aifactory/defaults/workflows/resolve-reviewed.yaml]
 ---
