@@ -47,7 +47,7 @@ function stubApi(
     if (own) return own
     if (url.startsWith('/api/updates')) return envelope({ status: 'current', current_version: '0.1.0' })
     if (url.startsWith('/api/machine/check')) return envelope({ ok: true, findings: [] })
-    if (url === '/api/machine/system') return envelope({ status: 'ok', volumes: [], memory: { free: null, total: null, status: 'ok' } })
+    if (url === '/api/machine/system') return envelope({ status: 'ok', disk: { free: null, total: null, status: 'ok' }, volumes: [], memory: { free: null, total: null, status: 'ok' } })
     if (url === '/api/library') return envelope({ exists: true, items: [] })
     if (url === '/api/library/inventory') return envelope({
       items: [], repos: repos.map(({ id, name }) => ({ id, name, rules: [] })), errors: [],

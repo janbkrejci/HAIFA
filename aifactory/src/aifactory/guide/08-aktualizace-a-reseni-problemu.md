@@ -17,7 +17,7 @@ Vydání: GitHub Actions / `just bundle`.
 
 ## Řešení problémů
 
-Čip **System info**: tooltip ukazuje místo svazků, cesty a paměť v GB; nezjištěné hodnoty jako „nedostupné“. Obnova každou minutu, oranžová značí nedostatek. Potvrzením **Uklidit disk** odstraníš osiřelé návrhy, hotové worktrees a větve sloučených PR všech rep. Tooltip ukáže počty, uvolněné místo, varování či chybu; hodnoty se obnoví.
+Modrý čip **System info**: volné místo disku stroje s factory a paměť v GB, bez cest; nezjištěné hodnoty „nedostupné“. Obnova každou minutu, bez oranžového varování. Potvrzením **Uklidit disk** odstraníš osiřelé návrhy, hotové worktrees a větve sloučených PR všech rep. Tooltip zobrazí výsledek či chybu; obnoví hodnoty.
 
 Problémy hledá `factory check` (jen čte):
 

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import './ui/statusIconChip.css'
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
-import { HardDrive, TriangleAlert } from 'lucide-vue-next'
+import { HardDrive } from 'lucide-vue-next'
 import { fetchSystemInfo, runCleanup, type SystemInfo } from '@/lib/system'
 import { useConfirm } from '@/lib/confirm'
 import { errorText } from '@/lib/format'
@@ -18,12 +18,11 @@ const { dialog, ask, confirm, cancel } = useConfirm()
 let timer: ReturnType<typeof setInterval> | undefined
 let disposed = false
 const busy = computed(() => loading.value || cleaning.value)
-const warning = computed(() => !!error.value || info.value?.status === 'warning')
 const gb = (bytes: number | null) => bytes === null ? 'nedostupné' : `${(bytes / 1024 ** 3).toLocaleString('cs-CZ', { maximumFractionDigits: 2 })} GB`
 const tooltip = computed(() => [
   'System info',
   cleaning.value ? 'Uklízím disk…' : loading.value ? 'Načítám…' : '',
-  ...(info.value?.volumes.map(v => `Disk ${v.id} (${v.paths.join(', ')}): volné ${gb(v.free)} / celkem ${gb(v.total)}`) ?? []),
+  info.value ? `Disk: volné ${gb(info.value.disk.free)} / celkem ${gb(info.value.disk.total)}` : '',
   info.value ? `Paměť: volná ${gb(info.value.memory.free)} / celkem ${gb(info.value.memory.total)}` : '',
   error.value,
   result.value,
@@ -35,7 +34,7 @@ async function load() {
   loading.value = true
   try {
     const data = await fetchSystemInfo()
-    if (!Array.isArray(data.volumes) || !data.memory) throw new Error('Neplatná odpověď systému')
+    if (!data.disk || !data.memory) throw new Error('Neplatná odpověď systému')
     if (!disposed) { info.value = data; error.value = '' }
   } catch (err) {
     if (!disposed) error.value = `System info se nepodařilo načíst: ${errorText(err)}`
@@ -77,9 +76,8 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); cancel() })
 
 <template>
   <Tooltip :text="tooltip">
-    <button class="status-icon-chip" :class="{ warning, success: info && !warning }" type="button" :disabled="busy" :aria-label="tooltip" :aria-busy="busy" data-test="system-info-chip" @click="cleanup">
+    <button class="status-icon-chip info" type="button" :disabled="busy" :aria-label="tooltip" :aria-busy="busy" data-test="system-info-chip" @click="cleanup">
       <Spinner v-if="busy" />
-      <TriangleAlert v-else-if="warning" :size="14" aria-hidden="true" />
       <HardDrive v-else :size="14" aria-hidden="true" />
     </button>
   </Tooltip>
@@ -87,6 +85,5 @@ onBeforeUnmount(() => { disposed = true; clearInterval(timer); cancel() })
 </template>
 
 <style scoped>
-.success { color: var(--green); }
-.warning { color: var(--amber); }
+.info { color: var(--blue); }
 </style>
