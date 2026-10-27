@@ -4,7 +4,7 @@ title: Automatický úklid worktree a větví po dokončeném nebo zrušeném ta
 status: todo
 workflow: build-test-review
 depends_on: []
-writes: [aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/review/__init__.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/guide/05-behy-a-review.md, aifactory/src/aifactory/skill/skill.md, docs/decisions.md, aifactory/tests/review/test_branch_cleanup.py, aifactory/tests/run/test_task_auto_clean.py]
+writes: [aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/review/__init__.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/guide/05-behy-a-review.md, aifactory/src/aifactory/skill/skill.md, docs/decisions.md, aifactory/tests/review/test_branch_cleanup.py, aifactory/tests/run/test_task_auto_clean.py, aifactory/tests/run/test_task_pr_flow.py]
 ---
 
 ## Zadání
