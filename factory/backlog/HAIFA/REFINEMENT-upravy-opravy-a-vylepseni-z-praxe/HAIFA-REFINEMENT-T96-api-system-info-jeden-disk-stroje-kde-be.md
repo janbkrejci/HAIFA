@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T96
 title: "API System info: jeden disk stroje, kde běží factory"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/system.py, aifactory/tests/web/test_web_system.py]
@@ -31,3 +31,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-27 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/185 · náklady $0.00
