@@ -251,7 +251,9 @@ from __future__ import annotations
 import asyncio
 import functools
 import json
+import logging
 import sqlite3
+import threading
 from collections.abc import AsyncIterator, Awaitable, Callable, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -320,6 +322,48 @@ ALLOWED_HOSTS = ["127.0.0.1", "localhost"]
 _NOT_BUILT = "dashboard frontend is not built; run: just web-build"
 
 APP_NAME = web_server.APP_NAME
+
+WORKTREE_CLEANUP_INTERVAL = 3600
+log = logging.getLogger(__name__)
+
+
+class _WorktreeCleanup:
+    """Share per-repository exclusion between API jobs and periodic worker threads."""
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._running: set[Path] = set()
+        self._tasks: set[asyncio.Task[None]] = set()
+
+    def clean(self, repo: Path) -> None:
+        from aifactory.review import clean_worktrees
+
+        root = repo.resolve()
+        with self._lock:
+            if root in self._running:
+                return
+            self._running.add(root)
+        try:
+            clean_worktrees(root)
+        except Exception:
+            log.exception("Dashboard worktree cleanup failed for %s", root)
+        finally:
+            with self._lock:
+                self._running.remove(root)
+
+    def registered(self, registry: Registry) -> None:
+        for entry in registry.snapshot()[0].repos:
+            self.clean(Path(entry.path))
+
+    def start(self, repo: Path) -> None:
+        task = asyncio.create_task(run_in_threadpool(self.clean, repo))
+        self._tasks.add(task)
+        task.add_done_callback(self._tasks.discard)
+
+    async def close(self) -> None:
+        await asyncio.gather(*self._tasks, return_exceptions=True)
+
+
 REPO_SCOPE_KEY = "haifa.repo"
 """The ASGI scope key under which ``RepoScope`` puts the request's ``RepoContext``."""
 
@@ -1247,6 +1291,8 @@ async def backlog_edit(request: Request) -> JSONResponse:
         return _usage_error(exc.message)
     except (TaskEditError, ConfigError, TaskRunError) as exc:
         return _edit_error(exc)
+    if body.get("status") == "cancelled":
+        request.app.state.worktree_cleanup.start(repo)
     return JSONResponse(envelope_ok(data, warnings))
 
 
@@ -1981,6 +2027,7 @@ def _shared_state(
     app.state.restart = restart if restart is not None else web_server.restart_process
     app.state.updates = Updates()
     app.state.control = FactoryControl()
+    app.state.worktree_cleanup = _WorktreeCleanup()
     overview: Overview | None = getattr(app.state, "overview", None)
     if overview is not None:
         overview.control = app.state.control
@@ -2058,6 +2105,7 @@ def create_app(
         try:
             yield
         finally:
+            await app.state.worktree_cleanup.close()
             await run_in_threadpool(app.state.workflow_advice.close)
             await run_in_threadpool(app.state.task_advice.close)
             await run_in_threadpool(app.state.intent.close)
@@ -2759,6 +2807,12 @@ def create_multi_app(
                 asyncio.create_task(periodic(app.state.updates.check, 60)),
                 asyncio.create_task(periodic(lambda: app.state.limits.get(None), 60)),
                 asyncio.create_task(
+                    periodic(
+                        lambda: app.state.worktree_cleanup.registered(app.state.registry),
+                        WORKTREE_CLEANUP_INTERVAL,
+                    )
+                ),
+                asyncio.create_task(
                     periodic(lambda: refresh_registered(app.state.registry), PR_REFRESH_INTERVAL)
                 ),
                 asyncio.create_task(
@@ -2777,6 +2831,7 @@ def create_multi_app(
             for check in checks:
                 check.cancel()
             await asyncio.gather(*checks, return_exceptions=True)
+            await app.state.worktree_cleanup.close()
             await close_sessions(app.state.terminal_sessions)
             await run_in_threadpool(app.state.workflow_advice.close)
             await run_in_threadpool(app.state.task_advice.close)
