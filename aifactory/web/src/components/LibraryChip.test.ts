@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import LibraryChip from './LibraryChip.vue'
 
 function stubLibrary(exists: boolean) {
@@ -8,6 +8,7 @@ function stubLibrary(exists: boolean) {
   return fetchMock
 }
 
+enableAutoUnmount(afterEach)
 afterEach(() => vi.unstubAllGlobals())
 
 describe('LibraryChip', () => {
@@ -16,7 +17,11 @@ describe('LibraryChip', () => {
     const wrapper = mount(LibraryChip)
     await flushPromises()
     const chip = wrapper.get('[data-test="library-chip-ok"]')
-    expect(chip.text()).toContain('Knihovna OK')
+    expect(chip.text()).toBe('')
+    expect(chip.attributes('aria-label')).toContain('Knihovna OK')
+    await chip.trigger('focusin')
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(chip.attributes('aria-label'))
+    await chip.trigger('focusout')
     expect(chip.attributes('href')).toBe('#/setup/library')
     wrapper.unmount()
   })
@@ -26,7 +31,11 @@ describe('LibraryChip', () => {
     const wrapper = mount(LibraryChip)
     await flushPromises()
     const chip = wrapper.get('[data-test="library-chip-missing"]')
-    expect(chip.text()).toContain('Založit knihovnu')
+    expect(chip.text()).toBe('')
+    expect(chip.attributes('aria-label')).toContain('Založit knihovnu')
+    await wrapper.get('[data-test="tip-anchor"]').trigger('mouseenter')
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(chip.attributes('aria-label'))
+    await wrapper.get('[data-test="tip-anchor"]').trigger('mouseleave')
     expect(chip.attributes('href')).toBe('#/setup/library')
     wrapper.unmount()
   })

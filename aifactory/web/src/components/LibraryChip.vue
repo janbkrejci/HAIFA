@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import './ui/statusIconChip.css'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Library, TriangleAlert } from 'lucide-vue-next'
 import { fetchLibrarySummary } from '@/lib/library'
+import Tooltip from './ui/Tooltip.vue'
 import { LIBRARY_HREF } from '@/lib/router'
 
 /** Whether this computer has a library: null while unknown (or unreadable). */
@@ -24,13 +26,11 @@ defineExpose({ load })
 </script>
 
 <template>
-  <a v-if="exists" :href="LIBRARY_HREF" class="status-chip success" data-test="library-chip-ok"><Library :size="14" aria-hidden="true" /> Knihovna OK</a>
-  <a v-else-if="exists === false" :href="LIBRARY_HREF" class="status-chip warning" data-test="library-chip-missing"><TriangleAlert :size="14" aria-hidden="true" /> Založit knihovnu</a>
+  <Tooltip v-if="exists" text="Knihovna OK – kliknutím otevřeš knihovnu"><a :href="LIBRARY_HREF" class="status-icon-chip success" aria-label="Knihovna OK – kliknutím otevřeš knihovnu" data-test="library-chip-ok"><Library :size="14" aria-hidden="true" /></a></Tooltip>
+  <Tooltip v-else-if="exists === false" text="Založit knihovnu – kliknutím otevřeš knihovnu"><a :href="LIBRARY_HREF" class="status-icon-chip warning" aria-label="Založit knihovnu – kliknutím otevřeš knihovnu" data-test="library-chip-missing"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
 </template>
 
 <style scoped>
-.status-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid currentColor; border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 12px; white-space: nowrap; background: var(--panel-2); text-decoration: none; cursor: pointer; }
-.status-chip:hover { background: var(--surface); }
 .success { color: var(--green); }
 .warning { color: var(--amber); }
 </style>

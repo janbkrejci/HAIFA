@@ -2,7 +2,7 @@
 
 Konfigurace je v `.factory/` repa: `config.yaml`, `agents.yaml` (roster agentů), volitelně `roles.yaml`, `workflows/` a `prompts/<agent>/`. Mimo git zůstávají `local.yaml` (trace DB, `database_url`), `trace.db` a `worktrees/`. Co repo nemá, dědí z knihovny.
 
-**Běhy čtou sdílenou konfiguraci z commitu v base.** Změnu commitni chipem **Necommitnutá konfigurace** nebo `factory config commit` (na chráněnou base `--pr`). `factory config show` ukáže konfiguraci běhu.
+**Běhy čtou sdílenou konfiguraci z commitu v base.** Změnu commitni ikonou s tooltipem **Necommitnutá konfigurace** nebo `factory config commit` (na chráněnou base `--pr`). `factory config show` ukáže konfiguraci běhu.
 
 ## config.yaml
 

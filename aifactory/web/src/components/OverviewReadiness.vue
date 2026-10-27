@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './ui/statusIconChip.css'
 import { Check, TriangleAlert } from 'lucide-vue-next'
 import { useReadiness } from '@/lib/readiness'
 import { useRemoveRepo } from '@/lib/repos'
@@ -18,10 +19,10 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
 
 <template>
   <template v-if="chip">
-    <span v-if="phase === 'loading'" class="status-chip checking" role="status" data-test="readiness-loading"><Spinner /> Načítání stavu</span>
-    <span v-else-if="phase === 'checking'" class="status-chip checking" role="status" data-test="readiness-checking"><Spinner /> Probíhá kontrola</span>
-    <Tooltip v-else-if="phase === 'success'" text="Spustit kontrolu znovu"><button type="button" class="status-chip success" data-test="readiness-success" @click="recheck"><Check :size="14" aria-hidden="true" /> Systém v pořádku</button></Tooltip>
-    <a v-else-if="phase === 'warning'" href="#/problems" class="status-chip warning" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /> Nalezeny problémy</a>
+    <Tooltip v-if="phase === 'loading'" text="Načítání stavu"><span class="status-icon-chip checking" role="status" tabindex="0" aria-label="Načítání stavu" data-test="readiness-loading"><Spinner /></span></Tooltip>
+    <Tooltip v-else-if="phase === 'checking'" text="Probíhá kontrola"><span class="status-icon-chip checking" role="status" tabindex="0" aria-label="Probíhá kontrola" data-test="readiness-checking"><Spinner /></span></Tooltip>
+    <Tooltip v-else-if="phase === 'success'" text="Systém v pořádku – kliknutím spustíš kontrolu znovu"><button type="button" class="status-icon-chip success" aria-label="Systém v pořádku – kliknutím spustíš kontrolu znovu" data-test="readiness-success" @click="recheck"><Check :size="14" aria-hidden="true" /></button></Tooltip>
+    <Tooltip v-else-if="phase === 'warning'" text="Nalezeny problémy – kliknutím otevřeš seznam problémů"><a href="#/problems" class="status-icon-chip warning" aria-label="Nalezeny problémy – kliknutím otevřeš seznam problémů" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
   </template>
   <div v-else-if="phase" class="readiness" :class="phase" :role="phase === 'warning' ? 'alert' : 'status'" :data-test="`readiness-${phase}`">
     <p v-if="phase === 'loading'"><Spinner /> Načítání stavu</p>
@@ -49,9 +50,6 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
 </template>
 
 <style scoped>
-.status-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid currentColor; border-radius: 999px; padding: 5px 10px; font: inherit; font-size: 12px; white-space: nowrap; background: var(--panel-2); text-decoration: none; }
-button.status-chip, a.status-chip { cursor: pointer; }
-.status-chip:hover { background: var(--surface); }
 .checking { color: var(--blue); }
 .success { color: var(--green); }
 .warning { color: var(--amber); }

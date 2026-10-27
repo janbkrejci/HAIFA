@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import App from './App.vue'
+import UpdateChip from './components/UpdateChip.vue'
 vi.mock('@xterm/xterm', async () => ({ Terminal: (await import('./components/terminal/xtermMock')).MockTerminal }))
 vi.mock('@xterm/addon-fit', async () => ({ FitAddon: (await import('./components/terminal/xtermMock')).MockFitAddon }))
 import MachineHarnessesDialog from './components/MachineHarnessesDialog.vue'
@@ -81,6 +82,35 @@ afterEach(() => {
 })
 
 describe('App', () => {
+  it.each([
+    ['current', 'Systém je aktuální', 'lucide-check'],
+    ['available', 'Je k dispozici aktualizace', 'lucide-circle-arrow-up'],
+    ['error', 'Nepodařilo se zkontrolovat aktualizace', 'lucide-triangle-alert'],
+  ])('shows the %s update as an icon with an accessible tooltip', async (status, label, icon) => {
+    const fetchMock = stubApi({ handler: url => url.startsWith('/api/updates')
+      ? envelope({ status, current_version: '0.1.0', target_version: '0.2.0', error: status === 'error' ? 'Offline' : null })
+      : undefined })
+    const wrapper = mount(UpdateChip)
+    const chip = wrapper.get('[data-test="update-chip"]')
+    expect(chip.find('.spinner').exists()).toBe(true)
+    expect(chip.attributes('disabled')).toBeDefined()
+    expect(chip.attributes('aria-label')).toContain('Kontrola aktualizací')
+    await flushPromises()
+    expect(chip.text()).toBe('')
+    expect(chip.find(`.${icon}`).exists()).toBe(true)
+    expect(chip.attributes('aria-label')).toContain(label)
+    if (status === 'available') expect(chip.attributes('aria-label')).toContain('Verze 0.2.0')
+    if (status === 'error') expect(chip.attributes('aria-label')).toContain('Offline')
+    await chip.trigger('focusin')
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(chip.attributes('aria-label'))
+    await chip.trigger('focusout')
+    if (status === 'current') {
+      await chip.trigger('click')
+      await flushPromises()
+      expect(fetchMock).toHaveBeenCalledWith('/api/updates?fresh=1')
+    }
+  })
+
   it('toggles from the xterm textarea even when bubbling stops and removes the listener', async () => {
     vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
     stubApi({ handler: url => {
@@ -121,13 +151,13 @@ describe('App', () => {
     go('#/r/haifa/backlog')
     const wrapper = mount(App)
     await flushPromises()
-    const status = wrapper.get('[data-test="readiness-warning"]').text()
+    const status = wrapper.get('[data-test="readiness-warning"]').attributes('aria-label')
     const home = wrapper.get('a.brand').attributes('href')!
     expect(home).toBe('#/overview')
     for (const hash of [home, '#/guide', home, '#/problems', home]) {
       go(hash)
       await flushPromises()
-      expect(wrapper.get('.topbar [data-test="readiness-warning"]').text()).toBe(status)
+      expect(wrapper.get('.topbar [data-test="readiness-warning"]').attributes('aria-label')).toBe(status)
       expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(false)
     }
     expect(fetchMock.mock.calls.filter(([url]) => url.startsWith('/api/machine/check'))).toHaveLength(1)
@@ -151,13 +181,13 @@ describe('App', () => {
     go('#/overview')
     const wrapper = mount(App)
     await flushPromises()
-    const previous = wrapper.get('[data-test="readiness-warning"]').text()
+    const previous = wrapper.get('[data-test="readiness-warning"]').attributes('aria-label')
     pending = new Promise(resolve => { finish = resolve })
     wrapper.getComponent(MachineHarnessesDialog).vm.$emit(event)
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/machine/check?fresh=1')
     expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="readiness-warning"]').text()).toBe(previous)
+    expect(wrapper.get('[data-test="readiness-warning"]').attributes('aria-label')).toBe(previous)
     finish(envelope({ ok: false, findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.' }] }))
     await flushPromises()
     go('#/problems')
@@ -190,7 +220,7 @@ describe('App', () => {
     } })
     go('#/r/haifa/backlog')
     const wrapper = mount(App, { attachTo: document.body }); await flushPromises()
-    expect(wrapper.get('.topbar [data-test="config-chip"]').text()).toContain('Necommitnutá konfigurace')
+    expect(wrapper.get('.topbar [data-test="config-chip"]').attributes('aria-label')).toContain('Necommitnutá konfigurace')
     await wrapper.get('[data-test="config-chip"]').trigger('click')
     expect(window.location.hash).toBe('#/r/haifa/factory/config_commit')
     expect(wrapper.find('[data-test="config-panel"]').exists()).toBe(false)
@@ -412,7 +442,9 @@ describe('App', () => {
     const wrapper = mount(App)
     await flushPromises()
     const chip = wrapper.get('.topbar [data-test="config-chip"]')
-    expect(chip.text()).toBe('Necommitnutá konfigurace · 2 soubory')
+    expect(chip.text()).toBe('2')
+    expect(chip.attributes('aria-label')).toContain('Necommitnutá konfigurace · 2 soubory')
+    expect(chip.find('svg').exists()).toBe(true)
     expect(chip.classes()).toContain('chip')
     go('#/r/haifa/runs')
     await flushPromises()
@@ -543,7 +575,8 @@ describe('App', () => {
     await flushPromises()
     expect(wrapper.find('nav').exists()).toBe(false)
     expect(wrapper.find('[data-test="limits"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="readiness-warning"]').text()).toBe('Nalezeny problémy')
+    expect(wrapper.get('[data-test="readiness-warning"]').text()).toBe('')
+    expect(wrapper.get('[data-test="readiness-warning"]').attributes('aria-label')).toContain('Nalezeny problémy')
     expect(wrapper.get('[data-test="readiness-warning"]').attributes('href')).toBe('#/problems')
     expect(wrapper.find('[data-test="repo-page"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="switcher-current"]').text()).toBe('Přehled')

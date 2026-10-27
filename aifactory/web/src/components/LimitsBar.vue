@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './ui/statusIconChip.css'
 // Free session limits of Claude and Codex in the topbar: per window a thin bar that fills
 // from the left with the used share (neutral colour, not a success one) and the free percent.
 // The windows are the last ones the harness reported; none shows an unavailable status.
@@ -15,12 +16,14 @@ const emit = defineEmits<{ open: [] }>()
 const orderedProviders = computed(() =>
   [...props.providers].sort((a, b) => Number(a.harness === 'codex') - Number(b.harness === 'codex')),
 )
+const statusDescription = computed(() => props.loading ? 'Harnessy – načítání nastavení harnessů' : empty.value ? 'Nakonfigurujte harnessy – kliknutím otevřeš nastavení harnessů' : '')
 </script>
 
 <template>
-  <button type="button" class="limits-trigger" :class="{ 'harness-loading': loading, 'harness-empty': empty }" :aria-busy="loading || undefined" aria-label="Usage limity a nastavení harnessů" data-test="harness-settings-open" @click="emit('open')">
-  <span v-if="loading" class="harness-status"><Spinner />Harnessy</span>
-  <span v-else-if="empty" class="harness-status"><TriangleAlert :size="14" aria-hidden="true" />Nakonfigurujte harnessy</span>
+  <Tooltip :text="statusDescription">
+  <button type="button" class="limits-trigger" :class="{ 'harness-loading': loading, 'harness-empty': empty, 'status-icon-chip': loading || empty }" :aria-busy="loading || undefined" :aria-label="statusDescription || 'Usage limity a nastavení harnessů'" data-test="harness-settings-open" @click="emit('open')">
+  <span v-if="loading" class="harness-status"><Spinner /></span>
+  <span v-else-if="empty" class="harness-status"><TriangleAlert :size="14" aria-hidden="true" /></span>
   <span v-else-if="!providers.length">Harnessy</span>
   <span v-else class="compact-label">Harnessy</span>
   <div v-if="!loading && !empty && providers.length" class="limits" data-test="limits">
@@ -55,6 +58,7 @@ const orderedProviders = computed(() =>
     </div>
   </div>
   </button>
+  </Tooltip>
 </template>
 
 <style scoped>
@@ -62,7 +66,7 @@ const orderedProviders = computed(() =>
 .limits-trigger:hover, .limits-trigger:focus-visible { border-color: var(--border); background: var(--panel-2); }
 .harness-status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; font-size: 12px; }
 /* loading and empty look like the other topbar status chips */
-.limits-trigger.harness-loading, .limits-trigger.harness-empty { display: inline-flex; align-items: center; border: 1px solid currentColor; border-radius: 999px; padding: 5px 10px; font-size: 12px; background: var(--panel-2); }
+.limits-trigger.status-icon-chip { height: 30px; min-width: 30px; padding: 0 7px; border-color: currentColor; border-radius: 999px; background: var(--panel-2); }
 .limits-trigger.harness-loading { color: var(--blue); }
 .limits-trigger.harness-empty { color: var(--red); }
 .compact-label { display: none; }

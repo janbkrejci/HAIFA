@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './ui/statusIconChip.css'
 // Changes kept in the working tree while runs read base (D4), as red chips in the topbar (so they
 // never move the page while you click in it): the backlog chip opens a short panel with the
 // number of changes and one button that commits it all at once, kept inside the viewport; the config chip (`panel` off) lists the files in its
@@ -52,6 +53,7 @@ const changes = computed(() => {
 
 const label = computed(() => props.chipText ?? `Necommitnutý ${props.title.toLocaleLowerCase('cs')}`)
 const paths = computed(() => dirty.value?.changes.map((c) => c.path).join(', ') ?? '')
+const description = computed(() => `${label.value} · ${files.value}: ${paths.value}`)
 function onChip() {
   if (props.panel) open.value = !open.value
   else emit('commit')
@@ -122,17 +124,18 @@ onBeforeUnmount(() => {
     role="status"
     :data-test="`${kind}-banner`"
   >
-    <Tooltip :text="panel ? '' : paths">
+    <Tooltip :text="description">
       <button
         type="button"
-        class="chip"
+        class="status-icon-chip chip"
+        :aria-label="description"
         :aria-expanded="panel ? open : undefined"
         :data-test="`${kind}-chip`"
         @click="onChip"
       >
         <Spinner v-if="committing" />
         <TriangleAlert v-else :size="14" aria-hidden="true" />
-        {{ label }} · {{ files }}
+        <span class="status-count" aria-hidden="true">{{ dirty.changes.length }}</span>
       </button>
     </Tooltip>
     <div
@@ -229,18 +232,8 @@ onBeforeUnmount(() => {
 }
 
 .chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 5px 10px;
-  border: 1px solid currentColor;
-  border-radius: 999px;
   background: color-mix(in srgb, var(--red) 12%, var(--panel-2));
   color: var(--red);
-  font: inherit;
-  font-size: 12px;
-  white-space: nowrap;
-  cursor: pointer;
 }
 
 .chip:hover {

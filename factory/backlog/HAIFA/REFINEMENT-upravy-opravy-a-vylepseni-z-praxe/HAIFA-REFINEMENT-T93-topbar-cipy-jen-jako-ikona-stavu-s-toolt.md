@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T93
 title: "Topbar: čipy jen jako ikona stavu s tooltipem"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/App.vue, aifactory/web/src/App.test.ts, aifactory/web/src/components/UpdateChip.vue, aifactory/web/src/components/OverviewReadiness.vue, aifactory/web/src/components/OverviewReadiness.test.ts, aifactory/web/src/components/LibraryChip.vue, aifactory/web/src/components/LibraryChip.test.ts, aifactory/web/src/components/UncommittedBanner.vue, aifactory/web/src/components/UncommittedBanner.test.ts, aifactory/web/src/components/LimitsBar.vue, aifactory/web/src/components/LimitsBar.test.ts, aifactory/web/src/components/ui/, aifactory/src/aifactory/guide/, aifactory/src/aifactory/web/static/]
@@ -34,3 +34,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-27 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/182 · náklady $0.00
