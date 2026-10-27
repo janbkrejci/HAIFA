@@ -70,3 +70,9 @@ mimo spec daného tasku. Ostatním PR zůstává původní důvod odmítnutí.
 ## Automatický úklid běhů (T90)
 
 Před vytvořením worktree a po dokončení workflow včetně publikace probíhá best-effort úklid, také při retry, selhání a přerušení. Sdílí implementaci s `factory task clean` a zámek s claim/reclaim běhů. Stav done/cancelled čte z backlogu hlavního checkoutu. Otevřené PR, běžící běhy a jejich sdílené cesty jsou chráněné; poslední selhaný/zastavený todo běh zůstává pro retry. Necommitnuté změny neukončených tasků znamenají varování místo smazání. Zrušené tasky a closed/merged PR uvolňují také větve factory, pokud je nepoužívá checkout ani otevřený stacked PR. Úklid osiřelých adresářů je omezen na adresář worktree; Git registrace se prořezávají. Chyby nikdy neshodí běh. JSON zachovává deleted_branches a přidává mapu branch_reasons; worktree mají removed[].reason. Bez přepínače pro vypnutí a bez nového dry-run.
+
+## Úklid adresářů AI agentů (T92)
+
+S odstraněním worktree, vlákna průvodce a dočasného advice mažeme best-effort také Claude `projects` pro jejich cwd (původní zápis i resolve, včetně krátkých Windows cest). Respektujeme `CLAUDE_CONFIG_DIR`. Advice uklízí cwd `repo` i nadřazený dočasný adresář. Smazání archivovaného běhu odstraní jeho session podle konfigurace `session_dir_of`; Claude projekt worktree odstraní pouze tehdy, pokud worktree už neexistuje. Existující sdílené worktree zůstává chráněné.
+
+Při startovním úklidu advice a při úklidu worktrees procházíme pouze příslušné zakódované prefixy a odstraňujeme historické osiřelé Claude projekty. Živé běhy a existující cesty včetně podadresářů jsou chráněné; cizí projekty mimo prefixy se nemažou. Nečitelné cesty úklid zastaví bez chyby. Vlákno, které odpovídá, dál nelze smazat. Codex rollouty a pi sessions tento úklid nemění.

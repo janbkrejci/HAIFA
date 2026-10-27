@@ -219,6 +219,9 @@ def remove_worktree(root: Path, path: Path) -> bool:
                 "worktree_remove_failed", f"git worktree remove {path}: {result.stderr.strip()}"
             )
     git_ok(root, "worktree", "prune")
+    from aifactory.harness.agent_dirs import remove_agent_dirs
+
+    remove_agent_dirs(path)
     return existed
 
 

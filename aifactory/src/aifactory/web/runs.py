@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import Any
 
 from aifactory.engine.quality import TEST_SLOT_EVENT
+from aifactory.harness.agent_dirs import remove_agent_dirs
 from aifactory.run.errors import TaskRunError
 from aifactory.run.store import TaskRunRow, TaskRunStore
 from aifactory.run.task import existing_store, session_dir_of
@@ -1056,8 +1057,13 @@ def delete_run(repo: Path, run_id: str) -> JsonDict:
     """Erase an archived run and its trace (``run_not_archived`` otherwise)."""
     store = _store(repo)
     try:
-        if not store.delete_run(run_id):
-            raise TaskRunError("unknown_run", f"no run {run_id}")
+        with store.serialized():
+            row = store.get(run_id)
+            active = {Path(r.worktree).resolve() for r in store.all_runs() if r.state == "running"}
+            if not store.delete_run(run_id):
+                raise TaskRunError("unknown_run", f"no run {run_id}")
+            if row is not None:
+                _delete_run_dirs(repo, row, active)
     finally:
         store.close()
     return {"deleted": [run_id]}
@@ -1080,6 +1086,23 @@ def delete_archived(repo: Path) -> JsonDict:
     if store is None:
         return {"deleted": []}
     try:
-        return {"deleted": store.delete_archived()}
+        with store.serialized():
+            rows = {row.run_id: row for row in store.all_runs()}
+            active = {Path(r.worktree).resolve() for r in rows.values() if r.state == "running"}
+            deleted = store.delete_archived()
+            for run_id in deleted:
+                _delete_run_dirs(repo, rows[run_id], active)
+            return {"deleted": deleted}
     finally:
         store.close()
+
+
+def _delete_run_dirs(repo: Path, row: TaskRunRow, active: set[Path]) -> None:
+    from aifactory.workflow.adaptive import remove_tree
+
+    try:
+        remove_tree(session_dir_of(repo, row.run_id))
+    except (OSError, TaskRunError):
+        pass
+    if Path(row.worktree).resolve() not in active and not Path(row.worktree).exists():
+        remove_agent_dirs(row.worktree)

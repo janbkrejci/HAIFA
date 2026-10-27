@@ -768,6 +768,9 @@ class AssistantManager:
                     raise AssistantError(
                         "delete_failed", f"cannot delete the thread: {exc}", 500
                     ) from exc
+            from aifactory.harness.agent_dirs import remove_agent_dirs
+
+            remove_agent_dirs(folder / "work")
             del self.threads[thread.id]
             self.changed.notify_all()
             return {"deleted": thread.id}

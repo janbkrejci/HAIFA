@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T92
 title: "Mazat složky AI agentů (Claude projekty, sessions) se smazaným vláknem, během, advice a worktree"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T90]
 writes: [aifactory/src/aifactory/harness/agent_dirs.py, aifactory/src/aifactory/providers/git.py, aifactory/src/aifactory/workflow/adaptive.py, aifactory/src/aifactory/web/assistant.py, aifactory/src/aifactory/web/runs.py, aifactory/src/aifactory/review/flow.py, docs/decisions.md, aifactory/tests/harness/test_agent_dirs.py, aifactory/tests/web/test_web_assistant.py, aifactory/tests/web/test_web_runs.py, aifactory/tests/workflow/test_workflow_advice.py]
@@ -39,3 +39,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-27 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/181 · náklady $0.00

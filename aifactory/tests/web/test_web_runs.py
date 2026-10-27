@@ -600,3 +600,54 @@ def test_allow_writes_does_not_launch_when_writes_are_not_committed(
     assert body["error"]["code"] == "writes_not_committed"
     assert calls == [(repo, T1, "r-fail")]
     assert launcher.calls == []
+
+
+@pytest.mark.parametrize("bulk", [False, True])
+@pytest.mark.parametrize("worktree_exists", [False, True])
+@pytest.mark.parametrize("shared_active", [False, True])
+def test_delete_archived_cleans_session_and_absent_worktree(
+    repo: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    bulk: bool,
+    worktree_exists: bool,
+    shared_active: bool,
+) -> None:
+    from aifactory.harness.agent_dirs import claude_project_dirs
+    from aifactory.run.task import existing_store, session_dir_of
+
+    monkeypatch.setenv(
+        "CLAUDE_CONFIG_DIR", ("\\\\?\\" if os.name == "nt" else "") + str(tmp_path / "claude")
+    )
+    from advice_fixture import git
+
+    git(repo, "add", ".factory/config.yaml")
+    git(repo, "commit", "-qm", "config for session lookup")
+    git(repo, "branch", "-M", "main")
+    cwd = repo / ".factory/worktrees/deleted"
+    if worktree_exists:
+        cwd.mkdir(parents=True)
+    store = existing_store(repo)
+    assert store is not None
+    store.conn.execute("UPDATE task_runs SET worktree=? WHERE run_id='r-fail'", (str(cwd),))
+    if shared_active:
+        store.conn.execute("UPDATE task_runs SET worktree=? WHERE run_id='r-run'", (str(cwd),))
+    store.conn.commit()
+    store.close()
+    session = session_dir_of(repo, "r-fail")
+    session.mkdir(parents=True)
+    (session / "transcript.jsonl").write_text("trace")
+    kept = session_dir_of(repo, "r-run")
+    kept.mkdir(parents=True)
+    projects = claude_project_dirs(cwd)
+    for path in projects:
+        path.mkdir(parents=True, exist_ok=True)
+    client = _client(repo, tmp_path)
+    _post(client, "/api/runs/r-fail/delete", 409)
+    assert session.exists()
+    _post(client, "/api/runs/r-fail/archive")
+    url = "/api/runs/delete-archived" if bulk else "/api/runs/r-fail/delete"
+    assert _post(client, url)["data"] == {"deleted": ["r-fail"]}
+    assert not session.exists()
+    assert kept.exists()
+    assert all(path.exists() == (worktree_exists or shared_active) for path in projects)

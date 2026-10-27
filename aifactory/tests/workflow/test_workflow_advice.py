@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import signal
 import threading
 from concurrent.futures import ThreadPoolExecutor
@@ -412,3 +413,49 @@ def test_context_without_computer_binding_leaves_roster_in_control(tmp_path: Pat
     repo = make_repo(tmp_path / "repo")
     ctx = context(repo, "P01-S01-T01", {})
     assert all(ctx["effective"][k] is None for k in ("harness", "model", "thinking"))
+
+
+def test_advice_dir_removes_claude_projects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.harness.agent_dirs import claude_project_dirs
+    from aifactory.workflow.adaptive import advice_dir, cleanup_orphans
+
+    monkeypatch.setenv(
+        "CLAUDE_CONFIG_DIR", ("\\\\?\\" if os.name == "nt" else "") + str(tmp_path / "claude")
+    )
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    with advice_dir() as tmp:
+        (tmp / "repo").mkdir()
+        projects = claude_project_dirs(tmp) | claude_project_dirs(tmp / "repo")
+        for path in projects:
+            path.mkdir(parents=True, exist_ok=True)
+        cleanup_orphans(tmp_path)
+        assert all(path.exists() for path in projects)
+    assert all(not path.exists() for path in projects)
+    assert not tmp.exists()
+
+
+def test_orphan_advice_removes_historical_claude_projects(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.harness.agent_dirs import claude_project_dirs
+    from aifactory.workflow.adaptive import cleanup_orphans
+
+    monkeypatch.setenv(
+        "CLAUDE_CONFIG_DIR",
+        ("\\\\?\\" if os.name == "nt" else "") + str(tmp_path / "claude"),
+    )
+    dead = tmp_path / "factory-advice-dead"
+    (dead / "repo").mkdir(parents=True)
+    (dead / "owner.pid").write_text("99999999")
+    monkeypatch.setattr("aifactory.workflow.adaptive.oscompat.alive", lambda _: False)
+    projects = (
+        claude_project_dirs(dead)
+        | claude_project_dirs(dead / "repo")
+        | claude_project_dirs(tmp_path / "factory-advice-legacy/repo")
+    )
+    for path in projects:
+        path.mkdir(parents=True, exist_ok=True)
+    assert cleanup_orphans(tmp_path) == [dead]
+    assert all(not path.exists() for path in projects)
