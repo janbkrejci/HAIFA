@@ -34,4 +34,4 @@ Prázdná hodnota se dědí od stepu, pak projektu: `workflow`, `writes`, `harne
 
 ## Commit backlogu
 
-Úpravy se zapisují do pracovního stromu, ale **běhy čtou backlog z base**. Commitni ho chipem **Necommitnutý backlog** nebo `factory backlog commit`. Po ruční úpravě souborů spusť `factory backlog check`.
+Úpravy se zapisují do pracovního stromu, ale **běhy čtou backlog z base**. Commitni ho ikonou s tooltipem **Necommitnutý backlog** nebo `factory backlog commit`. Po ruční úpravě souborů spusť `factory backlog check`.

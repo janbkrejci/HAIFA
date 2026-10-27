@@ -27,10 +27,14 @@ describe('LimitsBar', () => {
       wrapper.unmount()
     }
   })
-  it('shows a red configuration chip without usable harnesses', () => {
+  it('shows a red configuration chip without usable harnesses', async () => {
     const wrapper = mount(LimitsBar, { props: { providers: [] } })
     expect(wrapper.find('[data-test="limits"]').exists()).toBe(false)
-    expect(wrapper.text()).toBe('Nakonfigurujte harnessy')
+    expect(wrapper.text()).toBe('')
+    expect(wrapper.get('button').attributes('aria-label')).toContain('Nakonfigurujte harnessy')
+    await wrapper.get('button').trigger('focusin')
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(wrapper.get('button').attributes('aria-label'))
+    await wrapper.get('button').trigger('focusout')
     expect(wrapper.get('button').classes()).toContain('harness-empty')
   })
 
@@ -38,7 +42,11 @@ describe('LimitsBar', () => {
     const wrapper = mount(LimitsBar, { props: { providers: [], loading: true, usable: false } })
     expect(wrapper.get('button').classes()).toContain('harness-loading')
     expect(wrapper.find('.spinner').exists()).toBe(true)
-    expect(wrapper.text()).toBe('Harnessy')
+    expect(wrapper.text()).toBe('')
+    expect(wrapper.get('button').attributes('aria-label')).toContain('Harnessy')
+    await wrapper.get('button').trigger('focusin')
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(wrapper.get('button').attributes('aria-label'))
+    await wrapper.get('button').trigger('focusout')
     await wrapper.setProps({ loading: false, usable: true })
     expect(wrapper.find('.spinner').exists()).toBe(false)
     expect(wrapper.get('button').classes()).not.toContain('harness-empty')
