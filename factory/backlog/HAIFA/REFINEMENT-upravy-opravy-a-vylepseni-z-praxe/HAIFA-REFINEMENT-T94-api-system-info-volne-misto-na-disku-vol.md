@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T94
 title: "API System info: volné místo na disku, volná paměť a úklid disku"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/system.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_system.py]
@@ -27,3 +27,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-27 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/183 · náklady $0.00
