@@ -30,6 +30,7 @@ from aifactory.engine.runner import Run
 from aifactory.engine.tracer import Tracer
 from aifactory.errors import UsageError
 from aifactory.harness import canonical, install
+from aifactory.harness.agent_dirs import remove_agent_dirs, sweep_orphans
 from aifactory.harness.check import check_harness
 from aifactory.harness.settings import context_binding
 from aifactory.providers.git import PARALLEL_CHECKOUT
@@ -344,7 +345,10 @@ def cleanup_orphans(root: Path | None = None) -> list[Path]:
             remove_tree(path)
         except OSError:
             continue
+        remove_agent_dirs(path / "repo")
+        remove_agent_dirs(path)
         removed.append(path)
+    sweep_orphans([base / ADVICE_PREFIX], _active)
     return removed
 
 
@@ -359,6 +363,8 @@ def advice_dir() -> Iterator[Path]:
         (path / _OWNER).write_text(str(os.getpid()))
         yield path
     finally:
+        remove_agent_dirs(path / "repo")
+        remove_agent_dirs(path)
         try:
             remove_tree(path)
         except OSError:

@@ -916,7 +916,18 @@ def _clean(ctx: _Ctx, *, protected: frozenset[str] = frozenset()) -> CleanResult
     # Claim/reclaim and worktree creation use this same cross-process lock.
     try:
         with ctx.store.serialized():
-            return _clean_locked(ctx, protected)
+            result = _clean_locked(ctx, protected)
+            from aifactory.harness.agent_dirs import sweep_orphans
+
+            sweep_orphans(
+                [ctx.main / ctx.rc.config.settings.worktrees_dir],
+                [
+                    r.worktree
+                    for r in ctx.store.all_runs()
+                    if r.state == RUNNING or r.branch in protected
+                ],
+            )
+            return result
     except Exception as exc:
         return CleanResult(warnings=[f"cleanup failed: {exc}"])
 

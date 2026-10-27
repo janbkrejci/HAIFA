@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import subprocess
 import sys
@@ -244,7 +245,7 @@ def test_repo_thread_limits_context_commands_and_observation_to_its_repo(
 
         def command(*args: str) -> subprocess.CompletedProcess[str]:
             return subprocess.run(
-                [str(Path(request.cwd) / "guide"), *args],
+                ["bash", str(Path(request.cwd) / "guide"), *args],
                 cwd=request.cwd,
                 capture_output=True,
                 text=True,
@@ -289,7 +290,10 @@ def test_dashboard_thread_sees_all_registered_repositories(
     assert data["repo_id"] is None
     assert str(repo) in seen[0].system_prompt and str(other) in seen[0].system_prompt
     result = subprocess.run(
-        [str(Path(seen[0].cwd) / "guide"), "repos"], capture_output=True, text=True, check=True
+        ["bash", str(Path(seen[0].cwd) / "guide"), "repos"],
+        capture_output=True,
+        text=True,
+        check=True,
     )
     assert {r["id"] for r in json.loads(result.stdout)["data"]} == {repo_id, other_id}
 
@@ -659,6 +663,14 @@ def test_delete_removes_the_thread_for_good(
     ask(client, gone, "Ahoj")
     folder = haifa_home() / "assistant" / "threads" / gone
     assert (folder / "thread.json").is_file()
+    from aifactory.harness.agent_dirs import claude_project_dirs
+
+    monkeypatch.setenv(
+        "CLAUDE_CONFIG_DIR", ("\\\\?\\" if os.name == "nt" else "") + str(tmp_path / "claude")
+    )
+    claude_dirs = claude_project_dirs(folder / "work")
+    for path in claude_dirs:
+        path.mkdir(parents=True, exist_ok=True)
 
     # Git objects in the guide's work repo are read-only on Windows. Include one
     # explicitly so deletion keeps covering this even if repo setup changes.
@@ -677,6 +689,7 @@ def test_delete_removes_the_thread_for_good(
     assert response.status_code == 200, response.text
     assert response.json()["data"] == {"deleted": gone}
     assert not folder.exists()
+    assert all(not path.exists() for path in claude_dirs)
     listed = client.get("/api/assistant/threads").json()["data"]["threads"]
     assert [t["id"] for t in listed] == [kept]
     missing = client.get(f"/api/assistant/threads/{gone}")
