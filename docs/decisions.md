@@ -66,3 +66,7 @@ mimo spec daného tasku. Ostatním PR zůstává původní důvod odmítnutí.
 - **Limity harnessů:** dashboard ukazuje poslední hodnoty, které harness sám vrátil při běhu (Claude ve stream-json, Codex v session logu). Žádné vlastní dotazy na API ani app-server.
 - **Distribuce:** GitHub Actions po zeleném CI na `main` vydá release `haifa-<verze>.zip` s verzí `<major>.<minor>.<číslo běhu>`. Commit ani PR, který mění jen `factory/` (backlog, specy, dokumentace tasků), `docs/` nebo `.factory/`, CI ani release nespouští. Approve a auto-merge takový PR bez checků mergnou.
 - **HAIFA staví HAIFA:** vývoj běží přes `factory` nad tímto repem, backlog projektu `HAIFA` je ve `factory/backlog/`.
+
+## Automatický úklid běhů (T90)
+
+Před vytvořením worktree a po dokončení workflow včetně publikace probíhá best-effort úklid, také při retry, selhání a přerušení. Sdílí implementaci s `factory task clean` a zámek s claim/reclaim běhů. Stav done/cancelled čte z backlogu hlavního checkoutu. Otevřené PR, běžící běhy a jejich sdílené cesty jsou chráněné; poslední selhaný/zastavený todo běh zůstává pro retry. Necommitnuté změny neukončených tasků znamenají varování místo smazání. Zrušené tasky a closed/merged PR uvolňují také větve factory, pokud je nepoužívá checkout ani otevřený stacked PR. Úklid osiřelých adresářů je omezen na adresář worktree; Git registrace se prořezávají. Chyby nikdy neshodí běh. JSON zachovává deleted_branches a přidává mapu branch_reasons; worktree mají removed[].reason. Bez přepínače pro vypnutí a bez nového dry-run.

@@ -158,7 +158,7 @@ def test_clean_historical_merge_and_idempotence(
     assert clean_worktrees(repo).deleted_branches == []
 
 
-@pytest.mark.parametrize("state", ["open", "closed", "abandoned"])
+@pytest.mark.parametrize("state", ["open", "abandoned"])
 def test_clean_keeps_other_branches(repo: Path, script: Script, state: str) -> None:
     build(script, "src/app/a.py")
     run = run_task(repo, T01)
@@ -167,13 +167,40 @@ def test_clean_keeps_other_branches(repo: Path, script: Script, state: str) -> N
         if state == "abandoned":
             store.conn.execute("DELETE FROM task_prs")
             store.conn.commit()
-        elif state == "closed":
-            store.update_pr(run.run.branch, state=state)
     finally:
         store.close()
     assert clean_worktrees(repo).deleted_branches == []
     assert pgit.rev_parse(repo, f"refs/heads/{run.run.branch}")
     assert pgit.remote_branch_exists(repo, "origin", run.run.branch)
+
+
+@pytest.mark.parametrize("reason", ["closed", "cancelled"])
+def test_clean_deletes_unused_factory_branches_with_reasons(
+    repo: Path, script: Script, reason: str
+) -> None:
+    build(script, "src/app/a.py")
+    run = run_task(repo, T01)
+    store = TaskRunStore(repo / ".factory/trace.db")
+    try:
+        if reason == "closed":
+            store.update_pr(run.run.branch, state="closed")
+        else:
+            store.conn.execute("DELETE FROM task_prs")
+            store.conn.commit()
+            task = load_backlog(repo).by_id[T01]
+            assert isinstance(task, Task)
+            path = repo / task.path
+            path.write_text(
+                path.read_text(encoding="utf-8").replace("status: todo", "status: cancelled"),
+                encoding="utf-8",
+            )
+    finally:
+        store.close()
+    cleaned = clean_worktrees(repo)
+    assert cleaned.deleted_branches == [run.run.branch, f"origin/{run.run.branch}"]
+    assert cleaned.branch_reasons == {branch: reason for branch in cleaned.deleted_branches}
+    assert cleaned.removed[0]["reason"] == reason
+    assert_gone(repo, run.run.branch)
 
 
 def test_successful_restack_releases_parent_before_child_merges(repo: Path, script: Script) -> None:
@@ -467,4 +494,5 @@ def test_rendered_skill_describes_branch_cleanup_and_safety(
             assert rule in section
     assert "local and remote branches" in clean
     assert "including older merges" in clean
-    assert "Keep closed and abandoned branches" in clean
+    assert "closed factory branches" in clean
+    assert "branch_reasons" in clean

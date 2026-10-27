@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T90
 title: Automatický úklid worktree a větví po dokončeném nebo zrušeném tasku a před každým během
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/review/__init__.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/guide/05-behy-a-review.md, aifactory/src/aifactory/skill/skill.md, docs/decisions.md, aifactory/tests/review/test_branch_cleanup.py, aifactory/tests/run/test_task_auto_clean.py, aifactory/tests/run/test_task_pr_flow.py]
@@ -41,3 +41,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-10-27 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/179 · náklady $0.00

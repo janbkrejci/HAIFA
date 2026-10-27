@@ -303,15 +303,7 @@ def test_clean_removes_abandoned_worktree(repo: Path, script: Script, capsys: Ca
     code, data = cli_json(capsys, "task", "clean", "--json", "--repo", str(repo))
 
     assert code == 0
-    assert data["data"]["removed"] == [
-        {
-            "run_id": failed.run.run_id,
-            "task_id": T01,
-            "branch": failed.run.branch,
-            "worktree": failed.run.worktree,
-            "reason": "abandoned",
-        }
-    ]
+    assert data["data"]["removed"] == []  # already cleaned by the new run
     assert not Path(failed.run.worktree).exists()
     assert Path(good.run.worktree).is_dir()
 
@@ -336,7 +328,7 @@ def test_clean_without_runs(repo: Path, capsys: Capsys) -> None:
     assert code == 0
     assert data == {
         "ok": True,
-        "data": {"removed": [], "deleted_branches": []},
+        "data": {"removed": [], "deleted_branches": [], "branch_reasons": {}},
         "error": None,
         "warnings": [],
     }

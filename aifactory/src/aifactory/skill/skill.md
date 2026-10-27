@@ -949,7 +949,16 @@ the rebase. Then approve.
 
 - `factory backlog sync --json` finds task PRs merged outside factory and opens one sync PR
   that marks them done (never commits to base, never merges it).
-- `factory task clean --json` removes worktrees of merged, closed or abandoned runs.
+- Cleanup runs automatically before and after execution, including retry, failure and stop.
+  `factory task clean --json` invokes the same cleanup manually. It removes worktrees of
+  done/cancelled tasks, merged/closed PRs and older runs without a PR, plus orphan
+  directories in the configured worktrees directory, and prunes Git registrations.
+  It deletes unused factory branches locally and remotely for cancelled tasks and
+  merged/closed PRs. A running run, open PR, checkout or open stacked PR protects
+  the resources it still uses. Dirty worktrees of nonterminal tasks are kept with
+  warnings, as is the latest failed/stopped todo run for retry. Deletion failures
+  are warnings and never fail a run. `removed[].reason` and `branch_reasons` explain
+  each deletion; `deleted_branches` keeps listing local and remote branch names.
 
 ### Upgrade
 

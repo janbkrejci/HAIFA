@@ -18,14 +18,15 @@
   the branch as it was before the rebase. Never started automatically.
 * ``publish_task``: push the branch of the last succeeded run without a PR and open
   its PR (or adopt the open one the hosting has), as at the end of ``task run``.
-* ``clean_worktrees``: remove worktrees of runs whose PR is merged or closed and
-  of runs a newer run of the same task has superseded; delete unused merged PR branches.
+* ``clean_worktrees``: best-effort cleanup of terminal tasks, finished PRs,
+  superseded runs, unused factory branches and orphan worktree directories.
 """
 
 from __future__ import annotations
 
 import datetime
 import os
+import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -118,12 +119,14 @@ class CleanResult:
     removed: list[dict[str, str]] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     deleted_branches: list[str] = field(default_factory=list)
+    branch_reasons: dict[str, str] = field(default_factory=dict)
 
     def to_json(self) -> dict[str, object]:
         return {
             "ok": True,
             "removed": list(self.removed),
             "deleted_branches": list(self.deleted_branches),
+            "branch_reasons": dict(self.branch_reasons),
             "warnings": list(self.warnings),
         }
 
@@ -901,7 +904,7 @@ def resolve_task(
 
 
 def clean_worktrees(repo: Path, *, provider: GitProvider | None = None) -> CleanResult:
-    """Remove finished worktrees and unused local/remote branches of merged PRs."""
+    """Clean finished runs, unused factory branches and orphan directories."""
     ctx = _context(repo, provider)
     try:
         return _clean(ctx)
@@ -909,31 +912,74 @@ def clean_worktrees(repo: Path, *, provider: GitProvider | None = None) -> Clean
         ctx.store.close()
 
 
-def _clean(ctx: _Ctx) -> CleanResult:
+def _clean(ctx: _Ctx, *, protected: frozenset[str] = frozenset()) -> CleanResult:
+    # Claim/reclaim and worktree creation use this same cross-process lock.
+    try:
+        with ctx.store.serialized():
+            return _clean_locked(ctx, protected)
+    except Exception as exc:
+        return CleanResult(warnings=[f"cleanup failed: {exc}"])
+
+
+def _clean_locked(ctx: _Ctx, protected: frozenset[str]) -> CleanResult:
     result = CleanResult()
     for open_pr in ctx.store.open_prs():
         try:
             _record_state(ctx, open_pr, ctx.provider.status(open_pr.request()))
-        except ProviderError as exc:
-            result.warnings.append(f"PR {open_pr.url}: {exc.code}: {exc.message}")
+        except Exception as exc:
+            result.warnings.append(f"PR {open_pr.url}: {exc}")
+    backlog = load_backlog(ctx.main, ctx.rc.config.settings, create_missing=False)
+    terminal = {
+        task_id: task.status
+        for task_id, task in backlog.by_id.items()
+        if isinstance(task, Task) and task.status in ("done", "cancelled")
+    }
     runs = ctx.store.all_runs()  # newest first
     newest: dict[str, str] = {}
     for r in runs:
         newest.setdefault(r.task_id, r.run_id)
-    active = {Path(r.worktree).resolve() for r in runs if r.state == RUNNING}
+    active = {
+        Path(r.worktree).resolve() for r in runs if r.state == RUNNING or r.branch in protected
+    }
+    # An open PR protects every path shared with it, even when another record ended.
+    active.update(
+        Path(r.worktree).resolve()
+        for r in runs
+        if (pr := ctx.store.pr_for_branch(r.branch)) is not None and pr.state == OPEN
+    )
+    active.update(
+        Path(r.worktree).resolve()
+        for r in runs
+        if newest.get(r.task_id) == r.run_id
+        and r.state in ("failed", "stopped", "aborted")
+        and isinstance(task := backlog.by_id.get(r.task_id), Task)
+        and task.status == "todo"
+    )
     for r in runs:
         path = Path(r.worktree)
         if path.resolve() in active or not path.exists():
             continue
         pr = ctx.store.pr_for_branch(r.branch)
-        if pr is not None and pr.state in (MERGED, CLOSED):
+        if r.task_id in terminal:
+            reason = terminal[r.task_id]
+        elif pr is not None and pr.state in (MERGED, CLOSED):
             reason = pr.state
         elif pr is None and newest.get(r.task_id) != r.run_id:
             reason = "abandoned"
         else:
             continue  # the open PR's worktree, or the task's last run without a PR
         try:
-            pgit.remove_worktree(ctx.main, path)
+            if r.task_id not in terminal and pgit.git(path, "status", "--porcelain").strip():
+                result.warnings.append(f"worktree {path} has uncommitted changes; kept")
+                continue
+            registered = _registered_worktrees(ctx)
+            if path.resolve() in registered:
+                pgit.remove_worktree(ctx.main, path)
+            else:
+                root = _cleanup_root(ctx)
+                if path.is_symlink() or path.resolve().parent != root:
+                    raise RuntimeError("unregistered worktree is outside the worktrees directory")
+                shutil.rmtree(path)
         except (ProviderError, RuntimeError, OSError) as exc:
             result.warnings.append(f"worktree {path} not removed: {exc}")
             continue
@@ -946,19 +992,93 @@ def _clean(ctx: _Ctx) -> CleanResult:
                 "reason": reason,
             }
         )
-    for pr in ctx.store.done_prs():
-        if pr.state == MERGED:
-            _delete_merged_branch(ctx, pr, result.deleted_branches, result.warnings)
+    branches = {pr.branch: pr.state for pr in ctx.store.done_prs()}
+    branches.update({r.branch: "cancelled" for r in runs if terminal.get(r.task_id) == "cancelled"})
+    for branch, reason in branches.items():
+        if branch in protected:
+            continue
+        pr = ctx.store.pr_for_branch(branch)
+        if pr is not None and pr.state == OPEN:
+            continue
+        before = len(result.deleted_branches)
+        _delete_unused_branch(ctx, branch, result.deleted_branches, result.warnings)
+        result.branch_reasons.update({b: reason for b in result.deleted_branches[before:]})
+    _clean_orphans(ctx, active, runs, result)
     return result
+
+
+def _clean_orphans(
+    ctx: _Ctx, active: set[Path], runs: list[TaskRunRow], result: CleanResult
+) -> None:
+    try:
+        registered = _registered_worktrees(ctx)
+        root = _cleanup_root(ctx)
+        # Known runs are handled above: dirty/retryable paths are never orphans.
+        known = {Path(r.worktree).resolve() for r in runs}
+        if root.is_dir():
+            for path in root.iterdir():
+                resolved = path.resolve()
+                if (
+                    not path.is_dir()
+                    or path.is_symlink()
+                    or resolved.parent != root
+                    or any(
+                        resolved == p or resolved in p.parents for p in active | registered | known
+                    )
+                ):
+                    continue
+                try:
+                    shutil.rmtree(path)
+                    result.removed.append(
+                        {
+                            "worktree": str(path),
+                            "reason": "orphan",
+                            "task_id": "",
+                            "run_id": "",
+                            "branch": "",
+                        }
+                    )
+                except OSError as exc:
+                    result.warnings.append(f"orphan {path} not removed: {exc}")
+    except Exception as exc:
+        result.warnings.append(f"orphan cleanup failed: {exc}")
+    try:
+        pgit.git(ctx.main, "worktree", "prune")
+    except Exception as exc:
+        result.warnings.append(f"worktree prune failed: {exc}")
+
+
+def _registered_worktrees(ctx: _Ctx) -> set[Path]:
+    return {
+        Path(line.removeprefix("worktree ")).resolve()
+        for line in pgit.git(ctx.main, "worktree", "list", "--porcelain").splitlines()
+        if line.startswith("worktree ")
+    }
+
+
+def _cleanup_root(ctx: _Ctx) -> Path:
+    root = (ctx.main / ctx.rc.config.settings.worktrees_dir).resolve()
+    main = ctx.main.resolve()
+    if root == main or not root.is_relative_to(main) or root == (main / ".git").resolve():
+        raise RuntimeError(f"unsafe worktrees directory: {root}")
+    return root
 
 
 def _delete_merged_branch(
     ctx: _Ctx, pr: TaskPrRow, deleted: list[str], warnings: list[str]
 ) -> None:
     """Best-effort cleanup after restack; keep branches still used by open PRs or runs."""
-    branch = pr.branch
+    _delete_unused_branch(ctx, pr.branch, deleted, warnings)
+
+
+def _delete_unused_branch(ctx: _Ctx, branch: str, deleted: list[str], warnings: list[str]) -> None:
     try:
-        if branch == ctx.rc.config.settings.base or branch == pr.base:
+        pr = ctx.store.pr_for_branch(branch)
+        if (
+            not branch.startswith("factory/")
+            or branch == ctx.rc.config.settings.base
+            or (pr is not None and (branch == pr.base or pr.state == OPEN))
+        ):
             return
         for child in ctx.store.open_prs():
             if stacked_on(ctx.store, child.branch) != branch:
