@@ -1895,7 +1895,7 @@ task approve: on conflict run 'factory task resolve <task-id>'. Waits for the CI
   GitHub an approve review is sent as github_approver (config.yaml) when it is set;
   otherwise none is sent.
 task resolve: a run that fails leaves the branch as it was before the rebase.
-task stop: the run is marked stopped; its worktree and branch stay (task clean).
+task stop: the run is marked stopped; the next run or task clean removes eligible worktrees.
   A paused run can be stopped too.
 task pause: the phase in progress runs to its end (the run shows pausing), then the run
   waits as paused; its process stays alive and keeps its place among the parallel runs.
@@ -2167,8 +2167,11 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         description="Remove worktrees of runs whose PR is merged or closed, and of abandoned "
         "runs (a newer run of the task exists). Also delete local and remote branches of "
         "merged PRs, including older merges, unless an open stacked PR, a running run or "
-        "a checkout still uses them. Keep closed and abandoned branches. Deletion failures "
-        "are warnings; deleted_branches lists deleted local and remote refs.",
+        "a checkout still uses them. Also clean done/cancelled tasks, closed factory branches "
+        "and orphan directories. Keep dirty active tasks and the latest retryable run. "
+        "Cleanup runs automatically before and after execution. Deletion failures "
+        "are warnings; deleted_branches lists deleted local and remote refs; "
+        "branch_reasons records their reasons.",
     )
 
     stop = sub.add_parser(
@@ -2176,7 +2179,8 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         help="stop the running run of a task",
         description="Send SIGTERM to the coding agents of the task's running run and then to "
         "the run's process (SIGKILL after a timeout). The run is marked stopped; its worktree "
-        "and branch stay (factory task clean removes them).",
+        "is cleaned by the next run or factory task clean when eligible; the latest failed "
+        "or stopped todo run stays available for retry.",
     )
     stop.add_argument("task_id", metavar="ID", help="task id")
     stop.add_argument(

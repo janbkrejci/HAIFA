@@ -85,7 +85,7 @@ from aifactory.run.scope import (
     output_paths,
     task_scope,
 )
-from aifactory.run.stack import stack_point
+from aifactory.run.stack import stack_point, stacked_on
 from aifactory.run.store import (
     FAILED,
     RUNNING,
@@ -830,6 +830,51 @@ class _Job:
 
 
 def _execute(
+    main: Path,
+    rc: RunConfig,
+    store: TaskRunStore,
+    row: TaskRunRow,
+    job: _Job,
+    code: CodeRunner | None,
+    provider: GitProvider,
+) -> TaskRunResult:
+    # The row is already claimed/reclaimed. Protect its branch explicitly too:
+    # return/resolve/retry can share a previous run's worktree.
+    # A restack still needs its parent until approve finishes processing dependents.
+    parent = row.stacked_on or stacked_on(store, row.branch)
+    upstream = frozenset({parent}) if parent is not None else frozenset()
+    warnings = _auto_clean(main, rc, store, provider, protected=upstream | {row.branch})
+    result: TaskRunResult | None = None
+    try:
+        result = _execute_job(main, rc, store, row, job, code, provider)
+        return result
+    finally:
+        warnings.extend(_auto_clean(main, rc, store, provider, protected=upstream))
+        if result is not None:
+            result.warnings += tuple(warnings)
+        elif warnings:
+            import logging
+
+            logging.getLogger(__name__).warning("automatic cleanup: %s", "; ".join(warnings))
+
+
+def _auto_clean(
+    main: Path,
+    rc: RunConfig,
+    store: TaskRunStore,
+    provider: GitProvider,
+    *,
+    protected: frozenset[str] = frozenset(),
+) -> list[str]:
+    try:
+        from aifactory.review.flow import _clean, _Ctx
+
+        return _clean(_Ctx(main, rc, store, provider), protected=protected).warnings
+    except Exception as exc:
+        return [f"automatic cleanup failed: {exc}"]
+
+
+def _execute_job(
     main: Path,
     rc: RunConfig,
     store: TaskRunStore,
