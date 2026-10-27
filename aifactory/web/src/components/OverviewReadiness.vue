@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import './ui/statusIconChip.css'
-import { Check, TriangleAlert } from 'lucide-vue-next'
+import { Check, Stethoscope, TriangleAlert } from 'lucide-vue-next'
 import { useReadiness } from '@/lib/readiness'
 import { useRemoveRepo } from '@/lib/repos'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -21,7 +21,7 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
   <template v-if="chip">
     <Tooltip v-if="phase === 'loading'" text="Načítání stavu"><span class="status-icon-chip checking" role="status" tabindex="0" aria-label="Načítání stavu" data-test="readiness-loading"><Spinner /></span></Tooltip>
     <Tooltip v-else-if="phase === 'checking'" text="Probíhá kontrola"><span class="status-icon-chip checking" role="status" tabindex="0" aria-label="Probíhá kontrola" data-test="readiness-checking"><Spinner /></span></Tooltip>
-    <Tooltip v-else-if="phase === 'success'" text="Systém v pořádku – kliknutím spustíš kontrolu znovu"><button type="button" class="status-icon-chip success" aria-label="Systém v pořádku – kliknutím spustíš kontrolu znovu" data-test="readiness-success" @click="recheck"><Check :size="14" aria-hidden="true" /></button></Tooltip>
+    <Tooltip v-else-if="phase === 'success'" text="Systém v pořádku – kliknutím spustíš kontrolu znovu"><button type="button" class="status-icon-chip success" aria-label="Systém v pořádku – kliknutím spustíš kontrolu znovu" data-test="readiness-success" @click="recheck"><Stethoscope :size="14" aria-hidden="true" /></button></Tooltip>
     <Tooltip v-else-if="phase === 'warning'" text="Nalezeny problémy – kliknutím otevřeš seznam problémů"><a href="#/problems" class="status-icon-chip warning" aria-label="Nalezeny problémy – kliknutím otevřeš seznam problémů" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
   </template>
   <div v-else-if="phase" class="readiness" :class="phase" :role="phase === 'warning' ? 'alert' : 'status'" :data-test="`readiness-${phase}`">

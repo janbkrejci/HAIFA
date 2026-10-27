@@ -301,6 +301,7 @@ def test_task_run_adopts_pr_when_create_fails(
         {
             "pr create": reply(stderr="a pull request for branch already exists", exit=1),
             "pr list": reply([{"number": 4, "url": "https://github.com/o/r/pull/4", "title": "t"}]),
+            "pr view": reply({"state": "OPEN", "mergeable": "MERGEABLE"}),
         },
     )
     succeed(script)
@@ -309,7 +310,13 @@ def test_task_run_adopts_pr_when_create_fails(
 
     assert result.ok, (result.run.error, result.pr_error)
     assert result.pr is not None and result.pr.pr_id == "4"
-    assert [a[:2] for a in log.argvs()] == [["pr", "create"], ["pr", "list"], ["pr", "edit"]]
+    assert [a[:2] for a in log.argvs()] == [
+        ["pr", "create"],
+        ["pr", "list"],
+        ["pr", "edit"],
+        ["pr", "view"],
+    ]
+    assert log.argvs()[-1][2] == "4"
 
 
 def test_publish_without_succeeded_run(repo: Path, capsys: Capsys) -> None:

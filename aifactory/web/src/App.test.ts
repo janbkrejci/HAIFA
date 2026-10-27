@@ -84,7 +84,7 @@ afterEach(() => {
 
 describe('App', () => {
   it.each([
-    ['current', 'Systém je aktuální', 'lucide-check'],
+    ['current', 'Systém je aktuální', 'lucide-clock-check'],
     ['available', 'Je k dispozici aktualizace', 'lucide-circle-arrow-up'],
     ['error', 'Nepodařilo se zkontrolovat aktualizace', 'lucide-triangle-alert'],
   ])('shows the %s update as an icon with an accessible tooltip', async (status, label, icon) => {

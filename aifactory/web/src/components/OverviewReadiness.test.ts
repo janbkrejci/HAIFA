@@ -41,6 +41,7 @@ describe('overview readiness', () => {
     expect(wrapper.find('.status-icon-chip').exists()).toBe(false)
     await flushPromises()
     expect(wrapper.get('[data-test="readiness-success"]').text()).toBe('')
+    expect(wrapper.find('[data-test="readiness-success"] .lucide-stethoscope').exists()).toBe(true)
     expect(wrapper.get('[data-test="readiness-success"]').attributes('aria-label')).toBe('Systém v pořádku – kliknutím spustíš kontrolu znovu')
     await wrapper.get('[data-test="readiness-success"]').trigger('focusin')
     expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(wrapper.get('[data-test="readiness-success"]').attributes('aria-label'))

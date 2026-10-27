@@ -747,9 +747,16 @@ def test_github_auto_merge_waits_for_slow_mergeability(
         }
     )
     # Resolve beyond two full polling batches without any operator action.
+    # A genuine conflict stays conflicting when approval rechecks it; a later clean
+    # response would legitimately allow approval after follow-up ID reconciliation.
+    settled = (
+        [resolved]
+        if mergeable == "CONFLICTING"
+        else [resolved, _view(), _view(), _view(), _view("MERGED", MERGE_SHA)]
+    )
     log.respond(
         "pr view",
-        [unknown] * 64 + [resolved, _view(), _view(), _view(), _view("MERGED", MERGE_SHA)],
+        [unknown] * 64 + settled,
     )
     log.respond(
         "pr checks",

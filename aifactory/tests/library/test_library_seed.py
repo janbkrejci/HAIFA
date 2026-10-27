@@ -24,6 +24,7 @@ from aifactory.library import (
     store,
 )
 from aifactory.library.seed import SKILL_NAME, skill_seed_item
+from aifactory.library.version import agent_version
 from aifactory.skill import render_skill
 from aifactory.workflow import (
     DEFAULT_WORKFLOWS_DIR,
@@ -242,7 +243,12 @@ def test_seed_version_equals_haifa_repo_copy(name: str) -> None:
     if _pending(name):
         pytest.skip(f"{name}: .factory/prompts lacks a seed addition (PENDING_SEED_BLOCKS)")
     seed = load_library_item(SEED_DIR, "agent", name)
-    assert seed.version == load_repo_item(HAIFA_ROOT, "agent", name).version
+    # A local prompt can inherit its purpose from the library without agents.yaml.
+    config = load_config(WorktreeSource(HAIFA_ROOT))
+    agent = next(agent for agent in config.agents.agents if agent.name == name)
+    assert seed.version == agent_version(
+        agent.purpose, _haifa_prompt(name, "system"), _haifa_prompt(name, "user")
+    )
 
 
 def test_scout_defaults() -> None:

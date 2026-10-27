@@ -171,6 +171,18 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("pr_not_open", "2", "the task's pull request is not open"),
     ("conflict", "2", "the pull request conflicts with base (run factory task resolve)"),
     (
+        "follow_up_collision",
+        "2",
+        "follow-up IDs could not be reconciled with base; resolve the duplicate or "
+        "conflicting backlog changes and retry",
+    ),
+    (
+        "follow_up_head_changed",
+        "2",
+        "base changed during approval; follow-up IDs were reconciled, but the new PR "
+        "head needs checks before approval can finish; retry task approve",
+    ),
+    (
         "stacked_on_open_pr",
         "2",
         "the PR builds on a dependency's open PR; it is rebased onto base after that merge",

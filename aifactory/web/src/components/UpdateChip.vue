@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import './ui/statusIconChip.css'
 import { computed } from 'vue'
-import { ArrowUpCircle, Check, TriangleAlert } from 'lucide-vue-next'
+import { ArrowUpCircle, ClockCheck, TriangleAlert } from 'lucide-vue-next'
 import { useUpdates } from '@/lib/updates'
 import Spinner from './ui/Spinner.vue'
 import Tooltip from './ui/Tooltip.vue'
@@ -26,7 +26,7 @@ const description = computed(() => `${label.value} – ${hint.value}`)
   <Tooltip :text="description">
     <button type="button" class="status-icon-chip update-chip" :class="state.status" :aria-label="description" :disabled="state.status === 'checking' || state.status === 'installing'" data-test="update-chip" @click="updates.activate">
       <Spinner v-if="state.status === 'checking' || state.status === 'installing'" />
-      <Check v-else-if="state.status === 'current'" :size="14" aria-hidden="true" />
+      <ClockCheck v-else-if="state.status === 'current'" :size="14" aria-hidden="true" />
       <ArrowUpCircle v-else-if="state.status === 'available'" :size="14" aria-hidden="true" />
       <TriangleAlert v-else :size="14" aria-hidden="true" />
     </button>
