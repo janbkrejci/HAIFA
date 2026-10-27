@@ -286,7 +286,7 @@ from aifactory.run import stop as run_stop
 from aifactory.run.errors import TaskRunError
 from aifactory.run.store import is_db_busy
 from aifactory.skill.envelope import envelope_fail, envelope_ok
-from aifactory.web import backlog, chains, factory, library, machine, review, runs, settings
+from aifactory.web import backlog, chains, factory, library, machine, review, runs, settings, system
 from aifactory.web import server as web_server
 from aifactory.web.assistant import AssistantError, AssistantManager
 from aifactory.web.config_cache import ConfigCache
@@ -2410,6 +2410,44 @@ async def overview_get(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data, warnings))
 
 
+async def machine_system(request: Request) -> JSONResponse:
+    def work() -> dict[str, Any]:
+        state, warnings = _registry(request).snapshot()
+        return envelope_ok(system.system_info(request.app.state.home, state.repos), warnings)
+
+    return JSONResponse(await run_in_threadpool(work))
+
+
+async def machine_cleanup(request: Request) -> JSONResponse:
+    if "origin" not in request.headers:
+        return JSONResponse(
+            envelope_fail("cross_origin", "Origin is required for system cleanup"), status_code=403
+        )
+    try:
+        await _json_body(request)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+
+    def work() -> dict[str, Any] | None:
+        # Own the lock in the worker so cancellation cannot release it mid-cleanup.
+        lock = request.app.state.system_cleanup_lock
+        if not lock.acquire(blocking=False):
+            return None
+        try:
+            state, warnings = _registry(request).snapshot()
+            data = system.cleanup(request.app.state.home, state.repos)
+            return envelope_ok(data, [*warnings, *data["warnings"]])
+        finally:
+            lock.release()
+
+    result = await run_in_threadpool(work)
+    if result is None:
+        return JSONResponse(
+            envelope_fail("busy", "system cleanup is already running"), status_code=409
+        )
+    return JSONResponse(result)
+
+
 async def machine_check(request: Request) -> JSONResponse:
     offline, fresh = _flag(request, "offline"), _flag(request, "fresh")
     data, ok, message = await run_in_threadpool(
@@ -2737,6 +2775,8 @@ def create_multi_app(
             Route("/terminal/sessions/{id}/resize", terminal_session, methods=["POST"]),
             Route("/terminal/sessions/{id}", terminal_session, methods=["DELETE"]),
             Route("/machine/check", machine_check, methods=["GET"]),
+            Route("/machine/system", machine_system, methods=["GET"]),
+            Route("/machine/cleanup", machine_cleanup, methods=["POST"]),
             Route("/machine/harnesses", machine_harnesses, methods=["GET", "POST"]),
             Route("/machine/harnesses/test", machine_harness_test, methods=["POST"]),
             Route("/library", library_get, methods=["GET"]),
@@ -2850,6 +2890,7 @@ def create_multi_app(
     app.state.terminal_enabled = bool(allowed_hosts) and set(allowed_hosts) <= web_server.LOOPBACK
     app.state.library = machine.GlobalState()
     app.state.home = home_dir
+    app.state.system_cleanup_lock = threading.Lock()
     app.state.served_port = port
     app.state.registry = registry
     app.state.assistant = AssistantManager(
