@@ -7,6 +7,8 @@ import {
   eventLabel,
   eventOk,
   isPhaseHeaderLog,
+  isRunningTool,
+  mergeToolStarts,
   parseAgentEnd,
   parseAgentStart,
   parseQualityCall,
@@ -47,6 +49,19 @@ describe('events', () => {
     expect(eventLabel(named)).toBe('bash: ls -la')
     expect(eventLabel(event({ name: null, type: 'error' }))).toBe('error')
     expect(parseToolCall(event({ payload: [1] }))).toBeNull()
+  })
+
+  it('puts a finished tool call in place of its tool_start and keeps a running one', () => {
+    const call = (id: string) => ({ tool: 'Bash', tool_call_id: id, args: { command: 'ls' } })
+    const startA = event({ rowid: 1, event_id: 's1', type: 'tool_start', started_at: 't1', payload: call('a') })
+    const startB = event({ rowid: 2, event_id: 's2', type: 'tool_start', started_at: 't2', payload: call('b') })
+    const log = event({ rowid: 3, event_id: 'l1' })
+    const endA = event({ rowid: 4, event_id: 'c1', type: 'tool_call', started_at: null, payload: { ...call('a'), ok: true } })
+    const merged = mergeToolStarts([startA, startB, log, endA])
+    expect(merged.map((e) => e.event_id)).toEqual(['c1', 's2', 'l1'])
+    expect(merged[0]?.started_at).toBe('t1')
+    expect(merged.map(isRunningTool)).toEqual([false, true, false])
+    expect(eventLabel(startB)).toBe('Bash: ls')
   })
 
   it('labels a log by its message on one line, without indent or bullet', () => {

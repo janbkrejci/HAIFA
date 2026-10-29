@@ -150,6 +150,50 @@ class TaskWriteGuard:
             and not any(permissions._matches(path, p) for p in cfg.defaults.protected_files)
         )
 
+    def phase_scope(self, phase_name: str) -> TaskScope:
+        """The task scope a phase is checked against."""
+        return self.scope
+
+    def agent_paths(self, agent: Any, phase_name: str) -> tuple[str, ...]:
+        """The repo paths an agent may change in a phase: its `writes` within the task scope.
+
+        Stricter than ``_permitted``: the task outputs outside the agent's own `writes`
+        are left out, so each agent is told only the paths its role is meant to write.
+        """
+        scope = self.phase_scope(phase_name)
+        own = getattr(agent, "writes", None)
+        if own is None:
+            return scope.paths
+        found: dict[str, None] = {}
+        for allowed in scope.paths:
+            for pattern in own:
+                if matches(allowed, pattern):
+                    found[allowed] = None
+                elif matches(pattern, allowed):
+                    found[pattern] = None
+        return tuple(found)
+
+    def scope_prompt(self, agent: Any, phase_name: str, handoff_dir: str) -> str:
+        """The agent's write scope, appended to its system prompt in every phase."""
+        paths = self.agent_paths(agent, phase_name)
+        if paths:
+            repo = "- Repository paths you may change: " + ", ".join(f"`{p}`" for p in paths) + "."
+        else:
+            repo = (
+                "- Repository paths you may change: none. Do not create, edit, move or delete "
+                "any file in the repository."
+            )
+        return (
+            "\n## Write scope\n\n"
+            f"{repo}\n"
+            f"- Handoff files go only to `{handoff_dir}` (absolute path, outside the repository).\n"
+            "- Never write anywhere else, including other checkouts of the repository. "
+            "Paths the task allows other agents are not yours.\n"
+            "- Read anything you need. When the work needs a change outside this scope, "
+            "report it in your Report instead of making it.\n"
+            "- Any write outside this scope is reverted and fails the phase.\n"
+        )
+
     def _backup_dir(self, run: Any) -> Path:
         self._seq += 1
         session = getattr(run, "session_dir", None)

@@ -428,6 +428,12 @@ def test_harness_events_are_traced(
     assert "handoff" in types
     assert "agent_end" in types
     assert types.index("agent_start") < types.index("tool_call") < types.index("agent_end")
+    starts = {p["tool_call_id"]: (n, p) for t, n, p in events if t == "tool_start"}
+    for label, payload in tool_calls:
+        start_label, start = starts[payload["tool_call_id"]]
+        assert start_label == label
+        assert start["agent"] == "builder" and "ok" not in start
+    assert types.index("tool_start") < types.index("tool_call")
 
     procs = rows(
         env.db_path,

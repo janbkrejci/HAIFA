@@ -215,3 +215,27 @@ def test_workdir_symlink_in_base_is_rejected(repo: Path, script: Script) -> None
     assert caught.value.code == "invalid_config"
     assert script.calls == []
     assert factory_branches(repo) == []
+
+
+def write_scope(prompt: str) -> str:
+    return prompt[prompt.index("## Write scope") :].splitlines()[2]
+
+
+@pytest.mark.parametrize(
+    ("writes", "line"),
+    [
+        ("[specs/]", f"- Repository paths you may change: `{SPEC}`."),
+        ("[]", "- Repository paths you may change: none."),
+        (None, f"- Repository paths you may change: `src/app/`, `{SPEC}`, `{DOC}`."),
+    ],
+)
+def test_prompt_states_the_agent_write_scope(
+    repo: Path, script: Script, writes: str | None, line: str
+) -> None:
+    if writes is not None:
+        planner_writes(repo, writes)
+    script.add("planner", ok())
+
+    run_task(repo, T01)
+
+    assert write_scope(script.calls[0].system).startswith(line)

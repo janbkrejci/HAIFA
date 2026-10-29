@@ -1,6 +1,6 @@
 // Waterfall (gantt) layout of a run, ported from the sssf visualizer's SessionTrace.vue.
 // Pure functions: lanes, the time axis and block geometry, testable without a DOM.
-import { agentColor, eventOk, parseAgentStart } from './events'
+import { agentColor, eventOk, mergeToolStarts, parseAgentStart } from './events'
 import { axisTicks, ts } from './format'
 import {
   bySeq,
@@ -302,8 +302,8 @@ export function toolTicks(p: PhaseRow, events: TraceEvent[], now: number): { x: 
   if (!Number.isFinite(start)) return []
   const width = Math.max(phaseEndMs(p, now) - start, 1)
   const out: { x: number; ok: boolean }[] = []
-  for (const e of events) {
-    if (e.type !== 'tool_call' || e.phase_id !== p.phase_id) continue
+  for (const e of mergeToolStarts(events)) {
+    if ((e.type !== 'tool_call' && e.type !== 'tool_start') || e.phase_id !== p.phase_id) continue
     const t = ts(e.started_at)
     if (!Number.isFinite(t)) continue
     out.push({ x: Math.min(Math.max(((t - start) / width) * 100, 1), 99), ok: eventOk(e) })

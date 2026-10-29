@@ -123,6 +123,11 @@ def execute(run, phase: Phase, call: AgentCall) -> EnvelopeBase:
     # sending the same system prompt to any harness. Skill bodies remain on disk.
     from aifactory.harness.repo_skills import prompt_index
     system_text += prompt_index(run.repo_root, agent.skills)
+    # aifactory 3.7: a task run's guard states the agent's own write scope, which can
+    # be narrower than the task's allowed paths in the prompt (planner, reviewer).
+    scope_prompt = getattr(getattr(run, "write_guard", None), "scope_prompt", None)
+    if scope_prompt is not None:
+        system_text += scope_prompt(agent, phase.params.name, variables["context_handoff_dir"])
     user_text = prompts.render(agent.prompt_engineering.user, variables)
     prompts.save(agent_dir / "prompts", "system.md", system_text)
     prompts.save(agent_dir / "prompts", "user.md", user_text)
@@ -386,6 +391,13 @@ def _event_forwarder(run, phase: Phase, agent_name: str, harness):
 
     def forward(event: dict) -> None:
         record = tracker.observe(event)
+        # aifactory 3.7: a tool_start per call as soon as it is announced, so a run
+        # shows the running call; its tool_call follows with the result.
+        for start in getattr(tracker, "started", lambda: [])():
+            run.tracer.event(EventRecord(adw_id=run.adw_id, phase_id=phase.phase_id,
+                                         type="tool_start", name=start.pop("label"),
+                                         started_at=start.pop("started_at", None),
+                                         payload={**start, "agent": agent_name}))
         if record is None:
             return
         # The call's span rides the columns; duration_ms stays in the payload as

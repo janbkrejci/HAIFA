@@ -177,8 +177,9 @@ def task_prompt(
         f"- allowed paths: {', '.join(scope.paths)}",
         f"- spec file: {outputs.spec}",
         f"- documentation file: {outputs.doc}",
-        "- Change only the allowed paths inside the working directory; anything else, "
-        "including any file outside the working directory, is reverted and fails the phase.",
+        "- The allowed paths are the task's, shared by all its agents. Change only the paths "
+        "in the Write scope of your system prompt; anything else, including any file "
+        "outside the working directory, is reverted and fails the phase.",
     ]
     if follows is not None:
         origin, origin_outputs = follows.task, follows.outputs

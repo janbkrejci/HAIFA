@@ -23,6 +23,8 @@ import {
   eventLabel,
   eventOk,
   isPhaseHeaderLog,
+  isRunningTool,
+  mergeToolStarts,
   parseAgentEnd,
   parseAgentStart,
   parseQualityCall,
@@ -68,7 +70,10 @@ defineEmits<{ close: [] }>()
 const phaseEvents = computed(() => [...props.events].sort((a, b) => a.rowid - b.rowid))
 
 // The events column skips the log that only repeats the phase header.
-const listedEvents = computed(() => phaseEvents.value.filter((e) => !isPhaseHeaderLog(e)))
+// A running tool call is listed from its tool_start; its tool_call then takes that row.
+const listedEvents = computed(() =>
+  mergeToolStarts(phaseEvents.value.filter((e) => !isPhaseHeaderLog(e))),
+)
 
 const phaseGates = computed(() =>
   [...props.gates].sort((a, b) => (a.attempt ?? 0) - (b.attempt ?? 0) || a.id - b.id),
@@ -657,9 +662,10 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
             @click="toggleEvent(e.event_id)"
           >
             <span class="e-time dim">{{ fmtClock(e.started_at) }}</span>
-            <span class="e-type" :class="EVENT_TYPE_CLASS[e.type ?? '']">{{ e.type }}</span>
+            <span class="e-type" :class="EVENT_TYPE_CLASS[e.type ?? '']">{{ isRunningTool(e) ? 'tool_call' : e.type }}</span>
             <span class="e-name" :class="{ 't-red': !eventOk(e) }">{{ eventLabel(e) }}</span>
             <span class="e-extra">
+              <span v-if="isRunningTool(e)" class="dim" data-test="tool-running">běží…</span>
               <StatChip v-if="eventDuration(e) != null" kind="runtime" compact :value="eventDuration(e)" />
               <StatChip v-if="e.tokens" kind="tokens" compact :value="e.tokens" />
             </span>

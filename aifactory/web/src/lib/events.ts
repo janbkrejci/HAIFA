@@ -31,6 +31,38 @@ export function parseAgentEnd(e: TraceEvent): AgentEndPayload | null {
   return asRecord(e.payload) as AgentEndPayload | null
 }
 
+/** Events with each finished tool call in place of its `tool_start`, which the
+ *  engine records as the call is announced. A `tool_start` without its
+ *  `tool_call` stays: that call is still running. */
+export function mergeToolStarts(events: TraceEvent[]): TraceEvent[] {
+  const ends = new Map<string, TraceEvent>()
+  for (const e of events) {
+    const id = e.type === 'tool_call' ? parseToolCall(e)?.tool_call_id : undefined
+    if (id) ends.set(id, e)
+  }
+  const started = new Set<string>()
+  for (const e of events) {
+    const id = e.type === 'tool_start' ? parseToolCall(e)?.tool_call_id : undefined
+    if (id && ends.has(id)) started.add(id)
+  }
+  const out: TraceEvent[] = []
+  for (const e of events) {
+    const id = parseToolCall(e)?.tool_call_id
+    if (e.type === 'tool_start' && id && ends.has(id)) {
+      const end = ends.get(id) as TraceEvent
+      out.push({ ...end, started_at: e.started_at ?? end.started_at })
+    } else if (!(e.type === 'tool_call' && id && started.has(id))) {
+      out.push(e)
+    }
+  }
+  return out
+}
+
+/** A tool call that is announced and has no result yet. */
+export function isRunningTool(e: TraceEvent): boolean {
+  return e.type === 'tool_start'
+}
+
 /** A `quality:<name>` check: a tool_call with a command and no `tool`. */
 export function parseQualityCall(e: TraceEvent): QualityPayload | null {
   if (e.type !== 'tool_call') return null
@@ -53,6 +85,7 @@ export const EVENT_TYPE_CLASS: Record<string, string> = {
   gate_fail: 't-red',
   error: 't-red',
   gate_pass: 't-green',
+  tool_start: 't-cyan',
   tool_call: 't-cyan',
   handoff: 't-violet',
   agent_start: 't-purple',
@@ -112,7 +145,7 @@ export function isPhaseHeaderLog(e: TraceEvent): boolean {
 /** Row label for an event: "Read: src/x.py" for a tool call, the message for a log,
  *  else its name or type. */
 export function eventLabel(e: TraceEvent): string {
-  if (e.type === 'tool_call') {
+  if (e.type === 'tool_call' || e.type === 'tool_start') {
     const call = parseToolCall(e)
     if (call?.tool) {
       const summary = argsSummary(call.args)

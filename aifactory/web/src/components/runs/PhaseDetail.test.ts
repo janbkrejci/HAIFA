@@ -94,6 +94,22 @@ describe('PhaseDetail', () => {
     expect(wrapper.find('[data-test="event-body"]').exists()).toBe(false)
   })
 
+  it('lists a tool call as running from its tool_start until its result arrives', async () => {
+    const base = propsFor('p1')
+    const payload = { tool: 'Bash', tool_call_id: 'x1', args: { command: 'just lint' } }
+    const start = { ...base.events[0]!, rowid: 20, event_id: 's1', type: 'tool_start', name: 'Bash: just lint', payload }
+    const wrapper = mount(PhaseDetail, { props: { ...base, events: [...base.events, start] } })
+    const row = wrapper.find('[data-event="s1"]')
+    expect(row.find('[data-test="tool-running"]').exists()).toBe(true)
+    expect(row.find('.e-type').text()).toBe('tool_call')
+
+    const end = { ...start, rowid: 21, event_id: 'c1', type: 'tool_call', payload: { ...payload, ok: true } }
+    await wrapper.setProps({ events: [...base.events, start, end] })
+    expect(wrapper.find('[data-event="s1"]').exists()).toBe(false)
+    expect(wrapper.find('[data-event="c1"] [data-test="tool-running"]').exists()).toBe(false)
+    expect(wrapper.findAll('[data-event="c1"]')).toHaveLength(1)
+  })
+
   it('renders the request as markdown with a source tab', async () => {
     const section = await open(mountPhase('p1'), 'request')
     expect(section.find('[data-test="md-preview"] strong').text()).toBe('schéma')

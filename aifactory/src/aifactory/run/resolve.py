@@ -161,6 +161,16 @@ class ConflictWriteGuard(TaskWriteGuard):
     def _permitted(self, path: str, agent: Any, cfg: Any) -> bool:
         return not covered(path, self.generated) and super()._permitted(path, agent, cfg)
 
+    def phase_scope(self, phase_name: str) -> TaskScope:
+        self.fix_scope()
+        if phase_name in ("fix", "test_fix") or phase_name.startswith(("fix_", "test_fix_")):
+            return self.repair_scope
+        return self.scope
+
+    def agent_paths(self, agent: Any, phase_name: str) -> tuple[str, ...]:
+        paths = super().agent_paths(agent, phase_name)
+        return tuple(p for p in paths if not covered(p, self.generated))
+
     def enforce(self, run: Any, phase: Any, agent: Any, before: dict[str, Any]) -> list[str]:
         conflict_scope = self.scope
         name = phase.params.name

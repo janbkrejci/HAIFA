@@ -519,7 +519,7 @@ class EventRecord(BaseModel):
 
     adw_id: str
     phase_id: str = ""
-    type: str                       # phase_start | agent_start | tool_call | handoff | gate_pass | gate_fail | log | agent_end | phase_end | error
+    type: str                       # phase_start | agent_start | tool_start | tool_call | handoff | gate_pass | gate_fail | log | agent_end | phase_end | error
     name: str = ""
     payload: dict[str, Any] = Field(default_factory=dict)
     parent_id: str = ""

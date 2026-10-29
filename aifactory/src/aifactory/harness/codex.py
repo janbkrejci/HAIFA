@@ -286,6 +286,7 @@ class ToolCallTracker:
 
     def __init__(self) -> None:
         self._open: dict[str, dict[str, Any]] = {}
+        self._started: list[str] = []
 
     def observe(self, event: Event) -> dict[str, Any] | None:
         """Returns the record for a finished tool call, else None."""
@@ -323,11 +324,37 @@ class ToolCallTracker:
             record["started_at"] = opened["started_at"]
         return record
 
+    def started(self) -> list[dict[str, Any]]:
+        """The calls announced since the last call that are still running, oldest first."""
+        records = []
+        for call_id in self._started:
+            opened = self._open.get(call_id)
+            if opened is None:
+                continue
+            tool = str(opened.get("tool") or "tool")
+            args = opened.get("args") or {}
+            records.append(
+                {
+                    "tool": tool,
+                    "tool_call_id": call_id,
+                    "args": {
+                        key: _clip(value, ARG_VALUE_CHARS) if isinstance(value, str) else value
+                        for key, value in args.items()
+                    },
+                    "label": _label(tool, args),
+                    "started_at": opened.get("started_at"),
+                }
+            )
+        self._started = []
+        return records
+
     def _announce(self, call_id: str, tool: str, args: dict[str, Any]) -> None:
         """First sighting starts the clock; a later sighting only fills gaps."""
         if not call_id:
             return
         known = self._open.get(call_id, {})
+        if call_id not in self._open:
+            self._started.append(call_id)
         self._open[call_id] = {
             "tool": tool or known.get("tool", ""),
             "args": args or known.get("args", {}),
