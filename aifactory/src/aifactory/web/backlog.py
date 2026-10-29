@@ -199,7 +199,10 @@ def _display_runtime(runs: list[sqlite3.Row], prs: list[sqlite3.Row]) -> _Runtim
             rt.merge_blocked.add(pr["task_id"])
         elif pr["approved_at"]:
             rt.approved.add(pr["task_id"])
-    for run in runs:  # newest first; an older success must not hide a newer failure
+    # A retry keeps its original started_at, so a running row can be older than
+    # another attempt of the task. Active work takes precedence over ended runs.
+    ordered = sorted(runs, key=lambda run: run["state"] != "running")
+    for run in ordered:  # otherwise newest first; old successes cannot hide failures
         task_id = run["task_id"]
         if task_id in rt.last_run:
             continue

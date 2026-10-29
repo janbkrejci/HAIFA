@@ -11,6 +11,69 @@ from aifactory.run.queue import Slots
 from aifactory.run.store import TaskRunRow, TaskRunStore
 
 
+@pytest.mark.parametrize("finished", [False, True])
+def test_parallel_member_detects_reclaimed_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, finished: bool
+) -> None:
+    from types import SimpleNamespace
+
+    from run_repo import make_run_repo
+
+    from aifactory.run import members
+
+    repo = make_run_repo(tmp_path / "repo")
+    db = repo / ".factory" / "trace.db"
+    store = TaskRunStore(db)
+    try:
+        store.claim(
+            TaskRunRow(
+                run_id="existing",
+                task_id="T01",
+                branch="b",
+                worktree="",
+                base="main",
+                base_sha="a",
+                head_sha=None,
+                state="running",
+                started_at="2026-01-01",
+                pid=os.getpid(),
+            )
+        )
+        store.finish("existing", "failed", None, "Needs fix")
+    finally:
+        store.close()
+
+    class Process:
+        pid = os.getpid()
+        returncode = 0 if finished else None
+
+        def poll(self) -> int | None:
+            return self.returncode
+
+    def spawn(*args: object, **kwargs: object) -> Process:
+        store = TaskRunStore(db)
+        try:
+            store.reclaim("existing", os.getpid(), {"started_at": "2026-01-02"})
+            if finished:
+                store.finish("existing", "succeeded", None, None)
+        finally:
+            store.close()
+        return Process()
+
+    monkeypatch.setattr(members, "subprocess", SimpleNamespace(Popen=spawn, DEVNULL=-3))
+    runner = members.ProcessRunner(repo)
+    row = runner.start("T01", started_by="auto-continue")
+    assert row.run_id == "existing" and row.attempt == 2
+    assert row.state == ("succeeded" if finished else "running")
+    assert runner.active() == ["T01"]
+    store = TaskRunStore(db)
+    try:
+        assert len(store.for_task("T01")) == 1
+        assert store.live_operations() == []
+    finally:
+        store.close()
+
+
 def test_operations_preserve_capacity_and_are_reaped(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

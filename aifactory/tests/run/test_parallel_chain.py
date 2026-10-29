@@ -905,19 +905,51 @@ class RequeueRunner(BlockingRunner):
         return result
 
 
-def test_blocked_member_runs_again_after_its_blocker(repo: Path) -> None:
+@pytest.mark.parametrize("resume", [False, True])
+def test_blocked_member_runs_again_after_its_blocker(repo: Path, resume: bool) -> None:
+    class ResumingRunner(RequeueRunner):
+        def start(
+            self,
+            task_id: str,
+            *,
+            note: str | None = None,
+            force: bool = False,
+            started_by: str = "manual",
+            agents_override: dict[str, str] | None = None,
+        ) -> TaskRunRow:
+            store = self._store()
+            try:
+                previous = store.for_task(task_id)
+                if resume and previous and previous[0].state == FAILED:
+                    row = store.reclaim(previous[0].run_id, os.getpid(), {"started_at": "now"})
+                    self.active_at_start[task_id] = len(self.rows)
+                    self.rows[task_id] = row
+                    self.events.append(("start", task_id))
+                    return row
+            finally:
+                store.close()
+            return super().start(
+                task_id,
+                note=note,
+                force=force,
+                started_by=started_by,
+                agents_override=agents_override,
+            )
+
     setup_blocking(repo)
     store = TaskRunStore(_db(repo))
     try:
         store.set_queue_order([T02])
     finally:
         store.close()
-    runner = RequeueRunner(repo, blocked=(T02,), order=[T02, BLOCKER], queue_after=[T03])
+    runner = ResumingRunner(repo, blocked=(T02,), order=[T02, BLOCKER], queue_after=[T03])
     chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
     # the blocker and then T02 again go before T03, the kanban queue's first task
     assert started(runner) == [T01, T02, BLOCKER, T02, T03]
     assert chain.stop == STOP_EXHAUSTED
     assert [r.run.task_id for r in chain.runs if r.ok].count(T02) == 1
+    run_ids = [r.run.run_id for r in chain.runs]
+    assert len(run_ids) == len(set(run_ids))
     store = TaskRunStore(_db(repo))
     try:
         assert store.priorities() == ()  # the succeeded run of T02 took it away

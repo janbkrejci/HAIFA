@@ -1060,6 +1060,7 @@ def run_chain(
 
     ``agents_override`` (``task run --harness/--model/--thinking``) applies to the first
     run only; the rest of the chain runs on the roster.
+    Automatically selected tasks resume their newest failed ordinary run when present.
 
     A finished task with ``auto_merge`` has its PR merged by ``try_auto_merge``
     before anything else starts; nothing else is ever approved or merged.
@@ -1417,7 +1418,8 @@ def _run_parallel(
         )
 
     def started(task: Task | None, row: TaskRunRow) -> None:
-        order.append(row.run_id)
+        if row.run_id not in order:  # a requeued task may resume the same run
+            order.append(row.run_id)
         if task is not None and is_wide(effective_task_writes(task), main):
             exclusive.append(task.id)
         save()

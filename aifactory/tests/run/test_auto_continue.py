@@ -183,6 +183,26 @@ def test_without_auto_one_run_only(repo: Path, script: Script) -> None:
     assert (chain.chain_id, chain_rows(repo)) == (None, 0)
 
 
+def test_auto_continue_resumes_latest_failed_run(repo: Path, script: Script) -> None:
+    setup_chain(repo, step_auto=True)
+    script.add("planner", ok(status="fail", summary="Needs a prerequisite fix"))
+    failed = run_task(repo, T02)
+    assert failed.run.state == "failed"
+    for name in ("one", "two", "three"):
+        build(script, name)
+    chain = run_chain(repo, T01)
+    assert chain.ok, [(r.run.error, r.pr_error) for r in chain.runs]
+    assert ids(chain) == [T01, T02, T03]
+    resumed = chain.runs[1].run
+    assert (resumed.run_id, resumed.branch, resumed.worktree) == (
+        failed.run.run_id,
+        failed.run.branch,
+        failed.run.worktree,
+    )
+    assert resumed.attempt == 2
+    assert len(runs_of(repo, T02)) == 1
+
+
 def test_auto_continue_committed_during_the_first_run_records_the_chain(
     repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -930,6 +950,9 @@ def test_blocked_task_runs_again_in_its_chain_after_its_blocker(repo: Path, scri
     chain = run_chain(repo, T01)
     assert ids(chain) == [T01, T03, T01, T02]
     assert [r.ok for r in chain.runs] == [False, True, True, True]
+    assert chain.runs[2].run.run_id == chain.runs[0].run.run_id
+    assert chain.runs[2].run.attempt == 2
+    assert len(runs_of(repo, T01)) == 1
     assert chain.runs[2].run.stacked_on == runs_of(repo, T03)[0].branch
     # the succeeded run took the priority away
     store = _store(repo)

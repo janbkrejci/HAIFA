@@ -180,6 +180,40 @@ def calls(script: Script, agent: str) -> list[Any]:
     return [c for c in script.calls if c.agent == agent]
 
 
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.parametrize(
+    "reported",
+    [
+        {"blocked_by": ["FIX"]},
+        {"follow_ups": [{"title": "Fix prerequisite", "blocks_task": True}]},
+    ],
+)
+def test_retry_resumes_phase_that_reported_a_blocker(
+    legacy: bool, reported: dict[str, Any]
+) -> None:
+    from workflow_fakes import workflow
+
+    current = workflow(
+        "name: blocked\ndescription: Resume blocked work\nsteps: [plan, build, commit]\n"
+    )
+    journal = Journal(
+        None,
+        entries=[
+            JournalEntry("plan", "plan", "agent", "plan", envelope={"status": "ok"}),
+            JournalEntry("build", "build", "agent", "build", envelope=reported),
+            JournalEntry("commit", "commit", "code", "commit", action="commit"),
+        ],
+    )
+    plan = plan_retry(
+        journal,
+        current,
+        run_id="r1",
+        error="blocked: task waits for FIX",
+        failure_kind=None if legacy else failure.BLOCKED,
+    )
+    assert (plan.limit, plan.resume) == (1, "build")
+
+
 def phases(repo: Path, run_id: str) -> list[str]:
     db = sqlite3.connect(repo / ".factory" / "trace.db")
     try:
@@ -210,8 +244,9 @@ def push_to_origin(origin: Path, tmp_path: Path, rel: str, text: str) -> str:
 
 
 @pytest.mark.parametrize("harness", ["claude", "codex", "pi"])
+@pytest.mark.parametrize("automatic", [False, True])
 def test_retry_after_rejected_review_continues_at_the_review(
-    repo: Path, script: Script, capsys: Capsys, harness: str
+    repo: Path, script: Script, capsys: Capsys, harness: str, automatic: bool
 ) -> None:
     if harness != "claude":
         write(
@@ -225,7 +260,16 @@ def test_retry_after_rejected_review_continues_at_the_review(
 
     review(script, approved=True)
     code = GitCode([])
-    result = retry_run(repo, T01, note="The missing tests are out of scope.", code=code)
+    if automatic:
+        result = run_task(
+            repo,
+            T01,
+            started_by="auto-continue",
+            note="The missing tests are out of scope.",
+            code=code,
+        )
+    else:
+        result = retry_run(repo, T01, note="The missing tests are out of scope.", code=code)
 
     assert result.ok, (result.run.error, result.pr_error)
     assert result.run.run_id == run_id

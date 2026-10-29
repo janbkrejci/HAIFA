@@ -544,6 +544,31 @@ def test_task_summary_counts_tasks_per_board_state(repo_a: Path, tmp_path: Path)
     }
 
 
+@pytest.mark.parametrize("ended", ["failed", "stopped", "succeeded"])
+def test_resumed_older_run_takes_precedence_in_board_counts(
+    repo_a: Path, tmp_path: Path, ended: str
+) -> None:
+    from aifactory.web.backlog import backlog_view
+
+    store = TaskRunStore(_db(repo_a))
+    try:
+        store.finish("r-run", "failed", None, "blocked")
+        store.claim(_row("newer", T_RUN, 8, os.getpid()))
+        store.finish("newer", ended, None, None)
+        store.reclaim("r-run", os.getpid(), {"started_at": "2026-01-09T10:00:00+00:00"})
+    finally:
+        store.close()
+
+    item = _repo_item(repo_a, tmp_path)
+    board, warnings = backlog_view(repo_a)
+    assert warnings == []
+    task = next(t for t in board["tasks"] if t["id"] == T_RUN)
+    assert task["board_state"] == task["last_run"] == "running"
+    assert item["tasks"] == board["state_counts"] == item["projects"][0]["tasks"]
+    assert item["tasks"]["running"] == 2
+    assert next(r for r in item["running"] if r["task_id"] == T_RUN)["run_id"] == "r-run"
+
+
 @pytest.mark.parametrize(
     ("state", "pr_error", "expected"),
     [

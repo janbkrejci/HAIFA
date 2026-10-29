@@ -806,7 +806,13 @@ class TaskRunStore:
             )
 
     def reclaim(
-        self, run_id: str, pid: int, retry: dict[str, Any], note: str | None = None
+        self,
+        run_id: str,
+        pid: int,
+        retry: dict[str, Any],
+        note: str | None = None,
+        *,
+        stacked_on: str | None = None,
     ) -> TaskRunRow:
         """Turn the ended run `run_id` back into ``running`` for a retry, atomically.
 
@@ -814,6 +820,7 @@ class TaskRunStore:
         Only a ``failed``, ``stopped`` or ``aborted`` run can be retried
         (``run_not_retryable``). `retry` is appended to ``retries``. `note` (a retry on
         another harness: the new roster override) replaces the run's note.
+        ``stacked_on`` records a newly available dependency PR used by the retry.
         """
         with self.serialized(), self._txn():
             row = self.get(run_id)
@@ -835,9 +842,10 @@ class TaskRunStore:
             self.conn.execute(
                 "UPDATE task_runs SET state = ?, pid = ?, ended_at = NULL, error = NULL, "
                 "pause = NULL, pr_error = NULL, pr_body = NULL, retries = ?, "
-                "failure_kind = NULL, failure_detail = NULL, note = COALESCE(?, note) "
+                "failure_kind = NULL, failure_detail = NULL, note = COALESCE(?, note), "
+                "stacked_on = COALESCE(?, stacked_on) "
                 "WHERE run_id = ?",
-                (RUNNING, pid, retries, note, run_id),
+                (RUNNING, pid, retries, note, stacked_on, run_id),
             )
         final = self.get(run_id)
         assert final is not None

@@ -66,7 +66,7 @@ from aifactory.run.resolve import (
     restore,
 )
 from aifactory.run.scope import OutputPaths, output_paths, task_scope
-from aifactory.run.stack import open_stack
+from aifactory.run.stack import open_stack, stack_point
 from aifactory.run.store import MERGED_BY_AUTO, RUNNING, TaskRunRow, TaskRunStore, _now
 from aifactory.run.workdir import project_workdir
 from aifactory.workflow import (
@@ -170,8 +170,30 @@ def plan_retry(
     """The replay limit and resume phase of a retry (see the module docstring, step 4)."""
     entries = journal.entries
     warnings: list[str] = []
+    blocked_phase = None
+    if failure_kind == failures.BLOCKED or (error or "").startswith(failures.BLOCKED_PREFIX):
+        # A reported prerequisite can fail the task after the workflow finished.
+        # Resume the phase that needed it instead of replaying the stale blocker.
+        blocked_phase = next(
+            (
+                i
+                for i, entry in enumerate(entries)
+                if entry.envelope
+                and (
+                    entry.envelope.get("blocked_by")
+                    or any(
+                        item.get("blocks_task")
+                        for item in entry.envelope.get("follow_ups") or []
+                        if isinstance(item, dict)
+                    )
+                )
+            ),
+            None,
+        )
     if from_phase:
         limit = _from_phase(journal, from_phase.strip(), run_id)
+    elif blocked_phase is not None:
+        limit = blocked_phase
     elif (
         failure_kind == failures.ACCEPT_NOT_MET
         or error == ACCEPT_NOT_MET
@@ -471,9 +493,14 @@ def retry_run(
                     f"branch {row.branch} is checked out in {other}; free it first",
                 )
         onto = rc.commit
+        stack = stack_point(main, backlog, task, store) if settings.stacked_prs else None
+        if stack is not None:
+            point, prs = stack
+            onto = point.sha
+            run_note = f"{run_note}\n\n{point.note(prs)}" if run_note else point.note(prs)
         # a run stacked on a still open PR keeps its fork: base lacks the work it builds on
         rebase = not provider_git.is_ancestor(main, onto, tip) and (
-            open_stack(store, row.branch) is None
+            stack is not None or open_stack(store, row.branch) is None
         )
         lease = None
         if rebase:
@@ -536,7 +563,11 @@ def retry_run(
         if record is not None:
             retry[SWITCH_KEY] = record
         claimed = store.reclaim(
-            row.run_id, os.getpid(), retry, run_note if record is not None else None
+            row.run_id,
+            os.getpid(),
+            retry,
+            run_note if record is not None or stack is not None else None,
+            stacked_on=stack[0].branch if stack is not None else None,
         )
         result = run_mod._execute(
             main,

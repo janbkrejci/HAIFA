@@ -89,6 +89,7 @@ from aifactory.run.stack import stack_point, stacked_on
 from aifactory.run.store import (
     FAILED,
     RUNNING,
+    STARTED_AUTO_CONTINUE,
     STARTED_MANUAL,
     SUCCEEDED,
     TaskPrRow,
@@ -500,10 +501,30 @@ def run_task(
     that workflow instead of the task's own, with the task's scope and prompt (the note
     holds the red checks). ``started_by`` records who started the run (``manual``; a chain
     ``auto-continue``, auto-merge ``auto-resolve``, a CI repair ``auto-ci-fix``).
+    Auto-continue resumes the task's newest failed ordinary run through ``retry_run``
+    instead of discarding its branch and completed phases.
     """
     main = gitops.main_root(repo)
     rc = _load(main)
     settings = rc.config.settings
+    if started_by == STARTED_AUTO_CONTINUE and branch is None and workflow_name is None:
+        previous = task_runs_for(main, task_id)
+        if (
+            previous
+            and previous[0].state == FAILED
+            and previous[0].workflow not in INTERNAL_WORKFLOWS
+        ):
+            from aifactory.run.retry import retry_run
+
+            return retry_run(
+                main,
+                task_id,
+                run_id=previous[0].run_id,
+                note=note,
+                code=code,
+                provider=provider,
+                agents_override=agents_override,
+            )
     store = TaskRunStore(rc.local.trace_db_path(main))
     try:
         if provider is None:

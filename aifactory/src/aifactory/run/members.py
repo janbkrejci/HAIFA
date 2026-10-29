@@ -17,7 +17,7 @@ parallel merges into base go one after another. A PR in conflict is resolved onc
 ``resolve_run`` names the resolve run, which the chain adds to its runs. The chain
 reads the outcome from the envelope and from ``task_runs``/``task_prs``.
 
-``ProcessRunner.start`` returns once the run is claimed in ``task_runs``, so the next
+``ProcessRunner.start`` returns once the run is claimed or reclaimed in ``task_runs``, so the next
 selection of the chain already sees it running. ``wait_any`` waits for any member to
 exit and returns its ``TaskRunResult`` (``workflow_run`` is None: it lives in the
 member process). The chain's ``code`` and ``provider`` (tests) do not reach member
@@ -313,7 +313,7 @@ def _resolve_run(repo: Path, data: object, trace_db: Path) -> TaskRunResult | No
 
 
 class ProcessRunner:
-    """Starts every run of a parallel chain as a separate ``factory task run --member``."""
+    """Run parallel members through ``task run --member``, including automatic retries."""
 
     def __init__(
         self,
@@ -342,6 +342,7 @@ class ProcessRunner:
         agents_override: dict[str, str] | None = None,
     ) -> TaskRunRow:
         known = run_ids(self.repo, task_id)
+        attempts = {r.run_id: r.attempt for r in task_runs_for(self.repo, task_id)}
         prefix = self._command if self._command is not None else command_prefix()
         argv = [*prefix, "task", "run", task_id, "--repo", str(self.repo), "--json", "--member"]
         if note is not None and note.strip():
@@ -382,11 +383,26 @@ class ProcessRunner:
             process.wait()
             raise
         member = _Member(task_id, process, envelope_path, log_path)
+
+        def claimed() -> TaskRunRow | None:
+            row = new_row(self.repo, task_id, known)
+            if row is not None:
+                return row
+            # Auto-continue can reclaim an existing run instead of creating a row.
+            return next(
+                (
+                    r
+                    for r in task_runs_for(self.repo, task_id)
+                    if r.pid == process.pid and r.attempt > attempts.get(r.run_id, r.attempt)
+                ),
+                None,
+            )
+
         deadline = time.monotonic() + self.claim_timeout
         while True:
-            row = new_row(self.repo, task_id, known)
+            row = claimed()
             if row is None and process.poll() is not None:
-                row = new_row(self.repo, task_id, known)
+                row = claimed()
                 if row is None:
                     finish_operation(self.repo, operation_id)
                     error = launch_error(
