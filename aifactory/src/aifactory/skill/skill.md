@@ -409,7 +409,9 @@ library (without a library the packaged workflows: {{workflows}}).
   step's `test_plan` field (also in the `test_result` prompt variable) records coverage, reason, the commands
   and how many ran. Reviewers judge the plan: enough to trust the change, not wider than
   it needs.
-- At most `test_slots` (`.factory/config.yaml`, whole number ≥ 1, default 1) `test`
+- Test steps run concurrently across tasks by default: `test_slots: 0` disables the
+  machine-wide queue. A positive `test_slots` (`.factory/config.yaml`) opts into a limit.
+  At most that many `test`
   steps run their command on the machine at once; the others wait in a queue in the
   order they asked (`<HAIFA home>/test_slots`). The wait is traced as `test_slot` events
   (`state: waiting` with `ahead`, then `state: acquired` with `waited_seconds`), shows in

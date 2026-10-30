@@ -31,8 +31,8 @@ export const TOTALS: readonly { id: OverviewFilter; label: string }[] = [
 
 /** Urgency of a repo card, most urgent first. A PR waiting for auto-merge needs nobody, so it
  * ranks after running runs: the factory still works on the repo, but the user need not. */
-export type Urgency = 'problems' | 'failed' | 'review' | 'running' | 'automerge' | 'calm'
-const URGENCY_ORDER: readonly Urgency[] = ['problems', 'failed', 'review', 'running', 'automerge', 'calm']
+export type Urgency = 'problems' | 'failed' | 'review' | 'running' | 'automerge' | 'loading' | 'calm'
+const URGENCY_ORDER: readonly Urgency[] = ['problems', 'failed', 'review', 'running', 'automerge', 'loading', 'calm']
 
 /** The text a run whose process is gone shows. */
 export const PROCESS_ENDED = 'proces skončil'
@@ -49,7 +49,7 @@ export interface FailedRow {
 
 /** A problem of a repo: its configuration (links to the repo settings) or its folder. */
 export interface Problem {
-  kind: 'not_installed' | 'invalid' | 'uncommitted' | 'missing' | 'not_git' | 'timeout' | 'error'
+  kind: 'not_installed' | 'invalid' | 'uncommitted' | 'missing' | 'not_git' | 'error'
   text: string
   /** The repo settings for a configuration problem, null otherwise. */
   href: string | null
@@ -58,7 +58,6 @@ export interface Problem {
 const STATE_PROBLEMS: Partial<Record<OverviewRepo['state'], Problem['kind']>> = {
   missing: 'missing',
   not_git: 'not_git',
-  timeout: 'timeout',
   error: 'error',
 }
 
@@ -68,7 +67,6 @@ const PROBLEM_TEXT: Record<Problem['kind'], string> = {
   uncommitted: 'Necommitnutá konfigurace',
   missing: 'Složka nenalezena',
   not_git: 'Není git repozitář',
-  timeout: 'Repo neodpovědělo včas',
   error: 'Repo se nepodařilo přečíst',
 }
 
@@ -110,6 +108,7 @@ export function failedRows(repo: OverviewRepo): FailedRow[] {
 
 /** The problems of a repo: a missing or unreadable folder, or its configuration. */
 export function problems(repo: OverviewRepo): Problem[] {
+  if (repo.state === 'timeout') return []
   const stateKind = STATE_PROBLEMS[repo.state]
   if (stateKind) return [{ kind: stateKind, text: PROBLEM_TEXT[stateKind], href: null }]
   // the configuration is installed, fixed and committed on the Factory screen
@@ -129,10 +128,12 @@ export function problems(repo: OverviewRepo): Problem[] {
 
 /** Whether the repo has a problem: a state or config problem, or warnings. */
 export function hasProblems(repo: OverviewRepo): boolean {
+  if (repo.state === 'timeout') return false
   return problems(repo).length > 0 || repo.warnings.length > 0
 }
 
 export function urgency(repo: OverviewRepo): Urgency {
+  if (repo.state === 'timeout') return 'loading'
   if (hasProblems(repo)) return 'problems'
   if (failedRows(repo).length > 0) return 'failed'
   if (repo.review.length > 0) return 'review'

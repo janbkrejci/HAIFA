@@ -251,12 +251,12 @@ class ProjectSettings(BaseModel):
         ),
     )
     test_slots: int = Field(
-        default=1,
-        ge=1,
+        default=0,
+        ge=0,
         strict=True,
         description=(
             "Maximum simultaneous test steps on this machine; others queue without consuming "
-            "their timeout."
+            "their timeout. Zero (the default) disables the machine-wide limit."
         ),
     )
     stacked_prs: bool = Field(

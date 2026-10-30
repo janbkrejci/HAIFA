@@ -110,10 +110,11 @@ def _started(log: Path, label: str) -> bool:
     return any(w == "start" and lab == label for w, lab, _ in _lines(log))
 
 
-def test_test_slots_config_defaults_to_one() -> None:
-    assert ProjectSettings().test_slots == 1
+def test_test_slots_config_defaults_to_unlimited() -> None:
+    assert ProjectSettings().test_slots == 0
+    assert ProjectSettings.model_validate({"test_slots": 0}).test_slots == 0
     assert ProjectSettings.model_validate({"test_slots": 3}).test_slots == 3
-    for bad in (0, -1, "2", True):
+    for bad in (-1, "2", True):
         with pytest.raises(ValueError, match="test_slots"):
             ProjectSettings.model_validate({"test_slots": bad})
 

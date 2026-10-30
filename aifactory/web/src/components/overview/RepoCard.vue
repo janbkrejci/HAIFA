@@ -25,6 +25,7 @@ const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removi
 const emit = defineEmits<{ remove: [repo: OverviewRepo]; changed: [] }>()
 
 const autoActions = computed(() => props.repo.auto_actions ?? [])
+const loading = computed(() => props.repo.state === 'timeout')
 const configProblems = computed(() => problems(props.repo).filter((p) => p.href !== null))
 const stateProblems = computed(() => problems(props.repo).filter((p) => p.href === null))
 
@@ -60,17 +61,22 @@ async function onSync() {
 </script>
 
 <template>
-  <article class="repo-card" data-test="overview-card" :data-repo="repo.id">
+  <article class="repo-card" :class="{ loading }" data-test="overview-card" :data-repo="repo.id" :aria-busy="loading || undefined">
     <header class="card-head">
       <Tooltip :text="repo.path">
         <a :href="repoHref(repo.id, 'backlog')" class="repo-name" data-test="card-name">{{ repo.name }}</a>
       </Tooltip>
-      <div class="card-tools">
+      <div v-if="!loading" class="card-tools">
         <RepoActions :repo="repo" @feedback="feedback = $event" @changed="emit('changed')" />
         <RepoMenu :name="repo.name" :removing="removing" @remove="emit('remove', repo)" />
       </div>
     </header>
 
+    <div v-if="loading" class="loading-overlay" data-test="repo-loading" role="status">
+      <Spinner :size="22" /> Načítám repozitář…
+    </div>
+
+    <template v-else>
     <RepoControls :repo="repo" :feedback="feedback" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
@@ -150,11 +156,13 @@ async function onSync() {
       <template v-if="repo.last_activity">{{ fmtAge(since(repo.last_activity)) }} ({{ fmtTime(repo.last_activity) }})</template>
       <template v-else>žádná</template>
     </footer>
+    </template>
   </article>
 </template>
 
 <style scoped>
 .repo-card {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -162,6 +170,22 @@ async function onSync() {
   border: 1px solid var(--border);
   border-radius: 10px;
   background: var(--panel);
+}
+
+.repo-card.loading {
+  min-height: 120px;
+}
+
+.loading-overlay {
+  position: absolute;
+  inset: 44px 0 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border-radius: 0 0 10px 10px;
+  background: var(--panel);
+  color: var(--dim);
 }
 
 .card-head {

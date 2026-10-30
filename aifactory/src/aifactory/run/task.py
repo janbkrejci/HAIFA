@@ -677,6 +677,14 @@ def run_task(
                     "are relative to the repository root, "
                     "including when running from this subdirectory.\n"
                 )
+        if any(isinstance(s, CodeStep) and s.action == "test" for s in walk(workflow.steps)):
+            prompt += (
+                "\n## Workflow verification\n"
+                "This workflow has a separate test step. The builder implements and updates "
+                "regression tests; the tester selects checks and the test runner executes them. "
+                "The builder should run only a single targeted diagnostic test when needed "
+                "to resolve an implementation question, then hand verification to the tester.\n"
+            )
         prompt += followups.dependency_prompt(backlog, task)
         row = TaskRunRow(
             run_id=run_id,
@@ -981,7 +989,9 @@ def _execute_job(
             data_dir(main, rc) / "test_profiles",
             f"{main.resolve()}:{ancestors(job.task)[-1].path}",
         ),
-        "test_slots": TestSlots(default_slots_dir(), settings.test_slots),
+        "test_slots": (
+            TestSlots(default_slots_dir(), settings.test_slots) if settings.test_slots else None
+        ),
         "phase_gate": PauseGate(store, row.run_id),
     }
     wf: WorkflowRun | None = None

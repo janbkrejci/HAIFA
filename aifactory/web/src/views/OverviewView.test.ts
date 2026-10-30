@@ -80,6 +80,31 @@ afterEach(() => {
 })
 
 describe('OverviewView', () => {
+  it('shows a loading overlay for a slow repo until polling returns its data', async () => {
+    let slow = repo('slow', {
+      state: 'timeout', config: null,
+      warnings: ['repository slow did not answer within 2 s'],
+    })
+    stubOverview(() => overview([slow, repo('busy', { running: [running()] })]))
+    const wrapper = await mountView()
+    const card = wrapper.get('[data-repo="slow"]')
+    expect(card.attributes('aria-busy')).toBe('true')
+    expect(card.get('[data-test="repo-loading"][role="status"]').text()).toContain('Načítám repozitář')
+    expect(card.find('[data-test="spinner"]').exists()).toBe(true)
+    expect(card.find('[data-test="card-warnings"]').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Repo neodpovědělo včas')
+    expect(wrapper.get('[data-test="total-problems"] [data-test="total-count"]').text()).toBe('0')
+    expect(wrapper.find('[data-repo="busy"] [data-test="row-running"]').exists()).toBe(true)
+
+    slow = repo('slow', { review: [review()] })
+    await vi.advanceTimersByTimeAsync(OVERVIEW_POLL_MS)
+    await flushPromises()
+    const loaded = wrapper.get('[data-repo="slow"]')
+    expect(loaded.attributes('aria-busy')).toBeUndefined()
+    expect(loaded.find('[data-test="repo-loading"]').exists()).toBe(false)
+    expect(loaded.find('[data-test="row-review"]').exists()).toBe(true)
+  })
+
   it('toggles busy project rows and chips through the header switch', async () => {
     stubOverview(() => overview([repo('busy', {
       projects: [

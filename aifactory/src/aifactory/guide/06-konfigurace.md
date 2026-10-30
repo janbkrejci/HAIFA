@@ -18,7 +18,7 @@ Konfigurace je v `.factory/` repa: `config.yaml`, `agents.yaml` (roster agentů)
 | `protected_files` | `[".factory/"]` | Cesty, které agenti nemění. |
 | `max_parallel_runs` | `1` | Sloty pro souběžné tasky. |
 | `stacked_prs` | `false` | Navazující PR na PR závislostí. |
-| `test_timeout`, `test_slots` | 600, `1` | Limit testů a souběžné testy na počítači. |
+| `test_timeout`, `test_slots` | 600, `0` | Limit testů; `0` neomezuje souběžné testy na počítači, kladná hodnota zapne sdílenou frontu. |
 
 Další klíče: `levels`, `workdir`, `worktrees_dir`, `generated`.
 

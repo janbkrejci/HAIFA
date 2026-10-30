@@ -151,6 +151,8 @@ PENDING_SEED_BLOCKS: dict[tuple[str, str], bytes] = {
 }
 
 _BUILDER_OLD_TESTS = (
+    b"- Verify your work compiles/runs before reporting, and judge that by exit status "
+    b"\xe2\x80\x94 not by scanning the output for words like `error`.\n"
     b"- Run only the tests that cover the code you changed (by explicit test file or "
     b"project), plus the repo's type check and lint for the changed files. Never run "
     b"the whole suite: the test step after you runs the checks a tester chose and "
@@ -158,18 +160,21 @@ _BUILDER_OLD_TESTS = (
     b"report `fail`.\n"
 )
 _BUILDER_NEW_TESTS = (
-    b"- Only verify your own change, quickly. Run only explicit test files that you "
-    b"changed or that directly cover a module you changed, or single tests in them "
-    b"(`pytest tests/x/test_y.py`, `pytest tests/x/test_y.py::test_name`, "
-    b"`bun run test src/y.test.ts`). Never pass a directory, never start a test runner "
-    b"without a file path, and never run whole-suite commands such as `just check`, "
-    b"`just check-scoped`, `just test`, `just e2e`, `just web-test`, or `pytest` or "
-    b"`bun run test` without a file. Expanding a directory into its files (a glob, "
-    b"`$(ls ...)`, a loop) counts as passing the directory.\n"
-    b"- Run the type check and lint only on the files you changed.\n"
-    b"- The checks that count are the tester's: the test step after you runs every "
-    b"check the tester chose, also after one fails, and returns every failed check to "
-    b"you. A check you could not finish is not a reason to report `fail`.\n"
+    b"- When the workflow has a separate test step, leave verification to its tester and runner. "
+    b"Do not routinely run tests, builds, lint or type checks before reporting; do not repeat the "
+    b"failed check list after a repair. Write and update the tests, then hand the changed "
+    b"behaviour, relevant test paths and any suggested commands to the tester in "
+    b"`notes_for_next_agent`.\n"
+    b"- Run a single targeted test only when its result is needed to diagnose or implement the "
+    b"change (for example, reproducing a bug or checking a repair you are unsure about). Stop "
+    b"once that question is answered. A passing diagnostic test does not replace workflow "
+    b"verification. If the workflow has no test step, perform a minimal check of your change "
+    b"before reporting. Judge commands by exit status, not by scanning output for words like "
+    b"`error`.\n"
+    b"- Never run whole-suite commands such as `just check`, `just test`, `just e2e`, `just "
+    b"web-test`, or a test runner without an explicit test file. Never pass a test directory or "
+    b"expand one into its files. A check you could not finish is not a reason to report `fail`; "
+    b"report what remains unverified to the tester.\n"
 )
 
 # Seed rewrites HAIFA's own `.factory/prompts` may not have picked up yet:

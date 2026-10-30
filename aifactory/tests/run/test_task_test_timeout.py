@@ -240,17 +240,24 @@ def _assert_not_started(repo: Path, script: Script) -> None:
     assert script.calls == []
 
 
-def test_task_run_takes_a_machine_wide_test_slot(
-    repo: Path, script: Script, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("slots", [0, 1])
+def test_task_run_only_takes_a_machine_wide_test_slot_when_configured(
+    repo: Path, script: Script, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, slots: int
 ) -> None:
     """A task run's test step holds a slot in ``<HAIFA home>/test_slots`` (``test_slots``)."""
     monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "home"))
     setup(repo, config_timeout=43)
+    if slots:
+        config_path = repo / ".factory/config.yaml"
+        config_path.write_text(config_path.read_text(encoding="utf-8") + "test_slots: 1\n")
+        commit_all(repo, "limit test slots")
     scripted(script)
 
     result = run_task(repo, T01)
 
     assert result.run.state == "succeeded", result.run.error
+    assert "## Workflow verification" in script.calls[0].prompt
+    assert "separate test step" in script.calls[0].prompt
     conn = sqlite3.connect(str(repo / ".factory" / "trace.db"))
     try:
         rows = conn.execute(
@@ -259,6 +266,10 @@ def test_task_run_takes_a_machine_wide_test_slot(
         ).fetchall()
     finally:
         conn.close()
+    if not slots:
+        assert rows == []
+        assert not (tmp_path / "home" / "test_slots").exists()
+        return
     [acquired] = [json.loads(row[0]) for row in rows]
     assert acquired["state"] == "acquired"
     assert acquired["slot"] == 0
