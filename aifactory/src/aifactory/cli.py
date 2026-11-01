@@ -3391,12 +3391,21 @@ def _add_learn_commands(parser: argparse.ArgumentParser) -> None:
         "(the distinct runs), the runs and snippets of the objections. A lesson seen in one "
         "run only is not proposed, nor one a person accepted (factory learn accept) or "
         "rejected (factory learn dismiss). Proposed lessons are saved in the trace DB; nothing "
-        "in the repo is written.",
+        "in the repo is written. With --all the objections of every repo registered in the "
+        "dashboard are read and every lesson names the repo its rule belongs to.",
     )
     scan.add_argument(
         "--since",
         metavar="DATE",
         help="only objections from this date (YYYY-MM-DD) or ISO timestamp on",
+    )
+    scan.add_argument(
+        "--all",
+        dest="all_repos",
+        action="store_true",
+        help="read the objections of every repo registered in the dashboard; each lesson "
+        "names the repo its rule belongs to and is saved in that repo's trace DB (factory "
+        "shortcomings go to the HAIFA repo, target 'seed' only there)",
     )
     accept = sub.add_parser(
         "accept",
@@ -3451,15 +3460,18 @@ def _learn(args: argparse.Namespace) -> int:
         else:
             # the agent's progress goes to stderr; stdout carries only the lessons or JSON
             with contextlib.redirect_stdout(sys.stderr):
-                data = scan(root, args.since)
+                data = scan(root, args.since, all_repos=args.all_repos)
     except (ConfigError, TaskEditError) as exc:
         return _fail_from_exception(exc, args.json, label)
+    warnings = [str(w) for w in data.pop("warnings", [])]
     if args.json:
-        return _emit_ok(data)
+        return _emit_ok(data, warnings)
     if args.learn_command == "dismiss":
         print(f"dismissed {data['id']}: {data['rule']}")
     else:
         print(format_scan(data))
+    for warning in warnings:
+        print(f"warning: {warning}", file=sys.stderr)
     return 0
 
 

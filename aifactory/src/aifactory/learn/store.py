@@ -6,7 +6,8 @@ id. ``state`` is ``proposed``, ``accepted`` (``factory learn accept`` made it a 
 task, ``task_id``) or ``rejected`` (``factory learn dismiss``); a scan updates a proposed
 lesson and never touches a settled one. ``complaints`` are the keys of the objections the
 lesson was made of (``collect.Objection.key``); a later scan adds the objections that
-repeat an accepted lesson (``add_repeats``).
+repeat an accepted lesson (``add_repeats``). ``origin`` holds the ids of the registered
+repos the objections came from (``factory learn scan --all``), empty for a one-repo scan.
 """
 
 from __future__ import annotations
@@ -35,6 +36,7 @@ CREATE TABLE IF NOT EXISTS learn_lessons (
   state TEXT NOT NULL,
   reason TEXT,
   task_id TEXT,
+  origin TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -60,6 +62,7 @@ class StoredLesson:
     state: str = PROPOSED
     reason: str | None = None
     task_id: str | None = None
+    origin: list[str] = field(default_factory=list)
 
 
 class LessonStore:
@@ -72,6 +75,10 @@ class LessonStore:
         columns = {str(r[1]) for r in self.conn.execute("PRAGMA table_info(learn_lessons)")}
         if "task_id" not in columns:  # a table of an older HAIFA
             self.conn.execute("ALTER TABLE learn_lessons ADD COLUMN task_id TEXT")
+        if "origin" not in columns:  # a table from before ``factory learn scan --all``
+            self.conn.execute(
+                "ALTER TABLE learn_lessons ADD COLUMN origin TEXT NOT NULL DEFAULT ''"
+            )
 
     def close(self) -> None:
         self.conn.close()
@@ -79,11 +86,20 @@ class LessonStore:
     def all(self) -> list[StoredLesson]:
         rows = self.conn.execute(
             "SELECT lesson_id, rule, target, target_detail, complaints, runs, state, reason, "
-            "task_id FROM learn_lessons ORDER BY created_at, lesson_id"
+            "task_id, origin FROM learn_lessons ORDER BY created_at, lesson_id"
         ).fetchall()
         return [
             StoredLesson(
-                r[0], r[1], r[2], r[3], json.loads(r[4]), json.loads(r[5]), r[6], r[7], r[8]
+                r[0],
+                r[1],
+                r[2],
+                r[3],
+                json.loads(r[4]),
+                json.loads(r[5]),
+                r[6],
+                r[7],
+                r[8],
+                [part for part in str(r[9] or "").split(",") if part],
             )
             for r in rows
         ]
@@ -134,10 +150,10 @@ class LessonStore:
         now = now_iso()
         self.conn.execute(
             "INSERT INTO learn_lessons (lesson_id, rule, target, target_detail, complaints, "
-            "runs, state, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?) "
+            "runs, state, origin, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?) "
             "ON CONFLICT(lesson_id) DO UPDATE SET rule=excluded.rule, target=excluded.target, "
             "target_detail=excluded.target_detail, complaints=excluded.complaints, "
-            "runs=excluded.runs, updated_at=excluded.updated_at "
+            "runs=excluded.runs, origin=excluded.origin, updated_at=excluded.updated_at "
             f"WHERE learn_lessons.state = '{PROPOSED}'",
             (
                 lesson.lesson_id,
@@ -147,6 +163,7 @@ class LessonStore:
                 json.dumps(lesson.complaints),
                 json.dumps(lesson.runs),
                 PROPOSED,
+                ",".join(lesson.origin),
                 now,
                 now,
             ),

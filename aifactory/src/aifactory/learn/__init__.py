@@ -6,4 +6,6 @@ agent ``learner`` group similar ones into lessons, ``accept`` files a lesson as 
 task that changes the repo's rules, ``store`` keeps the lessons and what a person did
 with them (table ``learn_lessons`` in the trace DB), and ``view`` reads them for the
 dashboard with the runs before and after an accepted lesson's pull request was merged.
+``sources`` reads the objections of every registered repo for ``scan --all``, which saves
+each lesson in the trace DB of the repo its rule belongs to.
 """
