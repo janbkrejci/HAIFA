@@ -1,7 +1,7 @@
 ---
 id: LEARN-S02-T03
 title: "learn accept a view: task v cílovém repu s důkazy z běhů jiných rep"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [LEARN-S02-T02]
 writes: [aifactory/src/aifactory/learn/accept.py, aifactory/src/aifactory/learn/view.py, aifactory/tests/learn/test_learn_accept.py, aifactory/tests/learn/test_learn_view.py, aifactory/tests/learn_fixture.py]
@@ -26,3 +26,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-01 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/193 · náklady $1.57
