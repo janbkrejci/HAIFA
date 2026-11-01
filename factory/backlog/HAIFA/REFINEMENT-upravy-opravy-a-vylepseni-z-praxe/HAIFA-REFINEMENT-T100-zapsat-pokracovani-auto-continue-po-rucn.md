@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T100
 title: Zapsat pokračování auto-continue po ručním sloučení PR do decisions a příručky
 status: done
+archived: true
 workflow: build-review
 depends_on: [HAIFA-REFINEMENT-T98, HAIFA-REFINEMENT-T99]
 writes: [docs/decisions.md, aifactory/src/aifactory/guide/05-behy-a-review.md]

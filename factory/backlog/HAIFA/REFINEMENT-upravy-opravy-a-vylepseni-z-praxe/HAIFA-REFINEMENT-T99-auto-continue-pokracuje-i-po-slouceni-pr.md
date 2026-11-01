@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T99
 title: "Auto-continue pokračuje i po sloučení PR mimo factory (GitHub, Azure)"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T98]
 writes: [aifactory/src/aifactory/web/pr_refresh.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/run/queue.py, aifactory/tests/web/test_web_pr_refresh.py, aifactory/tests/run/test_auto_continue.py, aifactory/tests/run/test_factory_start.py]
