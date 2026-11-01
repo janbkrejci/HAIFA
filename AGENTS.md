@@ -16,6 +16,8 @@ Find the direct callers of every changed function, module, seed file or test hel
 
 Select only tests that exercise the changed behavior; narrow file or directory selections to relevant tests, omit tests justified only by imports of a changed module, and add browser or layout tests only for a changed screen.
 
+When adding or changing a protection or limit (write guards, timeouts, process kills), add a regression test for its failure path, such as an implicit default or a blocked send, as well as the happy path.
+
 Regardless of these selection limits, run every test file edited by the change in at least one check of the test plan, including browser tests under `tests/e2e/`.
 
 Measured on the Windows factory machine (set check timeouts with margin): `just lint` 1 s, `just typecheck` 10 s, `just web-test` 90 s (bun install, vue-tsc, vitest), one browser test file 60–200 s, `just pytest` of one test directory 1–5 min.
