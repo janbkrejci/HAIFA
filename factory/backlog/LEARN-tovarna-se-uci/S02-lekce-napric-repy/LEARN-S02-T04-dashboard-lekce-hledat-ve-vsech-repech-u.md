@@ -1,7 +1,7 @@
 ---
 id: LEARN-S02-T04
 title: "Dashboard Lekce: hledat ve všech repech, ukázat zdroj a cíl lekce"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [LEARN-S02-T03]
 writes: [aifactory/src/aifactory/web/learn.py, aifactory/src/aifactory/web/app.py, aifactory/web/src/lib/learn.ts, aifactory/web/src/components/factory/LessonsSection.vue, aifactory/web/src/components/factory/LessonsSection.test.ts, aifactory/tests/web/test_web_learn.py, aifactory/tests/e2e/test_learn_browser.py, aifactory/src/aifactory/web/static/]
@@ -25,3 +25,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-01 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/194 · náklady $2.45
