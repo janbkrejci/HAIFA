@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T98
 title: "Auto-continue pokračuje po ručním schválení PR, které auto-merge nesloučil"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/run/queue.py, aifactory/src/aifactory/run/__init__.py, aifactory/src/aifactory/run/store.py, aifactory/src/aifactory/review/flow.py, aifactory/src/aifactory/cli.py, aifactory/tests/review/test_approve_continue.py, aifactory/tests/run/test_auto_continue.py]
@@ -27,3 +27,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-01 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/190 · náklady $0.00

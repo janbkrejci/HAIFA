@@ -2767,8 +2767,6 @@ def _chain_output(
     extra: dict[str, Any] | None = None,
 ) -> int:
     """Start a chain with `start` and print it (``task run``, ``task retry``)."""
-    from aifactory.run import STOP_EXHAUSTED, STOP_NOT_MERGED
-
     if args.json:
         with contextlib.redirect_stdout(sys.stderr):
             chain = start()
@@ -2781,6 +2779,13 @@ def _chain_output(
     chain = start()
     for warning in chain.runs[0].warnings:
         print(f"warning: {warning}", file=sys.stderr)
+    _print_chain(chain)
+    return 0 if chain.ok else 1
+
+
+def _print_chain(chain: ChainResult) -> None:
+    from aifactory.run import STOP_EXHAUSTED, STOP_NOT_MERGED
+
     if chain.max_parallel > 1:
         print(f"auto-continue: up to {chain.max_parallel} parallel runs")
     for result in chain.runs:
@@ -2793,7 +2798,6 @@ def _chain_output(
             print(f"waiting: {skip.task_id} {skip.reason}: {skip.detail}")
         if chain.stop == STOP_EXHAUSTED and not chain.waiting:
             print("auto-continue: nothing left to run")
-    return 0 if chain.ok else 1
 
 
 def _task_return(args: argparse.Namespace, root: Path) -> int:
@@ -2863,6 +2867,11 @@ def _task_approve(args: argparse.Namespace, root: Path) -> int:
         print(f"deleted branch {branch}")
     for warning in result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
+    if result.chain is not None:
+        for run in result.chain.runs:
+            for warning in run.warnings:
+                print(f"warning: {warning}", file=sys.stderr)
+        _print_chain(result.chain)
     return 0
 
 

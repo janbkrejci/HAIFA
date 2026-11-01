@@ -701,12 +701,19 @@ class _ChainRecord:
     """
 
     def __init__(
-        self, db: Path | None, task_id: str, max_parallel: int, *, enabled: bool = True
+        self,
+        db: Path | None,
+        task_id: str,
+        max_parallel: int,
+        *,
+        enabled: bool = True,
+        auto: bool = False,
     ) -> None:
         self.db = db
         self.task_id = task_id
         self.max_parallel = max_parallel
         self.enabled = enabled
+        self.auto = auto
         self.chain_id = secrets.token_hex(4)
         self.started = False
         self.events: list[dict[str, Any]] = []
@@ -743,6 +750,7 @@ class _ChainRecord:
             started_at=now,
             updated_at=now,
             events=json.dumps(self.events, ensure_ascii=False),
+            auto=int(self.auto),
         )
         self._write(lambda store: store.start_chain(row))
         self.started = self.db is not None
@@ -1100,6 +1108,112 @@ def run_chain(
     )
 
 
+def continue_after_merge(
+    repo: Path,
+    task_id: str,
+    *,
+    provider: GitProvider | None = None,
+    code: CodeRunner | None = None,
+    runner: ChainRunner | None = None,
+    pr_files: Callable[[TaskPrRow], list[str] | None] | None = None,
+) -> ChainResult | None:
+    """Resume the latest not-merged chain after an operator merged its last task.
+
+    Claim before starting anything: repeated or concurrent approvals consume the old
+    chain only once. A consumed chain stays visible with its original stop reason.
+    """
+    main = gitops.main_root(repo)
+    db = _trace_db(repo)
+    if db is None:
+        return None
+    store = TaskRunStore(db)
+    try:
+        row = store.latest_chain_ending_with(task_id)
+        if row is None or row.stop != STOP_NOT_MERGED or row.continued_at is not None:
+            return None
+        pr = store.latest_pr(task_id)
+        if pr is None or pr.state != "merged":
+            return None
+        with _fresh_backlog(repo) as backlog:
+            after = backlog.by_id.get(task_id)
+            if not isinstance(after, Task) or not (row.auto or auto_continue_enabled(after)):
+                return None
+            if not store.claim_chain_continuation(row.chain_id):
+                return None
+        excluded: set[str] = set()
+        start_skips: list[Skip] = []
+        while True:
+            with _fresh_backlog(repo) as backlog:
+                after = backlog.by_id.get(task_id)
+                if not isinstance(after, Task):
+                    return None
+                slots = Slots.of(store)
+                occupancy = Occupancy.build(
+                    backlog, store, main, pr_files or _pr_files_default(main)
+                )
+
+                def conflict(
+                    task: Task,
+                    *,
+                    slots: Slots = slots,
+                    occupancy: Occupancy = occupancy,
+                    backlog: Backlog = backlog,
+                ) -> Skip | None:
+                    if slots.taken >= row.max_parallel and not slots.yields_to(
+                        unmet_ids(backlog, task) or []
+                    ):
+                        return slots.skip(task.id)
+                    return occupancy(task)
+
+                selection = select_next(
+                    backlog,
+                    after,
+                    open_pr=store.open_pr,
+                    running=store.running,
+                    exclude=excluded,
+                    conflict=conflict,
+                    require_auto_continue=not bool(row.auto),
+                    prefs=store.queue_prefs(),
+                    stack=stacker(main),
+                )
+            if selection.next is None:
+                return ChainResult(
+                    [],
+                    STOP_EXHAUSTED,
+                    [*start_skips, *selection.skipped],
+                    max_parallel=row.max_parallel,
+                )
+            next_id = selection.next.id
+            excluded.add(next_id)
+
+            def start_next(next_id: str = next_id) -> task_mod.TaskRunResult:
+                return task_mod.run_task(
+                    repo, next_id, provider=provider, code=code, started_by=STARTED_AUTO_CONTINUE
+                )
+
+            try:
+                chain = run_chain(
+                    repo,
+                    next_id,
+                    auto=bool(row.auto),
+                    provider=provider,
+                    code=code,
+                    max_parallel=row.max_parallel,
+                    runner=runner,
+                    pr_files=pr_files,
+                    first_run=start_next,
+                )
+            except TaskRunError as exc:
+                start_skips.append(Skip(next_id, "cannot_start", f"{exc.code}: {exc.message}"))
+                continue
+            chain.waiting = [*start_skips, *chain.waiting]
+            if start_skips and chain.chain_id is not None:
+                store.update_chain(chain.chain_id, skipped=[s.to_json() for s in chain.waiting])
+            return chain
+    finally:
+        store.close()
+
+
 def retry_chain(
     repo: Path,
     task_id: str,
@@ -1199,7 +1313,7 @@ def _run_sequential(
     db = _trace_db(repo)
     first = _first_task(repo, task_id)
     goes_on = auto or (first is not None and auto_continue_enabled(first))
-    record = _ChainRecord(db, task_id, 1, enabled=goes_on)
+    record = _ChainRecord(db, task_id, 1, enabled=goes_on, auto=auto)
     if db is not None and db.is_file():
         record.start()
     try:
@@ -1395,7 +1509,7 @@ def _run_parallel(
     files_of = pr_files if pr_files is not None else _pr_files_default(main)
     first_task = _first_task(repo, task_id)
     goes_on = first_task is not None and (auto or auto_continue_enabled(first_task))
-    record = _ChainRecord(db, task_id, max_parallel, enabled=goes_on)
+    record = _ChainRecord(db, task_id, max_parallel, enabled=goes_on, auto=auto)
     record.start()
     order: list[str] = []  # run ids in start order
     results: dict[str, task_mod.TaskRunResult] = {}
