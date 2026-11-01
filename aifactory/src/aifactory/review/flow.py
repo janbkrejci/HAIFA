@@ -95,6 +95,7 @@ class ApproveResult:
     ci_fix_runs: list[str] = field(default_factory=list)  # ci-fix runs before the merge
     deleted_branches: list[str] = field(default_factory=list)
     allow_writes: dict[str, object] | None = None  # --allow-writes: the paths allowed first
+    chain: ChainResult | None = None
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -109,6 +110,7 @@ class ApproveResult:
             "removed_worktrees": list(self.removed_worktrees),
             "warnings": list(self.warnings),
             "ci_fix_runs": list(self.ci_fix_runs),
+            "chain": self.chain.to_json() if self.chain is not None else None,
             "deleted_branches": list(self.deleted_branches),
             **({"allow_writes": self.allow_writes} if self.allow_writes is not None else {}),
         }
@@ -348,6 +350,10 @@ def approve_task(
         _delete_merged_branch(ctx, result.pr, result.deleted_branches, result.warnings)
     finally:
         ctx.store.close()
+    if merged_by == MERGED_BY_OPERATOR:
+        from aifactory.run.queue import continue_after_merge
+
+        result.chain = continue_after_merge(repo, task_id, provider=ctx.provider, code=code)
     return result
 
 

@@ -280,9 +280,15 @@ _CHAIN_COLUMNS = (
     "skipped",
     "exclusive",
     "events",
+    "auto",
+    "continued_at",
 )
 # columns added to task_chains after its first release; older DBs get them on open
-_CHAIN_ADDED_COLUMNS = {"events": "TEXT NOT NULL DEFAULT '[]'"}
+_CHAIN_ADDED_COLUMNS = {
+    "events": "TEXT NOT NULL DEFAULT '[]'",
+    "auto": "INTEGER NOT NULL DEFAULT 0",
+    "continued_at": "TEXT",
+}
 CHAIN_FINISHED = "finished"
 # the stop of a chain whose finished task has auto-continue off (``queue.STOP_DISABLED``)
 _CHAIN_DISABLED = "disabled"
@@ -512,6 +518,8 @@ class TaskChainRow:
     skipped: str = "[]"
     exclusive: str = "[]"
     events: str = "[]"
+    auto: int = 0  # --auto applies to every continuation
+    continued_at: str | None = None
 
     def run_id_list(self) -> list[str]:
         return [str(r) for r in _json_list(self.run_ids)]
@@ -1335,6 +1343,26 @@ class TaskRunStore:
         self.conn.execute(
             f"UPDATE task_chains SET {sets} WHERE chain_id = ?", (*fields.values(), chain_id)
         )
+
+    def latest_chain_ending_with(self, task_id: str) -> TaskChainRow | None:
+        """Newest chain whose last run belongs to this task, including consumed chains."""
+        rows = self._chains(
+            "json_extract(run_ids, '$[#-1]') IN (SELECT run_id FROM task_runs WHERE task_id = ?)",
+            (task_id,),
+            1,
+        )
+        return rows[0] if rows else None
+
+    def claim_chain_continuation(self, chain_id: str) -> bool:
+        """Atomically consume a finished not-merged chain, once across processes."""
+        now = _now()
+        cursor = self.conn.execute(
+            "UPDATE task_chains SET continued_at = ?, updated_at = ? "
+            "WHERE chain_id = ? AND state = ? AND stop = 'not_merged' "
+            "AND continued_at IS NULL",
+            (now, now, chain_id, CHAIN_FINISHED),
+        )
+        return bool(cursor.rowcount)
 
     def delete_chain(self, chain_id: str) -> None:
         self.conn.execute("DELETE FROM task_chains WHERE chain_id = ?", (chain_id,))

@@ -960,3 +960,69 @@ def test_blocked_task_runs_again_in_its_chain_after_its_blocker(repo: Path, scri
         assert store.priorities() == ()
     finally:
         store.close()
+
+
+def test_chain_continuation_columns_migrate_and_preserve_claim(tmp_path: Path) -> None:
+    import sqlite3
+
+    from aifactory.run.store import TaskChainRow
+
+    db = tmp_path / "trace.db"
+    conn = sqlite3.connect(db)
+    conn.execute(
+        "CREATE TABLE task_chains (chain_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, "
+        "pid INTEGER, max_parallel INTEGER NOT NULL, state TEXT NOT NULL, stop TEXT, "
+        "started_at TEXT NOT NULL, updated_at TEXT NOT NULL, ended_at TEXT, "
+        "run_ids TEXT NOT NULL DEFAULT '[]', skipped TEXT NOT NULL DEFAULT '[]', "
+        "exclusive TEXT NOT NULL DEFAULT '[]')"
+    )
+    conn.execute(
+        "INSERT INTO task_chains (chain_id, task_id, max_parallel, state, stop, "
+        "started_at, updated_at) VALUES ('old', ?, 1, 'finished', 'not_merged', '0', '0')",
+        (T01,),
+    )
+    conn.commit()
+    conn.close()
+    store = TaskRunStore(db)
+    try:
+        old = store.get_chain("old")
+        assert old is not None and old.auto == 0 and old.continued_at is None
+        assert store.claim_chain_continuation("old")
+        assert not store.claim_chain_continuation("old")
+        store.start_chain(TaskChainRow("auto", T01, None, 2, "finished", "1", "1", auto=1))
+    finally:
+        store.close()
+    store = TaskRunStore(db)
+    try:
+        old = store.get_chain("old")
+        auto = store.get_chain("auto")
+        assert old is not None and old.continued_at is not None
+        assert auto is not None and auto.auto == 1
+        assert not store.claim_chain_continuation("auto")  # no not_merged stop
+    finally:
+        store.close()
+
+
+def test_latest_chain_ending_with_task_includes_ineligible_newer_chains(tmp_path: Path) -> None:
+    from aifactory.run.store import TaskChainRow
+
+    store = TaskRunStore(tmp_path / "trace.db")
+    try:
+        store.conn.execute(
+            "INSERT INTO task_runs (run_id, task_id, branch, worktree, base, base_sha, "
+            "state, started_at) VALUES ('r1', ?, 'b', 'wt', 'main', '0', 'succeeded', '0')",
+            (T01,),
+        )
+        for chain_id, stop, runs in (
+            ("old", "not_merged", '["r1"]'),
+            ("new", "exhausted", '["r1"]'),
+            ("other", "not_merged", '["r1", "unrelated"]'),
+        ):
+            store.start_chain(
+                TaskChainRow(chain_id, T01, None, 1, "finished", "0", "0", stop=stop, run_ids=runs)
+            )
+        row = store.latest_chain_ending_with(T01)
+        assert row is not None and row.chain_id == "new"
+        assert store.latest_chain_ending_with(T02) is None
+    finally:
+        store.close()
