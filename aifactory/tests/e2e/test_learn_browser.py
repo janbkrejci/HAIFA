@@ -1,4 +1,5 @@
-"""Lekce on the Factory screen of the built dashboard: Najít lekce, then Přijmout; fake harness."""
+"""Lekce on the Factory screen of the built dashboard: Najít lekce (in this repo or in every
+repo), then Přijmout; fake harness."""
 
 from __future__ import annotations
 
@@ -11,8 +12,10 @@ from test_f3_browser import _launch
 from advice_fixture import git
 from advice_server import dashboard
 from aifactory.backlog import Task, load_backlog
+from aifactory.home import haifa_home
+from aifactory.learn.sources import FACTORY_REPO_ENV
 from aifactory.learn.store import ACCEPTED, LessonStore
-from learn_fixture import fake_learner, make_learn_repo
+from learn_fixture import fake_learner, make_learn_repo, register_learn_repos
 
 pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
 
@@ -38,6 +41,10 @@ def test_learn_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             page.goto(f"{url}/#/r/{identifier}/factory")
             section = page.locator('[data-test="lessons"]')
             expect(section.locator('[data-test="lessons-empty"]')).to_be_visible()
+            # Ze všech rep is on by default; this repo alone has the objections here
+            switch = section.locator('[data-test="lessons-all"]')
+            expect(switch).to_be_checked()
+            switch.uncheck()
             section.locator('[data-test="lessons-scan"]').click()
 
             card = section.locator('[data-test="lesson"][data-state="proposed"]')
@@ -46,6 +53,7 @@ def test_learn_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
             expect(card.locator('[data-test="lesson-occurrences"]')).to_have_text("2 běhy")
             expect(card.locator('[data-test="lesson-run"]')).to_have_text(["run-a", "run-b"])
             expect(section.locator('[data-test="lessons-scan-done"]')).to_contain_text("lekcí: 1")
+            expect(section.locator('[data-test="lessons-elsewhere"]')).to_have_count(0)
 
             card.locator('[data-test="lesson-accept"]').click()
             expect(section.locator('[data-test="lessons-notice"]')).to_contain_text("P01-LEARN-T01")
@@ -67,5 +75,62 @@ def test_learn_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     try:
         [lesson] = store.all()
         assert lesson.state == ACCEPTED and lesson.task_id == "P01-LEARN-T01"
+    finally:
+        store.close()
+
+
+def test_learn_browser_all_repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(FACTORY_REPO_ENV, "haifa")
+    repos = register_learn_repos(tmp_path, "haifa", "app")
+    _, answers = fake_learner(monkeypatch)
+    # c1-c3 are the objections of haifa, c4-c6 those of app; the rule belongs to app
+    answers.append(
+        {
+            "status": "success",
+            "summary": "one lesson",
+            "lessons": [
+                {"rule": RULE, "target": "AGENTS.md", "repo": "app", "complaints": ["c1", "c4"]}
+            ],
+        }
+    )
+    with dashboard(repos["haifa"], haifa_home()) as (url, identifier), sync_playwright() as p:
+        assert identifier == "haifa"
+        browser = _launch(p)
+        page = browser.new_page()
+        page.set_default_timeout(20000)
+        try:
+            page.goto(f"{url}/#/r/haifa/factory")
+            section = page.locator('[data-test="lessons"]')
+            expect(section.locator('[data-test="lessons-empty"]')).to_be_visible()
+            expect(section.locator('[data-test="lessons-all"]')).to_be_checked()
+            section.locator('[data-test="lessons-scan"]').click()
+
+            expect(section.locator('[data-test="lessons-scan-done"]')).to_contain_text(
+                "ze všech rep (2)"
+            )
+            notice = section.locator('[data-test="lessons-elsewhere"]')
+            expect(notice).to_contain_text("Do jiných rep se uložilo 1 lekce")
+            expect(section.locator('[data-test="lesson"]')).to_have_count(0)
+            notice.locator('[data-test="lessons-elsewhere-link"]').click()
+            page.wait_for_url("**/#/r/app/factory/lessons")
+
+            card = page.locator('[data-test="lessons"] [data-test="lesson"][data-state="proposed"]')
+            expect(card).to_have_count(1)
+            expect(card.locator('[data-test="lesson-rule"]')).to_have_text(RULE)
+            expect(card.locator('[data-test="lesson-origin"]')).to_have_text(["haifa", "app"])
+            expect(card.locator('[data-test="lesson-complaint-repo"]')).to_have_text(
+                ["haifa", "app"]
+            )
+            expect(card.locator('[data-test="lesson-run"]').first).to_have_attribute(
+                "href", "#/r/haifa/runs/run-a"
+            )
+            page.screenshot(path=str(tmp_path / "learn-all.png"), full_page=True)
+        finally:
+            browser.close()
+
+    store = LessonStore(repos["app"] / ".factory/trace.db")
+    try:
+        [lesson] = store.all()
+        assert lesson.rule == RULE and lesson.origin == ["app", "haifa"]
     finally:
         store.close()

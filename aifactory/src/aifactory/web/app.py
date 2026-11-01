@@ -84,9 +84,12 @@ the edited proposal; ``POST .../apply`` (``{tasks?}``) writes it and commits the
 
 Lekce (``web.learn``): ``GET /api/learn`` lists the lessons of ``factory learn`` (rule,
 occurrences with their runs, state, the task and its PR, and for an accepted lesson with a
-merged PR the runs before and after the merge) and the repo's scan job;
-``POST /api/learn/scan`` (``{since?}``, HTTP 202) starts ``factory learn scan`` in a thread
-(one per repo, HTTP 409 ``busy``); ``POST /api/learn/lessons/{id}/accept`` (``{project?}``)
+merged PR the runs before and after the merge, the repos of its objections ``origin`` and
+the ``repo`` of each objection) and the repo's scan job; ``POST /api/learn/scan``
+(``{since?, all?}``, HTTP 202) starts ``factory learn scan`` in a thread (one per repo,
+HTTP 409 ``busy``), with ``all: true`` over the objections of every registered repo
+(``--all``: the job's result then also counts the repos and, by repo id, the lessons saved
+in other repos, ``elsewhere``); ``POST /api/learn/lessons/{id}/accept`` (``{project?}``)
 and ``.../dismiss`` (``{reason?}``) are ``factory learn accept`` and ``dismiss``.
 
 Review: ``GET /api/review`` (open task PRs with mergeability and costs; ``?done=1``
@@ -1197,7 +1200,7 @@ async def learn_state(request: Request) -> JSONResponse:
 
 
 async def learn_scan(request: Request) -> JSONResponse:
-    """``{since?}``: start ``factory learn scan`` in the background."""
+    """``{since?, all?}``: start ``factory learn scan`` (``--all``) in the background."""
     try:
         body = await _json_body(request)
     except backlog.UsageError as exc:
