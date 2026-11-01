@@ -28,6 +28,7 @@ Další klíče: `levels`, `workdir`, `worktrees_dir`, `generated`.
 - **Souhrn kontroly** a nálezy repa; vybrané opraví agent (**Vyřešit vybrané nálezy**).
 - **Nastavení repozitáře:** **Sdílené nastavení repozitáře** (mimo jiné **Změny base**, **Merge pull requestů factory**, **Stacked pull requesty**) a **Lokální necommitované nastavení** (trace DB). **Uložit** zapisuje do pracovního stromu.
 - **Nastavení agentů:** harness, model a přemýšlení agentů, **zděděno**, nebo **přepsáno**; **Upravit** a **Vrátit na zděděné**.
+- **Lekce**: **Najít lekce** (`factory learn scan`) seskupí opakované výtky běhů, se **Ze všech rep** (`--all`) všech rep. Lekci uloží do repa, kam patří (lekce o factory do repa HAIFA); hláška odkáže na sekci Lekce toho repa.
 
 ## Agenti a harness
 

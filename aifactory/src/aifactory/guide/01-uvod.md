@@ -1,6 +1,6 @@
 # Co je HAIFA
 
-HAIFA (Helios AI Factory) je lokální dashboard a nástroj `factory`, který pouští kódovací agenty (Claude Code, Codex, pi) na tasky z backlogu v tvých Git repech. Pole **Hledat v příručce** hledá ve všech kapitolách bez ohledu na diakritiku.
+HAIFA (Helios AI Factory) je lokální dashboard a nástroj `factory`, který pouští kódovací agenty (Claude Code, Codex, pi) na tasky z backlogu v tvých Git repech. **Hledat v příručce** hledá ve všech kapitolách, i bez diakritiky.
 
 ## Jak HAIFA funguje
 
