@@ -13,7 +13,9 @@ from aifactory.engine import agents
 from aifactory.engine.data_types import AgentResult
 from aifactory.engine.tracer import Tracer
 from aifactory.harness.check import HarnessStatus
+from aifactory.home import haifa_home
 from aifactory.run.store import TaskRunStore
+from aifactory.web.registry import Registry
 
 
 def _run(db: Any, run_id: str, task_id: str) -> None:
@@ -62,8 +64,8 @@ def _review(*blocking: str, approved: bool = False) -> dict[str, Any]:
     return {"approved": approved, "blocking": list(blocking), "findings": []}
 
 
-def make_learn_repo(tmp_path: Path) -> Path:
-    root = make_repo(tmp_path / "repo")
+def make_learn_repo(tmp_path: Path, name: str = "repo") -> Path:
+    root = make_repo(tmp_path / name)
     # `factory learn accept` commits the backlog with the repo's own identity; CI has none.
     git(root, "config", "user.name", "test")
     git(root, "config", "user.email", "test@test")
@@ -133,6 +135,19 @@ def make_learn_repo(tmp_path: Path) -> Path:
     )
     tracer.conn.close()
     return root
+
+
+def register_learn_repos(tmp_path: Path, *names: str) -> dict[str, Path]:
+    """A learn repo per name, each registered in the dashboard registry: ``{id: root}``."""
+    registry = Registry(haifa_home())
+    repos: dict[str, Path] = {}
+    for name in names:
+        parent = tmp_path / f"src-{name}"
+        parent.mkdir()
+        root = make_learn_repo(parent, name)
+        entry, _created = registry.add(root)
+        repos[entry.id] = root
+    return repos
 
 
 def fake_learner(monkeypatch: pytest.MonkeyPatch) -> tuple[list[Any], list[dict[str, Any]]]:

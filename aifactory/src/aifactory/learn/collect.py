@@ -12,6 +12,8 @@ An objection is one thing an agent of a run found wrong:
 
 Only valid envelopes of rows in ``task_runs`` count. Every objection has a stable ``key``
 (``<envelope_id>#<n>``), so a lesson remembers which objections it was made of.
+``learn.sources`` reads every registered repo, sets ``repo`` and prefixes the key with
+``<repo_id>:``.
 """
 
 from __future__ import annotations
@@ -42,10 +44,12 @@ class Objection:
     phase: str
     text: str
     created_at: str
+    repo: str = ""
 
     def to_json(self) -> dict[str, str]:
         return {
             "key": self.key,
+            "repo": self.repo,
             "run_id": self.run_id,
             "task_id": self.task_id,
             "source": self.source,
