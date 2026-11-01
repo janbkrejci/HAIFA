@@ -1,7 +1,7 @@
 ---
 id: LEARN-S02-T02
 title: "factory learn scan --all: lekce ze všech rep s cílovým repem"
-status: todo
+status: done
 workflow: plan-build-test
 depends_on: [LEARN-S02-T01]
 writes: [aifactory/src/aifactory/learn/scan.py, aifactory/src/aifactory/learn/store.py, aifactory/src/aifactory/learn/__init__.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/seed/agents/learner/, aifactory/tests/learn/test_learn_scan.py, aifactory/tests/learn/test_learn_store.py, aifactory/tests/learn_fixture.py, aifactory/tests/library/test_library_seed.py]
@@ -30,3 +30,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-01 · workflow plan-build-test · PR https://github.com/janbkrejci/HAIFA/pull/189 · náklady $2.50
