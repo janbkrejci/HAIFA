@@ -13,11 +13,11 @@ factory upgrade haifa-<verze>.zip
 
 `factory upgrade` ověří `SHA256SUMS`, nainstaluje novější verzi, obnoví knihovnu (`factory library seed --all`, [Knihovna a tým](#/guide/knihovna-a-tym/seminko)). Dashboard restartuj; na Windows předem zastav (`dashboard_running`).
 
-Vydání: GitHub Actions / `just bundle`.
+Vydání: `just bundle`.
 
 ## Řešení problémů
 
-Modrý čip **System info**: volné místo disku stroje s factory a paměť v GB, bez cest; nezjištěné hodnoty „nedostupné“. Obnova každou minutu, bez oranžového varování. Potvrzením **Uklidit disk** odstraníš osiřelé návrhy, hotové worktrees a větve sloučených PR všech rep. Tooltip zobrazí výsledek či chybu; obnoví hodnoty.
+Modrý čip **System info**: volné místo disku a paměť v GB, obnova každou minutu. **Uklidit disk** odstraní osiřelé návrhy, hotové worktrees a větve sloučených PR všech rep; výsledek ukáže tooltip.
 
 Problémy hledá `factory check` (jen čte):
 

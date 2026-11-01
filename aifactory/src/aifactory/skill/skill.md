@@ -725,22 +725,38 @@ The agent's prompts are overridden in `.factory/prompts/proposer/`.
 repo from the trace DB (blocking items and unmet findings of the review and test review,
 test triage of failed checks, revise phases) and lets the read-only agent `learner` group
 similar ones into lessons. Each of `data.lessons` has an `id`, a short `rule`, a `target`
-(`CLAUDE.md`, `AGENTS.md`, `skill` or `prompt`, with `target_detail` naming the skill or
-role), `occurrences` (the distinct runs), `runs` and `complaints` (snippets with their run).
-A lesson seen in one run only is never proposed. Show the lessons to the user and let them
-decide; never write a rule into the repo yourself.
-`factory learn accept ID [--project ID] --json` files the lesson as a task in the step
-`LEARN` of the repo's project (created when missing) with workflow `build-review`, `writes`
-on the lesson's target only and the rule with the objections as evidence, and commits it to
-`base`; `data.task` names it. Run it like any task (it ends in a pull request). The project
-is `--project`, else the one of the tasks whose runs objected, else the only project
+(`CLAUDE.md`, `AGENTS.md`, `skill`, `prompt` or `seed`, with `target_detail` naming the
+skill or role), `repo` (the registry id of the target repo the rule belongs to, '' when the
+repo is not registered), `origin` and `origin_repos` (the repos its objections came from
+and their number), `occurrences` (the distinct runs), `runs` and `complaints` (snippets with
+their run). A lesson seen in one run only is never proposed. Show the lessons to the user
+and let them decide; never write a rule into the repo yourself.
+`factory learn scan --all --json` reads the objections of every repo registered in the
+dashboard (objection keys prefixed `<repo_id>:`; a repo without a trace DB is skipped with a
+warning in the envelope's `warnings`) and sets `data.all` and `data.repos` (the number of
+repos with objections). The learner still runs in an isolated clone of the current repo.
+Each lesson is saved in the trace DB of its target repo (`repo`), not of the repo the scan
+runs in: a rule about one repo's conventions or code goes to that repo, a shortcoming of
+the factory itself (a role or agent) to the factory repo. The factory repo is the
+registered repo named by `HAIFA_FACTORY_REPO`, else the one whose `aifactory/pyproject.toml`
+names the project `aifactory`. The target `seed` (a role prompt in
+`aifactory/src/aifactory/seed/agents/`) is allowed only for the factory repo. Without
+`--all` only the current repo is read.
+`factory learn accept ID [--project ID] --json`, run in the target repo (the one whose
+trace DB holds the lesson; `--repo PATH` for another), files the lesson as a task in the
+step `LEARN` of that repo's project (created when missing) with workflow `build-review`,
+`writes` on the lesson's target only and the rule with the objections (from the runs of
+every repo, each with its repo) as evidence, and commits it to `base`; `data.task` names
+it. Run it like any task (it ends in a pull request). The project is `--project`, else the
+one of the target repo's tasks whose runs objected, else the only project
 (`project_required` otherwise). Accepting again shows the same task (`data.existed`).
 `factory learn dismiss ID [--reason TEXT] --json` rejects a lesson in the trace DB. No later
 scan offers an accepted or dismissed lesson or its objections again. Objections that repeat
 an accepted lesson are added to it instead (`data.repeats`: lesson `id` and the number
-`added`); the dashboard's Factory screen (section Lekce) shows the lessons, scans, accepts
-and dismisses them, and counts for an accepted lesson the runs with its objections before
-and after its pull request was merged. The agent's prompts are overridden in
+`added`); the dashboard's Factory screen (section Lekce, switch Ze všech rep for `--all`,
+with links to the Lekce section of the repos that got lessons) shows the lessons, scans,
+accepts and dismisses them, and counts for an accepted lesson the runs with its objections
+before and after its pull request was merged. The agent's prompts are overridden in
 `.factory/prompts/learner/`.
 
 ### Run

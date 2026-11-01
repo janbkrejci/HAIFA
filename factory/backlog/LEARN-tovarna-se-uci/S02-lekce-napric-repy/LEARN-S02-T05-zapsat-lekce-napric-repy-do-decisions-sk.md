@@ -1,7 +1,7 @@
 ---
 id: LEARN-S02-T05
 title: "Zapsat lekce napříč repy do decisions, skillu factory a příručky"
-status: todo
+status: done
 workflow: build-review
 depends_on: [LEARN-S02-T04]
 writes: [docs/decisions.md, aifactory/src/aifactory/skill/skill.md, aifactory/src/aifactory/guide/]
@@ -24,3 +24,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-01 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/195 · náklady $1.76
