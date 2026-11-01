@@ -3,12 +3,17 @@
 The factory never writes a rule itself. Accepting a lesson files a task in the ``LEARN``
 step of the repo's project (the step is created when it is missing) with workflow
 ``build-review``, ``writes`` on the target of the lesson only (``CLAUDE.md``,
-``AGENTS.md``, the skill's directories or the role's prompt override) and the rule with
-its evidence (the objections of the runs) as its assignment. The task then runs the
-ordinary way up to a pull request.
+``AGENTS.md``, the skill's directories, the role's prompt override or, for ``seed``, the
+role's prompt in the library seed) and the rule with its evidence (the objections of the
+runs, each with its repo) as its assignment. The task then runs the ordinary way up to a
+pull request.
 
-The project is ``--project``, else the one of the tasks whose runs objected (the most of
-them), else the only project of the backlog. The task carries the marker
+The objections are read with ``sources.resolve_objections``: a key prefixed
+``<repo_id>:`` is looked up in the trace DB of that registered repo, one without a prefix
+in the repo the lesson is in. The task is filed in the backlog of that repo (the target
+repo). The project is ``--project``, else the one of the target repo's tasks whose runs
+objected (the most of them; tasks of other repos are ignored), else the only project of
+the backlog. The task carries the marker
 ``<!-- factory: lesson=<id> -->``; accepting the lesson again finds it and files nothing
 new. The backlog is written in the main checkout and committed to ``base``; a commit that
 fails leaves the task written and is reported as a warning.
@@ -34,7 +39,8 @@ from aifactory.backlog import (
     load_for_edit,
 )
 from aifactory.backlog.edit import compose_id
-from aifactory.learn.collect import Objection, collect
+from aifactory.home import haifa_home
+from aifactory.learn.collect import Objection
 from aifactory.learn.scan import trace_db
 from aifactory.learn.store import LessonStore, StoredLesson
 
@@ -45,6 +51,7 @@ LEARN_BODY = (
     "výtek, které se opakovaly v bězích. Tasky sem zakládá `factory learn accept`."
 )
 WORKFLOW = "build-review"
+SEED_AGENTS = "aifactory/src/aifactory/seed/agents"
 _TITLE_LIMIT = 90
 _NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
@@ -71,6 +78,8 @@ def target_writes(target: str, detail: str = "") -> list[str]:
         return [f".claude/skills/{suffix}", f".agents/skills/{suffix}"]
     if target == "prompt":
         return [f".factory/prompts/{name}/" if name else ".factory/prompts/"]
+    if target == "seed":
+        return [f"{SEED_AGENTS}/{name}/" if name else f"{SEED_AGENTS}/"]
     return [target]
 
 
@@ -83,6 +92,10 @@ def _where(target: str, detail: str) -> str:
         if not name:
             return "promptu role (`.factory/prompts/`)"
         return f"promptu role {name} (`.factory/prompts/{name}/`)"
+    if target == "seed":
+        if not name:
+            return f"promptu role v semínku knihovny (`{SEED_AGENTS}/`)"
+        return f"promptu role {name} v semínku knihovny (`{SEED_AGENTS}/{name}/`)"
     return f"`{target}`"
 
 
@@ -91,17 +104,22 @@ def _title(rule: str) -> str:
     return text if len(text) <= _TITLE_LIMIT else text[: _TITLE_LIMIT - 1].rstrip() + "…"
 
 
+def _repo(o: Objection) -> str:
+    return f"repo `{o.repo}`, " if o.repo else ""
+
+
 def _evidence(lesson: StoredLesson, objections: list[Objection]) -> list[str]:
     if objections:
         return [
-            f"- běh `{o.run_id}`, task `{o.task_id}` ({o.source}): {o.text}" for o in objections
+            f"- {_repo(o)}běh `{o.run_id}`, task `{o.task_id}` ({o.source}): {o.text}"
+            for o in objections
         ]
     return [f"- běh `{run}`" for run in lesson.runs]
 
 
 def task_body(lesson: StoredLesson, objections: list[Objection]) -> str:
     where = _where(lesson.target, lesson.target_detail)
-    runs = len({o.run_id for o in objections} or set(lesson.runs))
+    runs = len({(o.repo, o.run_id) for o in objections} or set(lesson.runs))
     lines = [
         f"Zapiš do {where} pravidlo z lekce `{lesson.lesson_id}`, kterou factory našla "
         "ve výtkách opakovaných v bězích:",
@@ -115,6 +133,11 @@ def task_body(lesson: StoredLesson, objections: list[Objection]) -> str:
         lines.append(
             "Skill uprav v `.claude/skills/` a kopii v `.agents/skills/` srovnej příkazem "
             "`factory skills sync`."
+        )
+    if lesson.target == "seed":
+        lines.append(
+            "Po merge se změna do knihovny dostane příkazem `factory library seed` nebo "
+            "novou verzí HAIFA."
         )
     lines += [
         "",
@@ -181,6 +204,21 @@ def _existing(backlog: Backlog, lesson: StoredLesson) -> Task | None:
     return None
 
 
+def _repo_id(repo: Path) -> str:
+    """The registry id of ``repo``, '' when the dashboard does not know it."""
+    # aifactory.web imports the learn package
+    from aifactory.web.registry import Registry, same_repo
+
+    state, _warnings = Registry(haifa_home()).snapshot()
+    return next((e.id for e in state.repos if same_repo(e.path, repo)), "")
+
+
+def _own_tasks(objections: list[Objection], repo: Path) -> list[str]:
+    """The tasks of the objections from ``repo`` itself, in order, without repeats."""
+    own = _repo_id(repo)
+    return list(dict.fromkeys(o.task_id for o in objections if o.repo == own))
+
+
 @dataclass
 class Accepted:
     lesson: StoredLesson
@@ -222,9 +260,10 @@ def accept(repo: Path, lesson_id: str, project_id: str | None = None) -> Accepte
         if found is not None:
             stored = store.accept(lesson.lesson_id, found.id)
             return Accepted(stored, found, existed=True)
-        keys = set(lesson.complaints)
-        objections = [o for o in collect(db) if o.key in keys]
-        tasks = list(dict.fromkeys(o.task_id for o in objections))
+        from aifactory.learn.sources import resolve_objections  # imports aifactory.web
+
+        objections = resolve_objections(lesson.complaints, repo)
+        tasks = _own_tasks(objections, repo)
         project = _project(backlog, tasks, project_id)
         step = _learn_step(project, backlog.containers)
         step_created = False

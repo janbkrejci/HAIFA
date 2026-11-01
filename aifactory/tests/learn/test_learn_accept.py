@@ -13,8 +13,10 @@ from advice_fixture import git
 from aifactory.backlog import Task, check_backlog, load_backlog
 from aifactory.cli import main
 from aifactory.learn.accept import WORKFLOW, lesson_marker, target_writes
+from aifactory.learn.collect import collect
+from aifactory.learn.sources import FACTORY_REPO_ENV
 from aifactory.learn.store import ACCEPTED, REJECTED, LessonStore, StoredLesson
-from learn_fixture import fake_learner, make_learn_repo
+from learn_fixture import fake_learner, make_learn_repo, register_learn_repos
 
 
 @pytest.fixture
@@ -159,3 +161,145 @@ def test_target_writes_cover_the_rules_file_only() -> None:
     assert target_writes("skill", "../etc") == [".claude/skills/", ".agents/skills/"]
     assert target_writes("prompt", "test-reviewer") == [".factory/prompts/test-reviewer/"]
     assert target_writes("prompt", "") == [".factory/prompts/"]
+    assert target_writes("seed", "reviewer") == ["aifactory/src/aifactory/seed/agents/reviewer/"]
+    assert target_writes("seed", "../x") == ["aifactory/src/aifactory/seed/agents/"]
+
+
+@pytest.fixture
+def two(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Path]:
+    monkeypatch.delenv(FACTORY_REPO_ENV, raising=False)
+    return register_learn_repos(tmp_path, "factory", "beta")
+
+
+def _keys(repo: Path, repo_id: str) -> list[str]:
+    """The prefixed keys of the fixture's objections (run-a, run-b, run-b)."""
+    return [f"{repo_id}:{o.key}" for o in collect(repo / ".factory/trace.db")]
+
+
+def _save(repo: Path, lesson: StoredLesson) -> None:
+    store = LessonStore(repo / ".factory/trace.db")
+    try:
+        store.save_proposed(lesson)
+    finally:
+        store.close()
+
+
+def test_accept_a_lesson_with_objections_from_two_repos(
+    two: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    factory, beta = two["factory"], two["beta"]
+    own, other = _keys(factory, "factory"), _keys(beta, "beta")
+    _save(
+        factory,
+        StoredLesson(
+            "L00000001",
+            "Test every new command.",
+            "AGENTS.md",
+            complaints=[own[1], other[0]],  # factory run-b (P01-S01-T02), beta run-a
+            runs=["run-b", "run-a"],
+            origin=["factory", "beta"],
+        ),
+    )
+
+    data = _accept(capsys, factory, "L00000001")
+    task = data["task"]
+    assert task["id"] == "P01-LEARN-T01" and task["writes"] == ["AGENTS.md"]
+    node = load_backlog(factory).by_id[task["id"]]
+    assert isinstance(node, Task)
+    assert node.writes == ["AGENTS.md"]
+    # beta's run-a is of beta's P01-S01-T01, not of the factory backlog's task of that id
+    assert node.related == []
+    assert "Výtky z 2 běhů" in node.body
+    assert (
+        "- repo `factory`, běh `run-b`, task `P01-S01-T02` (review): tests: no test for 'factory x'"
+    ) in node.body
+    assert (
+        "- repo `beta`, běh `run-a`, task `P01-S01-T01` (review): The new CLI command has no test."
+    ) in node.body
+    assert not list(beta.glob("backlog/P01/LEARN-*"))
+
+    again = _accept(capsys, factory, "L00000001")
+    assert again["existed"] is True and again["task"]["id"] == task["id"]
+    learn_step = factory / "backlog/P01" / Path(node.path).parent.name
+    assert len(list(learn_step.glob("P01-LEARN-T*.md"))) == 1
+
+
+def test_accept_relates_only_tasks_of_the_target_repo(
+    two: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    factory, beta = two["factory"], two["beta"]
+    _save(
+        factory,
+        StoredLesson(
+            "L00000002",
+            "Mind the reviewer.",
+            "AGENTS.md",
+            complaints=[_keys(factory, "factory")[0], _keys(beta, "beta")[0]],
+            runs=["run-a"],
+        ),
+    )
+    data = _accept(capsys, factory, "L00000002")
+    node = load_backlog(factory).by_id[data["task"]["id"]]
+    assert isinstance(node, Task)
+    assert node.related == ["P01-S01-T01"]
+
+
+def test_tasks_of_another_repo_do_not_choose_the_project(
+    two: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    factory, beta = two["factory"], two["beta"]
+    (factory / "backlog/P02").mkdir()
+    (factory / "backlog/P02/index.md").write_text("---\nid: P02\ntitle: Other\n---\n")
+    git(factory, "add", ".")
+    git(factory, "commit", "-qm", "second project")
+    _save(
+        factory,
+        StoredLesson(
+            "L00000003",
+            "Keep the review short.",
+            "AGENTS.md",
+            complaints=_keys(beta, "beta"),  # beta's P01-S01-T01 and T02
+            runs=["run-a", "run-b"],
+        ),
+    )
+
+    assert main(["learn", "accept", "L00000003", "--repo", str(factory), "--json"]) == 2
+    assert json.loads(capsys.readouterr().out)["error"]["code"] == "project_required"
+
+    data = _accept(capsys, factory, "L00000003", "--project", "P02")
+    assert data["task"]["id"] == "P02-LEARN-T01"
+    node = load_backlog(factory).by_id["P02-LEARN-T01"]
+    assert isinstance(node, Task)
+    assert node.related == []
+    assert "- repo `beta`, běh `run-a`" in node.body
+
+
+def test_accept_a_seed_lesson_writes_the_role_prompt_of_the_seed(
+    two: dict[str, Path], capsys: pytest.CaptureFixture[str]
+) -> None:
+    factory, beta = two["factory"], two["beta"]
+    _save(
+        factory,
+        StoredLesson(
+            "L00000004",
+            "The reviewer names the failing test.",
+            "seed",
+            "reviewer",
+            complaints=[_keys(factory, "factory")[0], _keys(beta, "beta")[1]],
+            runs=["run-a", "run-b"],
+            origin=["factory", "beta"],
+        ),
+    )
+
+    data = _accept(capsys, factory, "L00000004")
+    writes = ["aifactory/src/aifactory/seed/agents/reviewer/"]
+    assert data["task"]["writes"] == writes
+    node = load_backlog(factory).by_id[data["task"]["id"]]
+    assert isinstance(node, Task)
+    assert node.writes == writes
+    assert (
+        "promptu role reviewer v semínku knihovny (`aifactory/src/aifactory/seed/agents/reviewer/`)"
+    ) in node.body
+    assert "`factory library seed`" in node.body
+    assert "- repo `beta`, běh `run-b`" in node.body
+    assert "- repo `factory`, běh `run-a`" in node.body

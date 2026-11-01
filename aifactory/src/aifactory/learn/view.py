@@ -1,11 +1,13 @@
 """The lessons of a repo for the dashboard: their occurrences and, once adopted, their effect.
 
-Every stored lesson comes with its objections (``collect``, by the keys the lesson keeps)
-and the runs they come from. An accepted lesson also carries its task's pull request; once
-that is merged, ``effect`` counts the runs (and objections) of the lesson before and after
-the merge. The grouping is the scan's: a later ``factory learn scan`` adds the objections
-that repeat an accepted lesson to it (``scan.repeats_of``). The runs of the lesson's own
-task are left out of the count.
+Every stored lesson comes with its objections (``sources.resolve_objections``, by the keys
+the lesson keeps, so objections of other registered repos count too), the runs they come
+from and the repos of the objections (``origin``). An accepted lesson also carries its
+task's pull request, looked up in the trace DB of the lesson's repo; once that is merged,
+``effect`` counts the runs (and objections) of the lesson before and after the merge. The
+grouping is the scan's: a later ``factory learn scan`` adds the objections that repeat an
+accepted lesson to it (``scan.repeats_of``). The runs of the lesson's own task (in the
+lesson's repo) are left out of the count.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ from typing import Any
 
 from aifactory import database
 from aifactory.engine.tracer import BUSY_TIMEOUT
-from aifactory.learn.collect import Objection, collect
+from aifactory.learn.collect import Objection
 from aifactory.learn.scan import _snippet, trace_db
 from aifactory.learn.store import ACCEPTED, PROPOSED, LessonStore, StoredLesson
 
@@ -67,13 +69,17 @@ def _prs(db: Path, task_ids: list[str]) -> dict[str, dict[str, Any]]:
 
 
 def _count(objections: list[Objection]) -> dict[str, int]:
-    return {"runs": len({o.run_id for o in objections}), "objections": len(objections)}
+    return {"runs": len({(o.repo, o.run_id) for o in objections}), "objections": len(objections)}
 
 
 def effect(
-    lesson: StoredLesson, objections: list[Objection], merged_at: str | None
+    lesson: StoredLesson, objections: list[Objection], merged_at: str | None, own: str = ""
 ) -> dict[str, Any] | None:
-    """How often the lesson's mistake came up before and after its PR was merged."""
+    """How often the lesson's mistake came up before and after its PR was merged.
+
+    ``own`` is the registry id of the lesson's repo: only its runs of the lesson's task
+    are left out (another repo may have a task of the same id).
+    """
     merged = _moment(merged_at)
     if lesson.state != ACCEPTED or merged is None:
         return None
@@ -81,20 +87,30 @@ def effect(
     after: list[Objection] = []
     for o in objections:
         moment = _moment(o.created_at)
-        if moment is None or (lesson.task_id and o.task_id == lesson.task_id):
+        if moment is None or (lesson.task_id and o.task_id == lesson.task_id and o.repo == own):
             continue
         (after if moment >= merged else before).append(o)
     return {"merged_at": merged_at, "before": _count(before), "after": _count(after)}
 
 
+def _origin(lesson: StoredLesson, objections: list[Objection]) -> list[str]:
+    found = list(dict.fromkeys(o.repo for o in objections if o.repo))
+    return found or list(lesson.origin)
+
+
 def lesson_json(
-    lesson: StoredLesson, objections: list[Objection], pr: dict[str, Any] | None
+    lesson: StoredLesson,
+    objections: list[Objection],
+    pr: dict[str, Any] | None,
+    own: str = "",
 ) -> dict[str, Any]:
-    runs: dict[str, str] = {}
+    runs: dict[tuple[str, str], str] = {}
     for o in objections:
-        runs.setdefault(o.run_id, o.task_id)
+        runs.setdefault((o.repo, o.run_id), o.task_id)
+    known = {run for _repo, run in runs}
     for run in lesson.runs:
-        runs.setdefault(run, "")
+        if run not in known:
+            runs.setdefault((own, run), "")
     return {
         "id": lesson.lesson_id,
         "rule": lesson.rule,
@@ -104,10 +120,11 @@ def lesson_json(
         "reason": lesson.reason,
         "task_id": lesson.task_id,
         "occurrences": len(runs),
-        "runs": [{"run_id": r, "task_id": t} for r, t in runs.items()],
-        "complaints": [_snippet(o) for o in objections],
+        "origin": _origin(lesson, objections),
+        "runs": [{"run_id": r, "task_id": t, "repo": repo} for (repo, r), t in runs.items()],
+        "complaints": [{**_snippet(o), "repo": o.repo} for o in objections],
         "pr": pr,
-        "effect": effect(lesson, objections, pr["merged_at"] if pr else None),
+        "effect": effect(lesson, objections, pr["merged_at"] if pr else None, own),
     }
 
 
@@ -123,13 +140,17 @@ def lessons(repo: Path) -> list[dict[str, Any]]:
         store.close()
     if not stored:
         return []
-    by_key = {o.key: o for o in collect(db)}
+    from aifactory.learn.accept import _repo_id
+    from aifactory.learn.sources import resolve_objections  # imports aifactory.web
+
+    own = _repo_id(repo)
     prs = _prs(db, [s.task_id for s in stored if s.task_id])
     result = [
         lesson_json(
             s,
-            [by_key[k] for k in s.complaints if k in by_key],
+            resolve_objections(s.complaints, repo),
             prs.get(s.task_id) if s.task_id else None,
+            own,
         )
         for s in stored
     ]
