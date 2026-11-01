@@ -5,14 +5,24 @@ from __future__ import annotations
 import os
 from collections.abc import Iterator
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
-from multi_repo import git, rmtree
-from overview_fixture import T_REV, dead_pid, make_installed_repo, make_overview_repo, register
+from multi_repo import commit_all, git, rmtree
+from overview_fixture import (
+    T_FAIL,
+    T_REV,
+    dead_pid,
+    make_installed_repo,
+    make_overview_repo,
+    register,
+)
 
 from aifactory.review import ReviewError, SyncResult
 from aifactory.review import sync as review_sync
+from aifactory.run.store import TaskChainRow, TaskRunStore
 from aifactory.web.backlog import _runtime
+from aifactory.web.launcher import Launcher
 from aifactory.web.overview import Overview
 from aifactory.web.pr_refresh import refresh_registered
 
@@ -89,3 +99,62 @@ def test_pr_merged_outside_leaves_review_and_kanban(repo_a: Path, tmp_path: Path
     assert [m["task_id"] for m in item["merged_outside"]] == [T_REV]
     assert item["sync_pr"] is None
     assert T_REV not in _runtime(repo_a)[0].in_review
+
+
+@pytest.mark.parametrize("stop", ["not_merged", "disabled", "failed", "exhausted"])
+@pytest.mark.parametrize("auto", [False, True])
+def test_refresh_resumes_only_a_not_merged_chain_once_via_launcher(
+    repo_a: Path, tmp_path: Path, stop: str, auto: bool
+) -> None:
+    step = repo_a / "backlog/M01-core/S01-model/index.md"
+    if not auto:
+        step.write_text(
+            step.read_text(encoding="utf-8").replace("writes:", "auto_continue: true\nwrites:"),
+            encoding="utf-8",
+        )
+        commit_all(repo_a, "enable auto continue")
+    store = TaskRunStore(_db(repo_a))
+    try:
+        for run_id in ("r-run", "r-dead"):
+            store.finish(run_id, "aborted", None, "stopped")
+        store.set_queue_order([T_FAIL])
+        store.start_chain(
+            TaskChainRow(
+                "stopped",
+                T_REV,
+                None,
+                1,
+                "finished",
+                "0",
+                "0",
+                stop=stop,
+                run_ids='["r-rev"]',
+                auto=int(auto),
+            )
+        )
+    finally:
+        store.close()
+    registry = register(tmp_path / "home", repo_a)
+    launcher = Mock(spec=Launcher)
+    launcher.start.return_value = None  # claim pending: process continues independently
+
+    def refresh(root: Path) -> SyncResult:
+        store = TaskRunStore(_db(root))
+        try:
+            store.update_pr(REV_BRANCH, state="merged")
+        finally:
+            store.close()
+        # Return the event twice as well: the claim must prevent a duplicate launch.
+        return SyncResult(
+            pr=None,
+            created=False,
+            updated=False,
+            states=[{"task_id": T_REV, "state": "merged"}],
+        )
+
+    assert refresh_registered(registry, refresh=refresh, launcher=launcher) == []
+    assert refresh_registered(registry, refresh=refresh, launcher=launcher) == []
+    if stop == "not_merged":
+        launcher.start.assert_called_once_with(repo_a, T_FAIL, note=None, force=False, auto=auto)
+    else:
+        launcher.start.assert_not_called()

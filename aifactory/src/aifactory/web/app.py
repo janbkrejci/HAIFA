@@ -2853,7 +2853,10 @@ def create_multi_app(
                     )
                 ),
                 asyncio.create_task(
-                    periodic(lambda: refresh_registered(app.state.registry), PR_REFRESH_INTERVAL)
+                    periodic(
+                        lambda: refresh_registered(app.state.registry, launcher=app.state.launcher),
+                        PR_REFRESH_INTERVAL,
+                    )
                 ),
                 asyncio.create_task(
                     periodic(

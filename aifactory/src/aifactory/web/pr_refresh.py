@@ -7,6 +7,8 @@ of every registered repository every ``PR_REFRESH_INTERVAL`` seconds with
 ``aifactory.review.sync.refresh_prs`` (no fetch, worktree, commit or PR). ``GET /api/overview``
 stays read-only and never calls the provider itself. A repository without a trace DB is
 skipped and no trace DB is created; one broken repository never stops the others.
+When a launcher is supplied, merged task PRs also resume eligible not-merged chains
+through separate task run processes.
 """
 
 from __future__ import annotations
@@ -23,6 +25,9 @@ from aifactory.review.errors import ReviewError
 from aifactory.review.sync import SyncResult
 from aifactory.run.errors import TaskRunError
 from aifactory.run.gitops import repo_layout
+from aifactory.run.queue import continue_after_merge
+from aifactory.run.store import TaskRunRow
+from aifactory.web.launcher import Launcher
 from aifactory.web.registry import Registry
 from aifactory.web.repos import trace_db_of
 
@@ -38,9 +43,10 @@ def _default_refresh(root: Path) -> SyncResult:
 def refresh_registered(
     registry: Registry,
     *,
+    launcher: Launcher | None = None,
     refresh: Callable[[Path], SyncResult] | None = None,
 ) -> list[str]:
-    """Refresh open task PRs of every registered repository that has a trace DB; warnings."""
+    """Refresh PRs, resume externally merged chains via the launcher, and return warnings."""
     run = refresh if refresh is not None else _default_refresh
     state, _ = registry.snapshot()
     warnings: list[str] = []
@@ -60,6 +66,22 @@ def refresh_registered(
             warnings.append(f"{entry.id}: {exc}")
             continue
         warnings += [f"{entry.id}: {warning}" for warning in result.warnings]
+        if launcher is not None:
+
+            def start(task_id: str, auto: bool, root: Path = root) -> TaskRunRow | None:
+                return launcher.start(root, task_id, note=None, force=False, auto=auto)
+
+            for pr in result.states:
+                if pr["state"] != "merged":
+                    continue
+                try:
+                    continue_after_merge(
+                        root,
+                        pr["task_id"],
+                        start=start,
+                    )
+                except (ReviewError, TaskRunError, ConfigError, OSError, sqlite3.Error) as exc:
+                    warnings.append(f"{entry.id}: {exc}")
     for warning in warnings:
         log.warning("PR refresh: %s", warning)
     return warnings

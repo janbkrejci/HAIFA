@@ -158,6 +158,7 @@ SKIP_REASONS: tuple[str, ...] = (
     "waits_on_pr",
     "blocked",
     "in_review",
+    "merged_outside",
     "running",
     "cannot_start",
     "writes_overlap",
@@ -282,6 +283,7 @@ def select_next(
     *,
     open_pr: Callable[[str], TaskPrRow | None],
     running: Callable[[str], TaskRunRow | None],
+    latest_pr: Callable[[str], TaskPrRow | None] | None = None,
     exclude: Collection[str] = frozenset(),
     conflict: Callable[[Task], Skip | None] | None = None,
     require_auto_continue: bool = False,
@@ -309,6 +311,7 @@ def select_next(
         candidates(backlog, after, list(dict.fromkeys([*first, *prefer, *prefs.order]))),
         backlog,
         open_pr=open_pr,
+        latest_pr=latest_pr,
         running=running,
         exclude=exclude,
         conflict=conflict,
@@ -438,6 +441,7 @@ def select_ready(
     *,
     open_pr: Callable[[str], TaskPrRow | None],
     running: Callable[[str], TaskRunRow | None],
+    latest_pr: Callable[[str], TaskPrRow | None] | None = None,
     exclude: Collection[str] = frozenset(),
     conflict: Callable[[Task], Skip | None] | None = None,
     prefs: QueuePrefs | None = None,
@@ -454,6 +458,7 @@ def select_ready(
         repo_candidates(backlog, list(dict.fromkeys([*first, *prefs.order]))),
         backlog,
         open_pr=open_pr,
+        latest_pr=latest_pr,
         running=running,
         exclude=exclude,
         conflict=conflict,
@@ -469,6 +474,7 @@ def _select(
     *,
     open_pr: Callable[[str], TaskPrRow | None],
     running: Callable[[str], TaskRunRow | None],
+    latest_pr: Callable[[str], TaskPrRow | None] | None = None,
     exclude: Collection[str],
     conflict: Callable[[Task], Skip | None] | None,
     require_auto_continue: bool,
@@ -499,6 +505,16 @@ def _select(
         busy = running(task.id)
         if busy is not None:
             skipped.append(Skip(task.id, "running", f"run {busy.run_id} on {busy.branch}"))
+            continue
+        newest = latest_pr(task.id) if latest_pr is not None else None
+        if newest is not None and newest.state == "merged":
+            skipped.append(
+                Skip(
+                    task.id,
+                    "merged_outside",
+                    f"PR {newest.url} sloučen; spusťte factory backlog sync",
+                )
+            )
             continue
         own = open_pr(task.id)
         if own is not None:
@@ -956,6 +972,7 @@ def start_factory(
                     selection = select_ready(
                         backlog,
                         open_pr=store.open_pr,
+                        latest_pr=store.latest_pr,
                         running=store.running,
                         exclude=exclude,
                         conflict=_Pending(occupancy, pending),
@@ -1112,6 +1129,7 @@ def continue_after_merge(
     repo: Path,
     task_id: str,
     *,
+    start: Callable[[str, bool], TaskRunRow | None] | None = None,
     provider: GitProvider | None = None,
     code: CodeRunner | None = None,
     runner: ChainRunner | None = None,
@@ -1121,6 +1139,8 @@ def continue_after_merge(
 
     Claim before starting anything: repeated or concurrent approvals consume the old
     chain only once. A consumed chain stays visible with its original stop reason.
+    With ``start``, hand the next task and the chain's ``auto`` flag to an external
+    launcher and return None after dispatch; the new process owns the continued chain.
     """
     main = gitops.main_root(repo)
     db = _trace_db(repo)
@@ -1169,6 +1189,7 @@ def continue_after_merge(
                     backlog,
                     after,
                     open_pr=store.open_pr,
+                    latest_pr=store.latest_pr,
                     running=store.running,
                     exclude=excluded,
                     conflict=conflict,
@@ -1192,6 +1213,9 @@ def continue_after_merge(
                 )
 
             try:
+                if start is not None:
+                    start(next_id, bool(row.auto))
+                    return None
                 chain = run_chain(
                     repo,
                     next_id,
@@ -1458,6 +1482,7 @@ def _sequential(
                     backlog,
                     after,
                     open_pr=store.open_pr,
+                    latest_pr=store.latest_pr,
                     running=store.running,
                     exclude=exclude,
                     require_auto_continue=not auto,
@@ -1561,6 +1586,7 @@ def _run_parallel(
                         backlog,
                         after,
                         open_pr=store.open_pr,
+                        latest_pr=store.latest_pr,
                         running=store.running,
                         exclude=exclude,
                         conflict=occupancy,
