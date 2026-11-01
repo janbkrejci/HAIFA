@@ -2,6 +2,7 @@
 id: LEARN-S02-T01
 title: "Zdroje lekcí: výtky ze všech registrovaných rep a repo factory"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/learn/sources.py, aifactory/src/aifactory/learn/collect.py, aifactory/tests/learn/test_learn_sources.py, aifactory/tests/learn_fixture.py]

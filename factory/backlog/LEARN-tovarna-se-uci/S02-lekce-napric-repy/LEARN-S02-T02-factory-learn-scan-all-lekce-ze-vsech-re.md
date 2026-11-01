@@ -2,6 +2,7 @@
 id: LEARN-S02-T02
 title: "factory learn scan --all: lekce ze všech rep s cílovým repem"
 status: done
+archived: true
 workflow: plan-build-test
 depends_on: [LEARN-S02-T01]
 writes: [aifactory/src/aifactory/learn/scan.py, aifactory/src/aifactory/learn/store.py, aifactory/src/aifactory/learn/__init__.py, aifactory/src/aifactory/cli.py, aifactory/src/aifactory/seed/agents/learner/, aifactory/tests/learn/test_learn_scan.py, aifactory/tests/learn/test_learn_store.py, aifactory/tests/learn_fixture.py, aifactory/tests/library/test_library_seed.py]
