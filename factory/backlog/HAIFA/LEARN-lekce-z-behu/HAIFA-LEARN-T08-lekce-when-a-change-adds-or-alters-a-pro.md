@@ -1,7 +1,7 @@
 ---
 id: HAIFA-LEARN-T08
 title: "Lekce: When a change adds or alters a protection or limit (write guards, timeouts, proces…"
-status: todo
+status: done
 workflow: build-review
 depends_on: []
 related: [HAIFA-TODO-T26, HAIFA-REFINEMENT-T76]
@@ -31,3 +31,4 @@ Výtky z 2 běhů, ze kterých lekce vznikla:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-01 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/187 · náklady $0.00
