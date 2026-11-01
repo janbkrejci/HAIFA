@@ -263,3 +263,30 @@ def test_task_stacked_on_a_review_pr_takes_over_its_slot_once(repo: Path) -> Non
     # T02 took T01's slot; no slot is left for T03, which stacks on the same PR
     assert start.calls == [T02]
     assert result.free_slots == 0
+
+
+@pytest.mark.parametrize("stacked", [False, True])
+def test_merged_todo_task_is_skipped_and_dependents_stay_blocked(repo: Path, stacked: bool) -> None:
+    setup_tasks(
+        repo,
+        [(T01, "src/a/"), (T03, "src/c/")],
+        config=f"base: main\ndocs_root: .\nstacked_prs: {str(stacked).lower()}\n",
+    )
+    write(
+        repo,
+        f"{CORE}/{STEP}/{T02}.md",
+        f"---\nid: {T02}\ntitle: Dependent\nstatus: todo\nwrites: [src/b/]\n"
+        f"depends_on: [{T01}]\n---\n\nDo it.\n",
+    )
+    commit_all(repo, "dependent waits for done in base")
+    open_pr(repo, T01)
+    close_pr(repo, T01, "merged")
+    start = FakeStart(repo)
+    result = start_factory(repo, start, max_parallel=3, pr_files=no_files)
+    assert start.calls == [T03]
+    assert {s.task_id: s.reason for s in result.skipped} == {
+        T01: "merged_outside",
+        T02: "blocked",
+    }
+    merged = next(s for s in result.skipped if s.task_id == T01)
+    assert "factory backlog sync" in merged.detail

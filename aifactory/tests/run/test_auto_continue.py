@@ -1026,3 +1026,28 @@ def test_latest_chain_ending_with_task_includes_ineligible_newer_chains(tmp_path
         assert store.latest_chain_ending_with(T02) is None
     finally:
         store.close()
+
+
+def test_auto_continue_skips_latest_merged_pr_but_allows_a_newer_closed_pr(repo: Path) -> None:
+    setup_chain(repo, step_auto=True, t02_depends=True)
+    backlog = load_backlog(repo)
+    after = backlog.by_id[T03]
+    assert isinstance(after, Task)
+    merged = TaskPrRow("b", T01, "local", "b", "URL", "main", "0", "t", "", "merged", "", "")
+    for state in ("merged", "closed", "open"):
+        newest = replace(merged, state=state)
+        sel = select_next(
+            backlog,
+            after,
+            open_pr=lambda _: None,
+            running=_none,
+            latest_pr={T01: newest}.get,
+            require_auto_continue=True,
+        )
+        assert (sel.next.id if sel.next is not None else None) == (
+            None if state == "merged" else T01
+        )
+        assert {s.task_id: s.reason for s in sel.skipped} == {
+            **({T01: "merged_outside"} if state == "merged" else {}),
+            T02: "blocked",
+        }
