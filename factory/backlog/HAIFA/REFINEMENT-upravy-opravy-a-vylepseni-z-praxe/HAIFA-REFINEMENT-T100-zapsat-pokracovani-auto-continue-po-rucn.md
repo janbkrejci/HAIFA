@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T100
 title: Zapsat pokračování auto-continue po ručním sloučení PR do decisions a příručky
-status: todo
+status: done
 workflow: build-review
 depends_on: [HAIFA-REFINEMENT-T98, HAIFA-REFINEMENT-T99]
 writes: [docs/decisions.md, aifactory/src/aifactory/guide/05-behy-a-review.md]
@@ -20,3 +20,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-01 · workflow build-review · PR https://github.com/janbkrejci/HAIFA/pull/192 · náklady $0.00
