@@ -1,7 +1,7 @@
 ---
 id: LEARN-S02-T01
 title: "Zdroje lekcí: výtky ze všech registrovaných rep a repo factory"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/learn/sources.py, aifactory/src/aifactory/learn/collect.py, aifactory/tests/learn/test_learn_sources.py, aifactory/tests/learn_fixture.py]
@@ -26,3 +26,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-01 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/188 · náklady $1.22
