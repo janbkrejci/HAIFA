@@ -2,7 +2,7 @@
 
 ## Context
 
-The objections of the repository's task runs, the lessons a person rejected or accepted, the targets and `output_schema` (the JSON schema of your answer), as JSON:
+The objections of the repository's task runs (of every registered repo when the context has `repos`), the lessons a person rejected or accepted, the registered repos (`repos`, when the scan reads every repo), the targets and `output_schema` (the JSON schema of your answer), as JSON:
 
 {{prompt}}
 
