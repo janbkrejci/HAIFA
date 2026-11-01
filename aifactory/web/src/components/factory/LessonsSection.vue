@@ -5,8 +5,12 @@
 // backlog task that writes the rule) and Zamítnout (`factory learn dismiss`). An accepted
 // lesson links its task and, once the task's PR is merged, counts the runs with a similar
 // objection before and after the merge (grouped by the scan, so a later scan updates it).
-// Najít lekce starts the scan in the background; the section polls until it ends.
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+// Najít lekce starts the scan in the background; the section polls until it ends. With Ze
+// všech rep (on by default) the scan reads the objections of every registered repo and saves
+// each lesson in its target repo: a lesson shows the repos its objections come from, each
+// objection its repo, and a finished scan links the Lekce section of the repos that got
+// lessons. `#/r/<id>/factory/lessons` opens and scrolls to this section.
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Search } from 'lucide-vue-next'
 import { ApiError } from '@/lib/api'
 import { errorText, fmtTime, plural } from '@/lib/format'
@@ -15,16 +19,19 @@ import {
   acceptLesson,
   dismissLesson,
   fetchLearn,
+  lessonsElsewhere,
   startLessonScan,
   targetText,
   type Lesson,
+  type LessonComplaint,
   type LessonScan,
 } from '@/lib/learn'
 import { useNames } from '@/lib/names'
-import { runHref, taskHref } from '@/lib/router'
+import { currentRepoId, repoHref, runHref, taskHref, useRouteParams } from '@/lib/router'
 import CollapsibleSection from '@/components/ui/CollapsibleSection.vue'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
 import Spinner from '@/components/ui/Spinner.vue'
+import Tooltip from '@/components/ui/Tooltip.vue'
 
 const props = withDefaults(defineProps<{ pollMs?: number; disabled?: boolean }>(), { pollMs: 2000, disabled: false })
 const open = defineModel<boolean>('open', { default: true })
@@ -42,6 +49,10 @@ const notice = ref<string | null>(null)
 /** The lesson whose acceptance needs a project chosen by the person, with the choice. */
 const projectFor = ref<string | null>(null)
 const project = ref('')
+/** Ze všech rep: the scan reads the objections of every registered repo. */
+const allRepos = ref(true)
+const ownRepo = currentRepoId()
+const section = ref<InstanceType<typeof CollapsibleSection> | null>(null)
 
 const { names, levels } = useNames()
 const projectOptions = computed(() =>
@@ -56,6 +67,46 @@ const accepted = computed(() => lessons.value.filter((l) => l.state === 'accepte
 const rejected = computed(() => lessons.value.filter((l) => l.state === 'rejected'))
 const scanning = computed(() => starting.value || scan.value?.state === 'running')
 const busy = computed(() => props.disabled || acting.value !== null)
+const elsewhere = computed(() => (scan.value?.state === 'done' ? lessonsElsewhere(scan.value.result) : []))
+const elsewhereTotal = computed(() => elsewhere.value.reduce((sum, [, n]) => sum + n, 0))
+const scanWarnings = computed(() => (scan.value?.state === 'done' ? (scan.value.result?.warnings ?? []) : []))
+
+/** The Lekce section of another repo: the link switches the repo like the rest of the dashboard. */
+function lessonsHref(repo: string): string {
+  return repoHref(repo, 'factory', 'lessons')
+}
+
+/** A run or task of an objection from another repo opens in that repo. */
+function complaintRunHref(c: LessonComplaint): string {
+  return c.repo && c.repo !== ownRepo ? repoHref(c.repo, 'runs', c.run_id) : runHref(c.run_id)
+}
+
+function complaintTaskHref(c: LessonComplaint): string {
+  return c.repo && c.repo !== ownRepo ? repoHref(c.repo, 'backlog', c.task_id) : taskHref(c.task_id)
+}
+
+function originTip(lesson: Lesson): string {
+  return lesson.origin.length === 1
+    ? `Výtky této lekce jsou z běhů repa ${lesson.origin[0]}.`
+    : `Výtky této lekce jsou z běhů rep ${lesson.origin.join(', ')}.`
+}
+
+function lessonsCount(n: number): string {
+  return `${n} ${plural(n, 'lekce', 'lekce', 'lekcí')}`
+}
+
+const params = useRouteParams()
+watch(
+  params,
+  async (value) => {
+    if (value[0] !== 'lessons') return
+    open.value = true
+    await nextTick()
+    const el = section.value?.$el as HTMLElement | undefined
+    el?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+  },
+  { immediate: true },
+)
 
 let timer: ReturnType<typeof setTimeout> | undefined
 let generation = 0
@@ -83,7 +134,7 @@ async function findLessons(): Promise<void> {
   notice.value = null
   error.value = null
   try {
-    scan.value = await startLessonScan()
+    scan.value = await startLessonScan({ all: allRepos.value })
   } catch (e) {
     error.value = errorText(e)
   } finally {
@@ -148,11 +199,19 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <CollapsibleSection v-model:open="open" heading="Lekce" class="lessons" data-test="lessons">
+  <CollapsibleSection ref="section" v-model:open="open" heading="Lekce" class="lessons" data-test="lessons">
     <template #aside>
-      <button type="button" class="btn" :disabled="scanning || busy" data-test="lessons-scan" @click="findLessons">
-        <Search :size="14" aria-hidden="true" /> Najít lekce
-      </button>
+      <div class="scan-controls">
+        <Tooltip text="Projde výtky běhů všech rep v dashboardu a každou lekci uloží do repa, kam pravidlo patří.">
+          <label class="all-repos">
+            <input v-model="allRepos" type="checkbox" class="switch" role="switch" :disabled="scanning || busy" data-test="lessons-all" />
+            Ze všech rep
+          </label>
+        </Tooltip>
+        <button type="button" class="btn" :disabled="scanning || busy" data-test="lessons-scan" @click="findLessons">
+          <Search :size="14" aria-hidden="true" /> Najít lekce
+        </button>
+      </div>
     </template>
     <p class="hint">
       Výtky, které se opakují v bězích, seskupí agent learner do lekcí. Přijatá lekce se stane taskem, který pravidlo zapíše do
@@ -162,14 +221,23 @@ onBeforeUnmount(() => {
     <p v-else-if="scan?.state === 'failed'" class="error" data-test="lessons-scan-error">{{ scan.error }}</p>
     <p v-else-if="scan?.state === 'done' && scan.result" class="status" data-test="lessons-scan-done">
       Hledání {{ fmtTime(scan.finished_at) }}: {{ scan.result.objections }} výtek z {{ runs(scan.result.runs) }},
+      <template v-if="scan.all && scan.result.repos">ze všech rep ({{ scan.result.repos }}), </template>
       lekcí: {{ scan.result.lessons }}<template v-if="scan.result.repeats">, opakování přijatých lekcí: {{ scan.result.repeats }}</template>.
     </p>
+    <p v-if="elsewhere.length" class="notice" data-test="lessons-elsewhere">
+      Do jiných rep se uložilo {{ lessonsCount(elsewhereTotal) }}:
+      <template v-for="([repo, n], i) in elsewhere" :key="repo"
+        ><template v-if="i">, </template
+        ><a :href="lessonsHref(repo)" class="mono" data-test="lessons-elsewhere-link" :data-repo="repo">{{ repo }}</a> ({{ n }})</template
+      >. Najdeš je v sekci Lekce toho repa.
+    </p>
+    <p v-for="(w, i) in scanWarnings" :key="`w-${i}`" class="dim" data-test="lessons-scan-warning">{{ w }}</p>
     <p v-if="error" class="error" data-test="lessons-error">{{ error }}</p>
     <p v-if="loadError" class="error" data-test="lessons-load-error">Lekce se nepodařilo načíst: {{ loadError }}</p>
     <p v-if="notice" class="notice" data-test="lessons-notice">{{ notice }}</p>
     <p v-if="loading" class="status"><Spinner /> Načítám lekce…</p>
     <p v-else-if="!lessons.length && !scanning" class="empty" data-test="lessons-empty">
-      Zatím žádné lekce. Najít lekce projde výtky všech běhů repa.
+      Zatím žádné lekce. Najít lekce projde výtky všech běhů repa, se Ze všech rep i ostatních rep v dashboardu.
     </p>
 
     <ul v-if="proposed.length" class="list">
@@ -178,11 +246,20 @@ onBeforeUnmount(() => {
         <p class="meta">
           <span class="mono">{{ lesson.id }}</span> · do <span class="mono" data-test="lesson-target">{{ targetText(lesson) }}</span>
           · <span data-test="lesson-occurrences">{{ runs(lesson.occurrences) }}</span>
+          <template v-if="lesson.origin?.length">
+            ·
+            <Tooltip :text="originTip(lesson)">
+              <span class="origin" data-test="lesson-origin-chips">
+                <span v-for="repo in lesson.origin" :key="repo" class="chip mono" data-test="lesson-origin">{{ repo }}</span>
+              </span>
+            </Tooltip>
+          </template>
         </p>
         <ul class="complaints" data-test="lesson-complaints">
           <li v-for="(c, i) in lesson.complaints" :key="`${c.run_id}-${i}`">
-            <a :href="runHref(c.run_id)" class="mono" data-test="lesson-run">{{ c.run_id }}</a>
-            <a :href="taskHref(c.task_id)" class="mono task">{{ c.task_id }}</a>
+            <span v-if="c.repo" class="chip mono" data-test="lesson-complaint-repo">{{ c.repo }}</span>
+            <a :href="complaintRunHref(c)" class="mono" data-test="lesson-run">{{ c.run_id }}</a>
+            <a :href="complaintTaskHref(c)" class="mono task">{{ c.task_id }}</a>
             <span class="source">{{ SOURCE_TEXT[c.source] ?? c.source }}</span>
             <span class="text">{{ c.text }}</span>
           </li>
@@ -212,6 +289,14 @@ onBeforeUnmount(() => {
             <span class="mono">{{ lesson.id }}</span> · do <span class="mono">{{ targetText(lesson) }}</span>
             <template v-if="lesson.task_id"> · task <a :href="taskHref(lesson.task_id)" class="mono" data-test="lesson-task">{{ lesson.task_id }}</a></template>
             <template v-if="lesson.pr"> · <a :href="lesson.pr.url" target="_blank" rel="noopener">PR</a></template>
+            <template v-if="lesson.origin?.length">
+              ·
+              <Tooltip :text="originTip(lesson)">
+                <span class="origin" data-test="lesson-origin-chips">
+                  <span v-for="repo in lesson.origin" :key="repo" class="chip mono" data-test="lesson-origin">{{ repo }}</span>
+                </span>
+              </Tooltip>
+            </template>
           </p>
           <p v-if="lesson.effect" class="effect" data-test="lesson-effect">
             Před merge PR ({{ fmtTime(lesson.effect.merged_at) }}) se výtka objevila v
@@ -254,6 +339,40 @@ onBeforeUnmount(() => {
   font: inherit;
   font-size: 14px;
   cursor: pointer;
+}
+
+.scan-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+
+.all-repos {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.origin {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  vertical-align: middle;
+}
+
+.chip {
+  display: inline-block;
+  padding: 0 7px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .btn:disabled {

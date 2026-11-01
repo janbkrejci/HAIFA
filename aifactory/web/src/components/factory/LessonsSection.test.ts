@@ -28,10 +28,11 @@ function lesson(extra: Partial<Lesson> = {}): Lesson {
     reason: null,
     task_id: null,
     occurrences: 2,
-    runs: [{ run_id: 'run-a', task_id: 'P01-S01-T01' }, { run_id: 'run-b', task_id: 'P01-S01-T02' }],
+    origin: [],
+    runs: [{ run_id: 'run-a', task_id: 'P01-S01-T01', repo: '' }, { run_id: 'run-b', task_id: 'P01-S01-T02', repo: '' }],
     complaints: [
-      { run_id: 'run-a', task_id: 'P01-S01-T01', source: 'review', phase: 'review', text: 'The new CLI command has no test.', created_at: '2026-10-02T10:00:00Z' },
-      { run_id: 'run-b', task_id: 'P01-S01-T02', source: 'test_triage', phase: 'test', text: 'no test for x', created_at: '2026-10-05T10:00:00Z' },
+      { run_id: 'run-a', task_id: 'P01-S01-T01', source: 'review', phase: 'review', text: 'The new CLI command has no test.', created_at: '2026-10-02T10:00:00Z', repo: '' },
+      { run_id: 'run-b', task_id: 'P01-S01-T02', source: 'test_triage', phase: 'test', text: 'no test for x', created_at: '2026-10-05T10:00:00Z', repo: '' },
     ],
     pr: null,
     effect: null,
@@ -40,7 +41,7 @@ function lesson(extra: Partial<Lesson> = {}): Lesson {
 }
 
 const DONE: LessonScan = {
-  state: 'done', since: null, started_at: '2026-10-10T10:00:00Z', finished_at: '2026-10-10T10:01:00Z',
+  state: 'done', since: null, all: false, started_at: '2026-10-10T10:00:00Z', finished_at: '2026-10-10T10:01:00Z',
   result: { objections: 3, runs: 2, lessons: 1, repeats: 0 }, error: null,
 }
 
@@ -110,11 +111,92 @@ describe('LessonsSection', () => {
     await settle()
     await wrapper.get('[data-test="lessons-scan"]').trigger('click')
     await flushPromises()
-    expect(posts).toEqual([['/learn/scan', {}]])
+    expect(posts).toEqual([['/learn/scan', { all: true }]])
     await settle()
     expect(wrapper.find('[data-test="lessons-scanning"]').exists()).toBe(false)
     expect(wrapper.findAll('[data-test="lesson"]')).toHaveLength(1)
     expect(wrapper.get('[data-test="lessons-scan"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('scans only this repo with Ze všech rep switched off', async () => {
+    const posts = stub([{ lessons: [], scan: null }], () => ok({ ...DONE, state: 'running', result: null }))
+    const wrapper = mount(LessonsSection, { props: { pollMs: 1000 } })
+    await settle()
+    const toggle = wrapper.get('[data-test="lessons-all"]')
+    expect((toggle.element as HTMLInputElement).checked).toBe(true)
+    await toggle.setValue(false)
+    await wrapper.get('[data-test="lessons-scan"]').trigger('click')
+    await flushPromises()
+    expect(posts).toEqual([['/learn/scan', {}]])
+  })
+
+  it('shows the repos of a lesson and of its objections', async () => {
+    const mixed = lesson({
+      origin: ['a', 'beta'],
+      complaints: [
+        { ...lesson().complaints[0]!, repo: 'a' },
+        { ...lesson().complaints[1]!, repo: 'beta', run_id: 'run-x', task_id: 'B01-S01-T01' },
+      ],
+    })
+    stub([{ lessons: [mixed, lesson({ id: 'L2', state: 'accepted', origin: ['beta'] })], scan: null }])
+    const wrapper = mount(LessonsSection, { attachTo: document.body })
+    await settle()
+    const card = wrapper.get('[data-lesson="L1"]')
+    expect(card.findAll('[data-test="lesson-origin"]').map((c) => c.text())).toEqual(['a', 'beta'])
+    expect(card.findAll('[data-test="lesson-complaint-repo"]').map((c) => c.text())).toEqual(['a', 'beta'])
+    const runs = card.findAll('[data-test="lesson-run"]')
+    expect(runs[0]!.attributes('href')).toBe('#/r/a/runs/run-a')
+    expect(runs[1]!.attributes('href')).toBe('#/r/beta/runs/run-x')
+    const anchor = card.findAll('[data-test="tip-anchor"]').find((t) => t.find('[data-test="lesson-origin-chips"]').exists())!
+    await anchor.trigger('mouseenter')
+    await flushPromises()
+    expect(document.body.textContent).toContain('Výtky této lekce jsou z běhů rep a, beta.')
+    const accepted = wrapper.get('[data-lesson="L2"]')
+    expect(accepted.findAll('[data-test="lesson-origin"]').map((c) => c.text())).toEqual(['beta'])
+  })
+
+  it('has no origin chips for a lesson without origin repos', async () => {
+    stub([{ lessons: [lesson()], scan: null }])
+    const wrapper = mount(LessonsSection)
+    await settle()
+    expect(wrapper.find('[data-test="lesson-origin"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="lesson-complaint-repo"]').exists()).toBe(false)
+  })
+
+  it('links the repos a scan of every repo saved lessons in', async () => {
+    const all: LessonScan = {
+      ...DONE,
+      all: true,
+      result: { objections: 6, runs: 4, lessons: 3, repeats: 0, repos: 2, elsewhere: { gamma: 1, beta: 2 }, warnings: ['delta: cannot read the lessons'] },
+    }
+    stub([{ lessons: [], scan: all }])
+    const wrapper = mount(LessonsSection)
+    await settle()
+    expect(wrapper.get('[data-test="lessons-scan-done"]').text()).toContain('ze všech rep (2)')
+    const notice = wrapper.get('[data-test="lessons-elsewhere"]')
+    expect(notice.text()).toContain('Do jiných rep se uložilo 3 lekce')
+    const links = notice.findAll('[data-test="lessons-elsewhere-link"]')
+    expect(links.map((l) => [l.text(), l.attributes('href')])).toEqual([
+      ['beta', '#/r/beta/factory/lessons'],
+      ['gamma', '#/r/gamma/factory/lessons'],
+    ])
+    expect(wrapper.get('[data-test="lessons-scan-warning"]').text()).toBe('delta: cannot read the lessons')
+  })
+
+  it('has no notice when every lesson stayed in this repo', async () => {
+    stub([{ lessons: [], scan: { ...DONE, all: true, result: { ...DONE.result!, repos: 1, elsewhere: {} } } }])
+    const wrapper = mount(LessonsSection)
+    await settle()
+    expect(wrapper.find('[data-test="lessons-elsewhere"]').exists()).toBe(false)
+  })
+
+  it('opens the section for #/r/<id>/factory/lessons', async () => {
+    window.location.hash = '#/r/a/factory/lessons'
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+    stub([{ lessons: [lesson()], scan: null }])
+    const wrapper = mount(LessonsSection, { props: { open: false } })
+    await settle()
+    expect(wrapper.emitted('update:open')?.at(-1)).toEqual([true])
   })
 
   it('shows a failed scan', async () => {
