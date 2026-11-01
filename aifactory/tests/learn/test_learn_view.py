@@ -9,9 +9,17 @@ import pytest
 from test_learn_accept import _accept
 from test_learn_scan import TESTS_LESSON, TESTS_RULE, _context, _lessons, _scan
 
-from aifactory.learn.store import ACCEPTED, PROPOSED, LessonStore
+from aifactory.learn.collect import collect
+from aifactory.learn.sources import FACTORY_REPO_ENV
+from aifactory.learn.store import ACCEPTED, PROPOSED, LessonStore, StoredLesson
 from aifactory.learn.view import lessons
-from learn_fixture import add_objection, fake_learner, make_learn_repo, merge_pr
+from learn_fixture import (
+    add_objection,
+    fake_learner,
+    make_learn_repo,
+    merge_pr,
+    register_learn_repos,
+)
 
 
 @pytest.fixture
@@ -111,3 +119,61 @@ def test_objections_shared_with_accepted_lesson_are_a_repeat(
     data = _scan(capsys, repo)
     assert data["lessons"] == []
     assert data["repeats"] == [{"id": proposed["id"], "added": 1}]
+
+
+def _keys(repo: Path, repo_id: str, run_id: str | None = None) -> list[str]:
+    return [
+        f"{repo_id}:{o.key}"
+        for o in collect(repo / ".factory/trace.db")
+        if run_id is None or o.run_id == run_id
+    ]
+
+
+def test_view_counts_runs_of_every_repo_before_and_after_the_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.delenv(FACTORY_REPO_ENV, raising=False)
+    two = register_learn_repos(tmp_path, "factory", "beta")
+    factory, beta = two["factory"], two["beta"]
+    store = LessonStore(factory / ".factory/trace.db")
+    try:
+        store.save_proposed(
+            StoredLesson(
+                "L00000005",
+                "Test every new command.",
+                "AGENTS.md",
+                complaints=[*_keys(factory, "factory", "run-a"), *_keys(beta, "beta", "run-a")],
+                runs=["run-a"],
+                origin=["factory", "beta"],
+            )
+        )
+    finally:
+        store.close()
+    task_id = _accept(capsys, factory, "L00000005")["task"]["id"]
+
+    [lesson] = lessons(factory)
+    assert lesson["origin"] == ["factory", "beta"]
+    assert [(c["repo"], c["run_id"]) for c in lesson["complaints"]] == [
+        ("factory", "run-a"),
+        ("beta", "run-a"),
+    ]
+    assert lesson["occurrences"] == 2  # run-a of each repo
+    assert lesson["effect"] is None
+
+    # the PR is the factory's; after its merge beta objects again, in a task of the same id
+    merge_pr(factory, task_id, "2026-10-07T10:00:00.000+00:00")
+    add_objection(beta, "run-d", task_id, "Still no test.", "2026-10-08T10:00:00.000+00:00")
+    store = LessonStore(factory / ".factory/trace.db")
+    try:
+        store.add_repeats("L00000005", _keys(beta, "beta", "run-d"), ["run-d"])
+    finally:
+        store.close()
+
+    [lesson] = lessons(factory)
+    assert lesson["pr"]["url"].endswith(task_id)
+    assert lesson["effect"] == {
+        "merged_at": "2026-10-07T10:00:00.000+00:00",
+        "before": {"runs": 2, "objections": 2},
+        "after": {"runs": 1, "objections": 1},
+    }
+    assert lesson["complaints"][-1]["repo"] == "beta"
