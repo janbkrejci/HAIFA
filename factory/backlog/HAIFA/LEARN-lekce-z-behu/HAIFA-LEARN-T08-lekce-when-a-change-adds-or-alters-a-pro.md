@@ -2,6 +2,7 @@
 id: HAIFA-LEARN-T08
 title: "Lekce: When a change adds or alters a protection or limit (write guards, timeouts, proces…"
 status: done
+archived: true
 workflow: build-review
 depends_on: []
 related: [HAIFA-TODO-T26, HAIFA-REFINEMENT-T76]
