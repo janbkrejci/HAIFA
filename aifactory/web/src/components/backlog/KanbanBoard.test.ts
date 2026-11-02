@@ -90,6 +90,19 @@ describe('KanbanBoard', () => {
     wrapper.unmount()
   })
 
+  it('shows a failed task in Selhalo, not in Připraveno', () => {
+    const failed = taskNode({ id: 'F-1', path: 'f.md', board_state: 'failed' })
+    const ready = taskNode({ id: 'R-1', path: 'r.md' })
+    const states = presentStates(BOARD_STATES, { failed: 1, ready: 1 })
+    const wrapper = mount(KanbanBoard, { props: { tasks: [failed, ready], states } })
+    expect(cards(wrapper, 'failed')).toEqual(['F-1'])
+    expect(cards(wrapper, 'ready')).toEqual(['R-1'])
+    expect(wrapper.get('[data-column="failed"] h2').text()).toContain('Selhalo')
+    expect(wrapper.findAll('[data-column="failed"] [data-test="queue-rank"]')).toHaveLength(0)
+    expect(presentStates(BOARD_STATES, {})).not.toContain('failed')
+    wrapper.unmount()
+  })
+
   it('shows the approved column only while a task is waiting for CI', () => {
     const task = taskNode({ board_state: 'approved' })
     const wrapper = mount(KanbanBoard, { props: { tasks: [task], states: presentStates(BOARD_STATES, { approved: 1 }) } })
@@ -124,7 +137,7 @@ describe('KanbanBoard', () => {
     const columns = wrapper.findAll('[data-column]')
     expect(columns.map((c) => c.attributes('data-column'))).toEqual(kanbanColumns(BOARD_STATES))
     expect(columns.map((c) => c.attributes('data-column'))).toEqual([
-      'todo', 'ready', 'deferred', 'human', 'blocked', 'running', 'in review', 'approved', 'awaiting merge', 'done', 'cancelled',
+      'todo', 'ready', 'deferred', 'human', 'blocked', 'failed', 'running', 'in review', 'approved', 'awaiting merge', 'done', 'cancelled',
     ])
     expect(columns[0].find('h2').text()).toContain('Bez workflow')
     expect(cards(wrapper, 'todo')).toEqual(['M02-S01-T01', 'X-1'])

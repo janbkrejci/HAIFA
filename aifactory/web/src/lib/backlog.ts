@@ -10,6 +10,7 @@ export type BoardState =
   | 'ready'
   | 'human'
   | 'blocked'
+  | 'failed'
   | 'running'
   | 'in review'
   | 'approved'
@@ -23,6 +24,7 @@ export const BOARD_STATES: readonly BoardState[] = [
   'ready',
   'human',
   'blocked',
+  'failed',
   'running',
   'in review',
   'approved',
@@ -36,6 +38,7 @@ export const STATE_LABELS: Record<BoardState, string> = {
   ready: 'Připraveno',
   human: 'Pro člověka',
   blocked: 'Blokováno',
+  failed: 'Selhalo',
   running: 'Běží',
   'in review': 'Čeká na review',
   approved: 'Schváleno, čeká na CI',
@@ -47,6 +50,7 @@ export const STATE_LABELS: Record<BoardState, string> = {
 /** Tooltips of the board states that need an explanation. */
 export const STATE_TOOLTIPS: Partial<Record<BoardState, string>> = {
   todo: 'Task nejde spustit, dokud nemá workflow (vlastní nebo zděděné z projektu či stepu).',
+  failed: 'Poslední běh tasku selhal. Podrobnosti a akce najdeš v detailu tasku nebo běhu.',
   human: 'Task udělá člověk, factory ho nespustí. Až bude hotový, označ ho v detailu jako hotový.',
   'in review': 'Pull request čeká na tvoje review.',
   approved: 'Schválil jsi pull request. Factory čeká na zelené CI a potom ho mergne sama.',
@@ -60,7 +64,7 @@ export type KanbanColumn = BoardState | 'deferred'
 export const COLUMN_LABELS: Record<KanbanColumn, string> = { ...STATE_LABELS, deferred: 'Odloženo' }
 
 /** Board states whose excluded tasks move to Odloženo (they have not started yet). */
-export const DEFERRABLE_STATES: readonly BoardState[] = ['ready', 'blocked', 'todo']
+export const DEFERRABLE_STATES: readonly BoardState[] = ['ready', 'blocked', 'failed', 'todo']
 
 /** An open PR still owns the task until review and merge finish. */
 export function hasOpenPr(state: string): boolean {
@@ -113,7 +117,7 @@ export function mergeQueueOrder(all: readonly string[], shown: readonly string[]
 }
 
 /** States shown only when some task is in them (kanban column, status filter option). */
-export const OPTIONAL_STATES: readonly BoardState[] = ['todo', 'human', 'approved', 'awaiting merge']
+export const OPTIONAL_STATES: readonly BoardState[] = ['todo', 'human', 'failed', 'approved', 'awaiting merge']
 
 /** States hidden by the „Skrýt hotové“ switch. */
 export const DONE_STATES: readonly BoardState[] = ['done', 'cancelled']

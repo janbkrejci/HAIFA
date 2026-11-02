@@ -1,7 +1,7 @@
 ---
 id: HEAL-S01-T05
 title: "Dashboard: sloupec kanbanu „Selhalo“, chip a příručka"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HEAL-S01-T04]
 writes: [aifactory/web/src/, aifactory/src/aifactory/web/static/, aifactory/src/aifactory/guide/04-backlog.md, aifactory/tests/test_guide_consistency.py]
@@ -30,3 +30,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-02 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/201 · náklady $1.89
