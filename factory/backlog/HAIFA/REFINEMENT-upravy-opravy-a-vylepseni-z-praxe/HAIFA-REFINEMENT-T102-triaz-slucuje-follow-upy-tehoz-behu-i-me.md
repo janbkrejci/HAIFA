@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T102
 title: Triáž slučuje follow-upy téhož běhu i mezi sebou
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T101]
 writes: [aifactory/src/aifactory/run/triage.py, aifactory/src/aifactory/run/followups.py, aifactory/src/aifactory/seed/agents/triager/, aifactory/tests/run/test_triage.py, aifactory/tests/run/test_followups_triage.py, aifactory/tests/run/test_followups.py]
@@ -30,3 +30,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-02 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/197 · náklady $0.00

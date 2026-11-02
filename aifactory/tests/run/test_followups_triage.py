@@ -12,12 +12,13 @@ import pytest
 from run_repo import T01, T02, commit_all, make_run_repo
 from test_followups import TODO_STEP, follow_up, task_of, workflow_run
 
-from aifactory.backlog import Backlog, check_backlog, edit_task, link_task, load_backlog
+from aifactory.backlog import Backlog, Container, check_backlog, edit_task, link_task, load_backlog
 from aifactory.run import TaskRunStore, triage
 from aifactory.run.followups import FollowUpOutcome, Reported
 from aifactory.run.store import TaskRunRow
 from aifactory.run.task import _record_follow_ups
 from aifactory.run.triage import Decision
+from aifactory.workflow import WorkflowRun
 
 TARGET = "M01-S01-T03"
 
@@ -58,6 +59,7 @@ def apply(
     items: list[Any] | None = None,
     blocking: bool = True,
     run_id: str = "run-1",
+    wf: WorkflowRun | None = None,
 ) -> FollowUpOutcome:
     def ask(*args: object, **kwargs: object) -> list[Decision]:
         if isinstance(choices, Exception):
@@ -71,7 +73,7 @@ def apply(
             repo,
             store,
             row,
-            workflow_run(follow_ups=items or [follow_up(blocks=True)]),
+            wf if wf is not None else workflow_run(follow_ups=items or [follow_up(blocks=True)]),
             blocking=blocking,
         )
         assert result is not None, warnings
@@ -573,3 +575,85 @@ def test_triager_uses_binding_after_quota_switch(
     assert result.created[0].decision == "covered"
     [request] = seen
     assert request.model == "gpt-5.5" and request.thinking == "high"
+
+
+def peer_choice(source: str, target: str) -> Decision:
+    return Decision(
+        follow_up_id=source,
+        action="covered",
+        target_follow_up_id=target,
+        reason="The target covers the entire question or assignment.",
+    )
+
+
+@pytest.mark.parametrize("blocking", [False, True])
+@pytest.mark.parametrize("human", [False, True])
+@pytest.mark.parametrize("reverse", [False, True])
+def test_same_run_coverage_merges_origins_and_blocking(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, blocking: bool, human: bool, reverse: bool
+) -> None:
+    from aifactory.engine.data_types import PlanOutput
+    from aifactory.workflow import StepRecord
+
+    titles = (
+        ["Resolve Q-S55-1", "Answer question Q-S55-1", "Decide Q-S55-1"]
+        if human
+        else ["Fix Tab stops in every UIR form", "Fix Tab stop in municipality detail"]
+    )
+    phases = [("build", "builder")]
+    if human:
+        phases.append(("review", "reviewer"))
+    phases.append(("docs", "documenter"))
+    wf = workflow_run()
+    wf.history.clear()
+    wf.records.clear()
+    for index, title in enumerate(titles):
+        step, owner = phases[index]
+        item = follow_up(title, blocks=index == len(titles) - 1).model_copy(
+            update={"for_human": human, "details": "The full assignment" if index == 0 else title}
+        )
+        wf.history.append((step, PlanOutput(status="success", follow_ups=[item])))
+        wf.records.append(StepRecord(phase=step, step=step, kind="agent", owner=owner))
+    choices = [choice("new")]
+    choices += [peer_choice(f"f{i}", f"f{i - 1}") for i in range(2, len(titles) + 1)]
+    if reverse:
+        wf.history.reverse()
+        choices = [peer_choice(f"f{i}", f"f{i + 1}") for i in range(1, len(titles))] + [
+            choice("new", fid=f"f{len(titles)}")
+        ]
+    result = apply(repo, monkeypatch, list(reversed(choices)), wf=wf, blocking=blocking)
+    [created] = result.created
+    assert not result.warnings and created.title == titles[0]
+    assert created.assignee == ("human" if human else "agent")
+    assert created.blocks == blocking
+    assert result.blocked_by == ([created.id] if blocking else [])
+    assert task_of(repo).depends_on == result.blocked_by
+    filed = task_of(repo, created.id)
+    assert "The full assignment" in filed.body
+    for step, owner in phases:
+        assert f"`{step}` (agent {owner})" in filed.body
+    todo = load_backlog(repo).by_id[TODO_STEP]
+    assert isinstance(todo, Container) and len(todo.tasks) == 1
+    assert check_backlog(load_backlog(repo)) == []
+    again = apply(repo, monkeypatch, choices, wf=wf, blocking=blocking, run_id="retry")
+    assert len(again.created) == 1 and again.created[0].id == created.id
+    assert again.created[0].existed and not again.committed
+
+
+@pytest.mark.parametrize("invalid", ["cycle", "unknown", "assignment", "implicit-human"])
+def test_invalid_peer_coverage_under_lock_keeps_both_reports(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, invalid: str
+) -> None:
+    items = [follow_up("First"), follow_up("Second", blocks=True)]
+    if invalid == "assignment":
+        items[1] = items[1].model_copy(update={"for_human": True})
+    if invalid == "implicit-human":
+        items[1] = items[1].model_copy(update={"writes": [".factory/config.yaml"]})
+    choices = [choice("new"), peer_choice("f2", "missing" if invalid == "unknown" else "f1")]
+    if invalid == "cycle":
+        choices[0] = peer_choice("f1", "f2")
+    result = apply(repo, monkeypatch, choices, items=items)
+    assert len(result.created) == 2 and result.warnings
+    assert all(c.decision == "new" for c in result.created)
+    assert result.blocked_by == [result.created[1].id]
+    assert check_backlog(load_backlog(repo)) == []

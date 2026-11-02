@@ -27,7 +27,7 @@ from aifactory.engine.tracer import Tracer
 from aifactory.harness import canonical, install
 from aifactory.harness.check import check_harness
 from aifactory.harness.settings import context_binding, ensure_enabled
-from aifactory.run.followups import Reported
+from aifactory.run.followups import Reported, _for_human
 from aifactory.run.guard import TaskWriteGuard
 from aifactory.run.scope import TaskScope, matches
 from aifactory.run.task import _main_ignored, apply_agents_override, prepare_cfg
@@ -49,14 +49,20 @@ class Decision(BaseModel):
     action: Literal["covered", "extend", "decide", "new"]
     reason: str = Field(min_length=1, description="One sentence explaining the decision")
     task_id: str | None = Field(default=None, min_length=1)
+    target_follow_up_id: str | None = Field(default=None, min_length=1)
     addition: str | None = Field(default=None, min_length=1)
     proposal: str | None = Field(default=None, min_length=1)
     addition_writes: list[str] | None = None
 
     @model_validator(mode="after")
     def action_fields(self) -> Self:
-        if (self.task_id is not None) != (self.action != "new"):
-            raise ValueError("task_id is required only for covered/extend/decide")
+        if self.target_follow_up_id is not None:
+            if self.action != "covered" or self.task_id is not None:
+                raise ValueError("target_follow_up_id is allowed only for covered without task_id")
+        elif (self.task_id is not None) != (self.action != "new"):
+            raise ValueError(
+                "task_id is required for covered/extend/decide without a follow-up target"
+            )
         if (self.addition is not None) != (self.action == "extend"):
             raise ValueError("addition is required only for extend")
         if (self.addition_writes is not None) != (self.action == "extend"):
@@ -101,7 +107,7 @@ def context(reported: Sequence[Reported], backlog: Backlog) -> dict[str, Any]:
                 "details": r.details,
                 "blocks_task": r.blocks_task,
                 "writes": list(r.writes) if r.writes is not None else None,
-                "for_human": r.for_human,
+                "for_human": _for_human(r, backlog.settings),
             }
             for n, r in enumerate(reported, 1)
         ],
@@ -162,6 +168,43 @@ def _named_paths(text: str) -> list[str]:
     return result
 
 
+def _follow_up_roots(
+    decisions: Sequence[Decision], reported: Sequence[Reported], backlog: Backlog
+) -> tuple[dict[str, str], list[str]]:
+    """Resolve same-run coverage iteratively; never apply a partial invalid graph."""
+    reports = {f"f{n}": r for n, r in enumerate(reported, 1)}
+    edges = {
+        d.follow_up_id: d.target_follow_up_id
+        for d in decisions
+        if d.target_follow_up_id is not None
+    }
+    errors = []
+    for source, target in edges.items():
+        if source not in reports or target not in reports:
+            errors.append(f"{source}: unknown follow-up target {target}")
+        elif _for_human(reports[source], backlog.settings) != _for_human(
+            reports[target], backlog.settings
+        ):
+            errors.append(f"{source}: follow-up target {target} has a different human assignment")
+    roots: dict[str, str] = {}
+    for source in reports:
+        path: list[str] = []
+        seen: set[str] = set()
+        current = source
+        while current in edges and current not in roots and current not in seen:
+            seen.add(current)
+            path.append(current)
+            current = edges[current]
+        if current in seen:
+            errors.append(f"{source}: follow-up coverage cycle")
+            continue
+        root = roots.get(current, current)
+        roots[source] = root
+        for member in path:
+            roots[member] = root
+    return roots, errors
+
+
 def _violations(output: TriageOutput, reported: Sequence[Reported], backlog: Backlog) -> list[str]:
     if output.status != "success":
         return []
@@ -173,10 +216,12 @@ def _violations(output: TriageOutput, reported: Sequence[Reported], backlog: Bac
         if counts[fid] != 1
     ]
     errors += [f"{fid}: unknown follow-up id" for fid in counts if fid not in expected]
+    _, graph_errors = _follow_up_roots(output.decisions, reported, backlog)
+    errors += graph_errors
     tasks = {t.id: t for t in iter_tasks(backlog)}
     for decision in output.decisions:
         label = f"{decision.follow_up_id} ({decision.action}, task {decision.task_id})"
-        if decision.action == "new":
+        if decision.action == "new" or decision.target_follow_up_id is not None:
             continue
         task = tasks.get(decision.task_id or "")
         if task is None or task.status != "todo":
@@ -217,7 +262,7 @@ def ask_triager(
     """Recommend handling, or raise TriageUnavailable after one semantic correction."""
     if not reported:
         return []
-    if not any(t.status == "todo" for t in iter_tasks(backlog)):
+    if len(reported) == 1 and not any(t.status == "todo" for t in iter_tasks(backlog)):
         return [
             Decision(follow_up_id=f"f{n}", action="new", reason="No todo task covers this work.")
             for n, _ in enumerate(reported, 1)
@@ -294,7 +339,7 @@ def _invoke(
                     name="triage",
                     kind="agent",
                     owner=agent.name,
-                    description="Compare reported follow-ups with todo backlog tasks",
+                    description="Compare follow-ups with each other and todo backlog tasks",
                     retries=1,
                 )
             ) as phase:

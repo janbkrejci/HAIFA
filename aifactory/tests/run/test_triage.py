@@ -236,8 +236,8 @@ def test_shortcuts_do_not_touch_configuration(
     assert ask_triager(tmp_path / "absent", [], backlog) == []
     tasks = backlog.containers[0].children[0].tasks
     tasks[:] = [replace(tasks[0], id=f"T{n}", status=s) for n, s in enumerate(statuses)]
-    found = ask_triager(tmp_path / "absent", [report(), report(for_human=True)], backlog)
-    assert [(d.follow_up_id, d.action) for d in found] == [("f1", "new"), ("f2", "new")]
+    found = ask_triager(tmp_path / "absent", [report()], backlog)
+    assert [(d.follow_up_id, d.action) for d in found] == [("f1", "new")]
     assert not (tmp_path / "absent").exists()
 
 
@@ -552,3 +552,85 @@ def test_triager_roster_without_context_or_with_empty_binding(
 def test_triager_unknown_source_task(repo: Path, backlog: Backlog) -> None:
     with pytest.raises(TriageUnavailable, match="Unknown source task"):
         ask_triager(repo, [report()], backlog, task_id="missing")
+
+
+def peer_choice(source: str, target: str) -> dict[str, Any]:
+    return choice(task_id=None, follow_up_id=source, target_follow_up_id=target)
+
+
+@pytest.mark.parametrize(
+    ("decisions", "message"),
+    [
+        ([peer_choice("f1", "missing"), choice("new", follow_up_id="f2")], "unknown"),
+        ([peer_choice("f1", "f1"), choice("new", follow_up_id="f2")], "cycle"),
+        ([peer_choice("f1", "f2"), peer_choice("f2", "f1")], "cycle"),
+    ],
+)
+def test_invalid_follow_up_graph_is_rejected(
+    backlog: Backlog, decisions: list[dict[str, Any]], message: str
+) -> None:
+    assert message in " ".join(errors(backlog, *decisions, reports=[report(), report()]))
+
+
+@pytest.mark.parametrize("human", [False, True])
+def test_follow_up_chain_is_valid(backlog: Backlog, human: bool) -> None:
+    assert (
+        errors(
+            backlog,
+            peer_choice("f3", "f2"),
+            choice("new"),
+            peer_choice("f2", "f1"),
+            reports=[report(for_human=human) for _ in range(3)],
+        )
+        == []
+    )
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("implicit_human", [False, True])
+def test_follow_up_coverage_preserves_assignment(
+    backlog: Backlog, reverse: bool, implicit_human: bool
+) -> None:
+    human = report(writes=(".factory/config.yaml",)) if implicit_human else report(for_human=True)
+    reports = [human, report()]
+    if reverse:
+        reports.reverse()
+    assert "human assignment" in " ".join(
+        errors(backlog, peer_choice("f1", "f2"), choice("new", follow_up_id="f2"), reports=reports)
+    )
+
+
+@pytest.mark.parametrize("action", ["new", "extend", "decide", "covered"])
+def test_follow_up_target_fields_are_exclusive(action: str) -> None:
+    # covered also rejects supplying both kinds of target.
+    with pytest.raises(ValidationError):
+        Decision.model_validate(choice(action, target_follow_up_id="f2"))
+
+
+@pytest.mark.parametrize("cycle", [False, True])
+def test_peer_graph_gets_one_engine_correction(
+    repo: Path, backlog: Backlog, fake: tuple[list[Any], list[Any]], cycle: bool
+) -> None:
+    seen, answers = fake
+    answers.extend(
+        [
+            output(
+                peer_choice("f1", "f2"),
+                peer_choice("f2", "f1" if cycle else "missing"),
+            ),
+            output(choice("new"), peer_choice("f2", "f1")),
+        ]
+    )
+    assert ask_triager(repo, [report(), report()], backlog)[1].target_follow_up_id == "f1"
+    assert len(seen) == 2
+    assert ("cycle" if cycle else "unknown") in seen[1].prompt
+
+
+def test_peer_triage_without_todo_backlog(
+    repo: Path, backlog: Backlog, fake: tuple[list[Any], list[Any]]
+) -> None:
+    seen, answers = fake
+    backlog.containers[0].children[0].tasks.clear()
+    answers.append(output(choice("new"), peer_choice("f2", "f1")))
+    assert ask_triager(repo, [report(), report()], backlog)[1].target_follow_up_id == "f1"
+    assert len(seen) == 1

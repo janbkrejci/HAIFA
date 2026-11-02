@@ -679,6 +679,39 @@ def _record(
     project = task.parent.parent
     blockers: list[str] = []
 
+    if decisions is not None:
+        from aifactory.run.triage import _follow_up_roots
+
+        # IDs belong to the collected input, before any member is removed or merged.
+        choices = [decisions[r] for r in reported if r in decisions]
+        roots, errors = _follow_up_roots(choices, reported, backlog)
+        if errors:
+            outcome.warnings.append(
+                "follow-up coverage no longer applies; using new: " + "; ".join(errors)
+            )
+            decisions = {r: d for r, d in decisions.items() if d.target_follow_up_id is None}
+        else:
+            by_id = {f"f{n}": r for n, r in enumerate(reported, 1)}
+            merged = dict(by_id)
+            for fid, item in by_id.items():
+                root = roots[fid]
+                if root == fid:
+                    continue
+                target_report = merged[root]
+                merged[root] = replace(
+                    target_report,
+                    blocks_task=target_report.blocks_task or item.blocks_task,
+                    origins=tuple(
+                        dict.fromkeys(
+                            (target_report.origins or ((target_report.step, target_report.owner),))
+                            + (item.origins or ((item.step, item.owner),))
+                        )
+                    ),
+                )
+            survivors = [(item, merged[fid]) for fid, item in by_id.items() if roots[fid] == fid]
+            decisions = {new: decisions[old] for old, new in survivors if old in decisions}
+            reported = [new for _, new in survivors]
+
     pending: list[tuple[Reported, Decision | None]] = []
     for original in reported:
         item = original if blocking else replace(original, blocks_task=False)
