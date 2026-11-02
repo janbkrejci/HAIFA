@@ -10,7 +10,9 @@ a human decision, or a new task in the project's ``TODO`` step. A follow-up with
 A blocker that is ``cancelled`` (the operator waived it) blocks nothing.
 A follow-up with ``writes`` gets them as its own ``writes`` (they replace the inherited
 value), for work outside the paths this task may change, and ``workflow`` its own
-workflow. A follow-up only a person can do (``for_human``, or ``writes`` that reach the
+workflow. Without an explicit workflow, ``follow_up_workflows`` selects one by severity,
+otherwise the task inherits. Merged reports keep the highest severity.
+A follow-up only a person can do (``for_human``, or ``writes`` that reach the
 backlog or ``protected_files``) gets ``assignee: human``: no run starts it.
 
 The backlog is edited in a temporary copy through ``aifactory.backlog.edit`` and
@@ -59,13 +61,18 @@ if TYPE_CHECKING:
     from aifactory.run.triage import Decision
 
 DecisionKind = Literal["covered", "extend", "decide", "new"]
-
+Severity = Literal["blocker", "defect", "minor", "cosmetic"]
+SEVERITIES: tuple[Severity | None, ...] = (None, "cosmetic", "minor", "defect", "blocker")
 TODO_CODE = "TODO"
 TODO_TITLE = "TODO"
 TODO_BODY = (
     "Práce, která vznikla při zpracování jiných tasků a nevešla se do nich. "
     "Tasky sem zakládá factory z hlášení agentů (follow_ups)."
 )
+
+
+def _highest_severity(left: Severity | None, right: Severity | None) -> Severity | None:
+    return max((left, right), key=SEVERITIES.index)
 
 
 def follow_up_marker(task_id: str) -> str:
@@ -90,6 +97,7 @@ class Reported:
     for_human: bool = False
     workflow: str | None = None
     origins: tuple[tuple[str, str], ...] = ()
+    severity: Severity | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +175,7 @@ def collect(
                 writes=_writes(getattr(item, "writes", None)),
                 for_human=bool(getattr(item, "for_human", False)),
                 workflow=str(getattr(item, "workflow", None) or "").strip() or None,
+                severity=getattr(item, "severity", None),
                 origins=((str(key), owners.get(str(key), "")),),
             )
             human = _for_human(item_report, settings) if settings else item_report.for_human
@@ -176,6 +185,8 @@ def collect(
                 item_report = replace(
                     known,
                     blocks_task=known.blocks_task or blocks,
+                    severity=_highest_severity(known.severity, item_report.severity),
+                    workflow=known.workflow or item_report.workflow,
                     origins=tuple(dict.fromkeys((*known.origins, *item_report.origins))),
                 )
             reported[identity] = item_report
@@ -237,6 +248,8 @@ def _task_body(item: Reported, task: Task, run_id: str) -> str:
         f"Vznikl při běhu `{run_id}` tasku `{task.id}` ({task.title}), {where}.",
         f"Důvod: {item.reason}",
     ]
+    if item.severity is not None:
+        lines.append(f"Závažnost: {item.severity}")
     if item.blocks_task:
         lines.append(
             f"Task `{task.id}` na tomto tasku závisí a do jeho dokončení zůstává blokovaný."
@@ -701,6 +714,8 @@ def _record(
                 merged[root] = replace(
                     target_report,
                     blocks_task=target_report.blocks_task or item.blocks_task,
+                    severity=_highest_severity(target_report.severity, item.severity),
+                    workflow=target_report.workflow or item.workflow,
                     origins=tuple(
                         dict.fromkeys(
                             (target_report.origins or ((target_report.step, target_report.owner),))
@@ -905,7 +920,12 @@ def _record(
                             if deciding and decision and decision.task_id
                             else [task_id],
                             writes=list(item.writes) if item.writes is not None else None,
-                            workflow=item.workflow,
+                            workflow=item.workflow
+                            or (
+                                backlog.settings.follow_up_workflows.get(item.severity)
+                                if item.severity is not None
+                                else None
+                            ),
                             assignee=HUMAN if human else None,
                             body=_task_body(item, task, run_id)
                             + (

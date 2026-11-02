@@ -78,7 +78,8 @@ class Phase(BaseModel):
 # aifactory 3.3: `writes` becomes the new task's own `writes` (it replaces the inherited
 # value), for work outside this task's allowed paths; None inherits. `for_human`: only a
 # person can do it (the task gets `assignee: human`). `workflow`: the new task's own
-# workflow, e.g. `build-review` for a change that needs no tests; None inherits.
+# workflow, e.g. `build-review` for a change that needs no tests; None uses the project's
+# severity mapping, then inherits. `severity` describes impact independently of blocks_task.
 class FollowUp(BaseModel):
     title: str = Field(min_length=1)
     reason: str = Field(min_length=1)   # what was found, where, and why it is not done here
@@ -87,6 +88,7 @@ class FollowUp(BaseModel):
     writes: Optional[list[str]] = None
     for_human: bool = False
     workflow: Optional[str] = None
+    severity: Literal["blocker", "defect", "minor", "cosmetic"] | None = None
 
 
 # aifactory 3.2: the summary of the whole PR for the person who approves it, written by

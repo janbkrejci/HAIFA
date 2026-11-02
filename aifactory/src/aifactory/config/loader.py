@@ -360,6 +360,15 @@ def load_config(source: ConfigSource, library: LibrarySnapshot | None = None) ->
     declared = [agent.name for agent in agents.agents] if agents is not None else []
     prompts = _load_prompts(reader, declared)
     workflows = _load_workflows(reader, library)
+    if settings is not None:
+        for severity, workflow in settings.follow_up_workflows.items():
+            if workflow not in workflows:
+                reader.issues.append(
+                    ConfigIssue(
+                        reader.label(CONFIG_FILE),
+                        f"follow_up_workflows.{severity}: unknown workflow {workflow!r}",
+                    )
+                )
     if reader.issues or settings is None or agents is None or roles is None:
         raise ConfigError(reader.issues)
     return FactoryConfig(

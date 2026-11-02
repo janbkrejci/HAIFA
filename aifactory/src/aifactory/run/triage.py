@@ -105,6 +105,7 @@ def context(reported: Sequence[Reported], backlog: Backlog) -> dict[str, Any]:
                 "title": r.title,
                 "reason": r.reason,
                 "details": r.details,
+                **({"severity": r.severity} if r.severity is not None else {}),
                 "blocks_task": r.blocks_task,
                 "writes": list(r.writes) if r.writes is not None else None,
                 "for_human": _for_human(r, backlog.settings),

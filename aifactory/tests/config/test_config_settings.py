@@ -33,6 +33,7 @@ def test_missing_files_give_defaults(tmp_path: Path) -> None:
     settings = _settings(tmp_path)
     local = load_local(tmp_path)
     assert settings.base == "main"
+    assert settings.follow_up_workflows == {}
     assert settings.levels == ("project", "step", "task")
     assert not hasattr(local, "port")
     assert local.trace_db == ".factory/trace.db"
