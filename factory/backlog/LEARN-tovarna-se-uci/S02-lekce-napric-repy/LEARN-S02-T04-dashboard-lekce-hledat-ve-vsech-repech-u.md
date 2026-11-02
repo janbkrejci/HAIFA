@@ -2,6 +2,7 @@
 id: LEARN-S02-T04
 title: "Dashboard Lekce: hledat ve všech repech, ukázat zdroj a cíl lekce"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [LEARN-S02-T03]
 writes: [aifactory/src/aifactory/web/learn.py, aifactory/src/aifactory/web/app.py, aifactory/web/src/lib/learn.ts, aifactory/web/src/components/factory/LessonsSection.vue, aifactory/web/src/components/factory/LessonsSection.test.ts, aifactory/tests/web/test_web_learn.py, aifactory/tests/e2e/test_learn_browser.py, aifactory/src/aifactory/web/static/]

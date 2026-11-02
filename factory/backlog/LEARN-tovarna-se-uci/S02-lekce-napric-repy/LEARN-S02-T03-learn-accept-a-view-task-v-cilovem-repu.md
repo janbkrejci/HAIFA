@@ -2,6 +2,7 @@
 id: LEARN-S02-T03
 title: "learn accept a view: task v cílovém repu s důkazy z běhů jiných rep"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [LEARN-S02-T02]
 writes: [aifactory/src/aifactory/learn/accept.py, aifactory/src/aifactory/learn/view.py, aifactory/tests/learn/test_learn_accept.py, aifactory/tests/learn/test_learn_view.py, aifactory/tests/learn_fixture.py]

@@ -2,6 +2,7 @@
 id: LEARN-S02-T05
 title: "Zapsat lekce napříč repy do decisions, skillu factory a příručky"
 status: done
+archived: true
 workflow: build-review
 depends_on: [LEARN-S02-T04]
 writes: [docs/decisions.md, aifactory/src/aifactory/skill/skill.md, aifactory/src/aifactory/guide/]
