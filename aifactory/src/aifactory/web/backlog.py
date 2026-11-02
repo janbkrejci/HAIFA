@@ -15,7 +15,8 @@ Board states (the kanban columns), first match wins: ``cancelled``,
 ``approved`` (a manually approved open PR waiting for CI),
 ``awaiting merge`` (an open PR the factory
 merges by itself, see ``waits_for_automerge``), ``in review`` (any other open PR: it waits
-for the user), ``blocked``, ``human`` (a person's task, ``assignee: human``), ``ready``
+for the user), ``failed`` (the newest run failed or was aborted, see ``run_failed``),
+``blocked``, ``human`` (a person's task, ``assignee: human``), ``ready``
 (only with an effective workflow), otherwise ``todo``
 (no workflow yet, or an invalid ``status`` flagged with ``invalid``).
 """
@@ -30,6 +31,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aifactory import backlog as core
+from aifactory import failure
 from aifactory.backlog import Backlog, Container, Task
 from aifactory.backlog.taskfile import has_entry
 from aifactory.config import ConfigError, load_local, load_run_config
@@ -61,6 +63,7 @@ BOARD_STATES: tuple[str, ...] = (
     "ready",
     "human",
     "blocked",
+    "failed",
     "running",
     "in review",
     "approved",
@@ -68,6 +71,17 @@ BOARD_STATES: tuple[str, ...] = (
     "done",
     "cancelled",
 )
+
+# run states of an unsuccessful run shown as a failure (``run_failed``)
+FAILED_STATES = frozenset({"failed", "aborted"})
+
+
+def run_failed(run: sqlite3.Row) -> bool:
+    """An ended run shown as a failure: failed or aborted, and not blocked on other tasks."""
+    if run["state"] not in FAILED_STATES:
+        return False
+    return failure.shown_kind(run["failure_kind"], run["error"]) != failure.BLOCKED
+
 
 ADD_KEYS = (
     "parameters",
@@ -120,6 +134,8 @@ class _Runtime:
     merge_blocked: set[str] = field(default_factory=set)
     completion_errors: dict[str, str] = field(default_factory=dict)
     last_run: dict[str, str] = field(default_factory=dict)
+    # tasks whose newest run failed (``run_failed``)
+    failed: set[str] = field(default_factory=set)
     merged: dict[str, str] = field(default_factory=dict)
     queue: QueuePrefs = field(default_factory=QueuePrefs)
     # ``queue.priority_map`` of the backlog, computed once (``_priority``)
@@ -207,6 +223,8 @@ def _display_runtime(runs: list[sqlite3.Row], prs: list[sqlite3.Row]) -> _Runtim
         if task_id in rt.last_run:
             continue
         rt.last_run[task_id] = run["state"]
+        if run_failed(run):
+            rt.failed.add(task_id)
         if (run["pr_error"] or "").startswith(COMPLETION_ERROR_PREFIX):
             rt.completion_errors[task_id] = run["pr_error"]
         if run["state"] == "running" or (
@@ -258,6 +276,8 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
             return "approved"
         error = "auto_merge_error" if task.id in rt.merge_blocked else None
         return "awaiting merge" if waits_for_automerge(task, error) else "in review"
+    if task.id in rt.failed:
+        return "failed"
     state = core.derived_state(backlog, task)
     if state in ("blocked", "human"):
         return state

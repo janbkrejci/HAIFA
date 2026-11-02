@@ -532,9 +532,10 @@ def test_task_summary_counts_tasks_per_board_state(repo_a: Path, tmp_path: Path)
     # An unreaped row stays visible as running, including in the board-state chips.
     assert a["tasks"] == {
         "todo": 0,
-        "ready": 1,
+        "ready": 0,
         "human": 0,
         "blocked": 0,
+        "failed": 1,
         "running": 2,
         "in review": 1,
         "approved": 0,
@@ -570,23 +571,29 @@ def test_resumed_older_run_takes_precedence_in_board_counts(
 
 
 @pytest.mark.parametrize(
-    ("state", "pr_error", "expected"),
+    ("state", "pr_error", "kind", "expected"),
     [
-        ("succeeded", None, "running"),
-        ("succeeded", "push failed", "ready"),
-        ("failed", None, "ready"),
-        ("aborted", None, "ready"),
-        ("running", None, "running"),
+        ("succeeded", None, None, "running"),
+        ("succeeded", "push failed", None, "ready"),
+        ("failed", None, None, "failed"),
+        ("aborted", None, None, "failed"),
+        ("failed", None, "blocked", "ready"),  # a blocked run is not a failure
+        ("running", None, None, "running"),
     ],
 )
 def test_handoff_counts_match_kanban(
-    repo_a: Path, tmp_path: Path, state: str, pr_error: str | None, expected: str
+    repo_a: Path,
+    tmp_path: Path,
+    state: str,
+    pr_error: str | None,
+    kind: str | None,
+    expected: str,
 ) -> None:
     from aifactory.web.backlog import backlog_view
 
     store = TaskRunStore(_db(repo_a))
     try:
-        store.finish("r-fail", state, None, None)
+        store.finish("r-fail", state, None, None, kind)
         store.set_pr_error("r-fail", pr_error)
     finally:
         store.close()
@@ -598,6 +605,9 @@ def test_handoff_counts_match_kanban(
     assert item["tasks"] == board["state_counts"] == item["projects"][0]["tasks"]
     assert item["tasks"]["running"] == 2 + (expected == "running")
     assert (T_FAIL in {r["task_id"] for r in item["running"]}) == (expected == "running")
+    # the Overview's failed list agrees with the kanban's failed count
+    assert item["tasks"]["failed"] == (expected == "failed")
+    assert [r["task_id"] for r in item["failed"]] == ([T_FAIL] if expected == "failed" else [])
     # Includes T_DEAD, whose process ended; reading either view must not reap it.
     assert _run_row(_db(repo_a), "r-dead") == dead_before
     assert any(r["task_id"] == T_DEAD and r["process"] == "ended" for r in item["running"])
@@ -681,7 +691,8 @@ def test_legacy_merge_and_reopen_with_populated_cache(
 
     merged = check("running" if running else "done")
     assert merged["tasks"]["done"] == 1 + (not running)
-    assert merged["tasks"]["ready"] == 1
+    assert merged["tasks"]["ready"] == 0
+    assert merged["tasks"]["failed"] == 1
     assert (T_REV in {p["task_id"] for p in merged["merged_outside"]}) == (not running)
     path = next((repo_a / "backlog").rglob(f"{T_REV}-*.md"))
     path.write_text(
@@ -689,7 +700,7 @@ def test_legacy_merge_and_reopen_with_populated_cache(
     )
     reopened = check("running" if running else "ready")
     assert reopened["tasks"]["done"] == 1
-    assert reopened["tasks"]["ready"] == 1 + (not running)
+    assert reopened["tasks"]["ready"] == (not running)
     assert reopened["merged_outside"] == []
     with sqlite3.connect(_db(repo_a)) as conn:
         assert "branch" not in {row[1] for row in conn.execute("PRAGMA table_info(task_runs)")}
@@ -716,7 +727,7 @@ def test_success_with_closed_pr_matches_kanban(
     expected = "ready" if same_branch else "running"
     assert {t["id"]: t["board_state"] for t in board["tasks"]}[T_REV] == expected
     assert item["tasks"] == item["projects"][0]["tasks"] == board["state_counts"]
-    assert item["tasks"]["ready"] == 1 + same_branch
+    assert item["tasks"]["ready"] == same_branch
     assert item["tasks"]["running"] == 2 + (not same_branch)
     assert (T_REV in {r["task_id"] for r in item["running"]}) == (not same_branch)
     assert item["review"] == item["automerge"] == []
@@ -749,8 +760,9 @@ def test_display_handoffs_preserve_factory_capacity(
     }
     for key, value in expected_capacity.items():
         assert before["factory"][key] == after["factory"][key] == value
-    assert before["tasks"]["ready"] == 1
-    assert after["tasks"]["ready"] == 0
+    assert before["tasks"]["ready"] == after["tasks"]["ready"] == 0
+    # the newer successful run or the merged PR takes T_FAIL out of failed
+    assert (before["tasks"]["failed"], after["tasks"]["failed"]) == (1, 0)
     display = "running" if handoff == "publication" else "done"
     assert after["tasks"][display] == before["tasks"][display] + 1
     assert after["tasks"] == after["projects"][0]["tasks"]
@@ -857,7 +869,7 @@ def test_projects_split_lists_and_task_counts(
         assert all(item["project"] == item["task_id"].split("-")[0] for item in a[key])
     assert [(p["id"], p["title"]) for p in a["projects"]] == [("M01", "Core"), ("M02", "Other")]
     expected = dict.fromkeys(BOARD_STATES, 0)
-    expected.update({"ready": 1, "running": 1, "in review": 1})
+    expected.update({"failed": 1, "running": 1, "in review": 1})
     assert a["projects"][1]["tasks"] == expected
     expected.update({"running": 2, "done": 1, "cancelled": 1})
     assert a["projects"][0]["tasks"] == expected
@@ -950,7 +962,8 @@ def test_factory_can_start_with_a_free_slot_and_excluded_tasks_are_not_ready(
     assert factory["ready"] == 1
     assert factory["can_start"] is True
     assert (factory["pausing"], factory["paused"]) == (1, 0)
-    assert a["tasks"]["ready"] == 1  # dead process is still shown as running
+    # dead process is still shown as running; excluded T_FAIL is still shown as failed
+    assert (a["tasks"]["ready"], a["tasks"]["failed"]) == (0, 1)
     assert next(r for r in a["running"] if r["task_id"] == T_RUN)["pause"] == "pausing"
 
 
@@ -1015,6 +1028,7 @@ def test_blocked_run_is_not_failed(
     data = _get(_client(home, tmp_path))
     assert data["repos"][0]["failed"] == []
     assert data["totals"]["failed"] == 0
+    assert data["repos"][0]["tasks"]["failed"] == 0
 
 
 def test_missing_repo_has_no_tasks_nor_factory(tmp_path: Path) -> None:
