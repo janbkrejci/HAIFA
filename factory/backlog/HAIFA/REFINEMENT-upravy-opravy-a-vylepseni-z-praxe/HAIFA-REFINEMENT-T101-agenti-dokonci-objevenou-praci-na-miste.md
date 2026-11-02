@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T101
 title: "Agenti dokončí objevenou práci na místě, follow-up jen jako poslední možnost"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/seed/agents/builder/system.md, aifactory/src/aifactory/seed/agents/planner/system.md, aifactory/src/aifactory/seed/agents/tester/system.md, aifactory/src/aifactory/seed/agents/reviewer/system.md, aifactory/src/aifactory/seed/agents/documenter/system.md, aifactory/tests/run/test_follows_prompt.py]
