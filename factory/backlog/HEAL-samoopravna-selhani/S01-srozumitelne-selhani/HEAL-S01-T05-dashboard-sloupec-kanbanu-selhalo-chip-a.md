@@ -2,6 +2,7 @@
 id: HEAL-S01-T05
 title: "Dashboard: sloupec kanbanu „Selhalo“, chip a příručka"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HEAL-S01-T04]
 writes: [aifactory/web/src/, aifactory/src/aifactory/web/static/, aifactory/src/aifactory/guide/04-backlog.md, aifactory/tests/test_guide_consistency.py]
