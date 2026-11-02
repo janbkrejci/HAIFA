@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T104
 title: "Selhání needs_environment: běh skončí hned a řetěz pokračuje"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T103]
 writes: [aifactory/src/aifactory/seed/agents/builder/system.md, aifactory/src/aifactory/seed/agents/tester/system.md, aifactory/src/aifactory/failure.py, aifactory/src/aifactory/run/queue.py, aifactory/src/aifactory/run/heal.py, aifactory/src/aifactory/run/task.py, aifactory/src/aifactory/engine/agents.py, aifactory/web/src/lib/failure.ts, aifactory/web/src/components/runs/, aifactory/src/aifactory/web/static/, aifactory/tests/test_failure.py, aifactory/tests/run/test_failure_kind.py, aifactory/tests/run/test_auto_continue.py, aifactory/tests/run/test_auto_heal.py]
