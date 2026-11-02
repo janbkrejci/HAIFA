@@ -11,6 +11,7 @@ acts by the run's ``failure_kind`` (``aifactory.failure``):
 - ``nothing_to_do`` with the agent's reason (its ``summary``, the evidence): the chain
   marks the task done in ``base`` without changes (``unchanged.finish_nothing_to_do``)
   and goes on as after a run that changed nothing.
+- ``needs_environment``: never retry in the same environment; the queue skips the task.
 - every other kind (and ``nothing_to_do`` without a reason) is left to the operator:
   the chain stops ``failed`` as before.
 
@@ -224,6 +225,8 @@ def heal(
     if run.state == SUCCEEDED or not auto_heal_enabled(task):
         return None
     kind = run.shown_failure_kind
+    if kind == failures.NEEDS_ENVIRONMENT:
+        return None  # only an operator can retry once the environment is available
     if kind == failures.PROCESS_GONE:
         return _retry(repo, result, code, provider, retry)
     if kind == failures.NOTHING_TO_DO and run.state == FAILED:

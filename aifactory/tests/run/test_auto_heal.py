@@ -466,3 +466,34 @@ def test_parallel_chain_without_auto_heal_stops(tmp_path: Path) -> None:
     assert chain.stop == STOP_FAILED
     assert _status(repo, T01) == "todo"
     assert chain.events == []
+
+
+def test_needs_environment_is_never_healed(tmp_path: Path, script: Script) -> None:
+    from aifactory.run.heal import heal
+
+    repo = _repo(tmp_path)
+    script.on("planner", lambda wt: None)
+    script.add(
+        "planner",
+        {
+            "status": "fail",
+            "summary": "desktop cannot receive input",
+            "fail_kind": "needs_environment",
+        },
+    )
+    _build(script, "two")
+    chain = run_chain(repo, T01)
+    assert _ids(chain) == [T01, T02] and chain.stop == STOP_EXHAUSTED
+    result = chain.runs[0]
+    assert result.run.failure_kind == failure.NEEDS_ENVIRONMENT
+    assert result.run.retry_list() == []
+    assert _status(repo, T01) == "todo" and result.pr is None
+    assert chain.events == [] and _chain_events(repo) == []
+    assert len([c for c in script.calls if c.agent == "planner"]) == 2
+    task = load_backlog(repo).by_id[T01]
+    assert isinstance(task, Task)
+
+    def retry_forbidden(*args: Any, **kwargs: Any) -> task_mod.TaskRunResult:
+        pytest.fail("needs_environment must never retry in the same environment")
+
+    assert heal(repo, result, task, retry=retry_forbidden) is None

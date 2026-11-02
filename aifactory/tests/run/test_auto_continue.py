@@ -1051,3 +1051,96 @@ def test_auto_continue_skips_latest_merged_pr_but_allows_a_newer_closed_pr(repo:
             **({T01: "merged_outside"} if state == "merged" else {}),
             T02: "blocked",
         }
+
+
+@pytest.mark.parametrize("auto_heal", [True, False])
+def test_needs_environment_skips_second_task_and_runs_third(
+    repo: Path, script: Script, auto_heal: bool
+) -> None:
+    setup_chain(repo, module_auto=True, t02_extra=f"auto_heal: {str(auto_heal).lower()}\n")
+    # Also leave a dependent waiting: no PR from T02 means it cannot stack or start.
+    _index(repo, "S02-other", "M01-S02", "writes: [src/other/]\n")
+    _task(repo, "S02-other", S02_T01, depends_on=[T02])
+    commit_all(repo, "dependent of environment task")
+    build(script, "one")
+    script.on("planner", lambda wt: None)
+    script.add(
+        "planner",
+        {
+            "status": "fail",
+            "summary": "GUI session is disconnected",
+            "fail_kind": "needs_environment",
+        },
+    )
+    build(script, "three")
+
+    chain = run_chain(repo, T01)
+
+    assert ids(chain) == [T01, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+    second = chain.runs[1]
+    assert second.run.failure_kind == "needs_environment"
+    assert second.pr is None and open_pr(repo, T02) is None
+    task = load_backlog(repo).by_id[T02]
+    assert isinstance(task, Task) and task.status == "todo"
+    assert len(runs_of(repo, T02)) == 1 and second.run.retry_list() == []
+    assert runs_of(repo, S02_T01) == []
+    skip = next(s for s in chain.waiting if s.task_id == T02)
+    assert skip.reason == "needs_environment"
+    assert "planner" in skip.detail and "GUI session is disconnected" in skip.detail
+    assert "needs_environment" in SKIP_REASONS
+    assert (S02_T01, "blocked") in [(s.task_id, s.reason) for s in chain.waiting]
+    store = _store(repo)
+    try:
+        row = store.get_chain(chain.chain_id or "")
+        assert row is not None
+        assert skip.to_json() in row.skipped_list()
+    finally:
+        store.close()
+
+
+def test_needs_environment_without_auto_continue_stops(repo: Path, script: Script) -> None:
+    setup_chain(repo)
+    script.add(
+        "planner",
+        {"status": "fail", "summary": "shared device busy", "fail_kind": "needs_environment"},
+    )
+    chain = run_chain(repo, T01)
+    assert ids(chain) == [T01] and chain.stop == STOP_FAILED
+    assert runs_of(repo, T02) == []
+
+
+def test_parallel_needs_environment_refills_slot_without_retry(repo: Path) -> None:
+    from test_parallel_chain import FakeRunner, setup_tasks
+
+    class EnvironmentRunner(FakeRunner):
+        def wait_any(self) -> task_mod.TaskRunResult:
+            result = super().wait_any()
+            if result.run.task_id != T02:
+                return result
+            store = self._store()
+            try:
+                store.finish(
+                    result.run.run_id,
+                    "failed",
+                    None,
+                    "shared device busy",
+                    "needs_environment",
+                    {"agent": "tester", "summary": "shared device busy"},
+                )
+                row = store.get(result.run.run_id)
+            finally:
+                store.close()
+            assert row is not None
+            return replace(result, run=row)
+
+    setup_tasks(repo, [(T01, "src/one/"), (T02, "src/two/"), (T03, "src/three/")])
+    runner = EnvironmentRunner(repo, fail=(T02,))
+    chain = run_chain(repo, T01, max_parallel=2, runner=runner)
+    assert ids(chain) == [T01, T02, T03]
+    assert chain.stop == STOP_EXHAUSTED
+    assert [(s.task_id, s.reason) for s in chain.waiting] == [(T02, "needs_environment")]
+    assert runner.events.count(("start", T02)) == 1
+    assert open_pr(repo, T02) is None
+    task = load_backlog(repo).by_id[T02]
+    assert isinstance(task, Task) and task.status == "todo"

@@ -181,7 +181,7 @@ async function onCancelTask() {
           <CircleCheck v-else :size="14" /> Hotovo
         </button>
         <SwitchHarnessButton v-if="canSwitch" :run-id="run.run_id" @started="emit('retried')" />
-        <RetryRunButton v-if="canContinue" :run-id="run.run_id" label="Pokračovat" @started="emit('retried')" />
+        <RetryRunButton v-if="canContinue" :run-id="run.run_id" :label="card.kind === 'needs_environment' ? 'Spustit znovu' : 'Pokračovat'" @started="emit('retried')" />
         <button
           v-if="canCancel"
           type="button"
@@ -197,6 +197,7 @@ async function onCancelTask() {
       </div>
     </header>
     <p class="sentence" data-test="failure-sentence">{{ card.sentence }}</p>
+    <p v-if="card.kind === 'needs_environment'">Až bude prostředí k dispozici, spusťte běh znovu.</p>
     <div v-for="fact in card.facts" :key="fact.id" class="fact" :data-fact="fact.id">
       <h4>{{ fact.label }}</h4>
       <ul :class="{ mono: fact.mono }">
