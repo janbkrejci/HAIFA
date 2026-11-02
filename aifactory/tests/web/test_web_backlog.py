@@ -18,6 +18,7 @@ from backlog_fixture import (
     B3,
     S1,
     S2,
+    _run,
     git,
     make_backlog_repo,
 )
@@ -96,6 +97,7 @@ def test_tree_follows_levels_and_board_states(tmp_path: Path) -> None:
         "awaiting merge": 0,
         "approved": 0,
         "human": 0,
+        "failed": 0,
     }
     assert "owners" not in data
     assert {"custom-flow", "plan-build"} <= set(data["workflows"])
@@ -250,8 +252,8 @@ def test_no_trace_db_means_no_runtime_states(tmp_path: Path) -> None:
     [
         ("succeeded", None, "running"),
         ("succeeded", "push failed", "ready"),
-        ("failed", None, "ready"),
-        ("aborted", None, "ready"),
+        ("failed", None, "failed"),
+        ("aborted", None, "failed"),
     ],
 )
 def test_run_to_publication_handoff(
@@ -269,6 +271,46 @@ def test_run_to_publication_handoff(
     data, warnings = backlog_view(root)
     assert warnings == []
     assert _states(data)[B2] == expected
+
+
+@pytest.mark.parametrize("newer", ["running", "succeeded"])
+def test_failed_run_shows_failed_until_a_newer_run(tmp_path: Path, newer: str) -> None:
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    client = _client(root, tmp_path)
+    store = TaskRunStore(root / ".factory/trace.db")
+    try:
+        store.finish("r-b2", "failed", None, "accept not met")
+    finally:
+        store.close()
+    data = _get(client, "/api/backlog")["data"]
+    assert "failed" in data["states"]
+    assert _states(data)[B2] == "failed"
+    assert data["state_counts"]["failed"] == 1
+    assert [t["id"] for t in _get(client, "/api/backlog?status=failed")["data"]["tasks"]] == [B2]
+
+    store = TaskRunStore(root / ".factory/trace.db")
+    try:
+        store.claim(_run("r-b2-new", B2, "running", 3))
+        if newer == "succeeded":  # awaiting publication
+            store.finish("r-b2-new", "succeeded", "b" * 40, None)
+    finally:
+        store.close()
+    data = _get(client, "/api/backlog")["data"]
+    assert _states(data)[B2] == "running"
+    assert data["state_counts"]["failed"] == 0
+    assert _get(client, "/api/backlog?status=failed")["data"]["tasks"] == []
+
+
+def test_blocked_run_is_not_failed(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+    store = TaskRunStore(root / ".factory/trace.db")
+    try:
+        store.finish("r-b2", "failed", None, f"blocked: task {B2} waits for {A1}", "blocked")
+    finally:
+        store.close()
+    data = _get(_client(root, tmp_path), "/api/backlog")["data"]
+    assert _states(data)[B2] == "ready"
+    assert data["state_counts"]["failed"] == 0
 
 
 @pytest.mark.parametrize("same_branch", [True, False])

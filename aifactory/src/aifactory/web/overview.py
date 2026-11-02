@@ -37,7 +37,9 @@ process awaiting reaping), or a successful
 run awaiting publication/completion without a publication error, is ``running``. A merged
 PR is ``done`` until recorded in the task's history (a reopened task). One with an open PR is
 ``approved`` after manual approval while waiting for CI, ``awaiting merge`` when the
-factory merges it by itself, otherwise ``in review``. ``factory``
+factory merges it by itself, otherwise ``in review``. Without these, a task whose newest
+run failed or was aborted, and not blocked, is ``failed`` (``web.backlog.run_failed``, the
+same rule as the ``failed`` list). ``factory``
 is what the Overview's factory controls need (``control.py``):
 ``max_parallel_runs`` (``.factory/config.yaml`` of the main checkout; ``null`` when invalid),
 ``running`` (running rows whose process did not end), ``in_review`` (tasks with an open PR
@@ -105,6 +107,7 @@ from aifactory.web.backlog import (
     _merged_unrecorded,
     _newest_prs,
     board_state,
+    run_failed,
     waits_for_automerge,
 )
 from aifactory.web.chains import max_parallel_runs_in
@@ -123,7 +126,6 @@ if sys.platform == "win32":  # a cold repository runs ~8 git processes, each 0.1
     REPO_TIMEOUT = 10.0
 DB_TIMEOUT = 0.5  # s, sqlite busy wait of the read-only connection
 CLOSED_STATUSES = frozenset({"done", "cancelled"})
-FAILED_STATES = frozenset({"failed", "aborted"})
 AUTO_ACTIONS_LIMIT = 5
 # the chains whose events the overview reads, newest first
 _CHAINS_READ = 20
@@ -518,14 +520,11 @@ def _lists(
         if row["task_id"] in newest:
             continue
         newest.add(row["task_id"])
-        if row["state"] not in FAILED_STATES:
+        # a blocked run waits for its blockers: not a failure (same rule as the kanban)
+        if not run_failed(row) or _closed(tasks, row["task_id"]):
             continue
-        if _closed(tasks, row["task_id"]):
-            continue
-        # the typed kind (``aifactory.failure``); a run recorded before it: other or blocked
+        # the typed kind (``aifactory.failure``); a run recorded before it: other
         kind = failure.shown_kind(row["failure_kind"], row["error"])
-        if kind == failure.BLOCKED:
-            continue  # waits for its blockers: not a failure
         failed.append(
             {
                 "run_id": row["run_id"],

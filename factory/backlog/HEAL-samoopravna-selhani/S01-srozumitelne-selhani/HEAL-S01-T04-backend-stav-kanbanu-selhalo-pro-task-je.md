@@ -1,7 +1,7 @@
 ---
 id: HEAL-S01-T04
 title: "Backend: stav kanbanu „Selhalo“ pro task, jehož poslední běh selhal"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_backlog.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/workflow/test_workflow_advice.py]
@@ -36,3 +36,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-02 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/200 · náklady $2.14
