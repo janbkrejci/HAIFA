@@ -4,7 +4,7 @@ title: "Backend: stav kanbanu „Selhalo“ pro task, jehož poslední běh selh
 status: todo
 workflow: build-test-review
 depends_on: []
-writes: [aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_backlog.py, aifactory/tests/web/test_web_overview.py]
+writes: [aifactory/src/aifactory/web/backlog.py, aifactory/src/aifactory/web/overview.py, aifactory/tests/web/test_web_backlog.py, aifactory/tests/web/test_web_overview.py, aifactory/tests/workflow/test_workflow_advice.py]
 ---
 
 ## Zadání
