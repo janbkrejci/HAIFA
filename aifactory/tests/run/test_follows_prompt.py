@@ -1,4 +1,4 @@
-"""The prompt of a task with ``follows`` carries the done task it continues."""
+"""Task continuation context and seed rules for handling discovered work."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from run_repo import DOC, SPEC, T01, Script, commit_all, fake_env, git, make_run_repo, ok, write
 
+from aifactory.library import SEED_DIR
 from aifactory.run import TaskPrRow, TaskRunRow, TaskRunStore, run_task
 from aifactory.run.follows import TEXT_LIMIT
 from aifactory.run.store import SUCCEEDED
@@ -16,6 +17,50 @@ T03 = "M01-S01-T03"
 T04 = "M01-S01-T04"
 STEP = "backlog/M01-core/S01-model"
 URL = "https://example.com/pr/7"
+AGENTS = ("builder", "planner", "tester", "reviewer", "documenter")
+
+
+def _unfinished_work(agent: str) -> str:
+    system = (SEED_DIR / "agents" / agent / "system.md").read_text(encoding="utf-8")
+    return system.split("## Unfinished work\n", 1)[1].split("\n## ", 1)[0].strip()
+
+
+def test_seed_agents_share_unfinished_work_rules() -> None:
+    sections = [_unfinished_work(agent) for agent in AGENTS]
+    assert all(section == sections[0] for section in sections)
+
+
+@pytest.mark.parametrize("agent", AGENTS)
+def test_seed_agents_finish_discovered_work_before_follow_ups(agent: str) -> None:
+    section = _unfinished_work(agent)
+    required = (
+        "Never leave open work in the repository: no TODO files, no lists of open points, "
+        'no "later" or "open questions" sections in docs or specs, '
+        'no `TODO`/`FIXME`/"finish later" comments.',
+        "Finish discovered work in this task whenever you can",
+        "delegate it to a subagent and integrate the result in this run",
+        "pass implementation or repair work to the builder in this run",
+        "outside the allowed `writes` goes into `needs_writes`, never a follow-up",
+        "return `status: fail` with `fail_kind: needs_writes`",
+        "Use `follow_ups` only as a last resort",
+        "belongs to an existing backlog task (name its id instead of creating a duplicate)",
+        "would change this task's goal",
+        "Neither extra context nor a missing write permission is a reason to create a follow-up",
+        "check the earlier reports from this run and the existing backlog",
+        'The documenter must not turn a builder\'s "out of scope" note into another follow-up',
+        "keep it only as a finding in the task document, not as open work",
+        "Set `for_human: true` only for access or credentials, "
+        "an action in a system outside the repository, "
+        "or a decision the agent is not authorized to make",
+        "Consolidate all decisions requiring a person from this run into one `for_human` follow-up",
+        "A backlog or task front-matter edit alone does not justify `for_human`",
+        "put the existing task's id in `blocked_by`",
+    )
+    for sentence in required:
+        assert sentence in section, (agent, sentence)
+    assert "Work that turns out to be out of scope, extra, or a changed intent" not in section
+    assert "follow-ups are for what does not" not in section
+    assert "Work only a person can do (a change of the backlog" not in section
 
 
 @pytest.fixture(name="script")
