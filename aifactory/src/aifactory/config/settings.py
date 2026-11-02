@@ -284,6 +284,10 @@ class ProjectSettings(BaseModel):
         default=(),
         description="Tracked build outputs and rebuild commands used when resolving conflicts.",
     )
+    follow_up_workflows: dict[Literal["blocker", "defect", "minor", "cosmetic"], str] = Field(
+        default_factory=dict,
+        description="Workflows by follow-up severity; an explicit agent workflow takes precedence.",
+    )
     azure: AzureSettings | None = Field(
         default=None,
         description="Azure DevOps connection details; required when git_provider is azure.",

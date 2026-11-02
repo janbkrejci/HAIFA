@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
+from pydantic import ValidationError
 from run_repo import SPEC, T01, T02, Script, fake_env, git, make_run_repo, ok, write
 
 from aifactory.backlog import (
@@ -89,6 +90,76 @@ def test_collect_dedupes_titles_and_ors_blocking() -> None:
     assert blocked == ["X"]
 
 
+@pytest.mark.parametrize("severity", [None, "cosmetic", "minor", "defect", "blocker"])
+def test_follow_up_severity_schema(severity: str | None) -> None:
+    item = FollowUp.model_validate({"title": "Issue", "reason": "Found", "severity": severity})
+    assert item.severity == severity
+    with pytest.raises(ValidationError):
+        FollowUp.model_validate({"title": "Issue", "reason": "Found", "severity": "unknown"})
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize(
+    ("lower", "severity"),
+    [(None, "cosmetic"), ("cosmetic", "minor"), ("minor", "defect"), ("defect", "blocker")],
+)
+def test_collect_keeps_highest_severity(lower: str | None, severity: str, reverse: bool) -> None:
+    items = [follow_up().model_copy(update={"severity": value}) for value in (lower, severity)]
+    if reverse:
+        items.reverse()
+    wf = workflow_run(follow_ups=items)
+    [reported], _ = collect(wf)
+    assert reported.severity == severity
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_collect_keeps_explicit_workflow_and_highest_severity(reverse: bool) -> None:
+    items = [
+        follow_up().model_copy(update={"severity": "minor", "workflow": "build-review"}),
+        follow_up().model_copy(update={"severity": "blocker"}),
+    ]
+    if reverse:
+        items.reverse()
+    [reported], _ = collect(workflow_run(follow_ups=items))
+    assert reported.severity == "blocker" and reported.workflow == "build-review"
+
+
+@pytest.mark.parametrize(
+    ("mapping", "explicit", "severity", "expected"),
+    [
+        (True, None, "minor", "build-review"),
+        (True, "plan-commit", "minor", "plan-commit"),
+        (False, None, "minor", None),
+        (True, None, None, None),
+        (True, None, "defect", None),
+    ],
+)
+def test_record_selects_workflow_by_severity(
+    repo: Path, mapping: bool, explicit: str | None, severity: str | None, expected: str | None
+) -> None:
+    from aifactory.backlog.derived import effective_workflow
+
+    if mapping:
+        config = repo / ".factory/config.yaml"
+        config.write_text(
+            config.read_text(encoding="utf-8")
+            + "follow_up_workflows: {minor: build-review, cosmetic: build-review}\n",
+            encoding="utf-8",
+        )
+        git(repo, "commit", "-qam", "Configure severity workflows")
+    item = follow_up().model_copy(update={"severity": severity, "workflow": explicit})
+    outcome = record(repo, T01, "severity-run", workflow_run(follow_ups=[item]))
+    assert not outcome.warnings
+    task = task_of(repo, outcome.created[0].id)
+    assert task.own.get("workflow") == expected
+    assert effective_workflow(task) == (expected or "plan-commit")
+    origin = task.body.split("### Původ", 1)[1]
+    if severity:
+        assert f"Závažnost: {severity}" in origin
+    else:
+        assert "Závažnost:" not in origin
+
+
 def test_record_creates_todo_step_and_task(repo: Path) -> None:
     outcome = record(repo, T01, "run-1", workflow_run(follow_ups=[follow_up()]))
 
@@ -113,9 +184,16 @@ def test_record_creates_todo_step_and_task(repo: Path) -> None:
 
 
 def test_record_merges_phases_and_keeps_all_origins(repo: Path) -> None:
-    item = follow_up().model_copy(update={"for_human": True})
+    item = follow_up().model_copy(update={"for_human": True, "severity": "cosmetic"})
     wf = workflow_run(follow_ups=[item])
-    wf.history.append(("document", PlanOutput(status="success", follow_ups=[item])))
+    wf.history.append(
+        (
+            "document",
+            PlanOutput(
+                status="success", follow_ups=[item.model_copy(update={"severity": "blocker"})]
+            ),
+        )
+    )
     wf.records.append(
         StepRecord(phase="document", step="document", kind="agent", owner="documenter")
     )
@@ -125,6 +203,7 @@ def test_record_merges_phases_and_keeps_all_origins(repo: Path) -> None:
     assert len(outcome.created) == 1
     [filed] = backlog_of(repo).by_id[TODO_STEP].tasks
     assert is_human(filed)
+    assert "Závažnost: blocker" in filed.body.split("### Původ", 1)[1]
     for origin in ("`plan`", "planner", "`document`", "documenter"):
         assert origin in filed.body.split("### Původ", 1)[1]
 

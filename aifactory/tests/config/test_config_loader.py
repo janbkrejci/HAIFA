@@ -12,6 +12,34 @@ from aifactory.config import ConfigError, load_worktree_config, write_prompts
 from aifactory.engine.role_registry import DEFAULT_ROLES_PATH
 
 
+@pytest.mark.parametrize("workflow", ["plan-build", "build-review"])
+def test_follow_up_workflows_loads_local_and_inherited_workflows(
+    tmp_path: Path, workflow: str
+) -> None:
+    repo = make_repo(tmp_path / "repo")
+    write(repo, ".factory/config.yaml", f"follow_up_workflows: {{minor: {workflow}}}\n")
+    assert load_worktree_config(repo).settings.follow_up_workflows == {"minor": workflow}
+
+
+@pytest.mark.parametrize(
+    ("mapping", "message"),
+    [
+        ("{unknown: build-review}", "follow_up_workflows"),
+        ("{minor: does-not-exist}", "unknown workflow 'does-not-exist'"),
+        ("{minor: ''}", "unknown workflow ''"),
+    ],
+)
+def test_follow_up_workflows_rejects_invalid_configuration(
+    tmp_path: Path, mapping: str, message: str
+) -> None:
+    repo = make_repo(tmp_path / "repo")
+    write(repo, ".factory/config.yaml", f"follow_up_workflows: {mapping}\n")
+    with pytest.raises(ConfigError) as info:
+        load_worktree_config(repo)
+    assert message in str(info.value)
+    assert ".factory" in str(info.value) and "config.yaml" in str(info.value)
+
+
 def test_sample_config_loads(tmp_path: Path) -> None:
     repo = make_repo(tmp_path / "repo")
     config = load_worktree_config(repo)

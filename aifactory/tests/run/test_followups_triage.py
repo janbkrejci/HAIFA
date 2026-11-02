@@ -586,6 +586,42 @@ def peer_choice(source: str, target: str) -> Decision:
     )
 
 
+def test_triage_context_includes_reported_severity(repo: Path) -> None:
+    item = Reported("build", "builder", "Issue", "Reason", "Details", False, severity="minor")
+    payload = triage.context([item], load_backlog(repo))
+    assert payload["follow_ups"][0]["severity"] == "minor"
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+@pytest.mark.parametrize("explicit", [None, "plan-commit"])
+def test_peer_coverage_selects_workflow_after_merging_severity(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, reverse: bool, explicit: str | None
+) -> None:
+    items = [
+        follow_up("Entire assignment").model_copy(update={"severity": "cosmetic"}),
+        follow_up("Part of assignment").model_copy(
+            update={"severity": "defect", "workflow": explicit}
+        ),
+        follow_up("Another part").model_copy(update={"severity": "minor"}),
+    ]
+    config = repo / ".factory/config.yaml"
+    config.write_text(
+        config.read_text(encoding="utf-8") + "follow_up_workflows: {defect: build-review}\n",
+        encoding="utf-8",
+    )
+    commit_all(repo, "Configure severity workflows")
+    choices = [choice("new"), peer_choice("f2", "f1"), peer_choice("f3", "f2")]
+    if reverse:
+        items.reverse()
+        choices = [peer_choice("f1", "f2"), peer_choice("f2", "f3"), choice("new", fid="f3")]
+    outcome = apply(repo, monkeypatch, choices, items=items)
+    assert not outcome.warnings and len(outcome.created) == 1
+    task = task_of(repo, outcome.created[0].id)
+    assert task.title == "Entire assignment"
+    assert "Závažnost: defect" in task.body.split("### Původ", 1)[1]
+    assert task.own["workflow"] == (explicit or "build-review")
+
+
 @pytest.mark.parametrize("blocking", [False, True])
 @pytest.mark.parametrize("human", [False, True])
 @pytest.mark.parametrize("reverse", [False, True])

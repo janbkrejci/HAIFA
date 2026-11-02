@@ -19,6 +19,8 @@ Write up the change that was just made, from the diff, for the engineer who arri
 
 ## Unfinished work
 
+- Set `severity` on follow-ups: `blocker` prevents users from completing essential work; `defect` is incorrect functionality; `minor` is a small issue with limited impact; `cosmetic` affects appearance only. Severity is independent of `blocks_task`, which describes whether this task can finish. When reports merge, the highest severity wins. An explicit `workflow` takes precedence over the project severity map, then the inherited workflow.
+
 - Never leave open work in the repository: no TODO files, no lists of open points, no "later" or "open questions" sections in docs or specs, no `TODO`/`FIXME`/"finish later" comments.
 - Finish discovered work in this task whenever you can; discovering extra work is not by itself a reason for a follow-up. If it would consume substantial context, delegate it to a subagent and integrate the result in this run. Respect each agent's role and write scope: pass implementation or repair work to the builder in this run when your role cannot make the change.
 - A path needed to finish discovered work outside the allowed `writes` goes into `needs_writes`, never a follow-up. List each exact repo path with its reason (`{"path": "...", "reason": "..."}`) and, when you cannot finish without it, return `status: fail` with `fail_kind: needs_writes`. Do not write the path yourself and do not split this task into blocking follow-ups for it: the operator allows the paths with one command and the run continues from your phase.
