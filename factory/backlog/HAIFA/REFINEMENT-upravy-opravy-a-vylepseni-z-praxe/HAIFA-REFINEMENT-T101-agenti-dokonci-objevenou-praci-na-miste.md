@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T101
 title: "Agenti dokončí objevenou práci na místě, follow-up jen jako poslední možnost"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/seed/agents/builder/system.md, aifactory/src/aifactory/seed/agents/planner/system.md, aifactory/src/aifactory/seed/agents/tester/system.md, aifactory/src/aifactory/seed/agents/reviewer/system.md, aifactory/src/aifactory/seed/agents/documenter/system.md, aifactory/tests/run/test_follows_prompt.py]
@@ -24,3 +24,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-02 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/196 · náklady $0.00
