@@ -24,6 +24,15 @@ describe('StateChip', () => {
     )
   })
 
+  it('shows a failed task with its own chip and tooltip', async () => {
+    wrapper = mount(StateChip, { props: { state: 'failed', count: 2 }, attachTo: document.body })
+    expect(wrapper.get('[data-state="failed"]').text()).toBe('Selhalo 2')
+    expect(wrapper.get('[data-state="failed"]').classes()).toContain('state-failed')
+    await wrapper.get('[data-test="tip-anchor"]').trigger('mouseenter')
+    await flushPromises()
+    expect(document.body.querySelector('[data-test="tooltip"]')?.textContent).toContain('Poslední běh tasku selhal.')
+  })
+
   it('shows what blocks the task in a tooltip', async () => {
     wrapper = mount(StateChip, { props: { state: 'blocked', blockedBy: BLOCKED_BY }, attachTo: document.body })
     expect(wrapper.find('[data-state="blocked"]').text()).toBe('Blokováno')

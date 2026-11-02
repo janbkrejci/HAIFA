@@ -505,6 +505,13 @@ body button.btn-improve:disabled {
   background: rgba(232, 182, 74, 0.08);
 }
 
+.state-chip.state-failed {
+  color: var(--red);
+  border-color: rgba(255, 111, 103, 0.7);
+  background: rgba(255, 111, 103, 0.16);
+  font-weight: 600;
+}
+
 .state-chip.state-running {
   color: var(--blue);
   border-color: rgba(108, 182, 255, 0.45);

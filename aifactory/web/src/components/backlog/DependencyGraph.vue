@@ -238,6 +238,14 @@ a:hover .node rect {
   fill: var(--amber);
 }
 
+.state-failed rect {
+  stroke: var(--red);
+}
+
+.state-failed .node-state {
+  fill: var(--red);
+}
+
 .state-running rect {
   stroke: var(--blue);
 }
@@ -318,6 +326,10 @@ a:hover .node rect {
 
 .legend .state-blocked .swatch {
   border-color: var(--amber);
+}
+
+.legend .state-failed .swatch {
+  border-color: var(--red);
 }
 
 .legend .state-running .swatch {

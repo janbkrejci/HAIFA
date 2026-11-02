@@ -21,11 +21,11 @@ function detailWrapper(error: { message: string; issues: [] } | null = null) {
 }
 
 describe('TaskDetail', () => {
-  it.each(['running', 'in review', 'approved', 'awaiting merge', 'ready'] as const)('gates actions and explains disabled actions for %s', async (state) => {
+  it.each(['running', 'in review', 'approved', 'awaiting merge', 'ready', 'failed'] as const)('gates actions and explains disabled actions for %s', async (state) => {
     const detail = taskDetail()
     detail.task.board_state = state
     const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
-    const locked = state !== 'ready'
+    const locked = state !== 'ready' && state !== 'failed'
     for (const id of ['run', 'edit', 'improve', `unlink-${detail.depends[0]!.id}`, `unrelate-${detail.task.related[0]}`]) {
       expect(wrapper.get(`[data-test="${id}"]`).attributes('disabled') !== undefined).toBe(locked)
       const tip = wrapper.findAllComponents(Tooltip).find((t) => t.find(`[data-test="${id}"]`).exists())
@@ -124,6 +124,15 @@ describe('TaskDetail', () => {
     detail.runs[0]!.state = 'failed'
     const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
     expect(wrapper.find('[data-test="retry-run"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('offers to retry the failed run of a failed task', () => {
+    const detail = taskDetail()
+    detail.task.board_state = 'failed'
+    detail.runs[0]!.state = 'failed'
+    const wrapper = mount(TaskDetail, { props: { detail, workflows: [], busy: false, error: null } })
+    expect(wrapper.find('[data-test="retry-run"]').exists()).toBe(true)
     wrapper.unmount()
   })
 

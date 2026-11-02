@@ -188,11 +188,12 @@ describe('overview factory controls', () => {
       { state: 'done', label: 'Hotovo', count: 4 },
     ])
     expect(
-      taskSummary(repo('a', { tasks: tasks({ running: 2, todo: 1, ready: 3, done: 4 }) })),
+      taskSummary(repo('a', { tasks: tasks({ running: 2, todo: 1, ready: 3, failed: 5, done: 4 }) })),
     ).toEqual([
       { state: 'running', label: 'Běží', count: 2 },
       { state: 'todo', label: 'Bez workflow', count: 1 },
       { state: 'ready', label: 'Připraveno', count: 3 },
+      { state: 'failed', label: 'Selhalo', count: 5 },
       { state: 'done', label: 'Hotovo', count: 4 },
     ])
   })
