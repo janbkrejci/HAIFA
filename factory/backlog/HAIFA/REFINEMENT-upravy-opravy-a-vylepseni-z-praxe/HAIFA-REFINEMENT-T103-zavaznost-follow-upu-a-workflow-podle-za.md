@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T103
 title: Závažnost follow-upu a workflow podle závažnosti
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T101, HAIFA-REFINEMENT-T102]
 writes: [aifactory/src/aifactory/seed/agents/builder/system.md, aifactory/src/aifactory/seed/agents/planner/system.md, aifactory/src/aifactory/seed/agents/tester/system.md, aifactory/src/aifactory/seed/agents/reviewer/system.md, aifactory/src/aifactory/seed/agents/documenter/system.md, aifactory/src/aifactory/engine/data_types.py, aifactory/src/aifactory/config/settings.py, aifactory/src/aifactory/run/followups.py, aifactory/src/aifactory/run/triage.py, aifactory/tests/run/test_followups.py, aifactory/tests/run/test_followups_triage.py, aifactory/tests/config/, aifactory/src/aifactory/config/loader.py]
