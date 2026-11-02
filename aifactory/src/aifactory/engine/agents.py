@@ -17,7 +17,7 @@ import yaml
 
 from aifactory import yamlload  # aifactory 3.1: libyaml parser when available
 # aifactory 3.4: failures that carry the run's failure_kind
-from aifactory.failure import AgentReportedFail, InvalidOutput, QuotaExhausted
+from aifactory.failure import NEEDS_ENVIRONMENT, AgentReportedFail, InvalidOutput, QuotaExhausted
 
 from . import agent_cc, agent_pi, permissions, prompts
 from .data_types import (AgentCall, AgentConfig, AgentRequest, AgentResult,
@@ -321,6 +321,11 @@ def _send_and_check(run, phase: Phase, call: AgentCall, agent: AgentConfig,
 
     # claim gates — violations flow back into the SAME session as corrections
     for gate_attempt in range(1, max(1, phase.params.retries + 1) + 1):
+        # aifactory 3.7: missing environment cannot be fixed by a claim correction.
+        # Return through the caller so the write guard and envelope persistence still run.
+        # Check each parsed response, including one received during a gate correction.
+        if envelope.status == "fail" and envelope.fail_kind == NEEDS_ENVIRONMENT:
+            break
         violations = []
         for gate in call.gates:
             report = _as_report(gate(envelope, run))

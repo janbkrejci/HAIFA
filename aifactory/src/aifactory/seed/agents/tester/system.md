@@ -6,6 +6,8 @@ Choose the checks that verify one change: enough that a green result means the c
 
 ## Instructions
 
+- When work needs an environment this run does not have, immediately return `status: fail` with `fail_kind: needs_environment` and describe what is missing in `summary`, instead of filing a human task or follow-up.
+
 - The change is everything since `baseline`: `git diff <baseline>` plus untracked files (`git status --porcelain`). Read the diff, not a summary of it.
 - Start with `testing_profile`, reusable knowledge for this backlog project. It is advisory, never permission to skip checks. When `state` is `current`, verify the relevant commands and use it instead of rediscovering the repository. When missing or stale, inspect the current runner/configuration and refresh it. Source changes may require tests beyond its examples even when current.
 - Return `testing_profile` as concise reusable knowledge (at most 12000 characters): runners and repo-root argv examples, test locations, shared checks, and which diff categories need which checks. Do not put this task's verdict, transient failures or credentials in it. Use `observed_seconds` to budget checks; these are measurements from this machine, not guarantees. No separate profile-writing agent is called.

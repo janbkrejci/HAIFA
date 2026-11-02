@@ -82,3 +82,16 @@ def test_needs_writes_without_paths_stays_other() -> None:
     kind, detail = failure.classify(failure.AgentReportedFail("builder", "x", "needs_writes", []))
     assert kind == failure.OTHER
     assert "paths" not in detail
+
+
+def test_agent_reported_needs_environment() -> None:
+    exc = failure.AgentReportedFail("tester", "GUI session is disconnected", "needs_environment")
+    assert failure.NEEDS_ENVIRONMENT in failure.FAILURE_KINDS
+    assert failure.classify(exc) == (
+        failure.NEEDS_ENVIRONMENT,
+        {
+            "agent": "tester",
+            "summary": "GUI session is disconnected",
+            "fail_kind": "needs_environment",
+        },
+    )

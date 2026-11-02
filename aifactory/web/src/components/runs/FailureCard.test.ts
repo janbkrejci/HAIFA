@@ -36,6 +36,29 @@ function actions(wrapper: VueWrapper): string[] {
 }
 
 describe('FailureCard', () => {
+  it('needs_environment: shows what is missing and retries when the environment is ready', async () => {
+    const fetchMock = vi.fn(async () => okResponse({ task_id: 'M01-S01-T01', action: 'retry', run: null, pending: true }))
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = card({
+      failure_kind: 'needs_environment',
+      failure_detail: { agent: 'tester', summary: 'Odpojená GUI session nepřijímá klávesy ani myš.' },
+    })
+    expect(wrapper.get('[data-test="failure-kind"]').text()).toBe('Chybí prostředí pro práci')
+    expect(wrapper.get('[data-test="failure-sentence"]').text()).toContain('Agent tester')
+    expect(fact(wrapper, 'summary')).toEqual(['Odpojená GUI session nepřijímá klávesy ani myš.'])
+    expect(wrapper.text()).toContain('Až bude prostředí k dispozici')
+    expect(actions(wrapper)).toEqual(['Spustit znovu', 'Zrušit task'])
+    expect(fetchMock).not.toHaveBeenCalled()
+    await wrapper.get('[data-test="retry-run"]').trigger('click')
+    await flushPromises()
+    await wrapper.get('[data-test="retry-form"]').trigger('submit')
+    await flushPromises()
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit]
+    expect(url).toMatch(/\/runs\/r-fail\/retry$/)
+    expect(init.method).toBe('POST')
+    expect(wrapper.emitted('retried')).toHaveLength(1)
+  })
+
   it.each(['continue', 'switch', 'allow'] as const)('shows already_running for %s when another run owns the task', async (action) => {
     const message = 'task M01-S01-T01 is already running: run r-new (pid 123)'
     vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) => {

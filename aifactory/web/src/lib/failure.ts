@@ -6,6 +6,7 @@ import { plural } from './format'
 export type FailureKind =
   | 'accept_not_met'
   | 'nothing_to_do'
+  | 'needs_environment'
   | 'quota'
   | 'writes_violation'
   | 'writes_needed'
@@ -27,6 +28,7 @@ export type FailureAction = 'continue' | 'cancel_task' | 'allow_writes' | 'mark_
 const LABELS: Record<FailureKind, string> = {
   accept_not_met: 'Nesplněná podmínka accept',
   nothing_to_do: 'Agent neměl co dělat',
+  needs_environment: 'Chybí prostředí pro práci',
   quota: 'Vyčerpaná kvóta',
   writes_violation: 'Zápis mimo writes',
   writes_needed: 'Chybí cesty ve writes',
@@ -40,6 +42,7 @@ const LABELS: Record<FailureKind, string> = {
 const ACTIONS: Record<FailureKind, readonly FailureAction[]> = {
   accept_not_met: ['continue', 'cancel_task'],
   nothing_to_do: ['mark_done', 'cancel_task'],
+  needs_environment: ['continue', 'cancel_task'],
   quota: ['switch_harness', 'continue', 'cancel_task'],
   writes_violation: ['allow_writes', 'continue', 'cancel_task'],
   writes_needed: ['allow_writes', 'continue', 'cancel_task'],
@@ -324,6 +327,12 @@ export function failureCard(run: FailedRun, phases: readonly FailurePhase[] = []
     case 'nothing_to_do': {
       const summary = str(d.summary)
       text = `Agent ${str(d.agent) ?? 'agent'} neměl co dělat` + (summary ? `: ${firstLine(summary)}` : '')
+      break
+    }
+    case 'needs_environment': {
+      text = `Agent ${str(d.agent) ?? 'agent'} nemá prostředí potřebné pro práci`
+      const summary = str(d.summary)
+      facts = fact('summary', 'Co chybí v prostředí', summary ? [summary] : [])
       break
     }
     case 'quota':

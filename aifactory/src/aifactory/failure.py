@@ -6,6 +6,8 @@ and a JSON object with the facts in ``task_runs.failure_detail``:
 - ``accept_not_met``: the workflow ran to its end, its ``accept`` was false.
 - ``nothing_to_do``: an agent reported ``status: fail`` with ``fail_kind: nothing_to_do``
   (the work is done already or the task asks for no change).
+- ``needs_environment``: an agent cannot work in the available environment; detail holds
+  its ``agent`` and ``summary`` describing what is missing.
 - ``quota``: the harness reported an exhausted quota or credit (recognized by the
   harness adapter, ``QuotaExhausted``).
 - ``writes_violation``: an agent wrote outside its worktree or its ``writes``
@@ -35,6 +37,7 @@ from typing import Any
 
 ACCEPT_NOT_MET = "accept_not_met"
 NOTHING_TO_DO = "nothing_to_do"
+NEEDS_ENVIRONMENT = "needs_environment"
 QUOTA = "quota"
 WRITES_VIOLATION = "writes_violation"
 WRITES_NEEDED = "writes_needed"
@@ -46,6 +49,7 @@ OTHER = "other"
 FAILURE_KINDS = (
     ACCEPT_NOT_MET,
     NOTHING_TO_DO,
+    NEEDS_ENVIRONMENT,
     QUOTA,
     WRITES_VIOLATION,
     WRITES_NEEDED,
@@ -101,7 +105,8 @@ class AgentReportedFail(RunFailure):
     """An agent's envelope said ``status: fail``; ``fail_kind`` refines the kind.
 
     ``fail_kind: nothing_to_do`` is ``nothing_to_do``; ``fail_kind: needs_writes`` with
-    paths in `needs_writes` (``[{path, reason}]``) is ``writes_needed``; else ``other``.
+    paths in `needs_writes` (``[{path, reason}]``) is ``writes_needed``;
+    ``fail_kind: needs_environment`` is ``needs_environment``; else ``other``.
     """
 
     def __init__(
@@ -113,7 +118,9 @@ class AgentReportedFail(RunFailure):
     ) -> None:
         needed = needed_paths(needs_writes or [])
         detail: dict[str, Any] = {"agent": agent, "summary": summary[:1000], "fail_kind": fail_kind}
-        if fail_kind == NOTHING_TO_DO:
+        if fail_kind == NEEDS_ENVIRONMENT:
+            kind = NEEDS_ENVIRONMENT
+        elif fail_kind == NOTHING_TO_DO:
             kind = NOTHING_TO_DO
         elif fail_kind == NEEDS_WRITES and needed:
             kind = WRITES_NEEDED

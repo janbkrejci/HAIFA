@@ -4,6 +4,10 @@
 opened its pull request, picks the next task with ``select_next`` and runs it,
 until nothing more can start or a run fails.
 
+A ``needs_environment`` failure leaves the task todo without a PR and skips it for
+the rest of this chain, without healing; other ready tasks continue under the usual
+auto-continue rules. Its dependencies remain unmet.
+
 A run that failed because its task turned out blocked (an agent reported
 ``blocked_by`` or a follow-up with ``blocks_task``; ``task.run_blockers``) does not
 stop the chain when it would go on after that task (the same rule as after a
@@ -113,6 +117,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
+from aifactory import failure as failures
 from aifactory.backlog import (
     Backlog,
     Task,
@@ -153,6 +158,7 @@ STOP_FAILED, STOP_EXHAUSTED, STOP_DISABLED = "failed", "exhausted", "disabled"
 STOP_NOT_MERGED = "not_merged"
 STOP_REASONS: tuple[str, ...] = (STOP_FAILED, STOP_EXHAUSTED, STOP_DISABLED, STOP_NOT_MERGED)
 SKIP_REASONS: tuple[str, ...] = (
+    "needs_environment",
     "human_task",
     "no_workflow",
     "waits_on_pr",
@@ -421,6 +427,13 @@ def _may_requeue(backlog: Backlog, task: Task, ids: Sequence[str]) -> bool:
         return False
     waits = set(_waits(backlog, task))
     return bool(waits) and all(i in waits for i in ids if _todo(backlog, i) is not None)
+
+
+def _environment_skip(result: task_mod.TaskRunResult) -> Skip:
+    detail = result.run.failure_detail_dict() or {}
+    agent = detail.get("agent") or "agent"
+    summary = detail.get("summary") or "chybí prostředí pro práci"
+    return Skip(result.run.task_id, failures.NEEDS_ENVIRONMENT, f"{agent}: {summary}")
 
 
 def _blocked_skip(task: Task, ids: Sequence[str]) -> Skip:
@@ -1403,7 +1416,8 @@ def _sequential(
     last = first
     while True:
         blocked: list[str] | None = None
-        if _failed(last):
+        needs_environment = last.run.shown_failure_kind == failures.NEEDS_ENVIRONMENT
+        if _failed(last) and not needs_environment:
             blocked = task_mod.run_blockers(last.run)
             if blocked is None:
                 fixed, goes_on = _heal_in_chain(
@@ -1439,12 +1453,19 @@ def _sequential(
                     # it starts again once its blockers are done (priority record)
                     requeued.add(after.id)
                     exclude.discard(after.id)
+            if needs_environment:
+                if not cont:
+                    return ChainResult(runs, STOP_FAILED)
+                skip = _environment_skip(last)
+                if skip not in start_skips:
+                    start_skips.append(skip)
             if cont and not record.started:
                 record.go_on(last.trace_db)
                 record.update(run_ids=[r.run.run_id for r in runs])
             merged = False
             if (
                 blocked is None
+                and not needs_environment
                 and not last.closed_by_heal
                 and not last.done_without_pr
                 and last.auto_merge is None
@@ -1632,7 +1653,8 @@ def _run_parallel(
         if halt is not None:
             return
         blocked: list[str] | None = None
-        if _failed(result):
+        needs_environment = result.run.shown_failure_kind == failures.NEEDS_ENVIRONMENT
+        if _failed(result) and not needs_environment:
             blocked = task_mod.run_blockers(result.run)
             if blocked is None:
                 # a retry runs in this process, like the first run of a retry chain
@@ -1671,6 +1693,17 @@ def _run_parallel(
                 last_cont = False
             return
         cont = auto or auto_continue_enabled(after)
+        if needs_environment:
+            if not cont:
+                halt = STOP_FAILED
+                return
+            start_skips.append(_environment_skip(result))
+            last_cont = True
+            if not record.started:
+                record.go_on()
+            save()
+            fill(after.id)
+            return
         if blocked is not None:
             # blocked during its run: no PR, no merge; on with its blockers first
             if not cont:

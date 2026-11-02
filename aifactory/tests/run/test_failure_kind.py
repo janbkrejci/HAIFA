@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from run_repo import T01, Script, commit_all, fake_env, make_run_repo, ok, write
+from run_repo import T01, Script, commit_all, fake_env, make_run_repo, ok, plan_envelope, write
 
 from aifactory import failure
 from aifactory.cli import main
@@ -281,3 +281,103 @@ def test_cli_lists_a_blocked_run_with_its_blockers(repo: Path, capsys: Capsys) -
     assert "blocked" in out and "waits for M01-TODO-T01" in out
     assert main(["task", "show", T01, "--repo", str(repo)]) == 0
     assert "blocked: waits for M01-TODO-T01" in capsys.readouterr().out
+
+
+def test_needs_environment(repo: Path, script: Script) -> None:
+    script.add(
+        "planner",
+        {
+            "status": "fail",
+            "summary": "GUI session is disconnected",
+            "fail_kind": "needs_environment",
+        },
+    )
+    data = _failed(repo)
+    assert data["failure_kind"] == failure.NEEDS_ENVIRONMENT
+    assert data["failure_detail"] == {
+        "agent": "planner",
+        "summary": "GUI session is disconnected",
+        "fail_kind": "needs_environment",
+    }
+    assert len([c for c in script.calls if c.agent == "planner"]) == 1
+    store = _store(repo)
+    try:
+        assert store.open_pr(T01) is None
+    finally:
+        store.close()
+
+
+@pytest.mark.parametrize("during_correction", [False, True])
+@pytest.mark.parametrize("outside_writes", [False, True])
+def test_tester_needs_environment_bypasses_claim_corrections_but_not_write_guard(
+    repo: Path, script: Script, during_correction: bool, outside_writes: bool
+) -> None:
+    write(
+        repo,
+        ".factory/workflows/plan-commit.yaml",
+        "name: plan-commit\ndescription: Replan checks\nsteps:\n"
+        "  - test_plan\n  - test_plan: {id: replan}\n  - commit\n",
+    )
+    write(
+        repo,
+        ".factory/prompts/tester/user.md",
+        "{{prompt}}\nPREVIOUS_PLAN<<{{previous_test_plan}}>>PLAN\n",
+    )
+    commit_all(repo, "test tester replanning failure")
+    previous = plan_envelope(sys.executable, "-c", "pass")
+    script.add("tester", previous)
+    script.on("tester", lambda wt: None)
+    if during_correction:
+        # This valid plan omits the old check, provoking the usual claim correction.
+        script.add("tester", plan_envelope(coverage="none"))
+        script.on("tester", lambda wt: None)
+    reported = {
+        "status": "fail",
+        "fail_kind": "needs_environment",
+        "summary": "GUI session is disconnected",
+        "coverage": "none",
+        "reason": "desktop is unavailable",
+        "checks": [],
+    }
+    script.add("tester", reported)
+    original = (repo / "README.md").read_text(encoding="utf-8")
+    script.on(
+        "tester",
+        lambda wt: write(wt, "README.md", "outside writes\n") if outside_writes else None,
+    )
+
+    result = run_task(repo, T01)
+
+    assert result.run.state == FAILED and result.pr is None
+    calls = [c for c in script.calls if c.agent == "tester"]
+    # One initial plan, optionally one rejected replan, then exactly one environment failure.
+    assert len(calls) == 2 + int(during_correction)
+    prompt_plan = calls[1].prompt.split("PREVIOUS_PLAN<<")[1].split(">>PLAN")[0]
+    assert json.loads(prompt_plan)["checks"][0]["argv"] == previous["checks"][0]["argv"]
+    if during_correction:
+        assert calls[-1].prompt.startswith("Your previous response failed validation:")
+    if outside_writes:
+        assert result.run.failure_kind == failure.WRITES_VIOLATION
+        assert (Path(result.run.worktree) / "README.md").read_text(encoding="utf-8") == original
+        return
+    assert result.run.failure_kind == failure.NEEDS_ENVIRONMENT
+    assert result.run.failure_detail_dict() == {
+        "agent": "tester",
+        "summary": reported["summary"],
+        "fail_kind": "needs_environment",
+    }
+    with sqlite3.connect(result.trace_db) as conn:
+        stored = conn.execute(
+            "SELECT phase_id, payload_json FROM envelopes WHERE agent = ? "
+            "AND valid = 1 ORDER BY rowid",
+            ("tester",),
+        ).fetchall()
+        assert len(stored) == 2
+        phase_id, payload = stored[-1]
+        assert json.loads(payload)["fail_kind"] == "needs_environment"
+        assert json.loads(payload)["summary"] == reported["summary"]
+        # No gate runs on the environment response, even after a correction.
+        attempts = conn.execute(
+            "SELECT DISTINCT attempt FROM gate_results WHERE phase_id = ?", (phase_id,)
+        ).fetchall()
+        assert attempts == ([(1,)] if during_correction else [])

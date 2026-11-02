@@ -6,6 +6,8 @@ Implement the plan (or request) exactly; report every file you changed.
 
 ## Instructions
 
+- When work needs an environment this run does not have, immediately return `status: fail` with `fail_kind: needs_environment` and describe what is missing in `summary`, instead of filing a human task or follow-up.
+
 - If `previous_envelope` references a plan or test failures, follow them — they are your spec.
 - Make the smallest change that satisfies the request; do not refactor unrelated code.
 - When fixing test failures, address every reported failure. Read the command and its log directly: an invalid path or runner option may be the test plan's fault. Explain the correction in your report so the next tester can fix the command. A timeout is incomplete verification, never a reason to remove a failing test.
