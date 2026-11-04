@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime
 import os
 import shutil
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -921,8 +922,26 @@ def clean_worktrees(repo: Path, *, provider: GitProvider | None = None) -> Clean
 def _clean(ctx: _Ctx, *, protected: frozenset[str] = frozenset()) -> CleanResult:
     # Claim/reclaim and worktree creation use this same cross-process lock.
     try:
+        warnings: list[str] = []
+        # Hosting/network latency must not hold up claims in another process.
+        for open_pr in ctx.store.open_prs():
+            try:
+                _record_state(ctx, open_pr, ctx.provider.status(open_pr.request()))
+            except Exception as exc:
+                warnings.append(f"PR {open_pr.url}: {exc}")
+        remote = ctx.rc.config.settings.remote
+        branches = (
+            pgit.remote_branches(ctx.main, remote, "factory/")
+            if pgit.has_remote(ctx.main, remote)
+            else []
+        )
+
+        def remote_exists(branch: str) -> bool | None:
+            return None if branches is None else branch in branches
+
         with ctx.store.serialized():
-            result = _clean_locked(ctx, protected)
+            result = _clean_locked(ctx, protected, remote_exists)
+            result.warnings[:0] = warnings
             from aifactory.harness.agent_dirs import sweep_orphans
 
             sweep_orphans(
@@ -938,13 +957,10 @@ def _clean(ctx: _Ctx, *, protected: frozenset[str] = frozenset()) -> CleanResult
         return CleanResult(warnings=[f"cleanup failed: {exc}"])
 
 
-def _clean_locked(ctx: _Ctx, protected: frozenset[str]) -> CleanResult:
+def _clean_locked(
+    ctx: _Ctx, protected: frozenset[str], remote_exists: Callable[[str], bool | None]
+) -> CleanResult:
     result = CleanResult()
-    for open_pr in ctx.store.open_prs():
-        try:
-            _record_state(ctx, open_pr, ctx.provider.status(open_pr.request()))
-        except Exception as exc:
-            result.warnings.append(f"PR {open_pr.url}: {exc}")
     backlog = load_backlog(ctx.main, ctx.rc.config.settings, create_missing=False)
     terminal = {
         task_id: task.status
@@ -1018,7 +1034,9 @@ def _clean_locked(ctx: _Ctx, protected: frozenset[str]) -> CleanResult:
         if pr is not None and pr.state == OPEN:
             continue
         before = len(result.deleted_branches)
-        _delete_unused_branch(ctx, branch, result.deleted_branches, result.warnings)
+        _delete_unused_branch(
+            ctx, branch, result.deleted_branches, result.warnings, remote_exists=remote_exists
+        )
         result.branch_reasons.update({b: reason for b in result.deleted_branches[before:]})
     _clean_orphans(ctx, active, runs, result)
     return result
@@ -1088,7 +1106,14 @@ def _delete_merged_branch(
     _delete_unused_branch(ctx, pr.branch, deleted, warnings)
 
 
-def _delete_unused_branch(ctx: _Ctx, branch: str, deleted: list[str], warnings: list[str]) -> None:
+def _delete_unused_branch(
+    ctx: _Ctx,
+    branch: str,
+    deleted: list[str],
+    warnings: list[str],
+    *,
+    remote_exists: Callable[[str], bool | None] | None = None,
+) -> None:
     try:
         pr = ctx.store.pr_for_branch(branch)
         if (
@@ -1128,7 +1153,11 @@ def _delete_unused_branch(ctx: _Ctx, branch: str, deleted: list[str], warnings: 
     remote = ctx.rc.config.settings.remote
     try:
         if pgit.has_remote(ctx.main, remote):
-            exists = pgit.remote_branch_exists(ctx.main, remote, branch)
+            exists = (
+                remote_exists(branch)
+                if remote_exists is not None
+                else pgit.remote_branch_exists(ctx.main, remote, branch)
+            )
             if exists is None:
                 raise RuntimeError(f"cannot query {remote}")
             if exists:

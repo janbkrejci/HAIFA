@@ -6,6 +6,7 @@ import json
 import os
 import sys
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from pathlib import Path
 
@@ -301,10 +302,56 @@ def test_cleanup_remote_states(
     elif remote == "already-deleted":
         git(repo, "push", "origin", "--delete", run.run.branch)
     else:
-        monkeypatch.setattr(pgit, "remote_branch_exists", lambda *args: None)
+        monkeypatch.setattr(pgit, "remote_branches", lambda *args: None)
     result = clean_worktrees(repo)
     assert result.deleted_branches == [run.run.branch]
     assert bool(result.warnings) == (remote == "unreachable")
+
+
+@pytest.mark.parametrize("claimed_during_query", [False, True])
+def test_cleanup_queries_remote_once_without_blocking_claims(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, claimed_during_query: bool
+) -> None:
+    build(script, "src/app/a.py")
+    run = run_task(repo, T01)
+    with monkeypatch.context() as patch:
+        patch.setattr(flow, "_delete_merged_branch", lambda *args: None)
+        approve_task(repo, T01)
+    original = pgit.remote_branches
+    calls = []
+
+    def claim() -> None:
+        store = TaskRunStore(repo / ".factory/trace.db")
+        try:
+            with store.serialized():
+                if claimed_during_query:
+                    store.claim(
+                        replace(run.run, run_id="new-claim", state=RUNNING, pid=os.getpid())
+                    )
+        finally:
+            store.close()
+
+    def query(root: Path, remote: str, prefix: str) -> list[str] | None:
+        calls.append(prefix)
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            pool.submit(claim).result(timeout=5)
+        return original(root, remote, prefix)
+
+    monkeypatch.setattr("aifactory.run.store.SERIAL_TIMEOUT", 0.2)
+    monkeypatch.setattr(pgit, "remote_branches", query)
+    monkeypatch.setattr(
+        pgit,
+        "remote_branch_exists",
+        lambda *args: pytest.fail("cleanup must reuse its bulk remote snapshot"),
+    )
+    result = clean_worktrees(repo)
+    assert calls == ["factory/"]
+    assert result.warnings == []
+    if claimed_during_query:
+        assert result.deleted_branches == []
+        assert pgit.rev_parse(repo, f"refs/heads/{run.run.branch}")
+    else:
+        assert result.deleted_branches == [run.run.branch, f"origin/{run.run.branch}"]
 
 
 def test_failed_restack_preserves_parent(

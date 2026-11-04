@@ -4,6 +4,10 @@
 opened its pull request, picks the next task with ``select_next`` and runs it,
 until nothing more can start or a run fails.
 
+A start refused by the shared trace lock is retried on the same candidate, at
+most three attempts. If it remains locked the chain fails with that diagnostic;
+it never skips the rest of the queue and reports it as exhausted.
+
 A ``needs_environment`` failure leaves the task todo without a PR and skips it for
 the rest of this chain, without healing; other ready tasks continue under the usual
 auto-continue rules. Its dependencies remain unmet.
@@ -112,10 +116,12 @@ import secrets
 import sqlite3
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Collection, Iterable, Iterator, Sequence
 from dataclasses import dataclass, field, replace
+from functools import partial
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeVar
 
 from aifactory import failure as failures
 from aifactory.backlog import (
@@ -176,6 +182,25 @@ EXCLUDED_DETAIL = "vyloučeno z auto continue v kanbanu"
 NO_WORKFLOW_DETAIL = "bez workflow"
 HUMAN_TASK_DETAIL = "pro člověka"
 _HARD_REASONS = ("unknown", "cancelled", "empty")
+
+_StartResult = TypeVar("_StartResult")
+_LOCK_START_ATTEMPTS = 3
+
+
+def _start_with_lock_retry(start: Callable[[], _StartResult]) -> _StartResult:
+    """Retry the same unclaimed task; a shared lock says nothing about its readiness.
+
+    Each claim already waits up to SERIAL_TIMEOUT. Keep retries bounded and never
+    retry other errors (in particular failures after the run has been claimed).
+    """
+    for attempt in range(_LOCK_START_ATTEMPTS):
+        try:
+            return start()
+        except TaskRunError as exc:
+            if exc.code != "trace_db_locked" or attempt == _LOCK_START_ATTEMPTS - 1:
+                raise
+            time.sleep(0.5)
+    raise AssertionError("unreachable")
 
 
 @dataclass
@@ -681,7 +706,7 @@ class ChainResult:
 
     @property
     def ok(self) -> bool:
-        return all(r.ok or r.closed_by_heal for r in self.runs)
+        return self.stop != STOP_FAILED and all(r.ok or r.closed_by_heal for r in self.runs)
 
     def to_json(self) -> dict[str, object]:
         return {
@@ -1016,9 +1041,11 @@ def start_factory(
             slots = replace(slots, in_review=tuple(t for t in slots.in_review if t not in deps))
         exclude.add(nxt.id)
         try:
-            row = start(nxt.id)
+            row = _start_with_lock_retry(partial(start, nxt.id))
         except TaskRunError as exc:
             start_skips.append(Skip(nxt.id, "cannot_start", f"{exc.code}: {exc.message}"))
+            if exc.code == "trace_db_locked":
+                break
             continue
         if row is None:
             pending.append((nxt.id, effective_task_writes(nxt) or ("",)))
@@ -1221,13 +1248,19 @@ def continue_after_merge(
             excluded.add(next_id)
 
             def start_next(next_id: str = next_id) -> task_mod.TaskRunResult:
-                return task_mod.run_task(
-                    repo, next_id, provider=provider, code=code, started_by=STARTED_AUTO_CONTINUE
+                return _start_with_lock_retry(
+                    lambda: task_mod.run_task(
+                        repo,
+                        next_id,
+                        provider=provider,
+                        code=code,
+                        started_by=STARTED_AUTO_CONTINUE,
+                    )
                 )
 
             try:
                 if start is not None:
-                    start(next_id, bool(row.auto))
+                    _start_with_lock_retry(partial(start, next_id, bool(row.auto)))
                     return None
                 chain = run_chain(
                     repo,
@@ -1242,6 +1275,8 @@ def continue_after_merge(
                 )
             except TaskRunError as exc:
                 start_skips.append(Skip(next_id, "cannot_start", f"{exc.code}: {exc.message}"))
+                if exc.code == "trace_db_locked":
+                    return ChainResult([], STOP_FAILED, start_skips, max_parallel=row.max_parallel)
                 continue
             chain.waiting = [*start_skips, *chain.waiting]
             if start_skips and chain.chain_id is not None:
@@ -1518,12 +1553,21 @@ def _sequential(
             return ChainResult(runs, STOP_EXHAUSTED, [*start_skips, *selection.skipped])
         exclude.add(nxt.id)
         try:
-            result = task_mod.run_task(
-                repo, nxt.id, code=code, provider=provider, started_by=STARTED_AUTO_CONTINUE
+            result = _start_with_lock_retry(
+                partial(
+                    task_mod.run_task,
+                    repo,
+                    nxt.id,
+                    code=code,
+                    provider=provider,
+                    started_by=STARTED_AUTO_CONTINUE,
+                )
             )
         except TaskRunError as exc:
             # Nothing was started (a race with another process, no writes, ...): try the next one.
             start_skips.append(Skip(nxt.id, "cannot_start", f"{exc.code}: {exc.message}"))
+            if exc.code == "trace_db_locked":
+                return ChainResult(runs, STOP_FAILED, start_skips)
             continue
         runs.append(result)
         record.update(run_ids=[r.run.run_id for r in runs])
@@ -1585,7 +1629,7 @@ def _run_parallel(
         save()
 
     def fill(after_id: str, prefer: Sequence[str] = ()) -> None:
-        nonlocal last_skips
+        nonlocal last_skips, halt
         while halt is None:
             if len(runner.active()) >= max_parallel:
                 return
@@ -1631,10 +1675,15 @@ def _run_parallel(
                 return
             exclude.add(nxt.id)
             try:
-                row = runner.start(nxt.id, started_by=STARTED_AUTO_CONTINUE)
+                row = _start_with_lock_retry(
+                    partial(runner.start, nxt.id, started_by=STARTED_AUTO_CONTINUE)
+                )
             except TaskRunError as exc:
                 start_skips.append(Skip(nxt.id, "cannot_start", f"{exc.code}: {exc.message}"))
                 save()
+                if exc.code == "trace_db_locked":
+                    halt = STOP_FAILED
+                    return
                 continue
             started(nxt, row)
 
@@ -1758,6 +1807,7 @@ def _run_parallel(
     waiting: list[Skip] = []
     if halt is not None:
         stop = halt
+        waiting = [*start_skips, *last_skips]
     elif not last_cont:
         stop = STOP_DISABLED
     else:

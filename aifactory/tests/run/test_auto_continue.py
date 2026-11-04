@@ -342,6 +342,37 @@ def test_task_that_cannot_start_is_reported(repo: Path, script: Script) -> None:
     assert chain.waiting[0].detail.startswith("no_writes:")
 
 
+@pytest.mark.parametrize("persistent", [False, True])
+def test_locked_start_retries_same_task_without_exhausting_queue(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, persistent: bool
+) -> None:
+    setup_chain(repo)
+    for name in ("one", "two", "three", "other"):
+        build(script, name)
+    original = task_mod.run_task
+    attempts: list[str] = []
+
+    def run(root: Path, task_id: str, **kwargs: Any) -> Any:
+        attempts.append(task_id)
+        if task_id == T02 and (persistent or attempts.count(T02) == 1):
+            raise TaskRunError("trace_db_locked", "trace.db.lock is held by another process")
+        return original(root, task_id, **kwargs)
+
+    monkeypatch.setattr(task_mod, "run_task", run)
+    monkeypatch.setattr("aifactory.run.queue.time.sleep", lambda _: None)
+    chain = run_chain(repo, T01, auto=True)
+    if persistent:
+        assert attempts == [T01, T02, T02, T02]
+        assert ids(chain) == [T01]
+        assert chain.stop == STOP_FAILED and not chain.ok
+        assert [(s.task_id, s.reason) for s in chain.waiting] == [(T02, "cannot_start")]
+        assert "trace_db_locked" in chain.waiting[0].detail
+    else:
+        assert attempts[:4] == [T01, T02, T02, T03]
+        assert chain.ok and chain.stop == STOP_EXHAUSTED
+        assert not any(s.task_id == T02 for s in chain.waiting)
+
+
 def test_task_without_workflow_is_skipped(repo: Path, script: Script) -> None:
     setup_chain(repo, t02_extra="workflow: null\n")
     build(script, "one")

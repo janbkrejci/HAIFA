@@ -2775,6 +2775,19 @@ def _chain_output(
         keys = ("runs", "stop", "waiting", "max_parallel_runs", "exclusive", "chain_id")
         data["chain"] = {k: chain_json[k] for k in keys}
         data.update(extra or {})
+        if chain.stop == "failed":
+            locked = next(
+                (s for s in chain.waiting if s.detail.startswith("trace_db_locked:")), None
+            )
+            if locked is not None:
+                return _emit_fail(
+                    "trace_db_locked",
+                    locked.detail,
+                    exit_code=2,
+                    data=data,
+                    id=locked.task_id,
+                    warnings=chain.runs[0].warnings,
+                )
         return _emit_runs(data, chain.runs, chain.runs[0].warnings)
     chain = start()
     for warning in chain.runs[0].warnings:
@@ -2792,7 +2805,7 @@ def _print_chain(chain: ChainResult) -> None:
         _print_run("run", result)
     for task_id in chain.exclusive:
         print(f"exclusive: {task_id} ran alone (wide writes)")
-    if len(chain.runs) > 1 or chain.stop in (STOP_EXHAUSTED, STOP_NOT_MERGED):
+    if len(chain.runs) > 1 or chain.waiting or chain.stop in (STOP_EXHAUSTED, STOP_NOT_MERGED):
         print(f"auto-continue: stopped ({chain.stop})")
         for skip in chain.waiting:
             print(f"waiting: {skip.task_id} {skip.reason}: {skip.detail}")
