@@ -384,6 +384,118 @@ def test_remove_tree_handles_read_only_files(tmp_path: Path) -> None:
     assert not root.exists()
 
 
+@pytest.mark.parametrize(
+    ("path", "expected"),
+    [
+        (r"C:\temp\advice", "\\\\?\\C:\\temp\\advice"),
+        (r"\\server\share\advice", "\\\\?\\UNC\\server\\share\\advice"),
+        ("\\\\?\\C:\\temp\\advice", "\\\\?\\C:\\temp\\advice"),
+    ],
+)
+def test_remove_tree_uses_windows_extended_paths(
+    monkeypatch: pytest.MonkeyPatch, path: str, expected: str
+) -> None:
+    import ntpath
+    import shutil
+    from types import SimpleNamespace
+
+    from aifactory.workflow import adaptive
+
+    calls: list[str] = []
+    monkeypatch.setattr(adaptive, "os", SimpleNamespace(name="nt", path=ntpath))
+    monkeypatch.setattr(shutil, "rmtree", lambda target, **kwargs: calls.append(target))
+    adaptive.remove_tree(Path(path))
+    assert calls == [expected]
+
+
+def _long_advice_file(root: Path) -> Path:
+    import stat
+
+    file = root.joinpath(*(["nested-" + "x" * 40] * 6), "readonly-object")
+    assert len(str(file)) > 260
+    # Creation must work even on Windows with LongPathsEnabled=0.
+    if os.name == "nt":
+        file = Path("\\\\?\\" + str(file.resolve()))
+    file.parent.mkdir(parents=True)
+    file.write_text("git object")
+    file.chmod(stat.S_IREAD)
+    return file
+
+
+def test_advice_dir_removes_long_paths(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aifactory.workflow.adaptive import advice_dir
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    with advice_dir() as root:
+        file = _long_advice_file(root)
+        assert file.exists()
+    assert not file.exists()
+    assert not root.exists()
+
+
+def test_cleanup_orphans_removes_long_paths(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.workflow.adaptive import cleanup_orphans
+
+    root = tmp_path / "factory-advice-dead"
+    file = _long_advice_file(root)
+    (root / "owner.pid").write_text("99999999")
+    monkeypatch.setattr("aifactory.workflow.adaptive.oscompat.alive", lambda _: False)
+    assert cleanup_orphans(tmp_path) == [root]
+    assert not file.exists()
+    assert not root.exists()
+
+
+@pytest.mark.parametrize("cleanup", ["advice", "orphan"])
+def test_advice_cleanup_logs_failure_and_allows_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    cleanup: str,
+) -> None:
+    from aifactory import oscompat
+    from aifactory.workflow import adaptive
+
+    monkeypatch.setattr("tempfile.tempdir", str(tmp_path))
+    remove_tree = adaptive.remove_tree
+
+    def locked(path: Path) -> None:
+        raise PermissionError("injected locked file")
+
+    monkeypatch.setattr(adaptive, "remove_tree", locked)
+    if cleanup == "advice":
+        with adaptive.advice_dir() as root:
+            pass
+    else:
+        root = tmp_path / "factory-advice-dead"
+        root.mkdir()
+        (root / "owner.pid").write_text("99999999")
+        monkeypatch.setattr(oscompat, "alive", lambda _: False)
+        assert adaptive.cleanup_orphans(tmp_path) == []
+    assert root.exists()
+    assert str(root) in caplog.text
+    assert "injected locked file" in caplog.text
+    assert root not in adaptive._active
+    monkeypatch.setattr(adaptive, "remove_tree", remove_tree)
+    assert adaptive.cleanup_orphans(tmp_path) == [root]
+    assert not root.exists()
+
+
+def test_cleanup_orphans_logs_scan_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    from aifactory.workflow.adaptive import cleanup_orphans
+
+    def locked(path: Path) -> Any:
+        raise PermissionError("injected scan failure")
+
+    monkeypatch.setattr(Path, "iterdir", locked)
+    assert cleanup_orphans(tmp_path) == []
+    assert str(tmp_path) in caplog.text
+    assert "injected scan failure" in caplog.text
+
+
 @pytest.mark.parametrize("task_id", ["P01-S01-T01", None])
 def test_context_harness_switch_drops_ancestor_model(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, task_id: str | None

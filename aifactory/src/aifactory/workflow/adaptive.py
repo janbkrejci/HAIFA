@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
 import re
 import shutil
@@ -42,6 +43,7 @@ from aifactory.workflow.check import check_agents
 from aifactory.workflow.parse import outline, parse_workflow
 
 install()
+logger = logging.getLogger(__name__)
 
 # Board states of a task that the workflow advice is not offered for.
 ADVICE_CLOSED_STATES = frozenset(
@@ -295,6 +297,16 @@ _active: set[Path] = set()
 
 def remove_tree(path: Path) -> None:
     """Delete ``path`` recursively, including read-only files (git objects on Windows)."""
+    target: Path | str = path
+    if os.name == "nt":
+        absolute = os.path.abspath(path)
+        if not absolute.startswith("\\\\?\\"):
+            absolute = (
+                "\\\\?\\UNC\\" + absolute[2:]
+                if absolute.startswith("\\\\")
+                else "\\\\?\\" + absolute
+            )
+        target = absolute
 
     def writable(func: Any, name: str, *_: Any) -> None:
         try:
@@ -304,9 +316,9 @@ def remove_tree(path: Path) -> None:
             pass
 
     if sys.version_info >= (3, 12):
-        shutil.rmtree(path, onexc=writable)
+        shutil.rmtree(target, onexc=writable)
     else:
-        shutil.rmtree(path, onerror=writable)
+        shutil.rmtree(target, onerror=writable)
 
 
 def _orphaned(path: Path, now: float) -> bool:
@@ -330,7 +342,8 @@ def cleanup_orphans(root: Path | None = None) -> list[Path]:
     removed: list[Path] = []
     try:
         entries = list(base.iterdir())
-    except OSError:
+    except OSError as exc:
+        logger.warning("Could not scan advice directories in %s: %s", base, exc)
         return removed
     now = time.time()
     for path in entries:
@@ -343,7 +356,8 @@ def cleanup_orphans(root: Path | None = None) -> list[Path]:
             continue
         try:
             remove_tree(path)
-        except OSError:
+        except OSError as exc:
+            logger.warning("Could not remove orphan advice directory %s: %s", path, exc)
             continue
         remove_agent_dirs(path / "repo")
         remove_agent_dirs(path)
@@ -367,10 +381,10 @@ def advice_dir() -> Iterator[Path]:
         remove_agent_dirs(path)
         try:
             remove_tree(path)
-        except OSError:
+        except OSError as exc:
             # Still locked (e.g. by a lingering agent process on Windows): the owner is this
             # process and the directory is no longer active, so the next cleanup removes it.
-            pass
+            logger.warning("Could not remove advice directory %s: %s", path, exc)
         finally:
             with _active_lock:
                 _active.discard(path)
