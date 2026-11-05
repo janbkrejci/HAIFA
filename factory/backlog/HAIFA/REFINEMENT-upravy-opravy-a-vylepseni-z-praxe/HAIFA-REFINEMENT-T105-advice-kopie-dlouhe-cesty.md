@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T105
 title: Kopie factory-advice se na Windows nemažou kvůli dlouhým cestám
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/src/aifactory/workflow/adaptive.py, aifactory/tests/workflow/test_workflow_advice.py]
 ---
@@ -24,3 +24,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-05 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/202 · náklady $0.00
