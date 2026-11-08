@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T106
 title: Triage follow-upů selhává na příliš dlouhém promptu u velkého backlogu
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/src/aifactory/run/triage.py, aifactory/tests/run/]
 ---

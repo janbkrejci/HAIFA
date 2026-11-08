@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T105
 title: Kopie factory-advice se na Windows nemažou kvůli dlouhým cestám
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/src/aifactory/workflow/adaptive.py, aifactory/tests/workflow/test_workflow_advice.py]
 ---
