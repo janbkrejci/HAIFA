@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T107
 title: Retry s --allow-writes nepřenese rozšířený writes do obnovené session agenta
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/src/aifactory/run/, aifactory/tests/run/]
 ---
@@ -13,3 +13,7 @@ Co udělat:
 - Zjistit, kde obnovená session (`retry`, rejoin) bere Write scope role. Zajistit, aby po `allow_writes` dostala aktuální writes tasku ze stejného zdroje jako nová session, ne jen v poznámce k retry.
 - Pokud harness neumí scope obnovené session změnit, spustit po `--allow-writes` fázi v nové session.
 - Test: po `allow_writes` obsahuje scope, který dostane agent pokračující fáze, nově povolené cesty.
+
+## Běhy
+
+- 2026-11-08 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/204 · náklady $0.00

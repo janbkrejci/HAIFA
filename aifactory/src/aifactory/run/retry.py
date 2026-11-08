@@ -4,6 +4,8 @@ The retry is another attempt of the same run: the same ``run_id``, worktree and 
 the same trace session (phases, tokens and costs add up) and the same session directory,
 so every agent rejoins its coding-agent session (``agent_map.json``: ``claude --resume``,
 ``codex exec resume``, pi's ``--session-id``) when its harness and model are unchanged.
+Agents whose write scope changed start a fresh coding-agent session so the original
+system instructions cannot retain an obsolete scope.
 The prompt gets a ``## Continuation`` section with the phases already done, their
 summaries and the ``context_handoff/`` directory, for an agent whose session is gone, and
 the operator's note. A retry on another harness (``--harness``, the dashboard's
@@ -40,6 +42,7 @@ What the retry does, in order; any refusal before the claim changes nothing:
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import tempfile
@@ -87,6 +90,8 @@ from aifactory.workflow.interpreter import PLAN_REVIEW_PHASE
 from aifactory.workflow.rebase import rebase_onto
 
 if TYPE_CHECKING:  # task.py imports this module at run time
+    from aifactory.harness.config import SSSFConfig
+    from aifactory.run.guard import TaskWriteGuard
     from aifactory.run.task import TaskRunResult
 
 ACCEPT_NOT_MET = "accept not met"  # the error of a resolve whose accept failed
@@ -94,6 +99,33 @@ _REVIEW_OUTPUT = "ReviewOutput"
 _OVERRIDE_TAG = re.compile(r"\[přepis rosteru: ([^\]]*)\]")
 
 __all__ = ["ACCEPT_NOT_MET", "RetryPlan", "plan_retry", "rebase_for_retry", "retry_run"]
+
+
+def refresh_write_scope_sessions(session_dir: Path, cfg: SSSFConfig, guard: TaskWriteGuard) -> None:
+    """Keep a saved conversation only when its audited write scope is still current.
+
+    Harnesses can retain the first turn's system instructions on resume. Compare
+    against the same guard prompt a new session receives, before the engine replaces
+    the audit copies. Missing scope evidence is also unsafe to resume (older runs).
+    The run, journal and handoff files stay intact.
+    """
+    path = session_dir / "agent_map.json"
+    if not path.is_file():
+        return
+    entries = json.loads(path.read_text(encoding="utf-8"))
+    changed = False
+    for agent in cfg.agents:
+        if agent.name not in entries:
+            continue
+        audit = session_dir / agent.name / "prompts" / "system.md"
+        previous = audit.read_text(encoding="utf-8") if audit.is_file() else ""
+        current = guard.scope_prompt(agent, "", str(session_dir / "context_handoff"))
+        marker = "\n## Write scope\n\n"
+        if marker not in previous or marker + previous.rsplit(marker, 1)[1] != current:
+            del entries[agent.name]
+            changed = True
+    if changed:
+        path.write_text(json.dumps(entries, indent=2), encoding="utf-8", newline="\n")
 
 
 @dataclass

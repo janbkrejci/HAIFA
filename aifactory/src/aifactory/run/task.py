@@ -1013,6 +1013,9 @@ def _execute_job(
                         store.set_base_sha(row.run_id, retry.onto)
                         baseline = retry.onto
                 if retry is not None and error is None:
+                    from aifactory.run.retry import refresh_write_scope_sessions
+
+                    refresh_write_scope_sessions(session_dir, cfg, guard)
                     handoff = session_dir / "context_handoff"
                     handoff.mkdir(parents=True, exist_ok=True)
                     (handoff / f"retry_attempt_{row.attempt - 1}.json").write_text(
