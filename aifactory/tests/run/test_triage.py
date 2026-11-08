@@ -129,6 +129,64 @@ def test_context_is_pure_complete_and_only_todo(backlog: Backlog) -> None:
     json.dumps(payload)
 
 
+@pytest.mark.parametrize("source", ["T1", None])
+def test_large_context_budget(backlog: Backlog, source: str | None) -> None:
+    local_step = backlog.containers[0].children[0]
+    local_step.tasks[0].body = "č" * BODY_LIMIT
+    other = Container("OTHER", "Other project", "project", "backlog/OTHER")
+    step = Container("OS", "Other step", "step", "backlog/OTHER/OS", parent=other)
+    other.children.append(step)
+    # Put unrelated tasks first to ensure traversal order does not determine priority.
+    backlog.containers.insert(0, other)
+    for n in range(599):
+        task = Task(
+            f"O{n}",
+            f"Other {n}",
+            "todo",
+            "task",
+            f"backlog/OTHER/OS/O{n}.md",
+            step,
+            body=('"\\\nč' * BODY_LIMIT)[:BODY_LIMIT],
+        )
+        step.tasks.append(task)
+        backlog.by_id[task.id] = task
+    local_step.tasks[0].depends_on = ["O598"]
+    step.tasks[-1].depends_on = ["O597"]
+    step.tasks[-2].depends_on = ["O598"]  # a dependency cycle must terminate
+    before = copy.deepcopy(backlog)
+    payload = context([report()], backlog, task_id=source)
+    assert len(json.dumps(payload, ensure_ascii=False, indent=2)) <= triage.CONTEXT_LIMIT
+    assert payload["backlog_truncated"] is True
+    if source:
+        assert [t["id"] for t in payload["backlog"][:3]] == ["T1", "O597", "O598"]
+        assert payload["backlog"][0]["body"] == "č" * BODY_LIMIT
+        assert payload["backlog"][0]["body_truncated"] is False
+        assert all(len(t["body"]) == BODY_LIMIT for t in payload["backlog"][1:3])
+    assert any(set(t) == {"id", "title"} for t in payload["backlog"])
+    assert len(step.tasks[0].body) == len(before.containers[0].children[0].tasks[0].body)
+
+
+def test_context_omits_candidates_when_titles_exceed_budget(
+    backlog: Backlog, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    baseline = context([report()], backlog)
+    monkeypatch.setattr(triage, "CONTEXT_LIMIT", len(triage._context_json(baseline)))
+    backlog.containers[0].children[0].tasks[0].title = "Huge title" * BODY_LIMIT
+    payload = context([report()], backlog, task_id="T1")
+    assert payload["backlog"] == []
+    assert payload["backlog_truncated"] is True
+    assert len(triage._context_json(payload)) <= triage.CONTEXT_LIMIT
+
+
+def test_context_rejects_oversized_followups(backlog: Backlog) -> None:
+    with pytest.raises(TriageUnavailable, match="exceeds budget"):
+        context([report(details="x" * triage.CONTEXT_LIMIT)], backlog)
+
+
+def test_complete_context_is_not_marked_truncated(backlog: Backlog) -> None:
+    assert context([report()], backlog)["backlog_truncated"] is False
+
+
 @pytest.mark.parametrize("action", ["covered", "extend", "decide", "new"])
 def test_valid_decisions(backlog: Backlog, action: str) -> None:
     assert errors(backlog, choice(action)) == []
@@ -373,6 +431,25 @@ def test_output_and_invocation_failures(
     _finished(repo, "fail")
 
 
+def test_model_error_is_in_phase_error_and_trace(
+    repo: Path, backlog: Backlog, fake: tuple[list[Any], list[Any]]
+) -> None:
+    _, answers = fake
+    answers.append("Prompt is too long")
+    with pytest.raises(TriageUnavailable, match="Prompt is too long"):
+        ask_triager(repo, [report()], backlog)
+    [db] = (repo / ".factory/data/triage").glob("*/trace.db")
+    with sqlite3.connect(db) as conn:
+        status, error = conn.execute("SELECT status, error FROM phases").fetchone()
+        assert status == "fail"
+        assert "Prompt is too long" in error
+        logs = conn.execute("SELECT payload_json FROM events WHERE type='log'").fetchall()
+        assert any(json.loads(row[0]).get("model_response") == "Prompt is too long" for row in logs)
+    [events] = (repo / ".factory/data/triage").glob("*/events.jsonl")
+    assert "Prompt is too long" in events.read_text(encoding="utf-8")
+    _finished(repo, "fail")
+
+
 @pytest.mark.parametrize("failure", ["missing", "disabled", "unavailable", "resolve", "validate"])
 def test_unavailable_setup(
     repo: Path,
@@ -459,14 +536,23 @@ def test_urls_are_not_addition_path_evidence(backlog: Backlog) -> None:
     )
 
 
-def test_context_step_fallback_and_no_candidate_limit(backlog: Backlog) -> None:
+def test_context_step_fallback(backlog: Backlog) -> None:
     step = backlog.containers[0].children[0]
     step.level = "milestone"
+    payload = context([report()], backlog)
+    assert payload["backlog"][0]["step"] == {"id": "S", "title": "Step"}
+    assert payload["backlog"][0]["body_truncated"] is False
+    assert payload["backlog_truncated"] is False
+
+
+def test_context_preserves_followups_and_bounds_candidates(backlog: Backlog) -> None:
+    step = backlog.containers[0].children[0]
     step.tasks = [replace(step.tasks[0], id=f"T{n}", body="Small") for n in range(450)]
     payload = context([report() for _ in range(450)], backlog)
     assert len(payload["follow_ups"]) == len(payload["backlog"]) == 450
-    assert payload["backlog"][-1]["step"] == {"id": "S", "title": "Step"}
-    assert payload["backlog"][-1]["body_truncated"] is False
+    assert payload["backlog_truncated"] is True
+    assert len(json.dumps(payload, ensure_ascii=False, indent=2)) <= triage.CONTEXT_LIMIT
+    assert payload["backlog"][-1] == {"id": "T449", "title": "T1"}
 
 
 @pytest.mark.parametrize("source", ["binding", "task", "computer"])

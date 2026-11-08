@@ -1,8 +1,9 @@
 """Read-only follow-up recommendations; applying them belongs to the caller.
 
-Only task bodies are bounded (6,000 characters including the ellipsis). No task
-or follow-up is omitted. Scope containment is deliberately conservative; semantic
-relatedness and preservation of the original assignment remain agent judgments.
+Backlog candidates are prioritized and bounded by a serialized context budget.
+Follow-ups are preserved; oversized fixed input fails before invoking the model.
+Scope containment is deliberately conservative; semantic relatedness and
+preservation of the original assignment remain agent judgments.
 """
 
 from __future__ import annotations
@@ -17,8 +18,8 @@ from typing import Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from aifactory.backlog import Backlog, effective_writes, is_human, iter_tasks
-from aifactory.backlog.derived import ancestors, harness_values
+from aifactory.backlog import Backlog, Container, effective_writes, is_human, iter_tasks
+from aifactory.backlog.derived import ancestors, descendant_tasks, harness_values
 from aifactory.config import load_run_config
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentCall, EnvelopeBase, PhaseParams
@@ -36,6 +37,8 @@ from aifactory.workflow.propose import _isolated
 install()
 
 BODY_LIMIT = 6000
+# Characters of JSON sent here, including follow-ups and schema; allows room for system prompts.
+CONTEXT_LIMIT = 120_000
 
 
 class TriageUnavailable(RuntimeError):
@@ -77,12 +80,34 @@ class TriageOutput(EnvelopeBase):
     decisions: list[Decision] = Field(default_factory=list)
 
 
-def context(reported: Sequence[Reported], backlog: Backlog) -> dict[str, Any]:
+def context(
+    reported: Sequence[Reported], backlog: Backlog, *, task_id: str | None = None
+) -> dict[str, Any]:
     """Pure, serializable input, preserving stored todo status and inherited scope."""
-    tasks = []
-    for task in iter_tasks(backlog):
-        if task.status != "todo":
+    source = backlog.by_id.get(task_id or "")
+    project = next((c for c in ancestors(source) if c.level == "project"), None) if source else None
+    candidates = [t for t in iter_tasks(backlog) if t.status == "todo"]
+    local = {
+        t.id for t in candidates if project is not None and any(c is project for c in ancestors(t))
+    }
+    dependencies: set[str] = set()
+    pending = list(local)
+    while pending:
+        node = backlog.by_id.get(pending.pop())
+        if node is None:
             continue
+        targets = (
+            [t.id for t in descendant_tasks(node)]
+            if isinstance(node, Container)
+            else node.depends_on
+        )
+        for target in targets:
+            if target not in dependencies:
+                dependencies.add(target)
+                pending.append(target)
+    candidates.sort(key=lambda t: 0 if t.id in local else 1 if t.id in dependencies else 2)
+    tasks: list[dict[str, Any]] = []
+    for task in candidates:
         step = next((c for c in ancestors(task) if c.level == "step"), task.parent)
         truncated = len(task.body) > BODY_LIMIT
         tasks.append(
@@ -98,7 +123,7 @@ def context(reported: Sequence[Reported], backlog: Backlog) -> dict[str, Any]:
                 "assignee": "human" if is_human(task) else "agent",
             }
         )
-    return {
+    payload: dict[str, Any] = {
         "follow_ups": [
             {
                 "id": f"f{n}",
@@ -113,8 +138,53 @@ def context(reported: Sequence[Reported], backlog: Backlog) -> dict[str, Any]:
             for n, r in enumerate(reported, 1)
         ],
         "backlog": tasks,
+        "backlog_truncated": any(t["body_truncated"] for t in tasks),
         "output_schema": TriageOutput.model_json_schema(),
     }
+    size = len(_context_json(payload))
+    if size <= CONTEXT_LIMIT:
+        return payload
+    payload["backlog_truncated"] = True
+    size = len(_context_json(payload))
+
+    def entry_size(entry: dict[str, Any]) -> int:
+        # Match indentation of an entry nested in the backlog array.
+        return len(json.dumps([entry], ensure_ascii=False, indent=2).replace("\n", "\n  "))
+
+    for entry in reversed(tasks):
+        if size <= CONTEXT_LIMIT:
+            break
+        original_size = entry_size(entry)
+        body = entry["body"]
+        entry["body_truncated"] = True
+        entry["body"] = ""
+        available = CONTEXT_LIMIT - (size - original_size + entry_size(entry))
+        if available > 0:
+            low, high = 0, len(body)
+            while low < high:
+                mid = (low + high + 1) // 2
+                if len(json.dumps(body[:mid] + "…", ensure_ascii=False)) - 2 <= available:
+                    low = mid
+                else:
+                    high = mid - 1
+            entry["body"] = body[:low] + "…" if low else ""
+        size += entry_size(entry) - original_size
+        if size > CONTEXT_LIMIT:
+            previous_size = entry_size(entry)
+            minimal = {"id": entry["id"], "title": entry["title"]}
+            entry.clear()
+            entry.update(minimal)
+            size += entry_size(entry) - previous_size
+    while tasks and size > CONTEXT_LIMIT:
+        tasks.pop()
+        size = len(_context_json(payload))
+    if size > CONTEXT_LIMIT:
+        raise TriageUnavailable("Triager context exceeds budget even without backlog candidates")
+    return payload
+
+
+def _context_json(payload: dict[str, Any]) -> str:
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def _safe_path(value: str) -> str | None:
@@ -344,17 +414,31 @@ def _invoke(
                     retries=1,
                 )
             ) as phase:
-                envelope = phase.call(
-                    AgentCall(
-                        prompt=json.dumps(context(reported, backlog), ensure_ascii=False, indent=2),
-                        output_type=TriageOutput,
-                        gates=[gate],
+                try:
+                    envelope = phase.call(
+                        AgentCall(
+                            prompt=_context_json(context(reported, backlog, task_id=task_id)),
+                            output_type=TriageOutput,
+                            gates=[gate],
+                        )
                     )
-                )
-            output = TriageOutput.model_validate(envelope.model_dump())
-            errors = _violations(output, reported, backlog)
-            if output.status != "success" or errors:
-                raise TriageUnavailable(f"Triager failed: {output.summary}; {'; '.join(errors)}")
+                    output = TriageOutput.model_validate(envelope.model_dump())
+                    errors = _violations(output, reported, backlog)
+                    if output.status != "success" or errors:
+                        raise TriageUnavailable(
+                            f"Triager failed: {output.summary}; {'; '.join(errors)}"
+                        )
+                except Exception as exc:
+                    row = tracer.conn.execute(
+                        "SELECT payload_json FROM envelopes WHERE phase_id=? AND valid=0 "
+                        "ORDER BY rowid DESC LIMIT 1",
+                        (phase.phase.phase_id,),
+                    ).fetchone()
+                    response = json.loads(row[0]).get("raw", "") if row else ""
+                    phase.log(error=str(exc), model_response=response)
+                    raise TriageUnavailable(
+                        f"Triager failed; model response: {response[:700]}; reason: {exc}"
+                    ) from exc
             by_id = {d.follow_up_id: d for d in output.decisions}
             decisions = [by_id[f"f{n}"] for n, _ in enumerate(reported, 1)]
             ok = True
