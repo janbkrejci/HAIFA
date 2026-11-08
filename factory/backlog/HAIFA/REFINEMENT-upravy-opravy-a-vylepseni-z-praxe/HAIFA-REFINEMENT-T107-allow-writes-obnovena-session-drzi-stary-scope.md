@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T107
 title: Retry s --allow-writes nepřenese rozšířený writes do obnovené session agenta
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/src/aifactory/run/, aifactory/tests/run/]
 ---
