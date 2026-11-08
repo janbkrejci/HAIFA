@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T106
 title: Triage follow-upů selhává na příliš dlouhém promptu u velkého backlogu
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/src/aifactory/run/triage.py, aifactory/tests/run/]
 ---
@@ -25,3 +25,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-08 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/203 · náklady $0.00
