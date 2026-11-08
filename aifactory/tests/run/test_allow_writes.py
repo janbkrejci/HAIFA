@@ -62,6 +62,7 @@ def test_allow_writes_extends_writes_and_the_retry_finishes(
     repo: Path, script: Script, capsys: Capsys
 ) -> None:
     run_id = _failed_run(repo, script, "README.md")
+    original_session = script.calls[-1].session
     store = TaskRunStore(repo / ".factory" / "trace.db")
     try:
         detail = store.get(run_id).failure_detail_dict()  # type: ignore[union-attr]
@@ -94,6 +95,9 @@ def test_allow_writes_extends_writes_and_the_retry_finishes(
     assert run["attempt"] == 2
     branch = run["branch"]
     assert git(repo, "show", f"{branch}:README.md") == "readme, extended"
+    continued = script.calls[-1]
+    assert continued.session != original_session
+    assert "`README.md`" in continued.system.split("## Write scope", 1)[1]
 
 
 def test_protected_backlog_and_main_checkout_paths_are_refused(

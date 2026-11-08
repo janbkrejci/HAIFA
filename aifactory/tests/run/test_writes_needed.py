@@ -14,6 +14,7 @@ from aifactory import failure
 from aifactory.backlog import find_task, load_for_edit
 from aifactory.run import TaskRunError, TaskRunStore, run_task
 from aifactory.run.allow_writes import plan_allow_writes
+from aifactory.run.retry import retry_run
 from aifactory.run.store import FAILED, SUCCEEDED
 from aifactory.web import create_app
 from cli_json import run_json
@@ -82,10 +83,14 @@ def test_needs_writes_without_paths_is_not_a_valid_envelope(repo: Path, script: 
     assert result.run.failure_kind == failure.INVALID_OUTPUT
 
 
+@pytest.mark.parametrize("harness", ["codex", "claude", "pi"])
 def test_retry_allow_writes_adds_the_needed_paths_and_finishes(
-    repo: Path, script: Script, capsys: Capsys
+    tmp_path: Path, script: Script, capsys: Capsys, harness: str
 ) -> None:
+    repo = make_run_repo(tmp_path / "repo", harness=harness)
     run_id = _failed(repo, script, "README.md")
+    original = script.calls[-1]
+    assert "`README.md`" not in original.system
 
     script.on("planner", lambda wt: write(wt, "README.md", "readme, extended\n"))
     script.add("planner", {"status": "success", "summary": "planned"})
@@ -109,6 +114,33 @@ def test_retry_allow_writes_adds_the_needed_paths_and_finishes(
     note = prompt[prompt.index("## Retry note") :]
     assert "README.md" in note and "go on" in note
     assert "Continuing from phase: plan" in prompt
+    continued = script.calls[-1]
+    assert continued.session != original.session
+    scope = continued.system.split("## Write scope", 1)[1]
+    assert "`README.md`" in scope and "`src/app/`" in scope
+
+
+@pytest.mark.parametrize("audit", ["present", "missing", "legacy"])
+def test_retry_rejoins_only_a_session_with_a_known_current_scope(
+    repo: Path, script: Script, audit: str
+) -> None:
+    run_id = _failed(repo, script, "README.md")
+    original = script.calls[-1]
+    saved = repo / ".factory/data/sessions" / run_id / "planner/prompts/system.md"
+    if audit == "missing":
+        saved.unlink()
+    elif audit == "legacy":
+        saved.write_text("You are the planner.\n", encoding="utf-8")
+    script.add("planner", _needs("README.md"))
+
+    result = retry_run(repo, T01)
+
+    assert result.run.run_id == run_id
+    assert result.run.failure_kind == failure.WRITES_NEEDED
+    continued = script.calls[-1]
+    assert (continued.session == original.session) is (audit == "present")
+    assert continued.system == original.system
+    assert "`README.md`" not in continued.system
 
 
 def test_protected_and_backlog_paths_are_refused(repo: Path, script: Script) -> None:
