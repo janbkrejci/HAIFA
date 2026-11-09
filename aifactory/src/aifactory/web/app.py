@@ -541,7 +541,21 @@ async def repo_operating_settings(request: Request) -> JSONResponse:
         service = await run_in_threadpool(
             RepositorySettings, _repo(request), request.app.state.home
         )
-        if request.method == "PATCH":
+        if request.url.path.endswith("/legacy"):
+            if request.method == "POST":
+                body = await _json_body(request)
+                if set(body) - {"choices", "overwrite"} or not isinstance(
+                    body.get("choices", {}), dict
+                ):
+                    return _usage_error("Supply choices and optional overwrite only.")
+                data = await run_in_threadpool(
+                    service.import_legacy,
+                    body.get("choices", {}),
+                    overwrite=body.get("overwrite", False),
+                )
+            else:
+                data = await run_in_threadpool(service.legacy_preview)
+        elif request.method == "PATCH":
             body = await _json_body(request)
             if body.get("harness") is not None:
                 catalog = await run_in_threadpool(
@@ -1922,6 +1936,7 @@ def _repo_routes() -> list[BaseRoute]:
     """The API of one repository (every endpoint but ``/health``), relative to its prefix."""
     return [
         Route("/settings/local", repo_operating_settings, methods=["GET", "PATCH"]),
+        Route("/settings/local/legacy", repo_operating_settings, methods=["GET", "POST"]),
         Route("/limits", limits, methods=["GET"]),
         Route("/runs", list_runs, methods=["GET"]),
         Route("/runs/totals", runs_totals, methods=["GET"]),

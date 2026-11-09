@@ -44,3 +44,28 @@ Nálezy: `error` blokuje, `warning` varuje, `info` informuje; `fix` radí. Najde
 **Knihovna je pozadu nebo se rozešla s remote.** `factory library pull`; `library_diverged` vyřeš v knihovně.
 
 K hlášení: `factory check --json`, `factory --version`.
+
+## Převzetí starých voleb automatizace
+
+Po instalaci restartuj již spuštěný dashboard (`factory obs`). Neupgradovaný počítač
+používá frontmattery, upgradovaný místní volby v HAIFA_HOME: automatizace jsou bez záznamu
+vypnuté, harness dědí z počítače.
+
+Na Přehledu otevři **Náhled starých voleb**, nebo:
+
+```sh
+factory config local legacy --repo PATH --json
+factory config local import --repo PATH --json
+```
+
+Náhled ukáže hodnoty a původ přes projekt, step a task. Shodné hodnoty převezmeš přímo;
+rozpory vyžadují výběr pro celé repo, například
+`--auto-merge off --auto-continue on --harness codex`. Model/thinking se nepřenášejí; harness použije místní nastavení.
+Existující místní volby přepíše pouze výslovné `--overwrite`. Import je atomický,
+idempotentní a píše jen do HAIFA_HOME; jiný HAIFA_HOME má vlastní volby, worktrees je sdílí.
+
+Čtení, upgrade ani git pull místní volby nemění. Legacy pole zachovej pro neupgradované
+počítače; editace, schválení a sync je ponechají. Přechod nevyžaduje commit ani min-version
+bariéru; odstranění polí je samostatný krok. Staré `backlog auto-continue`,
+`backlog auto-merge` a `task edit --auto-merge` vracejí deprekační chybu; použij
+`factory config local set --auto-continue on|off` nebo `--auto-merge on|off`.

@@ -45,6 +45,12 @@ def test_creates_a_committed_local_repo_in_the_haifa_home() -> None:
     tracked = _git(root, "ls-files").splitlines()
     assert ".factory/config.yaml" in tracked and "textstats.py" in tracked
     assert not any("__pycache__" in path for path in tracked)
+    for path in (root / "factory/backlog").rglob("*.md"):
+        text = path.read_text(encoding="utf-8")
+        assert not any(
+            f"{key}:" in text
+            for key in ("auto_merge", "auto_continue", "harness", "model", "thinking")
+        )
     gitignore = (root / ".gitignore").read_text(encoding="utf-8").splitlines()
     assert ".factory/worktrees/" in gitignore and ".factory/trace.db*" in gitignore
     state, _warnings = Registry(haifa_home()).snapshot()

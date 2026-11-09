@@ -81,42 +81,27 @@ def test_task_edit_conflicting_options(tmp_path: Path) -> None:
     assert info.value.code == "conflicting_options"
 
 
-def test_cli_backlog_auto_merge(tmp_path: Path, capsys: Capsys) -> None:
+@pytest.mark.parametrize("mode", ["--on", "--off", "--inherit"])
+def test_cli_backlog_auto_merge(tmp_path: Path, capsys: Capsys, mode: str) -> None:
     root = sample_repo(tmp_path)
-    code = main(["backlog", "auto-merge", "M01-S01", "--on", "--repo", str(root)])
-    assert code == 0
-    assert capsys.readouterr().out.strip() == f"auto_merge on for M01-S01 ({INDEX})"
-
-    code = main(["backlog", "auto-merge", "M01-S01", "--off", "--json", "--repo", str(root)])
-    env = read_envelope(capsys)
-    data = env["data"]
-    assert code == 0 and env["ok"] is True and data["changed"] is True
-    assert (data["id"], data["path"], data["auto_merge"], data["level"]) == (
-        "M01-S01",
-        INDEX,
-        False,
-        "step",
-    )
-
-    code = main(["backlog", "auto-merge", "M01", "--inherit", "--repo", str(root)])
-    assert code == 0 and capsys.readouterr().out.strip() == "unchanged M01"
-
-    code = main(["backlog", "auto-merge", "M09", "--on", "--json", "--repo", str(root)])
-    assert code == 2
-    assert read_envelope(capsys)["error"]["code"] == "unknown_container"
+    before = (root / INDEX).read_bytes()
+    assert main(["backlog", "auto-merge", "M01-S01", mode, "--json", "--repo", str(root)]) == 2
+    error = read_envelope(capsys)["error"]
+    assert error["code"] == "deprecated_option"
+    assert "factory config local set --auto-merge" in error["message"]
+    assert (root / INDEX).read_bytes() == before
 
 
-def test_cli_task_edit_auto_merge(tmp_path: Path, capsys: Capsys) -> None:
+@pytest.mark.parametrize("mode", ["on", "off", "inherit"])
+def test_cli_task_edit_auto_merge(tmp_path: Path, capsys: Capsys, mode: str) -> None:
     root = sample_repo(tmp_path)
-    assert main(["task", "edit", TASK_ID, "--auto-merge", "off", "--repo", str(root)]) == 0
-    assert "auto_merge: false\n" in (root / T01).read_text(encoding="utf-8")
-    assert main(["task", "edit", TASK_ID, "--auto-merge", "on", "--repo", str(root)]) == 0
-    assert "auto_merge: true\n" in (root / T01).read_text(encoding="utf-8")
-    assert main(["task", "edit", TASK_ID, "--auto-merge", "inherit", "--repo", str(root)]) == 0
-    assert "auto_merge" not in (root / T01).read_text(encoding="utf-8")
-    capsys.readouterr()
-    with pytest.raises(SystemExit):
-        main(["task", "edit", TASK_ID, "--auto-merge", "maybe", "--repo", str(root)])
+    before = (root / T01).read_bytes()
+    args = ["task", "edit", TASK_ID, "--auto-merge", mode, "--repo", str(root)]
+    assert main(args) == 2
+    assert "factory config local set --auto-merge" in capsys.readouterr().err
+    assert main([*args, "--json"]) == 2
+    assert read_envelope(capsys)["error"]["code"] == "deprecated_option"
+    assert (root / T01).read_bytes() == before
 
 
 def test_loader_rejects_non_bool(tmp_path: Path) -> None:

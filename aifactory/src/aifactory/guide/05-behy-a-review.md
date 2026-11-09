@@ -10,25 +10,54 @@ Záložka **Běhy** má **Aktivní** a **Archivované** běhy, panel **Náklady*
 
 ## Navázání
 
-Karta selhání ukazuje druh (i na Přehledu a v Bězích), důvod a podrobnosti. Z karty běh nech pokračovat tlačítkem **Pokračovat** (v detailu tasku **Navázat**, obojí s volitelnou poznámkou), v CLI `factory task retry ID`, nebo task **Zrušit task**. Pokračuje ve stejné větvi: hotové fáze se neopakují, base se nejdřív stáhne a větev přebázuje. **Spustit** začne běh znovu. U zápisu mimo writes karta nabídne **Povolit tyto cesty a pokračovat** (v CLI `factory task retry ID --allow-writes`): přidá cesty do writes tasku, commitne backlog do base a běh pokračuje. Cesty v `protected_files`, v backlogu a v hlavním checkoutu nepřidá a karta řekne proč. Když agent neměl co dělat (`nothing_to_do`, zadání žádá jen změnu backlogu), karta nabídne **Hotovo**: task dostane `done` v base se záznamem „bez změn“ a důvodem agenta. U vyčerpané kvóty karta nabídne **Pokračovat s jiným harnessem** (v CLI `factory task retry ID --harness NAME`): vybereš jen z harnessů povolených a otestovaných na tomto počítači a běh pokračuje se všemi agenty na nich. Se zálohou factory přepne sama: přednost má řetěz projektu (`quota_switch`, `factory backlog edit ID --quota-switch codex pi`), jinak jednou `fallback` z `.factory/local.yaml` či `.factory/agents.yaml`. S `quota_switch_back` začne nový běh o krok výš, až má harness limit. Přepnutí je v detailu běhu a v popisu PR. Je-li práce hotová, builder vrátí `already_done` s důkazem; běh skončí bez PR, task dostane `done` se záznamem „bez změn“. Úklid běží před i po každém běhu; ručně `factory task clean --json`. Maže worktree hotových/zrušených tasků, uzavřených/mergnutých PR, starších běhů bez PR, osiřelé adresáře; provede `git worktree prune`. Větve zrušených tasků a uzavřených/mergnutých PR maže i vzdáleně. Zachová běžící běhy, otevřená PR, poslední selhaný/zastavený běh `todo`, větve checkoutů/otevřených stacked PR a necommitnuté worktree neukončených tasků (ohlásí je). Chyby hlásí jako varování.
+Karta selhání ukazuje druh, důvod a podrobnosti. **Pokračovat** (v detailu **Navázat**,
+`factory task retry ID`) obnoví stejnou větev: hotové fáze neopakuje, nejdřív aktualizuje
+base a přebázuje. **Spustit** začne znovu; **Zrušit task** task zruší.
+
+**Povolit tyto cesty a pokračovat** (`factory task retry ID --allow-writes`) rozšíří writes
+v base. Cesty chráněné `protected_files`, backlog a hlavní checkout nepovolí.
+**Hotovo** při `nothing_to_do` zapíše důvod a stav done bez PR; totéž platí pro doložené
+`already_done`. **Pokračovat s jiným harnessem** (`factory task retry ID --harness NAME`)
+obnoví běh na povoleném harnessu. Automaticky má přednost projektový `quota_switch`,
+pak `fallback` z `.factory/local.yaml` či `.factory/agents.yaml`; `quota_switch_back`
+vrací nové běhy výš v řetězu. Přepnutí ukazuje detail a PR.
+
+Úklid běží automaticky, ručně `factory task clean --json`. Odstraní nepotřebné worktrees
+a větve i na remote; zachová běžící běhy, otevřené PR, používané větve, poslední
+selhaný/zastavený todo běh a necommitnuté worktrees. Chyby hlásí jako varování.
 
 ## Follow-upy
 
-Agenti nenechávají v repu TODO. Práci mimo rozsah ohlásí a HAIFA ji založí jako task ve stepu **TODO** projektu; writes a workflow mu zvolí agent. Práci jen pro člověka založí jako task **Pro člověka**. Když task nejde dokončit před jinou prací, dostane na ni `depends_on` a běh skončí chybou `blocked: …` bez PR.
+Práci mimo rozsah agent ohlásí jako task do **TODO**, s writes a workflow; lidskou práci
+jako **Pro člověka**. Nutná podmínka přidá `depends_on` a ukončí běh jako `blocked`.
+
+## Místní automatizace
+
+Auto continue a auto merge jsou vypnuté. Zapneš je na Přehledu nebo
+`factory config local set --auto-continue on --repo PATH` či `--auto-merge on`.
+Platí ihned pro místní HAIFA_HOME, bez commitu. Zapnutí práci nespouští.
+Vypnutí continue nechá přijaté běhy doběhnout, zabrání dalším startům i retry;
+`--auto` ho neobejde. Převzetí starých voleb popisuje kapitola aktualizace.
 
 ## Schválení a CI
 
 Úspěšný běh otevře PR; task je **Čeká na review**. Detail PR na záložce **Review** ukazuje popis, testy, verdikt revieweru a diff.
 
-**Schválit** (`factory task approve ID`) přidá commit se `status: done`, počká na CI tohoto commitu a mergne PR. Červenou CI opraví nejvýš dvěma běhy workflow `ci-fix` do téhož PR; zůstane-li červená nebo nedoběhne do 30 minut, PR zůstane otevřený s důvodem. Backlog, Přehled i Review ukazují **Schváleno, čeká na CI**; detail čas schválení. **Schválit** pokus zopakuje. Merge znamená **Hotovo**, neúspěšná CI **Čeká na review**. Azure DevOps dostane hlas approve, GitHub approve review jen s `github_approver`.
+**Schválit** (`factory task approve ID`) commitne `status: done`, počká na CI a mergne PR.
+Červenou CI opraví nejvýš dva běhy `ci-fix`; po neúspěchu či 30 minutách zůstane PR otevřený.
+**Schváleno, čeká na CI** ukazuje čekání, **Čeká na review** neúspěch, **Hotovo** merge.
+Schválení lze zopakovat. Azure dostane approve hlas, GitHub review jen s `github_approver`.
 
 **Vrátit s poznámkou** (`factory task return ID --note "…"`) spustí nový běh na stejné větvi. **Vyřešit konflikt s base**, nebo **Dorovnat s base** (`factory task resolve ID`) přebázuje PR workflow `resolve`.
 
 ## Auto-merge
 
-S `auto_merge` se PR mergne sám, když review schválilo, PR jde mergovat a CI je zelená (s opravami `ci-fix`). Konflikt zkusí jednou `resolve-reviewed`, jinak PR přejde do **Čeká na review**. Zapneš ho přepínačem nebo `factory backlog auto-merge ID --on`.
+Místní auto merge schválí a mergne PR po schváleném review a zelené CI. Konflikt zkusí
+jednou `resolve-reviewed`, jinak ukáže **Čeká na review**.
 
-Řetěz auto-continue zastavený na `not_merged` naváže jednou po ručním sloučení přes **Schválit** (`factory task approve ID`) nebo v hostingu (až ho zjistí obnova PR v dashboardu), se stejnými pravidly výběru jako po auto-merge. Task se sloučeným PR a stavem `todo` v base se znovu nespustí; dorovnej ho přes `factory backlog sync` a sloučení jeho změn do base.
+Řetěz zastavený na `not_merged` naváže jednou i po ručním merge přes **Schválit** nebo
+hosting (po obnově dashboardu). Sloučený task se znovu nespustí; stav todo dorovnej
+`factory backlog sync` a sloučením sync PR.
 
 ## Souběh a stacked PR
 

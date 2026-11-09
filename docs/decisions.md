@@ -128,3 +128,32 @@ Při startovním úklidu advice a při úklidu worktrees procházíme pouze př�
 - **Uložení:** lekce se uloží do `learn_lessons` v trace DB cílového repa, ne do repa, kde scan běžel. Přijaté a zamítnuté lekce se při scanu čtou ze všech rep. `factory learn accept` založí task v backlogu cílového repa s výtkami z běhů všech rep jako důkazy.
 - **Klíče výtek:** výtky čtené ze všech rep mají klíč s předponou repa (`<repo_id>:<envelope_id>#<n>`), unikátní napříč repy. Klíč bez předpony (lekce z jednoho repa) patří repu, v jehož trace DB lekce je.
 - **Cíl `seed`:** prompt role v semínku knihovny (`aifactory/src/aifactory/seed/agents/<role>/`) smí být cílem jen lekce pro repo factory. Lekci se `seed` pro jiné repo, nebo když repo factory není, learner dostane k opravě. Do knihoven se změna dostane po merge přes `factory library seed` nebo novou verzi HAIFA.
+
+
+## 2026-11-09: Explicitní převzetí legacy provozních voleb
+
+Auto merge, auto continue a výchozí harness nové Factory patří dvojici místní
+HAIFA_HOME / identita repozitáře (společný Git adresář worktrees). Bez lokálního záznamu
+jsou automatizace vypnuté; harness dědí místní výchozí hodnotu počítače. Legacy effective
+hodnoty jsou metadata a žádné runtime rozhodnutí automatizací z nich nevychází.
+`effective_sources`, `effective` a `harness_values` zůstávají pro čtení metadat a náhled,
+nikoli jako fallback místní politiky. Guide ověřuje kontext tasku, ale jeho volbu harnessu
+určuje místní služba; `task_harness_values` je kompatibilní čtečka metadat.
+
+CLI `config local legacy` a Přehled zobrazí effective hodnoty i původ pro všechny úrovně.
+`config local import` a odpovídající API přijmou shodné hodnoty, při rozporech vyžadují
+konkrétní repo rozhodnutí pro každý rozporný klíč. Žádné any(true) ani nejbližší projekt.
+Model/thinking jsou pouze náhled; místní harness používá místní preset/roster. Existující
+záznam chrání výslovné `--overwrite`. Import sdílí zámek a atomický zápis lokální služby,
+je idempotentní a píše jen do HAIFA_HOME. Náhled nesynchronizuje databázový mirror.
+
+Legacy CLI zápisy `backlog auto-continue`, `backlog auto-merge`, `task edit --auto-merge`
+vracejí deprekační chybu s konkrétní alternativou `config local set`. Parser a textové
+editace nadále zachovávají existující klíče. Nové generátory je nevyžadují; návrh parametrů
+tasku je nevrací ani jako null, které by při aplikaci smazalo starou hodnotu.
+
+Neupgradovaný počítač používá frontmattery, upgradovaný místní nastavení. Po instalaci
+stačí běžný restart spuštěného dashboardu. Čtení ani upgrade nic tiše nepřebírají; git pull
+neovlivní místní volby. Žádný povinný commit ani min-version bariéra. Odstranění legacy
+polí je mimo tento release. Návrat ke staré verzi a ovládání starých procesů na již
+upgradovaném počítači nejsou součástí přechodu.

@@ -91,6 +91,31 @@ Rules (every command follows them, tests enforce them):
 
 ## Commands
 
+### Local repository choices and legacy import
+
+`factory config local show --repo PATH --json` reads the local choices without creating
+anything. Both automations default to off; the harness inherits this computer's default.
+The Overview card changes the same settings immediately, without a commit. Worktrees share
+their common Git identity; another clone or HAIFA_HOME has separate choices. Enabling a
+choice does not start work. `base_pr_merge` for administration PRs remains separate.
+
+Preview preserved legacy effective values and origins through project, step and task with
+`factory config local legacy --repo PATH --json`, or **Náhled starých voleb** on Overview.
+Explicitly adopt with `factory config local import --repo PATH --json`. Uniform values can
+be adopted directly. Conflicts require concrete repository-wide `--auto-merge on|off`,
+`--auto-continue on|off` or `--harness claude|codex|pi|inherit` choices. Existing local choices
+are preserved unless `--overwrite` is explicit. Import is atomic and idempotent, writes
+only HAIFA_HOME and leaves shared backlog bytes intact. Model/thinking are preview metadata;
+the imported harness uses local presets/roster. Git pull does not change local choices.
+
+An unupgraded computer continues using frontmatter; an upgraded computer uses local choices.
+Reads and upgrades never import silently. Restart an already running dashboard normally after
+installing this version. No transition commit or minimum-version barrier is required.
+Legacy keys remain readable and preserved by normal edits, approval and sync; new tasks do
+not need them. `backlog auto-continue`, `backlog auto-merge` and `task edit --auto-merge`
+return `deprecated_option` with the `config local set` alternative. Do not clean up existing
+backlog fields; their future removal is a separate change.
+
 ### Switch the local roster
 
 Repository operating settings live outside Git in HAIFA_HOME. Use
@@ -235,8 +260,6 @@ id: M01
 title: Core
 workflow: plan-build-test
 writes: [src/]
-auto_continue: false
-auto_merge: false
 ---
 
 Core: the data model and the API.
@@ -779,20 +802,19 @@ before and after its pull request was merged. The agent's prompts are overridden
 3. Read `data.run.state`, `data.pr` (the pull request), `data.pr_error` and `data.chain`.
 4. On failure (`run_failed`) the worktree and branch are kept; re-run with `--note` to tell
    the agents what to fix.
-5. Auto-continue (`--auto`, or `auto_continue: true` in the project or step
-   `{{index_file}}`, set with `factory backlog auto-continue ID --on|--off|--inherit`):
-   after a run opens its PR, the next ready task of the step, then of the project, starts.
-   The chain stays in that project, even with `--auto`: tasks of other projects,
-   including blockers and direct dependents, must be started separately.
-   Without `--auto` the chain continues only after a task with `auto_continue: true` and
-   starts only tasks with `auto_continue: true`; `--auto` starts any task.
+5. Auto-continue is a repository-local choice in HAIFA_HOME, default off.
+   Set it with `factory config local set --auto-continue on|off --repo PATH`.
+   `--auto` does not bypass local off. Accepted runs finish after switching off;
+   further automatic starts, slot refills and automatic retries are blocked.
+   After a run opens its PR, the next ready task of the step, then of the project, starts.
+   The chain stays in that project; start tasks of other projects separately.
    The dashboard's kanban sets the order of ready tasks (taken first) and can exclude a
    task from auto-continue (skipped as `excluded`, with `--auto` too; it still runs when
    started by hand).
    Tasks it skips carry a reason ({{skip_reasons}}); the chain stops with
    {{stop_reasons}} (`data.chain.stop`, `data.chain.waiting`). The chain approves and
    merges nothing except through `auto_merge` (next point).
-   Self-healing (`auto_heal`, inherited like `auto_continue`, default `true`; switch it off
+   Self-healing (`auto_heal`, inherited in the backlog, default `true`; switch it off
    with `auto_heal: false` or `factory backlog edit ID --auto-heal off`): a chain that goes
    on acts on a failed run by its `failure_kind`. `quota` continues on the project's
    quota chain (`quota_switch: [HARNESS, ...]`, `quota_switch_back`, project-only, set with
@@ -949,7 +971,7 @@ push (non-fast-forward, rights, protected branch or hook) is not.
 After publication, repository-local `auto_merge` merges the PR under the same review and CI
 conditions as `task run`, including conflict resolution and `auto_merge_error` on failure.
 The same auto-continue chain then selects ready tasks in kanban order and respects slots
-and `max_parallel_runs`. No `--auto` flag is needed: inherited `auto_continue` applies.
+and `max_parallel_runs`. No `--auto` flag is needed: repository-local `auto_continue` applies.
 Without `auto_merge` the PR stays open for review.
 `data.auto_merge` and `data.chain` report the merge outcome, runs and stop reason.
 The dashboard starts publish with auto-merge in a separate process so CI never blocks it.

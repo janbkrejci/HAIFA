@@ -62,11 +62,108 @@ class RepositorySettings:
     """
 
     def __init__(self, repo: Path, home: Path | None = None) -> None:
+        self.repo = repo.resolve()
         self.identity = repository_identity(repo)
         self.key = hashlib.sha256(self.identity.encode("utf-8")).hexdigest()
         self.directory = (haifa_home() if home is None else home) / "repositories"
         self.path = self.directory / f"{self.key}.json"
         self.lock_path = self.directory / f"{self.key}.lock"
+
+    def legacy_preview(self) -> dict[str, Any]:
+        """Read preserved frontmatter only; never synchronize a remote mirror or import."""
+        from aifactory.backlog.derived import (
+            ancestors,
+            effective_sources,
+            harness_values,
+            own_values,
+        )
+        from aifactory.backlog.loader import iter_nodes, load_backlog
+        from aifactory.backlog.model import node_file
+        from aifactory.config import ConfigError
+
+        try:
+            backlog = load_backlog(self.repo, create_missing=False, synchronize_mirror=False)
+        except (ConfigError, OSError, ValueError) as exc:
+            raise SettingsError("invalid_config", str(exc), self.repo) from exc
+        if backlog.issues:
+            raise SettingsError(
+                "invalid_config", "; ".join(i.message for i in backlog.issues), self.repo
+            )
+        rows: list[dict[str, Any]] = []
+        for node in iter_nodes(backlog):
+            sources = effective_sources(node, backlog.settings)
+            binding = harness_values(node)
+            for key in ("harness", "model", "thinking"):
+                origin: dict[str, object] | None = None
+                if key in binding:
+                    for level in [node, *ancestors(node)]:
+                        if own_values(level).get(key) == binding[key]:
+                            origin = {
+                                "source": "own" if level is node else "inherited",
+                                "level": level.level,
+                                "id": level.id,
+                                "path": node_file(level),
+                            }
+                            break
+                sources[key] = {"value": binding.get(key), "origin": origin}
+            rows.append(
+                {
+                    "id": node.id,
+                    "level": node.level,
+                    "values": {
+                        key: sources[key]
+                        for key in ("auto_merge", "auto_continue", "harness", "model", "thinking")
+                    },
+                    "binding": binding,
+                }
+            )
+        proposals: dict[str, Any] = {}
+        for key in ("auto_merge", "auto_continue", "harness"):
+            values = [row["values"][key]["value"] for row in rows]
+            distinct = list(dict.fromkeys(values))
+            proposals[key] = {
+                "conflict": len(distinct) > 1,
+                "value": distinct[0] if len(distinct) == 1 else None,
+            }
+        return {"nodes": rows, "proposals": proposals, "local_exists": self.path.exists()}
+
+    def import_legacy(
+        self, choices: Mapping[str, object] | None = None, *, overwrite: bool = False
+    ) -> dict[str, Any]:
+        """Explicit import under the local lock; preserve existing records by default.
+
+        Model/thinking stay metadata: the local harness uses its local preset/roster.
+        Every conflicting field needs a concrete repository-wide choice.
+        """
+        choices = {} if choices is None else choices
+        allowed = {"auto_merge", "auto_continue", "harness"}
+        if type(overwrite) is not bool or set(choices) - allowed:
+            raise SettingsError("invalid_value", "invalid import options", self.path)
+        preview = self.legacy_preview()
+        with self._locked():
+            current = self.read()
+            if self.path.exists() and not overwrite:
+                return self.show(current)
+            changes: dict[str, object] = {}
+            for key, proposal in preview["proposals"].items():
+                if key in choices:
+                    changes[key] = choices[key]
+                elif proposal["conflict"]:
+                    raise SettingsError(
+                        "invalid_value",
+                        f"legacy {key} differs; choose {key} for this repository",
+                        self.path,
+                    )
+                elif proposal["value"] is not None:
+                    changes[key] = proposal["value"]
+            try:
+                value = RepoSettings.model_validate({**current.model_dump(), **changes})
+            except ValidationError as exc:
+                raise SettingsError("invalid_value", str(exc), self.path) from exc
+            result = self.show(value)
+            if value != current or not self.path.exists():
+                self._write(value)
+            return result
 
     def read(self) -> RepoSettings:
         """Missing means defaults; this operation creates no files or directories."""

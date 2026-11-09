@@ -523,3 +523,20 @@ def test_allow_writes_explains_uncommitted_base() -> None:
     assert "factory backlog commit --json" in section
     assert "factory task retry ID --json" in section
     assert ERROR_CODES["writes_not_committed"]
+
+
+def test_skill_explains_explicit_local_transition() -> None:
+    skill = render_skill()
+    for text in (
+        "factory config local legacy",
+        "factory config local import",
+        "--overwrite",
+        "deprecated_option",
+        "Both automations default to off",
+        "Restart an already running dashboard",
+        "an upgraded computer uses local choices",
+    ):
+        assert text in skill
+    assert "auto_continue: false" not in skill
+    assert "auto_merge: false" not in skill
+    assert "auto_continue: true" not in skill

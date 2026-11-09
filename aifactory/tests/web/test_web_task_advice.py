@@ -120,14 +120,14 @@ def test_repeat_select_cost_and_save(tmp_path: Path, monkeypatch: pytest.MonkeyP
         task = core.load_for_edit(repo).by_id["P01-S01-T01"]
         assert isinstance(task, core.Task)
         assert task.title == "Clearer task"
-        assert task.own["auto_merge"] is False
+        assert "auto_merge" not in task.own
         assert task.own["test_timeout"] == 120
         response = client.post("/api/backlog/tasks", json={"step": "P01-S01", **edit})
         assert response.status_code == 200, response.text
         task = core.load_for_edit(repo).by_id[response.json()["data"]["task"]["id"]]
         assert isinstance(task, core.Task)
-        assert task.own["auto_merge"] is False
-        assert task.own["auto_continue"] is False
+        assert "auto_merge" not in task.own
+        assert "auto_continue" not in task.own
         assert "source" not in task.own
 
 
@@ -352,3 +352,25 @@ def test_available_tasks_share_the_context_budget(
     assert kept == tasks[: len(kept)]
     assert sum(len(json.dumps(item).encode()) for item in kept) <= 80_000
     assert "available_tasks: remaining context omitted" in result["warnings"]
+
+
+def test_applying_advice_preserves_existing_legacy_operating_values(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    machine_settings(monkeypatch)
+    repo = make_repo(tmp_path / "repo")
+    task_path = repo / "backlog/P01/S01/P01-S01-T01-first.md"
+    task_path.write_text(
+        task_path.read_text().replace(
+            "status: todo", "status: todo\nauto_merge: true\nauto_continue: true"
+        )
+    )
+    recommendation = validate_task(
+        repo,
+        TaskRecommendationOutput.model_validate(proposal()),
+        context(repo, "P01-S01-T01", {}, task_parameters=True),
+    )
+    assert recommendation["parameters"] == {"test_timeout": 120}
+    result = core.edit_task(repo, "P01-S01-T01", parameters=recommendation["parameters"])
+    assert result.task.own["auto_merge"] is True
+    assert result.task.own["auto_continue"] is True
