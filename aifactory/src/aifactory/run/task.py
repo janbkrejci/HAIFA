@@ -134,7 +134,7 @@ class TaskRunResult:
     trace_db: Path
     pr: TaskPrRow | None = None
     pr_error: str | None = None
-    # set by run_chain when the task has `auto_merge: true` (review/automerge.py)
+    # set by run_chain when repository-local auto merge is enabled (review/automerge.py)
     auto_merge: AutoMergeResult | None = None
     # a chain member's auto-resolve run of its conflicting PR (cli `--member`)
     resolve_run: TaskRunResult | None = None

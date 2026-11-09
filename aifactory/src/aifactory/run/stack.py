@@ -9,7 +9,8 @@ The stacked PR is merged only after its dependencies (approve refuses a task who
 ``depends_on`` are not done). Once a dependency's PR is merged, ``review/stack.py``
 rebases the stacked PR onto base without the dependency's commits
 (``git rebase --onto <base> <fork point>``, the resolve workflow on a conflict) and
-auto-merges it when the task has ``auto_merge``. A stacked PR whose dependency is still
+auto-merges it when repository-local ``auto_merge`` is enabled.
+A stacked PR whose dependency is still
 open is never rebased onto base: that would drop the work it builds on.
 """
 

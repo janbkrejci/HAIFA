@@ -55,8 +55,8 @@ skipped as ``no_workflow`` ("bez workflow") and the chain goes on. A person's ta
 waits: when nothing can start it stops (``stop == "exhausted"``) and reports what it
 waits on.
 
-The chain merges only through ``auto_merge: true`` inherited by the finished
-task: ``review.automerge.try_auto_merge`` approves and merges its PR when every
+The chain merges only through repository-local ``auto_merge``.
+``review.automerge.try_auto_merge`` approves and merges its PR when every
 condition holds (succeeded run, a review phase whose last review approved, a
 clean merge, no red checks). With ``auto_merge`` on the next task is started only
 after that merge, from the base that holds it; a PR that was not merged stops
@@ -125,7 +125,6 @@ from aifactory import failure as failures
 from aifactory.backlog import (
     Backlog,
     Task,
-    effective,
     has_workflow,
     is_human,
     iter_tasks,
@@ -282,9 +281,11 @@ def auto_continue_enabled(repo: Path) -> bool:
     return enabled(repo)
 
 
-def auto_merge_enabled(task: Task) -> bool:
-    """``auto_merge: true`` inherited by `task` (task, step or project)."""
-    return effective(task).get("auto_merge") is True
+def auto_merge_enabled(repo: Path) -> bool:
+    """Fresh repository-local policy, independent of backlog and auto continue."""
+    from aifactory.run.policy import merge_enabled
+
+    return merge_enabled(repo)
 
 
 def candidates(backlog: Backlog, after: Task, order: Sequence[str] = ()) -> list[Task]:
@@ -1355,13 +1356,13 @@ def member_auto_merge(
 
     A PR in conflict is resolved once (``resolve_and_merge``) outside the lock and merged
     under it, as the sequential chain does; the resolve run is ``result.resolve_run``.
-    Nothing happens without ``auto_merge: true`` on the task in base.
+    Nothing happens without repository-local auto merge enabled.
     """
     if not result.ok or result.pr is None:
         return result
     with _fresh_backlog(repo) as backlog:
         task = backlog.by_id.get(result.run.task_id)
-        if not isinstance(task, Task) or not auto_merge_enabled(task):
+        if not isinstance(task, Task) or not auto_merge_enabled(repo):
             return result
         # Local import: aifactory.review imports aifactory.run.
         from aifactory.review.automerge import resolve_and_merge, try_auto_merge
@@ -1521,7 +1522,7 @@ def _sequential(
                 and not last.closed_by_heal
                 and not last.done_without_pr
                 and last.auto_merge is None
-                and auto_merge_enabled(after)
+                and auto_merge_enabled(repo)
             ):
                 # Local import: aifactory.review imports aifactory.run.
                 from aifactory.review.automerge import try_auto_merge
@@ -1800,7 +1801,7 @@ def _run_parallel(
             save()
         merge = result.auto_merge
         closed = result.closed_by_heal or result.done_without_pr
-        if not closed and auto_merge_enabled(after) and (merge is None or not merge.merged):
+        if not closed and auto_merge_enabled(repo) and (merge is None or not merge.merged):
             if merge is None or not _waits_for_stack(merge):
                 halt = STOP_NOT_MERGED if cont else STOP_DISABLED
                 return

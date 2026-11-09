@@ -50,6 +50,7 @@ def script_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[Script]:
 def repo_fixture(tmp_path: Path) -> Path:
     repo = make_run_repo(tmp_path / "repo")
     setup_chain(repo, step_auto=True, t02_depends=True)
+    RepositorySettings(repo).update({"auto_merge": True})
     path = repo / CORE / "S01-model/index.md"
     path.write_text(
         path.read_text(encoding="utf-8").replace("writes:", "auto_merge: true\nwrites:"),

@@ -30,6 +30,7 @@ from aifactory.providers import (
 )
 from aifactory.providers import git as pgit
 from aifactory.providers.local import LocalProvider
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review import ReviewError, approve_task, ci, try_auto_merge
 from aifactory.run import TaskPrRow, TaskRunRow, TaskRunStore, run_task
 from aifactory.run.errors import TaskRunError
@@ -97,6 +98,7 @@ def script_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[Script]:
 def repo_fixture(tmp_path: Path) -> Path:
     """The run repo with a reviewed workflow and a ``ci-fix`` the planner plays."""
     repo = make_run_repo(tmp_path / "repo")
+    RepositorySettings(repo).update({"auto_merge": True})
     write(
         repo,
         ".factory/agents.yaml",
@@ -120,7 +122,9 @@ def repo_fixture(tmp_path: Path) -> Path:
     )
     index = repo / "backlog/M01-core/index.md"
     index.write_text(
-        index.read_text(encoding="utf-8").replace("plan-commit", "plan-review-commit"),
+        index.read_text(encoding="utf-8").replace(
+            "plan-commit", "plan-review-commit\nauto_merge: true"
+        ),
         encoding="utf-8",
     )
     commit_all(repo, "reviewed workflow and ci-fix")
@@ -582,3 +586,92 @@ def test_manual_approval_retries_clear_previous_error(repo: Path, script: Script
     approve_task(repo, T01, provider=provider)
     assert provider.approvals == [(pr(repo).approved_at, None)]
     assert pr(repo).approved_at != "2026-01-01T00:00:00Z"
+
+
+@pytest.mark.parametrize("auto_continue", [False, True])
+@pytest.mark.parametrize("auto_merge", [False, True])
+def test_local_merge_and_continue_are_independent(
+    repo: Path, script: Script, auto_continue: bool, auto_merge: bool
+) -> None:
+    first = first_run(repo, script)
+    settings = RepositorySettings(repo)
+    settings.update({"auto_merge": auto_merge, "auto_continue": auto_continue})
+    provider = CiProvider(repo, [GREEN])
+
+    merged, code, _ = approve(repo, first, provider, True)
+
+    assert merged is auto_merge
+    assert code == (None if auto_merge else "auto_merge_disabled")
+    assert settings.read().auto_continue is auto_continue
+    assert pr(repo).state == ("merged" if auto_merge else "open")
+    if not auto_merge:
+        assert provider.asked == []
+
+
+@MODES
+def test_switch_off_during_ci_wait(
+    repo: Path, script: Script, auto: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    first = first_run(repo, script)
+    clock = _Clock()
+    monkeypatch.setattr(ci, "_clock", clock)
+    monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_TIMEOUT", 60.0)
+
+    def disable(seconds: float) -> None:
+        clock.sleep(seconds)
+        RepositorySettings(repo).update({"auto_merge": False})
+
+    monkeypatch.setattr(ci, "sleep", disable)
+    provider = CiProvider(repo, [PENDING, GREEN])
+    merged, code, _ = approve(repo, first, provider, auto)
+
+    assert merged is (not auto)
+    assert code == ("auto_merge_disabled" if auto else None)
+    if auto:
+        assert pr(repo).state == "open"
+        assert "auto_merge_disabled" in (pr(repo).auto_merge_error or "")
+        assert git(repo, "log", "-1", "--format=%s", BRANCH) == f"{T01}: status done"
+
+
+@pytest.mark.parametrize("auto,corrupt", [(False, False), (True, False), (True, True)])
+def test_switch_off_after_host_approval_before_merge(
+    repo: Path, script: Script, auto: bool, monkeypatch: pytest.MonkeyPatch, corrupt: bool
+) -> None:
+    first = first_run(repo, script)
+    provider = CiProvider(repo, [GREEN])
+    host_approve = provider.approve
+
+    def disable(request: PullRequest, head: str) -> bool:
+        reviewed = host_approve(request, head)
+        service = RepositorySettings(repo)
+        if corrupt:
+            service.path.write_text("broken", encoding="utf-8")
+        else:
+            service.update({"auto_merge": False})
+        return reviewed
+
+    monkeypatch.setattr(provider, "approve", disable)
+    merged, code, _ = approve(repo, first, provider, auto)
+
+    assert merged is (not auto)
+    blocked = "repo_settings_invalid" if corrupt else "auto_merge_disabled"
+    assert code == (blocked if auto else None)
+    assert pr(repo).state == ("open" if auto else "merged")
+
+
+@pytest.mark.parametrize("broken", [False, True], ids=["missing", "corrupt"])
+def test_local_policy_never_falls_back_to_backlog(repo: Path, script: Script, broken: bool) -> None:
+    first = first_run(repo, script)
+    service = RepositorySettings(repo)
+    if broken:
+        service.path.write_text("{broken", encoding="utf-8")
+    else:
+        service.path.unlink()
+    provider = CiProvider(repo, [GREEN])
+
+    merged, code, _ = approve(repo, first, provider, True)
+
+    assert merged is False
+    assert code == ("repo_settings_invalid" if broken else "auto_merge_disabled")
+    assert provider.asked == []
+    assert pr(repo).state == "open"

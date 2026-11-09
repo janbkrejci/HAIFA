@@ -57,7 +57,9 @@ def setup_tasks(
     config: str | None = None,
 ) -> None:
     """S01 holds `tasks` (id, writes) in order, the step without own writes."""
-    RepositorySettings(repo).update({"auto_continue": True})
+    RepositorySettings(repo).update(
+        {"auto_continue": True, "auto_merge": "auto_merge: true" in step_extra}
+    )
     shutil.rmtree(repo / CORE / STEP)
     write(repo, f"{CORE}/{STEP}/index.md", f"---\nid: M01-S01\ntitle: Model\n{step_extra}---\n")
     for task_id, writes in tasks:

@@ -1908,8 +1908,9 @@ not do its job (bad input, config, state, provider), nothing was changed.
 task run: a failed run keeps its worktree and branch. After a successful run the branch
   is pushed and a pull request opened; when that fails the run stays succeeded and
   pr_error says why. Repository-local auto_continue starts the next ready task of
-  the step, then of the project. --auto is deprecated and has no effect. auto_merge: true
-  (inherited): a succeeded run with a review phase whose last review approved and a PR that
+  the step, then of the project. --auto is deprecated and has no effect. Repository-local
+  auto_merge (factory config local set --auto-merge on/off): a succeeded run with a review
+  phase whose last review approved and a PR that
   merges cleanly is approved and merged like 'task approve' (CI wait, ci-fix runs); the chain
   continues only after that merge. Otherwise the PR stays open and auto_merge says why.
 task publish: for the last succeeded run without a pull request (pr_failed) push the
@@ -2087,8 +2088,8 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         "including any change in the main checkout, is rolled back and fails the phase. "
         "Repository-local auto_continue controls whether the next ready task follows. "
         "--auto is deprecated and cannot override local off. "
-        "With auto_merge: true a reviewed run's PR is merged first when it may be "
-        "(see 'factory backlog auto-merge --help').",
+        "With repository-local auto_merge on a reviewed run's PR is merged first when it may be "
+        "(see 'factory config local --help').",
     )
     run.add_argument("task_id", metavar="ID", help="task id")
     run.add_argument("--note", metavar="TEXT", help="a note for the agents, appended to the task")

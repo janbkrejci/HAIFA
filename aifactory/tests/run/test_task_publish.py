@@ -669,6 +669,9 @@ def test_publish_without_auto_merge_does_not_continue(
         t01_extra="auto_merge: false\n",
         t02_depends=False,
     )
+    from aifactory.repo_settings import RepositorySettings
+
+    RepositorySettings(repo).update({"auto_merge": False})
     build(script, "one")
     review(script)
     with monkeypatch.context() as patch:

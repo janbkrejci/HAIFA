@@ -291,6 +291,23 @@ def _done_entry(ctx: _Ctx, row: TaskPrRow) -> str:
 # ── approve ──────────────────────────────────────────────────────────────────
 
 
+def require_auto_merge(repo: Path) -> None:
+    """Fail closed on disabled or unreadable local policy; manual approve bypasses it."""
+    from aifactory.run.policy import merge_enabled
+
+    try:
+        allowed = merge_enabled(repo)
+    except TaskRunError as exc:
+        raise ReviewError(exc.code, exc.message) from exc
+    if not allowed:
+        raise ReviewError(
+            "auto_merge_disabled",
+            "Repository-local auto merge is off; PR remains open. The done commit, "
+            "if already pushed for CI, stays on the PR branch. Approve manually or retry "
+            "after enabling auto merge. Hosting requests already sent cannot be withdrawn.",
+        )
+
+
 def approve_task(
     repo: Path,
     task_id: str,
@@ -447,6 +464,8 @@ def _approve_gated(
     fixes: list[str] = []
     refreshes = 0
     while True:
+        if merged_by != MERGED_BY_OPERATOR:
+            require_auto_merge(repo)
         prepared = _prepare_approve(ctx, task_id)
         row = prepared.row
 
@@ -458,7 +477,14 @@ def _approve_gated(
             return ReviewError(code_, reason)
 
         try:
-            checks = ci.head_checks(ctx.provider, row.request(), prepared.head)
+            if merged_by == MERGED_BY_OPERATOR:
+                checks = ci.head_checks(ctx.provider, row.request(), prepared.head)
+            else:
+                checks = ci.head_checks(
+                    ctx.provider, row.request(), prepared.head, lambda: require_auto_merge(repo)
+                )
+        except ReviewError as exc:
+            raise stop(exc.code, exc.message) from exc
         except ProviderError as exc:
             raise stop("checks_unavailable", f"{exc.code}: {exc.message}") from exc
         if checks.state != CHECKS_FAILING or len(fixes) >= ci.CI_FIX_ROUNDS:
@@ -487,6 +513,8 @@ def _approve_gated(
             _remove(ctx, prepared.temp, [], [])
         _free_branch(ctx, row)
         try:
+            if merged_by != MERGED_BY_OPERATOR:
+                require_auto_merge(repo)
             fixed = ci.run_ci_fix(
                 repo,
                 task_id,
@@ -495,6 +523,8 @@ def _approve_gated(
                 ctx.provider,
                 code,
             )
+        except ReviewError as exc:
+            raise stop(exc.code, exc.message) from exc
         except TaskRunError as exc:
             reason = f"ci-fix run did not start: {exc.code}: {exc.message}"
             raise stop("ci_fix_failed", reason) from exc
@@ -603,6 +633,8 @@ def _finish_approve_current(ctx: _Ctx, prepared: _Prepared, merged_by: str) -> A
     settings = ctx.rc.config.settings
     main, branch, task_id = ctx.main, row.branch, row.task_id
     try:
+        if merged_by != MERGED_BY_OPERATOR:
+            require_auto_merge(main)
         reviewed = ctx.provider.approve(row.request(), head)
     except ProviderError as exc:
         raise ReviewError(
@@ -611,7 +643,20 @@ def _finish_approve_current(ctx: _Ctx, prepared: _Prepared, merged_by: str) -> A
         ) from exc
 
     try:
-        merge_sha = ctx.provider.merge(row.request(), head, row.title)
+        if merged_by == MERGED_BY_OPERATOR:
+            merge_sha = ctx.provider.merge(row.request(), head, row.title)
+        else:
+            from aifactory.repo_settings import RepositorySettings, SettingsError
+
+            try:
+                with RepositorySettings(main).automatic_merge() as allowed:
+                    if not allowed:
+                        raise ReviewError(
+                            "auto_merge_disabled", "Auto merge is off; PR remains open."
+                        )
+                    merge_sha = ctx.provider.merge(row.request(), head, row.title)
+            except SettingsError as exc:
+                raise ReviewError(exc.code, str(exc)) from exc
     except MergeFailed as exc:
         # The done commit stays on the branch; mark_done is idempotent, so approve can be rerun.
         raise ReviewError(exc.code, f"{exc.message} (the done commit stays on {branch})") from exc
@@ -740,7 +785,7 @@ def publish_task(
     (``pr_exists``) or while a run of the task is in progress (``already_running``)
     nothing changes. `run_id` (the dashboard) must name that last succeeded run. A failed
     push or hosting call is ``result.pr_error`` and is kept on the run. After publication,
-    effective ``auto_merge`` enables ``run_chain`` to finish auto-merge and auto-continue
+    repository-local ``auto_merge`` enables ``run_chain`` to finish auto-merge and auto-continue
     with the completed attempt as its first run; its review is recovered from the
     workflow journal. Otherwise the PR stays open for review without continuing the queue.
     """
@@ -777,7 +822,7 @@ def publish_task(
     if published.ok:
         with _fresh_backlog(repo) as backlog:
             task = backlog.by_id.get(task_id)
-            resume_chain = isinstance(task, Task) and auto_merge_enabled(task)
+            resume_chain = isinstance(task, Task) and auto_merge_enabled(repo)
         if resume_chain:
             chain = run_chain(repo, task_id, first_run=first, provider=provider, code=code)
     return TaskPublishResult(

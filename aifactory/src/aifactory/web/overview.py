@@ -6,7 +6,7 @@ state with their running phase, attempt, start and cost so far), ``review`` (ope
 backlog and that wait for the user; ``source: trace`` says they come from the trace, not from
 the hosting), ``approved`` (manually approved open PRs waiting for CI without an
 ``auto_merge_error``), ``automerge`` (the same kind of open PR, but the factory merges it by itself:
-the task has an effective ``auto_merge`` and the PR no ``auto_merge_error``,
+the repository has local ``auto_merge`` enabled and the PR no ``auto_merge_error``,
 ``web.backlog.waits_for_automerge``),
 ``merged_outside`` (tasks without an active run whose newest PR is merged, that are neither
 ``done`` nor ``cancelled`` in the backlog and whose ``## Běhy`` does not have the PR yet: a
@@ -498,7 +498,7 @@ def _lists(
         age = None if opened is None else round(max(0.0, (now - opened).total_seconds()), 1)
         task = backlog.by_id.get(pr["task_id"]) if backlog is not None else None
         merges = waits_for_automerge(
-            task if isinstance(task, Task) else None, pr["auto_merge_error"]
+            root, task if isinstance(task, Task) else None, pr["auto_merge_error"]
         )
         waiting = bool(pr["approved_at"] and not pr["auto_merge_error"])
         (approved if waiting else automerge if merges else review).append(
@@ -787,6 +787,9 @@ class Overview:
                 tasks, task_warnings = self._tasks.get(key, 0, lambda: _task_index(root))
         item = _stub(entry, _state(config), [*config_warnings, *task_warnings, *trace_warnings])
         item["config"] = config
+        from aifactory.web.backlog import _merge_policy
+
+        item["auto_merge_policy"] = _merge_policy(root)
         active = _active_runs(trace)
         summary, ready, projects = (
             (None, [], []) if tasks.backlog is None else _task_summary(tasks.backlog, trace, active)

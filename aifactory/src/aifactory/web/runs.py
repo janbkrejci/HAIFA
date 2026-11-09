@@ -380,7 +380,7 @@ def publish_run(repo: Path, run_id: str, launcher: Any = None) -> tuple[JsonDict
 
         with tempfile.TemporaryDirectory(prefix="factory-publish-") as tmp:
             task = _base_backlog(repo, Path(tmp)).by_id.get(row.task_id)
-        if isinstance(task, Task) and auto_merge_enabled(task):
+        if isinstance(task, Task) and auto_merge_enabled(repo):
             from aifactory.review import ReviewError
 
             check, _ = _open_run(repo, run_id)

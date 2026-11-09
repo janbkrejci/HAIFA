@@ -296,3 +296,39 @@ def test_legacy_true_never_becomes_a_default(repo: Path, tmp_path: Path) -> None
     service.path.write_text("broken", encoding="utf-8")
     with pytest.raises(SettingsError):
         service.read()
+
+
+@pytest.mark.parametrize("auto_continue", [False, True])
+def test_merge_submission_serializes_disable(
+    repo: Path, tmp_path: Path, auto_continue: bool
+) -> None:
+    ctx = multiprocessing.get_context("spawn")
+    home = tmp_path / "home"
+    service = RepositorySettings(repo, home)
+    service.update({"auto_merge": True, "auto_continue": auto_continue})
+    ready, proceed, done = ctx.Event(), ctx.Event(), ctx.Event()
+    process = ctx.Process(
+        target=_patch_process, args=(repo, home, {"auto_merge": False}, ready, proceed, done)
+    )
+    try:
+        with service.automatic_merge() as allowed:
+            assert allowed is True
+            process.start()
+            assert ready.wait(15)
+            proceed.set()
+            assert not done.wait(0.2)
+        assert done.wait(15)
+        process.join(10)
+        assert process.exitcode == 0
+        with service.automatic_merge() as allowed:
+            assert allowed is False
+        assert service.read().auto_continue is auto_continue
+        service.path.write_text("broken", encoding="utf-8")
+        with pytest.raises(SettingsError):
+            with service.automatic_merge():
+                pytest.fail("invalid policy must never permit a submission")
+    finally:
+        if process.is_alive():
+            process.terminate()
+        if process.pid is not None:
+            process.join(5)

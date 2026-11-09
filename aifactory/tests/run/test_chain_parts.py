@@ -251,7 +251,7 @@ def test_member_runs_one_task_only(
         f"---\nid: {T02}\ntitle: Loader\nstatus: todo\n---\n\nLoad.\n",
     )
     commit_all(repo, "auto")
-    RepositorySettings(repo).update({"auto_continue": local_on})
+    RepositorySettings(repo).update({"auto_continue": local_on, "auto_merge": True})
     rel = "src/app/one.py"
     script.on("planner", lambda wt: write(wt, rel, "X = 1\n"))
     script.add("planner", ok(artifacts=[], changed_files=[rel], commit_message="Add"))

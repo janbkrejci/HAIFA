@@ -30,6 +30,7 @@ from overview_fixture import (
 )
 from starlette.testclient import TestClient
 
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run.store import SyncPrRow, TaskPrRow, TaskRunStore
 from aifactory.skill import envelope_problems
 from aifactory.web import create_multi_app, overview
@@ -1046,6 +1047,7 @@ def test_missing_repo_has_no_tasks_nor_factory(tmp_path: Path) -> None:
 
 
 def _auto_merge_step(root: Path) -> None:
+    RepositorySettings(root).update({"auto_merge": True})
     """Turn auto_merge on for the step of every fixture task (inherited by T_REV)."""
     write(
         root,
@@ -1080,6 +1082,8 @@ def test_open_pr_with_auto_merge_waits_for_automerge(repo_a: Path, tmp_path: Pat
     assert [r["task_id"] for r in a["automerge"]] == [T_REV]
     assert a["automerge"][0]["pr_id"] == "7"
     assert a["automerge"][0]["source"] == "trace"
+    assert a["auto_merge_policy"] == RepositorySettings(repo_a).show()["auto_merge_policy"]
+    assert a["auto_merge_policy"]["value"] is True
     assert a["automerge"][0]["project"] == "M01"
     assert (a["tasks"]["in review"], a["tasks"]["awaiting merge"]) == (0, 1)
     # the PR still holds its slot

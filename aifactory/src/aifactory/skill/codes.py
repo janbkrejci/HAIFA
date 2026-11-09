@@ -112,6 +112,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ),
     ("worktree_failed", "2", "the git worktree could not be created or used"),
     ("trace_db_locked", "2", "the trace database is locked by another process"),
+    ("auto_merge_disabled", "2", "repository-local auto merge is off; PR remains open"),
     ("auto_continue_disabled", "2", "repository-local auto continue blocks an automatic start"),
     ("unknown_branch", "2", "the branch does not exist"),
     ("unknown_run", "2", "no run with this id in the trace database"),

@@ -20,6 +20,7 @@ from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 import aifactory.review
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review import approve_task, resolve_task
 from aifactory.run import TaskRunResult, TaskRunStore, run_task
 from aifactory.skill import envelope_problems
@@ -180,12 +181,14 @@ def _pr_waits(client: TestClient) -> dict[str, tuple[bool, bool]]:
 def test_list_tells_review_from_automerge(client: TestClient, repo: Path, script: Script) -> None:
     first_run(repo, script)
     assert _pr_waits(client) == {T01: (True, False)}
-    # auto_merge inherited from the project: the factory merges the PR by itself
+    # Frontmatter alone does not enable automatic merging.
     write(
         repo,
         MODULE_INDEX,
         "---\nid: M01\ntitle: Core\nworkflow: plan-commit\nauto_merge: true\n---\n\nJádro.\n",
     )
+    assert _pr_waits(client) == {T01: (True, False)}
+    RepositorySettings(repo).update({"auto_merge": True})
     assert _pr_waits(client) == {T01: (False, True)}
     # an auto-merge that gave up leaves the PR to the user
     store = TaskRunStore(repo / ".factory" / "trace.db")
@@ -204,17 +207,24 @@ def test_list_orders_review_before_automerge(
     plan(script, SPEC2)
     assert run_task(repo, T02, force=True).ok
     # the newer T02 waits for auto-merge, the older T01 for review
-    _check(client.post(f"/api/backlog/tasks/{T02}/edit", json={"auto_merge": True}), 200)
+    RepositorySettings(repo).update({"auto_merge": True})
+    store = TaskRunStore(repo / ".factory" / "trace.db")
+    try:
+        store.update_pr(BRANCH1, auto_merge_error="review_rejected: blocking review")
+    finally:
+        store.close()
     assert list(_pr_waits(client).items()) == [(T01, (True, False)), (T02, (False, True))]
     store = TaskRunStore(repo / ".factory" / "trace.db")
     try:
-        store.update_pr(BRANCH1, approved_at="2026-01-07T10:00:00Z")
+        store.update_pr(BRANCH1, approved_at="2026-01-07T10:00:00Z", auto_merge_error=None)
     finally:
         store.close()
     assert list(_pr_waits(client).items()) == [(T01, (False, False)), (T02, (False, True))]
     store = TaskRunStore(repo / ".factory" / "trace.db")
     try:
-        store.update_pr(BRANCH1, approved_at=None)
+        store.update_pr(
+            BRANCH1, approved_at=None, auto_merge_error="review_rejected: blocking review"
+        )
         store.update_pr(BRANCH2, approved_at="2026-01-07T10:00:00Z")
     finally:
         store.close()

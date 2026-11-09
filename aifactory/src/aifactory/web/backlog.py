@@ -248,15 +248,20 @@ def _merged_unrecorded(root: Path, path: str, url: str) -> bool:
     return not (url and has_entry(text, url))
 
 
-def waits_for_automerge(task: Task | None, auto_merge_error: str | None) -> bool:
-    """An open PR of `task` is merged by the factory itself.
+def _merge_policy(repo: Path) -> JsonDict:
+    from aifactory.repo_settings import RepositorySettings, SettingsError
 
-    True with an effective ``auto_merge`` (task, step or project) and no ``auto_merge_error``:
-    a failed auto-merge leaves the PR open for a manual approve, so it waits for review again.
-    """
-    return (
-        task is not None and core.effective(task).get("auto_merge") is True and not auto_merge_error
-    )
+    try:
+        return RepositorySettings(repo).merge_policy()
+    except SettingsError as exc:
+        raise TaskRunError(exc.code, str(exc)) from exc
+
+
+def waits_for_automerge(repo: Path, task: Task | None, auto_merge_error: str | None) -> bool:
+    """Open PR waiting for local auto merge; disabled attempts can be retried explicitly."""
+    from aifactory.run.policy import merge_enabled
+
+    return task is not None and merge_enabled(repo) and not auto_merge_error
 
 
 def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
@@ -275,7 +280,7 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
         if task.id in rt.approved:
             return "approved"
         error = "auto_merge_error" if task.id in rt.merge_blocked else None
-        return "awaiting merge" if waits_for_automerge(task, error) else "in review"
+        return "awaiting merge" if waits_for_automerge(backlog.root, task, error) else "in review"
     if task.id in rt.failed:
         return "failed"
     state = core.derived_state(backlog, task)
@@ -326,7 +331,8 @@ def _task_json(
         )
     }
     data["own_auto_merge"] = own_merge if isinstance(own_merge, bool) else None
-    data["effective_auto_merge"] = core.effective(task).get("auto_merge") is True
+    data["auto_merge_policy"] = _merge_policy(backlog.root)
+    data["effective_auto_merge"] = data["auto_merge_policy"]["value"]
     data["invalid"] = core.derived_state(backlog, task) == "invalid"
     data["last_run"] = rt.last_run.get(task.id)
     rank = rt.queue.order.index(task.id) if task.id in rt.queue.order else None
@@ -373,7 +379,7 @@ def _container_json(
         "auto_continue": _own_flag(container, "auto_continue"),
         "auto_merge": _own_flag(container, "auto_merge"),
         "effective_auto_continue": _effective_flag(container, "auto_continue"),
-        "effective_auto_merge": _effective_flag(container, "auto_merge"),
+        "effective_auto_merge": _merge_policy(backlog.root)["value"],
         "can_toggle": container.index_path is not None,
         "archived": container.archived,
         "kind": "container",
@@ -1107,7 +1113,7 @@ def _nearest_id(task: Task) -> str | None:
     return None
 
 
-def _container_info(container: Container) -> JsonDict:
+def _container_info(backlog: Backlog, container: Container) -> JsonDict:
     return {
         "id": container.id,
         "title": container.title,
@@ -1116,7 +1122,7 @@ def _container_info(container: Container) -> JsonDict:
         "auto_continue": _own_flag(container, "auto_continue"),
         "effective_auto_continue": _effective_flag(container, "auto_continue"),
         "auto_merge": _own_flag(container, "auto_merge"),
-        "effective_auto_merge": _effective_flag(container, "auto_merge"),
+        "effective_auto_merge": _merge_policy(backlog.root)["value"],
         "can_toggle": container.index_path is not None,
     }
 
@@ -1159,7 +1165,11 @@ def container_graph(repo: Path, container_id: str) -> tuple[JsonDict, list[str]]
                 "external": True,
             }
     nodes.extend(external[k] for k in sorted(external))
-    data: JsonDict = {"container": _container_info(container), "nodes": nodes, "edges": edges}
+    data: JsonDict = {
+        "container": _container_info(backlog, container),
+        "nodes": nodes,
+        "edges": edges,
+    }
     return data, warnings
 
 
@@ -1192,7 +1202,9 @@ def _container_flag(
         "level": container.level,
         "path": result.path,
         key: _own_flag(container, key),
-        f"effective_{key}": _effective_flag(container, key),
+        f"effective_{key}": (
+            _merge_policy(repo)["value"] if key == "auto_merge" else _effective_flag(container, key)
+        ),
         "issues": [i.to_dict() for i in result.issues],
     }
     return data, _warnings(result.issues)

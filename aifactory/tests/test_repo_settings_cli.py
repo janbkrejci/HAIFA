@@ -22,6 +22,8 @@ def test_show_set_and_persist(
     args = ["--repo", str(repo), "--json"]
     rc, result = run_json(capsys, ["config", "local", "show", *args])
     assert rc == 0
+    assert result["data"]["auto_merge_policy"]["source"] == "default"
+    assert result["data"]["auto_merge_policy"]["value"] is False
     assert not home.exists()
     assert result["data"]["settings"]["auto_continue"] is False
     rc, result = run_json(
@@ -43,6 +45,8 @@ def test_show_set_and_persist(
     assert result["data"] == RepositorySettings(repo).show()
     rc, result = run_json(capsys, ["config", "local", "set", "--auto-continue", "off", *args])
     assert rc == 0
+    assert result["data"]["auto_merge_policy"]["source"] == "repository"
+    assert result["data"]["auto_merge_policy"]["value"] is True
     assert result["data"]["settings"]["auto_merge"] is True
     assert result["data"]["settings"]["auto_continue"] is False
     rc, result = run_json(capsys, ["config", "local", "set", "--harness", "inherit", *args])

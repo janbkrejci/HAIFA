@@ -105,10 +105,11 @@ def test_pr_merged_outside_leaves_review_and_kanban(repo_a: Path, tmp_path: Path
 @pytest.mark.parametrize("stop", ["not_merged", "disabled", "failed", "exhausted"])
 @pytest.mark.parametrize("auto", [False, True])
 @pytest.mark.parametrize("local_on", [False, True])
+@pytest.mark.parametrize("merge_on", [False, True])
 def test_refresh_resumes_only_a_not_merged_chain_once_via_launcher(
-    repo_a: Path, tmp_path: Path, stop: str, auto: bool, local_on: bool
+    repo_a: Path, tmp_path: Path, stop: str, auto: bool, local_on: bool, merge_on: bool
 ) -> None:
-    RepositorySettings(repo_a).update({"auto_continue": local_on})
+    RepositorySettings(repo_a).update({"auto_continue": local_on, "auto_merge": merge_on})
     store = TaskRunStore(_db(repo_a))
     try:
         for run_id in ("r-run", "r-dead"):

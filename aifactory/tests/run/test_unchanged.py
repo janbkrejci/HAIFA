@@ -132,7 +132,7 @@ def test_already_done_continues_with_dependent_task(
     commit_all(repo, "Enable automatic continuation")
     script.add("builder", ok(already_done=ALREADY_DONE), ok(already_done=ALREADY_DONE))
 
-    RepositorySettings(repo).update({"auto_continue": True})
+    RepositorySettings(repo).update({"auto_continue": True, "auto_merge": auto_merge})
     chain = run_chain(repo, T01)
 
     assert chain.stop == STOP_EXHAUSTED

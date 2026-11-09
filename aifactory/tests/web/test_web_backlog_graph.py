@@ -135,7 +135,7 @@ def test_auto_merge_writes_like_the_cli(tmp_path: Path) -> None:
     url = f"/api/backlog/containers/{S1}/auto-merge"
     data = _post(client, url, {"mode": "on"})["data"]
     assert data["changed"] is True
-    assert (data["auto_merge"], data["effective_auto_merge"]) == (True, True)
+    assert (data["auto_merge"], data["effective_auto_merge"]) == (True, False)
     assert data["id"] == S1 and data["level"] == "step"
     assert _container(root, S1).defaults.get("auto_merge") is True
     assert main(["backlog", "auto-merge", S1, "--on", "--repo", str(twin)]) == 0
@@ -145,7 +145,7 @@ def test_auto_merge_writes_like_the_cli(tmp_path: Path) -> None:
     tree = _get(client, "/api/backlog")["data"]["items"]
     assert all("auto_merge" in c for c in tree)
     task = _get(client, f"/api/backlog/tasks/{A1}")["data"]["task"]
-    assert (task["own_auto_merge"], task["effective_auto_merge"]) == (None, True)
+    assert (task["own_auto_merge"], task["effective_auto_merge"]) == (None, False)
 
     edit = f"/api/backlog/tasks/{A1}/edit"
     _post(client, edit, {"auto_merge": False})
@@ -153,14 +153,14 @@ def test_auto_merge_writes_like_the_cli(tmp_path: Path) -> None:
     assert (task["own_auto_merge"], task["effective_auto_merge"]) == (False, False)
     _post(client, edit, {"clear_auto_merge": True})
     task = _get(client, f"/api/backlog/tasks/{A1}")["data"]["task"]
-    assert (task["own_auto_merge"], task["effective_auto_merge"]) == (None, True)
+    assert (task["own_auto_merge"], task["effective_auto_merge"]) == (None, False)
     assert _post(client, edit, {"auto_merge": "yes"}, 400)["error"]["code"] == "invalid_value"
 
     data = _post(client, url, {"mode": "inherit"})["data"]
     assert data["auto_merge"] is None
     _post(client, f"/api/backlog/containers/{M01}/auto-merge", {"mode": "on"})
     step = _get(client, f"/api/backlog/containers/{S1}/graph")["data"]["container"]
-    assert (step["auto_merge"], step["effective_auto_merge"]) == (None, True)
+    assert (step["auto_merge"], step["effective_auto_merge"]) == (None, False)
     assert step["auto_continue"] is None
     assert _post(client, url, {"mode": "maybe"}, 400)["error"]["code"] == "invalid_value"
     body = _post(client, "/api/backlog/containers/M09/auto-merge", {"mode": "on"}, 404)

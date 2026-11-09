@@ -16,6 +16,7 @@ code ``writes_needed`` and the paths in ``auto_merge_error``; ``factory task app
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 from time import monotonic, sleep
 
@@ -56,11 +57,15 @@ _INSTRUCTION = (
 )
 
 
-def settled_checks(provider: GitProvider, request: PullRequest) -> ChecksStatus:
+def settled_checks(
+    provider: GitProvider, request: PullRequest, guard: Callable[[], None] | None = None
+) -> ChecksStatus:
     """The PR's checks once none runs, or as they are when the wait is over."""
     start = _clock()
     checks = provider.checks(request)
     while True:
+        if guard is not None:
+            guard()
         waited = _clock() - start
         running = checks.state == CHECKS_PENDING and waited < AUTO_MERGE_CHECKS_TIMEOUT
         appearing = (
@@ -74,7 +79,12 @@ def settled_checks(provider: GitProvider, request: PullRequest) -> ChecksStatus:
         checks = provider.checks(request)
 
 
-def head_checks(provider: GitProvider, request: PullRequest, head: str) -> ChecksStatus:
+def head_checks(
+    provider: GitProvider,
+    request: PullRequest,
+    head: str,
+    guard: Callable[[], None] | None = None,
+) -> ChecksStatus:
     """The settled checks of the PR once the hosting shows `head` as its head.
 
     A hosting that reports checks may still show the previous head (and its checks)
@@ -86,11 +96,15 @@ def head_checks(provider: GitProvider, request: PullRequest, head: str) -> Check
     if provider.reports_checks:
         start = _clock()
         while True:
+            if guard is not None:
+                guard()
             seen = provider.status(request).head_sha
             if seen is None or seen == head or _clock() - start >= AUTO_MERGE_CHECKS_APPEAR:
                 break
             sleep(AUTO_MERGE_CHECKS_DELAY)
-    return settled_checks(provider, request)
+    if guard is None:
+        return settled_checks(provider, request)
+    return settled_checks(provider, request, guard)
 
 
 def checks_reason(checks: ChecksStatus, rounds: int = 0) -> tuple[str, str] | None:

@@ -167,7 +167,9 @@ def _pr_summary(ctx: _Ctx, store: TaskRunStore, row: TaskPrRow) -> JsonDict:
     last = runs[0] if runs else None
     waiting = status.state == OPEN and running is None
     approved = waiting and bool(row.approved_at) and not row.auto_merge_error
-    automerge = waiting and not approved and waits_for_automerge(task, row.auto_merge_error)
+    automerge = (
+        waiting and not approved and waits_for_automerge(ctx.main, task, row.auto_merge_error)
+    )
     return {
         "task_id": row.task_id,
         "task_title": None if task is None else task.title,
