@@ -69,7 +69,9 @@ def refresh_registered(
         if launcher is not None:
 
             def start(task_id: str, auto: bool, root: Path = root) -> TaskRunRow | None:
-                return launcher.start(root, task_id, note=None, force=False, auto=auto)
+                return launcher.start(
+                    root, task_id, note=None, force=False, auto=auto, automatic=True
+                )
 
             for pr in result.states:
                 if pr["state"] != "merged":

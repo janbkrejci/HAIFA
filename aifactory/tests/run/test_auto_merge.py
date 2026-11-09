@@ -35,6 +35,7 @@ from aifactory.backlog import Task, load_backlog
 from aifactory.cli import main
 from aifactory.config import load_run_config
 from aifactory.providers.github import GitHubProvider
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review import approve_task, try_auto_merge
 from aifactory.review.automerge import AutoMergeResult, resolve_and_merge
 from aifactory.run import (
@@ -142,6 +143,7 @@ def setup(
     t02_depends: bool = True,
 ) -> None:
     """S01 with T01..T03 writing src/app/; a workflow with review (no accept on it)."""
+    RepositorySettings(repo).update({"auto_continue": "auto_continue: true" in step})
     write(repo, ".factory/agents.yaml", AGENTS)
     write(repo, ".factory/prompts/reviewer/system.md", "You are the reviewer.\n")
     write(repo, ".factory/prompts/reviewer/user.md", USER_PROMPT)
@@ -496,6 +498,7 @@ def test_retry_with_auto_continues_without_auto_continue(
     repo: Path, script: Script, capsys: Capsys
 ) -> None:
     setup(repo, step="", t02_depends=False)
+    RepositorySettings(repo).update({"auto_continue": True})
     stopped_at_review(repo, script)
     review(script)
     build(script, "two")

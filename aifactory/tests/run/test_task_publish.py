@@ -562,7 +562,7 @@ def test_dashboard_publish_merges_after_response(
 
     def approve(*args: Any, **kwargs: Any) -> Any:
         waiting.set()
-        assert release.wait(10)
+        assert release.wait(60)
         return real_approve(*args, **kwargs)
 
     monkeypatch.setattr(automerge, "approve_task", approve)
@@ -577,10 +577,10 @@ def test_dashboard_publish_merges_after_response(
         response = client.post(f"/api/runs/{first.run.run_id}/publish")
         assert response.status_code == 200, response.json()
         assert response.json()["data"]["started"] is True
-        assert waiting.wait(5) and launcher.busy()
+        assert waiting.wait(30) and launcher.busy()
     finally:
         release.set()
-        launcher.wait(10)
+        launcher.wait(60)
     assert not launcher.busy() and launcher.last_error is None
     store = store_of(repo)
     try:

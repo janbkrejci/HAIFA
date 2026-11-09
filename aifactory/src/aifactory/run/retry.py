@@ -418,6 +418,7 @@ def retry_run(
     provider: GitProvider | None = None,
     agents_override: dict[str, str] | None = None,
     switch: dict[str, Any] | None = None,
+    automatic: bool = False,
 ) -> TaskRunResult:
     """Continue the task's newest (or `run_id`) failed or stopped run; a ``TaskRunResult``.
 
@@ -594,13 +595,16 @@ def retry_run(
         }
         if record is not None:
             retry[SWITCH_KEY] = record
-        claimed = store.reclaim(
-            row.run_id,
-            os.getpid(),
-            retry,
-            run_note if record is not None or stack is not None else None,
-            stacked_on=stack[0].branch if stack is not None else None,
-        )
+        from aifactory.run.policy import acceptance
+
+        with acceptance(main, automatic or bool((switch or {}).get("auto"))):
+            claimed = store.reclaim(
+                row.run_id,
+                os.getpid(),
+                retry,
+                run_note if record is not None or stack is not None else None,
+                stacked_on=stack[0].branch if stack is not None else None,
+            )
         result = run_mod._execute(
             main,
             rc,

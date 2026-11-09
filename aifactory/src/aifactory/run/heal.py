@@ -1,6 +1,6 @@
 """Self-healing of an auto-continue chain: the safe action after a failure, by its kind.
 
-When a run of a chain that goes on (``--auto`` or ``auto_continue``) fails, the chain
+When a run of a chain with repository-local auto continue enabled fails, the chain
 acts by the run's ``failure_kind`` (``aifactory.failure``):
 
 - ``quota``: the run already continued on the configured fallback harness
@@ -15,7 +15,7 @@ acts by the run's ``failure_kind`` (``aifactory.failure``):
 - every other kind (and ``nothing_to_do`` without a reason) is left to the operator:
   the chain stops ``failed`` as before.
 
-Each run is healed at most once. ``auto_heal`` (inherited like ``auto_continue``, default
+Each run is healed at most once. ``auto_heal`` (inherited from the backlog, default
 ``true``; ``auto_heal: false`` in a task, step or project switches it off) disables every
 automatic action of the task, the quota fallback of a single run included.
 
@@ -168,7 +168,9 @@ def _retry(
     run = result.run
     runner = retry if retry is not None else retry_mod.retry_run
     try:
-        retried = runner(repo, run.task_id, run_id=run.run_id, code=code, provider=provider)
+        retried = runner(
+            repo, run.task_id, run_id=run.run_id, code=code, provider=provider, automatic=True
+        )
     except TaskRunError as exc:
         text = f"Factory nezopakovala běh {run.run_id} po pádu procesu: {exc.code}: {exc.message}"
         return Healing(_event(result, ACTION_RETRY, False, text), None, False)
@@ -221,6 +223,10 @@ def heal(
     Only a ``failed`` or ``aborted`` run with ``auto_heal`` on is acted on. `retry`
     replaces ``retry_run`` (the parallel chain passes its own).
     """
+    from aifactory.run.policy import DISABLED, acceptance, enabled
+
+    if not enabled(repo):
+        return None
     run = result.run
     if run.state == SUCCEEDED or not auto_heal_enabled(task):
         return None
@@ -230,5 +236,13 @@ def heal(
     if kind == failures.PROCESS_GONE:
         return _retry(repo, result, code, provider, retry)
     if kind == failures.NOTHING_TO_DO and run.state == FAILED:
-        return _close(repo, result)
+        try:
+            with acceptance(repo):
+                return _close(repo, result)
+        except TaskRunError as exc:
+            if exc.code != DISABLED:
+                raise
+            # Off won the race after the initial read. Let the chain stop and drain
+            # already accepted members, just as when the initial read returned off.
+            return None
     return None

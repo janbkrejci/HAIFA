@@ -20,6 +20,7 @@ from run_repo import Script, commit_all, fake_env, make_run_repo, ok, write
 from aifactory import failure
 from aifactory.backlog import Task, load_backlog
 from aifactory.engine.utils import now_iso
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run import (
     STOP_EXHAUSTED,
     STOP_FAILED,
@@ -56,6 +57,7 @@ def script_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[Script]:
 def _repo(tmp_path: Path, *, harness: str = "claude", heal: bool | None = None) -> Path:
     """T01 and T02 (independent) in step S01 with auto-continue on."""
     repo = make_run_repo(tmp_path / "repo", harness)
+    RepositorySettings(repo).update({"auto_continue": True})
     flag = "" if heal is None else f"auto_heal: {'true' if heal else 'false'}\n"
     write(
         repo,

@@ -10,10 +10,11 @@ so the only way into base is a pull request with an approval. The scenario then:
 3. clones it and adds it to HAIFA the way ``POST /api/repos`` does (``add_repo``)
    with ``base_changes: pr`` and ``base_pr_merge: auto``: the install goes through
    ``factory-init/<n>``, which factory approves with its own vote and merges;
-4. writes a backlog of two dependent tasks with ``auto_continue`` and ``auto_merge``
+4. writes a backlog of two dependent tasks with ``auto_merge``
    (workflow ``build-review``) and runs ``factory backlog commit``: PR
    ``factory-backlog/<n>``, approved and merged by factory;
-5. runs ``factory task run <first> --auto`` over the fake harness
+5. enables repository-local auto continue and runs ``factory task run <first>``
+   over the fake harness, then disables continuation
    (``validation.fake``, no model is called): each task gets a PR that factory
    approves with its own vote (``reviewed: true``) and that Azure completes under the
    policy without a bypass; the second task starts by itself (``auto-continue``);
@@ -367,7 +368,6 @@ def backlog_files(docs_root: str) -> dict[str, str]:
             "title: Azure E2E\n"
             "workflow: build-review\n"
             "writes: [src/e2e/]\n"
-            "auto_continue: true\n"
             "auto_merge: true\n"
             "---\n\n"
             "Temporary backlog of the Azure DevOps end-to-end validation.\n"
@@ -719,7 +719,15 @@ class E2E:
 
     def chain(self) -> None:
         first = TASKS[0][0]
-        cmd = self.factory("task", "run", first, "--auto", script=fake_script())
+        enabled = self.factory("config", "local", "set", "--auto-continue", "on")
+        if not enabled.ok:
+            raise Stop(f"cannot enable local auto continue: {enabled.brief()}")
+        try:
+            cmd = self.factory("task", "run", first, script=fake_script())
+        finally:
+            disabled = self.factory("config", "local", "set", "--auto-continue", "off")
+            if not disabled.ok:
+                raise Stop(f"cannot disable local auto continue: {disabled.brief()}")
         chain = cmd.payload.get("chain") if isinstance(cmd.payload.get("chain"), dict) else {}
         chain = chain or {}
         runs = [r for r in chain.get("runs") or [] if isinstance(r, dict)]

@@ -18,6 +18,7 @@ from aifactory import failure
 from aifactory.backlog import Task, TaskEditError, load_backlog
 from aifactory.backlog.commit import BacklogCommit
 from aifactory.engine.data_types import BuildOutput
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run import (
     STOP_EXHAUSTED,
     STOP_FAILED,
@@ -131,6 +132,7 @@ def test_already_done_continues_with_dependent_task(
     commit_all(repo, "Enable automatic continuation")
     script.add("builder", ok(already_done=ALREADY_DONE), ok(already_done=ALREADY_DONE))
 
+    RepositorySettings(repo).update({"auto_continue": True})
     chain = run_chain(repo, T01)
 
     assert chain.stop == STOP_EXHAUSTED
@@ -173,6 +175,7 @@ def test_completion_problem_blocks_dashboard_and_stops_chain(
             unchanged_mod, "commit_backlog", pending if problem == "pending-pr" else fail
         )
 
+    RepositorySettings(repo).update({"auto_continue": True})
     chain = run_chain(repo, T01, auto=True)
 
     assert chain.stop == STOP_FAILED and len(chain.runs) == 1

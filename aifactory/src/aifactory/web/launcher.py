@@ -83,6 +83,7 @@ class Launcher(Protocol):
         model: str | None = None,
         thinking: str | None = None,
         auto: bool = False,
+        automatic: bool = False,
         timeout: float = 30.0,
     ) -> TaskRunRow | None: ...
 
@@ -205,12 +206,14 @@ class RunLauncher:
         model: str | None = None,
         thinking: str | None = None,
         auto: bool = False,
+        automatic: bool = False,
         timeout: float = 30.0,
     ) -> TaskRunRow | None:
         """``factory task run``; the claimed ``task_runs`` row, or None if not claimed in time.
 
         ``harness``/``model``/``thinking`` become ``--harness``/``--model``/``--thinking``
-        (this run only), ``auto`` ``--auto`` (auto-continue after it).
+        (this run only). ``auto`` is deprecated; ``automatic`` marks a dispatched
+        continuation, which must pass the live policy at spawn and child claim.
 
         A ``TaskRunError`` from the process's envelope before the claim
         (``unmet_dependencies``, ``already_running``, ``no_writes``, ...) propagates.
@@ -227,6 +230,8 @@ class RunLauncher:
                 args.append(f"--{key}={value}")
         if auto:
             args.append("--auto")
+        if automatic:
+            args.append("--started-by=auto-continue")
         return self._launch(repo, task_id, "run", args, timeout)
 
     def start_return(
@@ -308,7 +313,13 @@ class RunLauncher:
         envelope_path = logs / f"{stem}.json"
         log_path = logs / f"{stem}.log"
         try:
-            with home.create_private(envelope_path) as out, home.create_private(log_path) as err:
+            from aifactory.run.policy import acceptance
+
+            with (
+                home.create_private(envelope_path) as out,
+                home.create_private(log_path) as err,
+                acceptance(repo, "--started-by=auto-continue" in args),
+            ):
                 process = subprocess.Popen(
                     argv,
                     cwd=repo,
