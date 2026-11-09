@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S11-T02
 title: Auto continue s okamžitou bariérou dalších startů
-status: todo
+status: done
 depends_on: [HAIFA-S11-T01]
 writes: [aifactory/]
 test_timeout: 1200
@@ -18,4 +18,5 @@ Hotovo: změna za běhu funguje bez restartu/commitu u sekvenčního i paraleln�
 ## Běhy
 
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-09 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/206 · náklady $0.00
 
