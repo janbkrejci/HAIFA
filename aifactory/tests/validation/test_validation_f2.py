@@ -23,6 +23,37 @@ Capsys = pytest.CaptureFixture[str]
 MERGE_ORDER = ("M03-S01-T01", "M04-S01-T01", "M04-S01-T02", "M04-S01-T03", "M03-S01-T02")
 
 
+@pytest.mark.parametrize("enable_ok", [False, True])
+def test_auto_chain_sets_local_policy_and_cleans_up_on_failure(enable_ok: bool) -> None:
+    from types import SimpleNamespace
+
+    from validation.results import ScenarioResult
+
+    from validation import f2
+
+    calls: list[tuple[str, ...]] = []
+
+    def haifa(*argv: str) -> Any:
+        calls.append(argv)
+        return SimpleNamespace(ok=enable_ok or argv[-1] == "off", brief=lambda: "setting")
+
+    def run_task(*argv: str, **kwargs: Any) -> Any:
+        calls.append(argv)
+        raise RuntimeError("run failed")
+
+    ctx = SimpleNamespace(haifa=haifa, run_task=run_task)
+    result = ScenarioResult("F2", "local")
+    if enable_ok:
+        with pytest.raises(RuntimeError, match="run failed"):
+            f2._auto_chain(ctx, result, {})  # type: ignore[arg-type]
+        assert calls[1] == (f2_backlog.AUTO_START,)
+        assert calls[2] == ("config", "local", "set", "--auto-continue", "off")
+    else:
+        assert not f2._auto_chain(ctx, result, {})  # type: ignore[arg-type]
+        assert len(calls) == 1
+    assert calls[0] == ("config", "local", "set", "--auto-continue", "on")
+
+
 def _git(repo: Path, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True, capture_output=True)
 

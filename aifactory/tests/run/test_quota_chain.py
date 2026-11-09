@@ -16,6 +16,7 @@ from run_repo import SPEC, T01, Script, commit_all, fake_env, make_run_repo, ok,
 from aifactory import failure
 from aifactory.backlog import Task, load_backlog
 from aifactory.config import load_run_config
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run import TaskRunStore, run_task
 from aifactory.run.fallback import SWITCH_KEY, harness_switches
 from aifactory.run.quota_chain import (
@@ -43,6 +44,7 @@ def _repo(
     tmp_path: Path, chain: str = "[claude, pi]", back: bool = False, fallback: str = ""
 ) -> Path:
     repo = make_run_repo(tmp_path / "repo", "codex")
+    RepositorySettings(repo).update({"auto_continue": True})
     write(repo, ".factory/agents.yaml", AGENTS.format(fallback=fallback))
     write(
         repo,

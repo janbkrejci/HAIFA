@@ -2,8 +2,8 @@
 
 A sample backlog (``validation.f2_backlog``: modules M03 and M04, five tasks
 with dependencies, one across modules) is created with ``factory task add``
-and pushed to base. Then two tasks run at the same time, one ``task run
---auto`` runs a chain of two tasks, one more task runs alone, and all five are
+and pushed to base. Then two tasks run at the same time, local auto continue
+runs a chain of two tasks, one more task runs alone, and all five are
 approved with ``factory task approve``. Checks: five merged PRs, ``status:
 done`` of all five in base, no write outside the worktrees, no leftover
 worktree of the five runs and a passing ``backlog check``.
@@ -141,7 +141,14 @@ def _parallel(ctx: Context, res: ScenarioResult, runs: dict[str, dict[str, Any]]
 
 
 def _auto_chain(ctx: Context, res: ScenarioResult, runs: dict[str, dict[str, Any]]) -> bool:
-    cmd = ctx.run_task(fb.AUTO_START, "--auto", variant="auto")
+    enabled = ctx.haifa("config", "local", "set", "--auto-continue", "on")
+    if not res.check("enable_local_auto_continue", enabled.ok, enabled.brief()):
+        return False
+    try:
+        cmd = ctx.run_task(fb.AUTO_START, variant="auto")
+    finally:
+        disabled = ctx.haifa("config", "local", "set", "--auto-continue", "off")
+        res.check("disable_local_auto_continue", disabled.ok, disabled.brief())
     chain = _dict(cmd.payload.get("chain"))
     items = chain.get("runs")
     items = items if isinstance(items, list) else []

@@ -1907,9 +1907,8 @@ not do its job (bad input, config, state, provider), nothing was changed.
 
 task run: a failed run keeps its worktree and branch. After a successful run the branch
   is pushed and a pull request opened; when that fails the run stays succeeded and
-  pr_error says why. --auto: after a run opens its PR the next ready task of the step,
-  then of the project, starts. Without --auto only a task with auto_continue: true
-  (inherited from index.md) is followed, by a task that has it too. auto_merge: true
+  pr_error says why. Repository-local auto_continue starts the next ready task of
+  the step, then of the project. --auto is deprecated and has no effect. auto_merge: true
   (inherited): a succeeded run with a review phase whose last review approved and a PR that
   merges cleanly is approved and merged like 'task approve' (CI wait, ci-fix runs); the chain
   continues only after that merge. Otherwise the PR stays open and auto_merge says why.
@@ -2086,9 +2085,8 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         "<worktrees_dir>/<run-id> on a new branch factory/<task-id>-<n>. Agents may change "
         "only the task's writes and its spec/doc files inside the worktree; anything else, "
         "including any change in the main checkout, is rolled back and fails the phase. "
-        "With --auto a run that opened its PR is followed by the next ready task "
-        "(auto-continue). Without it auto_continue: true (from the index.md of the step or "
-        "project) must hold for both the finished and the next task. "
+        "Repository-local auto_continue controls whether the next ready task follows. "
+        "--auto is deprecated and cannot override local off. "
         "With auto_merge: true a reviewed run's PR is merged first when it may be "
         "(see 'factory backlog auto-merge --help').",
     )
@@ -2102,10 +2100,8 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     run.add_argument(
         "--auto",
         action="store_true",
-        help="after a successful run (PR opened) start the next ready task of the step, then "
-        "of the project, whatever its auto_continue (auto-continue); a failure stops the chain. "
-        "The kanban's queue order goes first and tasks excluded in the kanban are never "
-        "started by the chain",
+        help="deprecated compatibility option; automatic continuation follows repository-local "
+        "auto_continue, set with factory config local set --auto-continue on/off",
     )
     from aifactory.harness.override import THINKING_LEVELS
 
@@ -2271,9 +2267,7 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     retry.add_argument(
         "--auto",
         action="store_true",
-        help="after a successful retry (PR opened) start the next ready task whatever its "
-        "auto_continue, like factory task run --auto. Without it the retry goes on like "
-        "task run: auto_merge merges the PR and auto_continue starts the next ready task",
+        help="deprecated compatibility option; follows repository-local auto_continue",
     )
     retry.add_argument(
         "--allow-writes",
@@ -2790,6 +2784,7 @@ def _task_run(args: argparse.Namespace, root: Path) -> int:
             note=args.note,
             force=args.force,
             auto=args.auto,
+            automatic=args.started_by == "auto-continue",
             agents_override=_agents_override(args),
         )
 
@@ -2802,12 +2797,26 @@ def _chain_output(
     extra: dict[str, Any] | None = None,
 ) -> int:
     """Start a chain with `start` and print it (``task run``, ``task retry``)."""
+    if getattr(args, "auto", False):
+        print(
+            "warning: --auto is deprecated and has no effect; use factory config local set "
+            "--auto-continue on/off. Repository-local off always blocks automatic starts.",
+            file=sys.stderr,
+        )
     if args.json:
         with contextlib.redirect_stdout(sys.stderr):
             chain = start()
         chain_json = chain.to_json()
         data = _run_json(chain.runs[0])
-        keys = ("runs", "stop", "waiting", "max_parallel_runs", "exclusive", "chain_id")
+        keys = (
+            "runs",
+            "stop",
+            "stop_detail",
+            "waiting",
+            "max_parallel_runs",
+            "exclusive",
+            "chain_id",
+        )
         data["chain"] = {k: chain_json[k] for k in keys}
         data.update(extra or {})
         if chain.stop == "failed":
@@ -2834,6 +2843,10 @@ def _chain_output(
 def _print_chain(chain: ChainResult) -> None:
     from aifactory.run import STOP_EXHAUSTED, STOP_NOT_MERGED
 
+    if chain.stop == "disabled":
+        from aifactory.run.policy import DISABLED_MESSAGE
+
+        print(DISABLED_MESSAGE)
     if chain.max_parallel > 1:
         print(f"auto-continue: up to {chain.max_parallel} parallel runs")
     for result in chain.runs:

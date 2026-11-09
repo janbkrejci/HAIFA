@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
-from multi_repo import commit_all, git, rmtree
+from multi_repo import git, rmtree
 from overview_fixture import (
     T_FAIL,
     T_REV,
@@ -18,6 +18,7 @@ from overview_fixture import (
     register,
 )
 
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review import ReviewError, SyncResult
 from aifactory.review import sync as review_sync
 from aifactory.run.store import TaskChainRow, TaskRunStore
@@ -103,16 +104,11 @@ def test_pr_merged_outside_leaves_review_and_kanban(repo_a: Path, tmp_path: Path
 
 @pytest.mark.parametrize("stop", ["not_merged", "disabled", "failed", "exhausted"])
 @pytest.mark.parametrize("auto", [False, True])
+@pytest.mark.parametrize("local_on", [False, True])
 def test_refresh_resumes_only_a_not_merged_chain_once_via_launcher(
-    repo_a: Path, tmp_path: Path, stop: str, auto: bool
+    repo_a: Path, tmp_path: Path, stop: str, auto: bool, local_on: bool
 ) -> None:
-    step = repo_a / "backlog/M01-core/S01-model/index.md"
-    if not auto:
-        step.write_text(
-            step.read_text(encoding="utf-8").replace("writes:", "auto_continue: true\nwrites:"),
-            encoding="utf-8",
-        )
-        commit_all(repo_a, "enable auto continue")
+    RepositorySettings(repo_a).update({"auto_continue": local_on})
     store = TaskRunStore(_db(repo_a))
     try:
         for run_id in ("r-run", "r-dead"):
@@ -154,7 +150,9 @@ def test_refresh_resumes_only_a_not_merged_chain_once_via_launcher(
 
     assert refresh_registered(registry, refresh=refresh, launcher=launcher) == []
     assert refresh_registered(registry, refresh=refresh, launcher=launcher) == []
-    if stop == "not_merged":
-        launcher.start.assert_called_once_with(repo_a, T_FAIL, note=None, force=False, auto=auto)
+    if stop == "not_merged" and local_on:
+        launcher.start.assert_called_once_with(
+            repo_a, T_FAIL, note=None, force=False, auto=auto, automatic=True
+        )
     else:
         launcher.start.assert_not_called()

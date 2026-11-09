@@ -20,6 +20,7 @@ from starlette.testclient import TestClient
 from thread_launcher import ThreadLauncher
 
 from aifactory.engine.utils import now_iso
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run.errors import TaskRunError
 from aifactory.run.store import TaskChainRow, TaskRunRow, TaskRunStore
 from aifactory.skill import envelope_problems
@@ -77,6 +78,7 @@ class FakeLauncher(ThreadLauncher):
         model: str | None = None,
         thinking: str | None = None,
         auto: bool = False,
+        automatic: bool = False,
         timeout: float = 30.0,
     ) -> TaskRunRow | None:
         self.calls.append((task_id, note, force, auto))
@@ -105,6 +107,7 @@ def repo_fixture(tmp_path: Path) -> Path:
             f"{STEP}/{task_id}.md",
             f"---\nid: {task_id}\ntitle: Task {task_id}\nstatus: todo\nwrites: [{writes}]\n---\n",
         )
+    RepositorySettings(root).update({"auto_continue": True})
     commit_all(root, "three tasks")
     return root
 

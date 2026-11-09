@@ -32,13 +32,11 @@ kanban's queue and the usual order (``priority_order``). The checks of a candida
 the same. The record goes when the task's run succeeds, when the task is no longer
 ``todo`` (done, cancelled) or when the operator clears it in the kanban.
 
-``--auto`` (``auto=True``) holds for the whole chain: it continues after every
-successful run and may start any task. Otherwise ``auto_continue: true`` inherited
-by a task (task, step or project ``index.md``) decides both ways: the chain continues
-only after a task that has it (else ``stop == "disabled"``) and starts only tasks
-that have it. So with ``auto_continue: true`` on step S01 only, the chain runs the
-tasks of S01 and stops; a task of a step with auto-continue off is never started by
-a chain.
+Repository-local ``auto_continue`` is read fresh from HAIFA_HOME. Its default is off.
+``--auto`` / ``auto=True`` is a deprecated compatibility parameter with no policy effect.
+Legacy task, step and project values never filter candidates. Automatic claim/reclaim
+and process spawn share the settings update lock; after off is confirmed no new work
+can be accepted. Already claimed runs and their internal repair phases finish.
 
 The next task stays in the same project (the root container of the backlog). It is
 taken from the same project's kanban manual queue first (``task_queue`` in the trace
@@ -93,8 +91,8 @@ store's merge lock); a PR it did not merge stops the filling as above.
 Every chain that goes on has a row in ``task_chains`` (``store.TaskChainRow``): its
 runs, the skipped tasks of the last selection with their reasons, the exclusive tasks
 and, at the end, the stop. The row is written from the start when the chain can go on
-then (``--auto``, or ``auto_continue: true`` on its first task in base), otherwise from
-the moment it does go on (auto-continue committed to base during the run). A run that
+then (repository-local ``auto_continue``), otherwise from the moment it does go on
+(the local setting enabled during the run). A run that
 never goes on is a single run, it gets no row. The dashboard shows the rows
 (``/api/chains``). A failure to write a row never affects the chain.
 
@@ -144,6 +142,7 @@ from aifactory.run import task as task_mod
 from aifactory.run.errors import TaskRunError
 from aifactory.run.followups import follow_up_marker
 from aifactory.run.members import ChainRunner, ProcessRunner
+from aifactory.run.policy import DISABLED, DISABLED_MESSAGE, enabled, require_enabled
 from aifactory.run.scope import effective_task_writes, is_wide, overlaps
 from aifactory.run.stack import stack_tip, stacked_on, unmet_ids
 from aifactory.run.store import (
@@ -151,6 +150,7 @@ from aifactory.run.store import (
     CHAIN_FINISHED,
     RUNNING,
     STARTED_AUTO_CONTINUE,
+    STARTED_MANUAL,
     Priority,
     QueuePrefs,
     TaskChainRow,
@@ -187,7 +187,7 @@ _StartResult = TypeVar("_StartResult")
 _LOCK_START_ATTEMPTS = 3
 
 
-def _start_with_lock_retry(start: Callable[[], _StartResult]) -> _StartResult:
+def _start_with_lock_retry(start: Callable[[], _StartResult], *, repo: Path) -> _StartResult:
     """Retry the same unclaimed task; a shared lock says nothing about its readiness.
 
     Each claim already waits up to SERIAL_TIMEOUT. Keep retries bounded and never
@@ -195,6 +195,7 @@ def _start_with_lock_retry(start: Callable[[], _StartResult]) -> _StartResult:
     """
     for attempt in range(_LOCK_START_ATTEMPTS):
         try:
+            require_enabled(repo)
             return start()
         except TaskRunError as exc:
             if exc.code != "trace_db_locked" or attempt == _LOCK_START_ATTEMPTS - 1:
@@ -276,8 +277,9 @@ class Selection:
     skipped: list[Skip]
 
 
-def auto_continue_enabled(task: Task) -> bool:
-    return effective(task).get("auto_continue") is True
+def auto_continue_enabled(repo: Path) -> bool:
+    """Live repository policy; legacy backlog flags never authorize a start."""
+    return enabled(repo)
 
 
 def auto_merge_enabled(task: Task) -> bool:
@@ -328,8 +330,8 @@ def select_next(
 
     ``conflict`` (parallel chains, ``Occupancy``) is asked only about a candidate that
     could start otherwise, until one is chosen; a ``Skip`` it returns is recorded and the
-    next candidate is tried. With ``require_auto_continue`` (a chain without ``--auto``)
-    a candidate without ``auto_continue: true`` is left out, not reported as skipped.
+    next candidate is tried. ``require_auto_continue`` is retained for compatibility
+    and no longer filters task metadata.
     ``prefs`` (the kanban's queue, ``TaskRunStore.queue_prefs``) orders the candidates
     and excludes tasks: an excluded task is skipped as ``excluded``, with ``--auto`` too.
     ``prefer`` (the blockers of a blocked `after`, ``blockers_of``) goes before the
@@ -529,8 +531,6 @@ def _select(
     for task in pool:
         if task.id in exclude:
             continue
-        if require_auto_continue and not auto_continue_enabled(task):
-            continue
         if task.id in prefs.excluded:
             skipped.append(Skip(task.id, "excluded", EXCLUDED_DETAIL))
             continue
@@ -723,6 +723,7 @@ class ChainResult:
                 for r in self.runs
             ],
             "stop": self.stop,
+            "stop_detail": DISABLED_MESSAGE if self.stop == STOP_DISABLED else None,
             "waiting": [s.to_json() for s in self.waiting],
             "max_parallel_runs": self.max_parallel,
             "exclusive": list(self.exclusive),
@@ -967,8 +968,8 @@ def start_factory(
     The Overview's "Spustit továrnu": the tasks are chosen like auto-continue does
     (``select_ready``: the kanban's queue first, excluded tasks, dependencies, open PRs
     and write collisions with running runs, open PRs and the tasks started just before)
-    and each is started with `start` (``factory task run ID`` as a separate process; it
-    then continues according to its inherited ``auto_continue``). At most
+    and each is started with `start` (an automatic launcher carrying the origin to the
+    child claim). Continuation follows the live repository-local policy. At most
     ``max_parallel_runs`` minus the taken slots (``Slots``: tasks with a live run or an
     open PR waiting for review, each once) are started. When PRs waiting for review hold
     a slot the next ready task that found none is skipped as ``no_slot``. A task `start`
@@ -1041,10 +1042,10 @@ def start_factory(
             slots = replace(slots, in_review=tuple(t for t in slots.in_review if t not in deps))
         exclude.add(nxt.id)
         try:
-            row = _start_with_lock_retry(partial(start, nxt.id))
+            row = _start_with_lock_retry(partial(start, nxt.id), repo=repo)
         except TaskRunError as exc:
             start_skips.append(Skip(nxt.id, "cannot_start", f"{exc.code}: {exc.message}"))
-            if exc.code == "trace_db_locked":
+            if exc.code in (DISABLED, "trace_db_locked"):
                 break
             continue
         if row is None:
@@ -1089,7 +1090,7 @@ def _heal_in_chain(
         return result, False
     with _fresh_backlog(repo) as backlog:
         task = backlog.by_id.get(result.run.task_id)
-    if not isinstance(task, Task) or not (auto or auto_continue_enabled(task)):
+    if not isinstance(task, Task) or not auto_continue_enabled(repo):
         return result, False
     healed.add(result.run.run_id)
     healing = heal_mod.heal(repo, result, task, code=code, provider=provider)
@@ -1117,6 +1118,7 @@ def run_chain(
     pr_files: Callable[[TaskPrRow], list[str] | None] | None = None,
     agents_override: dict[str, str] | None = None,
     first_run: Callable[[], task_mod.TaskRunResult] | None = None,
+    automatic: bool = False,
 ) -> ChainResult:
     """Run `task_id`, then (auto-continue) the next ready tasks.
 
@@ -1149,6 +1151,7 @@ def run_chain(
             provider=provider,
             agents_override=agents_override,
             first_run=first_run,
+            automatic=automatic,
         )
     return _run_parallel(
         repo,
@@ -1161,6 +1164,7 @@ def run_chain(
         pr_files=pr_files,
         agents_override=agents_override,
         first_run=first_run,
+        automatic=automatic,
         code=code,
     )
 
@@ -1196,7 +1200,7 @@ def continue_after_merge(
             return None
         with _fresh_backlog(repo) as backlog:
             after = backlog.by_id.get(task_id)
-            if not isinstance(after, Task) or not (row.auto or auto_continue_enabled(after)):
+            if not isinstance(after, Task) or not auto_continue_enabled(repo):
                 return None
             if not store.claim_chain_continuation(row.chain_id):
                 return None
@@ -1233,7 +1237,7 @@ def continue_after_merge(
                     running=store.running,
                     exclude=excluded,
                     conflict=conflict,
-                    require_auto_continue=not bool(row.auto),
+                    require_auto_continue=False,
                     prefs=store.queue_prefs(),
                     stack=stacker(main),
                 )
@@ -1255,12 +1259,13 @@ def continue_after_merge(
                         provider=provider,
                         code=code,
                         started_by=STARTED_AUTO_CONTINUE,
-                    )
+                    ),
+                    repo=repo,
                 )
 
             try:
                 if start is not None:
-                    _start_with_lock_retry(partial(start, next_id, bool(row.auto)))
+                    _start_with_lock_retry(partial(start, next_id, bool(row.auto)), repo=repo)
                     return None
                 chain = run_chain(
                     repo,
@@ -1275,8 +1280,13 @@ def continue_after_merge(
                 )
             except TaskRunError as exc:
                 start_skips.append(Skip(next_id, "cannot_start", f"{exc.code}: {exc.message}"))
-                if exc.code == "trace_db_locked":
-                    return ChainResult([], STOP_FAILED, start_skips, max_parallel=row.max_parallel)
+                if exc.code in (DISABLED, "trace_db_locked"):
+                    return ChainResult(
+                        [],
+                        STOP_DISABLED if exc.code == DISABLED else STOP_FAILED,
+                        start_skips,
+                        max_parallel=row.max_parallel,
+                    )
                 continue
             chain.waiting = [*start_skips, *chain.waiting]
             if start_skips and chain.chain_id is not None:
@@ -1306,8 +1316,8 @@ def retry_chain(
     ``agents_override`` continues the run on another harness (``retry_run``).
 
     After a successful attempt the chain goes on exactly as after ``run_chain``: the
-    PR is merged with ``auto_merge`` and the next ready task starts with ``--auto``
-    (`auto`) or ``auto_continue``, in the kanban's queue order. A `TaskRunError` of
+    PR is merged with ``auto_merge`` and the next ready task starts when the live
+    repository policy permits, in the kanban's queue order. A `TaskRunError` of
     the retry propagates.
     """
     # Local import and module attribute: a patched `retry_run` applies here too.
@@ -1380,11 +1390,11 @@ def _run_sequential(
     provider: GitProvider | None,
     agents_override: dict[str, str] | None = None,
     first_run: Callable[[], task_mod.TaskRunResult] | None = None,
+    automatic: bool = False,
 ) -> ChainResult:
     """One run after another (``max_parallel_runs: 1``)."""
     db = _trace_db(repo)
-    first = _first_task(repo, task_id)
-    goes_on = auto or (first is not None and auto_continue_enabled(first))
+    goes_on = auto_continue_enabled(repo)
     record = _ChainRecord(db, task_id, 1, enabled=goes_on, auto=auto)
     if db is not None and db.is_file():
         record.start()
@@ -1400,6 +1410,7 @@ def _run_sequential(
             record=record,
             agents_override=agents_override,
             first_run=first_run,
+            automatic=automatic,
         )
     except TaskRunError:
         record.abort()
@@ -1425,6 +1436,7 @@ def _sequential(
     record: _ChainRecord,
     agents_override: dict[str, str] | None = None,
     first_run: Callable[[], task_mod.TaskRunResult] | None = None,
+    automatic: bool = False,
 ) -> ChainResult:
     since = str(now_iso())
     if first_run is not None:
@@ -1439,6 +1451,7 @@ def _sequential(
             code=code,
             provider=provider,
             agents_override=agents_override,
+            started_by=STARTED_AUTO_CONTINUE if automatic else STARTED_MANUAL,
         )
     runs = [first]
     record.start(first.trace_db)
@@ -1453,6 +1466,8 @@ def _sequential(
         blocked: list[str] | None = None
         needs_environment = last.run.shown_failure_kind == failures.NEEDS_ENVIRONMENT
         if _failed(last) and not needs_environment:
+            if not auto_continue_enabled(repo):
+                return ChainResult(runs, STOP_DISABLED)
             blocked = task_mod.run_blockers(last.run)
             if blocked is None:
                 fixed, goes_on = _heal_in_chain(
@@ -1467,7 +1482,9 @@ def _sequential(
                 )
                 runs[runs.index(last)] = fixed
                 if not goes_on:
-                    return ChainResult(runs, STOP_FAILED)
+                    return ChainResult(
+                        runs, STOP_FAILED if auto_continue_enabled(repo) else STOP_DISABLED
+                    )
                 record.update(run_ids=[r.run.run_id for r in runs])
                 last = fixed
                 continue
@@ -1477,11 +1494,11 @@ def _sequential(
             after = backlog.by_id.get(last.run.task_id)
             if not isinstance(after, Task):
                 return ChainResult(runs, STOP_FAILED if blocked is not None else STOP_DISABLED)
-            cont = auto or auto_continue_enabled(after)
+            cont = auto_continue_enabled(repo)
             if blocked is not None:
                 # blocked during its run: no PR, no merge; on with its blockers first
                 if not cont:
-                    return ChainResult(runs, STOP_FAILED)
+                    return ChainResult(runs, STOP_DISABLED)
                 prefer = blockers_of(backlog, after, blocked)
                 start_skips.append(_blocked_skip(after, blocked))
                 if after.id not in requeued and _may_requeue(backlog, after, blocked):
@@ -1490,7 +1507,7 @@ def _sequential(
                     exclude.discard(after.id)
             if needs_environment:
                 if not cont:
-                    return ChainResult(runs, STOP_FAILED)
+                    return ChainResult(runs, STOP_DISABLED)
                 skip = _environment_skip(last)
                 if skip not in start_skips:
                     start_skips.append(skip)
@@ -1519,6 +1536,7 @@ def _sequential(
                     )
                     if resolved is not None:
                         runs.append(resolved)
+                cont = auto_continue_enabled(repo)
                 if not last.auto_merge.merged and not _waits_for_stack(last.auto_merge):
                     return ChainResult(runs, STOP_NOT_MERGED if cont else STOP_DISABLED)
                 merged = last.auto_merge.merged
@@ -1541,7 +1559,7 @@ def _sequential(
                     latest_pr=store.latest_pr,
                     running=store.running,
                     exclude=exclude,
-                    require_auto_continue=not auto,
+                    require_auto_continue=False,
                     prefs=store.queue_prefs(),
                     prefer=prefer,
                     stack=stacker(gitops.main_root(repo)),
@@ -1561,11 +1579,14 @@ def _sequential(
                     code=code,
                     provider=provider,
                     started_by=STARTED_AUTO_CONTINUE,
-                )
+                ),
+                repo=repo,
             )
         except TaskRunError as exc:
             # Nothing was started (a race with another process, no writes, ...): try the next one.
             start_skips.append(Skip(nxt.id, "cannot_start", f"{exc.code}: {exc.message}"))
+            if exc.code == DISABLED:
+                return ChainResult(runs, STOP_DISABLED, start_skips)
             if exc.code == "trace_db_locked":
                 return ChainResult(runs, STOP_FAILED, start_skips)
             continue
@@ -1588,6 +1609,7 @@ def _run_parallel(
     agents_override: dict[str, str] | None = None,
     first_run: Callable[[], task_mod.TaskRunResult] | None = None,
     code: CodeRunner | None = None,
+    automatic: bool = False,
 ) -> ChainResult:
     """Up to `max_parallel` runs at once, none overlapping another's writes or an open PR.
 
@@ -1598,7 +1620,7 @@ def _run_parallel(
     db = task_mod._load(main).local.trace_db_path(main)
     files_of = pr_files if pr_files is not None else _pr_files_default(main)
     first_task = _first_task(repo, task_id)
-    goes_on = first_task is not None and (auto or auto_continue_enabled(first_task))
+    goes_on = auto_continue_enabled(repo)
     record = _ChainRecord(db, task_id, max_parallel, enabled=goes_on, auto=auto)
     record.start()
     order: list[str] = []  # run ids in start order
@@ -1631,6 +1653,9 @@ def _run_parallel(
     def fill(after_id: str, prefer: Sequence[str] = ()) -> None:
         nonlocal last_skips, halt
         while halt is None:
+            if not auto_continue_enabled(repo):
+                halt = STOP_DISABLED
+                return
             if len(runner.active()) >= max_parallel:
                 return
             with _fresh_backlog(repo) as backlog:
@@ -1655,7 +1680,7 @@ def _run_parallel(
                         running=store.running,
                         exclude=exclude,
                         conflict=occupancy,
-                        require_auto_continue=not auto,
+                        require_auto_continue=False,
                         prefs=store.queue_prefs(),
                         prefer=prefer,
                         stack=stacker(main),
@@ -1676,13 +1701,14 @@ def _run_parallel(
             exclude.add(nxt.id)
             try:
                 row = _start_with_lock_retry(
-                    partial(runner.start, nxt.id, started_by=STARTED_AUTO_CONTINUE)
+                    partial(runner.start, nxt.id, started_by=STARTED_AUTO_CONTINUE),
+                    repo=repo,
                 )
             except TaskRunError as exc:
                 start_skips.append(Skip(nxt.id, "cannot_start", f"{exc.code}: {exc.message}"))
                 save()
-                if exc.code == "trace_db_locked":
-                    halt = STOP_FAILED
+                if exc.code in (DISABLED, "trace_db_locked"):
+                    halt = STOP_DISABLED if exc.code == DISABLED else STOP_FAILED
                     return
                 continue
             started(nxt, row)
@@ -1700,6 +1726,9 @@ def _run_parallel(
         save()
         _note_switch(record, result, since)
         if halt is not None:
+            return
+        if not auto_continue_enabled(repo):
+            halt = STOP_DISABLED
             return
         blocked: list[str] | None = None
         needs_environment = result.run.shown_failure_kind == failures.NEEDS_ENVIRONMENT
@@ -1719,7 +1748,7 @@ def _run_parallel(
                 )
                 results[fixed.run.run_id] = fixed
                 if not goes_on:
-                    halt = STOP_FAILED
+                    halt = STOP_FAILED if auto_continue_enabled(repo) else STOP_DISABLED
                     return
                 if not fixed.closed_by_heal:
                     fixed = member_auto_merge(repo, fixed, code=code)
@@ -1741,10 +1770,10 @@ def _run_parallel(
             else:
                 last_cont = False
             return
-        cont = auto or auto_continue_enabled(after)
+        cont = auto_continue_enabled(repo)
         if needs_environment:
             if not cont:
-                halt = STOP_FAILED
+                halt = STOP_DISABLED
                 return
             start_skips.append(_environment_skip(result))
             last_cont = True
@@ -1756,7 +1785,7 @@ def _run_parallel(
         if blocked is not None:
             # blocked during its run: no PR, no merge; on with its blockers first
             if not cont:
-                halt = STOP_FAILED
+                halt = STOP_DISABLED
                 return
             start_skips.append(_blocked_skip(after, blocked))
             last_cont = True
@@ -1790,7 +1819,11 @@ def _run_parallel(
         else:
             try:
                 first_row = runner.start(
-                    task_id, note=note, force=force, agents_override=agents_override
+                    task_id,
+                    note=note,
+                    force=force,
+                    agents_override=agents_override,
+                    started_by=STARTED_AUTO_CONTINUE if automatic else STARTED_MANUAL,
                 )
             except TaskRunError:
                 record.abort()

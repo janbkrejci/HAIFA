@@ -18,6 +18,7 @@ from run_repo import SPEC, T01, Script, commit_all, fake_env, make_run_repo, ok,
 from aifactory import failure
 from aifactory.config import load_run_config
 from aifactory.harness.fallback import Fallback
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review.prbody import pr_body
 from aifactory.run import TaskRunStore, run_task
 from aifactory.run.fallback import SWITCH_KEY, configured_fallback, harness_switches
@@ -40,6 +41,7 @@ def script_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[Script]:
 
 def _repo(tmp_path: Path, fallback: str = "", own: str = "") -> Path:
     repo = make_run_repo(tmp_path / "repo", "codex")
+    RepositorySettings(repo).update({"auto_continue": True})
     write(repo, ".factory/agents.yaml", AGENTS.format(fallback=fallback, own=own))
     commit_all(repo, "roster with a fallback")
     return repo

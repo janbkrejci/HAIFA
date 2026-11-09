@@ -14,6 +14,7 @@ from run_repo import Script, commit_all, fake_env, git, make_run_repo, ok, write
 
 from aifactory.cli import main
 from aifactory.engine.utils import now_iso
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run import TaskPrRow, TaskRunError, TaskRunRow, TaskRunStore
 from aifactory.run.gitops import pr_changed_files
 from aifactory.run.members import launch_error, member_result, parse_envelope
@@ -233,7 +234,10 @@ def script_fixture(monkeypatch: pytest.MonkeyPatch) -> Iterator[Script]:
     yield from fake_env(monkeypatch)
 
 
-def test_member_runs_one_task_only(tmp_path: Path, script: Script, capsys: Capsys) -> None:
+@pytest.mark.parametrize("local_on", [False, True])
+def test_member_runs_one_task_only(
+    tmp_path: Path, script: Script, capsys: Capsys, local_on: bool
+) -> None:
     repo = make_run_repo(tmp_path / "repo")
     write(
         repo,
@@ -247,12 +251,24 @@ def test_member_runs_one_task_only(tmp_path: Path, script: Script, capsys: Capsy
         f"---\nid: {T02}\ntitle: Loader\nstatus: todo\n---\n\nLoad.\n",
     )
     commit_all(repo, "auto")
+    RepositorySettings(repo).update({"auto_continue": local_on})
     rel = "src/app/one.py"
     script.on("planner", lambda wt: write(wt, rel, "X = 1\n"))
     script.add("planner", ok(artifacts=[], changed_files=[rel], commit_message="Add"))
     argv = ["task", "run", T01, "--repo", str(repo), "--json", "--member"]
     code = main([*argv, "--started-by=auto-continue"])
     env = read_envelope(capsys)
+    if not local_on:
+        assert code == 2, env
+        assert env["error"]["code"] == "auto_continue_disabled"
+        store = TaskRunStore(repo / ".factory" / "trace.db")
+        try:
+            assert store.for_task(T01) == []
+            assert store.for_task(T02) == []
+            assert store.chains() == []
+        finally:
+            store.close()
+        return
     assert code == 0, env
     data = env["data"]
     assert data["run"]["task_id"] == T01

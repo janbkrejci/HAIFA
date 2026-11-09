@@ -59,6 +59,7 @@ class ThreadLauncher:
         model: str | None = None,
         thinking: str | None = None,
         auto: bool = False,
+        automatic: bool = False,
         timeout: float = 30.0,
     ) -> TaskRunRow | None:
         if note is not None and not note.strip():
@@ -70,7 +71,13 @@ class ThreadLauncher:
             repo,
             task_id,
             lambda: run_queue.run_chain(
-                repo, task_id, note=note, force=force, auto=auto, agents_override=override or None
+                repo,
+                task_id,
+                note=note,
+                force=force,
+                auto=auto,
+                agents_override=override or None,
+                automatic=automatic,
             ),
             f"task {task_id}",
             timeout,

@@ -45,7 +45,14 @@ from typing import Any, Protocol
 from aifactory import home, oscompat
 from aifactory.config import ConfigError
 from aifactory.run.errors import TaskRunError
-from aifactory.run.store import FAILED, STARTED_MANUAL, TaskRunRow, TaskRunStore
+from aifactory.run.policy import acceptance
+from aifactory.run.store import (
+    FAILED,
+    STARTED_AUTO_CONTINUE,
+    STARTED_MANUAL,
+    TaskRunRow,
+    TaskRunStore,
+)
 from aifactory.run.task import TaskRunResult, existing_store, task_runs_for
 
 _TAIL_LINES = 20
@@ -361,7 +368,11 @@ class ProcessRunner:
         envelope_path = logs / f"{stem}.json"
         log_path = logs / f"{stem}.log"
         try:
-            with home.create_private(envelope_path) as out, home.create_private(log_path) as err:
+            with (
+                home.create_private(envelope_path) as out,
+                home.create_private(log_path) as err,
+                acceptance(self.repo, started_by == STARTED_AUTO_CONTINUE),
+            ):
                 process = subprocess.Popen(
                     argv,
                     cwd=self.repo,

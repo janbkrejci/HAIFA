@@ -525,6 +525,7 @@ def run_task(
                 code=code,
                 provider=provider,
                 agents_override=agents_override,
+                automatic=True,
             )
     store = TaskRunStore(rc.local.trace_db_path(main))
     try:
@@ -708,7 +709,10 @@ def run_task(
                 else None
             ),
         )
-        store.claim(row)
+        from aifactory.run.policy import acceptance
+
+        with acceptance(main, started_by == STARTED_AUTO_CONTINUE):
+            store.claim(row)
         if chain_start is not None:
             chain_start.commit(store)
         result = _execute(

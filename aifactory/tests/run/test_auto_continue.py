@@ -13,6 +13,7 @@ from run_repo import Script, commit_all, fake_env, git, make_run_repo, ok, write
 
 from aifactory.backlog import Task, load_backlog
 from aifactory.cli import main
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review import approve_task
 from aifactory.run import (
     STOP_DISABLED,
@@ -86,6 +87,7 @@ def setup_chain(
     s02_writes: str | None = None,
 ) -> None:
     """S01 holds T01..T03 (all writing src/app/); optionally a step S02 with one task."""
+    RepositorySettings(repo).update({"auto_continue": True})
     s01 = repo / CORE / "S01-model"
     shutil.rmtree(s01)
     auto = "auto_continue: true\n" if step_auto else ""
@@ -173,6 +175,7 @@ def chain_rows(repo: Path) -> int:
 
 def test_without_auto_one_run_only(repo: Path, script: Script) -> None:
     setup_chain(repo)
+    RepositorySettings(repo).update({"auto_continue": False})
     build(script, "one")
     chain = run_chain(repo, T01)
     assert ids(chain) == [T01]
@@ -203,11 +206,12 @@ def test_auto_continue_resumes_latest_failed_run(repo: Path, script: Script) -> 
     assert len(runs_of(repo, T02)) == 1
 
 
-def test_auto_continue_committed_during_the_first_run_records_the_chain(
+def test_local_auto_continue_enabled_during_first_run_records_the_chain(
     repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Off in base at the start, on when the first run ends: the chain goes on with a row."""
+    """Local off at start, on before completion: the active chain continues."""
     setup_chain(repo)
+    RepositorySettings(repo).update({"auto_continue": False})
     for name in ("one", "two", "three"):
         build(script, name)
     real = task_mod.run_task
@@ -217,8 +221,7 @@ def test_auto_continue_committed_during_the_first_run_records_the_chain(
         result = real(*args, **kwargs)
         if not switched:
             switched.append(True)
-            _index(repo, "S01-model", "M01-S01", "writes: [src/app/]\nauto_continue: true\n")
-            commit_all(repo, "auto-continue on")
+            RepositorySettings(repo).update({"auto_continue": True})
         return result
 
     monkeypatch.setattr(task_mod, "run_task", run_then_switch_on)
@@ -253,26 +256,28 @@ def test_module_switch_continues_across_steps(repo: Path, script: Script) -> Non
     assert chain.stop == STOP_EXHAUSTED
 
 
-def test_step_switch_keeps_the_chain_in_its_step(repo: Path, script: Script) -> None:
-    """auto_continue on S01 only: the chain never starts the task of S02."""
+def test_local_switch_covers_steps_without_legacy_metadata(repo: Path, script: Script) -> None:
+    """Local policy covers all steps, independent of legacy metadata."""
     setup_chain(repo, step_auto=True, s02_writes="writes: [src/other/]\n")
     for name in ("one", "two", "three"):
         build(script, name)
+    build(script, "other", "src/other/other.py")
     chain = run_chain(repo, T01)
-    assert ids(chain) == [T01, T02, T03]
+    assert ids(chain) == [T01, T02, T03, S02_T01]
     assert (chain.stop, chain.waiting) == (STOP_EXHAUSTED, [])
-    assert runs_of(repo, S02_T01) == []
+    assert len(runs_of(repo, S02_T01)) == 1
 
 
-def test_step_switched_off_is_passed_by(repo: Path, script: Script) -> None:
-    """auto_continue on the project, off on S02: the chain does not start S02's task."""
+def test_legacy_step_off_does_not_override_local_on(repo: Path, script: Script) -> None:
+    """Legacy step off cannot override repository-local on."""
     setup_chain(repo, module_auto=True, s02_writes="writes: [src/other/]\nauto_continue: false\n")
     for name in ("one", "two", "three"):
         build(script, name)
+    build(script, "other", "src/other/other.py")
     chain = run_chain(repo, T01)
-    assert ids(chain) == [T01, T02, T03]
+    assert ids(chain) == [T01, T02, T03, S02_T01]
     assert (chain.stop, chain.waiting) == (STOP_EXHAUSTED, [])
-    assert runs_of(repo, S02_T01) == []
+    assert len(runs_of(repo, S02_T01)) == 1
 
 
 def test_dependent_task_stacks_on_the_open_pr(repo: Path, script: Script) -> None:
@@ -448,9 +453,9 @@ def test_select_next_rules(repo: Path) -> None:
     assert sel.skipped[-1].detail == "bez workflow"
     sel = select_next(backlog, after, open_pr=prs.get, running=running, exclude={"M01-S01-T09"})
     assert sel.next is not None and sel.next.id == S02_T01
-    # without --auto only tasks with auto_continue: true are candidates; none has it here
+    # The compatibility filter no longer consults task metadata.
     sel = select_next(backlog, after, open_pr=prs.get, running=running, require_auto_continue=True)
-    assert (sel.next, sel.skipped) == (None, [])
+    assert sel.next is not None and sel.next.id == "M01-S01-T09"
 
 
 # ── CLI ──────────────────────────────────────────────────────────────────────
@@ -474,6 +479,7 @@ def test_cli_auto_json(repo: Path, script: Script, capsys: Capsys) -> None:
 
 def test_cli_without_auto_json_has_chain(repo: Path, script: Script, capsys: Capsys) -> None:
     setup_chain(repo)
+    RepositorySettings(repo).update({"auto_continue": False})
     build(script, "one")
     code = main(["task", "run", T01, "--repo", str(repo), "--json"])
     data = read_envelope(capsys)["data"]
@@ -676,12 +682,13 @@ def test_blocked_task_with_nothing_else_is_exhausted(repo: Path, script: Script)
 
 def test_blocked_task_without_auto_continue_stops(repo: Path, script: Script) -> None:
     setup_chain(repo)
+    RepositorySettings(repo).update({"auto_continue": False})
     _todo_step(repo, "writes: [src/todo/]\n")
     commit_all(repo, "todo step")
     blocked_build(script, "one")
     chain = run_chain(repo, T01)
     assert ids(chain) == [T01]
-    assert chain.stop == STOP_FAILED
+    assert chain.stop == STOP_DISABLED
     assert runs_of(repo, BLOCKER) == [] and runs_of(repo, T02) == []
 
 
@@ -1132,12 +1139,13 @@ def test_needs_environment_skips_second_task_and_runs_third(
 
 def test_needs_environment_without_auto_continue_stops(repo: Path, script: Script) -> None:
     setup_chain(repo)
+    RepositorySettings(repo).update({"auto_continue": False})
     script.add(
         "planner",
         {"status": "fail", "summary": "shared device busy", "fail_kind": "needs_environment"},
     )
     chain = run_chain(repo, T01)
-    assert ids(chain) == [T01] and chain.stop == STOP_FAILED
+    assert ids(chain) == [T01] and chain.stop == STOP_DISABLED
     assert runs_of(repo, T02) == []
 
 

@@ -17,6 +17,7 @@ from aifactory.cli import main
 from aifactory.config import load_run_config
 from aifactory.providers import CHECKS_NONE, ChecksStatus, PrStatus
 from aifactory.providers.local import LocalProvider
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review import approve_task
 from aifactory.run import continue_after_merge, run_chain
 from aifactory.run import task as task_mod
@@ -85,7 +86,7 @@ def test_approve_resumes_once_from_merged_base(
             path.read_text(encoding="utf-8").replace("auto_continue: true", "auto_continue: false"),
             encoding="utf-8",
         )
-        commit_all(repo, "only --auto enables continuation")
+        commit_all(repo, "legacy metadata is ignored")
     _other_project(repo)
     commit_all(repo, "another project stays outside the chain")
     chain_id = stopped_chain(repo, script, auto=auto)
@@ -122,10 +123,11 @@ def test_approve_resumes_once_from_merged_base(
 
 
 @pytest.mark.parametrize("reason", ["failed", "exhausted", "disabled", "running", "off"])
+@pytest.mark.parametrize("auto", [False, True])
 def test_approve_does_not_resume_ineligible_chain(
-    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, reason: str
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch, reason: str, auto: bool
 ) -> None:
-    chain_id = stopped_chain(repo, script)
+    chain_id = stopped_chain(repo, script, auto=auto)
     store = _store(repo)
     try:
         if reason == "running":
@@ -135,12 +137,7 @@ def test_approve_does_not_resume_ineligible_chain(
     finally:
         store.close()
     if reason == "off":
-        path = repo / CORE / "S01-model/index.md"
-        path.write_text(
-            path.read_text(encoding="utf-8").replace("auto_continue: true", "auto_continue: false"),
-            encoding="utf-8",
-        )
-        commit_all(repo, "disable continuation in base")
+        RepositorySettings(repo).update({"auto_continue": False})
     run = Mock(side_effect=AssertionError("must not start another task"))
     monkeypatch.setattr(task_mod, "run_task", run)
     result = approve_task(repo, T01, provider=provider_for(repo, monkeypatch))

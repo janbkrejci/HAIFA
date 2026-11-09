@@ -17,6 +17,7 @@ from run_repo import Script, commit_all, fake_env, make_run_repo, ok, write
 
 from aifactory.backlog import Task, load_backlog
 from aifactory.engine.utils import now_iso
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review.automerge import AutoMergeResult
 from aifactory.run import (
     STOP_EXHAUSTED,
@@ -56,6 +57,7 @@ def setup_tasks(
     config: str | None = None,
 ) -> None:
     """S01 holds `tasks` (id, writes) in order, the step without own writes."""
+    RepositorySettings(repo).update({"auto_continue": True})
     shutil.rmtree(repo / CORE / STEP)
     write(repo, f"{CORE}/{STEP}/index.md", f"---\nid: M01-S01\ntitle: Model\n{step_extra}---\n")
     for task_id, writes in tasks:
@@ -412,6 +414,7 @@ def test_an_open_pr_of_another_task_holds_a_slot_of_the_chain(repo: Path) -> Non
 
 def test_without_auto_continue_only_the_first_runs(repo: Path) -> None:
     setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/")], step_extra="")
+    RepositorySettings(repo).update({"auto_continue": False})
     runner = FakeRunner(repo)
     chain = run_chain(repo, T01, max_parallel=3, runner=runner, pr_files=no_files)
     assert started(runner) == [T01]
@@ -424,8 +427,9 @@ def test_without_auto_continue_only_the_first_runs(repo: Path) -> None:
         store.close()
 
 
-def test_auto_continue_committed_during_the_first_run_records_the_chain(repo: Path) -> None:
+def test_local_auto_continue_enabled_during_first_run_records_the_chain(repo: Path) -> None:
     setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/")], step_extra="")
+    RepositorySettings(repo).update({"auto_continue": False})
     runner = FakeRunner(repo)
     real_wait = runner.wait_any
     switched: list[bool] = []
@@ -434,12 +438,7 @@ def test_auto_continue_committed_during_the_first_run_records_the_chain(repo: Pa
         result = real_wait()
         if not switched:
             switched.append(True)
-            write(
-                repo,
-                f"{CORE}/{STEP}/index.md",
-                "---\nid: M01-S01\ntitle: Model\nauto_continue: true\n---\n",
-            )
-            commit_all(repo, "auto-continue on")
+            RepositorySettings(repo).update({"auto_continue": True})
         return result
 
     runner.wait_any = wait_then_switch_on  # type: ignore[method-assign]
@@ -470,11 +469,11 @@ def setup_step_off(repo: Path) -> None:
     commit_all(repo, "a step without auto-continue")
 
 
-def test_a_step_with_auto_continue_off_is_not_started(repo: Path) -> None:
+def test_local_on_includes_step_with_legacy_off(repo: Path) -> None:
     setup_step_off(repo)
     runner = FakeRunner(repo)
     chain = run_chain(repo, T01, max_parallel=3, runner=runner, pr_files=no_files)
-    assert started(runner) == [T01, T02]
+    assert started(runner) == [T01, T02, S02_T01]
     assert (chain.stop, chain.waiting) == (STOP_EXHAUSTED, [])
 
 
@@ -863,7 +862,7 @@ def test_blocked_member_refills_its_slot_with_its_blocker(repo: Path) -> None:
 
 
 def test_blocked_member_without_startable_blocker_takes_the_next(repo: Path) -> None:
-    setup_blocking(repo, todo_extra="")  # the blocker has no auto_continue: never started
+    setup_blocking(repo, todo_extra="workflow: null\n")  # the blocker has no workflow
     runner = BlockingRunner(repo, blocked=(T02,), order=[T02])
     chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
     assert started(runner) == [T01, T02, T03]
@@ -961,7 +960,8 @@ def test_blocked_member_without_auto_continue_stops(repo: Path) -> None:
     setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/")], step_extra="")
     write(repo, f"{CORE}/TODO/index.md", "---\nid: M01-TODO\ntitle: TODO\n---\n")
     commit_all(repo, "todo step")
+    RepositorySettings(repo).update({"auto_continue": False})
     runner = BlockingRunner(repo, blocked=(T01,))
     chain = run_chain(repo, T01, max_parallel=2, runner=runner, pr_files=no_files)
     assert started(runner) == [T01]
-    assert chain.stop == STOP_FAILED
+    assert chain.stop == "disabled"

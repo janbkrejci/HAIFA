@@ -11,7 +11,7 @@ import pytest
 
 from aifactory.backlog import Task, load_backlog
 from aifactory.config.settings import ProjectSettings
-from aifactory.run.queue import auto_continue_enabled, auto_merge_enabled
+from aifactory.run.queue import auto_merge_enabled
 from validation import azure_e2e
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "providers"))
@@ -186,9 +186,32 @@ def test_backlog_has_two_dependent_auto_tasks(tmp_path: Path) -> None:
     assert isinstance(first, Task) and isinstance(second, Task)
     assert list(second.depends_on) == [first.id]
     for task in (first, second):
-        assert auto_continue_enabled(task) and auto_merge_enabled(task)
+        assert auto_merge_enabled(task)
     rel = azure_e2e.task_path("factory", second.id)
     assert rel.endswith(f"/{second.id}-second.md")
+
+
+@pytest.mark.parametrize("enable_ok", [False, True])
+def test_chain_enables_local_policy_and_disables_it_on_run_failure(enable_ok: bool) -> None:
+    from types import SimpleNamespace
+
+    calls: list[tuple[str, ...]] = []
+
+    def factory(*argv: str, **kwargs: Any) -> Any:
+        calls.append(argv)
+        if argv[:2] == ("task", "run"):
+            raise RuntimeError("run failed")
+        return SimpleNamespace(ok=enable_ok or argv[-1] == "off", brief=lambda: "setting")
+
+    runner = SimpleNamespace(factory=factory)
+    with pytest.raises((RuntimeError, azure_e2e.Stop)):
+        azure_e2e.E2E.chain(runner)  # type: ignore[arg-type]
+    assert calls[0] == ("config", "local", "set", "--auto-continue", "on")
+    if enable_ok:
+        assert calls[1] == ("task", "run", azure_e2e.TASKS[0][0])
+        assert calls[2] == ("config", "local", "set", "--auto-continue", "off")
+    else:
+        assert len(calls) == 1
 
 
 def test_fake_script_builds_and_approves_each_task() -> None:
