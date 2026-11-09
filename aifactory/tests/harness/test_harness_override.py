@@ -20,7 +20,7 @@ from harness_fakes import (
 )
 
 from aifactory.engine import agent_cc, agent_pi
-from aifactory.harness import codex
+from aifactory.harness import codex, settings, thinking
 from aifactory.harness.config import AgentConfig, HarnessConfigError, SSSFConfig
 from aifactory.harness.override import (
     StepOverride,
@@ -153,3 +153,78 @@ def test_harness_step_override_through_engine(
         json.loads((run.session_dir / "agent_map.json").read_text())["builder"]["coding_agent"]
         == "codex"
     )
+
+
+@pytest.fixture
+def local_choices(monkeypatch: pytest.MonkeyPatch) -> settings.HarnessSettings:
+    machine = settings.HarnessSettings(
+        default_harness="codex",
+        harnesses={
+            "claude": settings.HarnessChoice(model="sonnet", thinking="low"),
+            "codex": settings.HarnessChoice(model="gpt-5.5", thinking="high"),
+            "pi": settings.HarnessChoice(enabled=False),
+        },
+    )
+    monkeypatch.setattr(settings, "read", lambda: machine)
+    monkeypatch.setattr(thinking, "codex_models", lambda: [])
+    return machine
+
+
+def test_harness_switch_uses_local_model_and_thinking(
+    local_choices: settings.HarnessSettings,
+) -> None:
+    original = _agent("codex", "gpt-5.5", thinking="high")
+    cfg = SSSFConfig(agents=[original])
+    override = StepOverride(harness="claude_code")
+    assert check_override(original, override) == []
+    with step_override(cfg, "builder", override) as effective:
+        assert (effective.coding_agent, effective.model, effective.thinking) == (
+            "claude",
+            "sonnet",
+            "low",
+        )
+    assert cfg.agents[0] is original
+    assert (original.coding_agent, original.model, original.thinking) == (
+        "codex",
+        "gpt-5.5",
+        "high",
+    )
+
+
+def test_same_harness_keeps_session_values(local_choices: settings.HarnessSettings) -> None:
+    original = _agent("claude", "opus", thinking="medium")
+    effective = effective_agent(original, StepOverride(harness="claude_code"))
+    assert (effective.model, effective.thinking) == ("opus", "medium")
+
+
+def test_harness_switch_without_machine_settings_uses_target_preset() -> None:
+    original = _agent("codex", "gpt-5.5", thinking="xhigh")
+    effective = effective_agent(original, StepOverride(harness="claude"))
+    assert (effective.model, effective.thinking) == ("claude-opus-5-5", "medium")
+    assert check_override(original, StepOverride(harness="claude")) == []
+
+
+@pytest.mark.parametrize("failure", ["disabled", "failed", "missing-model", "unavailable-model"])
+def test_bad_target_local_choice_does_not_replace_agent(
+    local_choices: settings.HarnessSettings, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    if failure == "disabled":
+        local_choices.harnesses["claude"].enabled = False
+    elif failure == "failed":
+        monkeypatch.setattr(settings, "test_failed", lambda *_: True)
+    elif failure == "missing-model":
+        local_choices.harnesses["claude"].model = ""
+    else:
+
+        def unavailable(_: str) -> str:
+            raise ValueError("selected model is no longer available")
+
+        monkeypatch.setattr(agent_cc, "resolve_model", unavailable)
+    original = _agent("codex", "gpt-5.5", thinking="high")
+    cfg = SSSFConfig(agents=[original])
+    override = StepOverride(harness="claude")
+    assert check_override(original, override)
+    with pytest.raises(HarnessConfigError):
+        with step_override(cfg, "builder", override):
+            pytest.fail("invalid target must not run")
+    assert cfg.agents[0] is original

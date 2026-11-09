@@ -46,14 +46,14 @@ import json
 import os
 import re
 import tempfile
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aifactory import failure as failures
 from aifactory.backlog import Task, load_backlog
 from aifactory.backlog.derived import is_done
-from aifactory.config import ProjectSettings
+from aifactory.config import ProjectSettings, load_run_config
 from aifactory.providers import GitProvider, ProviderError, get_provider
 from aifactory.providers import git as provider_git
 from aifactory.run import gitops
@@ -485,8 +485,29 @@ def retry_run(
         previous = _note_override(row.note)
         switching = {k: v for k, v in (agents_override or {}).items() if v and v.strip()}
         try:
-            binding = effective_override(run_mod.task_harness_values(task), switching or previous)
-            rc = run_mod.apply_agents_override(rc, binding)
+            snapshot = run_mod.data_dir(main, rc) / "sessions" / row.run_id / "roster.json"
+            if snapshot.exists():
+                from aifactory.harness.config import SSSFConfig
+
+                roster = SSSFConfig.model_validate_json(snapshot.read_text(encoding="utf-8"))
+                rc = replace(rc, config=replace(rc.config, agents=roster))
+            else:
+                # Older sessions have no roster snapshot: recover their original roster,
+                # then apply the override recorded when they started.
+                roster = load_run_config(main, row.base_sha).config.agents
+                rc = replace(rc, config=replace(rc.config, agents=roster))
+                rc = run_mod.apply_agents_override(rc, previous)
+            if switching:
+                target = switching.get("harness") or (previous or {}).get("harness")
+                if not target:
+                    target = rc.config.agents.defaults.harness
+                binding = effective_override(
+                    {}, {**({"harness": target} if target else {}), **switching}, repo=main
+                )
+                rc = run_mod.apply_agents_override(rc, binding)
+            else:
+                # Never re-resolve a session against today's local defaults.
+                binding = previous or {}
         except ValueError as exc:
             raise TaskRunError("invalid_override", str(exc)) from exc
         record: dict[str, Any] | None = None
@@ -499,8 +520,11 @@ def retry_run(
                 source=(switch or {}).get("source"),
                 previous=previous,
             )
+            source = "quota" if (switch or {}).get("auto") else "explicit"
+            cleaned = re.sub(r"\[zdroj harnessu: [^\]]*\]", "", row.note or "")
+            cleaned = _OVERRIDE_TAG.sub("", cleaned).strip()
             run_note = run_mod.override_note(
-                _OVERRIDE_TAG.sub("", row.note or "").strip() or None, binding
+                f"{cleaned} [zdroj harnessu: {source}]".strip(), binding
             )
         outputs = output_paths(task, settings)
         workdir = project_workdir(settings)

@@ -28,6 +28,7 @@ and logged in the ``request`` phase of the attempt (the run's events); the PR bo
 
 from __future__ import annotations
 
+import re
 from collections.abc import Iterable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -210,7 +211,7 @@ def continue_on_fallback(
         if not enabled:
             result.warnings = (*result.warnings, "quota fallback skipped: auto_heal is off")
             return result
-        chained = _chain_target(store, rc, run, detail, task)
+        chained = _chain_target(store, rc, run, detail, task, repo=main)
     finally:
         store.close()
     if chained is not None:
@@ -264,6 +265,8 @@ def _chain_target(
     run: TaskRunRow,
     detail: dict[str, Any],
     task: Task | None,
+    *,
+    repo: Path,
 ) -> tuple[str | None, str, str] | None:
     """With a project chain: (the next harness or None, the source, the warning when none).
 
@@ -274,7 +277,9 @@ def _chain_target(
 
     if task is None:
         return None
-    pc = project_chain(task, primary_harness(task, rc))
+    recorded = re.search(r"\[primární harness: ([^\]]+)\]", run.note or "")
+    primary = recorded.group(1) if recorded else primary_harness(task, rc, repo=repo)
+    pc = project_chain(task, primary)
     if pc is None:
         return None
     exhausted = str(detail.get("harness") or "")

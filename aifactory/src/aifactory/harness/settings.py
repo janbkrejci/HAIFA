@@ -166,8 +166,18 @@ def test_failed(name: str, model: str, home: Path | None = None) -> bool:
 
 
 def effective_override(
-    values: dict[str, object], explicit: dict[str, str] | None
+    values: dict[str, object], explicit: dict[str, str] | None, *, repo: Path | None = None
 ) -> dict[str, str]:
+    # No repo: legacy metadata/import API. Runtime callers supply the checkout,
+    # never the temporary directory containing an extracted backlog.
+    if repo is not None:
+        from aifactory.repo_settings import RepositorySettings, SettingsError
+
+        try:
+            local = RepositorySettings(repo).read()
+        except SettingsError as exc:
+            raise ValueError(f"{exc.code}: {exc} ({exc.path})") from exc
+        values = {"harness": local.harness} if local.harness else {}
     settings = read()
     result: dict[str, str] = {}
     if settings and settings.default_harness:
@@ -179,9 +189,10 @@ def effective_override(
     supplied = {k: v.strip() for k, v in (explicit or {}).items() if v and v.strip()}
     if supplied.get("harness") and supplied["harness"] != result.get("harness"):
         result.pop("model", None)
+        result.pop("thinking", None)
     result.update(supplied)
     harness = result.get("harness")
-    if settings and not harness:
+    if settings and not harness and repo is None:
         raise ValueError("no default harness enabled; fix computer harness settings")
     if harness:
         harness = result["harness"] = canonical(harness)
@@ -189,6 +200,10 @@ def effective_override(
             choice = settings.harnesses[harness]
             if not choice.enabled:
                 raise ValueError(f"harness {harness} is disabled on this computer")
+            if repo is not None and "model" not in result and not choice.model:
+                raise ValueError(
+                    f"harness {harness} has no local model; fix computer harness settings"
+                )
             if "model" not in result and choice.model:
                 if test_failed(harness, choice.model):
                     raise ValueError(
@@ -205,8 +220,10 @@ def effective_override(
     return result
 
 
-def context_binding(values: dict[str, object]) -> dict[str, str]:
+def context_binding(values: dict[str, object], *, repo: Path | None = None) -> dict[str, str]:
     """Bind a backlog context to computer settings, or leave selection to the roster."""
+    if repo is not None:
+        return effective_override(values, None, repo=repo)
     harness = values.get("harness")
     if not isinstance(harness, str) or not harness.strip():
         settings = read()

@@ -599,6 +599,10 @@ def test_triager_context_binding(
             },
             tmp_path / "home",
         )
+    from aifactory.repo_settings import RepositorySettings
+
+    if source == "task":
+        RepositorySettings(repo).update({"harness": "codex"})
     seen, _ = fake
     codex_seen: list[Any] = []
 
@@ -620,7 +624,9 @@ def test_triager_context_binding(
     )
     assert not seen
     [request] = codex_seen
-    assert request.model == "gpt-5.5" and request.thinking == "high"
+    assert request.model == "gpt-5.5" and request.thinking == (
+        "high" if source == "binding" else "medium"
+    )
     assert Path(request.cwd) != repo and not Path(request.cwd).exists()
 
 

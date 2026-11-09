@@ -253,6 +253,10 @@ def test_retry_after_rejected_review_continues_at_the_review(
             repo, ".factory/agents.yaml", AGENTS.replace("harness: claude", f"harness: {harness}")
         )
         commit_all(repo, "select retry harness")
+    if automatic:
+        from aifactory.repo_settings import RepositorySettings
+
+        RepositorySettings(repo).update({"auto_continue": True})
     first = rejected_run(repo, script)
     run_id = first.run.run_id
     builder_before = len(calls(script, "builder"))
@@ -407,9 +411,26 @@ def test_retry_refuses_approved_task_without_a_merged_pr(repo: Path, script: Scr
     assert len(script.calls) == before_calls
 
 
-def test_retry_from_build_reuses_the_builder_session(repo: Path, script: Script) -> None:
+@pytest.mark.parametrize("snapshot_available", [False, True])
+def test_retry_from_build_reuses_the_builder_session(
+    repo: Path, script: Script, snapshot_available: bool
+) -> None:
     first = rejected_run(repo, script)
     previous_session = calls(script, "builder")[0].session
+    from aifactory.repo_settings import RepositorySettings
+    from intent_fixture import computer_binding
+
+    computer_binding("codex")
+    RepositorySettings(repo).update({"harness": "codex"})
+    if not snapshot_available:
+        snapshot = repo / ".factory/data/sessions" / first.run.run_id / "roster.json"
+        snapshot.unlink()
+    write(
+        repo,
+        ".factory/agents.yaml",
+        AGENTS.replace("harness: claude\n  model: sonnet", "harness: codex\n  model: gpt-6.1-sol"),
+    )
+    commit_all(repo, "Change roster after session started")
     build(script, "NAME = 'updated'\n")
     test_plan(script)
     review(script, approved=True)
@@ -417,6 +438,7 @@ def test_retry_from_build_reuses_the_builder_session(repo: Path, script: Script)
     assert result.ok, result.run.error
     assert result.run.retry_list()[0]["from_phase"] == "build"
     assert calls(script, "builder")[-1].session == previous_session
+    assert calls(script, "builder")[-1].harness == "claude"
     assert git(repo, "show", f"{first.run.branch}:{MODEL}") == "NAME = 'updated'"
 
 
@@ -606,7 +628,8 @@ def test_retry_reads_changed_task_configuration_and_workflow_from_pulled_base(
     )
     assert result.run.retry_list()[0]["from_phase"] is None
     builder = calls(script, "builder")[-1]
-    assert builder.harness == "codex" and builder.model == "gpt-5.5"
+    # Workflow, task and scope update; legacy model metadata cannot switch this session.
+    assert builder.harness == "claude" and builder.model == "sonnet"
     assert "Use the updated task from base." in builder.prompt
     assert "src/new/" in builder.prompt and "updated-docs/" in builder.prompt
     assert not calls(script, "reviewer")

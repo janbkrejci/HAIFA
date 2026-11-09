@@ -571,8 +571,8 @@ def test_cli_context_binding(
     assert main(_propose(repo, *args, "--json")) == 0
     assert json.loads(capsys.readouterr().out)["ok"] is True
     assert checked == ["codex"]
-    assert seen[0].model == ("gpt-6.1-sol" if target in {"auto", "switched"} else "gpt-5.5")
-    assert seen[0].thinking == ("high" if target == "auto" else "low")
+    assert seen[0].model == "gpt-6.1-sol"
+    assert seen[0].thinking == "high"
 
 
 def test_codex_correction_and_refinement_keep_binding(
@@ -619,6 +619,9 @@ def test_selected_harness_failures_are_structured(
 
     container_binding(repo, "backlog/P01/index.md", "harness: codex\n")
     computer_binding("claude", enabled=failure != "disabled")
+    from aifactory.repo_settings import RepositorySettings
+
+    RepositorySettings(repo).update({"harness": "codex"})
     if failure == "unavailable":
         monkeypatch.setattr(
             "aifactory.workflow.propose.check_harness",

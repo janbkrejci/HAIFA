@@ -759,12 +759,15 @@ def stored_thread(thread_id: str) -> dict[str, Any]:
 
 
 @pytest.mark.parametrize("allow_codex", [True, False])
-def test_create_inherits_project_binding_and_applies_guide_limit(
+def test_create_uses_local_binding_and_applies_guide_limit(
     setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, allow_codex: bool
 ) -> None:
     client, repo, repo_id = setup
     machine_settings(monkeypatch)
     project_binding(repo, "codex")
+    from aifactory.repo_settings import RepositorySettings
+
+    RepositorySettings(repo).update({"harness": "codex"})
     if allow_codex:
         monkeypatch.setattr("aifactory.web.assistant.GUIDE_HARNESSES", ("claude", "codex"))
     codex = fake_unlimited(monkeypatch, "codex")
@@ -772,10 +775,15 @@ def test_create_inherits_project_binding_and_applies_guide_limit(
     response = client.post(
         "/api/assistant/threads", json={"screen": {"repo": repo_id, "task": "P01-S01-T01"}}
     )
+    if not allow_codex:
+        assert response.status_code == 409, response.text
+        assert response.json()["error"]["code"] == "harness_unavailable"
+        assert not codex and not claude
+        return
     assert response.status_code == 201, response.text
     data = response.json()["data"]
     thread_id = data["id"]
-    expected = ("codex", "context-model", "high") if allow_codex else ("claude", "sonnet", "medium")
+    expected = ("codex", "gpt-5.5", "medium") if allow_codex else ("claude", "sonnet", "medium")
     stored = stored_thread(thread_id)
     assert tuple(stored[k] for k in ("harness", "model", "thinking")) == expected
     assert tuple(data[k] for k in ("harness", "model", "thinking")) == expected
@@ -802,6 +810,7 @@ def test_context_binding_survives_messages_and_restart(
     if configured:
         machine_settings(monkeypatch)
     project_binding(repo)
+    expected = ("sonnet", "medium") if configured else ("claude-opus-5-5", "medium")
     seen = fake_harness(monkeypatch)
     response = client.post(
         "/api/assistant/threads", json={"screen": {"repo": repo_id, "task": "P01-S01-T01"}}
@@ -813,19 +822,19 @@ def test_context_binding_survives_messages_and_restart(
     project.write_text(project.read_text().replace("context-model", "changed-model"))
     machine_settings(monkeypatch)
     ask(client, thread_id, "Druhá", screen={"repo": repo_id, "task": "other"})
-    assert [(r.model, r.thinking) for r in seen] == [("context-model", "high")] * 2
+    assert [(r.model, r.thinking) for r in seen] == [expected] * 2
     assert seen[0].session_id == seen[1].session_id
     stored = stored_thread(thread_id)
-    assert (stored["model"], stored["thinking"]) == ("context-model", "high")
+    assert (stored["model"], stored["thinking"]) == expected
     restarted = AssistantManager(haifa_home(), lambda: [(repo_id, repo)])
     try:
-        assert restarted.get(thread_id)["model"] == "context-model"
+        assert restarted.get(thread_id)["model"] == expected[0]
         assert restarted.get(thread_id)["thinking"] == stored["thinking"]
         assert restarted.summaries()[0]["thinking"] == stored["thinking"]
         thread = restarted.threads[thread_id]
         assert (thread.harness, thread.thinking, thread.session_id) == (
             "claude",
-            "high",
+            expected[1],
             seen[0].session_id,
         )
     finally:
@@ -878,8 +887,8 @@ def test_run_uses_current_task_binding_read_only(
     stored = stored_thread(response.json()["data"]["id"])
     assert (stored["harness"], stored["model"], stored["thinking"]) == (
         "claude",
-        "context-model",
-        "high",
+        "sonnet",
+        "medium",
     )
     assert db.read_bytes() == before
 
@@ -959,6 +968,9 @@ def test_disabled_context_harness_is_not_silently_replaced(
     client, repo, repo_id = setup
     machine_settings(monkeypatch)
     project_binding(repo, "pi")
+    from aifactory.repo_settings import RepositorySettings
+
+    RepositorySettings(repo).update({"harness": "pi"})
     response = client.post(
         "/api/assistant/threads", json={"screen": {"repo": repo_id, "task": "P01-S01-T01"}}
     )

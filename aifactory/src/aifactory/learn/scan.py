@@ -251,7 +251,7 @@ def _ask_learner(
     """
     job_id = f"learn-{secrets.token_hex(4)}"
     rc = load_run_config(repo)
-    rc = apply_agents_override(rc, effective_override({}, None))
+    rc = apply_agents_override(rc, effective_override({}, None, repo=repo))
     with _isolated(repo, rc.commit, None) as isolated:
         runtime = repo / ".factory/data/learn" / job_id
         runtime.mkdir(parents=True, exist_ok=True)

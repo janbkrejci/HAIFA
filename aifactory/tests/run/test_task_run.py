@@ -517,10 +517,10 @@ def test_override_is_noted_on_the_run(repo: Path, script: Script) -> None:
     script.on("planner", lambda wt: write(wt, SPEC, "# spec\n"))
     script.add("planner", ok(artifacts=[SPEC]))
     result = run_task(repo, T01, note="pozor", agents_override={"model": "opus"})
-    assert result.run.note == "pozor [přepis rosteru: model=opus]"
+    assert result.run.note == "pozor [zdroj harnessu: explicit] [přepis rosteru: model=opus]"
 
 
-def test_task_harness_switch_uses_machine_model_instead_of_project_model(repo: Path) -> None:
+def test_legacy_task_harness_values_keep_import_inheritance(repo: Path) -> None:
     from aifactory import backlog as core
 
     project = repo / "backlog/M01-core/index.md"
@@ -538,7 +538,7 @@ def test_task_harness_switch_uses_machine_model_instead_of_project_model(repo: P
     assert task_mod.task_harness_values(task) == {"harness": "codex"}
 
 
-def test_project_and_task_model_choices_reach_run(repo: Path, script: Script) -> None:
+def test_project_and_task_model_choices_are_legacy_metadata(repo: Path, script: Script) -> None:
     project = repo / "backlog/M01-core/index.md"
     project.write_text(
         project.read_text().replace(
@@ -551,7 +551,8 @@ def test_project_and_task_model_choices_reach_run(repo: Path, script: Script) ->
     script.on("planner", lambda wt: write(wt, SPEC, "# spec\n"))
     script.add("planner", ok(artifacts=[SPEC]))
     result = run_task(repo, T01)
-    assert result.run.note == "[přepis rosteru: harness=claude, model=opus]"
+    assert result.run.note is None
+    assert [(c.harness, c.model) for c in script.calls] == [("claude", "sonnet")]
 
 
 def test_prompt_header_has_no_source_or_target(repo: Path, script: Script) -> None:
@@ -575,3 +576,152 @@ def test_prompt_header_has_no_source_or_target(repo: Path, script: Script) -> No
     assert any(line.startswith("- id: ") for line in lines)
     assert any(line.startswith("- working directory: ") for line in lines)
     assert not [line for line in lines if line.startswith(("- source:", "- target:"))]
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+def test_local_harness_changes_next_run_without_a_commit(
+    repo: Path, script: Script, tmp_path: Path, automatic: bool
+) -> None:
+    from aifactory.repo_settings import RepositorySettings
+    from intent_fixture import computer_binding
+
+    computer_binding("claude")
+    local = RepositorySettings(repo)
+    local.update({"harness": "codex", "auto_continue": True})
+    base = git(repo, "rev-parse", "HEAD")
+    script.add("planner", ok(), ok())
+    first = run_task(repo, T01)
+    assert first.ok, first.run.error
+    assert (script.calls[0].harness, script.calls[0].model, script.calls[0].thinking) == (
+        "codex",
+        "gpt-6.1-sol",
+        "high",
+    )
+    assert "zdroj harnessu: repository" in (first.run.note or "")
+    next_base = git(repo, "rev-parse", "HEAD")
+    local.update({"harness": "claude"})
+    assert git(repo, "rev-parse", "HEAD") == next_base
+    second = run_task(repo, T01, started_by="auto-continue" if automatic else "manual")
+    assert second.ok, second.run.error
+    assert script.calls[-1].harness == "claude"
+    # Run history may commit bookkeeping; changing the local choice does not.
+    assert first.run.base_sha == base
+    assert second.run.base_sha == next_base
+    assert git(repo, "status", "--porcelain") == ""
+    other = make_run_repo(tmp_path / "other")
+    from aifactory.harness.settings import effective_override
+
+    assert effective_override({}, None, repo=other)["harness"] == "claude"
+    assert RepositorySettings(other).read().harness is None
+
+
+def test_repo_precedence_ignores_backlog_and_uses_selected_model(repo: Path) -> None:
+    from aifactory.harness import settings
+    from aifactory.repo_settings import RepositorySettings
+    from intent_fixture import computer_binding
+
+    computer_binding("codex")
+    legacy: dict[str, object] = {"harness": "pi", "model": "wrong/model", "thinking": "ultra"}
+    assert settings.effective_override(legacy, None, repo=repo) == {
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "thinking": "high",
+    }
+    RepositorySettings(repo).update({"harness": "claude"})
+    assert settings.effective_override(legacy, None, repo=repo) == {
+        "harness": "claude",
+        "model": "sonnet",
+        "thinking": "medium",
+    }
+    assert settings.effective_override(legacy, {"harness": "codex"}, repo=repo) == {
+        "harness": "codex",
+        "model": "gpt-6.1-sol",
+        "thinking": "high",
+    }
+    assert settings.effective_override(legacy, {"model": "opus"}, repo=repo)["harness"] == "claude"
+
+
+@pytest.mark.parametrize("failure", ["disabled", "failed", "invalid", "unavailable", "no_model"])
+def test_bad_local_harness_never_starts_on_roster(
+    repo: Path, script: Script, failure: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.harness import settings
+    from aifactory.home import haifa_home
+    from aifactory.repo_settings import RepositorySettings
+    from intent_fixture import computer_binding
+
+    computer_binding("claude", enabled=failure != "disabled")
+    local = RepositorySettings(repo)
+    local.update({"harness": "codex"})
+    if failure == "unavailable":
+        from aifactory.harness import load
+
+        def missing_model(_: str) -> tuple[str, str]:
+            raise ValueError("selected model is no longer available")
+
+        monkeypatch.setattr(load("codex"), "resolve_model", missing_model)
+    if failure == "no_model":
+        machine = settings.read()
+        assert machine is not None
+        machine.harnesses["codex"].model = ""
+        settings.path().write_text(machine.model_dump_json())
+    if failure == "failed":
+        (haifa_home() / settings.TEST_FILE).write_text('{"codex": {"gpt-6.1-sol": {"ok": false}}}')
+    if failure == "invalid":
+        local.path.write_text(local.path.read_text().replace('"codex"', '"unknown"'))
+    with pytest.raises(TaskRunError) as exc:
+        run_task(repo, T01)
+    assert exc.value.code == "invalid_override"
+    assert script.calls == []
+    assert_nothing_created(repo)
+
+
+def test_repo_with_no_machine_default_leaves_roster_in_control(repo: Path) -> None:
+    from aifactory.harness.settings import effective_override
+    from intent_fixture import computer_binding
+
+    computer_binding(None)
+    assert effective_override({"harness": "codex"}, None, repo=repo) == {}
+
+
+@pytest.mark.parametrize(
+    ("fields", "model", "thinking"),
+    [
+        ("harness: claude", "sonnet", "medium"),
+        ("harness: claude, model: opus", "opus", "medium"),
+        ("harness: claude, thinking: high", "sonnet", "high"),
+        ("harness: claude, model: opus, thinking: high", "opus", "high"),
+    ],
+    ids=["harness-only", "explicit-model", "explicit-thinking", "all-explicit"],
+)
+def test_local_binding_keeps_explicit_workflow_override_visible(
+    repo: Path, script: Script, fields: str, model: str, thinking: str
+) -> None:
+    from aifactory.repo_settings import RepositorySettings
+    from intent_fixture import computer_binding
+
+    computer_binding("claude")
+    RepositorySettings(repo).update({"harness": "codex"})
+    write(
+        repo,
+        ".factory/workflows/plan-commit.yaml",
+        (
+            "name: plan-commit\ndescription: Plan the task with an explicit harness and commit it\n"
+            "steps:\n"
+            f"  - plan: {{{fields}}}\n"
+            "  - commit\n"
+        ),
+    )
+    commit_all(repo, "Explicit workflow step harness")
+    script.add("planner", ok())
+    result = run_task(repo, T01)
+    assert result.ok, result.run.error
+    assert (script.calls[0].harness, script.calls[0].model, script.calls[0].thinking) == (
+        "claude",
+        model,
+        thinking,
+    )
+    assert result.workflow_run is not None
+    record = result.workflow_run.records[0]
+    assert (record.harness, record.model, record.thinking) == ("claude", model, thinking)
+    assert "harness=codex" in (result.run.note or "")

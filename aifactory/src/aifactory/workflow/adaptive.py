@@ -23,7 +23,6 @@ from pydantic import ConfigDict, Field
 
 from aifactory import backlog as core
 from aifactory import oscompat, yamlload
-from aifactory.backlog.derived import harness_values
 from aifactory.config import load_run_config
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentCall, EnvelopeBase, PhaseParams
@@ -193,7 +192,7 @@ def context(
     for key in ("harness", "model", "thinking"):
         effective.pop(key, None)
     try:
-        effective.update(context_binding(harness_values(task if task is not None else parent)))
+        effective.update(context_binding({}, repo=repo))
     except ValueError as exc:
         raise UsageError(str(exc)) from exc
     return {
@@ -403,7 +402,7 @@ def recommend(
     from aifactory.run.task import apply_agents_override
 
     try:
-        binding = ctx["advisor"] if "advisor" in ctx else context_binding(ctx.get("effective", {}))
+        binding = ctx["advisor"] if "advisor" in ctx else context_binding({}, repo=repo)
         rc = apply_agents_override(rc, binding)
     except ValueError as exc:
         raise UsageError(str(exc)) from exc

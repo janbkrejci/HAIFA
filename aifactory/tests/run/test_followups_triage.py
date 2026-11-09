@@ -496,10 +496,13 @@ def test_explicit_empty_writes_survive_collection_and_allow_no_file_extension(
 
 
 @pytest.mark.parametrize("saved", [False, True])
+@pytest.mark.parametrize("snapshot_available", [False, True])
 def test_record_passes_run_binding(
-    repo: Path, monkeypatch: pytest.MonkeyPatch, saved: bool
+    repo: Path, monkeypatch: pytest.MonkeyPatch, saved: bool, snapshot_available: bool
 ) -> None:
-    from aifactory.run.task import override_note
+    from aifactory.harness.config import AgentConfig, SSSFConfig
+    from aifactory.repo_settings import RepositorySettings
+    from aifactory.run.task import override_note, session_dir_of
 
     binding = {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
     seen: list[dict[str, Any]] = []
@@ -509,6 +512,25 @@ def test_record_passes_run_binding(
         return [choice("covered")]
 
     monkeypatch.setattr(triage, "ask_triager", ask)
+    snapshot_binding = {"harness": "claude", "model": "sonnet", "thinking": "medium"}
+    if snapshot_available:
+        snapshot = session_dir_of(repo, "r") / "roster.json"
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        roster = SSSFConfig(
+            agents=[
+                AgentConfig.model_validate(
+                    {
+                        "name": "triager",
+                        "coding_agent": "claude",
+                        "model": "sonnet",
+                        "thinking": "medium",
+                        "prompt_engineering": {"system": "s.md", "user": "u.md"},
+                    }
+                )
+            ]
+        )
+        snapshot.write_text(roster.model_dump_json())
+        RepositorySettings(repo).update({"harness": "codex"})
     with closing(TaskRunStore(repo / ".factory/trace.db")) as store:
         row = cast(
             TaskRunRow,
@@ -520,7 +542,8 @@ def test_record_passes_run_binding(
             repo, store, row, workflow_run(follow_ups=[follow_up()])
         )
     assert result is not None and not warnings
-    assert seen == [{"task_id": T01, "binding": binding if saved else None}]
+    expected = binding if saved else snapshot_binding if snapshot_available else None
+    assert seen == [{"task_id": T01, "binding": expected}]
 
 
 def test_triager_uses_binding_after_quota_switch(

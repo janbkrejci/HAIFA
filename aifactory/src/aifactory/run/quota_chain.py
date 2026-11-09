@@ -30,6 +30,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from aifactory.backlog import Task
@@ -90,15 +91,11 @@ class Start:
     position: str | None = None
 
 
-def primary_harness(task: Task, rc: RunConfig) -> str | None:
-    """The harness `task` runs on without the chain: its settings, else the roster's."""
+def primary_harness(task: Task, rc: RunConfig, *, repo: Path) -> str | None:
+    """The local primary of a new run, before quota fallback, else the roster's."""
     from aifactory.harness.settings import effective_override
-    from aifactory.run.task import task_harness_values
 
-    try:
-        harness = effective_override(task_harness_values(task), None).get("harness")
-    except ValueError:
-        harness = None
+    harness = effective_override({}, None, repo=repo).get("harness")
     if harness:
         return harness
     roster = rc.config.agents
