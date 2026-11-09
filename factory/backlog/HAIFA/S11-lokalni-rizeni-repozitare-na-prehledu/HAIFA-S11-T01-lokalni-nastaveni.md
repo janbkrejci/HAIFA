@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S11-T01
 title: Místní nastavení repozitáře a kompatibilní kontrakt
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/, docs/decisions.md]
 test_timeout: 1200
@@ -18,4 +18,5 @@ Zapsat kontrakt a precedence do docs/decisions.md. Hotovo znamená stejná data 
 ## Běhy
 
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-09 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/205 · náklady $0.00
 

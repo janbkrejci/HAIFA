@@ -93,6 +93,15 @@ Rules (every command follows them, tests enforce them):
 
 ### Switch the local roster
 
+Repository operating settings live outside Git in HAIFA_HOME. Use
+`factory config local show --json` and
+`factory config local set --auto-merge on --auto-continue off --harness codex --json`.
+Both accept `--repo PATH` without dashboard registration. `--harness inherit` restores
+the computer default. Set patches only supplied fields. Missing settings mean both
+automations are off; invalid files and unsupported versions fail without legacy fallback
+or overwriting the file. These commands are the shared storage contract; S11 runtime
+and dashboard integration must ship together before these switches control running work.
+
 `factory config roster show --json` lists effective local agent harness/model/thinking.
 `factory config roster set codex --dry-run --json` previews all-Codex
 (`gpt-6.1-sol`, medium); omit `--dry-run` to write locally. Use

@@ -891,6 +891,17 @@ def _harness(args: argparse.Namespace) -> int:
 def _add_config_commands(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(config_parser=parser)
     sub = parser.add_subparsers(dest="config_command", metavar="<subcommand>")
+    local = sub.add_parser("local", help="repository operating settings in HAIFA_HOME")
+    local.set_defaults(local_parser=local)
+    local_commands = local.add_subparsers(dest="local_command", metavar="<subcommand>")
+    local_show = local_commands.add_parser("show", help="read local repository settings")
+    local_set = local_commands.add_parser("set", help="update supplied local fields only")
+    local_set.add_argument("--auto-merge", choices=("on", "off"))
+    local_set.add_argument("--auto-continue", choices=("on", "off"))
+    local_set.add_argument("--harness", choices=("claude", "codex", "pi", "inherit"))
+    for child in (local_show, local_set):
+        child.add_argument("--repo", metavar="PATH")
+        child.add_argument("--json", action="store_true", help="print the JSON envelope")
     roster = sub.add_parser("roster", help="show or edit local agent harness/model/thinking")
     roster.set_defaults(roster_parser=roster)
     commands = roster.add_subparsers(dest="roster_command", metavar="<subcommand>")
@@ -1198,7 +1209,31 @@ def _config(args: argparse.Namespace) -> int:
         return _config_edit(args)
     if args.config_command == "roster":
         return _config_roster(args)
+    if args.config_command == "local":
+        return _config_local(args)
     return _config_show(args)
+
+
+def _config_local(args: argparse.Namespace) -> int:
+    from aifactory.repo_settings import RepositorySettings, SettingsError
+
+    if args.local_command is None:
+        args.local_parser.print_help()
+        return 0
+    try:
+        service = RepositorySettings(Path(args.repo) if args.repo else Path.cwd())
+        if args.local_command == "set":
+            changes: dict[str, object] = {}
+            for name in ("auto_merge", "auto_continue"):
+                supplied = getattr(args, name)
+                if supplied is not None:
+                    changes[name] = supplied == "on"
+            if args.harness is not None:
+                changes["harness"] = None if args.harness == "inherit" else args.harness
+            return _emit_ok(service.update_and_show(changes))
+        return _emit_ok(service.show())
+    except SettingsError as exc:
+        return _emit_fail(exc.code, str(exc), path=str(exc.path), exit_code=2)
 
 
 def _config_roster(args: argparse.Namespace) -> int:
