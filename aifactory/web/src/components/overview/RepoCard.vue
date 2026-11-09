@@ -77,7 +77,7 @@ async function onSync() {
     </div>
 
     <template v-else>
-    <RepoControls :repo="repo" :feedback="feedback" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
+    <RepoControls @changed="emit('changed')" :repo="repo" :feedback="feedback" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
 

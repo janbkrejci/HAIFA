@@ -48,8 +48,9 @@ describe('ContainerSettings', () => {
     expect(row('writes').get('[data-test="value-writes"]').text()).toContain('src/')
     expect(wrapper.find('[data-setting="specs_dir"]').exists()).toBe(false)
     expect(wrapper.find('[data-setting="test"]').exists()).toBe(false)
-    expect(row('auto_continue').get('[data-test="value-auto_continue"]').text()).toContain('vypnuto')
-    expect(row('auto_continue').get('[data-test="origin"]').text()).toContain('výchozí')
+    expect(wrapper.find('[data-setting="auto_continue"]').exists()).toBe(false)
+    expect(wrapper.find('[data-setting="auto_merge"]').exists()).toBe(false)
+    expect(wrapper.find('[data-setting="harness"]').exists()).toBe(false)
     expect(wrapper.find('[data-setting="source"]').exists()).toBe(false)
     expect(wrapper.find('[data-setting="target"]').exists()).toBe(false)
     expect((wrapper.get('[data-test="inherit-workflow"]').element as HTMLInputElement).checked).toBe(false)
@@ -86,13 +87,11 @@ describe('ContainerSettings', () => {
     expect((wrapper.get('[data-test="edit-writes"]').element as HTMLTextAreaElement).value).toBe('src/')
     await wrapper.get('[data-test="edit-writes"]').setValue('src/\n\ntests/\n')
     expect(wrapper.find('[data-test="inherit-auto_continue"]').exists()).toBe(false)
-    await chooseOption(wrapper, '[data-test="edit-auto_continue"]', 'on')
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('save')?.[0]).toEqual([
       {
         title: 'Model 2',
         writes: ['src/', 'tests/'],
-        auto_continue: true,
         clear: ['workflow'],
       },
     ])
@@ -111,21 +110,11 @@ describe('ContainerSettings', () => {
     expect(wrapper.get('[data-setting="writes"] th').text()).toContain('writes')
   })
 
-  it('keeps an unset auto continue inherited, never off', async () => {
-    const wrapper = panel()
-    expect(wrapper.get('[data-test="edit-auto_continue"]').text()).toContain('Zděděno (vypnuto)')
-    expect(wrapper.get('[data-test="settings-save"]').attributes('disabled')).toBeDefined()
-    await chooseOption(wrapper, '[data-test="edit-auto_continue"]', 'off')
+  it('leaves legacy operating values untouched when editing the title', async () => {
+    const wrapper = panel({ own: { auto_continue: true, auto_merge: true, harness: 'codex' } })
+    await wrapper.get('[data-test="settings-title"]').setValue('Nový název')
     await wrapper.get('form').trigger('submit')
-    expect(wrapper.emitted('save')?.[0]).toEqual([{ auto_continue: false }])
-  })
-
-  it('returns an own auto continue to inherited with clear', async () => {
-    const wrapper = panel({ own: { workflow: 'plan', auto_continue: true } })
-    expect(wrapper.get('[data-test="edit-auto_continue"]').text()).toContain('Zapnuto')
-    await chooseOption(wrapper, '[data-test="edit-auto_continue"]', 'inherit')
-    await wrapper.get('form').trigger('submit')
-    expect(wrapper.emitted('save')?.[0]).toEqual([{ clear: ['auto_continue'] }])
+    expect(wrapper.emitted('save')?.[0]).toEqual([{ title: 'Nový název' }])
   })
 
   it('shows a rejected save with its issues', () => {

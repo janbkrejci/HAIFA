@@ -359,8 +359,21 @@ export interface OverviewProject {
   tasks: OverviewTaskCounts
 }
 
+export interface LocalRepoSettings {
+  settings: { version: number; auto_merge: boolean; auto_continue: boolean; harness: string | null }
+  effective_harness: string | null
+}
+
+export async function patchLocalRepoSettings(id: string, changes: Partial<LocalRepoSettings['settings']>): Promise<LocalRepoSettings> {
+  return request<LocalRepoSettings>(`/api/repos/${encodeURIComponent(id)}/settings/local`, {
+    ...postInit(changes), method: 'PATCH',
+  })
+}
+
 /** One repository of GET /api/overview. */
 export interface OverviewRepo {
+  local_settings?: LocalRepoSettings | null
+  local_settings_error?: string | null
   projects?: OverviewProject[]
   id: string
   name: string

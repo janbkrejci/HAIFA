@@ -694,8 +694,8 @@ def test_project_and_step_from_dashboard(page: Page, server: Server, net: Net) -
     panel = page.locator('[data-node="M02-S01"] > [data-test="settings-panel"]')
     settings = panel.locator('[data-test="container-settings"]')
     expect(settings.locator('[data-test="commit-note"]')).to_contain_text("až po commitu backlogu")
-    expect(panel.locator('[data-test="auto-toggle"]')).to_be_visible()
-    expect(panel.locator('[data-test="merge-toggle"]')).to_be_visible()
+    expect(panel.locator('[data-test="auto-toggle"]')).to_have_count(0)
+    expect(panel.locator('[data-test="merge-toggle"]')).to_have_count(0)
 
     # the step's workflow: inherited (none), then its own
     row = settings.locator('[data-setting="workflow"]')
@@ -708,11 +708,11 @@ def test_project_and_step_from_dashboard(page: Page, server: Server, net: Net) -
     step_index = _index(repo, "M02-S01")
     assert _frontmatter(step_index.read_text(encoding="utf-8"))["workflow"] == "plan-commit"
 
-    # auto-merge of the step from the same panel; the tree row shows its badge
-    panel.locator('[data-test="merge-on"]').click()
-    step_row = page.locator('[data-node="M02-S01"] > .row')
-    expect(step_row.locator('[data-test="merge-badge"]')).to_be_visible(timeout=SERVER_TIMEOUT_MS)
-    assert _frontmatter(step_index.read_text(encoding="utf-8"))["auto_merge"] is True
+    # Legacy operating choices cannot be edited in the backlog.
+    expect(panel).to_contain_text("Na tomto počítači")
+    expect(settings.locator('[data-setting="harness"]')).to_have_count(0)
+    expect(settings.locator('[data-setting="auto_merge"]')).to_have_count(0)
+    assert "auto_merge" not in _frontmatter(step_index.read_text(encoding="utf-8"))
 
     # the project's settings in the tree: its description in Náhled and Zdroj
     page.locator('[data-node="M02"] > .row [data-test="settings"]').click()

@@ -1,10 +1,6 @@
 <script setup lang="ts">
-// The Nastavení panel of a project or step (`factory backlog edit`): the title and the keys
-// of its `index.md`, each with its own value or the inherited one and its origin. Inheriting
-// removes the own value. The description of `index.md` is shown read-only. Auto continue and
-// the return of the quota chain are three-way switches (Zděděno / Zapnuto / Vypnuto): an unset
-// value stays inherited, never off. A project also sets its harness and the quota chain
-// (`quota_switch`): a switch and the backup harnesses in order, each at most once.
+// Backlog metadata with inherited values and origins. Operating choices are edited
+// on the Overview; legacy values remain untouched when saving this form.
 import { computed, reactive, ref } from 'vue'
 import {
   CONTAINER_KEYS,
@@ -47,7 +43,7 @@ const HINTS: Partial<Record<ContainerKey, string>> = {
 
 const keys = computed<ContainerKey[]>(() => {
   const allowed = props.editableKeys?.length ? props.editableKeys : CONTAINER_KEYS
-  return CONTAINER_KEYS.filter((k) => allowed.includes(k) && (props.container.parent === null || !HARNESS_KEYS.includes(k)))
+  return CONTAINER_KEYS.filter((k) => !['auto_continue', 'auto_merge', 'harness'].includes(k) && allowed.includes(k) && (props.container.parent === null || !HARNESS_KEYS.includes(k)))
 })
 
 /** Keys edited with the three-way switch instead of an inherit checkbox. */

@@ -13,6 +13,7 @@ import {
   getGlobal,
   isDbBusy,
   isDbBusyText,
+  patchLocalRepoSettings,
   postApi,
   postGlobal,
 } from './api'
@@ -37,6 +38,16 @@ describe('api', () => {
     })
     await expect(fetchHealth()).resolves.toEqual({ app: 'haifa-dashboard', version: '0.1.0', home: '/home/.haifa' })
     expect(fetchMock).toHaveBeenCalledWith('/api/health')
+  })
+
+  it('patches only changed operating fields of the card repo, independent of the URL', async () => {
+    window.location.hash = '#/overview'
+    const data = { settings: { version: 1, auto_merge: true, auto_continue: false, harness: null }, effective_harness: null }
+    const fetchMock = stubFetch({ ok: true, data, error: null, warnings: [] })
+    await expect(patchLocalRepoSettings('my repo', { auto_merge: true })).resolves.toEqual(data)
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/my%20repo/settings/local', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: '{"auto_merge":true}',
+    })
   })
 
   it('sends repo requests to the repo in the URL', async () => {

@@ -33,6 +33,15 @@ describe('RepoControls', () => {
     expect(busy.find('button').exists()).toBe(false)
   })
 
+  it('forwards local settings changes to refresh the overview', async () => {
+    const wrapper = mount(RepoControls, {
+      props: { repo: repo('a', { local_settings: null }) },
+      global: { stubs: { LocalRepoControls: { emits: ['changed'], template: '<button @click="$emit(\'changed\')">Uložit</button>' } } },
+    })
+    await wrapper.get('button').trigger('click')
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
+
   it('shows the message and the error of the last button', () => {
     const ok = mountWith(repo('a'), { message: 'Spuštěno 2 běhy', error: null })
     expect(ok.get('[data-test="factory-start-message"]').text()).toBe('Spuštěno 2 běhy')

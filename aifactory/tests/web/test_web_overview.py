@@ -1072,11 +1072,16 @@ def test_open_pr_without_auto_merge_waits_for_review(repo_a: Path, tmp_path: Pat
     assert (a["tasks"]["in review"], a["tasks"]["awaiting merge"]) == (1, 0)
 
 
-def test_open_pr_with_auto_merge_waits_for_automerge(repo_a: Path, tmp_path: Path) -> None:
-    _auto_merge_step(repo_a)
+def test_open_pr_with_auto_merge_waits_for_automerge(
+    repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     home = tmp_path / "home"
-    register(home, repo_a)
-    data = _get(_client(home, tmp_path))
+    monkeypatch.setenv("HAIFA_HOME", str(home))
+    entry = register(home, repo_a).snapshot()[0].repos[0]
+    client = _client(home, tmp_path)
+    url = f"/api/repos/{entry.id}/settings/local"
+    assert client.patch(url, json={"auto_merge": True}).status_code == 200
+    data = _get(client)
     a = data["repos"][0]
     assert a["review"] == []
     assert [r["task_id"] for r in a["automerge"]] == [T_REV]
@@ -1089,9 +1094,17 @@ def test_open_pr_with_auto_merge_waits_for_automerge(repo_a: Path, tmp_path: Pat
     # the PR still holds its slot
     assert a["factory"]["in_review"] == 1
     assert (data["totals"]["review"], data["totals"]["automerge"]) == (0, 1)
+    assert client.patch(url, json={"auto_merge": False}).status_code == 200
+    updated = _get(client)["repos"][0]
+    assert updated["automerge"] == []
+    assert [r["task_id"] for r in updated["review"]] == [T_REV]
+    assert updated["local_settings"]["settings"]["auto_merge"] is False
 
 
-def test_failed_auto_merge_waits_for_review_again(repo_a: Path, tmp_path: Path) -> None:
+def test_failed_auto_merge_waits_for_review_again(
+    repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "home"))
     _auto_merge_step(repo_a)
     _set_auto_merge_error(repo_a, f"factory/{T_REV}-r-rev", "checks_failing: ci")
     a = _repo_item(repo_a, tmp_path)
@@ -1100,7 +1113,10 @@ def test_failed_auto_merge_waits_for_review_again(repo_a: Path, tmp_path: Path) 
     assert (a["tasks"]["in review"], a["tasks"]["awaiting merge"]) == (1, 0)
 
 
-def test_trace_db_without_the_auto_merge_error_column(repo_a: Path, tmp_path: Path) -> None:
+def test_trace_db_without_the_auto_merge_error_column(
+    repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "home"))
     _auto_merge_step(repo_a)
     conn = sqlite3.connect(str(_db(repo_a)), isolation_level=None)
     try:
@@ -1397,3 +1413,124 @@ def test_claimed_run_takes_precedence_over_live_operations(
         assert {t["id"]: t["board_state"] for t in board["tasks"]}[T_RUN] == "running"
     finally:
         store.close()
+
+
+def test_local_settings_patch_is_immediate_persistent_and_repo_scoped(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HAIFA_HOME", str(home))
+    first = make_installed_repo(tmp_path / "first")
+    second = make_installed_repo(tmp_path / "second")
+    registry = register(home, first, second)
+    entries = registry.snapshot()[0].repos
+    first_id = next(e.id for e in entries if Path(e.path) == first)
+    url = f"/api/repos/{first_id}/settings/local"
+    before = subprocess.check_output(["git", "status", "--porcelain"], cwd=first)
+    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=first)
+    # Two tabs send only their changed field, concurrently.
+    with _client(home, tmp_path) as client:
+        assert client.get(url).json()["data"]["settings"]["auto_merge"] is False
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            responses = list(
+                pool.map(
+                    lambda change: client.patch(url, json=change),
+                    [
+                        {"auto_merge": True},
+                        {"auto_continue": True},
+                    ],
+                )
+            )
+        assert all(r.status_code == 200 for r in responses)
+        settings = client.get(url).json()["data"]["settings"]
+        assert settings["auto_merge"] is settings["auto_continue"] is True
+        item = _by_id(_get(client))[first_id]
+        assert item["local_settings"]["settings"] == settings
+    with _client(home, tmp_path) as restarted:
+        assert restarted.get(url).json()["data"]["settings"] == settings
+    assert RepositorySettings(second, home).read().auto_merge is False
+    assert not RepositorySettings(second, home).path.exists()
+    assert subprocess.check_output(["git", "status", "--porcelain"], cwd=first) == before
+    assert subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=first) == head
+
+
+def test_local_settings_errors_do_not_acknowledge_off(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    home = tmp_path / "home"
+    monkeypatch.setenv("HAIFA_HOME", str(home))
+    root = make_installed_repo(tmp_path / "repo")
+    entry = register(home, root).snapshot()[0].repos[0]
+    service = RepositorySettings(root, home)
+    service.update({"auto_continue": True})
+    url = f"/api/repos/{entry.id}/settings/local"
+
+    def failed_write(self: RepositorySettings, settings: object) -> None:
+        raise OSError("disk full")
+
+    with _client(home, tmp_path) as client:
+        with monkeypatch.context() as patch:
+            patch.setattr(RepositorySettings, "_write", failed_write)
+            response = client.patch(url, json={"auto_continue": False})
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "repo_settings_io"
+        assert service.read().auto_continue is True
+        for value in ({"auto_merge": "off"}, {"version": 1}, {}, {"unknown": True}):
+            assert client.patch(url, json=value).status_code == 422
+        assert client.patch(url, json={"harness": "missing"}).status_code == 400
+        service.path.write_text("broken", encoding="utf-8")
+        assert client.get(url).status_code == 503
+        item = _by_id(_get(client))[entry.id]
+        assert item["local_settings"] is None
+        assert "repo_settings_invalid" in item["local_settings_error"]
+        rmtree(root)
+        assert client.patch(url, json={"auto_continue": False}).status_code == 404
+
+
+def test_local_harness_uses_machine_catalog(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    root = make_installed_repo(tmp_path / "repo")
+    entry = register(home, root).snapshot()[0].repos[0]
+    app = create_multi_app(home=home, static_dir=tmp_path / "nostatic")
+    with TestClient(app, base_url=BASE) as client:
+        monkeypatch.setattr(
+            app.state.library,
+            "harnesses",
+            lambda home: {
+                "available": {"codex": True, "pi": False},
+                "settings": {"harnesses": {"codex": {"enabled": True}, "pi": {"enabled": True}}},
+            },
+        )
+        url = f"/api/repos/{entry.id}/settings/local"
+        assert client.patch(url, json={"harness": "pi"}).status_code == 400
+        response = client.patch(url, json={"harness": "codex"})
+        assert response.status_code == 200
+        assert response.json()["data"]["effective_harness"] == "codex"
+        assert (
+            client.patch(url, json={"harness": None}).json()["data"]["settings"]["harness"] is None
+        )
+
+
+def test_local_harness_catalog_failure_does_not_save(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    home = tmp_path / "home"
+    root = make_installed_repo(tmp_path / "repo")
+    entry = register(home, root).snapshot()[0].repos[0]
+    app = create_multi_app(home=home, static_dir=tmp_path / "nostatic")
+
+    def unavailable(home: Path) -> dict[str, Any]:
+        raise OSError("catalog unavailable")
+
+    monkeypatch.setattr(app.state.library, "harnesses", unavailable)
+    with TestClient(app, base_url=BASE) as client:
+        response = client.patch(f"/api/repos/{entry.id}/settings/local", json={"harness": "codex"})
+        assert response.status_code == 503
+        assert response.json()["error"]["code"] == "harness_catalog_unavailable"
+        assert not RepositorySettings(root, home).path.exists()

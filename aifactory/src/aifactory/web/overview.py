@@ -732,6 +732,8 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         "merged_outside": [],
         "sync_pr": None,
         "config": None,
+        "local_settings": None,
+        "local_settings_error": None,
         "last_activity": None,
         "warnings": warnings,
         "tasks": None,
@@ -787,9 +789,19 @@ class Overview:
                 tasks, task_warnings = self._tasks.get(key, 0, lambda: _task_index(root))
         item = _stub(entry, _state(config), [*config_warnings, *task_warnings, *trace_warnings])
         item["config"] = config
-        from aifactory.web.backlog import _merge_policy
+        from aifactory.repo_settings import RepositorySettings, SettingsError
 
-        item["auto_merge_policy"] = _merge_policy(root)
+        try:
+            item["local_settings"] = RepositorySettings(root, self.registry.home).show()
+            item["local_settings_error"] = None
+            item["auto_merge_policy"] = item["local_settings"]["auto_merge_policy"]
+        except SettingsError as exc:
+            item["local_settings"] = None
+            item["local_settings_error"] = f"{exc.code}: {exc}"
+            item["state"] = "error"
+            item["warnings"].append(item["local_settings_error"])
+            return item
+
         active = _active_runs(trace)
         summary, ready, projects = (
             (None, [], []) if tasks.backlog is None else _task_summary(tasks.backlog, trace, active)

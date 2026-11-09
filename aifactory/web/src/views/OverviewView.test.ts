@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import OverviewView from './OverviewView.vue'
+import RepoControls from '@/components/overview/RepoControls.vue'
 import type { OverviewData, RepoItem } from '@/lib/api'
 import { BY_PROJECT_KEY, OVERVIEW_POLL_MS } from '@/lib/overview'
 import { config, factory, failed, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
@@ -80,6 +81,15 @@ afterEach(() => {
 })
 
 describe('OverviewView', () => {
+  it('refreshes after changing local settings of a calm repository', async () => {
+    const fetchMock = stubOverview(() => overview([repo('calm')]))
+    const wrapper = await mountView()
+    const before = overviewCalls(fetchMock)
+    wrapper.getComponent(RepoControls).vm.$emit('changed')
+    await flushPromises()
+    expect(overviewCalls(fetchMock)).toBe(before + 1)
+  })
+
   it('shows a loading overlay for a slow repo until polling returns its data', async () => {
     let slow = repo('slow', {
       state: 'timeout', config: null,

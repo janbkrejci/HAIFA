@@ -148,7 +148,7 @@ function activity(iso: string | null): string {
               <RepoMenu :name="repo.name" :removing="removing === repo.id" item-test="calm-remove" @remove="remove(repo)" />
             </div>
           </div>
-          <RepoControls :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
+          <RepoControls @changed="refresh" :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
           <RepoWork v-if="byProject && (repo.projects?.length ?? 0) > 1" :repo="repo" :now="now" :by-project="byProject" />
           <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>
         </li>

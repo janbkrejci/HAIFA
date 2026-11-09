@@ -6,7 +6,6 @@ import {
   INHERIT_LABEL,
   SETTING_LABELS,
   THINKING_LEVELS,
-  autoMode,
   levelLabel,
   levelNoun,
   splitLines,
@@ -60,7 +59,6 @@ const initialStatus = task?.status ?? 'todo'
 const initialWorkflow = task?.own_workflow ?? ''
 const initialWrites = task?.own_writes ?? []
 const initialInherit = initialWrites.length === 0
-const initialAutoMerge = autoMode(task?.own_auto_merge)
 
 const step = ref(
   props.steps.find((s) => s.id === props.initialStep)?.id ?? props.steps[0]?.id ?? '',
@@ -79,8 +77,8 @@ const depends = ref<string[]>([...(task?.depends_on ?? [])])
 const related = ref<string[]>([...(task?.related ?? [])])
 const parameterBusy = ref(false)
 const parameters = ref<Record<string, unknown> | undefined>()
-const parameterFields = ['harness', 'model', 'thinking', 'test_timeout', 'auto_continue', 'auto_merge']
-const { harnessOptions, modelOptions } = useHarnessChoices()
+const parameterFields = ['model', 'thinking', 'test_timeout']
+const { modelOptions } = useHarnessChoices()
 const projectHarness = computed(() => props.steps.find(s => s.id === step.value)?.harness ?? '')
 /** A parameter's value: the typed or proposed one, else the task's own one (edit). */
 function parameterValue(key: string): unknown {
@@ -97,23 +95,15 @@ const thinkingOptions: SelectOption[] = [
   { value: '', label: INHERIT_LABEL },
   ...THINKING_LEVELS.map((level) => ({ value: level, label: level })),
 ]
-const parameterFlagOptions: SelectOption[] = [
-  { value: '', label: INHERIT_LABEL },
-  { value: 'true', label: 'Zapnuto' },
-  { value: 'false', label: 'Vypnuto' },
-]
 function setParameter(key: string, event: Event) {
   setParameterText(key, (event.target as HTMLInputElement).value)
 }
 function setParameterText(key: string, text: string) {
-  const value = !text ? null : key === 'test_timeout' ? Number(text) : ['auto_continue', 'auto_merge'].includes(key) ? text === 'true' : text
+  const value = !text ? null : key === 'test_timeout' ? Number(text) : text
   parameters.value = { ...parameters.value, [key]: value }
-  if (key === 'harness') parameters.value.model = null
-  if (key === 'auto_merge') autoMerge.value = autoMode(value as boolean | null)
 }
 const body = ref(props.mode === 'edit' ? props.taskBody ?? '' : props.initialBody ?? '')
 const status = ref<string>(initialStatus)
-const autoMerge = ref<string>(initialAutoMerge)
 const adviceBusy = ref(false)
 const advice = ref<{ result: Recommendation; id: string } | null>(null)
 // Analyze the live draft, including the current manual or suggested selection.
@@ -130,7 +120,6 @@ const parameterDraft = computed(() => ({
   parameters: {
     ...(task?.own_parameters ?? {}),
     ...(parameters.value ?? {}),
-    ...(props.mode === 'edit' ? { auto_merge: autoMerge.value === 'inherit' ? null : autoMerge.value === 'on' } : {}),
   },
 }))
 /** "Další nastavení" opens when the task uses any of them (edit) or the agent changed one. */
@@ -147,9 +136,8 @@ const advancedOpen = ref(
 const workflowAdvice = ref<InstanceType<typeof WorkflowAdvice> | null>(null)
 /** Apply the improved task, then propose its workflow from the improved draft (same advice as the button). */
 async function applyParameters(result: TaskProposal) {
-  const before = JSON.stringify([writesText.value, inheritWrites.value, depends.value, related.value, autoMerge.value])
-  parameters.value = result.parameters
-  if (result.parameters && 'auto_merge' in result.parameters) autoMerge.value = autoMode(result.parameters.auto_merge as boolean | null)
+  const before = JSON.stringify([writesText.value, inheritWrites.value, depends.value, related.value])
+  parameters.value = result.parameters ? Object.fromEntries(Object.entries(result.parameters).filter(([key]) => !['harness', 'auto_continue', 'auto_merge'].includes(key))) : undefined
   title.value = result.title
   body.value = result.body
   writesText.value = (result.writes ?? []).join('\n')
@@ -158,7 +146,7 @@ async function applyParameters(result: TaskProposal) {
   related.value = [...result.related]
   workflow.value = result.workflow ?? ''
   advice.value = null
-  const after = JSON.stringify([writesText.value, inheritWrites.value, depends.value, related.value, autoMerge.value])
+  const after = JSON.stringify([writesText.value, inheritWrites.value, depends.value, related.value])
   if (before !== after || hasOwnParameters(result.parameters)) advancedOpen.value = true
   // Let the advice see the improved draft (its watcher drops the old result first).
   await nextTick()
@@ -181,7 +169,6 @@ const isDone = computed(() => initialStatus === 'done')
 const level = useLevels()
 const stepLabel = computed(() => levelLabel(level.step.value))
 const taskNoun = computed(() => levelNoun(level.task.value))
-const taskGen = computed(() => levelNoun(level.task.value, 'gen'))
 
 const stepOptions = computed<SelectOption[]>(() =>
   props.steps.map((s) => ({ value: s.id, label: s.title ? `${s.id} · ${s.title}` : s.id })),
@@ -190,16 +177,6 @@ const statusOptions = computed<SelectOption[]>(() => [
   ...(isDone.value ? [{ value: 'done', label: 'Hotovo' }] : []),
   { value: 'todo', label: 'K řešení' },
   { value: 'cancelled', label: 'Zrušeno' },
-])
-function inheritedMergeLabel(): string {
-  // The inherited value is known only while the task has none of its own.
-  if (!task || task.own_auto_merge != null) return INHERIT_LABEL
-  return `${INHERIT_LABEL} (${task.effective_auto_merge ? 'zapnuto' : 'vypnuto'})`
-}
-const autoMergeOptions = computed<SelectOption[]>(() => [
-  { value: 'inherit', label: inheritedMergeLabel() },
-  { value: 'on', label: 'Zapnuto' },
-  { value: 'off', label: 'Vypnuto' },
 ])
 /** A new task needs a step; without one the form explains how to create it. */
 const noSteps = computed(() => props.mode === 'add' && props.steps.length === 0)
@@ -216,7 +193,7 @@ const adviceBlocker = computed(() => {
   return ''
 })
 const visibleParameters = computed(() =>
-  parameterFields.filter((key) => props.mode === 'add' || key !== 'auto_merge'),
+  parameterFields,
 )
 const { names } = useNames()
 /** Codes of the backlog to link to, `<id> · <title>`; the task itself is left out. */
@@ -252,7 +229,7 @@ function sameList(a: string[], b: string[]): boolean {
 const editInput = computed<EditTaskInput>(() => {
   const input: EditTaskInput = {}
   if (!task) return input
-  if (parameters.value) input.parameters = { ...parameters.value, auto_merge: autoMerge.value === 'inherit' ? null : autoMerge.value === 'on' }
+  if (parameters.value) input.parameters = parameters.value
   if (body.value !== (props.taskBody ?? '')) input.body = body.value
   if (!sameList(depends.value, task.depends_on ?? [])) input.depends_on = [...depends.value]
   if (!sameList(related.value, task.related ?? [])) input.related = [...related.value]
@@ -270,10 +247,6 @@ const editInput = computed<EditTaskInput>(() => {
     const writes = splitLines(writesText.value)
     if (initialInherit || !sameList(writes, initialWrites)) input.writes = writes
   }
-  if (autoMerge.value !== initialAutoMerge) {
-    if (autoMerge.value === 'inherit') input.clear_auto_merge = true
-    else input.auto_merge = autoMerge.value === 'on'
-  }
   return attachAdvice(input)
 })
 
@@ -287,7 +260,7 @@ const canSubmit = computed(() => {
 function formState(): string {
   return JSON.stringify([
     step.value, title.value, taskId.value, workflow.value, writesText.value, inheritWrites.value,
-    depends.value, related.value, parameters.value ?? null, body.value, status.value, autoMerge.value,
+    depends.value, related.value, parameters.value ?? null, body.value, status.value,
   ])
 }
 const pristine = formState()
@@ -399,16 +372,7 @@ async function onCancel() {
             </span>
           </label>
 
-          <label v-if="mode === 'edit'">
-            Auto-merge
-            <SelectMenu
-              v-model="autoMerge"
-              data-test="auto-merge"
-              label="Auto-merge"
-              :options="autoMergeOptions"
-            />
-            <span class="hint faint">Vypni u {{ taskGen }}, který mění hlídač nebo oprávnění.</span>
-          </label>
+          <p>Automatizace a výchozí harness nové Factory se nastavují na Přehledu — Na tomto počítači.</p>
 
           <label>
             Writes
@@ -442,18 +406,8 @@ async function onCancel() {
               <span class="parameter-name">
                 {{ SETTING_LABELS[key] ?? key }} <code class="key">{{ key }}</code>
               </span>
-              <SelectMenu
-                v-if="key === 'harness'" :model-value="parameterText(key)" :options="harnessOptions" label="Harness tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
-              <SelectMenu v-else-if="key === 'model'" :model-value="parameterText(key)" :options="modelOptions(parameterText('harness') || projectHarness)" label="Model tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
+              <SelectMenu v-if="key === 'model'" :model-value="parameterText(key)" :options="modelOptions(projectHarness)" label="Model tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
               <SelectMenu v-else-if="key === 'thinking'" :model-value="parameterText(key)" :options="thinkingOptions" :label="SETTING_LABELS[key] ?? key" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
-              <SelectMenu
-                v-else-if="['auto_continue', 'auto_merge'].includes(key)"
-                :model-value="parameterText(key)"
-                :data-test="`parameter-${key}`"
-                :label="SETTING_LABELS[key] ?? key"
-                :options="parameterFlagOptions"
-                @update:model-value="setParameterText(key, $event)"
-              />
               <input
                 v-else
                 :data-test="`parameter-${key}`"

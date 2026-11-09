@@ -650,3 +650,55 @@ def test_delete_archived_cleans_session_and_absent_worktree(
     assert not session.exists()
     assert kept.exists()
     assert all(path.exists() == (worktree_exists or shared_active) for path in projects)
+
+
+def test_local_off_during_fake_worker_keeps_accepted_run_and_blocks_next(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    from aifactory.run.errors import TaskRunError
+    from aifactory.run.policy import acceptance
+
+    home = tmp_path / "home"
+    monkeypatch.setenv("HAIFA_HOME", str(home))
+    root = make_repo(tmp_path / "repo")
+    accepted = threading.Event()
+    finish = threading.Event()
+    completed = threading.Event()
+    outcomes: list[str] = []
+
+    def fake_worker() -> None:
+        with acceptance(root):
+            outcomes.append("accepted")
+        accepted.set()
+        if not finish.wait(10):
+            outcomes.append("timeout")
+            return
+        outcomes.append("completed")
+        try:
+            with acceptance(root):
+                outcomes.append("unexpected next run")
+        except TaskRunError as exc:
+            outcomes.append(exc.code)
+        completed.set()
+
+    client = _client(root, tmp_path)
+    url = "/api/settings/local"
+    assert client.patch(url, json={"auto_continue": True}).status_code == 200
+    worker = threading.Thread(target=fake_worker)
+    worker.start()
+    try:
+        assert accepted.wait(10)
+        assert client.patch(url, json={"auto_continue": False}).status_code == 200
+        assert worker.is_alive()
+        assert outcomes == ["accepted"]
+        finish.set()
+        assert completed.wait(10)
+        assert outcomes == ["accepted", "completed", "auto_continue_disabled"]
+        assert _client(root, tmp_path).get(url).json()["data"]["settings"]["auto_continue"] is False
+    finally:
+        finish.set()
+        worker.join(timeout=10)
+        client.close()
