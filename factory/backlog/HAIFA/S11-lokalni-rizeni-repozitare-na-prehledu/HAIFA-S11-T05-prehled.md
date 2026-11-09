@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S11-T05
 title: Ovládání automatizací a harnessu na Přehledu
-status: todo
+status: done
 depends_on: [HAIFA-S11-T04]
 writes: [aifactory/]
 test_timeout: 1200
@@ -18,4 +18,5 @@ Hotovo: změna z Přehledu se okamžitě projeví v běžícím novém workeru, 
 ## Běhy
 
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-09 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/209 · náklady $0.00
 
