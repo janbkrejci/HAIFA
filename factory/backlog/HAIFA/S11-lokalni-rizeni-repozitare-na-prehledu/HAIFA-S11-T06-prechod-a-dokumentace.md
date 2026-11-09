@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S11-T06
 title: Převzetí legacy voleb a kompatibilita sdíleného backlogu
-status: todo
+status: done
 depends_on: [HAIFA-S11-T05]
 writes: [aifactory/, docs/, README.md]
 test_timeout: 1200
@@ -22,4 +22,5 @@ Kandidáti testů: backlog/test_backlog_auto_continue.py, test_backlog_auto_merg
 ## Běhy
 
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-09 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/210 · náklady $0.00
 
