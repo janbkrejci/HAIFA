@@ -18,9 +18,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from aifactory import oscompat
+from aifactory.config.source import GitError, git
 from aifactory.harness import settings as harness_settings
 from aifactory.home import haifa_home
-from aifactory.run.gitops import git
 
 
 class SettingsError(Exception):
@@ -48,8 +48,8 @@ def repository_identity(repo: Path) -> str:
     Deliberately uncached: moving/replacing a clone must not retain an old identity.
     """
     try:
-        common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    except (OSError, RuntimeError) as exc:
+        common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    except GitError as exc:
         raise SettingsError("invalid_config", str(exc), repo) from exc
     return os.path.normcase(str(Path(common).resolve()))
 

@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from aifactory.repo_settings import RepositorySettings, SettingsError
+from aifactory.repo_settings import RepositorySettings, SettingsError, repository_identity
 from aifactory.run.gitops import git
 
 
@@ -332,3 +333,22 @@ def test_merge_submission_serializes_disable(
             process.terminate()
         if process.pid is not None:
             process.join(5)
+
+
+def test_identity_reads_without_optional_locks(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    real_run = subprocess.run
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
+
+    def record(args: list[str], **kwargs: Any) -> Any:
+        calls.append((args, kwargs["env"]))
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record)
+    assert repository_identity(repo) == os.path.normcase(str((repo / ".git").resolve()))
+    assert len(calls) == 1
+    args, env = calls[0]
+    assert args == ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"]
+    assert env["GIT_OPTIONAL_LOCKS"] == "0"
+    assert env["PATH"] == os.environ["PATH"]
+    assert os.environ["GIT_OPTIONAL_LOCKS"] == "1"

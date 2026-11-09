@@ -17,6 +17,7 @@ from aifactory.cli import main
 from aifactory.config import load_run_config
 from aifactory.providers import git as pgit
 from aifactory.providers.github import GitHubProvider
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review import approve_task, clean_worktrees, flow
 from aifactory.review.automerge import _hosting_and_merge
 from aifactory.run import TaskPrRow, TaskRunStore, run_task
@@ -99,6 +100,7 @@ def test_approve_deletes_after_restack(
 
     monkeypatch.setattr(stack, "restack_dependents", restack)
     if merged_by == "auto-merge":
+        RepositorySettings(repo).update({"auto_merge": True})
         rc = load_run_config(repo)
         task = load_backlog(repo, rc.config.settings).by_id[T01]
         assert isinstance(task, Task) and run.pr is not None
