@@ -60,6 +60,49 @@ mimo spec daného tasku. Ostatním PR zůstává původní důvod odmítnutí.
 
 ## Dashboard a distribuce
 
+- **Lokální řízení repozitáře (S11):** provozní `auto_merge`, `auto_continue` a výchozí
+  `harness` patří dvojici HAIFA_HOME / místní klon. Sdílená služba
+  `aifactory.repo_settings.RepositorySettings` je nezávislá na web registry; CLI
+  `factory config local show|set --repo PATH --json`, dashboard i worker používají
+  stejná data a validaci. T01 zavádí službu; napojení runtime a UI v T02–T05 se vydá
+  společně, nikoli jako samostatný release s neúčinnými ovladači.
+- **Identita a životnost:** klíč je SHA-256 kanonické absolutní cesty common Git dir
+  (`git rev-parse --path-format=absolute --git-common-dir`, resolve symlinků a Windows
+  normcase). Worktrees sdílejí záznam, nezávislé klony nikoli, ani se stejným remote.
+  ID dashboardu ani remote do identity nevstupují. Jiný HAIFA_HOME má jiné volby.
+  Přesun common dir vytváří novou identitu s vypnutými automatizacemi; původní záznam
+  zůstane osiřelý, nemaže se ani nemigruje při čtení. Odstranění klonu záznam nemaže;
+  vrácení klonu na tutéž kanonickou cestu záznam znovu použije. Při nahrazení klonu
+  na stejné cestě je nutné lokální volby výslovně zkontrolovat či resetovat.
+- **Formát a precedence:** `<HAIFA_HOME>/repositories/<klíč>.json` obsahuje přesně
+  `version: 1`, booleany `auto_merge`, `auto_continue` a `harness: null|claude|codex|pi`.
+  Chybějící soubor znamená false/false/null; null dědí místní `harnesses.json`
+  (`default_harness`, bez něj null a další výběr řeší harness resolver). Explicitní
+  false je konečné. Lokální volby nepřebírají true ani harness/model/thinking
+  z backlogu; legacy metadata zůstávají pro explicitní náhled/import a staré verze.
+  Harness pro konkrétní běh může výslovně změnit CLI override; další agent/step
+  bindingy řeší T04. `base_pr_merge` zůstává samostatná politika.
+- **Chyby a zápis:** read je čisté čtení bez cache, migrace, obnovy či vytváření složek.
+  Neplatný typ, neúplný záznam, neznámý harness a vadný JSON vyvolají
+  `repo_settings_invalid`, neznámá celočíselná verze `repo_settings_version`, I/O
+  `repo_settings_io`. Neplatný patch vrací `invalid_value`. Chyba se předá volajícímu;
+  nikdy se nepoužije legacy true ani poslední platná hodnota umožňující start.
+  Neznámé verze ani poškozené záznamy update nepřepíše. CLI vrací standardní envelope
+  `{ok,data,error,warnings}`, při chybě exit 2. Úspěšné data obsahuje identity, path,
+  settings a effective_harness. Set mění pouze zadaná pole, pod trvalým procesovým
+  zámkem `<klíč>.lock` znovu načte stav, validuje a zapíše privátní dočasný soubor ve
+  stejné složce, flush/fsync a os.replace. Různá pole se při souběhu neztratí, stejné
+  pole vyhraje posledním zápisem. Selhání uložení ponechá předchozí záznam.
+- **Bariéra auto continue pro T02:** update i `automatic_start()` drží stejný
+  meziprocesový zámek. Scheduler smí rezervovat/přijmout/spawnout automatický běh
+  pouze uvnitř scope s výsledkem true; nesmí odložit přijetí za uvolnění zámku.
+  False nebo chyba start zakazuje. Potvrzené vypnutí tedy předchází všem pozdějším
+  odmítnutým startům; už přijaté běhy doběhnou. Platí pro doplnění slotů, retry/heal
+  i řetěz původně spuštěný přes --auto. Ruční start bariéru nepoužívá, zapnutí samo
+  práci nespustí, auto merge se vypnutím nemění. Scope se nesmí vnořovat ani z něj
+  znovu volat update. Staré procesy vyžadují před upgradem doběhnout/zastavit a pak
+  restartovat dashboard i workery; downgrade opět používá legacy pravidla.
+
 - **Více repozitářů:** jeden `factory obs` obsluhuje repozitáře z registru `dashboard.yaml` v domově HAIFA. Port je jen v registru. `.factory/`, backlog a trace DB zůstávají v repu.
 - **Tajný terminál:** globální `GET /api/terminal` vrací dostupnost, domovský adresář a shell; `POST /api/terminal/exec` streamuje NDJSON výstup a návratový kód. Bez přihlášení, dostupný pouze při loopback `allowed_hosts` i loopback adrese klienta; síťový dashboard jej nikdy nepovolí. Platí běžná ochrana Origin, Sec-Fetch-Site a JSON. Příkazy ani výstup se neukládají do repa či trace DB. Samostatné `cd` řeší server, cwd drží klient. Odpojení nebo limit 600 s ukončí skupinu procesů; bez TTY a stdin. POSIX navíc nabízí interaktivní login shell nad PTY: `POST /api/terminal/sessions` vytvoří sezení (`cols`, `rows` 1–1000, volitelné `cwd`, výchozí domov); GET terminálu hlásí schopnost `pty`. `GET /api/terminal/sessions/{id}/stream` posílá surové bajty jedinému odběrateli, `POST .../input` zapisuje UTF-8, `POST .../resize` mění velikost a jádro oznamuje SIGWINCH skupině popředí. `DELETE .../{id}`, odpojení nebo konec shellu ukončí skupinu procesů, zavře FD a odstraní sezení; bez časového limitu. Nejvýš čtyři sezení (429), druhý stream 409, neznámé id 404; Windows používá ConPTY přes windowsovou závislost pywinpty, shell z `%COMSPEC%` a čtení ve vlákně; bez dostupného winpty vrací 501. Shell má controlling TTY, `TERM=xterm-256color`, `COLORTERM=truecolor`. Všechny nové routy zachovávají loopback kontrolu i write guard; vstup ani výstup se neukládají.
 - **AI průvodce z topbaru:** každé otevření začne nové vlákno; minulá vlákna zůstávají dostupná v historii.
