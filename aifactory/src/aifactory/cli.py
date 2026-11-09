@@ -33,7 +33,7 @@ from aifactory.home import load_env_file
 from aifactory.skill.envelope import envelope_fail, envelope_ok, strip_payload
 
 if TYPE_CHECKING:
-    from aifactory.backlog import Backlog, ContainerWriteResult
+    from aifactory.backlog import Backlog
     from aifactory.config.commit import ConfigCommitError
     from aifactory.engine.role_registry import RoleRegistry
     from aifactory.harness.config import SSSFConfig
@@ -899,7 +899,19 @@ def _add_config_commands(parser: argparse.ArgumentParser) -> None:
     local_set.add_argument("--auto-merge", choices=("on", "off"))
     local_set.add_argument("--auto-continue", choices=("on", "off"))
     local_set.add_argument("--harness", choices=("claude", "codex", "pi", "inherit"))
-    for child in (local_show, local_set):
+    legacy = local_commands.add_parser(
+        "legacy", help="preview legacy task/step/project values; writes nothing"
+    )
+    take = local_commands.add_parser(
+        "import", help="explicitly import legacy values into HAIFA_HOME"
+    )
+    take.add_argument(
+        "--overwrite", action="store_true", help="explicitly replace existing local settings"
+    )
+    take.add_argument("--auto-merge", choices=("on", "off"))
+    take.add_argument("--auto-continue", choices=("on", "off"))
+    take.add_argument("--harness", choices=("claude", "codex", "pi", "inherit"))
+    for child in (local_show, local_set, legacy, take):
         child.add_argument("--repo", metavar="PATH")
         child.add_argument("--json", action="store_true", help="print the JSON envelope")
     roster = sub.add_parser("roster", help="show or edit local agent harness/model/thinking")
@@ -1222,7 +1234,9 @@ def _config_local(args: argparse.Namespace) -> int:
         return 0
     try:
         service = RepositorySettings(Path(args.repo) if args.repo else Path.cwd())
-        if args.local_command == "set":
+        if args.local_command == "legacy":
+            return _emit_ok(service.legacy_preview())
+        if args.local_command in ("set", "import"):
             changes: dict[str, object] = {}
             for name in ("auto_merge", "auto_continue"):
                 supplied = getattr(args, name)
@@ -1230,6 +1244,8 @@ def _config_local(args: argparse.Namespace) -> int:
                     changes[name] = supplied == "on"
             if args.harness is not None:
                 changes["harness"] = None if args.harness == "inherit" else args.harness
+            if args.local_command == "import":
+                return _emit_ok(service.import_legacy(changes, overwrite=args.overwrite))
             return _emit_ok(service.update_and_show(changes))
         return _emit_ok(service.show())
     except SettingsError as exc:
@@ -1368,12 +1384,10 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     )
     auto = sub.add_parser(
         "auto-continue",
-        help="switch auto-continue on, off or back to inherited for a project or step",
-        description="Write (--on/--off) or remove (--inherit) 'auto_continue' in the index.md "
-        "of a project or step. With auto_continue: true, a task run that opened its PR is "
-        "followed by the next ready task that has auto_continue: true too; a chain never "
-        "starts a task with it off. The change is written to the working tree; runs read the "
-        "backlog from base, so commit it first.",
+        help="deprecated; use factory config local set --auto-continue on|off",
+        description="Deprecated legacy write. Use factory config local set --auto-continue "
+        "on|off --repo PATH. Preview old values with factory config local legacy; "
+        "explicitly take them with factory config local import. Nothing is committed.",
     )
     auto.add_argument("id", metavar="ID", help="project or step id")
     mode = auto.add_mutually_exclusive_group(required=True)
@@ -1388,14 +1402,10 @@ def _add_backlog_commands(parser: argparse.ArgumentParser) -> None:
     )
     merge = sub.add_parser(
         "auto-merge",
-        help="switch auto-merge on, off or back to inherited for a project or step",
-        description="Write (--on/--off) or remove (--inherit) 'auto_merge' in the index.md "
-        "of a project or step (a task sets it with 'factory task edit ID --auto-merge'). "
-        "With auto_merge: true, a succeeded run whose last review approved and whose PR "
-        "merges cleanly with no red checks is approved and merged like 'factory task "
-        "approve'; a workflow without a review phase is never merged automatically. "
-        "Auto-continue then starts the next task only after the merge. The change is "
-        "written to the working tree; runs read the backlog from base, so commit it first.",
+        help="deprecated; use factory config local set --auto-merge on|off",
+        description="Deprecated legacy write. Use factory config local set --auto-merge "
+        "on|off --repo PATH. Preview old values with factory config local legacy; "
+        "explicitly take them with factory config local import. Nothing is committed.",
     )
     merge.add_argument("id", metavar="ID", help="project or step id")
     merge_mode = merge.add_mutually_exclusive_group(required=True)
@@ -1654,49 +1664,24 @@ def _backlog_sync(args: argparse.Namespace) -> int:
 
 
 def _backlog_auto_continue(args: argparse.Namespace) -> int:
-    from aifactory.backlog import set_auto_continue
-
-    return _backlog_flag(args, "auto_continue", set_auto_continue, "backlog auto-continue")
+    return _deprecated_operating_flag(args, "auto_continue")
 
 
 def _backlog_auto_merge(args: argparse.Namespace) -> int:
-    from aifactory.backlog import set_auto_merge
-
-    return _backlog_flag(args, "auto_merge", set_auto_merge, "backlog auto-merge")
+    return _deprecated_operating_flag(args, "auto_merge")
 
 
-def _backlog_flag(
-    args: argparse.Namespace,
-    key: str,
-    setter: Callable[[Path, str, bool | None], ContainerWriteResult],
-    command: str,
-) -> int:
-    from aifactory.backlog import TaskEditError
-    from aifactory.config import ConfigError
-
-    enabled = {"on": True, "off": False, "inherit": None}[args.auto_mode]
-    try:
-        result = setter(_backlog_root(args.repo), args.id, enabled)
-    except (ConfigError, TaskEditError) as exc:
-        return _fail_from_exception(exc, args.json, f"factory {command}")
-    container = result.container
-    value = container.defaults.get(key)
+def _deprecated_operating_flag(args: argparse.Namespace, key: str) -> int:
+    option = key.replace("_", "-")
+    message = (
+        f"Legacy {option} writes are deprecated. Use factory config local set "
+        f"--{option} on|off --repo PATH; preview with factory config local legacy --repo PATH "
+        "and explicitly import with factory config local import --repo PATH."
+    )
     if args.json:
-        data = {
-            "changed": result.changed,
-            "id": container.id,
-            "level": container.level,
-            "path": result.path,
-            key: value if isinstance(value, bool) else None,
-            "issues": [i.to_dict() for i in result.issues],
-        }
-        return _emit_ok(data, _problem_warnings(len(result.issues)))
-    if not result.changed:
-        print(f"unchanged {container.id}")
-    else:
-        label = {"on": "on", "off": "off", "inherit": "inherited"}[args.auto_mode]
-        print(f"{key} {label} for {container.id} ({result.path})")
-    return 0
+        return _emit_fail("deprecated_option", message, exit_code=2)
+    print(message, file=sys.stderr)
+    return 2
 
 
 def _backlog_commit(args: argparse.Namespace) -> int:
@@ -1997,7 +1982,8 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
         "edit",
         help="change header fields of a task",
         description="Change title, status (todo|cancelled, or done for a person's task), "
-        "workflow, writes, auto_merge or assignee of a task.",
+        "workflow, writes or assignee of a task. --auto-merge is deprecated; "
+        "use factory config local set --auto-merge on|off.",
     )
     edit.add_argument("task_id", metavar="ID", help="task id")
     edit.add_argument("--title", metavar="TEXT", help="new title")
@@ -2015,8 +2001,7 @@ def _add_task_commands(parser: argparse.ArgumentParser) -> None:
     edit.add_argument(
         "--auto-merge",
         choices=("on", "off", "inherit"),
-        help="set auto_merge of the task (off, e.g. when it changes the guard or permissions) "
-        "or remove it (inherit)",
+        help="deprecated; use factory config local set --auto-merge on|off",
     )
     edit.add_argument(
         "--assignee",
@@ -2553,6 +2538,8 @@ def _task_write(args: argparse.Namespace, root: Path) -> int:
     from aifactory.backlog import add_task, blocks, edit_task, link_task, task_to_json
 
     command: str = args.task_command
+    if command == "edit" and args.auto_merge is not None:
+        return _deprecated_operating_flag(args, "auto_merge")
     if command == "add":
         result = add_task(
             root,

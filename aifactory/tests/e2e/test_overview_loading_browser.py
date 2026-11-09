@@ -1,6 +1,7 @@
 """A slow repository stays in a loading card until its overview arrives."""
 
 import json
+from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
@@ -12,7 +13,7 @@ pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
 
 
 def test_slow_repo_loading_overlay() -> None:
-    item = {
+    item: dict[str, Any] = {
         "id": "haifa",
         "name": "HAIFA",
         "path": "C:/repos/HAIFA",
@@ -60,5 +61,90 @@ def test_slow_repo_loading_overlay() -> None:
             page.locator('[data-test="overview-refresh"]').click()
             expect(page.locator('[data-test="repo-loading"]')).to_have_count(0)
             expect(page.locator('[data-test="calm-repo"][data-repo="haifa"]')).to_be_visible()
+        finally:
+            browser.close()
+
+
+def test_overview_legacy_preview_requires_explicit_repository_decision() -> None:
+    settings = {
+        "settings": {"version": 1, "auto_merge": False, "auto_continue": False, "harness": None},
+        "effective_harness": None,
+    }
+    item: dict[str, Any] = {
+        "id": "haifa",
+        "name": "HAIFA",
+        "path": "C:/repos/HAIFA",
+        "state": "ok",
+        "config": None,
+        "factory": None,
+        "tasks": None,
+        "running": [],
+        "review": [],
+        "failed": [],
+        "warnings": [],
+        "last_activity": None,
+        "local_settings": settings,
+    }
+    preview = {
+        "local_exists": False,
+        "nodes": [
+            {
+                "id": "P",
+                "level": "project",
+                "values": {"auto_merge": {"value": True, "origin": {"id": "P"}}},
+            },
+            {
+                "id": "P-S-T01",
+                "level": "task",
+                "values": {"auto_merge": {"value": False, "origin": {"id": "P-S-T01"}}},
+            },
+        ],
+        "proposals": {
+            "auto_merge": {"conflict": True, "value": None},
+            "auto_continue": {"conflict": False, "value": False},
+            "harness": {"conflict": False, "value": None},
+        },
+    }
+    submitted: list[object] = []
+    fallback = _server("live")
+
+    def serve(route: Route) -> None:
+        path = urlsplit(route.request.url).path
+        data: dict[str, Any]
+        if path == "/api/overview":
+            data = {"repos": [item]}
+        elif path.endswith("/settings/local/legacy"):
+            if route.request.method == "POST":
+                submitted.append(route.request.post_data_json)
+                data = settings
+            else:
+                data = preview
+        else:
+            fallback(route)
+            return
+        route.fulfill(
+            content_type="application/json",
+            body=json.dumps({"ok": True, "data": data, "error": None, "warnings": []}),
+        )
+
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        try:
+            page = browser.new_page()
+            page.route("**/*", serve)
+            page.goto("http://haifa.test/#/overview")
+            controls = page.locator('[data-test="local-repo-controls"]')
+            controls.locator('[data-test="legacy-preview"]').click()
+            expect(controls.locator('[data-test="legacy-panel"]')).to_contain_text("P-S-T01")
+            take = controls.locator('[data-test="legacy-import"]')
+            expect(take).to_be_disabled()
+            assert submitted == []
+            controls.locator('[data-test="legacy-choice-auto_merge"]').click()
+            page.get_by_role("option", name="Vypnuto", exact=True).click()
+            expect(take).to_be_enabled()
+            take.click()
+            expect(controls.locator('[data-test="legacy-panel"]')).to_have_count(0)
+            expect(controls.locator('[data-test="local-auto-merge"]')).not_to_be_checked()
+            assert submitted == [{"choices": {"auto_merge": False}, "overwrite": False}]
         finally:
             browser.close()

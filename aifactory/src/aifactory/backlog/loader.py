@@ -367,12 +367,17 @@ def iter_tasks(backlog: Backlog) -> Iterator[Task]:
 
 
 def load_backlog(
-    root: Path, settings: ProjectSettings | None = None, *, create_missing: bool = True
+    root: Path,
+    settings: ProjectSettings | None = None,
+    *,
+    create_missing: bool = True,
+    synchronize_mirror: bool = True,
 ) -> Backlog:
     """Read the backlog tree; in remote mode synchronize its local Markdown mirror.
 
     A missing backlog root without a wildcard is created silently unless
     ``create_missing`` is False (then it is a ``missing_backlog_dir`` issue).
+    ``synchronize_mirror=False`` reads preserved files without remote database writes.
     Raises ``ConfigError`` when ``settings`` is not given and ``.factory/config.yaml``
     is invalid.
     """
@@ -380,7 +385,8 @@ def load_backlog(
         settings = load_settings(root)
     from aifactory.database.backlog import synchronize
 
-    synchronize(root, settings)
+    if synchronize_mirror:
+        synchronize(root, settings)
     loader = _Loader(root, settings, create_missing)
     containers = loader.load_root()
     backlog = Backlog(root=root, settings=settings, containers=containers, issues=loader.issues)

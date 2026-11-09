@@ -72,32 +72,18 @@ def test_unknown_container(tmp_path: Path) -> None:
     assert info.value.code == "unknown_container" and info.value.exit_code == 2
 
 
-def test_cli_text_and_json(tmp_path: Path, capsys: Capsys) -> None:
+@pytest.mark.parametrize("mode", ["--on", "--off", "--inherit"])
+def test_cli_text_and_json(tmp_path: Path, capsys: Capsys, mode: str) -> None:
     root = sample_repo(tmp_path)
-    code = main(["backlog", "auto-continue", "M01-S01", "--on", "--repo", str(root)])
-    assert code == 0
-    assert capsys.readouterr().out.strip() == f"auto_continue on for M01-S01 ({INDEX})"
-
-    code = main(["backlog", "auto-continue", "M01-S01", "--on", "--repo", str(root)])
-    assert code == 0
-    assert capsys.readouterr().out.strip() == "unchanged M01-S01"
-
-    code = main(["backlog", "auto-continue", "M01-S01", "--off", "--json", "--repo", str(root)])
-    env = read_envelope(capsys)
-    data = env["data"]
-    assert code == 0
-    assert env["ok"] is True and data["changed"] is True
-    assert (data["id"], data["path"], data["auto_continue"]) == ("M01-S01", INDEX, False)
-    assert data["level"] == "step"
-
-    code = main(["backlog", "auto-continue", "M01-S01", "--inherit", "--json", "--repo", str(root)])
-    data = read_envelope(capsys)["data"]
-    assert code == 0 and data["auto_continue"] is None
-
-    code = main(["backlog", "auto-continue", "M09", "--on", "--json", "--repo", str(root)])
-    data = read_envelope(capsys)
-    assert code == 2
-    assert data["error"]["code"] == "unknown_container"
+    before = (root / INDEX).read_bytes()
+    args = ["backlog", "auto-continue", "M01-S01", mode, "--repo", str(root)]
+    assert main(args) == 2
+    assert "factory config local set --auto-continue" in capsys.readouterr().err
+    assert main([*args, "--json"]) == 2
+    error = read_envelope(capsys)["error"]
+    assert error["code"] == "deprecated_option"
+    assert "factory config local import" in error["message"]
+    assert (root / INDEX).read_bytes() == before
 
 
 def test_cli_needs_a_mode(tmp_path: Path) -> None:

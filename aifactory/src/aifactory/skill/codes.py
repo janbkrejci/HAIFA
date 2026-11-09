@@ -22,6 +22,7 @@ class ErrorCode:
 
 
 _CODES: tuple[tuple[str, str, str], ...] = (
+    ("deprecated_option", "2", "legacy operating write; use factory config local set or import"),
     ("repo_settings_invalid", "2", "local repository or inherited harness settings are invalid"),
     ("repo_settings_version", "2", "local repository settings version is unsupported"),
     ("repo_settings_io", "2", "local repository settings could not be read or saved"),

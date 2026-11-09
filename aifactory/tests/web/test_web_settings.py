@@ -267,3 +267,30 @@ def test_saving_docs_root_drops_old_folder_keys(client: TestClient, root: Path) 
     assert saved["docs_root"] == "work"
     assert not {"backlog_dir", "specs_dir", "docs_dir"} & saved.keys()
     _post(client, {"shared": {"backlog_dir": "x"}}, 400)
+
+
+def test_legacy_local_preview_import_and_preservation(client: TestClient, root: Path) -> None:
+    from aifactory.home import haifa_home
+    from aifactory.repo_settings import RepositorySettings
+
+    service = RepositorySettings(root, haifa_home())
+    before = {p: p.read_bytes() for p in (root / "backlog").rglob("*.md")}
+    url = "/api/settings/local/legacy"
+    preview = _get(client, url)["data"]
+    assert preview["nodes"]
+    assert not service.path.exists()
+    choices = {"auto_merge": False, "auto_continue": False, "harness": None}
+    response = _check(client.post(url, json={"choices": choices}), 200)
+    assert response["data"]["settings"]["auto_merge"] is False
+    saved = service.path.read_bytes()
+    _check(client.post(url, json={"choices": {"auto_merge": True}}), 200)
+    assert service.path.read_bytes() == saved
+    _check(
+        client.post(url, json={"choices": {**choices, "auto_merge": True}, "overwrite": True}), 200
+    )
+    assert service.read().auto_merge is True
+    saved = service.path.read_bytes()
+    _check(client.post(url, json={"choices": {"auto_merge": "yes"}, "overwrite": True}), 422)
+    assert service.path.read_bytes() == saved
+    _check(client.post(url, json={"overwrite": "yes"}), 422)
+    assert {p: p.read_bytes() for p in before} == before

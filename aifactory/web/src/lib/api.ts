@@ -370,6 +370,18 @@ export async function patchLocalRepoSettings(id: string, changes: Partial<LocalR
   })
 }
 
+export interface LegacyRepoPreview {
+  local_exists: boolean
+  nodes: { id: string; level: string; values: Record<string, { value: unknown; origin: unknown }> }[]
+  proposals: Record<'auto_merge' | 'auto_continue' | 'harness', { conflict: boolean; value: boolean | string | null }>
+}
+export function fetchLegacyRepoSettings(id: string): Promise<LegacyRepoPreview> {
+  return request(`/api/repos/${encodeURIComponent(id)}/settings/local/legacy`)
+}
+export function importLegacyRepoSettings(id: string, choices: Record<string, unknown>, overwrite: boolean): Promise<LocalRepoSettings> {
+  return request(`/api/repos/${encodeURIComponent(id)}/settings/local/legacy`, postInit({ choices, overwrite }))
+}
+
 /** One repository of GET /api/overview. */
 export interface OverviewRepo {
   local_settings?: LocalRepoSettings | null
