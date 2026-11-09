@@ -18,9 +18,9 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, ValidationError
 
 from aifactory import oscompat
+from aifactory.config.source import GitError, git
 from aifactory.harness import settings as harness_settings
 from aifactory.home import haifa_home
-from aifactory.run.gitops import git
 
 
 class SettingsError(Exception):
@@ -48,8 +48,8 @@ def repository_identity(repo: Path) -> str:
     Deliberately uncached: moving/replacing a clone must not retain an old identity.
     """
     try:
-        common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    except (OSError, RuntimeError) as exc:
+        common = git(repo, "rev-parse", "--path-format=absolute", "--git-common-dir").strip()
+    except GitError as exc:
         raise SettingsError("invalid_config", str(exc), repo) from exc
     return os.path.normcase(str(Path(common).resolve()))
 
@@ -156,11 +156,24 @@ class RepositorySettings:
             except (OSError, ValueError) as exc:
                 raise SettingsError("repo_settings_invalid", str(exc), self.path) from exc
             effective_harness = machine.default_harness if machine else None
+        merge_policy = self.merge_policy(value)
+        if settings is None and not self.path.exists():
+            merge_policy["source"] = "default"
         return {
             "identity": self.identity,
             "path": str(self.path),
             "settings": value.model_dump(),
             "effective_harness": effective_harness,
+            "auto_merge_policy": merge_policy,
+        }
+
+    def merge_policy(self, settings: RepoSettings | None = None) -> dict[str, Any]:
+        """Effective automatic merge value and its local source; never consult backlog."""
+        value = self.read() if settings is None else settings
+        return {
+            "value": value.auto_merge,
+            "source": "repository" if settings is not None or self.path.exists() else "default",
+            "path": str(self.path),
         }
 
     @contextlib.contextmanager
@@ -173,3 +186,13 @@ class RepositorySettings:
         """
         with self._locked():
             yield self.read().auto_continue
+
+    @contextlib.contextmanager
+    def automatic_merge(self) -> Iterator[bool]:
+        """Serialize the final policy check and hosting merge submission with updates.
+
+        Never hold this lock while waiting for CI. Once the hosting request is sent,
+        switching off cannot withdraw it; update waits for the submission to return.
+        """
+        with self._locked():
+            yield self.read().auto_merge

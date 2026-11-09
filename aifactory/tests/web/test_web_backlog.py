@@ -25,6 +25,7 @@ from backlog_fixture import (
 from starlette.testclient import TestClient
 
 import aifactory.backlog
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run.store import TaskRunStore
 from aifactory.skill import envelope_problems
 from aifactory.web import create_app
@@ -206,10 +207,12 @@ def test_open_pr_waits_for_review_without_auto_merge(tmp_path: Path) -> None:
     assert data["state_counts"]["awaiting merge"] == 0
 
 
-def test_open_pr_waits_for_automerge_with_inherited_auto_merge(tmp_path: Path) -> None:
+def test_open_pr_waits_for_local_auto_merge(tmp_path: Path) -> None:
     root = make_backlog_repo(tmp_path / "repo", with_trace=True)
     client = _client(root, tmp_path)
     _post(client, "/api/backlog/containers/M02/auto-merge", {"mode": "on"})
+    assert _states(_get(client, "/api/backlog")["data"])[B3] == "in review"
+    RepositorySettings(root).update({"auto_merge": True})
     data = _get(client, "/api/backlog")["data"]
     assert _states(data)[B3] == "awaiting merge"
     assert (data["state_counts"]["in review"], data["state_counts"]["awaiting merge"]) == (0, 1)
@@ -220,9 +223,12 @@ def test_open_pr_waits_for_automerge_with_inherited_auto_merge(tmp_path: Path) -
     assert _get(client, "/api/backlog?status=in%20review")["data"]["tasks"] == []
     detail = _get(client, f"/api/backlog/tasks/{B3}")["data"]
     assert detail["task"]["board_state"] == "awaiting merge"
+    assert detail["task"]["auto_merge_policy"] == RepositorySettings(root).merge_policy()
 
-    # the task's own switch wins over the inherited one
+    # Backlog flags do not override the repository policy.
     _post(client, f"/api/backlog/tasks/{B3}/edit", {"auto_merge": False})
+    assert _states(_get(client, "/api/backlog")["data"])[B3] == "awaiting merge"
+    RepositorySettings(root).update({"auto_merge": False})
     assert _states(_get(client, "/api/backlog")["data"])[B3] == "in review"
 
 
@@ -230,6 +236,7 @@ def test_failed_auto_merge_puts_the_pr_back_to_review(tmp_path: Path) -> None:
     root = make_backlog_repo(tmp_path / "repo", with_trace=True)
     client = _client(root, tmp_path)
     _post(client, f"/api/backlog/containers/{S2}/auto-merge", {"mode": "on"})
+    RepositorySettings(root).update({"auto_merge": True})
     assert _states(_get(client, "/api/backlog")["data"])[B3] == "awaiting merge"
     store = TaskRunStore(root / ".factory" / "trace.db")
     try:

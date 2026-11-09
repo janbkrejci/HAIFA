@@ -5,12 +5,13 @@ from __future__ import annotations
 import json
 import multiprocessing
 import os
+import subprocess
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from aifactory.repo_settings import RepositorySettings, SettingsError
+from aifactory.repo_settings import RepositorySettings, SettingsError, repository_identity
 from aifactory.run.gitops import git
 
 
@@ -296,3 +297,58 @@ def test_legacy_true_never_becomes_a_default(repo: Path, tmp_path: Path) -> None
     service.path.write_text("broken", encoding="utf-8")
     with pytest.raises(SettingsError):
         service.read()
+
+
+@pytest.mark.parametrize("auto_continue", [False, True])
+def test_merge_submission_serializes_disable(
+    repo: Path, tmp_path: Path, auto_continue: bool
+) -> None:
+    ctx = multiprocessing.get_context("spawn")
+    home = tmp_path / "home"
+    service = RepositorySettings(repo, home)
+    service.update({"auto_merge": True, "auto_continue": auto_continue})
+    ready, proceed, done = ctx.Event(), ctx.Event(), ctx.Event()
+    process = ctx.Process(
+        target=_patch_process, args=(repo, home, {"auto_merge": False}, ready, proceed, done)
+    )
+    try:
+        with service.automatic_merge() as allowed:
+            assert allowed is True
+            process.start()
+            assert ready.wait(15)
+            proceed.set()
+            assert not done.wait(0.2)
+        assert done.wait(15)
+        process.join(10)
+        assert process.exitcode == 0
+        with service.automatic_merge() as allowed:
+            assert allowed is False
+        assert service.read().auto_continue is auto_continue
+        service.path.write_text("broken", encoding="utf-8")
+        with pytest.raises(SettingsError):
+            with service.automatic_merge():
+                pytest.fail("invalid policy must never permit a submission")
+    finally:
+        if process.is_alive():
+            process.terminate()
+        if process.pid is not None:
+            process.join(5)
+
+
+def test_identity_reads_without_optional_locks(repo: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    calls: list[tuple[list[str], dict[str, str]]] = []
+    real_run = subprocess.run
+    monkeypatch.setenv("GIT_OPTIONAL_LOCKS", "1")
+
+    def record(args: list[str], **kwargs: Any) -> Any:
+        calls.append((args, kwargs["env"]))
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", record)
+    assert repository_identity(repo) == os.path.normcase(str((repo / ".git").resolve()))
+    assert len(calls) == 1
+    args, env = calls[0]
+    assert args == ["git", "rev-parse", "--path-format=absolute", "--git-common-dir"]
+    assert env["GIT_OPTIONAL_LOCKS"] == "0"
+    assert env["PATH"] == os.environ["PATH"]
+    assert os.environ["GIT_OPTIONAL_LOCKS"] == "1"

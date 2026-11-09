@@ -43,3 +43,12 @@ def acceptance(repo: Path, automatic: bool = True) -> Iterator[None]:
             yield
     except SettingsError as exc:
         raise TaskRunError(exc.code, str(exc)) from exc
+
+
+def merge_enabled(repo: Path) -> bool:
+    from aifactory.repo_settings import RepositorySettings, SettingsError
+
+    try:
+        return RepositorySettings(repo).read().auto_merge
+    except SettingsError as exc:
+        raise TaskRunError(exc.code, str(exc)) from exc

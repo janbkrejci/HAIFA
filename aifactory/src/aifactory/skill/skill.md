@@ -803,10 +803,9 @@ before and after its pull request was merged. The agent's prompts are overridden
    done without changes and the chain goes on; every other kind stops the chain as before.
    Each action is in `data.chain.events` (`action`: `fallback`, `retry` or `close`, `ok`,
    `text`), in `task_chains.events` and on the dashboard's Overview.
-6. Auto-merge (`auto_merge: true`, inherited project -> step -> task; set it with
-   `factory backlog auto-merge ID --on|--off|--inherit` or on a task with
-   `factory task edit ID --auto-merge on|off|inherit`, e.g. off for a task that changes
-   the guard or permissions): after the run its PR is approved and merged like
+6. Auto-merge is a repository-local choice in HAIFA_HOME, set with
+   `factory config local set --auto-merge on|off`. Backlog flags do not control it.
+   After the run its PR is approved and merged like
    `factory task approve` (`merged_by: auto-merge` in `task_prs`) only when the run
    `succeeded`, the workflow has a review phase whose last review approved with no blocking
    or unmet item, the PR merges cleanly and its checks finished with none red. Running
@@ -815,7 +814,13 @@ before and after its pull request was merged. The agent's prompts are overridden
    review is never merged automatically. Otherwise `data.auto_merge` (`merged`, `code`,
    `reason`) says why and the PR waits for `factory task approve`. With auto-continue the
    next task starts only after the merge; a PR that was not merged stops the chain
-   (`not_merged`).
+   (`not_merged`). The local value is read again while waiting for CI and immediately
+   before the hosting merge, serialized with settings updates. Off leaves the PR open;
+   a status-done commit already pushed for CI stays on its branch. A hosting merge
+   request already submitted cannot be withdrawn. Manual approve is explicit and
+   independent of this flag and `base_pr_merge`. Auto continue off does not prevent
+   finishing the current PR when auto merge stays on; changing auto merge never changes
+   auto continue. Missing settings default to off; invalid settings stop automation.
 7. Parallel runs (`max_parallel_runs` in `.factory/config.yaml`, whole number ≥ 1,
    default 1): with 1 the chain runs one task after another. Above 1 the chain keeps up to
    that many slots taken (each run a separate `factory task run` process) and refills a
@@ -941,7 +946,7 @@ the network (RPC failed, HTTP2 framing, remote end hung up, timeout) is retried 
 with a pause, including hosting server errors (HTTP 5xx, Internal Server Error); a rejected
 push (non-fast-forward, rights, protected branch or hook) is not.
 
-After publication, effective `auto_merge` merges the PR under the same review and CI
+After publication, repository-local `auto_merge` merges the PR under the same review and CI
 conditions as `task run`, including conflict resolution and `auto_merge_error` on failure.
 The same auto-continue chain then selects ready tasks in kanban order and respects slots
 and `max_parallel_runs`. No `--auto` flag is needed: inherited `auto_continue` applies.

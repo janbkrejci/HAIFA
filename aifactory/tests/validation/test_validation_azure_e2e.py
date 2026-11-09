@@ -11,7 +11,6 @@ import pytest
 
 from aifactory.backlog import Task, load_backlog
 from aifactory.config.settings import ProjectSettings
-from aifactory.run.queue import auto_merge_enabled
 from validation import azure_e2e
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "providers"))
@@ -185,8 +184,6 @@ def test_backlog_has_two_dependent_auto_tasks(tmp_path: Path) -> None:
     first, second = (backlog.by_id[t[0]] for t in azure_e2e.TASKS)
     assert isinstance(first, Task) and isinstance(second, Task)
     assert list(second.depends_on) == [first.id]
-    for task in (first, second):
-        assert auto_merge_enabled(task)
     rel = azure_e2e.task_path("factory", second.id)
     assert rel.endswith(f"/{second.id}-second.md")
 

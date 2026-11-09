@@ -1,7 +1,7 @@
 """Auto-merge: approve and merge a task's PR right after its run, without the operator.
 
-With ``auto_merge: true`` inherited by the task (task, step or project
-``index.md``), ``run_chain`` calls ``try_auto_merge`` after the run. It merges
+With repository-local ``auto_merge`` enabled, ``run_chain`` calls
+``try_auto_merge`` after the run. It merges
 the PR the same way ``factory task approve`` does (``approve_task``: the
 ``status: done`` commit, push, merge, ``task_prs`` merged, base caught up,
 worktrees removed), with ``merged_by == "auto-merge"``, but only when all holds:
@@ -200,6 +200,10 @@ def try_auto_merge(
     code: CodeRunner | None = None,
 ) -> AutoMergeResult:
     """Approve and merge the PR of `result` when every condition holds; never raises for that."""
+    try:
+        review_flow.require_auto_merge(repo)
+    except ReviewError as exc:
+        return AutoMergeResult(False, exc.code, exc.message, result.pr.url if result.pr else None)
     pr = result.pr
     if result.run.state != SUCCEEDED:
         return AutoMergeResult(
@@ -246,6 +250,7 @@ def resolve_and_merge(
         return run, AutoMergeResult(False, code_, reason, pr.url)
 
     try:
+        review_flow.require_auto_merge(repo)
         resolved = review_flow.resolve_task(
             repo,
             task.id,
@@ -343,12 +348,16 @@ def _hosting_and_merge(
         return AutoMergeResult(False, code, reason, url)
 
     try:
+        review_flow.require_auto_merge(repo)
         if provider is None:
             provider = get_provider(rc.config.settings, main)
         status = provider.status(pr.request())
         while status.state == OPEN and status.mergeability == UNKNOWN:
+            review_flow.require_auto_merge(repo)
             sleep(AUTO_MERGE_POLL_DELAY)
             status = provider.status(pr.request())
+    except ReviewError as exc:
+        return blocked(exc.code, exc.message)
     except ProviderError as exc:
         return blocked("status_unavailable", f"{exc.code}: {exc.message}")
     hosting = hosting_blocker(status)

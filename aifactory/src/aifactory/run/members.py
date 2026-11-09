@@ -9,8 +9,8 @@ starts runs (``web.launcher``): ``start_new_session``, stdin closed, the reposit
 root as cwd, stdout (the JSON envelope) and stderr (the narration) in two new files
 with mode 0600 in ``logs/`` of the HAIFA home.
 
-``--member`` runs exactly one task (never a chain). With ``auto_merge`` inherited by
-the task, the member process merges its own PR (only it holds the workflow run with
+``--member`` runs exactly one task (never a chain). With repository-local
+``auto_merge`` enabled, the member process merges its own PR (only it holds the workflow run with
 the last review), under the merge lock of the store (``<trace db>.merge.lock``), so
 parallel merges into base go one after another. A PR in conflict is resolved once
 (``resolve_and_merge``, the lock not held) and merged under the lock; the envelope's

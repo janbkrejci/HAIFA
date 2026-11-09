@@ -143,7 +143,12 @@ def setup(
     t02_depends: bool = True,
 ) -> None:
     """S01 with T01..T03 writing src/app/; a workflow with review (no accept on it)."""
-    RepositorySettings(repo).update({"auto_continue": "auto_continue: true" in step})
+    RepositorySettings(repo).update(
+        {
+            "auto_continue": "auto_continue: true" in step,
+            "auto_merge": "auto_merge: true" in step,
+        }
+    )
     write(repo, ".factory/agents.yaml", AGENTS)
     write(repo, ".factory/prompts/reviewer/system.md", "You are the reviewer.\n")
     write(repo, ".factory/prompts/reviewer/user.md", USER_PROMPT)
@@ -289,13 +294,16 @@ def test_auto_merge_json_carries_the_host_vote() -> None:
     assert AutoMergeResult(False, "no_pr", "none", None).to_json()["reviewed"] is False
 
 
-def test_failed_run_is_not_merged(repo: Path, script: Script) -> None:
-    setup(repo)
+@pytest.mark.parametrize("auto_continue", [False, True])
+def test_failed_run_is_not_merged(repo: Path, script: Script, auto_continue: bool) -> None:
+    setup(repo, step=f"auto_merge: true\nauto_continue: {str(auto_continue).lower()}\n")
     build(script, "bad", path="README.md")  # outside writes: the run fails
 
     chain = run_chain(repo, T01)
 
-    assert chain.stop == STOP_FAILED
+    assert chain.stop == (STOP_FAILED if auto_continue else STOP_DISABLED)
+    assert not chain.ok
+    assert len(chain.runs) == 1 and not chain.runs[0].ok
     assert chain.runs[0].auto_merge is None
     assert pr_row(repo, T01) is None
 
@@ -333,8 +341,9 @@ def test_rejected_review_is_not_merged(repo: Path, script: Script) -> None:
     assert not on_main(repo, "src/app/one.py")
 
 
-def test_task_switches_auto_merge_off(repo: Path, script: Script) -> None:
-    setup(repo, t01_extra="auto_merge: false\n")
+def test_local_switch_overrides_task_auto_merge(repo: Path, script: Script) -> None:
+    setup(repo)
+    RepositorySettings(repo).update({"auto_merge": False})
     build(script, "one")
     review(script)
 
@@ -1047,7 +1056,10 @@ def test_member_rejected_resolution_keeps_the_pr_open(
 # ── stacked PRs (stacked_prs: true) ──────────────────────────────────────────
 
 
-def test_stacked_pr_waits_for_its_dependency_then_merges(repo: Path, script: Script) -> None:
+@pytest.mark.parametrize("merge_on", [False, True])
+def test_stacked_pr_waits_for_its_dependency_then_merges(
+    repo: Path, script: Script, merge_on: bool
+) -> None:
     setup(repo)
     write(repo, ".factory/config.yaml", "base: main\ndocs_root: .\nstacked_prs: true\n")
     commit_all(repo, "stacked PRs")
@@ -1064,10 +1076,15 @@ def test_stacked_pr_waits_for_its_dependency_then_merges(repo: Path, script: Scr
     pr = pr_row(repo, T02)
     assert pr is not None and pr.state == "open" and pr.auto_merge_error is None
 
+    RepositorySettings(repo).update({"auto_merge": merge_on})
     scripted_plan(script)  # the restack's resolve run tests the rebased branch
     merged = approve_task(repo, T01)
     assert merged.warnings == []
     pr = pr_row(repo, T02)
+    if not merge_on:
+        assert pr is not None and pr.state == "open" and pr.merged_by is None
+        assert on_main(repo, "src/app/one.py") and not on_main(repo, "src/app/two.py")
+        return
     assert pr is not None and pr.state == "merged" and pr.merged_by == MERGED_BY_AUTO
     assert on_main(repo, "src/app/one.py") and on_main(repo, "src/app/two.py")
     assert status_on_main(repo, T02) == "done"

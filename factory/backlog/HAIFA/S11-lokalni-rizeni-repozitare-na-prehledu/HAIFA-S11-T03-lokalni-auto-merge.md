@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S11-T03
 title: Jednotná místní politika auto merge
-status: todo
+status: done
 depends_on: [HAIFA-S11-T02]
 writes: [aifactory/]
 test_timeout: 3600
@@ -26,4 +26,5 @@ Hotovo: CLI, worker i Přehled uvádějí stejnou účinnou hodnotu a zdroj; zm�
 ## Běhy
 
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-09 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/207 · náklady $0.00
 

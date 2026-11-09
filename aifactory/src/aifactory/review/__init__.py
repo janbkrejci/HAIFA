@@ -9,7 +9,7 @@
   up with the remote and the branch's worktrees are removed. Before the merge the
   provider sends a host approval where it can: an Azure vote, or a GitHub APPROVE
   review as ``github_approver`` when that is set.
-* ``try_auto_merge`` (``automerge``): with ``auto_merge: true`` the PR of a
+* ``try_auto_merge`` (``automerge``): with repository-local ``auto_merge`` the PR of a
   succeeded run is approved and merged like ``task approve`` (``merged_by``
   ``auto-merge``) when the workflow has a review phase, the last review approved
   with no blocking or unmet item, the PR merges cleanly and no check is red;

@@ -518,7 +518,6 @@ def test_publish_auto_merge_uses_launcher(
 ) -> None:
     from thread_launcher import ThreadLauncher
 
-    from aifactory.backlog import Task
     from aifactory.run import queue
     from aifactory.run.errors import TaskRunError
 
@@ -550,7 +549,7 @@ def test_publish_auto_merge_uses_launcher(
         store.set_pr_error("publish-me", "push_failed: server error")
     finally:
         store.close()
-    monkeypatch.setattr(queue, "auto_merge_enabled", lambda task: isinstance(task, Task))
+    monkeypatch.setattr(queue, "auto_merge_enabled", lambda repo: isinstance(repo, Path))
     called: list[str] = []
 
     class Launcher(ThreadLauncher):

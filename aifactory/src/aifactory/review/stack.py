@@ -82,7 +82,7 @@ def restack_dependents(
             warnings.append(f"{pr.task_id}: not auto-merged: {exc}")
             continue
         task = load_backlog(main, rc.config.settings).by_id.get(pr.task_id)
-        if not isinstance(task, Task) or not auto_merge_enabled(task):
+        if not isinstance(task, Task) or not auto_merge_enabled(repo):
             continue
         outcome = _hosting_and_merge(repo, resolved.pr or pr, task, provider, rc, main, code)
         if not outcome.merged:
