@@ -216,21 +216,15 @@ describe('TaskForm', () => {
     ])
   })
 
-  it('switches auto-merge of the task off, on or back to inherited', async () => {
-    const off = editForm()
-    await chooseOption(off, '[data-test="auto-merge"]', 'off')
-    await off.find('form').trigger('submit')
-    expect(off.emitted('submit')?.[0]).toEqual([{ auto_merge: false }])
-
-    const inherit = editForm({ own_auto_merge: false })
-    await chooseOption(inherit, '[data-test="auto-merge"]', 'inherit')
-    await inherit.find('form').trigger('submit')
-    expect(inherit.emitted('submit')?.[0]).toEqual([{ clear_auto_merge: true }])
-
-    const on = editForm({ own_auto_merge: false })
-    await chooseOption(on, '[data-test="auto-merge"]', 'on')
-    await on.find('form').trigger('submit')
-    expect(on.emitted('submit')?.[0]).toEqual([{ auto_merge: true }])
+  it('does not edit legacy operating choices', async () => {
+    const wrapper = editForm({ own_auto_merge: true, own_parameters: { harness: 'codex', auto_continue: true } })
+    for (const key of ['harness', 'auto_continue', 'auto_merge']) {
+      expect(wrapper.find(`[data-test="parameter-${key}"]`).exists()).toBe(false)
+    }
+    expect(wrapper.find('[data-test="auto-merge"]').exists()).toBe(false)
+    await wrapper.get('[data-test="title"]').setValue('Nový název')
+    await wrapper.get('form').trigger('submit')
+    expect(wrapper.emitted('submit')?.[0]).toEqual([{ title: 'Nový název' }])
   })
 
   it('disables the status of a done task', () => {
@@ -406,13 +400,12 @@ describe('TaskForm', () => {
     expect(params.find('[data-parameter="test"]').exists()).toBe(false)
     expect(params.get('[data-parameter="test_timeout"]').text()).toContain('Limit testů (s)')
     expect(params.find('[data-parameter="specs_dir"]').exists()).toBe(false)
-    expect(params.find('[data-parameter="auto_merge"]').exists()).toBe(true)
+    expect(params.find('[data-parameter="auto_merge"]').exists()).toBe(false)
     await wrapper.get('[data-test="title"]').setValue('Nový')
     await wrapper.get('[data-test="parameter-test_timeout"]').setValue('300')
-    await chooseOption(wrapper, '[data-test="parameter-auto_continue"]', 'false')
     await wrapper.get('form').trigger('submit')
     expect(wrapper.emitted('submit')?.[0]?.[0]).toMatchObject({
-      parameters: { test_timeout: 300, auto_continue: false },
+      parameters: { test_timeout: 300 },
     })
   })
 
@@ -422,7 +415,7 @@ describe('TaskForm', () => {
     expect(wrapper.get('[data-test="save"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-test="parameter-test_timeout"]').setValue('600')
     await wrapper.get('form').trigger('submit')
-    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ parameters: { test_timeout: 600, auto_merge: null } })
+    expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ parameters: { test_timeout: 600 } })
   })
 
   it('names the statuses in Czech', async () => {

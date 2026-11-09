@@ -21,6 +21,13 @@ function detailWrapper(error: { message: string; issues: [] } | null = null) {
 }
 
 describe('TaskDetail', () => {
+  it('points operating choices to the machine-local overview', () => {
+    const wrapper = detailWrapper()
+    expect(wrapper.text()).toContain('místní volby na Přehledu')
+    expect(wrapper.find('[data-test="auto-merge"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it.each(['running', 'in review', 'approved', 'awaiting merge', 'ready', 'failed'] as const)('gates actions and explains disabled actions for %s', async (state) => {
     const detail = taskDetail()
     detail.task.board_state = state

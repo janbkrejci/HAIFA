@@ -211,6 +211,33 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     row_b = page.locator(f'[data-repo="{id_b}"]')
                     expect(row_b).to_be_visible()
                     expect(row_b).not_to_contain_text("does not exist")
+                    # The fake worker is still in its plan phase. Local off neither stops
+                    # that run nor changes Git or another registered repository.
+                    before_settings = git(repo_a, "status", "--porcelain")
+                    before_head = git(repo_a, "rev-parse", "HEAD")
+                    auto = card.locator('[data-test="local-auto-continue"]')
+                    auto.click()
+                    expect(auto).to_be_checked()
+                    expect(card.get_by_role("status")).to_contain_text("Uloženo")
+                    auto.focus()
+                    auto.press("Space")
+                    expect(auto).not_to_be_checked()
+                    expect(card.locator('[data-test="local-off-note"]')).to_have_text(
+                        "Aktuální běhy doběhnou, další se nespustí"
+                    )
+                    expect(running).to_be_visible()
+                    assert run_state(server.api, run_id)["state"] == "running"
+                    assert git(repo_a, "status", "--porcelain") == before_settings
+                    assert git(repo_a, "rev-parse", "HEAD") == before_head
+                    assert (
+                        api_get(obs.url, f"/api/repos/{id_b}/settings/local")["settings"][
+                            "auto_continue"
+                        ]
+                        is False
+                    )
+                    page.reload()
+                    expect(auto).not_to_be_checked()
+                    expect(running).to_be_visible()
                     release.touch()
 
                     def finished() -> str | None:

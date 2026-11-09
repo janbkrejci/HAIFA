@@ -96,7 +96,7 @@ def test_detail_has_own_and_effective_values_with_origin(tmp_path: Path) -> None
     assert container["level"] == "step"
     assert container["parent"] == "M01"
     assert container["own"] == {}
-    assert "auto_continue" in data["editable_keys"]
+    assert not {"auto_continue", "auto_merge", "harness"} & set(data["editable_keys"])
     assert not {"quota_switch", "quota_switch_back", "harness"} & set(data["editable_keys"])
     effective = container["effective"]
     assert effective["workflow"] == {

@@ -1,9 +1,6 @@
 <script setup lang="ts">
-// A row of the backlog tree. A click anywhere on a project or step row folds it (the arrow
-// as well), only its Graf link opens the dependency graph and its Nastavení button opens the
-// settings under the row: the auto-continue and auto-merge switches and the keys of its
-// `index.md` (written to the working tree, the tree reloads). A click on a task row opens
-// the task detail.
+// A container row expands its children or opens its backlog metadata settings.
+// Task rows open the task detail; machine-local choices are on the Overview.
 import { computed, ref } from 'vue'
 import { Archive, ArchiveRestore, ChevronRight, SlidersHorizontal } from 'lucide-vue-next'
 import {
@@ -21,7 +18,6 @@ import {
 import { graphHref, taskHref } from '@/lib/router'
 import TreeSettings from './TreeSettings.vue'
 import StateChip from './StateChip.vue'
-import Tooltip from '@/components/ui/Tooltip.vue'
 import CodeTip from '@/components/ui/CodeTip.vue'
 
 const props = defineProps<{ node: BacklogNode; levels: string[]; depth: number; workflows?: string[] }>()
@@ -90,12 +86,6 @@ function openTask(event: MouseEvent) {
       <CodeTip :code="node.id"><span class="id">{{ node.id ?? node.path }}</span></CodeTip>
       <span class="title">{{ node.title }}</span>
       <span v-if="node.archived" class="level">Archivováno</span>
-      <Tooltip v-if="node.auto_continue === true" text="auto-continue zapnuto">
-        <span class="auto" data-test="auto-badge" tabindex="0">auto</span>
-      </Tooltip>
-      <Tooltip v-if="node.auto_merge === true" text="auto-merge zapnuto">
-        <span class="auto" data-test="merge-badge" tabindex="0">merge</span>
-      </Tooltip>
       <span v-if="stateCounts.length" class="states" data-test="state-counts">
         <StateChip v-for="s in stateCounts" :key="s.state" :state="s.state" :count="s.count" />
       </span>

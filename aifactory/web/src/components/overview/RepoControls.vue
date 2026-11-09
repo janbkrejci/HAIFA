@@ -6,6 +6,7 @@
 import { computed } from 'vue'
 import type { OverviewRepo } from '@/lib/api'
 import { controlErrors, controlStatus, stateClass, taskSummary } from '@/lib/overview'
+import LocalRepoControls from './LocalRepoControls.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import { NO_FEEDBACK, type ControlFeedback } from './feedback'
 
@@ -14,12 +15,16 @@ const props = withDefaults(defineProps<{ repo: OverviewRepo; feedback?: ControlF
   showSummary: true,
 })
 
+const emit = defineEmits<{ changed: [] }>()
+
 const summary = computed(() => props.showSummary ? taskSummary(props.repo) : [])
 const status = computed(() => controlStatus(props.repo))
 const errors = computed(() => controlErrors(props.repo))
 const factory = computed(() => props.repo.factory ?? null)
 const anything = computed(
   () =>
+    props.repo.local_settings !== undefined ||
+    props.repo.local_settings_error !== undefined ||
     status.value !== null ||
     summary.value.length > 0 ||
     factory.value !== null ||
@@ -31,6 +36,7 @@ const anything = computed(
 
 <template>
   <div v-if="anything" class="repo-controls" data-test="factory-controls">
+    <LocalRepoControls v-if="repo.local_settings !== undefined || repo.local_settings_error !== undefined" :repo="repo" @changed="emit('changed')" />
     <span
       v-if="status"
       class="status"

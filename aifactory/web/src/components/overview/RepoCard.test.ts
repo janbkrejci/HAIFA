@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RepoCard from './RepoCard.vue'
+import RepoControls from './RepoControls.vue'
 import type { OverviewRepo } from '@/lib/api'
 import { factory, failed, mergedOutside, operation, repo, review, running, tasks } from '@/test/overviewFixtures'
 
@@ -58,6 +59,12 @@ describe('RepoCard layout', () => {
       warnings: ['pozor'],
       merged_outside: [mergedOutside()],
     })
+
+  it('forwards a local controls change to the overview', () => {
+    const wrapper = mountWith(busy())
+    wrapper.getComponent(RepoControls).vm.$emit('changed')
+    expect(wrapper.emitted('changed')).toHaveLength(1)
+  })
 
   it('puts the icon buttons next to the menu in the header', () => {
     const head = mountWith(busy()).get('.card-head')

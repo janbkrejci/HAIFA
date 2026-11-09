@@ -53,9 +53,7 @@ describe('BacklogTree', () => {
     const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
     const step = wrapper.find('[data-node="M01-S01"] > .row')
     expect(step.find('[data-test="graph-link"]').attributes('href')).toBe('#/r/haifa/backlog/graph/M01-S01')
-    expect(step.find('[data-test="auto-badge"]').text()).toBe('auto')
-    expect(step.find('[data-test="auto-badge"]').attributes('title')).toBeUndefined()
-    expect(step.find('[data-test="auto-badge"]').attributes('tabindex')).toBe('0')
+    expect(step.find('[data-test="auto-badge"]').exists()).toBe(false)
     expect(wrapper.find('[title]').exists()).toBe(false)
     const module = wrapper.find('[data-node="M02"] > .row')
     expect(module.find('[data-test="graph-link"]').attributes('href')).toBe('#/r/haifa/backlog/graph/M02')
@@ -206,8 +204,7 @@ describe('BacklogTree', () => {
     const step = wrapper.find('[data-node="M01-S01"] > .row')
     const follows = (a: string, b: string) =>
       !!(step.find(a).element.compareDocumentPosition(step.find(b).element) & Node.DOCUMENT_POSITION_FOLLOWING)
-    expect(follows('.title', '[data-test="auto-badge"]')).toBe(true)
-    expect(follows('[data-test="auto-badge"]', '[data-test="state-counts"]')).toBe(true)
+    expect(follows('.title', '[data-test="state-counts"]')).toBe(true)
     expect(follows('[data-test="state-counts"]', '[data-test="graph-link"]')).toBe(true)
     expect(wrapper.find('[data-test="progress"]').exists()).toBe(false)
   })
@@ -235,17 +232,16 @@ describe('BacklogTree', () => {
     expect(wrapper.find('[data-task="M01-S01-T01"]').exists()).toBe(false)
     expect(fetchMock.mock.calls[0]![0]).toBe('/api/repos/haifa/backlog/containers/M01-S01')
     const panel = wrapper.get('[data-node="M01-S01"] > [data-test="settings-panel"]')
-    expect(panel.get('[data-test="auto-on"]').attributes('aria-pressed')).toBe('true')
-    expect(panel.get('[data-test="auto-effective"]').text()).toContain('zapnuto')
-    expect(panel.get('[data-test="merge-inherit"]').attributes('aria-pressed')).toBe('true')
-    expect(panel.get('[data-test="merge-effective"]').text()).toContain('vypnuto')
+    expect(panel.find('[data-test="auto-toggle"]').exists()).toBe(false)
+    expect(panel.find('[data-test="merge-toggle"]').exists()).toBe(false)
+    expect(panel.text()).toContain('Na tomto počítači')
     expect(step().get('[data-test="settings"]').attributes('aria-expanded')).toBe('true')
     // the whole form with inherited values; auto-continue only once, in its switch
     const form = panel.get('[data-test="container-settings"]')
     expect(form.get('[data-test="value-workflow"]').text()).toContain('plan')
     expect(form.get('[data-setting="writes"] [data-test="origin"]').text()).toContain('Modul M01')
     expect(form.find('[data-setting="auto_continue"]').exists()).toBe(false)
-    expect(panel.findAll('[data-test="auto-toggle"]')).toHaveLength(1)
+    expect(panel.findAll('[data-test="auto-toggle"]')).toHaveLength(0)
     await step().get('[data-test="settings"]').trigger('click')
     expect(wrapper.find('[data-test="settings-panel"]').exists()).toBe(false)
   })
@@ -309,41 +305,6 @@ describe('BacklogTree', () => {
     expect(wrapper.get('[data-node="M01"] > [data-test="settings-panel"] [data-test="settings-error"]').text()).toContain(
       'disk full',
     )
-  })
-
-  it('writes a switch and asks for the tree again', async () => {
-    expandTree(['M01'])
-    const fetchMock = vi.fn(async (url: string, _init?: RequestInit) =>
-      url.endsWith('/auto-merge')
-        ? envelope({ changed: true, id: 'M01-S01', level: 'step', path: 'x', mode: 'on' })
-        : envelope(containerDetail()),
-    )
-    vi.stubGlobal('fetch', fetchMock)
-    const data = backlogData()
-    const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
-    await wrapper.get('[data-node="M01-S01"] > .row [data-test="settings"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-node="M01-S01"] > [data-test="settings-panel"] [data-test="merge-on"]').trigger('click')
-    await flushPromises()
-    const [url, init] = fetchMock.mock.calls.find(([, i]) => i?.method === 'POST')!
-    expect(url).toBe('/api/repos/haifa/backlog/containers/M01-S01/auto-merge')
-    expect(JSON.parse(String(init?.body))).toEqual({ mode: 'on' })
-    expect(wrapper.emitted('changed')).toHaveLength(1)
-  })
-
-  it('reports a switch that could not be written', async () => {
-    expandTree(['M01'])
-    vi.stubGlobal('fetch', vi.fn(async (_url: string, init?: RequestInit) =>
-      init?.method === 'POST' ? envelope(null, false) : envelope(containerDetail({ id: 'M01', parent: null })),
-    ))
-    const data = backlogData()
-    const wrapper = mount(BacklogTree, { props: { items: data.items, levels: data.levels } })
-    await wrapper.get('[data-node="M01"] > .row [data-test="settings"]').trigger('click')
-    await flushPromises()
-    await wrapper.get('[data-node="M01"] > [data-test="settings-panel"] [data-test="auto-off"]').trigger('click')
-    await flushPromises()
-    expect(wrapper.get('[data-test="switches-error"]').text()).toBe('disk full')
-    expect(wrapper.emitted('changed')).toBeUndefined()
   })
 
   it('unfolds the tree to a container revealed from the graph page and opens its settings', async () => {

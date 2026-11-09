@@ -464,11 +464,8 @@ function onEdit(input: EditTaskInput) {
               <span v-else class="amber">bez workflow</span>
               <span v-if="task.workflow && !task.own_workflow" class="faint"> (zděděno)</span>
             </dd>
-            <dt>Auto-merge</dt>
-            <dd data-test="auto-merge">
-              {{ task.effective_auto_merge ? 'zapnuto' : 'vypnuto' }}
-              <span class="faint">{{ task.own_auto_merge == null ? '(zděděno)' : '(vlastní)' }}</span>
-            </dd>
+            <dt>Automatizace a harness</dt>
+            <dd>Nová Factory používá místní volby na Přehledu — Na tomto počítači.</dd>
             <dt>Writes</dt>
             <dd data-test="writes">
               <span v-if="task.writes.length" class="chips">

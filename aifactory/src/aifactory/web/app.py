@@ -533,6 +533,41 @@ async def global_limits(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data))
 
 
+async def repo_operating_settings(request: Request) -> JSONResponse:
+    """Immediate machine-local partial updates; never write the repository."""
+    from aifactory.repo_settings import RepositorySettings, SettingsError
+
+    try:
+        service = await run_in_threadpool(
+            RepositorySettings, _repo(request), request.app.state.home
+        )
+        if request.method == "PATCH":
+            body = await _json_body(request)
+            if body.get("harness") is not None:
+                catalog = await run_in_threadpool(
+                    request.app.state.library.harnesses, request.app.state.home
+                )
+                name = body["harness"]
+                if not isinstance(name, str) or not (
+                    catalog["available"].get(name)
+                    and catalog["settings"]["harnesses"].get(name, {}).get("enabled")
+                ):
+                    return _usage_error("Harness není na tomto počítači dostupný a zapnutý.")
+            data = await run_in_threadpool(service.update_and_show, body)
+        else:
+            data = await run_in_threadpool(service.show)
+    except backlog.UsageError as exc:
+        return _usage_error(exc.message)
+    except SettingsError as exc:
+        return JSONResponse(
+            envelope_fail(exc.code, str(exc)),
+            status_code=422 if exc.code == "invalid_value" else 503,
+        )
+    except (ValueError, OSError) as exc:
+        return JSONResponse(envelope_fail("harness_catalog_unavailable", str(exc)), status_code=503)
+    return JSONResponse(envelope_ok(data))
+
+
 async def machine_harnesses(request: Request) -> JSONResponse:
     try:
         home = request.app.state.home
@@ -1886,6 +1921,7 @@ async def _internal_error(request: Request, exc: Exception) -> Response:
 def _repo_routes() -> list[BaseRoute]:
     """The API of one repository (every endpoint but ``/health``), relative to its prefix."""
     return [
+        Route("/settings/local", repo_operating_settings, methods=["GET", "PATCH"]),
         Route("/limits", limits, methods=["GET"]),
         Route("/runs", list_runs, methods=["GET"]),
         Route("/runs/totals", runs_totals, methods=["GET"]),
