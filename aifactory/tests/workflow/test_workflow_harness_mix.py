@@ -14,6 +14,7 @@ from workflow_fakes import (
 )
 
 from aifactory.engine import data_types as dt
+from aifactory.harness import thinking
 from aifactory.workflow import WorkflowError, run_workflow
 
 MIXED = """\
@@ -29,6 +30,11 @@ accept: review.approved
 PLAN = ok(summary="planned", commit_message="Add the plan", notes_for_next_agent="ünïcode — ok")
 BUILD = ok(summary="built", changed_files=[], commit_message="Build it")
 REVIEW = ok(summary="approved", approved=True)
+
+
+@pytest.fixture(autouse=True)
+def local_model_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(thinking, "codex_models", lambda: [])
 
 
 def _script(env: EngineEnv) -> None:
@@ -48,7 +54,12 @@ def test_each_step_gets_its_harness_and_model(workflow_env: EngineEnv) -> None:
     calls = [(c.harness, c.agent, c.model, c.thinking) for c in workflow_env.script.calls]
     assert calls == [
         ("claude", "planner", "opus", "high"),
-        ("codex", "builder", "gpt-5.5", "medium"),  # thinking not overridden: agent default
+        (
+            "codex",
+            "builder",
+            "gpt-5.5",
+            "medium",
+        ),  # target harness default when thinking is omitted
         ("pi", "reviewer", "google/gemini-3.6-flash", "low"),
     ]
     records = [(r.phase, r.harness, r.model, r.thinking) for r in result.records]

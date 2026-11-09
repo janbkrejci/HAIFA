@@ -37,7 +37,6 @@ from pydantic import BaseModel, ConfigDict, Field
 from aifactory import backlog as core
 from aifactory import yamlload
 from aifactory.backlog import Issue, NewTask, TaskEditError
-from aifactory.backlog.derived import harness_values
 from aifactory.config import load_run_config
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentCall, EnvelopeBase, PhaseParams
@@ -646,9 +645,7 @@ def run_proposer(
         if refinement is not None and snapshot.exists():
             binding = json.loads(snapshot.read_text(encoding="utf-8"))
         else:
-            backlog = core.load_for_edit(repo)
-            node = backlog.by_id.get(target.step or target.project or "")
-            binding = context_binding(harness_values(node) if node is not None else {})
+            binding = context_binding({}, repo=repo)
         rc = apply_agents_override(rc, binding)
     except ValueError as exc:
         raise TaskEditError("agent_unavailable", str(exc)) from exc

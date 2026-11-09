@@ -692,14 +692,24 @@ class AssistantManager:
         if not isinstance(title, str) or len(title) > 200:
             raise AssistantError("usage_error", "title must be a string of at most 200 characters")
         screen = parse_screen(body.get("screen"))
-        values = self._context_values(screen)
+        self._context_values(screen)
         try:
-            selection = harness_settings.context_binding(values)
+            selection = harness_settings.context_binding(
+                {}, repo=dict(self.repos()).get(screen.get("repo", ""))
+            )
         except ValueError as exc:
             raise AssistantError("harness_unavailable", str(exc), 409) from exc
         if not selection.get("harness"):
             selection = guide_defaults()
         if canonical(selection["harness"]) not in GUIDE_HARNESSES:
+            repo = dict(self.repos()).get(screen.get("repo", ""))
+            if repo is not None:
+                from aifactory.repo_settings import RepositorySettings
+
+                if RepositorySettings(repo).read().harness is not None:
+                    raise AssistantError(
+                        "harness_unavailable", unlimited_message(selection["harness"]), 409
+                    )
             selection = claude_fallback(selection["harness"])
         harness = canonical(selection["harness"])
         thread_id = uuid.uuid4().hex[:12]

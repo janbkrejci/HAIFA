@@ -697,9 +697,9 @@ def _opt_bool(body: JsonDict, key: str) -> bool:
 
 
 def add(
-    repo: Path, body: JsonDict, *, advice: AdviceManager | None = None
+    repo: Path, body: JsonDict, *, advice: AdviceManager | None = None, render_response: bool = True
 ) -> tuple[JsonDict, list[str]]:
-    """``factory task add``: a new ``todo`` task in ``step``."""
+    """Write a new todo task; staging callers can skip the live repository response."""
     _check_keys(body, ADD_KEYS)
     if "workflow_advice_id" in body:
         if advice is None:
@@ -728,7 +728,7 @@ def add(
         parameters=_parameters(body),
         assignee=_opt_str(body, "assignee"),
     )
-    return _write_json(repo, result)
+    return _write_json(repo, result) if render_response else ({}, [])
 
 
 def ensure_task_not_running(repo: Path, task_id: str) -> None:
@@ -748,9 +748,14 @@ def ensure_task_not_running(repo: Path, task_id: str) -> None:
 
 
 def edit(
-    repo: Path, task_id: str, body: JsonDict, *, advice: AdviceManager | None = None
+    repo: Path,
+    task_id: str,
+    body: JsonDict,
+    *,
+    advice: AdviceManager | None = None,
+    render_response: bool = True,
 ) -> tuple[JsonDict, list[str]]:
-    """``factory task edit``: title, status, workflow (assign or clear), writes, auto_merge."""
+    """Write a task edit; staging callers can skip the live repository response."""
     _check_keys(body, EDIT_KEYS)
     ensure_task_not_running(repo, task_id)
     if "workflow_advice_id" in body:
@@ -783,7 +788,7 @@ def edit(
         assignee=_opt_str(body, "assignee"),
         clear_assignee=_opt_bool(body, "clear_assignee"),
     )
-    return _write_json(repo, result)
+    return _write_json(repo, result) if render_response else ({}, [])
 
 
 def follow_up(

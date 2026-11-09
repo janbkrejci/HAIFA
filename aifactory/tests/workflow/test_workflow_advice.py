@@ -132,6 +132,22 @@ def test_engine_lifecycle_in_thread(
             "writes: [src/]", "writes: [src/]\nharness: codex\nmodel: gpt-5.5\nthinking: high"
         )
     )
+    from aifactory.harness import settings
+    from aifactory.home import haifa_home
+    from aifactory.repo_settings import RepositorySettings
+
+    settings.write(
+        {
+            "default_harness": "claude",
+            "harnesses": {
+                "claude": {"model": "sonnet"},
+                "codex": {"model": "gpt-5.5", "thinking": "high"},
+                "pi": {"enabled": False},
+            },
+        },
+        haifa_home(),
+    )
+    RepositorySettings(repo).update({"harness": "codex"})
     seen: list[Any] = []
     module = agents.INTERFACES["codex"]
     monkeypatch.setattr(
@@ -497,7 +513,7 @@ def test_cleanup_orphans_logs_scan_failure(
 
 
 @pytest.mark.parametrize("task_id", ["P01-S01-T01", None])
-def test_context_harness_switch_drops_ancestor_model(
+def test_context_ignores_legacy_ancestor_harness(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, task_id: str | None
 ) -> None:
     from aifactory import backlog as core
@@ -522,9 +538,9 @@ def test_context_harness_switch_drops_ancestor_model(
     monkeypatch.setattr(settings, "read", lambda: machine)
     ctx = context(repo, task_id, {} if task_id else {"step": "P01-S01", "title": "Draft"})
     assert {k: ctx["effective"][k] for k in ("harness", "model", "thinking")} == {
-        "harness": "claude",
-        "model": "sonnet",
-        "thinking": "high",
+        "harness": "codex",
+        "model": "gpt-5.5",
+        "thinking": "medium",
     }
 
 

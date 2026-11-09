@@ -305,8 +305,8 @@ def test_job_reports_selected_agent(
     assert data["state"] == "ready", data
     expected = {
         "harness": "codex",
-        "model": "gpt-6.1-sol" if target == "auto" else "gpt-5.5",
-        "thinking": "high" if target == "auto" else "low",
+        "model": "gpt-6.1-sol",
+        "thinking": "high",
     }
     assert data["agent"] == expected
     assert (seen[0].model, seen[0].thinking) == (expected["model"], expected["thinking"])

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S11-T04
 title: Místní výchozí harness pro všechny nové běhy repozitáře
-status: todo
+status: done
 depends_on: [HAIFA-S11-T03]
 writes: [aifactory/]
 test_timeout: 1200
@@ -18,4 +18,5 @@ Hotovo: změna bez commitu ovlivní další ruční i automatický run, jiné re
 ## Běhy
 
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-09 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/208 · náklady $0.00
 

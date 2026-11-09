@@ -436,6 +436,10 @@ def apply_agents_override(rc: RunConfig, override: dict[str, str] | None) -> Run
             update["model"] = _HARNESS_MODELS[harness]
         if thinking is not None:
             update["thinking"] = thinking
+        elif harness is not None and harness != agent.harness:
+            from aifactory.harness.thinking import default_level
+
+            update["thinking"] = default_level(harness, update.get("model", agent.model))
         if agent_harness != "pi" and agent.harness_engineering:
             update["harness_engineering"] = []  # pi extensions belong to pi only
         try:
@@ -465,7 +469,7 @@ def override_note(note: str | None, override: dict[str, str] | None) -> str | No
 
 
 def task_harness_values(task: Task) -> dict[str, object]:
-    """A harness switch at a nearer level inherits that harness's model, not its sibling's."""
+    """Legacy import metadata; runtime selection comes from local harness settings."""
     return harness_values(task)
 
 
@@ -565,15 +569,37 @@ def run_task(
             from aifactory.harness.settings import effective_override
 
             try:
-                binding = effective_override(task_harness_values(task), agents_override)
+                binding = effective_override({}, agents_override, repo=main)
                 rc = apply_agents_override(rc, binding)
             except ValueError as exc:
                 raise TaskRunError("invalid_override", str(exc)) from exc
+            primary = binding.get("harness") or rc.config.agents.defaults.harness
+            if not primary and rc.config.agents.agents:
+                primary = rc.config.agents.agents[0].harness
             chain_start: _ChainStart | None = None
             if agents_override is None and resolve_onto is None and workflow_name is None:
-                chain_start = _chain_start(store, rc, task, binding)
+                chain_start = _chain_start(store, rc, task, binding, repo=main)
                 if chain_start is not None and chain_start.rc is not None:
                     rc, binding = chain_start.rc, chain_start.binding
+            if primary and (binding.get("harness") or chain_start is not None):
+                note = f"{note or ''} [primární harness: {primary}]".strip()
+            if binding:
+                from aifactory.harness.settings import read as read_harness_settings
+                from aifactory.repo_settings import RepositorySettings
+
+                local = RepositorySettings(main).read()
+                machine = read_harness_settings()
+                if chain_start and chain_start.record:
+                    source = "quota"
+                elif agents_override:
+                    source = "explicit"
+                elif local.harness:
+                    source = "repository"
+                elif machine and machine.default_harness:
+                    source = "machine"
+                else:
+                    source = "roster"
+                note = f"{note or ''} [zdroj harnessu: {source}]".strip()
             note = override_note(note, binding)
             busy = store.running(task_id)
             if busy is not None:
@@ -775,7 +801,7 @@ class _ChainStart:
 
 
 def _chain_start(
-    store: TaskRunStore, rc: RunConfig, task: Task, binding: dict[str, str]
+    store: TaskRunStore, rc: RunConfig, task: Task, binding: dict[str, str], *, repo: Path
 ) -> _ChainStart | None:
     """The start of a new run on its project's quota chain; None without a chain."""
     from aifactory.harness.settings import effective_override
@@ -797,19 +823,13 @@ def _chain_start(
     new_rc: RunConfig | None = None
     if start.harness != pc.primary:
         try:
-            new_binding = effective_override(task_harness_values(task), {"harness": start.harness})
+            new_binding = effective_override({}, {"harness": start.harness}, repo=repo)
             new_rc = apply_agents_override(rc, new_binding)
         except (ValueError, TaskRunError) as exc:
             message = exc.message if isinstance(exc, TaskRunError) else str(exc)
-            return _ChainStart(
-                pc.project_id,
-                None,
-                stored is not None,
-                warnings=(
-                    f"quota chain: cannot start on {start.harness}: {message}; "
-                    f"the run starts on {pc.primary}",
-                ),
-            )
+            raise TaskRunError(
+                "invalid_override", f"quota chain: cannot start on {start.harness}: {message}"
+            ) from exc
 
     def side(harness: str, values: dict[str, str]) -> dict[str, str]:
         return {"harness": harness, **{k: v for k, v in _side(values).items() if k != "harness"}}
@@ -922,6 +942,10 @@ def _execute_job(
     settings = rc.config.settings
     session_dir = data_dir(main, rc) / "sessions" / row.run_id
     try:
+        session_dir.mkdir(parents=True, exist_ok=True)
+        (session_dir / "roster.json").write_text(
+            rc.config.agents.model_dump_json(), encoding="utf-8"
+        )
         cfg = prepare_cfg(main, rc, session_dir / "prompt_templates")
         ignored = _main_ignored(main, settings.worktrees_dir, cfg)
         with store.serialized():
@@ -1191,8 +1215,19 @@ def _record_follow_ups(
         reported, _ = followups.collect(wf, backlog.settings)
         if reported:
             try:
+                binding = _note_override(row.note)
+                snapshot = session_dir_of(main, row.run_id) / "roster.json"
+                if binding is None and snapshot.exists():
+                    roster = SSSFConfig.model_validate_json(snapshot.read_text(encoding="utf-8"))
+                    agent = next((a for a in roster.agents if a.name == "triager"), None)
+                    if agent is not None:
+                        binding = {"harness": agent.harness, "model": agent.model}
+                        if agent.thinking:
+                            binding["thinking"] = agent.thinking
+                    else:
+                        binding = {}
                 choices = triage.ask_triager(
-                    main, reported, backlog, task_id=row.task_id, binding=_note_override(row.note)
+                    main, reported, backlog, task_id=row.task_id, binding=binding
                 )
                 by_id = {choice.follow_up_id: choice for choice in choices}
                 if len(choices) != len(reported) or set(by_id) != {

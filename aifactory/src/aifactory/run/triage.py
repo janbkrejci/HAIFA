@@ -19,7 +19,7 @@ from typing import Any, Literal, Self
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from aifactory.backlog import Backlog, Container, effective_writes, is_human, iter_tasks
-from aifactory.backlog.derived import ancestors, descendant_tasks, harness_values
+from aifactory.backlog.derived import ancestors, descendant_tasks
 from aifactory.config import load_run_config
 from aifactory.engine import agents
 from aifactory.engine.data_types import AgentCall, EnvelopeBase, PhaseParams
@@ -360,7 +360,9 @@ def _invoke(
         task = next((t for t in iter_tasks(backlog) if t.id == task_id), None)
         if task is None:
             raise TriageUnavailable(f"Unknown source task: {task_id}")
-        binding = context_binding(harness_values(task))
+        binding = context_binding({}, repo=repo)
+    if binding is None:
+        binding = context_binding({}, repo=repo)
     rc = apply_agents_override(rc, binding)
     with _isolated(repo, rc.commit, None) as isolated:
         runtime = repo / ".factory/data/triage" / job_id

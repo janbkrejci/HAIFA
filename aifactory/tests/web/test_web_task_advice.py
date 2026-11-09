@@ -253,7 +253,7 @@ def test_advisor_defaults(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> No
         ({}, True),
     ],
 )
-def test_advisor_inherits_task_settings(
+def test_advisor_uses_local_settings_and_ignores_legacy_metadata(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     task_id: str | None,
@@ -275,6 +275,9 @@ def test_advisor_inherits_task_settings(
         step.write_text(step.read_text().replace("title: Step", "title: Step\nharness: claude"))
     git(repo, "commit", "-qam", "project defaults")
     machine_settings(monkeypatch)
+    from aifactory.repo_settings import RepositorySettings
+
+    RepositorySettings(repo).update({"harness": "codex"})
     seen: list[dict[str, Any]] = []
 
     def runner(
@@ -292,8 +295,8 @@ def test_advisor_inherits_task_settings(
             "model": explicit.get("model", "sonnet"),
             "thinking": "medium" if explicit.get("model") == "opus" else "high",
         }
-        if explicit or switch
-        else {"harness": "codex", "model": "gpt-5.5", "thinking": "high"}
+        if explicit
+        else {"harness": "codex", "model": "gpt-5.5", "thinking": "medium"}
     )
     draft = {"body": "Live body"} if task_id else {"step": "P01-S01", "title": "Draft"}
     with TestClient(app, base_url="http://127.0.0.1:4700") as client:

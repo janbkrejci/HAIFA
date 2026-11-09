@@ -30,10 +30,28 @@ class StepOverride:
 
 
 def effective_agent(agent: AgentT, override: StepOverride) -> AgentT:
-    """The agent as this step runs it: only the fields the override names change."""
+    """Apply explicit fields, using target-local defaults when the harness changes."""
     update: dict[str, Any] = {}
     if override.harness is not None:
-        update["coding_agent"] = canonical(override.harness)
+        harness = update["coding_agent"] = canonical(override.harness)
+        if harness != canonical(str(agent.coding_agent)):
+            from aifactory.harness import settings, thinking
+
+            explicit = {"harness": harness}
+            if override.model is not None:
+                explicit["model"] = override.model
+            if override.thinking is not None:
+                explicit["thinking"] = override.thinking
+            selection = settings.effective_override({}, explicit)
+            model = selection.get("model")
+            if not model and settings.read() is None:
+                model = settings.DEFAULT_MODELS[harness]
+            if not model:
+                raise ValueError(
+                    f"harness {harness} has no local model; fix computer harness settings"
+                )
+            update["model"] = model
+            update["thinking"] = selection.get("thinking") or thinking.default_level(harness, model)
     if override.model is not None:
         update["model"] = override.model
     if override.thinking is not None:
@@ -49,18 +67,16 @@ def check_override(agent: dt.AgentConfig, override: StepOverride) -> list[str]:
     """Problems with applying ``override`` to ``agent``; runs nothing."""
     label = f"agent {agent.name!r}"
     problems: list[str] = []
-    harness = str(agent.coding_agent)
-    if override.harness is not None:
-        try:
-            harness = canonical(override.harness)
-        except ValueError as exc:
-            problems.append(f"{label}: {exc}")
-            return problems
+    try:
+        effective = effective_agent(agent, override)
+    except ValueError as exc:
+        return [f"{label}: {exc}"]
+    harness = str(effective.coding_agent)
     if override.thinking is not None and override.thinking not in THINKING_LEVELS:
         problems.append(
             f"{label}: thinking {override.thinking!r} is not one of {list(THINKING_LEVELS)}"
         )
-    model = override.model if override.model is not None else agent.model
+    model = effective.model
     try:
         load(harness).resolve_model(model)
     except ValueError as exc:

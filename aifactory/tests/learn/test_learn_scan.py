@@ -172,6 +172,7 @@ def test_bad_since_and_unknown_lesson(repo: Path, capsys: pytest.CaptureFixture[
 
 
 @pytest.mark.parametrize("configured", [False, True])
+@pytest.mark.parametrize("local", [False, True])
 def test_learner_computer_binding(
     repo: Path,
     fake: tuple[list[Any], list[dict[str, Any]]],
@@ -179,6 +180,7 @@ def test_learner_computer_binding(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     configured: bool,
+    local: bool,
 ) -> None:
     from aifactory.engine import agents
     from aifactory.engine.data_types import AgentResult
@@ -186,10 +188,10 @@ def test_learner_computer_binding(
 
     monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(thinking, "codex_models", lambda: [])
-    if configured:
+    if configured or local:
         settings.write(
             {
-                "default_harness": "codex",
+                "default_harness": "claude" if local else "codex",
                 "harnesses": {
                     "claude": {"enabled": True, "model": "sonnet"},
                     "pi": {"enabled": False},
@@ -198,6 +200,10 @@ def test_learner_computer_binding(
             },
             tmp_path / "home",
         )
+    if local:
+        from aifactory.repo_settings import RepositorySettings
+
+        RepositorySettings(repo).update({"harness": "codex"})
     seen, answers = fake
     answers.append(_lessons(TESTS_LESSON))
     codex_seen: list[Any] = []
@@ -209,7 +215,7 @@ def test_learner_computer_binding(
     monkeypatch.setattr(agents.INTERFACES["codex"], "run", codex)
     [lesson] = _scan(capsys, repo)["lessons"]
     assert lesson["rule"] == TESTS_RULE and lesson["occurrences"] == 2
-    if configured:
+    if configured or local:
         assert not seen
         [request] = codex_seen
         assert request.model == "gpt-5.5" and request.thinking == "high"

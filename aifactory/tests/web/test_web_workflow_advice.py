@@ -62,8 +62,20 @@ def test_async_duplicate_poll_scope_and_expiry(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("new", [False, True])
-def test_add_and_edit_save(tmp_path: Path, new: bool) -> None:
+def test_add_and_edit_save(tmp_path: Path, new: bool, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aifactory.web import backlog
+
     repo = make_repo(tmp_path / "repo")
+    merge_policy = backlog._merge_policy
+    policy_repos: list[Path] = []
+
+    def live_policy(root: Path) -> dict[str, Any]:
+        # Staging validates backlog edits without reading a different repo's policy.
+        assert root == repo
+        policy_repos.append(root)
+        return merge_policy(root)
+
+    monkeypatch.setattr(backlog, "_merge_policy", live_policy)
     name = "research" if new else "plan"
     with client_for(repo, lambda *args: output(name, new=new)) as client:
         draft = {"step": "P01-S01", "title": "Unsaved", "body": "Task details"}
@@ -93,6 +105,7 @@ def test_add_and_edit_save(tmp_path: Path, new: bool) -> None:
         )
         # A new recommendation with a name already on disk must never overwrite it.
         assert response.status_code == (400 if new else 200), response.text
+        assert policy_repos
 
 
 @pytest.mark.parametrize("mutation", ["draft", "collision", "symlink", "invalid-task"])
@@ -364,6 +377,22 @@ def test_project_binding_in_job_and_save(
             "writes: [src/]", "writes: [src/]\nharness: codex\nmodel: gpt-5.5\nthinking: high"
         )
     )
+    from aifactory.harness import settings
+    from aifactory.home import haifa_home
+    from aifactory.repo_settings import RepositorySettings
+
+    settings.write(
+        {
+            "default_harness": "claude",
+            "harnesses": {
+                "claude": {"model": "sonnet"},
+                "codex": {"model": "gpt-5.5", "thinking": "high"},
+                "pi": {"enabled": False},
+            },
+        },
+        haifa_home(),
+    )
+    RepositorySettings(repo).update({"harness": "codex"})
     seen: list[dict[str, Any]] = []
 
     def runner(

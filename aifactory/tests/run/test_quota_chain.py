@@ -17,7 +17,7 @@ from aifactory import failure
 from aifactory.backlog import Task, load_backlog
 from aifactory.config import load_run_config
 from aifactory.repo_settings import RepositorySettings
-from aifactory.run import TaskRunStore, run_task
+from aifactory.run import TaskRunError, TaskRunStore, run_task
 from aifactory.run.fallback import SWITCH_KEY, harness_switches
 from aifactory.run.quota_chain import (
     ProjectChain,
@@ -293,7 +293,7 @@ def test_project_chain_reads_the_inherited_keys(tmp_path: Path) -> None:
     rc = load_run_config(repo)
     task = load_backlog(repo, rc.config.settings).by_id[T01]
     assert isinstance(task, Task)
-    assert primary_harness(task, rc) == "codex"
+    assert primary_harness(task, rc, repo=repo) == "codex"
     pc = project_chain(task, "codex")
     assert pc == ProjectChain("M01", ("codex", "claude", "pi"), True)
     assert project_chain(task, None) is None
@@ -326,3 +326,73 @@ def test_start_and_next_harness(tmp_path: Path) -> None:
         assert store.project_position("P") is None
     finally:
         store.close()
+
+
+def test_quota_returns_to_local_primary_and_preserves_saved_choice(
+    tmp_path: Path, script: Script
+) -> None:
+    from intent_fixture import computer_binding
+
+    repo = _repo(tmp_path, chain="[codex]", back=True)
+    computer_binding("codex")
+    local = RepositorySettings(repo)
+    local.update({"harness": "claude"})
+    # The committed roster is codex; the local primary must lead the quota chain.
+    _planned(script, _out("claude"), _plan)
+    first = run_task(repo, T01)
+    assert first.ok, first.run.error
+    assert _harnesses(script) == ["claude", "codex"]
+    assert local.read().harness == "claude"
+    store = _store(repo)
+    try:
+        store.clear_quota("claude")
+    finally:
+        store.close()
+    _planned(script, _plan)
+    second = run_task(repo, T01)
+    assert second.ok, second.run.error
+    assert _harnesses(script)[-1] == "claude"
+    assert local.read().harness == "claude"
+
+
+def test_quota_chain_of_running_session_survives_local_primary_change(
+    tmp_path: Path, script: Script
+) -> None:
+    from intent_fixture import computer_binding
+
+    repo = _repo(tmp_path, chain="[codex]", back=True)
+    computer_binding("codex")
+    local = RepositorySettings(repo)
+    local.update({"harness": "claude"})
+
+    def change_then_exhaust(wt: Path) -> None:
+        local.update({"harness": "codex"})
+        _out("claude")(wt)
+
+    _planned(script, change_then_exhaust, _plan)
+    result = run_task(repo, T01)
+    assert result.ok, result.run.error
+    assert _harnesses(script) == ["claude", "codex"]
+    assert local.read().harness == "codex"
+
+
+def test_disabled_quota_start_does_not_silently_run_on_primary(
+    tmp_path: Path, script: Script
+) -> None:
+    from aifactory.harness import settings
+    from intent_fixture import computer_binding
+
+    repo = _repo(tmp_path, back=False)
+    computer_binding("codex")
+    machine = settings.read()
+    assert machine is not None
+    machine.harnesses["claude"].enabled = False
+    settings.path().write_text(machine.model_dump_json())
+    store = _store(repo)
+    try:
+        store.set_project_position("M01", "claude")
+    finally:
+        store.close()
+    with pytest.raises(TaskRunError, match="cannot start on claude"):
+        run_task(repo, T01)
+    assert script.calls == []

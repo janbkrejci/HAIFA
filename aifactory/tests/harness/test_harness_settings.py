@@ -184,3 +184,14 @@ def test_context_binding_uses_computer_and_object_values(
     settings.path(tmp_path).write_text("invalid json")
     with pytest.raises(ValueError):
         settings.context_binding({})
+
+
+def test_explicit_harness_switch_drops_legacy_thinking(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HAIFA_HOME", str(tmp_path))
+    monkeypatch.setattr(thinking, "codex_models", lambda: [])
+    settings.write(choices(), tmp_path)
+    assert settings.effective_override(
+        {"harness": "claude", "model": "opus", "thinking": "max"}, {"harness": "codex"}
+    ) == {"harness": "codex", "model": "gpt-5.5", "thinking": "medium"}

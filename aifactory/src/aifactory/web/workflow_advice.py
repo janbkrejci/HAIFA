@@ -167,9 +167,9 @@ def _resolve(
     """Explicit choice, inherited computer binding, else the roster plan agent."""
     try:
         selection = (
-            harness_settings.effective_override({}, explicit)
+            harness_settings.effective_override({}, explicit, repo=repo)
             if explicit
-            else harness_settings.context_binding(values or {})
+            else harness_settings.context_binding({}, repo=repo)
         )
     except ValueError as exc:
         raise UsageError(str(exc)) from exc
@@ -449,7 +449,14 @@ class AdviceManager:
                     shutil.copytree(repo / root, stage / root)
                 (stage / ".factory").mkdir(exist_ok=True)
                 shutil.copyfile(repo / ".factory/config.yaml", stage / ".factory/config.yaml")
-                writer(stage, clean)
+                from aifactory.web import backlog as web_backlog
+
+                # Validate edits on the disposable backlog without rendering a live
+                # repository response (local policy resolution needs its Git identity).
+                if task_id is None:
+                    web_backlog.add(stage, clean, render_response=False)
+                else:
+                    web_backlog.edit(stage, task_id, clean, render_response=False)
             created: Path | None = None
             created_identity: tuple[int, int] | None = None
             content = b""
