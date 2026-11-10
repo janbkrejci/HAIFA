@@ -55,6 +55,7 @@ function stubApi(
     if (url === '/api/health') return envelope(HEALTH)
     if (url === '/api/repos') return envelope({ repos, home: HEALTH.home })
     if (url === '/api/code') return envelope({ stale: false, started: 'a', current: 'a' })
+    if (url.endsWith('/backlog/summary')) return envelope({ projects: 0 })
     if (url.endsWith('/config/status')) return envelope(options.status ?? CLEAN_STATUS)
     return envelope({ levels: ['module', 'step', 'task'], items: [], tasks: [] })
   })
@@ -592,7 +593,7 @@ describe('App', () => {
       repos: [HAIFA, repo('sandbox', 'sandbox', '/work/sandbox')],
       handler: (url) => {
         if (url.endsWith('/factory/roster')) return envelope({ agents: [{ name: 'builder' }] })
-        if (url.endsWith('/backlog')) return envelope({ items: [{ id: 'M01' }] })
+        if (url.endsWith('/backlog/summary')) return envelope({ projects: 1 })
         if (url === '/api/overview') return envelope(overview([ovRepo('haifa', { name: 'HAIFA', running: [running()] }), ovRepo('sandbox')]))
       },
     })

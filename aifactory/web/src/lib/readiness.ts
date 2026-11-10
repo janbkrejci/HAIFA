@@ -83,10 +83,10 @@ function createReadiness() {
       if (repo && ['ok', 'uncommitted'].includes(repo.status)) {
         const [roster, backlog] = await bounded(Promise.all([
           track('roster', fetchFactoryRoster(repo.id)),
-          track('backlog', getGlobal<{ items?: unknown[] }>(`/repos/${encodeURIComponent(repo.id)}/backlog`)),
+          track('backlog', getGlobal<{ projects: number }>(`/repos/${encodeURIComponent(repo.id)}/backlog/summary`)),
         ]))
         rosterAgents = roster.agents.length
-        projects = backlog.items?.length ?? 0
+        projects = backlog.projects
       }
       if (disposed || current !== generation) return
       const timedOut = machineTimeout(machine)

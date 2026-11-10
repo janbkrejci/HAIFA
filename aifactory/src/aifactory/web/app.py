@@ -1123,6 +1123,14 @@ def backlog_list(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok(data, warnings))
 
 
+def backlog_summary(request: Request) -> JSONResponse:
+    try:
+        data, warnings = backlog.summary(_repo(request))
+    except (TaskEditError, ConfigError, TaskRunError) as exc:
+        return _edit_error(exc)
+    return JSONResponse(envelope_ok(data, warnings))
+
+
 def backlog_names(request: Request) -> JSONResponse:
     repo: Path = _repo(request)
     try:
@@ -1974,6 +1982,7 @@ def _repo_routes() -> list[BaseRoute]:
         Route("/runs/{run_id}/unarchive", unarchive_run, methods=["POST"]),
         Route("/runs/{run_id}/delete", delete_run, methods=["POST"]),
         Route("/backlog", backlog_list, methods=["GET"]),
+        Route("/backlog/summary", backlog_summary, methods=["GET"]),
         Route("/backlog/names", backlog_names, methods=["GET"]),
         Route("/backlog/task-advice/options", task_advice_options, methods=["GET"]),
         Route("/backlog/task-advice", task_advice_start, methods=["POST"]),

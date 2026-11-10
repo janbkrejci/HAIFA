@@ -140,6 +140,8 @@ class _Runtime:
     queue: QueuePrefs = field(default_factory=QueuePrefs)
     # ``queue.priority_map`` of the backlog, computed once (``_priority``)
     priority: dict[str, list[str]] | None = None
+    # Only the board read request sets this; action decisions keep their fresh reads.
+    merge_policy: JsonDict | None = None
 
 
 def _priority(backlog: Backlog, rt: _Runtime) -> dict[str, list[str]]:
@@ -280,7 +282,12 @@ def board_state(backlog: Backlog, task: Task, rt: _Runtime) -> str:
         if task.id in rt.approved:
             return "approved"
         error = "auto_merge_error" if task.id in rt.merge_blocked else None
-        return "awaiting merge" if waits_for_automerge(backlog.root, task, error) else "in review"
+        enabled = (
+            bool(rt.merge_policy["value"]) and not error
+            if rt.merge_policy is not None
+            else waits_for_automerge(backlog.root, task, error)
+        )
+        return "awaiting merge" if enabled else "in review"
     if task.id in rt.failed:
         return "failed"
     state = core.derived_state(backlog, task)
@@ -310,6 +317,10 @@ def _completion_error(backlog: Backlog, task: Task, rt: _Runtime) -> str | None:
     return error
 
 
+def _read_policy(backlog: Backlog, rt: _Runtime) -> JsonDict:
+    return rt.merge_policy if rt.merge_policy is not None else _merge_policy(backlog.root)
+
+
 def _task_json(
     backlog: Backlog, task: Task, reverse: dict[str, list[str]], rt: _Runtime
 ) -> JsonDict:
@@ -331,7 +342,7 @@ def _task_json(
         )
     }
     data["own_auto_merge"] = own_merge if isinstance(own_merge, bool) else None
-    data["auto_merge_policy"] = _merge_policy(backlog.root)
+    data["auto_merge_policy"] = _read_policy(backlog, rt)
     data["effective_auto_merge"] = data["auto_merge_policy"]["value"]
     data["invalid"] = core.derived_state(backlog, task) == "invalid"
     data["last_run"] = rt.last_run.get(task.id)
@@ -379,7 +390,7 @@ def _container_json(
         "auto_continue": _own_flag(container, "auto_continue"),
         "auto_merge": _own_flag(container, "auto_merge"),
         "effective_auto_continue": _effective_flag(container, "auto_continue"),
-        "effective_auto_merge": _merge_policy(backlog.root)["value"],
+        "effective_auto_merge": _read_policy(backlog, rt)["value"],
         "can_toggle": container.index_path is not None,
         "archived": container.archived,
         "kind": "container",
@@ -441,6 +452,7 @@ def backlog_view(repo: Path, *, status: str | None = None) -> tuple[JsonDict, li
     issues = core.check_backlog(backlog)
     reverse = core.blocks(backlog)
     rt, warnings = _runtime(repo)
+    rt.merge_policy = _merge_policy(repo)
 
     def keep(task: Task) -> bool:
         return status is None or board_state(backlog, task, rt) == status
@@ -493,6 +505,12 @@ def backlog_view(repo: Path, *, status: str | None = None) -> tuple[JsonDict, li
         "priority_order": list(_priority(backlog, rt)),
     }
     return data, warnings + _warnings(issues)
+
+
+def summary(repo: Path) -> tuple[JsonDict, list[str]]:
+    """Project count for onboarding, including archived projects as on the board."""
+    backlog = core.load_for_edit(repo)
+    return {"projects": len(backlog.containers)}, []
 
 
 def names(repo: Path) -> tuple[JsonDict, list[str]]:

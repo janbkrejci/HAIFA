@@ -121,6 +121,9 @@ class GlobalState:
     jobs: dict[bool, CheckJob] = field(default_factory=dict)
     seq: int = 0
     epoch: int = 0
+    # Per-repository roster results, keyed by freshly read configuration inputs.
+    roster_counts: dict[str, tuple[tuple[Any, ...], frozenset[str]]] = field(default_factory=dict)
+    roster_lock: threading.Lock = field(default_factory=threading.Lock)
     harness_catalog: dict[str, Any] | None = None
     harness_lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -410,7 +413,7 @@ def check_view(
     ok = bool(view["ok"])
     message = _message(view["findings"])
     # Registry changes must be visible even while the machine probes are cached.
-    view["harness_repos"] = counts = _harness_repos(home, machine)
+    view["harness_repos"] = counts = _harness_repos(home, machine, state)
     # Which harnesses are missing stays known (the roster editor and getting started use
     # it), even when the info finding of a harness no repository uses is not shown.
     missing = [
@@ -451,23 +454,64 @@ def check_view(
     return actionable_findings(view, lambda f: _needed(f, counts)), ok, message
 
 
-def _harness_repos(home: Path, machine: Machine | None) -> dict[str, int]:
+def _harness_repos(home: Path, machine: Machine | None, state: GlobalState) -> dict[str, int]:
     """How many registered repositories use each harness (``REGISTRY_BUDGET``)."""
     counts = dict.fromkeys(HARNESSES, 0)
     adapter = HomeMachine(machine or SystemMachine(), home)
+    with state.roster_lock:
+        previous = dict(state.roster_counts)
+    current: dict[str, tuple[tuple[Any, ...], frozenset[str]]] = {}
     with procrun.budget(REGISTRY_BUDGET):
+        from aifactory.library.inherit import library_head
+        from aifactory.library.store import library_root
+
+        try:
+            library_key = (str(library_root()), library_head(library_root()))
+        except (ConfigError, OSError, procrun.BudgetExceeded):
+            return counts
         for repo in _registered(home):
             try:
                 context = CheckContext(
                     Path(repo.path), offline=True, machine=adapter, require_repo=False
                 )
-                roster = context.roster
-                if roster is not None:
-                    for name in harnesses_in_config(roster):
-                        counts[name] += 1
+                if not context.in_repo:
+                    continue
+                # Base and its commit are read again on every request. Working-tree
+                # bytes cover the fallback for an uncommitted/invalid installation;
+                # neither timestamps nor a TTL can hide edits or deletions.
+                key = (
+                    str(context.main),
+                    context.base,
+                    context.commit,
+                    library_key,
+                    _roster_files(context.main),
+                )
+                cached = previous.get(repo.path)
+                if cached is not None and cached[0] == key:
+                    names = cached[1]
+                else:
+                    roster = context.roster
+                    names = (
+                        frozenset(harnesses_in_config(roster))
+                        if roster is not None
+                        else frozenset()
+                    )
+                current[repo.path] = (key, names)
+                for name in names:
+                    counts[name] += 1
             except (ConfigError, OSError, procrun.BudgetExceeded):
                 continue
+    with state.roster_lock:
+        state.roster_counts = current
     return counts
+
+
+def _roster_files(root: Path) -> tuple[tuple[str, bytes], ...]:
+    """All working-tree inputs of load_config, excluding runtime data."""
+    files = [root / ".factory" / name for name in ("config.yaml", "agents.yaml", "roles.yaml")]
+    for directory in ("prompts", "workflows"):
+        files.extend(p for p in (root / ".factory" / directory).rglob("*") if p.is_file())
+    return tuple((str(p.relative_to(root)), p.read_bytes()) for p in sorted(files) if p.is_file())
 
 
 def _needed(finding: Mapping[str, Any], counts: Mapping[str, int]) -> bool:
