@@ -2,6 +2,7 @@
 id: HAIFA-S11-T02
 title: Auto continue s okamžitou bariérou dalších startů
 status: done
+archived: true
 depends_on: [HAIFA-S11-T01]
 writes: [aifactory/]
 test_timeout: 1200

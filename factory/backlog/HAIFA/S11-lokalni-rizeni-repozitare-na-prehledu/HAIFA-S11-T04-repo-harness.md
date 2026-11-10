@@ -2,6 +2,7 @@
 id: HAIFA-S11-T04
 title: Místní výchozí harness pro všechny nové běhy repozitáře
 status: done
+archived: true
 depends_on: [HAIFA-S11-T03]
 writes: [aifactory/]
 test_timeout: 1200

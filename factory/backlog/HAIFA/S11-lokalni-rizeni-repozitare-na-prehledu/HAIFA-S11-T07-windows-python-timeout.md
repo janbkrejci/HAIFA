@@ -2,6 +2,7 @@
 id: HAIFA-S11-T07
 title: Opravit timeouty testů a chybová okna Pythonu na Windows
 status: done
+archived: true
 depends_on: [HAIFA-S11-T02]
 writes: [aifactory/]
 test_timeout: 1200

@@ -2,6 +2,7 @@
 id: HAIFA-S11-T06
 title: Převzetí legacy voleb a kompatibilita sdíleného backlogu
 status: done
+archived: true
 depends_on: [HAIFA-S11-T05]
 writes: [aifactory/, docs/, README.md]
 test_timeout: 1200

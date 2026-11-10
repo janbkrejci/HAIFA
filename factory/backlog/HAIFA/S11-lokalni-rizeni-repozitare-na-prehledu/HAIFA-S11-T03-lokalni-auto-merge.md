@@ -2,6 +2,7 @@
 id: HAIFA-S11-T03
 title: Jednotná místní politika auto merge
 status: done
+archived: true
 depends_on: [HAIFA-S11-T02]
 writes: [aifactory/]
 test_timeout: 3600

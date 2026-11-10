@@ -2,6 +2,7 @@
 id: HAIFA-S11-T01
 title: Místní nastavení repozitáře a kompatibilní kontrakt
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/, docs/decisions.md]
 test_timeout: 1200

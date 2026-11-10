@@ -2,6 +2,7 @@
 id: HAIFA-S11-T05
 title: Ovládání automatizací a harnessu na Přehledu
 status: done
+archived: true
 depends_on: [HAIFA-S11-T04]
 writes: [aifactory/]
 test_timeout: 1200

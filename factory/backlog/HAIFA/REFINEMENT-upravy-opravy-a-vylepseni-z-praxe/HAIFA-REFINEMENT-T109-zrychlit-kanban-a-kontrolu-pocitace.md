@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T109
 title: "Zrychlit kanban a kontrolu počítače: odstranit opakovaná Git čtení"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T108]
 writes: [aifactory/]

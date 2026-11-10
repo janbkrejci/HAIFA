@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T108
 title: "Průběh, časový limit a čerstvé výsledky kontroly počítače"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-REFINEMENT-T57]
 writes: [aifactory/]
