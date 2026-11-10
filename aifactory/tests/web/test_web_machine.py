@@ -5,7 +5,12 @@ from __future__ import annotations
 import os
 import sys
 import tempfile
+import threading
+import time
+from collections.abc import Sequence
+from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 import pytest
 from multi_repo import git, register, write
@@ -13,7 +18,7 @@ from starlette.testclient import TestClient
 from test_web_library import client as client
 from test_web_library import initialize, response, state
 
-from aifactory.check import run_check
+from aifactory.check import Probe, run_check
 from aifactory.check.machine import SystemMachine
 from aifactory.web import machine
 from fake_exe import make_executable
@@ -209,3 +214,243 @@ def test_internal_error_says_where_a_nameless_error_was_raised(
     message = body["error"]["message"]
     assert message.startswith("FileNotFoundError: [Errno 2] No such file or directory (in ")
     assert "machine.py:" in message
+
+
+# -- one bounded check: progress, timeout, shared jobs, late results (T108) --
+
+
+@dataclass
+class BlockingMachine(FakeMachine):
+    """A fake whose ``claude auth status`` hangs until ``release`` (an unresponsive probe)."""
+
+    release: threading.Event = field(default_factory=threading.Event)
+    entered: threading.Event = field(default_factory=threading.Event)
+    blocks: int = 1
+    hung: int = 0
+
+    def run(
+        self, argv: Sequence[str], timeout: float = 15, cwd: Path | None = None
+    ) -> Probe | None:
+        if tuple(argv) == ("claude", "auth", "status") and self.hung < self.blocks:
+            self.hung += 1
+            self.entered.set()
+            assert self.release.wait(10), "the test never released the probe"
+        return super().run(argv, timeout, cwd)
+
+
+def _small_budget(monkeypatch: pytest.MonkeyPatch, budget: float = 0.5) -> None:
+    monkeypatch.setattr(machine, "CHECK_BUDGET", budget)
+    monkeypatch.setattr(machine, "RESULT_GRACE", 0.1)
+
+
+def _idle(client: TestClient) -> None:
+    """Wait until no machine check job runs (a released probe lets it finish)."""
+    deadline = time.monotonic() + 10
+    while any(not job.done.is_set() for job in list(state(client).library.jobs.values())):
+        assert time.monotonic() < deadline, "the check job never ended"
+        time.sleep(0.01)
+
+
+def test_timeout_names_the_step_keeps_the_last_result_and_a_retry_checks_again(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state(client).check_machine = FakeMachine(present={"git", "uv", "just", "claude"})
+    first = response(client.get("/api/machine/check"))
+    blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
+    state(client).check_machine = blocking
+    _small_budget(monkeypatch)
+    started = time.monotonic()
+    res = client.get("/api/machine/check?fresh=1")
+    assert time.monotonic() - started < 5, "the request must end at the budget"
+    data = response(res, 200, "check_timeout")
+    assert data["timed_out"] and data["stale"] and data["cached"] and not data["ok"]
+    # The last known result with its time, never a success of the unfinished check.
+    assert data["checked_at"] == first["checked_at"]
+    assert data["findings"] == first["findings"]
+    assert data["progress"]["step"] == "machine: logins"
+    assert data["progress"]["detail"] == "claude auth status"
+    message = res.json()["error"]["message"]
+    assert "0.5 s" in message and "machine: logins (claude auth status)" in message
+    # The server's progress answers while the probe still hangs.
+    progress = response(client.get("/api/machine/progress"))
+    assert progress["job"]["step"] == "machine: logins" and progress["job"]["running"]
+    assert progress["checked_at"] == first["checked_at"]
+    # A retry does not join the expired job: it checks again and succeeds.
+    retried = response(client.get("/api/machine/check?fresh=1"))
+    assert not retried.get("timed_out") and not retried["cached"]
+    assert retried["checked_at"] != first["checked_at"]
+    blocking.release.set()
+    _idle(client)
+    # The expired job ran out of budget: its late result never replaces the newer one.
+    assert response(client.get("/api/machine/check"))["checked_at"] == retried["checked_at"]
+    assert response(client.get("/api/machine/progress"))["job"] is None
+
+
+def test_first_check_timeout_has_no_result_and_is_not_ok(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
+    state(client).check_machine = blocking
+    _small_budget(monkeypatch)
+    data = response(client.get("/api/machine/check"), 200, "check_timeout")
+    assert data["timed_out"] and not data["ok"] and not data["cached"]
+    assert data["checked_at"] is None and data["findings"] == []
+    blocking.release.set()
+    _idle(client)
+    # Nothing of the exhausted check was cached: the next read checks again.
+    assert not state(client).library.checks
+
+
+def test_concurrent_requests_share_one_check_and_its_timeout(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
+    home, global_state = state(client).home, state(client).library
+    monkeypatch.setattr(machine, "RESULT_GRACE", 0.1)
+    results: list[tuple[dict[str, Any], bool, str]] = []
+
+    def request() -> None:
+        results.append(
+            machine.check_view(
+                home, global_state, offline=False, fresh=True, machine=blocking, budget=1.0
+            )
+        )
+
+    threads = [threading.Thread(target=request) for _ in range(4)]
+    for thread in threads:
+        thread.start()
+    assert blocking.entered.wait(5)
+    for thread in threads:
+        thread.join(10)
+        assert not thread.is_alive(), "a waiting request must end at the shared deadline"
+    # Repeated clicks and other dashboards joined one check: one probe, one job.
+    assert blocking.hung == 1
+    assert blocking.calls.count(("claude", "auth", "status")) == 0  # still hanging
+    assert len(results) == 4
+    assert all(data["timed_out"] and not ok for data, ok, _ in results)
+    assert len({data["progress"]["seq"] for data, _, _ in results}) == 1
+    blocking.release.set()
+    _idle(client)
+
+
+def test_joined_check_answers_every_waiting_request(client: TestClient) -> None:
+    blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
+    home, global_state = state(client).home, state(client).library
+    results: list[dict[str, Any]] = []
+
+    def request() -> None:
+        data, _, _ = machine.check_view(
+            home, global_state, offline=False, fresh=True, machine=blocking
+        )
+        results.append(data)
+
+    threads = [threading.Thread(target=request) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    assert blocking.entered.wait(5)
+    time.sleep(0.1)  # every request joined the hanging check
+    blocking.release.set()
+    for thread in threads:
+        thread.join(10)
+    assert blocking.calls.count(("claude", "auth", "status")) == 1
+    assert len(results) == 3 and len({data["checked_at"] for data in results}) == 1
+    assert not any(data.get("timed_out") for data in results)
+
+
+def test_older_result_never_replaces_a_newer_one(client: TestClient) -> None:
+    global_state = state(client).library
+    home = state(client).home
+    fake = FakeMachine()
+
+    def job(seq: int) -> machine.CheckJob:
+        return machine.CheckJob(
+            offline=False,
+            seq=seq,
+            epoch=global_state.epoch,
+            budget=30,
+            started=machine._clock(),
+            started_at="",
+        )
+
+    newer, older = job(2), job(1)
+    machine._work(newer, home, global_state, fake)
+    machine._work(older, home, global_state, fake)
+    assert older.result is not None and not older.exhausted
+    assert global_state.checks[False].seq == 2
+
+
+def test_check_started_before_a_library_write_is_not_cached(client: TestClient) -> None:
+    blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
+    home, global_state = state(client).home, state(client).library
+    thread = threading.Thread(
+        target=machine.check_view,
+        args=(home, global_state),
+        kwargs={"offline": False, "fresh": True, "machine": blocking},
+    )
+    thread.start()
+    assert blocking.entered.wait(5)
+    global_state.invalidate()  # a library sync while the check runs
+    # A request after the write does not join the old check; it reads the current state.
+    data, _, _ = machine.check_view(
+        home, global_state, offline=False, fresh=True, machine=FakeMachine()
+    )
+    assert not data["cached"] and not data.get("timed_out")
+    blocking.release.set()
+    thread.join(10)
+    assert global_state.checks[False].report["checked_at"] == data["checked_at"]
+
+
+def test_unresponsive_registry_read_is_bounded(
+    client: TestClient, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.library.install import init_repo
+
+    initialize(client)
+    repo = tmp_path / "one"
+    repo.mkdir()
+    git(repo, "init", "-b", "main")
+    write(repo, "README.md", "repo\n")
+    git(repo, "add", "README.md")
+    git(repo, "commit", "-m", "initial")
+    init_repo(repo)
+    register(client, repo)
+    state(client).check_machine = FakeMachine()
+    assert response(client.get("/api/machine/check?offline=1"))["harness_repos"]["claude"] == 1
+    # The roster read gets no time left: the view still answers, without the counts.
+    monkeypatch.setattr(machine, "REGISTRY_BUDGET", 0.0)
+    data = response(client.get("/api/machine/check?offline=1"))
+    assert data["cached"] and data["harness_repos"]["claude"] == 0
+
+
+def test_cached_check_follows_a_library_changed_outside_the_dashboard(
+    client: TestClient, tmp_path: Path
+) -> None:
+    bare = tmp_path / "remote.git"
+    git(tmp_path, "init", "--bare", "-b", "main", str(bare))
+    root = initialize(client, remote=str(bare))
+    fake = FakeMachine()
+    state(client).check_machine = fake
+
+    def codes(data: dict[str, Any]) -> set[str]:
+        return {f["code"] for f in data["findings"]}
+
+    first = response(client.get("/api/machine/check"))
+    assert "library_behind" not in codes(first)
+    probes = len(fake.calls)
+    # Another clone advances the remote; the library fetches it with git, not HAIFA.
+    other = tmp_path / "other"
+    git(tmp_path, "clone", str(bare), str(other))
+    write(other, "note.txt", "remote change\n")
+    git(other, "add", "note.txt")
+    git(other, "commit", "-m", "remote change")
+    git(other, "push", "origin", "main")
+    git(root, "fetch", "origin")
+    behind = response(client.get("/api/machine/check"))
+    assert behind["cached"] and behind["checked_at"] == first["checked_at"]
+    assert "library_behind" in codes(behind)
+    # Synced by the CLI or git: the cached check no longer shows the old state.
+    git(root, "merge", "--ff-only", "origin/main")
+    synced = response(client.get("/api/machine/check"))
+    assert synced["cached"] and "library_behind" not in codes(synced)
+    # The expensive probes were not run again for these cached reads.
+    assert len(fake.calls) == probes

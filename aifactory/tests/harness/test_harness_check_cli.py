@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 from typing import Any
@@ -11,6 +10,7 @@ from typing import Any
 import pytest
 import yaml
 
+from aifactory import procrun
 from aifactory.cli import main
 from aifactory.harness import check
 from cli_json import read_envelope, run_json
@@ -33,15 +33,15 @@ def _fake(monkeypatch: pytest.MonkeyPatch, present: set[str]) -> list[list[str]]
             return binary if binary in VERSIONS else None
         return f"/bin/{binary}" if binary in present else None
 
-    def run(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
+    def run(cmd: list[str], timeout: float, **kw: Any) -> procrun.Finished:
         calls.append(cmd)
         out, err = VERSIONS[cmd[0]]
-        return subprocess.CompletedProcess(cmd, 0, out, err)
+        return procrun.Finished(0, out, err)
 
     for var in ("CLAUDE_CODE_PATH", "CODEX_PATH", "PI_PATH"):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setattr(shutil, "which", which)
-    monkeypatch.setattr(subprocess, "run", run)
+    monkeypatch.setattr(procrun, "run", run)
     return calls
 
 
@@ -120,10 +120,10 @@ def test_harness_check_env_binary(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_harness_check_nonzero_version_is_an_error(monkeypatch: pytest.MonkeyPatch) -> None:
     _fake(monkeypatch, {"claude", "codex", "pi"})
 
-    def failing(cmd: list[str], **kw: Any) -> subprocess.CompletedProcess[str]:
-        return subprocess.CompletedProcess(cmd, 2, "", "bad flag")
+    def failing(cmd: list[str], timeout: float, **kw: Any) -> procrun.Finished:
+        return procrun.Finished(2, "", "bad flag")
 
-    monkeypatch.setattr(subprocess, "run", failing)
+    monkeypatch.setattr(procrun, "run", failing)
     status = check.check_harness("codex")
     assert status.version is None
     assert not status.ok

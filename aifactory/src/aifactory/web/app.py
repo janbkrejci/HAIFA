@@ -154,7 +154,11 @@ available on this machine).
 Global library: ``GET /api/machine/check?offline=&fresh=`` caches the outside-repo
 CLI check; the server runs it once at start and again only for ``fresh=1``. It returns
 only actionable findings (no info ``harness_missing`` of a harness no registered repo
-uses; ``missing_harnesses`` names them all).
+uses; ``missing_harnesses`` names them all). A cached read evaluates the library rules
+again (local git only). Concurrent requests share one running check with one time
+budget; past it the answer is ``check_timeout`` with the last known result (``stale``,
+``checked_at``) and ``progress`` (the unfinished step). ``GET /api/machine/progress``
+returns the running check's ``step``, ``detail`` and ``elapsed`` (``job``) for the UI.
 ``GET /api/library`` returns status without fetch and item metadata (``?items=0``: status
 only); ``GET /api/library/items/{type}/{name}?version=`` returns files and history.
 ``GET /api/library/overrides`` lists the registered repositories' own copies of library
@@ -2516,11 +2520,17 @@ async def machine_check(request: Request) -> JSONResponse:
         envelope_ok(data)
         if ok
         else envelope_fail(
-            "checks_failed",
+            "check_timeout" if data.get("timed_out") else "checks_failed",
             message,
             data=data,
         )
     )
+
+
+async def machine_check_progress(request: Request) -> JSONResponse:
+    """The step and elapsed time of the running machine check (``job``: None when idle)."""
+    offline = _flag(request, "offline")
+    return JSONResponse(envelope_ok(request.app.state.library.progress(offline)))
 
 
 async def library_get(request: Request) -> JSONResponse:
@@ -2829,6 +2839,7 @@ def create_multi_app(
             Route("/terminal/sessions/{id}/resize", terminal_session, methods=["POST"]),
             Route("/terminal/sessions/{id}", terminal_session, methods=["DELETE"]),
             Route("/machine/check", machine_check, methods=["GET"]),
+            Route("/machine/progress", machine_check_progress, methods=["GET"]),
             Route("/machine/system", machine_system, methods=["GET"]),
             Route("/machine/cleanup", machine_cleanup, methods=["POST"]),
             Route("/machine/harnesses", machine_harnesses, methods=["GET", "POST"]),

@@ -10,16 +10,23 @@ const registered: RepoItem = { id: 'a', name: 'A', path: '/w/a', added_at: '', s
 const machine: MachineCheck = { ok: true, findings: [], checked_at: 'now', cached: false, harness_repos: { codex: 1 } }
 
 function envelope(data: unknown) { return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] })) }
-function stub(options: { machine?: MachineCheck; repos?: RepoItem[]; fail?: boolean; pending?: Promise<Response> } = {}) {
+type StubOptions = {
+  machine?: MachineCheck; repos?: RepoItem[]; fail?: boolean; pending?: Promise<Response>
+  progress?: unknown; roster?: Promise<Response>; machineResponse?: () => Response
+}
+function stub(options: StubOptions = {}) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === '/api/repos/missing' && init?.method === 'DELETE') return envelope({ removed: { id: 'missing' } })
+    if (url === '/api/machine/progress') return envelope(options.progress ?? { job: null, checked_at: null })
     if (url.startsWith('/api/machine/check')) {
       if (options.fail) throw new Error('Server není dostupný')
       if (options.pending) return options.pending
+      if (options.machineResponse) return options.machineResponse()
       return envelope(options.machine ?? machine)
     }
     if (url === '/api/library?items=0') return envelope({ exists: true })
     if (url === '/api/repos') return envelope({ repos: options.repos ?? [registered] })
+    if (url === '/api/repos/a/factory/roster' && options.roster) return options.roster
     if (url === '/api/repos/a/factory/roster') return envelope({ agents: [{ name: 'builder' }], workflow_tasks: {} })
     if (url === '/api/repos/a/backlog') return envelope({ items: [{ id: 'M01' }] })
     if (url === '/api/overview') return envelope(overview([repo('a')]))
@@ -222,6 +229,94 @@ describe('overview readiness', () => {
     expect(wrapper.get('[data-test="readiness-warning"]').text()).toContain('Server není dostupný')
     options.fail = false
     await wrapper.get('[data-test="readiness-retry"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
+  })
+
+  const job = { seq: 1, offline: false, step: 'machine: logins', detail: 'claude auth status', started_at: '', elapsed: 3, budget: 60, running: true }
+
+  it.each([true, false])('shows the waited-for step and the elapsed time while checking (chip=%s)', async chip => {
+    const options: StubOptions = { progress: { job, checked_at: null } }
+    stub(options)
+    const wrapper = mount(OverviewReadiness, { props: { chip } })
+    await flushPromises()
+    let finish!: (response: Response) => void
+    options.pending = new Promise(resolve => { finish = resolve })
+    await wrapper.get(chip ? '[data-test="readiness-success"]' : '[data-test="readiness-retry"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(2000)
+    const label = 'Probíhá kontrola – čeká na: kontrola počítače: machine: logins (claude auth status) · 2 s'
+    if (chip) {
+      expect(wrapper.get('[data-test="readiness-checking"]').attributes('aria-label')).toBe(label)
+      expect(wrapper.get('[data-test="readiness-elapsed"]').text()).toBe('2 s')
+      await wrapper.get('[data-test="readiness-checking"]').trigger('focusin')
+      expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(label)
+    } else {
+      expect(wrapper.get('[data-test="readiness-progress"]').text()).toBe('Čeká na: kontrola počítače: machine: logins (claude auth status) · 2 s')
+    }
+    finish(envelope(machine))
+    await flushPromises()
+    expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="readiness-elapsed"]').exists()).toBe(false)
+  })
+
+  it('ends a check whose follow-up request never answers, names the step and retries', async () => {
+    const options: StubOptions = { machine: { ...machine, checked_at: new Date().toISOString() } }
+    const fetchMock = stub(options)
+    const wrapper = mount(OverviewReadiness)
+    await flushPromises()
+    let finishRoster!: (response: Response) => void
+    options.roster = new Promise(resolve => { finishRoster = resolve })
+    await wrapper.get('[data-test="readiness-retry"]').trigger('click')
+    await vi.advanceTimersByTimeAsync(74_000)
+    expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(true)
+    await vi.advanceTimersByTimeAsync(1_000)
+    const warning = wrapper.get('[data-test="readiness-warning"]')
+    expect(warning.get('strong').text()).toBe('Kontrola nedoběhla do 75 s')
+    expect(warning.text()).toContain('Nedokončený krok: roster.')
+    expect(warning.text()).toContain('Zobrazen poslední známý výsledek z')
+    // A late answer of the timed-out check changes nothing.
+    finishRoster(envelope({ agents: [{ name: 'builder' }], workflow_tasks: {} }))
+    await flushPromises()
+    expect(wrapper.get('[data-test="readiness-warning"] strong').text()).toBe('Kontrola nedoběhla do 75 s')
+    options.roster = undefined
+    const before = fetchMock.mock.calls.length
+    await wrapper.get('[data-test="readiness-timeout-retry"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock.mock.calls.slice(before).map(([url]) => url)).toContain('/api/machine/check?fresh=1')
+    expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
+  })
+
+  it.each([true, false])('shows a server timeout with the unfinished step and the last known result (chip=%s)', async chip => {
+    const checkedAt = new Date(Date.now() - 10 * 60_000).toISOString()
+    const stale = { ...machine, ok: false, checked_at: checkedAt, cached: true, stale: true, timed_out: true, progress: { ...job, elapsed: 60 }, findings: [{ code: 'library_behind', severity: 'warning' as const, scope: 'library' as const, message: 'the library is 7 commit(s) behind', fix: 'factory library pull', action: null }] }
+    stub({ machineResponse: () => new Response(JSON.stringify({ ok: false, data: stale, error: { code: 'check_timeout', message: 'the check did not finish', path: null, id: null, issues: [] }, warnings: [] })) })
+    const wrapper = mount(OverviewReadiness, { props: { chip } })
+    await flushPromises()
+    expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(false)
+    if (chip) {
+      expect(wrapper.find('[data-test="readiness-warning"]').exists()).toBe(true)
+      return
+    }
+    const items = wrapper.findAll('[data-test="readiness-warning"] li').map(li => li.text())
+    expect(items[0]).toContain('Kontrola nedoběhla do 60 s')
+    expect(items[0]).toContain('Nedokončený krok: kontrola počítače: machine: logins (claude auth status).')
+    expect(items[0]).toContain('(před 10 min)')
+    expect(items.some(text => text.includes('the library is 7 commit(s) behind (poslední známý stav)'))).toBe(true)
+    expect(wrapper.find('[data-test="readiness-timeout-retry"]').exists()).toBe(true)
+  })
+
+  it('does not queue another check for a repeated click while one runs', async () => {
+    const options: StubOptions = {}
+    const fetchMock = stub(options)
+    const wrapper = mount(OverviewReadiness, { props: { chip: true } })
+    await flushPromises()
+    let finish!: (response: Response) => void
+    options.pending = new Promise(resolve => { finish = resolve })
+    const recheck = (wrapper.vm as unknown as { recheck: () => void }).recheck
+    recheck(); recheck(); recheck()
+    await flushPromises()
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/machine/check?fresh=1')).toHaveLength(1)
+    finish(envelope(machine))
     await flushPromises()
     expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
   })

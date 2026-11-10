@@ -746,14 +746,33 @@ export function applyBasePull(digest: string, id?: string): Promise<FactoryResul
   return applyEnvelope(factoryUrl('/config/pull', id), { digest })
 }
 
+/** The running machine check (GET /api/machine/progress, `progress` of a timed-out check). */
+export interface MachineProgress {
+  seq: number; offline: boolean; step: string; detail: string | null
+  started_at: string; elapsed: number; budget: number; running: boolean
+}
 export interface MachineCheck {
-  ok: boolean; findings: CheckFinding[]; checked_at: string; cached: boolean
+  ok: boolean; findings: CheckFinding[]
+  /** When the shown result was checked; null when no check has finished yet. */
+  checked_at: string | null
+  cached: boolean
   harness_repos?: Record<string, number>
   /** Every missing harness, also those whose info finding is not shown (no repo uses them). */
   missing_harnesses?: string[]
+  /** The check did not finish within its budget: the data are the last known result. */
+  timed_out?: boolean
+  stale?: boolean
+  /** The library findings are cached ones (they could not be read again now). */
+  library_stale?: boolean
+  progress?: MachineProgress
 }
+/** Error codes of the machine check whose envelope still carries the (last known) report. */
+export const MACHINE_CHECK_CODES = [...CHECK_REPORT_CODES, 'check_timeout'] as const
 export async function fetchMachineCheck(fresh = false): Promise<MachineCheck> {
-  return readEnvelope<MachineCheck>(await fetch('/api/machine/check' + (fresh ? '?fresh=1' : '')), CHECK_REPORT_CODES)
+  return readEnvelope<MachineCheck>(await fetch('/api/machine/check' + (fresh ? '?fresh=1' : '')), MACHINE_CHECK_CODES)
+}
+export function fetchMachineProgress(): Promise<{ job: MachineProgress | null; checked_at: string | null }> {
+  return getGlobal('/machine/progress')
 }
 
 export type FactoryItemType = 'agent' | 'workflow' | 'skill' | 'extension'

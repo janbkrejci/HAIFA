@@ -17,6 +17,7 @@ import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from pathlib import Path
 
+from aifactory import procrun
 from aifactory.providers.base import ProviderError
 
 # Global options for commands that check files out: write them with parallel workers.
@@ -25,8 +26,15 @@ PARALLEL_CHECKOUT = ("-c", "checkout.workers=0")
 
 
 def _run(cwd: Path, args: tuple[str, ...], input: str | None) -> subprocess.CompletedProcess[str]:
+    # Inside a probe budget (``procrun.budget``) git gets the time left, else no limit.
     return subprocess.run(
-        ["git", *args], cwd=cwd, capture_output=True, text=True, input=input, encoding="utf-8"
+        ["git", *args],
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        input=input,
+        encoding="utf-8",
+        timeout=procrun.limit(None, ["git", *args]),
     )
 
 
@@ -284,6 +292,7 @@ def run_bytes(
         capture_output=True,
         input=input_bytes,
         env={**os.environ, **(env or {})},
+        timeout=procrun.limit(None, ["git", *args]),
     )
 
 

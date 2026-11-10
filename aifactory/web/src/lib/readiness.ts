@@ -1,54 +1,106 @@
 import { inject, onBeforeUnmount, onMounted, provide, ref, type InjectionKey } from 'vue'
-import { fetchFactoryRoster, fetchMachineCheck, fetchRepos, getGlobal, type RepoItem } from './api'
+import { fetchFactoryRoster, fetchMachineCheck, fetchRepos, getGlobal, type MachineCheck, type RepoItem } from './api'
 import { fetchLibrarySummary } from './library'
 import { focusRepo, gettingStartedSteps, type Step } from './gettingStarted'
 import { errorText } from './format'
+import { CHECK_DEADLINE_MS, CheckTimeout, beforeDeadline, followProgress, lastKnown, serverStep } from './machineProgress'
 import { LIBRARY_HREF, SETUP_HREF, repoHref } from './router'
 import { repoStatusText } from './repos'
 
-type Issue = Pick<Step, 'id' | 'title' | 'hint' | 'href' | 'action'> & { repo?: RepoItem }
+/** `retry`: the issue's action runs the check again (a check that did not finish). */
+type Issue = Pick<Step, 'title' | 'hint' | 'href' | 'action'> & { id: Step['id'] | 'timeout'; repo?: RepoItem; retry?: boolean }
+/** The requests the readiness waits for, in the words shown while it waits. */
+const STEPS = { machine: 'kontrola počítače', library: 'stav knihovny', repos: 'seznam repozitářů', roster: 'roster', backlog: 'backlog' } as const
+type StepKey = keyof typeof STEPS
+
+function timeoutIssue(step: string, seconds: number, checkedAt: string | null | undefined): Issue {
+  const known = lastKnown(checkedAt)
+  return {
+    id: 'timeout',
+    title: `Kontrola nedoběhla do ${seconds} s`,
+    hint: `Nedokončený krok: ${step}. ` + (known ? `Zobrazen poslední známý výsledek ${known}.` : 'Dřívější výsledek není k dispozici.'),
+    href: SETUP_HREF,
+    action: 'Zkontrolovat znovu',
+    retry: true,
+  }
+}
+
 function createReadiness() {
   const phase = ref<'loading' | 'checking' | 'warning' | 'success' | null>(null)
   const issues = ref<Issue[]>([])
+  /** What the running check waits for (with the server's step of the machine check). */
+  const step = ref<string | null>(null)
+  /** Seconds since the running check started. */
+  const elapsed = ref(0)
   let checking = false
+  let manualRunning = false
   let generation = 0
   let disposed = false
   let loadingTimer: ReturnType<typeof setTimeout> | undefined
+  let stopProgress: (() => void) | undefined
+  let lastCheckedAt: string | null = null
   async function check(fresh = false, manual = false) {
-    if (disposed || (checking && !manual)) return
+    if (disposed || (checking && !manual) || (manual && manualRunning)) return
     const current = ++generation
     checking = true
+    manualRunning = manual
     clearTimeout(loadingTimer)
     if (manual) phase.value = 'checking'
     else if (phase.value === null) {
       loadingTimer = setTimeout(() => { phase.value = 'loading' }, 1000)
     }
+    const pending = new Set<StepKey>()
+    let server: string | null = null
+    const waitingFor = () => {
+      const first = [...pending][0]
+      if (!first) return 'vyhodnocení'
+      return first === 'machine' && server ? `${STEPS.machine}: ${server}` : STEPS[first]
+    }
+    function track<T>(key: StepKey, promise: Promise<T>): Promise<T> {
+      pending.add(key)
+      return promise.finally(() => pending.delete(key))
+    }
+    stopProgress?.()
+    elapsed.value = 0
+    step.value = null
+    stopProgress = followProgress((seconds, serverStepText) => {
+      if (current !== generation) return
+      server = serverStepText
+      elapsed.value = seconds
+      step.value = waitingFor()
+    }, () => pending.has('machine'))
+    const deadline = Date.now() + CHECK_DEADLINE_MS
+    const seconds = Math.round(CHECK_DEADLINE_MS / 1000)
+    const bounded = <T>(promise: Promise<T>) => beforeDeadline(promise, deadline, waitingFor, seconds)
     try {
-      const [machine, library, registry] = await Promise.all([
-        fetchMachineCheck(fresh), fetchLibrarySummary(), fetchRepos(),
-      ])
+      const [machine, library, registry] = await bounded(Promise.all([
+        track('machine', fetchMachineCheck(fresh)), track('library', fetchLibrarySummary()), track('repos', fetchRepos()),
+      ]))
       if (disposed || current !== generation) return
       const repo = focusRepo(registry.repos)
       let rosterAgents = 0
       let projects = 0
       if (repo && ['ok', 'uncommitted'].includes(repo.status)) {
-        const [roster, backlog] = await Promise.all([
-          fetchFactoryRoster(repo.id),
-          getGlobal<{ items?: unknown[] }>(`/repos/${encodeURIComponent(repo.id)}/backlog`),
-        ])
+        const [roster, backlog] = await bounded(Promise.all([
+          track('roster', fetchFactoryRoster(repo.id)),
+          track('backlog', getGlobal<{ items?: unknown[] }>(`/repos/${encodeURIComponent(repo.id)}/backlog`)),
+        ]))
         rosterAgents = roster.agents.length
         projects = backlog.items?.length ?? 0
       }
       if (disposed || current !== generation) return
+      const timedOut = machineTimeout(machine)
+      if (!timedOut && machine.checked_at) lastCheckedAt = machine.checked_at
       const machineErrors = machine.findings.filter(f => f.severity === 'error' || f.severity === 'warning')
       issues.value = gettingStartedSteps({ check: machine, library, repos: registry.repos, rosterAgents, projects }).filter(step => {
-        if (step.id === 'machine' && machineErrors.length) return false
+        if (step.id === 'machine' && (machineErrors.length || timedOut)) return false
         if (step.id === 'factory' && registry.repos.some(r => r.status !== 'ok')) return false
         if (step.id === 'roster' && rosterAgents > 0) return false
         return !step.done
       })
+      if (timedOut) issues.value.unshift(timedOut)
       for (const finding of machineErrors) {
-      issues.value.push({ id: 'machine', title: finding.message, hint: finding.fix ?? 'Otevři stránku Knihovna a oprav uvedený problém.', href: finding.code === 'harness_test_failed' ? '#harness-settings' : finding.scope === 'library' ? LIBRARY_HREF : SETUP_HREF, action: finding.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači' })
+      issues.value.push({ id: 'machine', title: timedOut ? `${finding.message} (poslední známý stav)` : finding.message, hint: finding.fix ?? 'Otevři stránku Knihovna a oprav uvedený problém.', href: finding.code === 'harness_test_failed' ? '#harness-settings' : finding.scope === 'library' ? LIBRARY_HREF : SETUP_HREF, action: finding.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači' })
       }
       for (const item of registry.repos.filter(r => r.status !== 'ok')) {
         const uncommitted = item.status === 'uncommitted'
@@ -59,12 +111,33 @@ function createReadiness() {
       else phase.value = 'success'
     } catch (error) {
       if (!disposed && current === generation) {
-        issues.value = [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít stránku Knihovna' }]
+        if (error instanceof CheckTimeout) {
+          // Keep the last known issues next to the timeout; a timeout is never a success.
+          issues.value = [timeoutIssue(error.step, error.seconds, lastCheckedAt), ...issues.value.filter(i => i.id !== 'timeout')]
+        } else {
+          issues.value = [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít stránku Knihovna' }]
+        }
         phase.value = 'warning'
       }
     } finally {
-      if (current === generation) { clearTimeout(loadingTimer); checking = false }
+      if (current === generation) {
+        clearTimeout(loadingTimer)
+        stopProgress?.()
+        stopProgress = undefined
+        checking = false
+        manualRunning = false
+        step.value = null
+        elapsed.value = 0
+      }
     }
+  }
+
+  /** The issue of a machine check the server ended at its budget, or null. */
+  function machineTimeout(machine: MachineCheck): Issue | null {
+    if (!machine.timed_out) return null
+    const budget = machine.progress?.budget ?? Math.round(CHECK_DEADLINE_MS / 1000)
+    const unfinished = serverStep(machine.progress) ?? STEPS.machine
+    return timeoutIssue(`${STEPS.machine}: ${unfinished}`, budget, machine.checked_at)
   }
 
   // The server checks once at start; a page load reads that result, later checks are explicit.
@@ -72,8 +145,8 @@ function createReadiness() {
   function refresh(fresh = false) { void check(fresh) }
   function onFactoryApplied() { refresh() }
   onMounted(() => { refresh(); window.addEventListener('factory-applied', onFactoryApplied) })
-  onBeforeUnmount(() => { disposed = true; clearTimeout(loadingTimer); window.removeEventListener('factory-applied', onFactoryApplied) })
-  return { phase, issues, recheck, refresh }
+  onBeforeUnmount(() => { disposed = true; clearTimeout(loadingTimer); stopProgress?.(); window.removeEventListener('factory-applied', onFactoryApplied) })
+  return { phase, issues, step, elapsed, recheck, refresh }
 }
 const key: InjectionKey<ReturnType<typeof createReadiness>> = Symbol('readiness')
 export function provideReadiness() {
