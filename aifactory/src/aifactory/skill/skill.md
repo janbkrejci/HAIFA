@@ -100,7 +100,7 @@ their common Git identity; another clone or HAIFA_HOME has separate choices. Ena
 choice does not start work. `base_pr_merge` for administration PRs remains separate.
 
 Preview preserved legacy effective values and origins through project, step and task with
-`factory config local legacy --repo PATH --json`, or **Náhled starých voleb** on Overview.
+`factory config local legacy --repo PATH --json`.
 Explicitly adopt with `factory config local import --repo PATH --json`. Uniform values can
 be adopted directly. Conflicts require concrete repository-wide `--auto-merge on|off`,
 `--auto-continue on|off` or `--harness claude|codex|pi|inherit` choices. Existing local choices

@@ -51,7 +51,7 @@ Po instalaci restartuj již spuštěný dashboard (`factory obs`). Neupgradovan�
 používá frontmattery, upgradovaný místní volby v HAIFA_HOME: automatizace jsou bez záznamu
 vypnuté, harness dědí z počítače.
 
-Na Přehledu otevři **Náhled starých voleb**, nebo:
+Staré volby si můžeš prohlédnout příkazem:
 
 ```sh
 factory config local legacy --repo PATH --json

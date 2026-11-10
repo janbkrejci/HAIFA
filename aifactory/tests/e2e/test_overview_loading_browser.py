@@ -65,7 +65,7 @@ def test_slow_repo_loading_overlay() -> None:
             browser.close()
 
 
-def test_overview_legacy_preview_requires_explicit_repository_decision() -> None:
+def test_overview_shows_local_controls_without_legacy_preview() -> None:
     settings = {
         "settings": {"version": 1, "auto_merge": False, "auto_continue": False, "harness": None},
         "effective_harness": None,
@@ -85,26 +85,6 @@ def test_overview_legacy_preview_requires_explicit_repository_decision() -> None
         "last_activity": None,
         "local_settings": settings,
     }
-    preview = {
-        "local_exists": False,
-        "nodes": [
-            {
-                "id": "P",
-                "level": "project",
-                "values": {"auto_merge": {"value": True, "origin": {"id": "P"}}},
-            },
-            {
-                "id": "P-S-T01",
-                "level": "task",
-                "values": {"auto_merge": {"value": False, "origin": {"id": "P-S-T01"}}},
-            },
-        ],
-        "proposals": {
-            "auto_merge": {"conflict": True, "value": None},
-            "auto_continue": {"conflict": False, "value": False},
-            "harness": {"conflict": False, "value": None},
-        },
-    }
     submitted: list[object] = []
     fallback = _server("live")
 
@@ -114,11 +94,8 @@ def test_overview_legacy_preview_requires_explicit_repository_decision() -> None
         if path == "/api/overview":
             data = {"repos": [item]}
         elif path.endswith("/settings/local/legacy"):
-            if route.request.method == "POST":
-                submitted.append(route.request.post_data_json)
-                data = settings
-            else:
-                data = preview
+            submitted.append(route.request.method)
+            data = {}
         else:
             fallback(route)
             return
@@ -134,17 +111,11 @@ def test_overview_legacy_preview_requires_explicit_repository_decision() -> None
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/overview")
             controls = page.locator('[data-test="local-repo-controls"]')
-            controls.locator('[data-test="legacy-preview"]').click()
-            expect(controls.locator('[data-test="legacy-panel"]')).to_contain_text("P-S-T01")
-            take = controls.locator('[data-test="legacy-import"]')
-            expect(take).to_be_disabled()
-            assert submitted == []
-            controls.locator('[data-test="legacy-choice-auto_merge"]').click()
-            page.get_by_role("option", name="Vypnuto", exact=True).click()
-            expect(take).to_be_enabled()
-            take.click()
+            expect(controls).to_be_visible()
+            expect(controls.locator('[data-test="legacy-preview"]')).to_have_count(0)
             expect(controls.locator('[data-test="legacy-panel"]')).to_have_count(0)
             expect(controls.locator('[data-test="local-auto-merge"]')).not_to_be_checked()
-            assert submitted == [{"choices": {"auto_merge": False}, "overwrite": False}]
+            expect(controls.locator('[data-test="local-auto-continue"]')).not_to_be_checked()
+            assert submitted == []
         finally:
             browser.close()
