@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T112
 title: Posouvat dlouhý Gantt uvnitř detailu bez překryvů kroků
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T111]
 writes: [aifactory/web/src/lib/waterfall.ts, aifactory/web/src/lib/waterfall.test.ts, aifactory/web/src/components/runs/RunWaterfall.vue, aifactory/web/src/components/runs/RunWaterfall.test.ts, aifactory/web/src/components/runs/RunDetail.vue, aifactory/web/src/components/runs/RunDetail.test.ts, aifactory/tests/e2e/test_run_waterfall_scroll_browser.py, aifactory/src/aifactory/web/static/]
@@ -24,3 +24,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-10 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/216 · náklady $3.18
