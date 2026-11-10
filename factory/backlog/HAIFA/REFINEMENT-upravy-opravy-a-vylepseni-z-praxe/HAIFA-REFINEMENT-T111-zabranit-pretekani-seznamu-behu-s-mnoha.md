@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T111
 title: Zabránit přetékání seznamu běhů s mnoha fázemi
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T110]
 writes: [aifactory/web/src/components/runs/RunsList.vue, aifactory/web/src/components/runs/RunsList.test.ts, aifactory/web/src/components/runs/PhaseDots.vue, aifactory/web/src/components/runs/PhaseDots.test.ts, aifactory/tests/e2e/test_runs_overflow_browser.py, aifactory/src/aifactory/web/static/, aifactory/web/src/App.vue]
@@ -21,3 +21,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-10 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/215 · náklady $0.00

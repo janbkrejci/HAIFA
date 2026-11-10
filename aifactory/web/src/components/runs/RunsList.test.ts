@@ -8,6 +8,35 @@ afterEach(() => {
 })
 
 describe('RunsList', () => {
+  it('contains a long run in a named keyboard accessible table region and preserves row actions', async () => {
+    window.location.hash = '#/r/haifa/runs'
+    const run = summary({
+      task_title: 'DlouhýNázev'.repeat(100),
+      phases: Array.from({ length: 100 }, (_, seq) => ({ seq, name: `phase-${seq}`, status: 'success' })),
+    })
+    const wrapper = mount(RunsList, { props: { runs: [run] } })
+    const region = wrapper.get('[role="region"][aria-label="Seznam běhů"]')
+    expect(region.attributes('tabindex')).toBe('0')
+    expect(region.findAll('table')).toHaveLength(1)
+    expect(region.findAll('td.phases .d')).toHaveLength(100)
+    expect(region.get('.task-link').text()).toContain(run.task_title)
+    await region.get('[data-col="pr"]').trigger('click')
+    expect(window.location.hash).toBe('#/r/haifa/runs')
+    await region.get('[data-test="archive"]').trigger('click')
+    expect(wrapper.emitted('archive')).toEqual([['r-ok']])
+    expect(window.location.hash).toBe('#/r/haifa/runs')
+    await wrapper.setProps({ archived: true })
+    await region.get('[data-test="unarchive"]').trigger('click')
+    await region.get('[data-test="delete"]').trigger('click')
+    expect(wrapper.emitted('unarchive')).toEqual([['r-ok']])
+    expect(wrapper.emitted('delete')).toEqual([['r-ok']])
+    expect(window.location.hash).toBe('#/r/haifa/runs')
+    await region.get('[data-col="tokens"]').trigger('click')
+    expect(window.location.hash).toBe('#/r/haifa/runs/r-ok')
+    window.location.hash = '#/r/haifa/runs'
+    wrapper.unmount()
+  })
+
   it('renders every column of a run', () => {
     const data = runsResponse()
     const wrapper = mount(RunsList, { props: { runs: data.runs } })

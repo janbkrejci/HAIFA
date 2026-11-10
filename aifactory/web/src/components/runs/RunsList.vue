@@ -90,114 +90,141 @@ function openRun(event: MouseEvent, run: RunSummary) {
     <p v-else-if="!runs.length" class="empty-state" data-test="no-runs">
       {{ archived ? 'Žádné archivované běhy' : 'Žádné běhy' }}
     </p>
-    <table v-else class="table">
-      <thead>
-        <tr>
-          <th>Task</th>
-          <th>Workflow</th>
-          <th>Stav</th>
-          <th>Začátek</th>
-          <th>Spustil</th>
-          <th class="num">Doba</th>
-          <th class="num">Tokeny</th>
-          <th class="num">Náklady</th>
-          <th>PR</th>
-          <th>Fáze</th>
-          <th class="actions"></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="run in runs"
-          :key="run.run_id"
-          :data-run="run.run_id"
-          class="run-row"
-          @click="openRun($event, run)"
-        >
-          <td>
-            <a :href="runHref(run.run_id)" class="task-link" data-test="task-label"
-              ><span class="task-id">{{ run.task_id }}</span
-              ><span v-if="run.task_title" class="dim">{{ ' ' + run.task_title }}</span></a
-            >
-          </td>
-          <td>{{ run.workflow ?? '—' }}</td>
-          <td>
-            <StatusChip :status="shownState(run)" />
-            <span v-if="shownState(run) === 'blocked'" class="blockers" data-col="blockers">
-              čeká na
-              <template v-for="(id, i) in runBlockers(run)" :key="id"
-                >{{ i ? ', ' : ' ' }}<a :href="taskHref(id)" class="mono" data-test="blocker-link">{{ id }}</a></template
+    <div v-else class="table-scroll" role="region" aria-label="Seznam běhů" tabindex="0">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Task</th>
+            <th>Workflow</th>
+            <th>Stav</th>
+            <th>Začátek</th>
+            <th>Spustil</th>
+            <th class="num">Doba</th>
+            <th class="num">Tokeny</th>
+            <th class="num">Náklady</th>
+            <th>PR</th>
+            <th class="phases">Fáze</th>
+            <th class="actions"></th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="run in runs"
+            :key="run.run_id"
+            :data-run="run.run_id"
+            class="run-row"
+            @click="openRun($event, run)"
+          >
+            <td>
+              <a :href="runHref(run.run_id)" class="task-link" data-test="task-label"
+                ><span class="task-id">{{ run.task_id }}</span
+                ><span v-if="run.task_title" class="dim">{{ ' ' + run.task_title }}</span></a
               >
-            </span>
-            <Tooltip v-else-if="run.failure_kind" :text="run.error ?? ''">
-              <span class="failure-kind" data-col="failure-kind" tabindex="0">{{ failureLabel(run.failure_kind) }}</span>
-            </Tooltip>
-          </td>
-          <td class="nowrap">{{ fmtTime(run.started_at) }}</td>
-          <td class="nowrap">
-            <Tooltip :text="startedByTip(run.started_by)">
-              <span class="started-by" :class="{ faint: !run.started_by }" tabindex="0" data-col="started-by">
-                {{ startedByLabel(run.started_by) }}
+            </td>
+            <td>{{ run.workflow ?? '—' }}</td>
+            <td>
+              <StatusChip :status="shownState(run)" />
+              <span v-if="shownState(run) === 'blocked'" class="blockers" data-col="blockers">
+                čeká na
+                <template v-for="(id, i) in runBlockers(run)" :key="id"
+                  >{{ i ? ', ' : ' ' }}<a :href="taskHref(id)" class="mono" data-test="blocker-link">{{ id }}</a></template
+                >
               </span>
-            </Tooltip>
-          </td>
-          <td class="num" data-col="duration">{{ fmtDuration(run.duration_s) }}</td>
-          <td class="num" data-col="tokens">{{ fmtTokens(run.tokens) }}</td>
-          <td class="num" data-col="cost">{{ fmtCost(run.cost) }}</td>
-          <td>
-            <a v-if="run.pr" :href="run.pr.url" target="_blank" rel="noopener" data-col="pr">
-              #{{ run.pr.pr_id }}
-            </a>
-            <span v-else class="faint">—</span>
-          </td>
-          <td><PhaseDots :phases="run.phases ?? []" /></td>
-          <td class="actions">
-            <template v-if="archived">
-              <Tooltip text="Vrátit z archivu">
+              <Tooltip v-else-if="run.failure_kind" :text="run.error ?? ''">
+                <span class="failure-kind" data-col="failure-kind" tabindex="0">{{ failureLabel(run.failure_kind) }}</span>
+              </Tooltip>
+            </td>
+            <td class="nowrap">{{ fmtTime(run.started_at) }}</td>
+            <td class="nowrap">
+              <Tooltip :text="startedByTip(run.started_by)">
+                <span class="started-by" :class="{ faint: !run.started_by }" tabindex="0" data-col="started-by">
+                  {{ startedByLabel(run.started_by) }}
+                </span>
+              </Tooltip>
+            </td>
+            <td class="num" data-col="duration">{{ fmtDuration(run.duration_s) }}</td>
+            <td class="num" data-col="tokens">{{ fmtTokens(run.tokens) }}</td>
+            <td class="num" data-col="cost">{{ fmtCost(run.cost) }}</td>
+            <td>
+              <a v-if="run.pr" :href="run.pr.url" target="_blank" rel="noopener" data-col="pr">
+                #{{ run.pr.pr_id }}
+              </a>
+              <span v-else class="faint">—</span>
+            </td>
+            <td class="phases"><PhaseDots :phases="run.phases ?? []" /></td>
+            <td class="actions">
+              <template v-if="archived">
+                <Tooltip text="Vrátit z archivu">
+                  <button
+                    type="button"
+                    class="icon"
+                    data-test="unarchive"
+                    aria-label="Vrátit z archivu"
+                    :disabled="busy"
+                    @click="emit('unarchive', run.run_id)"
+                  >
+                    <ArchiveRestore :size="16" />
+                  </button>
+                </Tooltip>
+                <Tooltip text="Smazat z databáze">
+                  <button
+                    type="button"
+                    class="icon danger"
+                    data-test="delete"
+                    aria-label="Smazat z databáze"
+                    :disabled="busy"
+                    @click="emit('delete', run.run_id)"
+                  >
+                    <Trash2 :size="16" />
+                  </button>
+                </Tooltip>
+              </template>
+              <Tooltip v-else-if="isFinished(run)" text="Archivovat">
                 <button
                   type="button"
                   class="icon"
-                  data-test="unarchive"
-                  aria-label="Vrátit z archivu"
+                  data-test="archive"
+                  aria-label="Archivovat"
                   :disabled="busy"
-                  @click="emit('unarchive', run.run_id)"
+                  @click="emit('archive', run.run_id)"
                 >
-                  <ArchiveRestore :size="16" />
+                  <Archive :size="16" />
                 </button>
               </Tooltip>
-              <Tooltip text="Smazat z databáze">
-                <button
-                  type="button"
-                  class="icon danger"
-                  data-test="delete"
-                  aria-label="Smazat z databáze"
-                  :disabled="busy"
-                  @click="emit('delete', run.run_id)"
-                >
-                  <Trash2 :size="16" />
-                </button>
-              </Tooltip>
-            </template>
-            <Tooltip v-else-if="isFinished(run)" text="Archivovat">
-              <button
-                type="button"
-                class="icon"
-                data-test="archive"
-                aria-label="Archivovat"
-                :disabled="busy"
-                @click="emit('archive', run.run_id)"
-              >
-                <Archive :size="16" />
-              </button>
-            </Tooltip>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
 
 <style scoped>
+.runs-list {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+
+.table-scroll:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 2px;
+}
+
+.phases {
+  width: 172px;
+}
+
+.task-link {
+  display: block;
+  width: clamp(12rem, 20vw, 22rem);
+  overflow-wrap: anywhere;
+}
+
 .blockers {
   display: block;
   margin-top: 4px;
