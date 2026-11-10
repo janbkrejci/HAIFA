@@ -18,6 +18,7 @@ from starlette.testclient import TestClient
 from aifactory.library import share, store
 from aifactory.skill import envelope_problems
 from aifactory.web import create_multi_app
+from aifactory.web.machine import CachedCheck
 
 
 @pytest.fixture
@@ -333,7 +334,7 @@ def test_rejected_push_and_cache_invalidation(client: TestClient, tmp_path: Path
     options = {"path": str(source), "type": "skill", "name": "demo"}
     head = git(root, "rev-parse", "HEAD")
     planned = preview(client, "import", **options)
-    state(client).library.checks[True] = (0, {}, True, "")
+    state(client).library.checks[True] = CachedCheck(1, 0.0, {}, [], [])
     response(apply(client, "import", planned, **options), 502, "push_failed")
     assert not state(client).library.checks
     assert not state(client).library.lock.locked()

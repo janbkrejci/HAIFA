@@ -185,7 +185,8 @@ def test_kill_of_an_already_exited_command(tmp_path: Path) -> None:
 def test_without_a_job_object_the_kill_falls_back_to_taskkill(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(oscompat._kernel32, "CreateJobObjectW", lambda *args: None)
+    # A string target: _kernel32 exists only on Windows, where mypy cannot see it elsewhere.
+    monkeypatch.setattr("aifactory.oscompat._kernel32.CreateJobObjectW", lambda *args: None)
     pids = tmp_path / "pids"
     pids.mkdir()
     script = (
@@ -224,7 +225,7 @@ def test_a_failing_job_api_falls_back_and_is_reported(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, api: str
 ) -> None:
     """A job API failure must neither hang the timeout nor be logged as a clean stop."""
-    monkeypatch.setattr(oscompat._kernel32, api, lambda *args: 0)
+    monkeypatch.setattr(f"aifactory.oscompat._kernel32.{api}", lambda *args: 0)
     result, pids = _timed_out_tree(tmp_path)
     assert result.returncode == 124
     log = Path(result.output_artifact).read_text(encoding="utf-8")

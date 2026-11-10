@@ -19,7 +19,7 @@ I/O) becomes a ``check_failed`` finding instead of stopping the check.
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 
 from aifactory.check.context import CheckContext, NotARepositoryError, main_checkout
@@ -80,24 +80,29 @@ def run_check(
     machine: Machine | None = None,
     groups: Sequence[RuleGroup] | None = None,
     require_repo: bool = True,
+    progress: Callable[[str], None] | None = None,
 ) -> CheckReport:
     """Run every rule of ``groups`` (default: ``RULE_GROUPS`` at call time) on ``repo``.
 
-    Raises ``NotARepositoryError`` when ``repo`` is not inside a git repository and
-    ``require_repo`` is true; otherwise only the machine and library rules run there.
+    ``progress`` is told ``"<group>: <rule>"`` before each rule runs (the dashboard shows
+    the step a check waits for). Raises ``NotARepositoryError`` when ``repo`` is not inside
+    a git repository and ``require_repo`` is true; otherwise only the machine and library
+    rules run there.
     """
     ctx = CheckContext(
         repo, offline=offline, machine=machine or default_machine(), require_repo=require_repo
     )
     selected = list(RULE_GROUPS if groups is None else groups)
     if not ctx.in_repo:
-        return _outside_report(ctx, selected)
+        return _outside_report(ctx, selected, progress)
     installed = ctx.installed
     findings: list[Finding] = []
     for group in selected:
         for rule in group.rules:
             if rule.needs_install and not installed:
                 continue
+            if progress is not None:
+                progress(f"{group.name}: {rule.name}")
             findings.extend(_run_rule(ctx, group, rule))
     counts = ctx.ahead_behind if installed else None
     try:
@@ -121,12 +126,16 @@ def run_check(
     )
 
 
-def _outside_report(ctx: CheckContext, selected: list[RuleGroup]) -> CheckReport:
+def _outside_report(
+    ctx: CheckContext, selected: list[RuleGroup], progress: Callable[[str], None] | None
+) -> CheckReport:
     """Outside a git repository: only the rules that need no repo."""
     findings: list[Finding] = []
     for group in selected:
         for rule in group.rules:
             if not rule.needs_repo:
+                if progress is not None:
+                    progress(f"{group.name}: {rule.name}")
                 findings.extend(_run_rule(ctx, group, rule))
     return CheckReport(
         repo=None,

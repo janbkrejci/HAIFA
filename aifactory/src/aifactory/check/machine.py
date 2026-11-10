@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
+from aifactory import procrun
 from aifactory.engine.utils import operator_env
 from aifactory.harness.check import HarnessStatus, check_harness
 
@@ -78,20 +79,11 @@ class SystemMachine:
         # Windows starts only an .exe by bare name; an npm shim (codex.cmd) needs its path.
         program = shutil.which(argv[0]) or argv[0]
         try:
-            proc = subprocess.run(
-                [program, *argv[1:]],
-                cwd=cwd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                env=operator_env(),
-                stdin=subprocess.DEVNULL,
-                check=False,
-                encoding="utf-8",
-            )
+            # Bounded by the thread's budget too; a timeout stops the command's process tree.
+            proc = procrun.run([program, *argv[1:]], timeout, cwd=cwd, env=operator_env())
         except (OSError, subprocess.SubprocessError):
             return None
-        return Probe(proc.returncode, proc.stdout or "", proc.stderr or "")
+        return Probe(proc.returncode, proc.stdout, proc.stderr)
 
     def env(self, name: str) -> str | None:
         return os.environ.get(name)

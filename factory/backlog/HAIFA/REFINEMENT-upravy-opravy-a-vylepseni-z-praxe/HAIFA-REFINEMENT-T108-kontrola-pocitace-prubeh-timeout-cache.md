@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T108
 title: "Průběh, časový limit a čerstvé výsledky kontroly počítače"
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T57]
 writes: [aifactory/]
@@ -24,3 +24,4 @@ Před implementací vyhledat přímé volající v celém aifactory/tests/. Spus
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-10 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/212 · náklady $7.25

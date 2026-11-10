@@ -17,6 +17,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol
 
+from aifactory import procrun
 from aifactory.config.errors import ConfigError, ConfigIssue
 
 FACTORY_DIR = ".factory"
@@ -40,8 +41,9 @@ def git(root: Path, *args: str) -> str:
             encoding="utf-8",
             check=False,
             env={**os.environ, **READ_ENV},
+            timeout=procrun.limit(None, ["git", *args]),
         )
-    except OSError as exc:
+    except (OSError, subprocess.TimeoutExpired) as exc:
         raise GitError([ConfigIssue(str(root), f"git {' '.join(args)}: {exc}")]) from exc
     if proc.returncode != 0:
         detail = proc.stderr.strip() or f"exit status {proc.returncode}"
@@ -103,8 +105,9 @@ def _read_blobs(root: Path, oids: dict[str, str]) -> dict[str, bytes]:
             capture_output=True,
             check=False,
             env={**os.environ, **READ_ENV},
+            timeout=procrun.limit(None, ["git", "cat-file", "--batch"]),
         )
-    except OSError as exc:
+    except (OSError, subprocess.TimeoutExpired) as exc:
         raise GitError([ConfigIssue(str(root), f"git cat-file --batch: {exc}")]) from exc
     if proc.returncode != 0:
         detail = proc.stderr.decode("utf-8", "replace").strip() or f"exit status {proc.returncode}"

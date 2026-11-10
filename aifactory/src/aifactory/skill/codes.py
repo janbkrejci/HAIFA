@@ -329,6 +329,12 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("workflow_invalid", "1", "workflow check found problems; see error.issues"),
     ("harness_missing", "1", "a harness CLI is missing or broken; see data.harnesses"),
     ("checks_failed", "1", "factory check found errors; see data.findings"),
+    (
+        "check_timeout",
+        "1",
+        "dashboard API: the machine check did not finish within its time budget; data is the "
+        "last known report (stale, checked_at) and data.progress the unfinished step",
+    ),
     ("skills_sync_failed", "2", "factory skills sync could not write .agents/skills"),
     # factory upgrade.
     ("update_busy", "1", "dashboard update is installing; wait for its restart"),

@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import './ui/statusIconChip.css'
 import { Check, Stethoscope, TriangleAlert } from 'lucide-vue-next'
+import { computed } from 'vue'
 import { useReadiness } from '@/lib/readiness'
+import { PROGRESS_SHOWN_AFTER } from '@/lib/machineProgress'
 import { useRemoveRepo } from '@/lib/repos'
 import Spinner from '@/components/ui/Spinner.vue'
 import RemoveRepoDialog from '@/components/repos/RemoveRepoDialog.vue'
@@ -10,7 +12,11 @@ import TryDemoButton from '@/components/demo/TryDemoButton.vue'
 
 withDefaults(defineProps<{ chip?: boolean }>(), { chip: false })
 const emit = defineEmits<{ changed: [] }>()
-const { phase, issues, recheck, refresh } = useReadiness()
+const { phase, issues, step, elapsed, recheck, refresh } = useReadiness()
+/** "kontrola počítače: machine: logins (claude auth status) · 12 s" once the check takes a while. */
+const progress = computed(() => elapsed.value >= PROGRESS_SHOWN_AFTER && step.value ? `${step.value} · ${elapsed.value} s` : '')
+const loadingLabel = computed(() => progress.value ? `Načítání stavu – čeká na: ${progress.value}` : 'Načítání stavu')
+const checkingLabel = computed(() => progress.value ? `Probíhá kontrola – čeká na: ${progress.value}` : 'Probíhá kontrola')
 const removal = useRemoveRepo(() => { emit('changed'); refresh() })
 const { remove, removing, error: removeError } = removal
 defineExpose({ recheck })
@@ -19,8 +25,8 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
 
 <template>
   <template v-if="chip">
-    <Tooltip v-if="phase === 'loading'" text="Načítání stavu"><span class="status-icon-chip checking" role="status" tabindex="0" aria-label="Načítání stavu" data-test="readiness-loading"><Spinner /></span></Tooltip>
-    <Tooltip v-else-if="phase === 'checking'" text="Probíhá kontrola"><span class="status-icon-chip checking" role="status" tabindex="0" aria-label="Probíhá kontrola" data-test="readiness-checking"><Spinner /></span></Tooltip>
+    <Tooltip v-if="phase === 'loading'" :text="loadingLabel"><span class="status-icon-chip checking" role="status" tabindex="0" :aria-label="loadingLabel" data-test="readiness-loading"><Spinner /><span v-if="progress" class="status-count" data-test="readiness-elapsed">{{ elapsed }} s</span></span></Tooltip>
+    <Tooltip v-else-if="phase === 'checking'" :text="checkingLabel"><span class="status-icon-chip checking" role="status" tabindex="0" :aria-label="checkingLabel" data-test="readiness-checking"><Spinner /><span v-if="progress" class="status-count" data-test="readiness-elapsed">{{ elapsed }} s</span></span></Tooltip>
     <Tooltip v-else-if="phase === 'success'" text="Systém v pořádku – kliknutím spustíš kontrolu znovu"><button type="button" class="status-icon-chip success" aria-label="Systém v pořádku – kliknutím spustíš kontrolu znovu" data-test="readiness-success" @click="recheck"><Stethoscope :size="14" aria-hidden="true" /></button></Tooltip>
     <Tooltip v-else-if="phase === 'warning'" text="Nalezeny problémy – kliknutím otevřeš seznam problémů"><a href="#/problems" class="status-icon-chip warning" aria-label="Nalezeny problémy – kliknutím otevřeš seznam problémů" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
   </template>
@@ -34,7 +40,8 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
         <li v-for="(issue, index) in issues" :key="index">
           <strong>{{ issue.title }}</strong>
           <span>{{ issue.hint }}</span>
-          <button v-if="issue.repo" type="button" class="action" :disabled="removing !== null" @click="remove(issue.repo)">{{ issue.action }}</button>
+          <button v-if="issue.retry" type="button" class="action" data-test="readiness-timeout-retry" @click="recheck">{{ issue.action }}</button>
+          <button v-else-if="issue.repo" type="button" class="action" :disabled="removing !== null" @click="remove(issue.repo)">{{ issue.action }}</button>
           <button v-else-if="issue.href === '#harness-settings'" type="button" class="action" @click="openHarnesses">{{ issue.action }}</button>
           <span v-else class="actions">
             <a :href="issue.href" class="action">{{ issue.action }}</a>
@@ -44,6 +51,7 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
       </ul>
       <p v-if="removeError" role="alert">{{ removeError }}</p>
     </template>
+    <p v-if="(phase === 'loading' || phase === 'checking') && progress" class="progress" data-test="readiness-progress">Čeká na: {{ progress }}</p>
     <button v-if="phase !== 'checking' && phase !== 'loading'" type="button" class="action" data-test="readiness-retry" @click="recheck">Zkontrolovat znovu</button>
   </div>
   <RemoveRepoDialog :removal="removal" />
@@ -55,6 +63,7 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
 .warning { color: var(--amber); }
 .readiness { padding: 16px; border: 1px solid currentColor; border-radius: 10px; background: var(--panel-2); margin-bottom: 18px; }
 .readiness p { display: flex; align-items: center; gap: 8px; margin: 0; font-weight: 600; }
+.readiness p.progress { margin-top: 6px; color: var(--dim); font-weight: 400; }
 ul { display: flex; flex-direction: column; gap: 14px; padding: 0; list-style: none; color: var(--text); }
 li { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
 li span { color: var(--dim); }

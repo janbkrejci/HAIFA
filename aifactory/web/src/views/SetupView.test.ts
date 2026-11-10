@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import SetupView from './SetupView.vue'
+import LibrarySection from '@/components/setup/LibrarySection.vue'
 import { answerDialog, openDialog } from '@/test/modal'
 import { findingGroup } from '@/lib/library'
 import { useRouteParams } from '@/lib/router'
@@ -121,5 +122,74 @@ describe('Knihovna page', () => {
       HTMLElement.prototype.scrollIntoView = original
       useRouteParams().value = []
     }
+  })
+
+  function machineApi(answer: (fresh: boolean) => Promise<Response> | Response) {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.startsWith('/api/machine/check')) return answer(url.endsWith('fresh=1'))
+      if (url === '/api/machine/progress') return envelope({ job: { seq: 2, offline: false, step: 'machine: logins', detail: 'claude auth status', started_at: '', elapsed: 2, budget: 60, running: true }, checked_at: null })
+      if (url === '/api/library') return envelope({ exists: true, library: '/lib', remote: 'origin', items: [] })
+      if (url === '/api/library/overrides') return envelope({ library: 'abc', overrides: [], errors: [] })
+      if (url === '/api/dashboard/settings') return envelope({ port: 4700, home: '/h', registry: '/h/r', restart_required: false })
+      throw new Error(`unexpected ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    return fetchMock
+  }
+  const timedOut = (checkedAt: string | null) => new Response(JSON.stringify({
+    ok: false,
+    data: { ok: false, findings: [], checked_at: checkedAt, cached: !!checkedAt, stale: true, timed_out: true, progress: { seq: 2, offline: false, step: 'machine: logins', detail: 'claude auth status', started_at: '', elapsed: 60, budget: 60, running: true } },
+    error: { code: 'check_timeout', message: 'the check did not finish', path: null, id: null, issues: [] }, warnings: [],
+  }))
+  it('shows a timed-out check with its unfinished step and the age of the last known result', async () => {
+    const checkedAt = new Date(Date.now() - 5 * 60_000).toISOString()
+    machineApi(() => timedOut(checkedAt))
+    const wrapper = mount(SetupView); await flushPromises()
+    const alert = wrapper.get('[data-test="machine-timeout"]').text()
+    expect(alert).toContain('Kontrola nedoběhla do 60 s. Nedokončený krok: machine: logins (claude auth status).')
+    expect(alert).toContain('(před 5 min)')
+    // The old result is never presented as a current success.
+    expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('Poslední známý stav: Počítač je v pořádku')
+    expect(wrapper.get('[data-test="machine-verdict"]').classes()).toContain('is-bad')
+    expect(wrapper.get('[data-test="machine-summary"]').text()).toContain('neaktuální')
+    expect(wrapper.get('[data-test="machine-refresh"]').attributes('disabled')).toBeUndefined()
+  })
+  it('shows no verdict for a first check that timed out', async () => {
+    machineApi(() => timedOut(null))
+    const wrapper = mount(SetupView); await flushPromises()
+    expect(wrapper.get('[data-test="machine-timeout"]').text()).toContain('Dřívější výsledek není k dispozici.')
+    expect(wrapper.find('[data-test="machine-verdict"]').exists()).toBe(false)
+  })
+  it('shows the step and elapsed time while checking, and a late older answer changes nothing', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      const answers: ((response: Response) => void)[] = []
+      machineApi(() => new Promise<Response>(resolve => { answers.push(resolve) }))
+      const wrapper = mount(SetupView); await flushPromises()
+      await vi.advanceTimersByTimeAsync(2000)
+      expect(wrapper.get('[data-test="setup-busy"]').text()).toBe('Probíhá kontrola – čeká na: machine: logins (claude auth status) · 2 s')
+      // A library write checks again while the first read still runs.
+      wrapper.findComponent(LibrarySection).vm.$emit('changed')
+      await flushPromises()
+      expect(answers).toHaveLength(2)
+      answers[1]!(envelope({ ok: false, findings: [finding('git_identity_missing')], checked_at: '2026-11-10T10:00:00Z', cached: false }, false))
+      await flushPromises()
+      expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('1 chyb, 0 varování')
+      answers[0]!(envelope({ ok: true, findings: [], checked_at: '2026-11-10T09:00:00Z', cached: true }))
+      await flushPromises()
+      expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('1 chyb, 0 varování')
+      expect(wrapper.find('[data-test="setup-busy"]').exists()).toBe(false)
+    } finally { vi.useRealTimers() }
+  })
+  it('ends the wait at the page deadline with the step it waited for', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    try {
+      machineApi(() => new Promise<Response>(() => {}))
+      const wrapper = mount(SetupView); await flushPromises()
+      await vi.advanceTimersByTimeAsync(75_000)
+      expect(wrapper.get('[data-test="setup-error"]').text()).toBe('Kontrola počítače selhala: Kontrola nedoběhla do 75 s; nedokončený krok: machine: logins (claude auth status)')
+      expect(wrapper.find('[data-test="setup-busy"]').exists()).toBe(false)
+      expect(wrapper.get('[data-test="machine-refresh"]').attributes('disabled')).toBeUndefined()
+    } finally { vi.useRealTimers() }
   })
 })

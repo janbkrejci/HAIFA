@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from typing import Any
 
+from aifactory import procrun
 from aifactory.engine import data_types as dt
 from aifactory.engine.utils import operator_env
 from aifactory.harness import CLI_BINARIES, HARNESSES, canonical
@@ -56,16 +57,9 @@ def check_harness(name: str, agents: Iterable[str] = ()) -> HarnessStatus:
         return status
     status.path = path
     try:
-        proc = subprocess.run(
-            [path, "--version"],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            env=operator_env(),
-            check=False,
-            encoding="utf-8",
-        )
-    except (OSError, subprocess.TimeoutExpired) as exc:
+        # Bounded by the thread's budget too; a timeout stops the CLI's process tree.
+        proc = procrun.run([path, "--version"], 15, env=operator_env())
+    except (OSError, subprocess.SubprocessError) as exc:
         status.error = f"--version failed: {exc}"
         return status
     version = _first_line(proc.stdout or "") or _first_line(proc.stderr or "")
