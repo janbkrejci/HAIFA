@@ -199,28 +199,47 @@ if sys.platform == "win32":
             if not _kernel32.QueryInformationJobObject(
                 self._job, _JOB_BASIC_ACCOUNTING, ctypes.byref(info), ctypes.sizeof(info), None
             ):
-                raise ctypes.WinError(ctypes.get_last_error())
+                raise OSError(f"QueryInformationJobObject failed (error {ctypes.get_last_error()})")
             return int(info.active_processes)
 
         def kill(self, process: subprocess.Popen[Any]) -> str:
-            """Stop the command and every process it started; return a line for the log."""
+            """Stop the command and every process it started; return a line for the log.
+
+            Never raises: a failing job API falls back to taskkill and says so, so the
+            caller can still end the command and the log never claims a clean stop.
+            """
             if self._job is None:
-                with suppress(ProcessLookupError):
-                    _taskkill(process.pid)
-                return "stopped the process tree with taskkill /T /F (no job object)"
-            found = self._active()
-            deadline = time.monotonic() + KILL_WAIT
-            while True:
-                # Terminate again while members remain: covers a child created in between.
-                _kernel32.TerminateJobObject(self._job, _JOB_KILLED_EXIT)
-                left = self._active()
-                if left == 0 or time.monotonic() >= deadline:
-                    break
-                time.sleep(0.05)
+                return _taskkill_note(process, "no job object")
+            try:
+                found = self._active()
+                deadline = time.monotonic() + KILL_WAIT
+                while True:
+                    # Terminate again while members remain: covers a child created meanwhile.
+                    if not _kernel32.TerminateJobObject(self._job, _JOB_KILLED_EXIT):
+                        error = ctypes.get_last_error()
+                        raise OSError(f"TerminateJobObject failed (error {error})")
+                    left = self._active()
+                    if left == 0 or time.monotonic() >= deadline:
+                        break
+                    time.sleep(0.05)
+            except OSError as error:
+                return _taskkill_note(process, f"job object cleanup failed: {error}") + (
+                    "; processes outside the root's tree may remain"
+                )
             note = f"stopped {found} process(es) of the command's job object"
             if left:
                 note += f"; {left} still running after {KILL_WAIT:g}s"
             return note
+
+    def _taskkill_note(process: subprocess.Popen[Any], why: str) -> str:
+        """Stop `process` with its tree by taskkill; return a line for the log."""
+        try:
+            _taskkill(process.pid)
+        except ProcessLookupError:
+            pass
+        except OSError as error:
+            return f"{why}; taskkill /T /F failed: {error}"
+        return f"stopped the process tree with taskkill /T /F ({why})"
 
     def fchmod(fd: int, mode: int) -> None:
         """Windows has no POSIX modes: the user's profile directory keeps the file private."""

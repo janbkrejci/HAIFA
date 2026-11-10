@@ -86,7 +86,10 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
                         returncode = process.wait(timeout=spec.timeout_seconds)
                     except subprocess.TimeoutExpired:
                         # aifactory 3.0: also stops children started during the kill.
-                        stopped = tree.kill(process)
+                        try:
+                            stopped = tree.kill(process)
+                        except Exception as error:  # the root must still be ended below
+                            stopped = f"process tree cleanup failed: {error}"
                         if process.poll() is None:
                             process.kill()
                         process.wait()

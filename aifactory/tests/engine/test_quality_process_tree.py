@@ -7,6 +7,7 @@ a process started outside the command stays alive.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 import time
@@ -198,6 +199,58 @@ def test_without_a_job_object_the_kill_falls_back_to_taskkill(
     assert "taskkill /T /F (no job object)" in Path(result.output_artifact).read_text(
         encoding="utf-8"
     )
+    assert _wait_dead(_recorded(pids)) == []
+
+
+def _timed_out_tree(tmp_path: Path, timeout: float = 3) -> tuple[QualityCheckResult, Path]:
+    pids = tmp_path / "pids"
+    pids.mkdir()
+    script = (
+        "import pathlib, subprocess, sys, time\n"
+        f"subprocess.Popen([sys.executable, '-c', {_worker(pids)!r}])\n"
+        f"while not any(pathlib.Path({str(pids)!r}).iterdir()): time.sleep(0.02)\n"
+        "print('worker started', flush=True)\n"
+        f"time.sleep({WORKER_LIFE})\n"
+    )
+    clock = time.monotonic()
+    result = _run(tmp_path, [sys.executable, "-c", script], timeout=timeout)
+    assert time.monotonic() - clock < timeout + oscompat.KILL_WAIT + 10
+    return result, pids
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows job object")
+@pytest.mark.parametrize("api", ["QueryInformationJobObject", "TerminateJobObject"])
+def test_a_failing_job_api_falls_back_and_is_reported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, api: str
+) -> None:
+    """A job API failure must neither hang the timeout nor be logged as a clean stop."""
+    monkeypatch.setattr(oscompat._kernel32, api, lambda *args: 0)
+    result, pids = _timed_out_tree(tmp_path)
+    assert result.returncode == 124
+    log = Path(result.output_artifact).read_text(encoding="utf-8")
+    assert "worker started" in log
+    assert f"job object cleanup failed: {api} failed" in log
+    assert "stopped the process tree with taskkill /T /F" in log
+    assert "of the command's job object" not in log
+    assert _wait_dead(_recorded(pids)) == []
+
+
+def test_a_raising_tree_kill_still_ends_the_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def broken(self: Any, process: Any) -> str:
+        raise RuntimeError("cleanup broke")
+
+    monkeypatch.setattr(oscompat.ProcessTree, "kill", broken)
+    result, pids = _timed_out_tree(tmp_path)
+    assert result.returncode == 124
+    log = Path(result.output_artifact).read_text(encoding="utf-8")
+    assert "worker started" in log
+    assert "process tree cleanup failed: cleanup broke" in log
+    # Only the root is ended here; end the worker this test leaked on purpose.
+    for pid in _recorded(pids):
+        with contextlib.suppress(ProcessLookupError):
+            oscompat.kill(pid, force=True)
     assert _wait_dead(_recorded(pids)) == []
 
 

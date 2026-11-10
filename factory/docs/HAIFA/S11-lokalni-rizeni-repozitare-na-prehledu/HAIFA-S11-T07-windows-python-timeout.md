@@ -18,10 +18,14 @@ workery):
   okno je v logu u běhu c612e428.
 - Potomek, jehož rodič už skončil, taskkill nenajde vůbec.
 
-Timeouty samy vznikly pomalými testy, ne deadlockem. `tests/review/test_approve_continue.py`
-s `test_task_retry.py::test_retry_after_stop_continues_at_the_stopped_phase` trvají se
-dvěma workery 178 s a jednotlivé testy 8 až 28 s. Dávka 23 takových testů s limitem
-260 s proto limit přirozeně překročí a timeout pak spustí výše popsané ukončení.
+Příčinu samotných historických timeoutů tento úkol neprokazuje. Naměřeno je jen,
+že `tests/review/test_approve_continue.py` s
+`test_task_retry.py::test_retry_after_stop_continues_at_the_stopped_phase` trvají se
+dvěma workery 178 s (jednotlivé testy 8 až 28 s) a nevisí. Dávky v c612e428 byly jiné,
+běžely se čtyřmi workery a jejich výpis před timeoutem nezachycuje stav vláken, takže
+deadlock v nich nelze vyloučit ani potvrdit. Pomalost těchto testů je pravděpodobné, ne
+ověřené vysvětlení. Doložené je jen to, že každý z timeoutů spustil popsané ukončení
+stromu a okna vznikla v jeho čase.
 
 ## Oprava
 
@@ -30,7 +34,9 @@ job object: příkaz startuje s `CREATE_SUSPENDED`, vloží se do nového jobu a
 potom se spustí. Proto do jobu patří každý potomek od první instrukce.
 Při timeoutu `TerminateJobObject` ukončí všechny členy najednou a
 opakuje to, dokud job není prázdný (nejvýše `KILL_WAIT` = 10 s). Pokud job nelze
-vytvořit, použije se původní taskkill. Job nemá `KILL_ON_JOB_CLOSE`, takže po běžném
+vytvořit nebo `QueryInformationJobObject` či `TerminateJobObject` selže, použije se
+taskkill a `command.log` uvede selhání i možnost zbylých procesů mimo strom kořene.
+Ani výjimka při úklidu nebrání ukončení kořene, takže timeout zůstává ohraničený. Job nemá `KILL_ON_JOB_CLOSE`, takže po běžném
 dokončení příkazu pomocné procesy na pozadí doběhnou jako dřív. Na POSIX zůstává
 ukončení skupiny procesů přes `killpg`.
 
@@ -51,7 +57,8 @@ ověřen se zapnutým `SEM_FAILCRITICALERRORS`, aby se okno při pokusu neukáza
 timeout se zachovaným výstupem a nedotčeným nesouvisejícím procesem, potomka
 vznikajícího při ukončování, potomka rodiče ukončeného dříve, běžné dokončení
 s pomocným procesem, ukončení již skončeného příkazu a na Windows náhradní taskkill
-bez jobu a start pozastaveného příkazu.
+bez jobu, selhání `QueryInformationJobObject` a `TerminateJobObject`, výjimku při úklidu
+a start pozastaveného příkazu.
 
 ## Pád faulthandleru (38777bbd)
 
