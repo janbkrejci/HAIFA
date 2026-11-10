@@ -24,6 +24,7 @@ from starlette.applications import Starlette
 from starlette.testclient import TestClient
 
 from aifactory import home, oscompat
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run import TaskRunRow, TaskRunStore, members
 from aifactory.run.errors import TaskRunError
 from aifactory.skill import envelope_problems
@@ -721,3 +722,20 @@ def test_previous_reaper_finishes_after_retry_claim(
         assert operations_of(repo) == []
     finally:
         release.set()
+
+
+@pytest.mark.parametrize("configured", [False, True])
+def test_automatic_start_still_checks_local_policy_before_spawn(
+    repo: Path, stub: Stub, configured: bool
+) -> None:
+    settings = RepositorySettings(repo)
+    if configured:
+        settings.update({"auto_continue": True})
+        settings.update({"auto_continue": False})
+    launcher = RunLauncher(command=STUB_COMMAND)
+    with pytest.raises(TaskRunError) as caught:
+        launcher.start(repo, T01, note=None, force=False, automatic=True)
+    assert caught.value.code == "auto_continue_disabled"
+    assert stub.records(T01) == []
+    assert launcher.running() == []
+    assert runs_of(repo, T01) == []

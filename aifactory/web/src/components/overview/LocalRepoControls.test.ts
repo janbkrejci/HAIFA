@@ -26,6 +26,21 @@ const panel = (settings: LocalRepoSettings | null = local()) => mount(LocalRepoC
 const checked = (wrapper: ReturnType<typeof panel>) => (wrapper.get('[data-test="local-auto-continue"]').element as HTMLInputElement).checked
 
 describe('machine-local repository controls', () => {
+  it('keeps an accessible section and controls without explanatory copy', async () => {
+    const wrapper = panel(local(false))
+    await flushPromises()
+    expect(wrapper.attributes('aria-label')).toBe('Na tomto počítači: alpha')
+    for (const text of [
+      'Na tomto počítači',
+      'Platí pouze pro novou Factory na tomto počítači. Ukládá se ihned.',
+      'Staré volby v backlogu nová Factory nepoužívá. Bez místních voleb jsou automatizace vypnuté.',
+      'Aktuální běhy doběhnou, další se nespustí',
+    ]) expect(wrapper.text()).not.toContain(text)
+    expect(wrapper.find('[data-test="local-auto-merge"]').exists()).toBe(true)
+    expect(checked(wrapper)).toBe(false)
+    expect(wrapper.get('[data-test="local-harness"]').attributes('disabled')).toBeUndefined()
+  })
+
   it('keeps on while saving off, then shows only the confirmed off', async () => {
     let resolve!: (value: LocalRepoSettings) => void
     vi.mocked(patchLocalRepoSettings).mockReturnValue(new Promise(r => { resolve = r }))
@@ -40,7 +55,7 @@ describe('machine-local repository controls', () => {
     await flushPromises()
     expect(checked(wrapper)).toBe(false)
     expect(wrapper.text()).toContain('Uloženo')
-    expect(wrapper.text()).toContain('Aktuální běhy doběhnou, další se nespustí')
+    expect(wrapper.find('[data-test="local-off-note"]').exists()).toBe(false)
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })
 
@@ -61,7 +76,6 @@ describe('machine-local repository controls', () => {
     expect(missing.get('[role="alert"]').text()).toContain('nejsou')
     const unavailable = panel({ ...local(), effective_harness: 'pi', settings: { ...local().settings, harness: 'pi' } })
     expect(unavailable.text()).toContain('nedostupný')
-    expect(unavailable.text()).toContain('pouze pro novou Factory')
     expect(unavailable.find('[data-test="legacy-preview"]').exists()).toBe(false)
     expect(fetchLegacyRepoSettings).not.toHaveBeenCalled()
     expect(importLegacyRepoSettings).not.toHaveBeenCalled()

@@ -222,9 +222,20 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     auto.focus()
                     auto.press("Space")
                     expect(auto).not_to_be_checked()
-                    expect(card.locator('[data-test="local-off-note"]')).to_have_text(
-                        "Aktuální běhy doběhnou, další se nespustí"
+                    controls = card.locator('[data-test="local-repo-controls"]')
+                    expect(controls).to_have_attribute(
+                        "aria-label", f"Na tomto počítači: {repo_a.name}"
                     )
+                    for text in (
+                        "Na tomto počítači",
+                        "Platí pouze pro novou Factory na tomto počítači. Ukládá se ihned.",
+                        "Staré volby v backlogu nová Factory nepoužívá. "
+                        "Bez místních voleb jsou automatizace vypnuté.",
+                        "Aktuální běhy doběhnou, další se nespustí",
+                    ):
+                        expect(controls).not_to_contain_text(text)
+                    expect(controls.locator('[data-test="local-auto-merge"]')).to_be_enabled()
+                    expect(controls.locator('[data-test="local-harness"]')).to_be_enabled()
                     expect(running).to_be_visible()
                     assert run_state(server.api, run_id)["state"] == "running"
                     assert git(repo_a, "status", "--porcelain") == before_settings
