@@ -58,7 +58,11 @@ def test_runs_overflow_browser(width: int) -> None:
         data: dict[str, Any]
         if path == "/api/repos/haifa/runs":
             data = {"runs": [run]}
-        elif path.startswith("/api/repos/haifa/runs/many-phases/"):
+        elif path in (
+            "/api/repos/haifa/runs/many-phases/archive",
+            "/api/repos/haifa/runs/many-phases/unarchive",
+            "/api/repos/haifa/runs/many-phases/delete",
+        ):
             action = path.rsplit("/", 1)[1]
             assert route.request.method == "POST", (path, route.request.method)
             assert action in ("archive", "unarchive", "delete"), action
@@ -82,6 +86,16 @@ def test_runs_overflow_browser(width: int) -> None:
             expect(region).to_be_visible()
             page.evaluate("document.fonts.ready")
             _assert_document_fits(page)
+            # Wrapped topbar controls remain inside the viewport and the header.
+            header = page.locator(".topbar").bounding_box()
+            assert header is not None
+            for control in page.locator(".topbar a, .topbar button").all():
+                if not control.is_visible():
+                    continue
+                box = control.bounding_box()
+                assert box is not None
+                assert 0 <= box["x"] and box["x"] + box["width"] <= width, box
+                assert box["y"] + box["height"] <= header["y"] + header["height"], box
             expect(region.locator(".task-link")).to_contain_text(run["task_title"])
             expect(region.locator('[data-col="pr"]')).to_have_attribute("href", run["pr"]["url"])
             dots = region.locator(".d")

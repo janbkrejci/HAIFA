@@ -340,6 +340,8 @@ onBeforeUnmount(() => {
 
 .topbar {
   display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
   align-items: center;
   justify-content: space-between;
   padding: 15px 28px;
@@ -380,11 +382,13 @@ onBeforeUnmount(() => {
 
 .topbar-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 12px;
-  flex: 0 0 auto;
+  flex: 0 1 auto;
   justify-content: flex-end;
   min-width: 0;
+  max-width: 100%;
 }
 
 .logo {

@@ -9,6 +9,7 @@ Seznam musí zobrazit všechny fáze ve vzestupném pořadí `seq`, včetně too
 - Odkaz tasku má omezenou šířku a zalamuje i dlouhé řetězce bez mezer. Celý název zůstává viditelný.
 - Tabulku obaluje oblast „Seznam běhů“ s `overflow-x: auto` a `tabindex="0"`. Na úzké obrazovce se posouvá pouze tato oblast. Dokument nemá globální zákaz horizontálního posunu ani oříznutý obsah.
 - Kliknutí na řádek, odkazy, archivace, vrácení z archivu a mazání zachovávají dosavadní chování.
+- Horní lišta i její skupina ovládacích prvků se při nedostatku místa zalamují, aby na úzkém viewportu samy nerozšiřovaly dokument.
 
 ## Regrese
 
