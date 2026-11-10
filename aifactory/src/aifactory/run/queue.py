@@ -186,15 +186,20 @@ _StartResult = TypeVar("_StartResult")
 _LOCK_START_ATTEMPTS = 3
 
 
-def _start_with_lock_retry(start: Callable[[], _StartResult], *, repo: Path) -> _StartResult:
+def _start_with_lock_retry(
+    start: Callable[[], _StartResult], *, repo: Path, automatic: bool = True
+) -> _StartResult:
     """Retry the same unclaimed task; a shared lock says nothing about its readiness.
 
-    Each claim already waits up to SERIAL_TIMEOUT. Keep retries bounded and never
+    Automatic dispatch rechecks the live policy before every attempt; the manual
+    initial Factory batch does not. Each claim already waits up to SERIAL_TIMEOUT.
+    Keep retries bounded and never
     retry other errors (in particular failures after the run has been claimed).
     """
     for attempt in range(_LOCK_START_ATTEMPTS):
         try:
-            require_enabled(repo)
+            if automatic:
+                require_enabled(repo)
             return start()
         except TaskRunError as exc:
             if exc.code != "trace_db_locked" or attempt == _LOCK_START_ATTEMPTS - 1:
@@ -969,8 +974,8 @@ def start_factory(
     The Overview's "Spustit továrnu": the tasks are chosen like auto-continue does
     (``select_ready``: the kanban's queue first, excluded tasks, dependencies, open PRs
     and write collisions with running runs, open PRs and the tasks started just before)
-    and each is started with `start` (an automatic launcher carrying the origin to the
-    child claim). Continuation follows the live repository-local policy. At most
+    and each is started with `start` as an explicit manual run. Only subsequent
+    continuation follows the live repository-local policy. At most
     ``max_parallel_runs`` minus the taken slots (``Slots``: tasks with a live run or an
     open PR waiting for review, each once) are started. When PRs waiting for review hold
     a slot the next ready task that found none is skipped as ``no_slot``. A task `start`
@@ -1043,7 +1048,7 @@ def start_factory(
             slots = replace(slots, in_review=tuple(t for t in slots.in_review if t not in deps))
         exclude.add(nxt.id)
         try:
-            row = _start_with_lock_retry(partial(start, nxt.id), repo=repo)
+            row = _start_with_lock_retry(partial(start, nxt.id), repo=repo, automatic=False)
         except TaskRunError as exc:
             start_skips.append(Skip(nxt.id, "cannot_start", f"{exc.code}: {exc.message}"))
             if exc.code in (DISABLED, "trace_db_locked"):

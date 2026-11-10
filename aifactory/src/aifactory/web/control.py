@@ -150,7 +150,7 @@ class FactoryControl:
         """Start ready tasks into the free slots (``start_factory``); what started and why not."""
         result = start_factory(
             repo,
-            lambda task_id: launcher.start(repo, task_id, note=None, force=False, automatic=True),
+            lambda task_id: launcher.start(repo, task_id, note=None, force=False),
         )
         return result.to_json()
 

@@ -81,6 +81,7 @@ class FakeLauncher(ThreadLauncher):
         automatic: bool = False,
         timeout: float = 30.0,
     ) -> TaskRunRow | None:
+        assert automatic is False  # Play is an explicit manual dispatch.
         self.calls.append((task_id, note, force, auto))
         return claim(repo, task_id)
 

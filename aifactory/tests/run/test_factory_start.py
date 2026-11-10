@@ -14,7 +14,9 @@ from run_repo import commit_all, git, make_run_repo, write
 from test_parallel_chain import CORE, STEP, T01, T02, T03, T04, _db, _pr, no_files, setup_tasks
 
 from aifactory.engine.utils import now_iso
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run import TaskRunError, TaskRunRow, TaskRunStore, start_factory
+from aifactory.run.queue import _start_with_lock_retry
 
 
 @pytest.fixture(name="repo")
@@ -73,8 +75,10 @@ class FakeStart:
         return claim(self.repo, task_id)
 
 
-def test_starts_as_many_as_free_slots_in_queue_order(repo: Path) -> None:
+@pytest.mark.parametrize("auto_continue", [False, True])
+def test_starts_as_many_as_free_slots_in_queue_order(repo: Path, auto_continue: bool) -> None:
     setup_tasks(repo, [(T01, "src/a/"), (T02, "src/b/"), (T03, "src/c/")])
+    RepositorySettings(repo).update({"auto_continue": auto_continue})
     store = TaskRunStore(_db(repo))
     try:
         store.set_queue_order([T03])
@@ -290,3 +294,31 @@ def test_merged_todo_task_is_skipped_and_dependents_stay_blocked(repo: Path, sta
     }
     merged = next(s for s in result.skipped if s.task_id == T01)
     assert "factory backlog sync" in merged.detail
+
+
+@pytest.mark.parametrize("automatic", [False, True])
+def test_lock_retry_rechecks_policy_only_for_automatic_starts(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, automatic: bool
+) -> None:
+    settings = RepositorySettings(repo)
+    settings.update({"auto_continue": True})
+    calls: list[str] = []
+
+    def start() -> str:
+        calls.append("start")
+        if len(calls) == 1:
+            settings.update({"auto_continue": False})
+            raise TaskRunError("trace_db_locked", "held by another process")
+        return "claimed"
+
+    monkeypatch.setattr("aifactory.run.queue.time.sleep", lambda _: None)
+    if automatic:
+        # Omitting the origin must keep the automatic barrier enabled by default.
+        with pytest.raises(TaskRunError) as caught:
+            _start_with_lock_retry(start, repo=repo)
+        assert caught.value.code == "auto_continue_disabled"
+        assert calls == ["start"]
+    else:
+        assert _start_with_lock_retry(start, repo=repo, automatic=False) == "claimed"
+        assert calls == ["start", "start"]
+    assert settings.read().auto_continue is False

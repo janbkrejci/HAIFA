@@ -64,9 +64,6 @@ function harness(value: string) {
 
 <template>
   <section class="local-controls" data-test="local-repo-controls" :aria-label="`Na tomto počítači: ${repo.name}`">
-    <strong>Na tomto počítači</strong>
-    <p>Platí pouze pro novou Factory na tomto počítači. Ukládá se ihned.</p>
-    <p>Staré volby v backlogu nová Factory nepoužívá. Bez místních voleb jsou automatizace vypnuté.</p>
     <fieldset :disabled="saving || !confirmed" :aria-busy="saving">
       <legend>Automatizace a výchozí harness</legend>
       <label><input type="checkbox" data-test="local-auto-merge" :checked="confirmed?.settings.auto_merge ?? false" @change="toggle('auto_merge', $event)" /> Auto merge</label>
@@ -84,7 +81,6 @@ function harness(value: string) {
         />
       </div>
     </fieldset>
-    <p v-if="confirmed && !confirmed.settings.auto_continue" data-test="local-off-note">Aktuální běhy doběhnou, další se nespustí</p>
     <p v-if="catalogLoading">Načítám katalog harnessů…</p>
     <p v-else-if="catalogError" role="alert">Katalog harnessů není dostupný: {{ catalogError }}</p>
     <p v-if="harnessUnavailable" role="alert">Výchozí harness není na tomto počítači dostupný a zapnutý.</p>
