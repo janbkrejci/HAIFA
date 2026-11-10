@@ -54,6 +54,17 @@ describe('RunDetail', () => {
     expect(wrapper.find('[data-test="pr-link"]').attributes('href')).toBe('https://example.test/pr/7')
   })
 
+  it('scrolls only the gantt: the head and the phase panel sit outside its region', () => {
+    const wrapper = mount(RunDetail, { props: { detail: detail(), events: events(), phaseId: 'p1' } })
+    const scroll = wrapper.get('[data-test="waterfall-scroll"]')
+    expect(wrapper.findAll('[data-test="waterfall-scroll"]')).toHaveLength(1)
+    expect(scroll.find('.axis-row').exists()).toBe(true)
+    expect(scroll.find('[data-lane="agent:planner"]').exists()).toBe(true)
+    const panel = wrapper.get('.phase-panel')
+    expect(scroll.element.contains(panel.element)).toBe(false)
+    expect(scroll.element.contains(wrapper.get('header.head').element)).toBe(false)
+  })
+
   it('links the task to the backlog and its PR to Review, the PR state in Czech', () => {
     window.location.hash = '#/r/haifa/runs/r-1'
     const wrapper = mount(RunDetail, { props: { detail: detail(), events: events() } })

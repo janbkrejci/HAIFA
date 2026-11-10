@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The run's waterfall (gantt), ported from the sssf visualizer's SessionTrace.vue.
 // Layout lives in lib/waterfall.ts; this component only renders it.
-import { computed, ref, type Component } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
 import { Bot, Check, Circle, LoaderCircle, SquareTerminal, UserRound, X } from 'lucide-vue-next'
 import { hexAlpha } from '@/lib/events'
 import { fmtDuration, fmtInt } from '@/lib/format'
@@ -13,6 +13,7 @@ import {
   buildLanes,
   buildTimeline,
   contextFill,
+  DEFAULT_TRACK_PX,
   contextLabel,
   toolTicks,
   type Lane,
@@ -28,7 +29,37 @@ const props = defineProps<{
 }>()
 
 const lanes = computed(() => buildLanes(props.detail, props.events))
-const timeline = computed(() => buildTimeline(props.detail, props.now))
+/** Width of the lane label column, in px (the grid's first column). */
+const LABEL_PX = 240
+/** The track never lays out narrower than this; a narrower screen scrolls the gantt. */
+const MIN_TRACK_PX = 320
+
+// One scroll region holds the axis and every lane, so they scroll together and stay aligned.
+const scroller = ref<HTMLElement | null>(null)
+const trackPx = ref(DEFAULT_TRACK_PX)
+let observer: ResizeObserver | undefined
+
+function measure() {
+  const w = scroller.value?.clientWidth ?? 0
+  // Without a layout (no width yet, or a DOM without one) the default stands.
+  if (w > 0) trackPx.value = Math.max(w - LABEL_PX, MIN_TRACK_PX)
+}
+
+onMounted(() => {
+  measure()
+  if (typeof ResizeObserver !== 'undefined' && scroller.value) {
+    observer = new ResizeObserver(measure)
+    observer.observe(scroller.value)
+  }
+})
+
+onBeforeUnmount(() => observer?.disconnect())
+
+const timeline = computed(() => buildTimeline(props.detail, props.now, trackPx.value))
+// A run that fits fills the region; a longer one gets a canvas as wide as its layout needs.
+const canvasStyle = computed(() =>
+  timeline.value.overflow ? { width: `${LABEL_PX + timeline.value.width}px` } : { width: '100%' },
+)
 const hasPhases = computed(() => (props.detail.phases ?? []).length > 0)
 
 const KIND_ICONS: Record<PhaseKind, Component> = { engineer: UserRound, code: SquareTerminal, agent: Bot }
@@ -60,9 +91,10 @@ function geom(p: PhaseRow) {
 function blockStyle(p: PhaseRow, lane: Lane): Record<string, string> | undefined {
   const g = geom(p)
   if (!g) return undefined
+  const box = { left: `${g.left}%`, width: `${g.width}%` }
+  if (!p.started_at) return box
   return {
-    left: `${g.left}%`,
-    width: `${g.width}%`,
+    ...box,
     background: `linear-gradient(180deg, ${hexAlpha(lane.color, 0.2)}, ${hexAlpha(lane.color, 0.05)})`,
     borderColor: isFail(p.status) ? 'rgba(255, 111, 103, 0.8)' : hexAlpha(lane.color, 0.55),
     '--lane-glow': hexAlpha(lane.color, 0.28),
@@ -107,119 +139,112 @@ function select(p: PhaseRow) {
 <template>
   <p v-if="!hasPhases" class="faint">Žádné fáze v trace.</p>
   <div v-else class="waterfall" data-test="waterfall">
-    <div class="row axis-row">
-      <div class="label" />
-      <div class="track">
-        <span v-if="timeline.zonePct" class="zone-head" :style="{ width: `${timeline.zonePct}%` }">požadavek</span>
-        <span v-for="(t, i) in timeline.ticks" :key="i" class="axis-label" :style="{ left: `${t.pct}%` }">{{
-          t.label
-        }}</span>
-      </div>
-    </div>
-
     <div
-      v-for="lane in lanes"
-      :key="lane.id"
-      class="row lane"
-      :class="`kind-${lane.kind}`"
-      :data-lane="lane.id"
+      ref="scroller"
+      class="wf-scroll"
+      data-test="waterfall-scroll"
+      :data-overflow="timeline.overflow || undefined"
+      role="region"
+      aria-label="Časová osa fází"
+      tabindex="0"
     >
-      <div class="label">
-        <span class="lane-name" :style="{ color: lane.color }" :data-color="lane.color">
-          <component :is="KIND_ICONS[lane.kind]" class="lane-icon" :size="20" :stroke-width="2" />
-          {{ lane.label }}
-        </span>
-        <Tooltip v-if="lane.model" :text="lane.model">
-          <span class="lane-meta lane-model" data-test="lane-model">
-            <img v-if="modelIcon(lane.model)" class="model-icon" :src="modelIcon(lane.model)!" alt="" />
-            {{ modelName(lane.model) }}
-          </span>
-        </Tooltip>
-        <Tooltip v-if="lane.context" :text="ctxTip(lane)">
-          <span class="lane-ctx" data-test="lane-ctx">
-            <span class="ctx-head">
-              <span class="ctx-label">Kontext</span>
-              <span class="ctx-pct">{{ contextLabel(lane.context) }}</span>
-            </span>
-            <span class="ctx-bar">
-              <span
-                class="ctx-fill"
-                :style="{
-                  width: contextFill(lane.context),
-                  background: `linear-gradient(90deg, ${hexAlpha(lane.color, 0.55)}, ${lane.color})`,
-                  boxShadow: `0 0 10px ${hexAlpha(lane.color, 0.45)}`,
-                }"
-              />
-            </span>
-          </span>
-        </Tooltip>
-        <span v-if="lane.meta" class="lane-meta">{{ lane.meta }}</span>
-      </div>
-      <div class="track">
-        <span v-if="timeline.zonePct" class="zone-divider" :style="{ left: `${timeline.zonePct}%` }" />
-        <span v-for="(t, i) in timeline.ticks" :key="i" class="gridline" :style="{ left: `${t.pct}%` }" />
-        <template v-for="p in lane.phases" :key="p.phase_id">
-          <button
-            v-if="geom(p)"
-            type="button"
-            class="block"
-            :class="[p.status, { selected: p.phase_id === phaseId, failed: isFail(p.status) }]"
-            :style="blockStyle(p, lane)"
-            :data-phase="p.phase_id"
-            :data-name="p.name"
-            :aria-pressed="p.phase_id === phaseId"
-            @click="select(p)"
-            @mouseenter="showTip($event, p)"
-            @mouseleave="hideTip"
-            @focus="showTip($event, p)"
-            @blur="hideTip"
-          >
-            <span class="b-top">
-              <span class="b-status" :class="p.status"
-                ><component :is="STATUS_GLYPH[p.status ?? ''] ?? Circle" :size="16" :stroke-width="2.5"
-              /></span>
-              <span class="b-name">{{ p.name }}</span>
-              <StatChip
-                v-if="Number.isFinite(durMs(p))"
-                class="b-dur"
-                kind="runtime"
-                compact
-                plain
-                :value="durMs(p) / 1000"
-              />
-            </span>
-            <span class="b-desc">{{ p.description }}</span>
-            <span
-              v-for="(t, i) in toolTicks(p, events, now)"
-              :key="i"
-              class="tool-tick"
-              :class="{ err: !t.ok }"
-              :style="{ left: `${t.x}%` }"
-            />
-          </button>
-        </template>
-        <button
-          v-for="(p, i) in lane.phases.filter((q) => !q.started_at)"
-          :key="p.phase_id"
-          type="button"
-          class="block queued"
-          :class="{ selected: p.phase_id === phaseId }"
-          :style="{ right: `${10 + i * 5}px`, width: '170px' }"
-          :data-phase="p.phase_id"
-          :data-name="p.name"
-          :aria-pressed="p.phase_id === phaseId"
-          @click="select(p)"
-          @mouseenter="showTip($event, p)"
-          @mouseleave="hideTip"
-          @focus="showTip($event, p)"
-          @blur="hideTip"
+      <div class="wf-canvas" data-test="waterfall-canvas" :style="canvasStyle">
+        <div class="row axis-row">
+          <div class="label" />
+          <div class="track">
+            <span v-if="timeline.zonePct" class="zone-head" :style="{ width: `${timeline.zonePct}%` }">požadavek</span>
+            <span v-for="(t, i) in timeline.ticks" :key="i" class="axis-label" :style="{ left: `${t.pct}%` }">{{
+              t.label
+            }}</span>
+          </div>
+        </div>
+
+        <div
+          v-for="lane in lanes"
+          :key="lane.id"
+          class="row lane"
+          :class="`kind-${lane.kind}`"
+          :data-lane="lane.id"
         >
-          <span class="b-top">
-            <span class="b-status queued"><Circle :size="16" :stroke-width="2.5" /></span>
-            <span class="b-name">{{ p.name }}</span>
-          </span>
-          <span class="b-desc">ve frontě</span>
-        </button>
+          <div class="label">
+            <span class="lane-name" :style="{ color: lane.color }" :data-color="lane.color">
+              <component :is="KIND_ICONS[lane.kind]" class="lane-icon" :size="20" :stroke-width="2" />
+              {{ lane.label }}
+            </span>
+            <Tooltip v-if="lane.model" :text="lane.model">
+              <span class="lane-meta lane-model" data-test="lane-model">
+                <img v-if="modelIcon(lane.model)" class="model-icon" :src="modelIcon(lane.model)!" alt="" />
+                {{ modelName(lane.model) }}
+              </span>
+            </Tooltip>
+            <Tooltip v-if="lane.context" :text="ctxTip(lane)">
+              <span class="lane-ctx" data-test="lane-ctx">
+                <span class="ctx-head">
+                  <span class="ctx-label">Kontext</span>
+                  <span class="ctx-pct">{{ contextLabel(lane.context) }}</span>
+                </span>
+                <span class="ctx-bar">
+                  <span
+                    class="ctx-fill"
+                    :style="{
+                      width: contextFill(lane.context),
+                      background: `linear-gradient(90deg, ${hexAlpha(lane.color, 0.55)}, ${lane.color})`,
+                      boxShadow: `0 0 10px ${hexAlpha(lane.color, 0.45)}`,
+                    }"
+                  />
+                </span>
+              </span>
+            </Tooltip>
+            <span v-if="lane.meta" class="lane-meta">{{ lane.meta }}</span>
+          </div>
+          <div class="track">
+            <span v-if="timeline.zonePct" class="zone-divider" :style="{ left: `${timeline.zonePct}%` }" />
+            <span v-for="(t, i) in timeline.ticks" :key="i" class="gridline" :style="{ left: `${t.pct}%` }" />
+            <template v-for="p in lane.phases" :key="p.phase_id">
+              <button
+                v-if="geom(p)"
+                type="button"
+                class="block"
+                :class="[p.status, { selected: p.phase_id === phaseId, failed: isFail(p.status), queued: !p.started_at }]"
+                :style="blockStyle(p, lane)"
+                :data-phase="p.phase_id"
+                :data-name="p.name"
+                :aria-pressed="p.phase_id === phaseId"
+                @click="select(p)"
+                @mouseenter="showTip($event, p)"
+                @mouseleave="hideTip"
+                @focus="showTip($event, p)"
+                @blur="hideTip"
+              >
+                <span class="b-top">
+                  <span class="b-status" :class="p.started_at ? p.status : 'queued'"
+                    ><component
+                      :is="p.started_at ? (STATUS_GLYPH[p.status ?? ''] ?? Circle) : Circle"
+                      :size="16"
+                      :stroke-width="2.5"
+                  /></span>
+                  <span class="b-name">{{ p.name }}</span>
+                  <StatChip
+                    v-if="Number.isFinite(durMs(p))"
+                    class="b-dur"
+                    kind="runtime"
+                    compact
+                    plain
+                    :value="durMs(p) / 1000"
+                  />
+                </span>
+                <span class="b-desc">{{ p.started_at ? p.description : 've frontě' }}</span>
+                <span
+                  v-for="(t, i) in toolTicks(p, events, now)"
+                  :key="i"
+                  class="tool-tick"
+                  :class="{ err: !t.ok }"
+                  :style="{ left: `${t.x}%` }"
+                />
+              </button>
+            </template>
+          </div>
+        </div>
       </div>
     </div>
     <Tooltip :text="tipText" :anchor="tip.el" />
@@ -232,6 +257,18 @@ function select(p: PhaseRow) {
   border-radius: 16px;
   background: var(--surface);
   overflow: hidden;
+  max-width: 100%;
+  min-width: 0;
+}
+
+/* The only horizontal scroll of the detail: axis and lanes move together. */
+.wf-scroll {
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+
+.wf-canvas {
+  min-width: 100%;
 }
 
 .row {
@@ -241,6 +278,10 @@ function select(p: PhaseRow) {
 
 .axis-row {
   border-bottom: 1px solid var(--border);
+  background: var(--panel-2);
+}
+
+.axis-row .label {
   background: var(--panel-2);
 }
 
@@ -273,6 +314,10 @@ function select(p: PhaseRow) {
 }
 
 .label {
+  position: sticky;
+  left: 0;
+  z-index: 2;
+  background: var(--surface);
   padding: 12px 16px;
   display: flex;
   flex-direction: column;
