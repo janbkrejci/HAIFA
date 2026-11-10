@@ -4,7 +4,7 @@ title: Zabránit přetékání seznamu běhů s mnoha fázemi
 status: todo
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T110]
-writes: [aifactory/web/src/components/runs/RunsList.vue, aifactory/web/src/components/runs/RunsList.test.ts, aifactory/web/src/components/runs/PhaseDots.vue, aifactory/web/src/components/runs/PhaseDots.test.ts, aifactory/tests/e2e/test_runs_overflow_browser.py, aifactory/src/aifactory/web/static/]
+writes: [aifactory/web/src/components/runs/RunsList.vue, aifactory/web/src/components/runs/RunsList.test.ts, aifactory/web/src/components/runs/PhaseDots.vue, aifactory/web/src/components/runs/PhaseDots.test.ts, aifactory/tests/e2e/test_runs_overflow_browser.py, aifactory/src/aifactory/web/static/, aifactory/web/src/App.vue]
 ---
 
 ## Zadání
