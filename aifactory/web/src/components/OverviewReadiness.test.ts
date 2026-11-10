@@ -12,7 +12,7 @@ const machine: MachineCheck = { ok: true, findings: [], checked_at: 'now', cache
 function envelope(data: unknown) { return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] })) }
 type StubOptions = {
   machine?: MachineCheck; repos?: RepoItem[]; fail?: boolean; pending?: Promise<Response>
-  progress?: unknown; roster?: Promise<Response>; machineResponse?: () => Response
+  progress?: unknown; roster?: Promise<Response>; projects?: number; summaryFails?: boolean; machineResponse?: () => Response
 }
 function stub(options: StubOptions = {}) {
   const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
@@ -28,7 +28,10 @@ function stub(options: StubOptions = {}) {
     if (url === '/api/repos') return envelope({ repos: options.repos ?? [registered] })
     if (url === '/api/repos/a/factory/roster' && options.roster) return options.roster
     if (url === '/api/repos/a/factory/roster') return envelope({ agents: [{ name: 'builder' }], workflow_tasks: {} })
-    if (url === '/api/repos/a/backlog') return envelope({ items: [{ id: 'M01' }] })
+    if (url === '/api/repos/a/backlog/summary') {
+      if (options.summaryFails) throw new Error('Backlog nelze načíst')
+      return envelope({ projects: options.projects ?? 1 })
+    }
     if (url === '/api/overview') return envelope(overview([repo('a')]))
     throw new Error(`unexpected ${url}`)
   })
@@ -41,6 +44,23 @@ beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }))
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('overview readiness', () => {
+  it.each([0, 1])('reads only the project summary for onboarding (%s projects)', async projects => {
+    const fetchMock = stub({ projects })
+    const wrapper = mount(OverviewReadiness)
+    await flushPromises()
+    expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos/a/backlog/summary')).toHaveLength(1)
+    expect(fetchMock.mock.calls.some(([url]) => url === '/api/repos/a/backlog')).toBe(false)
+    if (projects) expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
+    else expect(wrapper.text()).toContain('projekt')
+  })
+
+  it('keeps summary failures visible', async () => {
+    stub({ summaryFails: true })
+    const wrapper = mount(OverviewReadiness)
+    await flushPromises()
+    expect(wrapper.get('[data-test="readiness-warning"]').text()).toContain('Backlog nelze načíst')
+  })
+
   it('keeps a green chip visible and runs a fresh check when clicked', async () => {
     const options: { pending?: Promise<Response> } = {}
     const fetchMock = stub(options)

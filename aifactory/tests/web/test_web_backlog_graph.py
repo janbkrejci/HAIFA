@@ -6,6 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+import pytest
 from backlog_fixture import A1, A2, A3, A4, B1, B2, B3, M01, S1, S2, git, make_backlog_repo
 from starlette.testclient import TestClient
 
@@ -94,7 +95,9 @@ def test_unknown_container(tmp_path: Path) -> None:
     assert body["error"]["code"] == "unknown_container"
 
 
-def test_auto_continue_writes_like_the_cli(tmp_path: Path) -> None:
+def test_auto_continue_web_edits_and_legacy_cli_rejection(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     root = make_backlog_repo(tmp_path / "repo")
     twin = tmp_path / "twin"
     shutil.copytree(root, twin)
@@ -107,9 +110,12 @@ def test_auto_continue_writes_like_the_cli(tmp_path: Path) -> None:
     assert data["id"] == S1 and data["level"] == "step"
     assert _container(root, S1).defaults.get("auto_continue") is True
     assert _status_paths(root) == ["backlog/M01-core/S01-model/index.md"]
-    assert main(["backlog", "auto-continue", S1, "--on", "--repo", str(twin)]) == 0
     index = "backlog/M01-core/S01-model/index.md"
-    assert (root / index).read_text() == (twin / index).read_text()
+    original = (twin / index).read_text()
+    assert main(["backlog", "auto-continue", S1, "--on", "--repo", str(twin)]) == 2
+    assert "Legacy auto-continue writes are deprecated" in capsys.readouterr().err
+    assert (twin / index).read_text() == original
+    assert _status_paths(twin) == []
 
     assert _post(client, url, {"mode": "on"})["data"]["changed"] is False
     _post(client, url, {"mode": "off"})
@@ -127,7 +133,9 @@ def test_auto_continue_writes_like_the_cli(tmp_path: Path) -> None:
     assert step["effective_auto_continue"] is True
 
 
-def test_auto_merge_writes_like_the_cli(tmp_path: Path) -> None:
+def test_legacy_auto_merge_edits_do_not_enable_repository_policy(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     root = make_backlog_repo(tmp_path / "repo")
     twin = tmp_path / "twin"
     shutil.copytree(root, twin)
@@ -138,9 +146,12 @@ def test_auto_merge_writes_like_the_cli(tmp_path: Path) -> None:
     assert (data["auto_merge"], data["effective_auto_merge"]) == (True, False)
     assert data["id"] == S1 and data["level"] == "step"
     assert _container(root, S1).defaults.get("auto_merge") is True
-    assert main(["backlog", "auto-merge", S1, "--on", "--repo", str(twin)]) == 0
     index = "backlog/M01-core/S01-model/index.md"
-    assert (root / index).read_text() == (twin / index).read_text()
+    original = (twin / index).read_text()
+    assert main(["backlog", "auto-merge", S1, "--on", "--repo", str(twin)]) == 2
+    assert "Legacy auto-merge writes are deprecated" in capsys.readouterr().err
+    assert (twin / index).read_text() == original
+    assert _status_paths(twin) == []
 
     tree = _get(client, "/api/backlog")["data"]["items"]
     assert all("auto_merge" in c for c in tree)

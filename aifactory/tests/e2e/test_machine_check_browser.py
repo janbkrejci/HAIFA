@@ -125,3 +125,69 @@ def test_manual_check_shows_progress_timeout_and_retry_browser() -> None:
         finally:
             context.close()
             browser.close()
+
+
+def test_readiness_on_kanban_does_not_request_a_second_board_browser() -> None:
+    requests: list[str] = []
+
+    def serve(route: Route) -> None:
+        path = urlsplit(route.request.url).path
+        if path.startswith("/api/"):
+            requests.append(path)
+            responses: dict[str, Any] = {
+                "/api/health": {"app": "haifa-dashboard", "version": "test", "home": "/home"},
+                "/api/repos": {
+                    "repos": [
+                        {
+                            "id": "a",
+                            "name": "A",
+                            "path": "/repo",
+                            "status": "ok",
+                            "added_at": "",
+                            "factory": None,
+                        }
+                    ]
+                },
+                "/api/library": {"exists": True},
+                "/api/machine/check": CHECK,
+                "/api/repos/a/factory/roster": {"agents": [{"name": "builder"}]},
+                "/api/repos/a/backlog/summary": {"projects": 1},
+                "/api/repos/a/backlog": {
+                    "levels": ["project", "step", "task"],
+                    "items": [],
+                    "tasks": [],
+                    "steps": [],
+                    "states": [],
+                    "workflows": [],
+                    "issues": [],
+                    "state_counts": {},
+                    "counts": {},
+                    "filters": {"status": None},
+                },
+                "/api/repos/a/backlog/names": {"levels": ["project", "step", "task"], "names": {}},
+                "/api/limits": {"providers": []},
+            }
+            route.fulfill(content_type="application/json", body=_envelope(responses.get(path, {})))
+            return
+        asset = STATIC / (path.lstrip("/") or "index.html")
+        assert asset.resolve().is_relative_to(STATIC.resolve()) and asset.is_file()
+        route.fulfill(
+            body=asset.read_bytes(),
+            content_type=mimetypes.guess_type(asset.name)[0] or "application/octet-stream",
+        )
+
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        try:
+            page = browser.new_page(service_workers="block")
+            page.route("**/*", serve)
+            page.goto("http://haifa.test/#/r/a/backlog")
+            expect(page.locator("[data-test='readiness-success']")).to_be_visible()
+            expect(page.locator("h1")).to_contain_text("Backlog")
+            # Wait for the page's own board response to finish rendering as well.
+            page.locator("[data-test=mode-kanban]").click()
+            expect(page.locator("[data-test=kanban]")).to_be_visible()
+            assert requests.count("/api/repos/a/backlog/summary") == 1
+            assert requests.count("/api/repos/a/backlog") == 1
+        finally:
+            browser.close()
