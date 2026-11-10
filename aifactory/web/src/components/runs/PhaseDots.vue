@@ -49,11 +49,16 @@ function dotLabel(p: PhaseDot): string {
 
 <style scoped>
 .dots {
-  display: inline-flex;
+  display: flex;
+  flex-wrap: wrap;
+  width: 152px;
+  max-width: 100%;
   gap: 4px;
 }
 
 .d {
+  display: inline-flex;
+  flex: none;
   color: var(--faint);
 }
 
