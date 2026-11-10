@@ -242,6 +242,12 @@ async function onStop() {
 </template>
 
 <style scoped>
+/* Stays in its column: only the gantt's own region scrolls sideways. */
+.run-detail {
+  min-width: 0;
+  max-width: 100%;
+}
+
 .head {
   margin-bottom: 22px;
 }

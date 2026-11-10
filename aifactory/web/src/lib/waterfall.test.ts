@@ -3,7 +3,11 @@ import { AGENT_FALLBACK_COLORS } from './events'
 import type { AgentSession, PhaseRow, RunDetail, TraceEvent } from './runs'
 import { applyTail } from './runs'
 import {
-  MIN_BLOCK_PCT,
+  BLOCK_GAP_PX,
+  DEFAULT_TRACK_PX,
+  MIN_BLOCK_PX,
+  MIN_TICK_GAP_PX,
+  QUEUED_BLOCK_PX,
   REQ_ZONE_PCT,
   blockDurationMs,
   buildLanes,
@@ -75,6 +79,11 @@ function event(over: Partial<TraceEvent>): TraceEvent {
     ended_at: null,
     ...over,
   }
+}
+
+/** A block's width in px on a canvas `width` px wide. */
+function px(g: { width: number }, width: number): number {
+  return (g.width / 100) * width
 }
 
 function overlaps(blocks: { left: number; width: number }[]): boolean {
@@ -218,8 +227,8 @@ describe('buildTimeline', () => {
       phase({ phase_id: 'b', seq: 2, started_at: at(300), ended_at: at(300), kind: 'code' }),
       phase({ phase_id: 'c', seq: 3, started_at: at(300), ended_at: at(600) }),
     ]
-    const { blocks } = buildTimeline(run(phases), T0)
-    expect(blocks.b!.width).toBeGreaterThanOrEqual(MIN_BLOCK_PCT - 1e-9)
+    const { blocks, width } = buildTimeline(run(phases), T0)
+    expect(px(blocks.b!, width)).toBeGreaterThanOrEqual(MIN_BLOCK_PX - 1e-6)
     expect(overlaps(Object.values(blocks))).toBe(false)
   })
 
@@ -239,9 +248,25 @@ describe('buildTimeline', () => {
     expect(tl.ticks[0]!.pct).toBe(REQ_ZONE_PCT)
   })
 
-  it('has no geometry for a queued phase', () => {
+  it('places queued phases after the timed ones, in order and apart', () => {
+    const phases = [
+      phase({ phase_id: 'a', seq: 1, started_at: at(0), ended_at: at(300) }),
+      phase({ phase_id: 'q2', seq: 3, status: 'queued', started_at: null, ended_at: null }),
+      phase({ phase_id: 'q1', seq: 2, status: 'queued', started_at: null, ended_at: null }),
+    ]
+    const tl = buildTimeline(run(phases), T0)
+    const { a, q1, q2 } = tl.blocks
+    expect(tl.overflow).toBe(false)
+    expect(px(q1!, tl.width)).toBeCloseTo(QUEUED_BLOCK_PX)
+    expect(px(q2!, tl.width)).toBeCloseTo(QUEUED_BLOCK_PX)
+    expect(q1!.left).toBeGreaterThan(a!.left + a!.width)
+    expect(q2!.left).toBeGreaterThan(q1!.left + q1!.width)
+    expect(q2!.left + q2!.width).toBeLessThanOrEqual(100 + 1e-9)
+  })
+
+  it('gives a lone queued phase a block', () => {
     const tl = buildTimeline(run([phase({ phase_id: 'q', status: 'queued', started_at: null, ended_at: null })]), T0)
-    expect(tl.blocks.q).toBeUndefined()
+    expect(px(tl.blocks.q!, tl.width)).toBeCloseTo(QUEUED_BLOCK_PX)
   })
 
   it('grows a running block with now', () => {
@@ -297,8 +322,120 @@ describe('buildTimeline with many phases', () => {
     const phases = Array.from({ length: 12 }, (_, i) =>
       phase({ phase_id: `p${i}`, seq: i, started_at: at(i * 50), ended_at: at(i * 50 + (i % 2 ? 0 : 50)) }),
     )
-    const { blocks } = buildTimeline(run(phases), T0)
-    for (const g of Object.values(blocks)) expect(g.width).toBeGreaterThanOrEqual(MIN_BLOCK_PCT - 1e-9)
+    const { blocks, width } = buildTimeline(run(phases), T0)
+    for (const g of Object.values(blocks)) expect(px(g, width)).toBeGreaterThanOrEqual(MIN_BLOCK_PX - 1e-6)
     expect(overlaps(Object.values(blocks))).toBe(false)
+  })
+})
+
+/** A long run: an engineer request, dozens of short steps of one owner with retries, a running
+ * phase and several queued ones, as in practice. */
+function longRun(): RunDetail {
+  const phases: PhaseRow[] = [
+    phase({ phase_id: 'req', seq: 0, kind: 'engineer', owner: 'engineer', started_at: at(0), ended_at: at(1) }),
+  ]
+  let t = 1
+  for (let i = 0; i < 40; i++) {
+    const attempt = (i % 5) + 1
+    phases.push(
+      phase({ phase_id: `b${i}`, seq: i + 1, name: 'build', owner: 'builder', attempt, started_at: at(t), ended_at: at(t + 2) }),
+    )
+    t += 2
+    if (i % 4 === 0) {
+      phases.push(phase({ phase_id: `c${i}`, seq: 100 + i, kind: 'code', owner: 'test', started_at: at(t), ended_at: at(t + 1) }))
+      t += 1
+    }
+  }
+  phases.push(phase({ phase_id: 'long', seq: 200, owner: 'reviewer', started_at: at(t), ended_at: at(t + 1800) }))
+  t += 1800
+  phases.push(phase({ phase_id: 'run', seq: 201, owner: 'builder', status: 'running', started_at: at(t), ended_at: null }))
+  for (let i = 0; i < 4; i++) {
+    phases.push(phase({ phase_id: `q${i}`, seq: 300 + i, owner: i % 2 ? 'reviewer' : 'builder', status: 'queued', started_at: null, ended_at: null }))
+  }
+  const detail = run(phases, [], 'running')
+  return detail
+}
+
+const LONG_NOW = T0 + 3_000_000
+
+describe('buildTimeline for a long run', () => {
+  it('widens the canvas instead of shrinking or stacking blocks', () => {
+    const detail = longRun()
+    const tl = buildTimeline(detail, LONG_NOW, 900)
+    expect(tl.overflow).toBe(true)
+    expect(tl.width).toBeGreaterThan(900)
+    for (const lane of buildLanes(detail, [])) {
+      const geoms = lane.phases.map((p) => tl.blocks[p.phase_id]!)
+      expect(geoms.every(Boolean)).toBe(true)
+      expect(overlaps(geoms)).toBe(false)
+    }
+    for (const [id, g] of Object.entries(tl.blocks)) {
+      if (id === 'req') continue
+      const floor = id.startsWith('q') ? QUEUED_BLOCK_PX : MIN_BLOCK_PX
+      expect(px(g, tl.width)).toBeGreaterThanOrEqual(floor - 1e-6)
+      expect(g.left).toBeGreaterThanOrEqual(tl.zonePct - 1e-9)
+      expect(g.left + g.width).toBeLessThanOrEqual(100 + 1e-9)
+    }
+  })
+
+  it('keeps the order and a gap between every two blocks', () => {
+    const tl = buildTimeline(longRun(), LONG_NOW, 900)
+    const ordered = Object.entries(tl.blocks)
+      .filter(([id]) => id !== 'req')
+      .map(([id, g]) => ({ id, ...g }))
+      .sort((a, b) => a.left - b.left)
+    // the time order: builds and tests interleaved, then the long review, running, queued
+    expect(ordered.slice(0, 3).map((b) => b.id)).toEqual(['b0', 'c0', 'b1'])
+    expect(ordered.slice(-6).map((b) => b.id)).toEqual(['long', 'run', 'q0', 'q1', 'q2', 'q3'])
+    for (let i = 1; i < ordered.length; i++) {
+      const gap = ((ordered[i]!.left - ordered[i - 1]!.left - ordered[i - 1]!.width) / 100) * tl.width
+      expect(gap).toBeGreaterThanOrEqual(BLOCK_GAP_PX - 1e-6)
+    }
+  })
+
+  it('keeps the axis inside the canvas, in order and readable', () => {
+    const tl = buildTimeline(longRun(), LONG_NOW, 900)
+    expect(tl.ticks[0]!.pct).toBeCloseTo(tl.zonePct)
+    expect(tl.ticks.length).toBeGreaterThan(2)
+    for (let i = 1; i < tl.ticks.length; i++) {
+      const step = ((tl.ticks[i]!.pct - tl.ticks[i - 1]!.pct) / 100) * tl.width
+      expect(step).toBeGreaterThanOrEqual(MIN_TICK_GAP_PX - 1e-6)
+    }
+    expect(tl.ticks.at(-1)!.pct).toBeLessThanOrEqual(100)
+    // the request zone keeps its width on the visible track
+    expect((tl.zonePct / 100) * tl.width).toBeCloseTo((REQ_ZONE_PCT / 100) * 900)
+  })
+
+  it('grows the running block with now', () => {
+    const detail = longRun()
+    const early = buildTimeline(detail, LONG_NOW, 900)
+    const late = buildTimeline(detail, LONG_NOW + 3_600_000, 900)
+    expect(px(late.blocks.run!, late.width)).toBeGreaterThanOrEqual(px(early.blocks.run!, early.width))
+    expect(late.blocks.run!.left + late.blocks.run!.width).toBeLessThan(late.blocks.q0!.left)
+  })
+})
+
+describe('buildTimeline for a short run', () => {
+  it('fills the measured track without a wider canvas', () => {
+    const phases = [
+      phase({ phase_id: 'a', seq: 1, started_at: at(0), ended_at: at(200) }),
+      phase({ phase_id: 'b', seq: 2, started_at: at(200), ended_at: at(201), kind: 'code' }),
+      phase({ phase_id: 'c', seq: 3, started_at: at(201), ended_at: at(600) }),
+    ]
+    for (const track of [700, DEFAULT_TRACK_PX, 1600]) {
+      const tl = buildTimeline(run(phases), T0, track)
+      expect(tl.overflow).toBe(false)
+      expect(tl.width).toBeCloseTo(track)
+      const right = Math.max(...Object.values(tl.blocks).map((g) => g.left + g.width))
+      expect(right).toBeGreaterThan(95)
+    }
+  })
+
+  it('overflows a narrow track sooner than a wide one', () => {
+    const phases = Array.from({ length: 8 }, (_, i) => phase({ phase_id: `p${i}`, seq: i, started_at: at(i * 10), ended_at: at(i * 10 + 10) }))
+    expect(buildTimeline(run(phases), T0, 1600).overflow).toBe(false)
+    const narrow = buildTimeline(run(phases), T0, 600)
+    expect(narrow.overflow).toBe(true)
+    expect(narrow.width).toBeCloseTo(8 * MIN_BLOCK_PX + 7 * BLOCK_GAP_PX + 0.004 * 600)
   })
 })

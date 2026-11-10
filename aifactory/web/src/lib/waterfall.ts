@@ -12,12 +12,20 @@ import {
   type TraceEvent,
 } from './runs'
 
-/** Track-% reserved at the start of the timeline for the engineer's request. */
+/** Track-% of the visible track reserved at the start of the timeline for the engineer's request. */
 export const REQ_ZONE_PCT = 16
-/** Readable floor for a block's width, in track-%. */
-export const MIN_BLOCK_PCT = 3.5
-/** Hair of right margin, in track-%. */
+/** Hair of right margin, in track-% of the visible track. */
 export const RIGHT_MARGIN_PCT = 0.4
+/** Readable floor for a timed block's width, in px. */
+export const MIN_BLOCK_PX = 132
+/** Space kept between two neighbouring blocks, in px. */
+export const BLOCK_GAP_PX = 6
+/** Width of a queued block (a phase without a start), in px. */
+export const QUEUED_BLOCK_PX = 170
+/** Closest two axis labels may sit, in px. */
+export const MIN_TICK_GAP_PX = 72
+/** Track width assumed before (or without) a measurement, in px. */
+export const DEFAULT_TRACK_PX = 1000
 export const ENGINEER_COLOR = '#e8b64a'
 export const CODE_COLOR = '#5ad2dd'
 
@@ -157,7 +165,13 @@ export interface Timeline {
   requestId: string | null
   origin: number
   postSpan: number
+  /** Width of the whole track canvas in px: the visible track, or more when the blocks need it. */
+  width: number
+  /** True when the canvas is wider than the visible track (the gantt scrolls). */
+  overflow: boolean
+  /** Positions in %-of-canvas; the axis follows the same warping as the blocks. */
   ticks: { pct: number; label: string }[]
+  /** Geometry in %-of-canvas of every phase, queued ones included. */
   blocks: Record<string, BlockGeom>
 }
 
@@ -166,7 +180,74 @@ export function isLive(detail: RunDetail): boolean {
   return detail.run.state === 'running' || (detail.phases ?? []).some((p) => p.status === 'running')
 }
 
-export function buildTimeline(detail: RunDetail, now: number): Timeline {
+interface TimedBlock {
+  id: string
+  start: number
+  end: number
+  order: number
+  /** Natural position and width at full time scale, in px after the request zone. */
+  left: number
+  width: number
+}
+
+interface PlacedBlock {
+  id: string
+  start: number
+  end: number
+  left: number
+  width: number
+}
+
+/**
+ * Sequential layout at time scale `k` (0–1 of the natural scale): a block keeps its natural
+ * gap after the previous one, is widened to the floor and pushed right past the previous
+ * edge plus a gap, so no two blocks ever share a horizontal range.
+ */
+function placeTimed(timed: TimedBlock[], k: number): PlacedBlock[] {
+  let shift = 0
+  let prevEdge = -Infinity
+  const out: PlacedBlock[] = []
+  for (const b of timed) {
+    let left = b.left * k + shift
+    const minLeft = out.length ? prevEdge + BLOCK_GAP_PX : 0
+    if (left < minLeft) {
+      shift += minLeft - left
+      left = minLeft
+    }
+    const width = Math.max(b.width * k, MIN_BLOCK_PX)
+    shift += width - b.width * k
+    out.push({ id: b.id, start: b.start, end: b.end, left, width })
+    prevEdge = left + width
+  }
+  return out
+}
+
+function placedEnd(placed: PlacedBlock[]): number {
+  const last = placed[placed.length - 1]
+  return last ? last.left + last.width : 0
+}
+
+/** Maps a time onto the warped layout through the block edges (monotonic anchors). */
+function timeMapper(anchors: { t: number; x: number }[]): (t: number) => number {
+  return (t: number) => {
+    if (t <= anchors[0]!.t) return anchors[0]!.x
+    for (let i = 1; i < anchors.length; i++) {
+      const a = anchors[i - 1]!
+      const b = anchors[i]!
+      if (t <= b.t) return b.t > a.t ? a.x + ((t - a.t) / (b.t - a.t)) * (b.x - a.x) : b.x
+    }
+    return anchors[anchors.length - 1]!.x
+  }
+}
+
+/**
+ * The waterfall's geometry for a track `trackPx` wide. Blocks keep a readable floor and a gap;
+ * a run that fits is squeezed into the track, a longer one widens the canvas (`width`) so
+ * the gantt scrolls instead of shrinking or stacking its blocks. Queued phases follow the
+ * timed ones in order.
+ */
+export function buildTimeline(detail: RunDetail, now: number, trackPx: number = DEFAULT_TRACK_PX): Timeline {
+  const track = Number.isFinite(trackPx) && trackPx > 0 ? trackPx : DEFAULT_TRACK_PX
   const phases = sortPhases(detail.phases ?? [])
   let t0 = Infinity
   let t1 = -Infinity
@@ -192,7 +273,7 @@ export function buildTimeline(detail: RunDetail, now: number): Timeline {
 
   // The engineer's request opens the run and owns an exclusive leading zone.
   const request = phases.find((p) => p.kind === 'engineer' && Number.isFinite(ts(p.started_at))) ?? null
-  const zonePct = request ? REQ_ZONE_PCT : 0
+  const zonePx = request ? (REQ_ZONE_PCT * track) / 100 : 0
 
   // The post-request timeline begins at the earliest non-engineer phase start.
   let origin = t0
@@ -211,15 +292,10 @@ export function buildTimeline(detail: RunDetail, now: number): Timeline {
   }
   const postSpan = Math.max(t1 - origin, 1000)
 
-  const ticks = axisTicks(postSpan, 7).map((t) => ({
-    pct: zonePct + (t.pct * (100 - zonePct)) / 100,
-    label: t.label,
-  }))
-
-  // Sequential layout: a block widened to the floor pushes every later block right,
-  // then the whole layout is scaled back into the track. Blocks never stack.
-  const avail = 100 - zonePct - RIGHT_MARGIN_PCT
-  const timed = phases
+  const marginPx = (RIGHT_MARGIN_PCT * track) / 100
+  const avail = Math.max(track - zonePx - marginPx, 0)
+  const scale = avail / postSpan
+  const timed: TimedBlock[] = phases
     .filter((p) => p.phase_id !== request?.phase_id && Number.isFinite(ts(p.started_at)))
     .map((p, order) => {
       const start = ts(p.started_at)
@@ -227,73 +303,86 @@ export function buildTimeline(detail: RunDetail, now: number): Timeline {
       return {
         id: p.phase_id,
         start,
+        end,
         order,
-        left: ((start - origin) / postSpan) * avail,
-        width: ((end - start) / postSpan) * avail,
+        left: (start - origin) * scale,
+        width: (end - start) * scale,
       }
     })
     .sort((a, b) => a.start - b.start || a.order - b.order)
+  const queued = phases.filter((p) => p.phase_id !== request?.phase_id && !Number.isFinite(ts(p.started_at)))
+  const queuedPx = queued.length * (BLOCK_GAP_PX + QUEUED_BLOCK_PX)
 
-  // Each block is a gap after the previous edge plus its width; a block widened to the
-  // floor pushes every later one right instead of overlapping it.
-  let shift = 0
-  let prevEdge = 0
-  const rows: { id: string; gap: number; width: number; floored: boolean }[] = []
-  for (const b of timed) {
-    let left = b.left + shift
-    if (left < prevEdge) {
-      shift += prevEdge - left
-      left = prevEdge
+  // Squeeze the time scale until the timed blocks fit beside the queued ones. When even the
+  // floors and gaps alone do not fit, the target grows to them: the canvas widens.
+  const floorPx = placedEnd(placeTimed(timed, 0))
+  const target = Math.max(avail - queuedPx, floorPx)
+  let k = 1
+  if (placedEnd(placeTimed(timed, 1)) > target) {
+    let lo = 0
+    let hi = 1
+    for (let i = 0; i < 40; i++) {
+      const mid = (lo + hi) / 2
+      if (placedEnd(placeTimed(timed, mid)) <= target) lo = mid
+      else hi = mid
     }
-    const width = Math.max(b.width, MIN_BLOCK_PCT)
-    shift += width - b.width
-    rows.push({ id: b.id, gap: left - prevEdge, width, floored: width <= MIN_BLOCK_PCT })
-    prevEdge = left + width
+    k = lo
   }
+  const placed = placeTimed(timed, k)
+  let edge = placedEnd(placed)
+  const queuedPlaced: { id: string; left: number; width: number }[] = []
+  for (const p of queued) {
+    const left = edge + (placed.length || queuedPlaced.length ? BLOCK_GAP_PX : 0)
+    queuedPlaced.push({ id: p.phase_id, left, width: QUEUED_BLOCK_PX })
+    edge = left + QUEUED_BLOCK_PX
+  }
+  const postPx = Math.max(avail, edge)
+  const width = zonePx + postPx + marginPx
+  const overflow = width > track + 0.5
+  const pct = (px: number) => (px / width) * 100
+  const zonePct = request ? (REQ_ZONE_PCT * track) / width : 0
 
-  // Squeeze an overflow back into the track: gaps and naturally wide blocks shrink,
-  // blocks at the floor keep it (a block squeezed below the floor joins them).
-  if (prevEdge > avail) {
-    const fixed = () => rows.filter((r) => r.floored).length * MIN_BLOCK_PCT
-    for (;;) {
-      if (fixed() >= avail) {
-        // Too many phases for the floor: scale everything evenly.
-        const total = rows.reduce((sum, r) => sum + r.gap + r.width, 0)
-        const k = avail / total
-        for (const r of rows) {
-          r.gap *= k
-          r.width *= k
-        }
-        break
-      }
-      const flexible = rows.reduce((sum, r) => sum + r.gap + (r.floored ? 0 : r.width), 0)
-      const k = flexible > 0 ? Math.min(1, (avail - fixed()) / flexible) : 1
-      const under = rows.filter((r) => !r.floored && r.width * k < MIN_BLOCK_PCT)
-      if (under.length) {
-        for (const r of under) {
-          r.floored = true
-          r.width = MIN_BLOCK_PCT
-        }
-        continue
-      }
-      for (const r of rows) {
-        r.gap *= k
-        if (!r.floored) r.width *= k
-      }
-      break
-    }
+  // The axis follows the blocks: their edges anchor time to x, ticks too close are dropped.
+  const anchors: { t: number; x: number }[] = [{ t: origin, x: 0 }]
+  const push = (t: number, x: number) => {
+    const last = anchors[anchors.length - 1]!
+    if (t >= last.t && x >= last.x) anchors.push({ t, x })
+  }
+  for (const b of placed) {
+    push(b.start, b.left)
+    push(b.end, b.left + b.width)
+  }
+  const lastAnchor = anchors[anchors.length - 1]!
+  if (t1 > lastAnchor.t) push(t1, lastAnchor.x + (t1 - lastAnchor.t) * scale * k)
+  const toX = timeMapper(anchors)
+  const ticks: { pct: number; label: string }[] = []
+  let lastTickPx = -Infinity
+  const tickCount = Math.max(7, Math.round(postPx / (2 * MIN_TICK_GAP_PX)))
+  for (const t of axisTicks(postSpan, tickCount)) {
+    const x = toX(origin + (t.pct / 100) * postSpan)
+    if (ticks.length && x - lastTickPx < MIN_TICK_GAP_PX) continue
+    ticks.push({ pct: zonePct + pct(x), label: t.label })
+    lastTickPx = x
   }
 
   const blocks: Record<string, BlockGeom> = {}
-  let edge = zonePct
-  for (const r of rows) {
-    const left = edge + r.gap
-    blocks[r.id] = { left, width: r.width }
-    edge = left + r.width
+  for (const b of [...placed, ...queuedPlaced]) {
+    blocks[b.id] = { left: zonePct + pct(b.left), width: pct(b.width) }
   }
-  if (request) blocks[request.phase_id] = { left: 0.4, width: zonePct - 0.8 }
+  if (request) blocks[request.phase_id] = { left: pct((0.4 * track) / 100), width: pct(zonePx - (0.8 * track) / 100) }
 
-  return { t0, t1, zonePct, requestId: request?.phase_id ?? null, origin, postSpan, ticks, blocks }
+  return {
+    t0,
+    t1,
+    zonePct,
+    requestId: request?.phase_id ?? null,
+    origin,
+    postSpan,
+    width,
+    overflow,
+    ticks,
+    blocks,
+  }
 }
 
 /** Tool-call marks inside a phase block, in %-of-block; a failed call is not ok. */
