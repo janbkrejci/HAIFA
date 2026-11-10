@@ -13,7 +13,6 @@ NAME (the operator's environment resolves them, see utils.operator_env).
 
 from __future__ import annotations
 
-import contextlib
 import shlex
 import subprocess
 import tempfile
@@ -67,7 +66,9 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
         # aifactory 2.14: files let us wait for the command's actual exit, not EOF
         # on pipes inherited by background helpers (e.g. check-scoped cleanup).
         # Keep partial output on timeout without waiting for those helpers either.
-        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err:
+        # aifactory 3.0: ProcessTree is a Windows job object (POSIX: the process group).
+        with tempfile.TemporaryFile() as out, tempfile.TemporaryFile() as err, \
+                oscompat.ProcessTree() as tree:
             try:
                 # aifactory 2.14: own the process group so a timed-out test cannot
                 # leave pytest workers running against a deleted temporary directory.
@@ -78,18 +79,23 @@ def _run(spec: QualityCheckSpec, run) -> QualityCheckResult:
                     stdout=out,
                     stderr=err,
                     start_new_session=True,
-                    creationflags=oscompat.NEW_GROUP,
+                    creationflags=oscompat.NEW_GROUP | tree.creationflags,
                 ) as process:
+                    tree.adopt(process)
                     try:
                         returncode = process.wait(timeout=spec.timeout_seconds)
                     except subprocess.TimeoutExpired:
-                        with contextlib.suppress(ProcessLookupError):
-                            oscompat.kill_group(process.pid, force=True)
+                        # aifactory 3.0: also stops children started during the kill.
+                        try:
+                            stopped = tree.kill(process)
+                        except Exception as error:  # the root must still be ended below
+                            stopped = f"process tree cleanup failed: {error}"
                         if process.poll() is None:
                             process.kill()
                         process.wait()
                         returncode = 124
-                        stderr = f"\nTimed out: exceeded the time limit of {spec.timeout_seconds:g}s."  # aifactory 3.0: a shared budget leaves fractions
+                        stderr = (f"\nTimed out: exceeded the time limit of {spec.timeout_seconds:g}s."  # aifactory 3.0: a shared budget leaves fractions
+                                  f"\n{stopped}.")
             finally:
                 out.seek(0)
                 stdout = _text(out.read())

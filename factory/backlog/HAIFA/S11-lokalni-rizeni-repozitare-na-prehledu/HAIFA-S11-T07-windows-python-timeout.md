@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S11-T07
 title: Opravit timeouty testů a chybová okna Pythonu na Windows
-status: todo
+status: done
 depends_on: [HAIFA-S11-T02]
 writes: [aifactory/]
 test_timeout: 1200
@@ -24,4 +24,5 @@ Před změnou vyhledat přímé volající v celém aifactory/tests/. Kandidáti
 ## Běhy
 
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-10 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/211 · náklady $3.64
 
