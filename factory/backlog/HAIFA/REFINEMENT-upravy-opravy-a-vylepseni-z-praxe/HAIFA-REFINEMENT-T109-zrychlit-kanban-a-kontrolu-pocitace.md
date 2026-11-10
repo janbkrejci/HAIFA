@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T109
 title: "Zrychlit kanban a kontrolu počítače: odstranit opakovaná Git čtení"
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-REFINEMENT-T108]
 writes: [aifactory/]
@@ -27,3 +27,4 @@ Testovací plán: před implementací vyhledat přímé volající změněných 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-10 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/213 · náklady $0.00
