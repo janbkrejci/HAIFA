@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T110
 title: Zjednodušit Přehled a opravit Play při vypnutém auto continue
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/components/overview/LocalRepoControls.vue, aifactory/web/src/components/overview/LocalRepoControls.test.ts, aifactory/src/aifactory/web/control.py, aifactory/src/aifactory/web/launcher.py, aifactory/src/aifactory/run/queue.py, aifactory/tests/web/test_web_control.py, aifactory/tests/web/test_web_launcher.py, aifactory/tests/run/test_factory_start.py, aifactory/tests/web/test_manual_factory_start.py, aifactory/tests/e2e/test_multi_repo_browser.py, aifactory/src/aifactory/web/static/]

@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T113
 title: "Kontrola počítače jen při startu factory a na vyžádání, ne při otevření nového tabu"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/machine.py, aifactory/tests/web/test_web_machine.py, aifactory/web/src/lib/readiness.ts, aifactory/web/src/lib/api.ts, aifactory/web/src/components/OverviewReadiness.vue, aifactory/web/src/components/OverviewReadiness.test.ts, aifactory/web/src/views/SetupView.vue, aifactory/web/src/views/SetupView.test.ts, aifactory/tests/e2e/test_machine_check_browser.py, aifactory/tests/e2e/test_overview_loading_browser.py, aifactory/src/aifactory/web/static/]
