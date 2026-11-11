@@ -44,7 +44,6 @@ Vzor už v HAIFA existuje: workflow `heal` opravuje se `scoped` kontrolami a cel
 - Test resolve: rebase s konfliktem jen v `.md` naplánuje kontroly dokumentace bez buildu. Rebase, který automaticky sloučil `.cs`, naplánuje build a testy dotčeného projektu.
 - Test volby rozsahu: diff jen v dokumentaci → `none` nebo kontroly dokumentace, diff ve sdílené cestě z testovacího profilu → `full`.
 - Upravený `seed/agents/tester/system.md` (a `validation/template/.factory/prompts/tester/system.md`) a `skill/skill.md` popisují nová pravidla.
-- Měření po nasazení na NEO_HEF: celá sada nejvýš 1× na běh (dnes 4,4×).
 - Projdou `just lint`, `just typecheck` a cílené `just pytest` pro změněné chování.
 
 ## Běhy
