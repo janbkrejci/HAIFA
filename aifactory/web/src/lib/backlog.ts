@@ -339,10 +339,8 @@ export interface StepRef {
 export type BacklogMode = 'tree' | 'kanban'
 
 export interface BacklogFilters {
-  /** Kanban only: tasks of this project (top level); undefined means all. */
+  /** Project (top level) shared by tree and kanban; undefined means all. */
   project?: string
-  /** Kanban only: tasks of this step; undefined means all. */
-  step?: string
 }
 
 export interface BacklogData {
@@ -930,9 +928,9 @@ export function resetTreeForTests(): void {
   resetShowArchivedForTests()
 }
 
-// ── Kanban filter by project and step ────────────────────────────────────────
+// ── Backlog project filter ────────────────────────────────────────
 
-/** A project or step offered by the kanban filter. */
+/** A project or step offered by a scope selector. */
 export interface ScopeOption {
   id: string
   title: string | null
@@ -951,23 +949,19 @@ export function taskAncestors(items: readonly BacklogNode[] | undefined): Map<st
   return out
 }
 
-/** Tasks of the kanban in the project and step of the filters, an empty filter meaning all. */
+/** Tasks of the kanban in the selected project, an empty filter meaning all. */
 export function filterKanban(
   tasks: readonly TaskNode[],
   items: readonly BacklogNode[] | undefined,
   filters: BacklogFilters,
 ): TaskNode[] {
-  const scopes = [filters.project, filters.step].filter((s): s is string => !!s)
-  const above = scopes.length ? taskAncestors(items) : null
-  return tasks.filter((t) => {
-    if (!above) return true
-    const ids = above.get(t.path)
-    return !!ids && scopes.every((s) => ids.has(s))
-  })
+  const project = filters.project
+  const above = project ? taskAncestors(items) : null
+  return tasks.filter((t) => !project || !!above?.get(t.path)?.has(project))
 }
 
 /**
- * Projects for the kanban filter: the top of the tree and the projects of the steps
+ * Projects for the shared backlog filter: the top of the tree and the projects of the steps
  * (with fewer than three levels the steps are the projects). Titles fall back to `names`.
  */
 export function projectOptions(
@@ -989,11 +983,31 @@ export function projectOptions(
   return [...out].map(([id, title]) => ({ id, title })).sort((a, b) => a.id.localeCompare(b.id))
 }
 
-/** Steps for the kanban filter: those of `project`, all without a project. */
+/** Step options belonging to `project`, or all steps when no project is selected. */
 export function stepOptions(steps: readonly StepRef[] | undefined, project?: string): ScopeOption[] {
   return (Array.isArray(steps) ? steps : [])
     .filter((s) => s.project && (!project || s.project === project))
     .map((s) => ({ id: s.id, title: s.title }))
+}
+
+/** Read the selected backlog project for one repository; undefined means all. */
+export function backlogProject(repoId: string): string | undefined {
+  try {
+    return localStorage.getItem(`haifa.backlog.project.${repoId}`) || undefined
+  } catch {
+    return undefined
+  }
+}
+
+/** Save the shared tree/kanban project filter for one repository. */
+export function setBacklogProject(repoId: string, project: string | undefined): void {
+  try {
+    const key = `haifa.backlog.project.${repoId}`
+    if (project) localStorage.setItem(key, project)
+    else localStorage.removeItem(key)
+  } catch {
+    // Storage unavailable: the view keeps the choice for this visit.
+  }
 }
 
 // ── Hide done tasks ─────────────────────────────────────────────────────────
