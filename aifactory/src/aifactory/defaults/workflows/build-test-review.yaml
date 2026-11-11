@@ -17,7 +17,7 @@ steps:
       - fix:
           description: Repair what the checks reported, from their verbatim output
       - test_plan:
-          description: Plan the checks again — the fix changed code, keep every earlier check
+          description: Plan the checks again — the fix changed code, retain failures and check the latest edits and direct callers; the whole suite confirms later
   - repeat: {max: 2, until: review.approved}
     steps:
       - review:

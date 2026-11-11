@@ -15,7 +15,7 @@ steps:
       when: rebase.conflict
       description: Settle every conflict in the files the rebase reported, keeping both sides' intent
   - test_plan:
-      description: Choose the checks for the rebased branch — a rebase mixes two lines of work, so cover both
+      description: Diff against the PR head before rebase, including automatic merges; documentation needs reader checks only, code needs affected projects and callers
   - repeat: {max: 3, until: test.passed}
     steps:
       - rebuild:
@@ -26,5 +26,5 @@ steps:
       - fix:
           description: Repair what the suite reported, from its verbatim output, within the task writes, including files without conflicts
       - test_plan:
-          description: Plan the checks again — the fix changed code, keep every earlier check
+          description: Plan the checks again — the fix changed code, retain failures and check the latest edits and direct callers; the whole suite confirms later
 accept: test.passed

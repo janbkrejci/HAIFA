@@ -163,24 +163,40 @@ def checks_runnable(envelope: EnvelopeBase, run) -> GateReport:
 def plan_keeps_checks(envelope: EnvelopeBase, run) -> GateReport:
     """aifactory 3.0: a new test plan drops no check of the previous plan silently.
 
-    A previous check is kept when a new check runs the same argv; otherwise its
-    name must be in `dropped` with a reason. The interpreter puts the previous
-    plan on `run.previous_test_plan` (None for the first plan of a run). A `full`
-    plan keeps nothing by definition: it runs everything the repo has.
+    Scoped rounds may defer green, unaffected checks without repeated reasons.
+    Failures and unexecuted prerequisites stay, including when the new plan is
+    full. A named replacement needs an explicit dropped reason, except a failed
+    full suite which must be narrowed because it cannot execute a second time.
     """
     report = GateReport()
     previous = getattr(run, "previous_test_plan", None)
-    if previous is None or getattr(envelope, "coverage", None) == "full":
-        return report  # a full plan runs everything there is
+    failed = set(getattr(run, "failed_test_checks", ()))
+    if previous is None:
+        return report
     argvs = [check.argv for check in getattr(envelope, "checks", [])]
+    names = {check.name for check in getattr(envelope, "checks", [])}
     dropped = {d.name for d in getattr(envelope, "dropped", [])}
+    scoped = getattr(run, "required_coverage", None) == "scoped"
     for check in previous.checks:
         if check.argv in argvs:
             report.check(check.name, True, "kept")
+        elif check.name in failed:
+            # A failed full-suite command must be split into a targeted regression
+            # under the same name; a second whole-suite execution is forbidden.
+            replacement = check.name in names and (
+                (previous.coverage == "full" and scoped) or check.name in dropped
+            )
+            report.check(check.name, replacement,
+                         "failed check replaced explicitly or suite narrowed to a regression" if replacement
+                         else "failed check must be kept; a dropped entry cannot discard a failure")
+        elif scoped:
+            report.check(check.name, True, "scoped round; the whole suite confirms later")
+        elif getattr(envelope, "coverage", None) == "full":
+            report.check(check.name, True, "covered by the full plan")
         else:
             report.check(check.name, check.name in dropped,
-                          "dropped with a reason" if check.name in dropped
-                          else "left out without a `dropped` entry; keep it or say why it goes")
+                         "dropped with a reason" if check.name in dropped
+                         else "left out without a `dropped` entry; keep it or say why it goes")
     return report
 
 

@@ -414,85 +414,75 @@ def _required(env: EngineEnv) -> list[str]:
     ]
 
 
-def _round(i: int, confirmed: bool | None) -> list[tuple[str, str, str]]:
-    """One heal round; ``confirmed`` None means the scoped test was red (no confirm)."""
-    phases = [_fix(i), ("repair_plan_" + str(i), "agent", "tester"), _test(i)]
-    if confirmed is None:
-        return phases
-    phases += [(f"confirm_plan_{i}", "agent", "tester"), (f"confirm_{i}", "code", "quality")]
-    return phases
-
-
-HEAL_HEAD = [REQUEST, ("full_plan", "agent", "tester"), ("full_test", "code", "quality")]
+HEAL_HEAD = [REQUEST, ("full_plan", "agent", "tester"), ("scoped_plan", "agent", "tester")]
+FINAL = [("final_plan", "agent", "tester"), ("final_test", "code", "quality")]
 
 
 def test_heal_green_at_once(workflow_env: EngineEnv, tmp_path: Path) -> None:
-    _script(workflow_env, tester=[FULL])
-    result, code = _heal(workflow_env, [True], tmp_path)
-    assert _phases(result) == [*HEAL_HEAD, COMMIT]
-    assert (result.exit_code, result.accepted) == (0, True)
-    assert result.results["test"]["coverage"] == "full"
+    _script(workflow_env, tester=[FULL, SCOPED, FULL])
+    result, code = _heal(workflow_env, [True, True], tmp_path)
+    assert _phases(result) == [*HEAL_HEAD, _test(1), *FINAL, COMMIT]
+    assert result.accepted
+    assert [p.coverage for p in code.plans] == ["scoped", "full"]
+    assert _required(workflow_env) == ["full", "scoped", "full"]
     assert len(code.commits) == 1
-    assert _required(workflow_env) == ["full"]
     _assert_done(workflow_env, code)
 
 
 def test_heal_repairs_and_confirms_on_the_full_suite(
     workflow_env: EngineEnv, tmp_path: Path
 ) -> None:
-    _script(
-        workflow_env,
-        tester=[FULL, SCOPED, FULL],
-        builder=[FIX],
-    )
+    _script(workflow_env, tester=[FULL, SCOPED, SCOPED, FULL], builder=[FIX])
     result, code = _heal(workflow_env, [False, True, True], tmp_path)
     assert _phases(result) == [
         *HEAL_HEAD,
-        *_round(1, confirmed=True),
+        _test(1),
+        _fix(1),
+        ("repair_plan_1", "agent", "tester"),
+        _test(2),
+        *FINAL,
         COMMIT,
     ]
-    assert (result.exit_code, result.accepted) == (0, True)
-    assert [plan.coverage for plan in code.plans] == ["full", "scoped", "full"]
-    # Only explicit test-plan steps call the tester.
-    assert _required(workflow_env) == ["full", "scoped", "full"]
+    assert result.accepted
+    assert [p.coverage for p in code.plans] == ["scoped", "scoped", "full"]
     assert code.commits == ["Fix the failing test"]
     _assert_done(workflow_env, code)
 
 
-def test_heal_red_confirmation_starts_the_next_round(
+def test_heal_red_confirmation_repairs_without_repeating_full_suite(
     workflow_env: EngineEnv, tmp_path: Path
 ) -> None:
-    _script(
-        workflow_env,
-        tester=[FULL, SCOPED, FULL, SCOPED, FULL],
-        builder=[FIX, FIX],
-    )
-    result, code = _heal(workflow_env, [False, True, False, True, True], tmp_path)
+    _script(workflow_env, tester=[FULL, SCOPED, FULL, SCOPED], builder=[FIX])
+    result, code = _heal(workflow_env, [True, False, True], tmp_path)
     assert _phases(result) == [
         *HEAL_HEAD,
-        *_round(1, confirmed=False),
-        *_round(2, confirmed=True),
+        _test(1),
+        *FINAL,
+        ("final_repair_1", "agent", "builder"),
+        ("final_repair_plan_1", "agent", "tester"),
+        ("final_retest_1", "code", "quality"),
         COMMIT,
     ]
-    assert (result.exit_code, result.accepted) == (0, True)
-    assert [plan.coverage for plan in code.plans] == ["full", "scoped", "full", "scoped", "full"]
+    assert result.accepted
+    assert [p.coverage for p in code.plans] == ["scoped", "full", "scoped"]
+    assert result.results["full_suite"]["count"] == 1
     _assert_done(workflow_env, code)
 
 
 def test_heal_never_healed(workflow_env: EngineEnv, tmp_path: Path) -> None:
     rounds = 6
     _script(
-        workflow_env,
-        tester=[FULL] + [SCOPED] * rounds,
-        builder=[FIX] * rounds,
+        workflow_env, tester=[FULL, SCOPED] + [SCOPED] * (rounds - 1), builder=[FIX] * (rounds - 1)
     )
-    result, code = _heal(workflow_env, [False] * (1 + rounds), tmp_path)
+    result, code = _heal(workflow_env, [False] * rounds, tmp_path)
     expected = [*HEAL_HEAD]
-    for i in range(1, rounds + 1):
-        expected += _round(i, confirmed=None)
+    for i in range(1, rounds):
+        expected += [_test(i), _fix(i), (f"repair_plan_{i}", "agent", "tester")]
+    expected += [_test(rounds)]
     assert _phases(result) == expected
-    assert (result.exit_code, result.accepted) == (1, False)
+    assert not result.accepted
     assert code.commits == []
+    assert all(p.coverage == "scoped" for p in code.plans)
     _assert_done(workflow_env, code)
 
 

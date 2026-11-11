@@ -8,6 +8,10 @@
 
 {{baseline}}
 
+## Diff categories
+
+{{testing_scope}}
+
 ## Build, fix or revision
 
 {{previous_envelope}}
@@ -31,7 +35,7 @@ Time limit for all checks together: {{test_timeout}} seconds.
 
 {{test_result}}
 
-Keep earlier checks or name them in `dropped` with a reason. Correct a broken command
+In scoped rounds retain failed/unexecuted and affected checks; green unaffected checks and the deferred whole suite need no repeated `dropped` reason. Correct a broken command
 when necessary; never weaken a check because it caught a real defect.
 
 ## Handoff directory
