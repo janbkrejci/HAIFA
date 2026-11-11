@@ -364,7 +364,7 @@ def test_joined_check_answers_every_waiting_request(
 
     def wait(timeout: float | None = None) -> bool:
         joined.set()
-        return original_wait(timeout)
+        return bool(original_wait(timeout))
 
     monkeypatch.setattr(job.done, "wait", wait)
     reader = threading.Thread(target=request, args=(False,))
@@ -443,7 +443,8 @@ def test_unresponsive_registry_read_is_bounded(
     init_repo(repo)
     register(client, repo)
     state(client).check_machine = FakeMachine()
-    assert response(client.get("/api/machine/check?offline=1&fresh=1"))["harness_repos"]["claude"] == 1
+    first = response(client.get("/api/machine/check?offline=1&fresh=1"))
+    assert first["harness_repos"]["claude"] == 1
     # The roster read gets no time left: the view still answers, without the counts.
     monkeypatch.setattr(machine, "REGISTRY_BUDGET", 0.0)
     data = response(client.get("/api/machine/check?offline=1"))
@@ -513,8 +514,12 @@ def test_invalidated_result_is_read_as_stale_until_explicit_refresh(client: Test
 def test_late_result_after_invalidation_is_not_available_to_reads(client: TestClient) -> None:
     global_state = state(client).library
     job = machine.CheckJob(
-        offline=False, seq=1, epoch=global_state.epoch, budget=30,
-        started=machine._clock(), started_at="",
+        offline=False,
+        seq=1,
+        epoch=global_state.epoch,
+        budget=30,
+        started=machine._clock(),
+        started_at="",
     )
     global_state.invalidate()
     machine._work(job, state(client).home, global_state, FakeMachine())
