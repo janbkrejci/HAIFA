@@ -1,6 +1,8 @@
 // What a running check of this computer waits for, and how long it may take.
 // The server bounds one machine check to its budget (web/machine.py CHECK_BUDGET, 60 s) and
-// answers `check_timeout` past it; the page adds a margin for the follow-up requests
+// answers `check_timeout` past it; registry reads add at most 10 s and result grace
+// adds 2 s (72 s total). The 75 s page deadline leaves a transport margin.
+// The page also bounds the follow-up requests
 // (library, repositories, roster, backlog), so no step leaves the UI checking for ever.
 import { fetchMachineProgress, type MachineProgress } from './api'
 import { fmtAge, fmtTime } from './format'

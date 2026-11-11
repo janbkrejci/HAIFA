@@ -22,10 +22,12 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from aifactory import procrun
 from aifactory.config import ConfigError
 from aifactory.config.repo_state import RepoState, repo_state
 from aifactory.config.settings import load_local
-from aifactory.run.gitops import read_git, repo_layout
+from aifactory.run.gitops import read_git as _read_git
+from aifactory.run.gitops import repo_layout
 from aifactory.web import settings as web_settings
 from aifactory.web.backlog import UsageError
 from aifactory.web.factory import FactoryState
@@ -37,6 +39,30 @@ JsonDict = dict[str, Any]
 REPO_STATUSES = ("ok", "uncommitted", "not_installed", "missing", "not_git")
 RUN_WORKTREE_PARTS = (".factory", "worktrees")
 DEFAULT_TRACE_DB = ".factory/trace.db"
+
+
+# A new Windows git process needs useful time even when the enclosing probe has
+# almost exhausted its deadline. Propagate exhaustion; never misreport "no commits".
+MIN_GIT_BUDGET = 1.0
+
+
+def require_git_budget() -> None:
+    left = procrun.remaining()
+    if left is not None and left < MIN_GIT_BUDGET:
+        raise procrun.BudgetExceeded("git repository read")
+
+
+def read_git(path: Path, *args: str) -> str | None:
+    require_git_budget()
+    if procrun.remaining() is None:
+        return _read_git(path, *args)
+    proc = procrun.run(
+        ["git", *args],
+        10.0,
+        cwd=path,
+        env={**os.environ, "GIT_OPTIONAL_LOCKS": "0"},
+    )
+    return proc.stdout.strip() if proc.returncode == 0 else None
 
 
 def _input_path(raw: object) -> Path:
@@ -94,6 +120,7 @@ def _vet(ex: Examined, state: RegistryState) -> None:
     real = path.resolve()
     if in_run_worktree(real):
         raise RepoError("run_worktree", f"{path} is a worktree of a task run, not a repository")
+    require_git_budget()
     layout = repo_layout(real)
     if layout is not None and layout.bare:
         raise RepoError("bare_repo", f"{path} is a bare repository without a working tree")
@@ -337,6 +364,7 @@ def repo_status(entry: RepoEntry) -> JsonDict:
     if not root.is_dir():
         item["status"] = "missing"
         return item
+    require_git_budget()
     layout = repo_layout(root)
     if layout is None or layout.toplevel is None:
         item["status"] = "not_git"

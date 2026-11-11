@@ -445,10 +445,10 @@ def test_unresponsive_registry_read_is_bounded(
     state(client).check_machine = FakeMachine()
     first = response(client.get("/api/machine/check?offline=1&fresh=1"))
     assert first["harness_repos"]["claude"] == 1
-    # The roster read gets no time left: the view still answers, without the counts.
+    # The roster read gets no time left: the view still answers with known counts.
     monkeypatch.setattr(machine, "REGISTRY_BUDGET", 0.0)
     data = response(client.get("/api/machine/check?offline=1"))
-    assert data["cached"] and data["harness_repos"]["claude"] == 0
+    assert data["cached"] and data["harness_repos"]["claude"] == 1
 
 
 def test_cached_check_follows_a_library_changed_outside_the_dashboard(
@@ -530,3 +530,67 @@ def test_late_result_after_invalidation_is_not_available_to_reads(client: TestCl
         state(client).home, global_state, offline=False, fresh=False, machine=fake
     )
     assert not ok and not data["checked"] and not fake.calls
+
+
+@pytest.mark.parametrize("remaining", [0.0, 0.27])
+def test_registry_exhaustion_starts_no_git_and_logs_no_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    remaining: float,
+) -> None:
+    from aifactory import procrun
+    from aifactory.library import inherit
+    from aifactory.web.registry import RepoEntry
+
+    global_state = machine.GlobalState()
+    entry = RepoEntry("a", "A", str(tmp_path), "")
+    global_state.roster_counts[entry.path] = (("known",), frozenset({"claude"}))
+    monkeypatch.setattr(machine, "_registered", lambda home: [entry])
+    monkeypatch.setattr(procrun, "remaining", lambda: remaining)
+
+    def forbidden(*args: object) -> None:
+        pytest.fail("exhausted registry must not start git")
+
+    monkeypatch.setattr(inherit, "library_head", forbidden)
+    counts = machine._harness_repos(tmp_path, FakeMachine(), global_state)
+    assert counts["claude"] == 1
+    assert not any(record.exc_info for record in caplog.records)
+
+
+def test_registry_git_timeout_degrades_without_traceback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    import subprocess
+
+    from aifactory.library import inherit
+
+    def timed_out(*args: object) -> None:
+        raise subprocess.TimeoutExpired(["git", "rev-parse"], 0.27)
+
+    monkeypatch.setattr(inherit, "library_head", timed_out)
+    counts = machine._harness_repos(tmp_path, FakeMachine(), machine.GlobalState())
+    assert not any(counts.values())
+    assert not any(record.exc_info for record in caplog.records)
+
+
+def test_library_git_timeout_preserves_cached_check(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import subprocess
+
+    state(client).check_machine = FakeMachine()
+    first = response(client.get("/api/machine/check?offline=1&fresh=1"))
+
+    def timed_out(*args: object) -> None:
+        raise subprocess.TimeoutExpired(["git", "rev-parse"], 0.27)
+
+    monkeypatch.setattr(machine, "_current_library", timed_out)
+    caplog.clear()
+    cached = response(client.get("/api/machine/check?offline=1"))
+    assert cached["cached"] and cached["library_stale"]
+    assert cached["checked_at"] == first["checked_at"]
+    assert cached["findings"] == first["findings"]
+    assert not any(record.exc_info for record in caplog.records)

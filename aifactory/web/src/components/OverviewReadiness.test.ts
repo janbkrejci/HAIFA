@@ -26,8 +26,8 @@ function stub(options: StubOptions = {}) {
     }
     if (url === '/api/library?items=0') return envelope({ exists: true })
     if (url === '/api/repos') return envelope({ repos: options.repos ?? [registered] })
-    if (url === '/api/repos/a/factory/roster' && options.roster) return options.roster
-    if (url === '/api/repos/a/factory/roster') return envelope({ agents: [{ name: 'builder' }], workflow_tasks: {} })
+    if (url === '/api/repos/a/factory/roster?summary=1' && options.roster) return options.roster
+    if (url === '/api/repos/a/factory/roster?summary=1') return envelope({ agents: 1 })
     if (url === '/api/repos/a/backlog/summary') {
       if (options.summaryFails) throw new Error('Backlog nelze načíst')
       return envelope({ projects: options.projects ?? 1 })
@@ -68,6 +68,7 @@ describe('overview readiness', () => {
     await flushPromises()
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos/a/backlog/summary')).toHaveLength(1)
     expect(fetchMock.mock.calls.some(([url]) => url === '/api/repos/a/backlog')).toBe(false)
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/repos/a/factory/roster')
     if (projects) expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
     else expect(wrapper.text()).toContain('projekt')
   })
@@ -297,6 +298,39 @@ describe('overview readiness', () => {
     expect(wrapper.find('[data-test="readiness-elapsed"]').exists()).toBe(false)
   })
 
+  it('retains the first completed machine result when the follow-up expires', async () => {
+    const checkedAt = '2026-11-10T12:00:00Z'
+    stub({
+      machine: { ...machine, checked_at: checkedAt, findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] },
+      roster: new Promise<Response>(() => {}),
+    })
+    const wrapper = mount(OverviewReadiness)
+    await flushPromises()
+    await vi.advanceTimersByTimeAsync(75_000)
+    const warning = wrapper.get('[data-test="readiness-warning"]').text()
+    expect(warning).toContain('Chybí Git.')
+    expect(warning).toContain('Údaj není k dispozici: roster')
+    expect(warning).toContain('Zobrazen poslední známý výsledek z')
+    expect(warning).toMatch(/10\. 11\. 2026/)
+    expect(warning).not.toContain('Dřívější výsledek není k dispozici')
+    expect(warning).not.toContain('Kontrola nedoběhla')
+  })
+
+  it.each(['library', 'repos', 'roster', 'backlog'] as const)('retains machine findings when %s fails', async failed => {
+    const original = stub({ machine: { ...machine, checked_at: '2026-11-10T12:00:00Z', findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: null, action: null }] } })
+    const failing = { library: '/api/library?items=0', repos: '/api/repos', roster: '/api/repos/a/factory/roster?summary=1', backlog: '/api/repos/a/backlog/summary' }[failed]
+    vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
+      if (url === failing) return Promise.reject(new Error('Údaj nelze načíst'))
+      return original(url, init)
+    }))
+    const wrapper = mount(OverviewReadiness)
+    await flushPromises()
+    expect(wrapper.text()).toContain('Chybí Git.')
+    expect(wrapper.text()).toContain('Údaj nelze načíst')
+    expect(wrapper.text()).toContain('Zobrazen poslední známý výsledek z')
+    expect(wrapper.text()).not.toContain('Kontrola nedoběhla')
+  })
+
   it('ends a check whose follow-up request never answers, names the step and retries', async () => {
     const options: StubOptions = { machine: { ...machine, checked_at: new Date().toISOString() } }
     const fetchMock = stub(options)
@@ -309,13 +343,13 @@ describe('overview readiness', () => {
     expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(true)
     await vi.advanceTimersByTimeAsync(1_000)
     const warning = wrapper.get('[data-test="readiness-warning"]')
-    expect(warning.get('strong').text()).toBe('Kontrola nedoběhla do 75 s')
+    expect(warning.get('strong').text()).toBe('Údaj není k dispozici: roster')
     expect(warning.text()).toContain('Nedokončený krok: roster.')
     expect(warning.text()).toContain('Zobrazen poslední známý výsledek z')
     // A late answer of the timed-out check changes nothing.
-    finishRoster(envelope({ agents: [{ name: 'builder' }], workflow_tasks: {} }))
+    finishRoster(envelope({ agents: 1 }))
     await flushPromises()
-    expect(wrapper.get('[data-test="readiness-warning"] strong').text()).toBe('Kontrola nedoběhla do 75 s')
+    expect(wrapper.get('[data-test="readiness-warning"] strong').text()).toBe('Údaj není k dispozici: roster')
     options.roster = undefined
     const before = fetchMock.mock.calls.length
     await wrapper.get('[data-test="readiness-timeout-retry"]').trigger('click')

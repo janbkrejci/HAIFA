@@ -1790,7 +1790,10 @@ async def factory_items(request: Request) -> JSONResponse:
 
 async def factory_roster(request: Request) -> JSONResponse:
     try:
-        data = await run_in_threadpool(factory.roster, _ctx(request).root)
+        read = (
+            factory.roster_summary if request.query_params.get("summary") == "1" else factory.roster
+        )
+        data = await run_in_threadpool(read, _ctx(request).root)
     except factory.Failure as exc:
         return _failure(exc)
     return JSONResponse(envelope_ok(data))

@@ -615,6 +615,14 @@ def workflow_overrides(root: Path) -> list[JsonDict]:
     return rows
 
 
+def roster_summary(root: Path) -> JsonDict:
+    """Only the effective agent count; never load base backlog or editor metadata."""
+    from aifactory.config.loader import load_worktree_config
+
+    with _core_errors():
+        return {"agents": len(load_worktree_config(root).agents.agents)}
+
+
 def roster(root: Path) -> JsonDict:
     """The effective agents (the repo's and the inherited ones) and backlog usage.
 

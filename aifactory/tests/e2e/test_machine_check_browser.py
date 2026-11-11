@@ -145,6 +145,8 @@ def test_readiness_on_kanban_does_not_request_a_second_board_browser() -> None:
     def serve(route: Route) -> None:
         path = urlsplit(route.request.url).path
         if path.startswith("/api/"):
+            if path.endswith("/factory/roster") and urlsplit(route.request.url).query:
+                path += "?" + urlsplit(route.request.url).query
             requests.append(path)
             responses: dict[str, Any] = {
                 "/api/health": {"app": "haifa-dashboard", "version": "test", "home": "/home"},
@@ -162,7 +164,7 @@ def test_readiness_on_kanban_does_not_request_a_second_board_browser() -> None:
                 },
                 "/api/library": {"exists": True},
                 "/api/machine/check": CHECK,
-                "/api/repos/a/factory/roster": {"agents": [{"name": "builder"}]},
+                "/api/repos/a/factory/roster?summary=1": {"agents": 1},
                 "/api/repos/a/backlog/summary": {"projects": 1},
                 "/api/repos/a/backlog": {
                     "levels": ["project", "step", "task"],
@@ -200,6 +202,7 @@ def test_readiness_on_kanban_does_not_request_a_second_board_browser() -> None:
             page.locator("[data-test=mode-kanban]").click()
             expect(page.locator("[data-test=kanban]")).to_be_visible()
             assert requests.count("/api/repos/a/backlog/summary") == 1
+            assert "/api/repos/a/factory/roster" not in requests
             assert requests.count("/api/repos/a/backlog") == 1
         finally:
             browser.close()

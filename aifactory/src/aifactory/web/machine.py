@@ -27,6 +27,7 @@ run only at server start and for ``fresh``.
 from __future__ import annotations
 
 import copy
+import subprocess
 import tempfile
 import threading
 import time
@@ -56,6 +57,9 @@ CHECK_BUDGET = 60.0
 RESULT_GRACE = 2.0
 # Seconds for the library rules on a cached read (local git only).
 LIBRARY_BUDGET = 10.0
+# Keep local read budgets at 10 s: fresh check + registry + result grace is at most
+# 72 s, below the UI deadline of 75 s. Under Windows load, registry exhaustion
+# keeps previous counts instead of repeatedly starting git with fractions of a second.
 # Seconds for the registry part of the view (the roster of each registered repository).
 REGISTRY_BUDGET = 10.0
 
@@ -275,7 +279,7 @@ def _work(job: CheckJob, home: Path, state: GlobalState, machine: Machine | None
         data["checked_at"] = datetime.now(UTC).isoformat()
         result = CachedCheck(job.seq, _clock(), data, _findings(report), _findings(library))
         exhausted = job.expired()
-    except procrun.BudgetExceeded:
+    except subprocess.TimeoutExpired:
         result, exhausted = None, True
     except BaseException as exc:  # handed to the waiting requests, raised there
         job.error = exc
@@ -400,7 +404,7 @@ def check_view(
         else:
             try:
                 library = _current_library(home, offline, machine)
-            except procrun.BudgetExceeded:
+            except subprocess.TimeoutExpired:
                 library = None
             view = {
                 **_compose(entry, library),
@@ -479,17 +483,28 @@ def _harness_repos(home: Path, machine: Machine | None, state: GlobalState) -> d
     adapter = HomeMachine(machine or SystemMachine(), home)
     with state.roster_lock:
         previous = dict(state.roster_counts)
+    registered = _registered(home)
+    previous = {repo.path: previous[repo.path] for repo in registered if repo.path in previous}
     current: dict[str, tuple[tuple[Any, ...], frozenset[str]]] = {}
     with procrun.budget(REGISTRY_BUDGET):
         from aifactory.library.inherit import library_head
         from aifactory.library.store import library_root
 
         try:
+            from aifactory.web.repos import require_git_budget
+
+            require_git_budget()
             library_key = (str(library_root()), library_head(library_root()))
-        except (ConfigError, OSError, procrun.BudgetExceeded):
+        except subprocess.TimeoutExpired:
+            for _, names in previous.values():
+                for name in names:
+                    counts[name] += 1
             return counts
-        for repo in _registered(home):
+        except (ConfigError, OSError):
+            return counts
+        for repo in registered:
             try:
+                require_git_budget()
                 context = CheckContext(
                     Path(repo.path), offline=True, machine=adapter, require_repo=False
                 )
@@ -509,6 +524,7 @@ def _harness_repos(home: Path, machine: Machine | None, state: GlobalState) -> d
                 if cached is not None and cached[0] == key:
                     names = cached[1]
                 else:
+                    require_git_budget()
                     roster = context.roster
                     names = (
                         frozenset(harnesses_in_config(roster))
@@ -518,7 +534,14 @@ def _harness_repos(home: Path, machine: Machine | None, state: GlobalState) -> d
                 current[repo.path] = (key, names)
                 for name in names:
                     counts[name] += 1
-            except (ConfigError, OSError, procrun.BudgetExceeded):
+            except subprocess.TimeoutExpired:
+                for saved in registered:
+                    if saved.path not in current and saved.path in previous:
+                        current[saved.path] = previous[saved.path]
+                        for name in previous[saved.path][1]:
+                            counts[name] += 1
+                break
+            except (ConfigError, OSError):
                 continue
     with state.roster_lock:
         state.roster_counts = current

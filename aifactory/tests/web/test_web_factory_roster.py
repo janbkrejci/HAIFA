@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 from test_web_factory import AGENTS, Api, api, git, home, install
 
@@ -141,3 +142,16 @@ def test_roster_reset_returns_an_override_to_the_inherited_value(api: Api, tmp_p
         a for a in api.get("a", "factory/roster")["data"]["agents"] if a["name"] == "builder"
     )
     assert after["overridden"] == [] and after["thinking"] == inherited["thinking"]
+
+
+def test_roster_summary_never_reads_base_backlog(api: Api, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aifactory.library import config_edit
+
+    install(api, "a")
+    full = api.get("a", "factory/roster")["data"]
+
+    def forbidden(*args: object) -> None:
+        pytest.fail("readiness must not read base backlog")
+
+    monkeypatch.setattr(config_edit, "_base_tasks", forbidden)
+    assert api.get("a", "factory/roster?summary=1")["data"] == {"agents": len(full["agents"])}
