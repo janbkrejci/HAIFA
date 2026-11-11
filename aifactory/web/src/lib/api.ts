@@ -823,6 +823,11 @@ export interface FactoryMovePlan extends FactoryPlanCommon {
 export function fetchFactoryItems(id: string): Promise<{ library: string | null; library_name?: string | null; items: FactoryRepoItem[] }> {
   return request(factoryUrl('/factory/items', id))
 }
+/** Readiness only needs the count, without the editor's base backlog usage. */
+export function fetchFactoryRosterSummary(id: string): Promise<{ agents: number }> {
+  return getGlobal(`/repos/${encodeURIComponent(id)}/factory/roster?summary=1`)
+}
+
 export function fetchFactoryRoster(id: string): Promise<FactoryRoster> {
   return request(factoryUrl('/factory/roster', id))
 }

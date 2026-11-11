@@ -2,7 +2,8 @@
 
 ``budget(seconds)`` sets a deadline for the current thread (a ``ContextVar``; other
 threads, such as running tasks, never see it). Inside it ``limit(timeout)`` shortens a
-command's timeout to the time left and raises ``BudgetExceeded`` once nothing is left,
+command's timeout to the time left and raises ``BudgetExceeded`` once nothing is left
+(for git, before the remaining time is too short to start a useful probe),
 so a check with one budget cannot run past it, whatever its probes ask for.
 
 ``run(argv, timeout)`` runs one command with its output in temporary files and stops the
@@ -27,10 +28,13 @@ from aifactory import oscompat
 
 _deadline: ContextVar[float | None] = ContextVar("aifactory_probe_deadline", default=None)
 _clock = time.monotonic
+# Starting git on Windows under load needs useful time. Apply this to every git
+# command, including commands inside configuration reads, only within a probe budget.
+MIN_GIT_BUDGET = 1.0
 
 
 class BudgetExceeded(subprocess.TimeoutExpired):
-    """The thread's time budget is spent; the command was not started."""
+    """The thread's remaining time is insufficient; the command was not started."""
 
     def __init__(self, cmd: Sequence[str] | str) -> None:
         super().__init__(cmd, 0)
@@ -60,11 +64,13 @@ def remaining() -> float | None:
 
 
 def limit(timeout: float | None, cmd: Sequence[str] | str = "") -> float | None:
-    """``timeout`` shortened to the budget left; ``BudgetExceeded`` when none is left."""
+    """Shorten to the budget left; refuse git with less than MIN_GIT_BUDGET left."""
     left = remaining()
     if left is None:
         return timeout
-    if left <= 0:
+    argv = cmd.split(maxsplit=1) if isinstance(cmd, str) else cmd
+    program = argv[0] if argv else ""
+    if left <= 0 or (program == "git" and left < MIN_GIT_BUDGET):
         raise BudgetExceeded(cmd)
     return left if timeout is None else min(timeout, left)
 

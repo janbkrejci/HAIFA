@@ -805,3 +805,41 @@ def test_live_hub_closes_twice(tmp_path: Path) -> None:
         assert await queue.get() is None
 
     asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("seconds", [0.0, 0.27])
+def test_repo_git_read_rejects_exhausted_budget_before_start(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    seconds: float,
+) -> None:
+    from aifactory import procrun
+    from aifactory.web import repos
+
+    def forbidden(*args: object, **kwargs: object) -> None:
+        pytest.fail("no git may start with an exhausted budget")
+
+    monkeypatch.setattr(repos, "_read_git", forbidden)
+    monkeypatch.setattr(procrun, "run", forbidden)
+    with procrun.budget(seconds), pytest.raises(procrun.BudgetExceeded):
+        repos.read_git(tmp_path, "rev-parse", "--verify", "--quiet", "HEAD^{commit}")
+    assert not any(record.exc_info for record in caplog.records)
+
+
+def test_repo_git_read_has_useful_budget(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from aifactory import procrun
+    from aifactory.web import repos
+
+    calls: list[object] = []
+
+    def run(argv: object, timeout: float, **kwargs: object) -> procrun.Finished:
+        calls.append(argv)
+        assert timeout == 10.0
+        assert kwargs["cwd"] == tmp_path
+        return procrun.Finished(0, "head\n", "")
+
+    monkeypatch.setattr(procrun, "run", run)
+    with procrun.budget(10):
+        assert repos.read_git(tmp_path, "rev-parse", "HEAD") == "head"
+    assert calls == [["git", "rev-parse", "HEAD"]]

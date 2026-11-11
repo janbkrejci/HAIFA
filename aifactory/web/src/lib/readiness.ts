@@ -1,5 +1,5 @@
 import { inject, onBeforeUnmount, onMounted, provide, ref, type InjectionKey } from 'vue'
-import { fetchFactoryRoster, fetchMachineCheck, fetchRepos, getGlobal, type MachineCheck, type RepoItem } from './api'
+import { fetchFactoryRosterSummary, fetchMachineCheck, fetchRepos, getGlobal, type MachineCheck, type RepoItem } from './api'
 import { fetchLibrarySummary } from './library'
 import { focusRepo, gettingStartedSteps, type Step } from './gettingStarted'
 import { errorText } from './format'
@@ -49,6 +49,9 @@ function createReadiness() {
     else if (phase.value === null) {
       loadingTimer = setTimeout(() => { phase.value = 'loading' }, 1000)
     }
+    let finished = false
+    let machineDone = false
+    let failedStep: StepKey | null = null
     const pending = new Set<StepKey>()
     let server: string | null = null
     const waitingFor = () => {
@@ -58,7 +61,7 @@ function createReadiness() {
     }
     function track<T>(key: StepKey, promise: Promise<T>): Promise<T> {
       pending.add(key)
-      return promise.finally(() => pending.delete(key))
+      return promise.catch(error => { failedStep ??= key; throw error }).finally(() => pending.delete(key))
     }
     stopProgress?.()
     elapsed.value = 0
@@ -73,19 +76,33 @@ function createReadiness() {
     const seconds = Math.round(CHECK_DEADLINE_MS / 1000)
     const bounded = <T>(promise: Promise<T>) => beforeDeadline(promise, deadline, waitingFor, seconds)
     try {
-      const [machine, library, registry] = await bounded(Promise.all([
-        track('machine', fetchMachineCheck(fresh)), track('library', fetchLibrarySummary()), track('repos', fetchRepos()),
+      const initial = await bounded(Promise.allSettled([
+        track('machine', fetchMachineCheck(fresh).then(machine => {
+          if (!finished && !disposed && current === generation) {
+            machineDone = !machine.timed_out && machine.checked !== false
+            if (machineDone && machine.checked_at) lastCheckedAt = machine.checked_at
+            issues.value = machineIssues(machine)
+          }
+          return machine
+        })), track('library', fetchLibrarySummary()), track('repos', fetchRepos()),
       ]))
       if (disposed || current !== generation) return
+      const [machineResult, libraryResult, registryResult] = initial
+      if (machineResult.status === 'rejected') throw machineResult.reason
+      if (libraryResult.status === 'rejected') throw libraryResult.reason
+      if (registryResult.status === 'rejected') throw registryResult.reason
+      const machine = machineResult.value
+      const library = libraryResult.value
+      const registry = registryResult.value
       const repo = focusRepo(registry.repos)
       let rosterAgents = 0
       let projects = 0
       if (repo && ['ok', 'uncommitted'].includes(repo.status)) {
         const [roster, backlog] = await bounded(Promise.all([
-          track('roster', fetchFactoryRoster(repo.id)),
+          track('roster', fetchFactoryRosterSummary(repo.id)),
           track('backlog', getGlobal<{ projects: number }>(`/repos/${encodeURIComponent(repo.id)}/backlog/summary`)),
         ]))
-        rosterAgents = roster.agents.length
+        rosterAgents = roster.agents
         projects = backlog.projects
       }
       if (disposed || current !== generation) return
@@ -120,13 +137,16 @@ function createReadiness() {
       if (!disposed && current === generation) {
         if (error instanceof CheckTimeout) {
           // Keep the last known issues next to the timeout; a timeout is never a success.
-          issues.value = [timeoutIssue(error.step, error.seconds, lastCheckedAt), ...issues.value.filter(i => i.id !== 'timeout')]
+          issues.value = [machineDone ? auxiliaryIssue(error.step) : timeoutIssue(error.step, error.seconds, lastCheckedAt), ...issues.value.filter(i => i.id !== 'timeout')]
         } else {
-          issues.value = [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít stránku Knihovna' }]
+          issues.value = machineDone
+            ? [auxiliaryIssue(STEPS[failedStep ?? 'machine'], errorText(error)), ...issues.value.filter(i => i.id !== 'timeout')]
+            : [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít stránku Knihovna' }]
         }
         phase.value = 'warning'
       }
     } finally {
+      finished = true
       if (current === generation) {
         clearTimeout(loadingTimer)
         stopProgress?.()
@@ -137,6 +157,30 @@ function createReadiness() {
         elapsed.value = 0
       }
     }
+  }
+
+  function auxiliaryIssue(step: string, error?: string): Issue {
+    const known = lastKnown(lastCheckedAt)
+    return {
+      id: 'timeout', title: `Údaj není k dispozici: ${step}`,
+      hint: `Nedokončený krok: ${step}. ` + (known ? `Zobrazen poslední známý výsledek ${known}. ` : '') + (error ?? ''),
+      href: SETUP_HREF, action: 'Zkontrolovat znovu', retry: true,
+    }
+  }
+
+  function machineIssues(machine: MachineCheck): Issue[] {
+    const result: Issue[] = machine.findings.filter(f => f.severity === 'error' || f.severity === 'warning').map(f => ({
+      id: 'machine', title: f.message, hint: f.fix ?? 'Otevři stránku Knihovna a oprav uvedený problém.',
+      href: f.code === 'harness_test_failed' ? '#harness-settings' : f.scope === 'library' ? LIBRARY_HREF : SETUP_HREF,
+      action: f.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači',
+    }))
+    const timeout = machineTimeout(machine)
+    if (timeout) result.unshift(timeout)
+    else if (machine.checked === false || machine.stale) result.unshift({
+      id: 'machine-status', title: machine.checked === false ? 'Počítač zatím nebyl zkontrolován' : 'Zastaralý výsledek kontroly počítače',
+      hint: 'Spusť ruční kontrolu pro aktuální stav počítače.', href: SETUP_HREF, action: 'Zkontrolovat počítač', retry: true,
+    })
+    return result
   }
 
   /** The issue of a machine check the server ended at its budget, or null. */

@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T116
 title: "Zrychlit kontrolu na Přehledu: lehký krok roster, poslední známý výsledek a žádné git timeouty z vyčerpaného rozpočtu"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T113]
 writes: [aifactory/src/aifactory/web/machine.py, aifactory/src/aifactory/web/factory.py, aifactory/src/aifactory/web/app.py, aifactory/src/aifactory/web/repos.py, aifactory/tests/web/test_web_machine.py, aifactory/tests/web/test_web_factory_roster.py, aifactory/tests/web/test_web_repos.py, aifactory/web/src/lib/readiness.ts, aifactory/web/src/lib/machineProgress.ts, aifactory/web/src/lib/api.ts, aifactory/web/src/components/OverviewReadiness.test.ts, aifactory/src/aifactory/web/static/, aifactory/web/src/App.test.ts, aifactory/tests/e2e/test_machine_check_browser.py, aifactory/src/aifactory/procrun.py, aifactory/tests/test_procrun.py]
@@ -35,3 +35,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-11 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/218 · náklady $0.00

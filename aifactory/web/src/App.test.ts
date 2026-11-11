@@ -55,6 +55,7 @@ function stubApi(
     if (url === '/api/health') return envelope(HEALTH)
     if (url === '/api/repos') return envelope({ repos, home: HEALTH.home })
     if (url === '/api/code') return envelope({ stale: false, started: 'a', current: 'a' })
+    if (url.endsWith('/factory/roster?summary=1')) return envelope({ agents: 0 })
     if (url.endsWith('/backlog/summary')) return envelope({ projects: 0 })
     if (url.endsWith('/config/status')) return envelope(options.status ?? CLEAN_STATUS)
     return envelope({ levels: ['module', 'step', 'task'], items: [], tasks: [] })
@@ -180,7 +181,7 @@ describe('App', () => {
     let finish!: (response: Response) => void
     const fetchMock = stubApi({ handler: url => {
       if (url.startsWith('/api/machine/check') && pending) return pending
-      if (url.endsWith('/factory/roster')) return envelope({ agents: [] })
+      if (url.endsWith('/factory/roster?summary=1')) return envelope({ agents: 0 })
     } })
     go('#/overview')
     const wrapper = mount(App)
@@ -592,7 +593,7 @@ describe('App', () => {
     stubApi({
       repos: [HAIFA, repo('sandbox', 'sandbox', '/work/sandbox')],
       handler: (url) => {
-        if (url.endsWith('/factory/roster')) return envelope({ agents: [{ name: 'builder' }] })
+        if (url.endsWith('/factory/roster?summary=1')) return envelope({ agents: 1 })
         if (url.endsWith('/backlog/summary')) return envelope({ projects: 1 })
         if (url === '/api/overview') return envelope(overview([ovRepo('haifa', { name: 'HAIFA', running: [running()] }), ovRepo('sandbox')]))
       },
