@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T118
 title: Gantt automaticky sleduje pravý konec a respektuje ruční posun
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T112]
 writes: [aifactory/web/src/components/runs/RunWaterfall.vue, aifactory/web/src/components/runs/RunWaterfall.test.ts, aifactory/tests/e2e/test_run_waterfall_scroll_browser.py, aifactory/src/aifactory/web/static/]
