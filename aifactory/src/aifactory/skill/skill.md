@@ -410,14 +410,25 @@ library (without a library the packaged workflows: {{workflows}}).
   change, nothing beyond. There is no configured test command; every repo, whatever its
   stack, gets its checks from the tester. The gate `checks_runnable` requires the first
   argv element of every check on PATH or as a file in the worktree.
-- A later `test_plan` keeps every check of the previous plan (same argv) or names it in
-  `dropped` with a reason (gate `plan_keeps_checks`). Workflows plan again after every
-  fix and every revision, from the whole diff since `baseline`.
-- A `test_plan` step may require a coverage: `coverage: full` (every check the repo has)
-  or `coverage: scoped` (only the latest changes); gate `coverage_required`. The result of
-  a `test` repeats the plan's coverage, so conditions can read `test.coverage == "full"`.
-  The packaged `heal` workflow runs the whole suite, repairs until it is green (each repair
-  checked scoped, then confirmed on the whole suite) and commits only on a green full run.
+- Select the first checks from the diff against `baseline`: documentation/backlog needs reader
+  validation only, with no build or code tests; code needs affected projects and direct callers.
+  Search tests for callers before choosing full coverage. Full coverage is reserved for shared
+  infrastructure, paths marked `shared_paths: glob, path/prefix` in the testing profile, or
+  dependencies that cannot be traced after a caller search.
+- After fixes and revisions the interpreter requires scoped plans: retain failures and
+  unexecuted checks, and check the latest edits and direct callers. Previously green,
+  unaffected checks and deferred whole-suite checks need no repeated `dropped` reason.
+  A failed ordinary check cannot be discarded, even with a dropped reason.
+- A full plan requests one final confirmation. The interpreter defers it, asks for a
+  scoped plan for intermediate tests, and confirms once after review and before commit
+  or acceptance. This applies to custom workflows too. A failed confirmation returns to
+  bounded repairs with scoped regression checks under the failed suite's name; the
+  whole suite never runs again. The `heal` workflow follows the same rule.
+- Resolve uses the PR head before rebase as its testing baseline, including code merged
+  automatically. Documentation-only changes need reader checks; automatically merged
+  code needs affected project builds and tests. Conflict file names alone do not set scope.
+- Test results and phase logs record `full_suite_runs` and the full plan's reason;
+  the PR test summary and dashboard phase evidence show the count and reasons.
 - A red `test` goes directly to the builder's `fix` with the failed commands
   and their verbatim output. There are no implicit triage or test-plan review calls.
   The final code reviewer requests missing regression tests directly from the builder.

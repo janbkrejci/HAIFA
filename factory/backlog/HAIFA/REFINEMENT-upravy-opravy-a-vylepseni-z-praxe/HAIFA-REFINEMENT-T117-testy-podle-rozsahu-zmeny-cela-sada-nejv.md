@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T117
 title: "Testy podle rozsahu změny: celá sada nejvýš jednou na běh, mezikola a resolve scoped"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/engine/gates.py, aifactory/src/aifactory/workflow/interpreter.py, aifactory/src/aifactory/engine/defaults/roles.yaml, aifactory/src/aifactory/defaults/workflows/, aifactory/src/aifactory/seed/agents/tester/, aifactory/validation/template/.factory/prompts/tester/, aifactory/src/aifactory/skill/skill.md, aifactory/src/aifactory/run/, aifactory/tests/]
@@ -48,3 +48,4 @@ Vzor už v HAIFA existuje: workflow `heal` opravuje se `scoped` kontrolami a cel
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-11 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/219 · náklady $0.00

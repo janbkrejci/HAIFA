@@ -10,6 +10,10 @@
 
 {{baseline}}
 
+### testing_scope
+
+{{testing_scope}}
+
 ### previous_envelope
 
 The step before you: the build, a fix or a revision (with the files it changed), or a review whose findings concern the test plan:
@@ -24,7 +28,7 @@ The step before you: the build, a fix or a revision (with the files it changed),
 
 ### previous_test_plan
 
-The plan the last test ran, `(none)` for the first plan of the run. Keep each of its checks or name it in `dropped`:
+The plan the last test ran, `(none)` for the first plan of the run. In scoped rounds retain failed/unexecuted and affected checks; defer green unaffected checks and the whole suite without repeated dropped reasons:
 
 {{previous_test_plan}}
 

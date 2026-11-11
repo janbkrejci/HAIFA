@@ -128,6 +128,8 @@ def test_review_gets_builder_envelope_and_test_result(
     assert report == {
         "step": "test",
         "phase": "test_2",
+        "coverage": "scoped",
+        "reason": "covers the change",
         "passed": True,
         "command": "pytest tests",
         "log": "/data/quality/test.log",

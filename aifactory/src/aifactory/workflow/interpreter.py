@@ -13,12 +13,14 @@ output is ``TestPlanOutput``; the parser requires one before any ``test``) under
 the shared time limit ``run.test_timeout`` (``run_workflow(test_timeout=...)``),
 else 600 s. Role steps get ``{{baseline}}``, the commit the run started from, so
 a tester can diff the whole change, and ``{{previous_test_plan}}``, the latest
-test plan (``(none)`` before the first), which a new plan must keep or say why
-it drops a check (gate ``plan_keeps_checks``).
+test plan (``(none)`` before the first). Scoped replans keep failures and affected
+checks; green unaffected checks can wait for confirmation (``plan_keeps_checks``).
 
 A red ``test`` goes directly to the builder through the workflow's repair loop.
-There are no implicit plan reviews or triage calls. Testing profiles are local,
-advisory knowledge per project; the tester refreshes them while selecting checks.
+There are no implicit plan reviews or triage calls. Full plans on mutable workflows
+are deferred to a single final confirmation; repair and revision rounds are scoped.
+Testing profiles are local, advisory knowledge per project; the tester refreshes them
+while selecting checks.
 A resolve run may change only conflicted files; a repair stops if none are writable.
 
 Inputs of a role step: ``{{previous_envelope}}`` is the latest result of the
@@ -55,7 +57,8 @@ from __future__ import annotations
 import json
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
+from fnmatch import fnmatchcase
 from pathlib import Path
 from typing import Any, Literal, Protocol
 
@@ -69,7 +72,7 @@ from aifactory.failure import InvalidOutput, RunFailure
 from aifactory.harness.override import effective_agent, step_override
 from aifactory.testing.profile import ProfileCache
 from aifactory.workflow.check import check_agents
-from aifactory.workflow.conditions import truthy
+from aifactory.workflow.conditions import Condition, truthy
 from aifactory.workflow.journal import Journal, JournalEntry
 from aifactory.workflow.model import CodeStep, Repeat, RoleStep, Step, Workflow, WorkflowError, walk
 from aifactory.workflow.rebase import RebaseOutput, rebase_onto
@@ -111,6 +114,64 @@ _CODE_OUTPUTS: dict[str, Any] = {
     "rebase": RebaseOutput,
     "rebuild": RebuildOutput,
 }
+
+
+def testing_scope(paths: Sequence[str], shared_paths: Sequence[str] = ()) -> dict[str, Any]:
+    """Diff categories for the tester; caller discovery still determines exact checks."""
+    shared_names = {
+        "justfile",
+        "makefile",
+        "pyproject.toml",
+        "package.json",
+        "bun.lock",
+        "bun.lockb",
+        "uv.lock",
+        "conftest.py",
+        "directory.build.props",
+        "directory.build.targets",
+        "directory.packages.props",
+        "global.json",
+        "nuget.config",
+        "pytest.ini",
+        "tox.ini",
+        "requirements.txt",
+        "requirements-dev.txt",
+        "poetry.lock",
+        "package-lock.json",
+        "pnpm-lock.yaml",
+        "yarn.lock",
+        "cargo.toml",
+        "cargo.lock",
+        "go.mod",
+        "go.sum",
+        "setup.py",
+        "setup.cfg",
+        "cmakelists.txt",
+        ".gitlab-ci.yml",
+    }
+    normalized = sorted({p.replace("\\", "/") for p in paths})
+    shared = [
+        p
+        for p in normalized
+        if (
+            Path(p).name.lower() in shared_names
+            or p.startswith((".github/workflows/", ".gitlab/"))
+            or any(
+                fnmatchcase(p, pattern) or p.startswith(pattern.rstrip("/") + "/")
+                for pattern in shared_paths
+            )
+        )
+    ]
+    docs = [p for p in normalized if Path(p).suffix.lower() in {".md", ".rst", ".txt", ".adoc"}]
+    coverage = "full" if shared else ("none" if len(docs) == len(normalized) else "scoped")
+    return {
+        "coverage": coverage,
+        "files": normalized,
+        "shared": shared,
+        "guidance": "Documentation/backlog: reader checks only, no build or code tests. "
+        "Code: build and tests of affected projects and direct callers. "
+        "Search callers before considering full coverage; explain any untraceable callers.",
+    }
 
 
 class CodeRunner(Protocol):
@@ -298,6 +359,15 @@ class _Interpreter:
         self.run = run
         self.code = code
         self.baseline = ""
+        self.resolve_baseline = ""
+        self.deferred_full: dt.TestPlanOutput | None = None
+        self.confirming = False
+        self.finalized = False
+        self.verifying_only = not any(
+            isinstance(leaf, RoleStep)
+            and leaf.role.output_type in (dt.BuildOutput, dt.ReviewOutput)
+            for leaf in walk(workflow.steps)
+        )
         self.results: dict[str, dict[str, Any]] = {}
         self.envelopes: dict[str, Any] = {}
         self.history: list[tuple[str, Any]] = []  # (key, envelope), oldest first
@@ -377,12 +447,15 @@ class _Interpreter:
         """Extra prompt variables of a role step: ``test_result``, then its ``input:`` mapping."""
         variables = {
             TEST_RESULT_VARIABLE: self.render_input(self.test_keys),
-            BASELINE_VARIABLE: self.baseline or NO_INPUT,
+            BASELINE_VARIABLE: self.resolve_baseline or self.baseline or NO_INPUT,
             PREVIOUS_PLAN_VARIABLE: self.latest_plan_json(),
             FAILED_TEST_VARIABLE: NO_INPUT,  # legacy prompt variable; no implicit triage
             "testing_profile": (
                 self.profile_context() if step.role.output_type is dt.TestPlanOutput else NO_INPUT
             ),
+            "testing_scope": self.scope_context()
+            if step.role.output_type is dt.TestPlanOutput
+            else NO_INPUT,
             REQUIRED_COVERAGE_VARIABLE: step.coverage or "any",
             REVIEW_MODE_VARIABLE: REVIEW_MODE_RESOLVE if self.resolving else REVIEW_MODE_TASK,
             TEST_TIMEOUT_VARIABLE: str(
@@ -478,6 +551,12 @@ class _Interpreter:
 
     def dispatch(self, step: Step, suffix: tuple[int, ...]) -> bool:
         """Run one step unless its ``when`` is false; return whether it ran."""
+        if (
+            isinstance(step, CodeStep)
+            and self.commit_needs_confirmation(step)
+            and self.confirmation_ready(step.when)
+        ):
+            self.finalize_tests()
         if not truthy(step.when, self.results):
             return False
         if isinstance(step, Repeat):
@@ -509,10 +588,26 @@ class _Interpreter:
         if self.gate is not None:
             self.gate()
 
+    def code_changed_since_plan(self) -> bool:
+        """Only a repair/revision, not a repeated planning call, permits narrowing."""
+        for _, envelope in reversed(self.history):
+            if isinstance(envelope, dt.TestPlanOutput):
+                return False
+            if isinstance(envelope, dt.BuildOutput):
+                return True
+        return False
+
     def role(self, step: RoleStep, suffix: tuple[int, ...]) -> Any:
         """Run or replay one agent phase and store its result."""
         if step.name in REPAIR_STEPS and self.writes_nothing():
             self.stop_nothing_writable(step)
+        if (
+            step.role.output_type is dt.TestPlanOutput
+            and self.latest_plan() is not None
+            and (self.deferred_full is not None or self.code_changed_since_plan())
+            and not self.confirming
+        ):
+            step = replace(step, coverage="scoped")
         name = self.phase_name(step.phase_id, suffix)
         role = step.role
         entry = self.replayed(name, step.key)
@@ -528,7 +623,112 @@ class _Interpreter:
             self.save_profile(envelope.testing_profile)
         if isinstance(envelope, dt.BuildOutput) and envelope.already_done is not None:
             self.stop_if_first_build(envelope.already_done)
+        if (
+            isinstance(envelope, dt.TestPlanOutput)
+            and envelope.coverage == "full"
+            and not self.confirming
+            and not self.verifying_only
+        ):
+            self.deferred_full = envelope
+            return self.role(
+                replace(
+                    step,
+                    phase_id="scoped_plan",
+                    coverage="scoped",
+                    description="Plan scoped checks; defer the whole suite until the final code",
+                ),
+                suffix,
+            )
         return envelope
+
+    def full_suite_runs(self) -> list[dict[str, Any]]:
+        return [report for report in self.reports.values() if report.get("coverage") == "full"]
+
+    def tests_green(self) -> bool:
+        index = self.latest(self.test_keys)
+        return index is not None and bool(self.history[index][1].passed)
+
+    def confirmation_ok(self) -> bool:
+        return self.deferred_full is None or (
+            self.finalized and len(self.full_suite_runs()) == 1 and self.tests_green()
+        )
+
+    def confirmation_ready(self, condition: Condition | None) -> bool:
+        """Allow a coverage requirement to trigger its still-pending confirmation.
+
+        Project only coverage for this scheduling decision. Approval, passing
+        tests and every other prerequisite remain real; commit and acceptance
+        subsequently evaluate the condition against the actual test result.
+        """
+        if truthy(condition, self.results):
+            return True
+        projected = dict(self.results)
+        for key in self.test_keys:
+            result = self.results.get(key)
+            if result is not None:
+                projected[key] = {**result, "coverage": "full"}
+        return truthy(condition, projected)
+
+    def finalize_tests(self) -> None:
+        """Confirm a requested whole suite once, after all ordinary fixes/reviews.
+
+        Use workflow roles for bounded repairs of a red confirmation. Their scoped
+        plans must retain failures (or split a failed suite into named regressions).
+        All injected phases use the ordinary journal, including on retry.
+        """
+        if (
+            self.finalized
+            or self.deferred_full is None
+            or not self.confirmation_ready(self.workflow.accept)
+            or not self.tests_green()
+        ):
+            return
+        self.finalized = True
+        leaves = list(walk(self.workflow.steps))
+        planner = next(
+            s for s in leaves if isinstance(s, RoleStep) and s.role.output_type is dt.TestPlanOutput
+        )
+        tester = next(s for s in leaves if isinstance(s, CodeStep) and s.action == "test")
+        self.confirming = True
+        try:
+            self.role(
+                replace(
+                    planner,
+                    phase_id="final_plan",
+                    coverage="full",
+                    inputs=(),
+                    description="Confirm the final code on the deferred whole suite",
+                ),
+                (),
+            )
+            self.code_step(replace(tester, phase_id="final_test"), ())
+        finally:
+            self.confirming = False
+        fixer = next((s for s in leaves if isinstance(s, RoleStep) and s.name == "fix"), None)
+        reviewer = next(
+            (
+                s
+                for s in leaves
+                if isinstance(s, RoleStep)
+                and s.role.output_type is dt.ReviewOutput
+                and s.key in self.results
+            ),
+            None,
+        )
+        reviser = next((s for s in leaves if isinstance(s, RoleStep) and s.name == "revise"), None)
+        for i in range(1, 4):
+            if self.tests_green() and truthy(self.workflow.accept, self.results):
+                break
+            repair = fixer if not self.results[tester.key].get("passed") else reviser
+            if repair is None:
+                break
+            self.role(replace(repair, phase_id="final_repair", inputs=()), (i,))
+            self.role(
+                replace(planner, phase_id="final_repair_plan", coverage="scoped", inputs=()), (i,)
+            )
+            self.code_step(replace(tester, phase_id="final_retest"), (i,))
+            if reviewer is not None and self.results[tester.key].get("passed"):
+                self.role(replace(reviewer, phase_id="final_review"), (i,))
 
     def check_empty_first_build(self, envelope: dt.BuildOutput, step: RoleStep) -> None:
         """A task's empty first build needs explicit evidence, not a spec-only PR."""
@@ -588,6 +788,12 @@ class _Interpreter:
         previous = self.previous(step.inputs)
         self.run.previous_test_plan = self.latest_plan()  # for the plan_keeps_checks gate
         self.run.required_coverage = step.coverage  # for the coverage_required gate
+        latest_test = self.latest(self.test_keys)
+        evidence = self.reports.get(latest_test, {}) if latest_test is not None else {}
+        self.run.failed_test_checks = [c["name"] for c in evidence.get("failed_checks", [])]
+        self.run.failed_test_checks += [
+            c["name"] for c in (evidence.get("test_plan") or {}).get("not_run", [])
+        ]
         with step_override(self.run.cfg, role.agent, step.override) as agent:
             params = self.params(name, "agent", role.agent, step.description, role.retries)
             with self.run.phase(params) as ph:
@@ -646,6 +852,43 @@ class _Interpreter:
             self.run.console.note(f"testing profile unavailable: {error}")
             return NO_INPUT
 
+    def scope_context(self) -> str:
+        root = Path(self.run.repo_root)
+        baseline = self.resolve_baseline or self.baseline
+        try:
+            changed = subprocess.run(
+                ["git", "-c", "core.quotePath=false", "diff", "--name-only", baseline, "--"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=True,
+            ).stdout.splitlines()
+            untracked = subprocess.run(
+                ["git", "ls-files", "--others", "--exclude-standard"],
+                cwd=root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=True,
+            ).stdout.splitlines()
+        except (OSError, subprocess.SubprocessError):
+            return (
+                "Diff unavailable: inspect git against baseline and find direct callers; "
+                "do not assume full."
+            )
+        context = self.profile_context()
+        profile = json.loads(context) if context != NO_INPUT else {}
+        knowledge = str(profile.get("knowledge", ""))
+        shared = [
+            p.strip()
+            for line in knowledge.splitlines()
+            if line.startswith("shared_paths:")
+            for p in line.partition(":")[2].split(",")
+            if p.strip()
+        ]
+        return json.dumps(testing_scope([*changed, *untracked], shared), ensure_ascii=False)
+
     def save_profile(self, knowledge: str, durations: dict[str, float] | None = None) -> None:
         cache = getattr(self.run, "test_profile", None)
         if cache is not None:
@@ -654,7 +897,34 @@ class _Interpreter:
             except (OSError, ValueError, subprocess.SubprocessError) as error:
                 self.run.console.note(f"testing profile not saved: {error}")
 
+    def commit_needs_confirmation(self, step: CodeStep) -> bool:
+        if step.action != "commit":
+            return False
+        leaves = list(walk(self.workflow.steps))
+        later_mutations = (
+            any(
+                isinstance(leaf, RoleStep)
+                and leaf.role.output_type in (dt.BuildOutput, dt.ReviewOutput)
+                for leaf in leaves[leaves.index(step) + 1 :]
+            )
+            if step in leaves
+            else False
+        )
+        return (
+            self.latest(self.test_keys) is not None
+            and self.deferred_full is not None
+            and not later_mutations
+        )
+
     def code_step(self, step: CodeStep, suffix: tuple[int, ...]) -> None:
+        if self.commit_needs_confirmation(step):
+            self.finalize_tests()
+            if (
+                not truthy(step.when, self.results)
+                or not truthy(self.workflow.accept, self.results)
+                or not self.confirmation_ok()
+            ):
+                return
         self.run_code_step(step, suffix)
 
     def run_code_step(self, step: CodeStep, suffix: tuple[int, ...]) -> None:
@@ -679,6 +949,8 @@ class _Interpreter:
             done.summary = str(envelope.summary)
             if step.action in ("test", "command"):
                 done.report = self.reports.get(len(self.history) - 1)
+        if step.action == "rebase":
+            done.result = {"test_baseline": self.resolve_baseline}
         self.journal_done(done)
 
     def restore_code(self, step: CodeStep, entry: JournalEntry) -> None:
@@ -686,17 +958,27 @@ class _Interpreter:
         if step.action == "commit":
             self.results[step.key] = {**(entry.result or {}), RAN_FIELD: True}
             return
+        if step.action == "rebase":
+            self.resolve_baseline = (entry.result or {}).get("test_baseline", self.baseline)
         envelope_type: Any = _CODE_OUTPUTS.get(step.action, dt.VerifyOutput)
         envelope = envelope_type.model_validate(entry.envelope or {})
         if step.action in ("test", "command") and entry.report is not None:
             self.reports[len(self.history)] = dict(entry.report)
+            runs = self.full_suite_runs()
+            self.results["full_suite"] = {
+                "count": len(runs),
+                "reasons": [r["reason"] for r in runs],
+            }
         self.store(step.key, envelope)
 
     def live_code_step(self, step: CodeStep, name: str) -> None:
         with self.run.phase(self.params(name, "code", step.owner, step.description)) as ph:
             if step.action in ("test", "command"):
                 if step.action == "test":
-                    result, what = self.code.test(self.run, self.test_plan()), "tests"
+                    plan = self.test_plan()
+                    if plan.coverage == "full" and self.full_suite_runs():
+                        raise RunFailure("the whole suite already ran; select scoped checks")
+                    result, what = self.code.test(self.run, plan), "tests"
                 else:
                     result, what = self.code.command(self.run, step), step.key
                 passed = sum(1 for check in result.checks if check.passed)
@@ -707,8 +989,23 @@ class _Interpreter:
                     artifacts=", ".join(result.artifacts),
                 )
                 report = self.report(name, step.key, result)
+                if step.action == "test":
+                    report["coverage"] = self.test_plan().coverage
+                    report["reason"] = self.test_plan().reason
                 self.reports[len(self.history)] = report
-                self.store(step.key, engine_quality.as_envelope(result, what))
+                envelope = engine_quality.as_envelope(result, what)
+                if step.action == "test":
+                    runs = self.full_suite_runs()
+                    detail = (
+                        "; ".join(str(r["reason"]) for r in runs) or "not requested or deferred"
+                    )
+                    envelope.summary += f"; full suite runs: {len(runs)} ({detail})"
+                    ph.log(full_suite_runs=len(runs), full_suite_reasons=detail)
+                    self.results["full_suite"] = {
+                        "count": len(runs),
+                        "reasons": [r["reason"] for r in runs],
+                    }
+                self.store(step.key, envelope)
                 if step.action == "test":
                     plan = self.test_plan()
                     self.save_profile(
@@ -742,6 +1039,7 @@ class _Interpreter:
                     )
                 self.store(step.key, engine_changes.as_envelope(cs))
             elif step.action == "rebase":
+                self.resolve_baseline = self.code.baseline()
                 rebased = self.code.rebase(self.run)
                 ph.log(
                     onto=str(rebased.onto)[:7],
@@ -831,6 +1129,7 @@ def run_workflow(
     already_done: dt.AlreadyDone | None = None
     try:
         interp.execute(workflow.steps)
+        interp.finalize_tests()
     except _AlreadyDone as stop:
         already_done = stop.done
         run.console.note(f"already done ({', '.join(stop.done.evidence)}): workflow ends here")
@@ -838,7 +1137,7 @@ def run_workflow(
         # nothing was built, so nothing is left to verify or commit
         accepted, reason = True, ""
     else:
-        accepted = truthy(workflow.accept, interp.results)
+        accepted = truthy(workflow.accept, interp.results) and interp.confirmation_ok()
         reason = f"accept `{workflow.accept.source}` was not met" if workflow.accept else ""
     exit_code = int(run.finish(accepted=accepted, reason=reason))
     return WorkflowRun(

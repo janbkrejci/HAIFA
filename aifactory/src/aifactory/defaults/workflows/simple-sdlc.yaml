@@ -7,8 +7,8 @@
 #         -> git(commit_build) -> code(changes) -> documenter -> git(commit_docs)
 #
 # aifactory 3.0: the tester plans the checks again after every change of code (a fix
-# or a revision), from the whole diff since the baseline, keeping or explicitly
-# dropping the previous checks. After a rejection it gets the review, so a plan the
+# or a revision), checking failures, the latest edits and direct callers.
+# The interpreter confirms any requested whole suite once before commit_build. After a rejection it gets the review, so a plan the
 # reviewer found insufficient or too broad is corrected before the next review.
 #
 # Loops (2.7): `until` is checked after every body step, and the last round ends
@@ -30,7 +30,7 @@ steps:
       - fix:
           description: Repair what the checks reported, from their verbatim output
       - test_plan:
-          description: Plan the checks again — the fix changed code, keep every earlier check
+          description: Plan the checks again — the fix changed code, retain failures and check the latest edits and direct callers; the whole suite confirms later
   - repeat: {max: 2, until: review.approved}
     steps:
       # The reviewer judges the latest code, plan and test result.
