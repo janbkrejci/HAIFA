@@ -1,8 +1,10 @@
 # Backlog a tasky
 
-Backlog: markdown strom pod `<docs_root>/backlog/`: **projekt**, **step**, **task** (názvy určuje `levels`). Projekt a step: výchozí hodnoty v `index.md`; id tasku: `<step>-<kód>`, například `WEB-S01-T01`.
+Backlog: markdown strom `<docs_root>/backlog/`: **projekt**, **step**, **task** dle `levels`; výchozí hodnoty kontejnerů v `index.md`, id tasku `<step>-<kód>` (např. `WEB-S01-T01`).
 
 ## Strom a kanban
+
+Filtr projektu sdílí strom i kanban; prohlížeč jej pamatuje podle repozitáře.
 
 Archivaci (`archived: true/false`) ukládá **Archivovat**/**Obnovit** do front matter; commituje se. Chybějící hodnota: `cancelled`=archivovaný, ostatní=nearchivovaný. Archiv ukáže přepínač sloupce.
 
@@ -22,7 +24,7 @@ Detail tasku: **Spustit**, **Upravit**, **Zrušit**, **Vylepšit agentem** (a **
 
 Hotový task nespustíš: **Navázat follow-upem** (`factory task follow-up ID --body TEXT --run`) založí ve stepu task s `follows: ID`, vlastními writes a workflow původního; **Commitnout a spustit** ho spustí. Detail ukáže předchůdce i navazující tasky.
 
-Formulář: **Titulek**, **Kód**, **Zadání** (cíl, kontext, kdy je hotovo), **Workflow** a **Navrhnout workflow**. **Další nastavení**: **Status**, **Writes** (povolené cesty), **Závisí na**, **Související** a časový limit testů. **Vylepšit agentem** doplní zadání, writes, vazby a workflow. Oba používají místní nastavení podle [pravidla pomocných agentů](#/guide/prvni-beh/harnessy-tohoto-pocitace).
+Formulář: **Titulek**, **Kód**, **Zadání** (cíl, kontext, kdy je hotovo), **Workflow** a **Navrhnout workflow**. **Další nastavení**: **Status**, **Writes** (povolené cesty), **Závisí na**, **Související** a časový limit testů. **Vylepšit agentem** doplní zadání, writes, vazby a workflow. Oba dodržují [pravidla pomocných agentů](#/guide/prvni-beh/harnessy-tohoto-pocitace).
 
 **Nový záměr** navrhne backlog k upřesnění a použití. Používá stejné místní pravidlo pomocných agentů.
 

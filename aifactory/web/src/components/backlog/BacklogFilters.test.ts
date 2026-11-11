@@ -25,41 +25,30 @@ describe('BacklogFilters', () => {
     expect(wrapper.emitted('update:mode')?.[0]).toEqual(['kanban'])
   })
 
-  it('filters the kanban by project and step with labels from levels', async () => {
-    const projects = [
-      { id: 'P1', title: 'One' },
-      { id: 'P2', title: null },
-    ]
-    const steps = [
-      { id: 'P1-S01', title: 'A', path: 'p1/s1', project: 'P1' },
-      { id: 'P2-S01', title: 'B', path: 'p2/s1', project: 'P2' },
-    ]
-    const props = { filters: {}, mode: 'kanban' as const, levels: ['project', 'step', 'task'], projects, steps }
-    const wrapper = mount(BacklogFilters, { props })
+  it.each(['tree', 'kanban'] as const)('filters %s by project with labels from levels', async (mode) => {
+    const projects = [{ id: 'P1', title: 'One' }, { id: 'P2', title: null }]
+    const wrapper = mount(BacklogFilters, {
+      props: { filters: {}, mode, levels: ['project', 'step', 'task'], projects },
+    })
     expect(wrapper.find('[data-test="project-filter"]').element.parentElement?.textContent).toContain('Projekt')
-    expect(wrapper.find('[data-test="step-filter"]').element.parentElement?.textContent).toContain('Step')
+    expect(wrapper.find('[data-test="step-filter"]').exists()).toBe(false)
     expect(await selectLabels(wrapper, '[data-test="project-filter"]')).toEqual(['vše', 'P1 – One', 'P2'])
-    expect(await selectLabels(wrapper, '[data-test="step-filter"]')).toEqual(['vše', 'P1-S01 – A', 'P2-S01 – B'])
     await chooseOption(wrapper, '[data-test="project-filter"]', 'P1')
-    expect(wrapper.emitted('update:filters')?.[0]).toEqual([{ project: 'P1', step: undefined }])
+    expect(wrapper.emitted('update:filters')?.[0]).toEqual([{ project: 'P1' }])
     await wrapper.setProps({ filters: { project: 'P1' } })
-    expect(await selectLabels(wrapper, '[data-test="step-filter"]')).toEqual(['vše', 'P1-S01 – A'])
-    await chooseOption(wrapper, '[data-test="step-filter"]', 'P1-S01')
-    expect(wrapper.emitted('update:filters')?.[1]).toEqual([{ project: 'P1', step: 'P1-S01' }])
-    // another project drops a step outside it
-    await wrapper.setProps({ filters: { project: 'P1', step: 'P1-S01' } })
-    await chooseOption(wrapper, '[data-test="project-filter"]', 'P2')
-    expect(wrapper.emitted('update:filters')?.[2]).toEqual([{ project: 'P2', step: undefined }])
+    await chooseOption(wrapper, '[data-test="project-filter"]', '')
+    expect(wrapper.emitted('update:filters')?.[1]).toEqual([{ project: undefined }])
   })
 
-  it('has no step filter with fewer than three levels and no scope filters in the tree', async () => {
+  it('uses the top level label with fewer than three levels in either view', async () => {
     const wrapper = mount(BacklogFilters, {
       props: { filters: {}, mode: 'kanban', levels: ['area', 'task'], projects: [{ id: 'A', title: null }] },
     })
     expect(wrapper.find('[data-test="project-filter"]').element.parentElement?.textContent).toContain('area')
     expect(wrapper.find('[data-test="step-filter"]').exists()).toBe(false)
     await wrapper.setProps({ mode: 'tree' })
-    expect(wrapper.find('[data-test="project-filter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="project-filter"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="step-filter"]').exists()).toBe(false)
   })
 
   it('switches Skrýt hotové', async () => {

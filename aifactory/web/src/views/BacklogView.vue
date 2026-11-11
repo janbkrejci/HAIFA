@@ -19,6 +19,8 @@ import TaskForm from '@/components/backlog/TaskForm.vue'
 import ContainerForm from '@/components/backlog/ContainerForm.vue'
 import {
   BOARD_STATES,
+  backlogProject,
+  setBacklogProject,
   addContainer,
   addTask,
   childLevel,
@@ -93,6 +95,7 @@ import {
   runHref,
   taskHref,
   useRouteParams,
+  useRepoId,
 } from '@/lib/router'
 import { mergeNames, setLevels, useLevels, useNames } from '@/lib/names'
 import { useBacklogStatus } from '@/lib/backlogStatus'
@@ -129,7 +132,14 @@ const taskId = computed(() =>
 )
 
 const data = ref<BacklogData | null>(null)
-const filters = ref<Filters>({})
+const repoId = useRepoId()
+const project = ref(repoId.value ? backlogProject(repoId.value) : undefined)
+watch(repoId, (id) => {
+  project.value = id ? backlogProject(id) : undefined
+})
+const filters = computed<Filters>(() => ({
+  project: projects.value.some((p) => p.id === project.value) ? project.value : undefined,
+}))
 const mode = ref<BacklogMode>('tree')
 const detail = ref<TaskDetailData | null>(null)
 /** The task id `detail` belongs to: a detail of another task is never shown. */
@@ -230,7 +240,10 @@ function onHideDone(on: boolean) {
 }
 const counts = computed(() => (data.value ? stateCounts(data.value) : null))
 const treeItems = computed(() => {
-  const shown = items.value.filter((n) => n.kind !== 'container' || !n.archived || showArchivedProjects.value)
+  const shown = items.value.filter((n) =>
+    (!filters.value.project || n.id === filters.value.project) &&
+    (n.kind !== 'container' || !n.archived || showArchivedProjects.value),
+  )
   return hideDone.value ? pruneDone(shown) : shown
 })
 const kanbanTasks = computed(() => {
@@ -525,9 +538,10 @@ function reloadTree() {
   void loadList()
 }
 
-/** Project and step filter the loaded kanban. */
+/** The same project filters both views and is remembered per repository. */
 function onFilters(next: Filters) {
-  filters.value = next
+  project.value = next.project
+  if (repoId.value) setBacklogProject(repoId.value, next.project)
 }
 
 /** What a live event changed: backlog paths and tasks with changed runs or PRs. */
@@ -832,7 +846,6 @@ watch(
         :mode="mode"
         :levels="levels"
         :projects="projects"
-        :steps="steps"
         :hide-done="hideDone"
         @update:filters="onFilters"
         @update:hide-done="onHideDone"
@@ -860,7 +873,7 @@ watch(
           :filtered="treeFiltered"
           :workflows="workflows"
           @changed="reloadTree"
-          @clear-filter="onHideDone(false); showArchivedProjects = true"
+          @clear-filter="onFilters({}); onHideDone(false); showArchivedProjects = true"
         />
       </template>
       <p v-else-if="loading" class="faint" data-test="list-loading">Načítám…</p>

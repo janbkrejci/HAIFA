@@ -17,7 +17,7 @@ import { chooseOption, openSelect, selectLabels } from '@/test/select'
 import { deferred, type Deferred } from '@/test/deferred'
 import { answerDialog } from '@/test/modal'
 import { useBacklogStatus } from '@/lib/backlogStatus'
-import { HIDE_DONE_KEY, resetTreeForTests } from '@/lib/backlog'
+import { backlogProject, setBacklogProject, HIDE_DONE_KEY, resetTreeForTests } from '@/lib/backlog'
 
 enableAutoUnmount(afterEach)
 
@@ -1227,31 +1227,87 @@ describe('BacklogView', () => {
     again.unmount()
   })
 
-  it('filters the kanban by project and step', async () => {
+  it('shares the project filter between the tree and kanban', async () => {
     go('#/r/haifa/backlog')
     const fetchMock = vi.fn(async (_url: string) => ok(backlogData()))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(BacklogView)
     await flushPromises()
-    expect(wrapper.find('[data-test="project-filter"]').exists()).toBe(false)
-    await wrapper.find('[data-test="mode-kanban"]').trigger('click')
-    const cards = () => wrapper.findAll('[data-card]').map((c) => c.attributes('data-card')).sort()
-    expect(cards()).toEqual(['M01-S01-T01', 'M01-S01-T02', 'M01-S01-T03', 'M02-S01-T01'])
-    expect(wrapper.find('[data-test="project-filter"]').element.parentElement?.textContent).toContain('Modul')
-    expect(wrapper.find('[data-test="step-filter"]').element.parentElement?.textContent).toContain('Step')
-    expect(await selectLabels(wrapper, '[data-test="step-filter"]')).toEqual(['vše', 'M01-S01 – Model', 'M02-S01 – UI'])
+    const roots = () => wrapper.findAll('[data-test="tree"] > [data-node]').map((n) => n.attributes('data-node'))
+    expect(wrapper.find('[data-test="project-filter"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="step-filter"]').exists()).toBe(false)
+    expect(roots()).toEqual(['M01', 'M02'])
     const calls = fetchMock.mock.calls.length
     await chooseOption(wrapper, '[data-test="project-filter"]', 'M01')
-    expect(fetchMock.mock.calls.length).toBe(calls)
+    expect(roots()).toEqual(['M01'])
+    expect(localStorage.getItem('haifa.backlog.project.haifa')).toBe('M01')
+    await wrapper.find('[data-test="mode-kanban"]').trigger('click')
+    const cards = () => wrapper.findAll('[data-card]').map((c) => c.attributes('data-card')).sort()
     expect(cards()).toEqual(['M01-S01-T01', 'M01-S01-T02', 'M01-S01-T03'])
-    expect(await selectLabels(wrapper, '[data-test="step-filter"]')).toEqual(['vše', 'M01-S01 – Model'])
-    await chooseOption(wrapper, '[data-test="step-filter"]', 'M01-S01')
-    expect(cards()).toEqual(['M01-S01-T01', 'M01-S01-T02', 'M01-S01-T03'])
-    await chooseOption(wrapper, '[data-test="project-filter"]', 'M02')
-    expect(cards()).toEqual(['M02-S01-T01'])
-    // an empty filter means all
+    expect(wrapper.get('[data-test="project-filter"]').text()).toContain('M01')
+    expect(wrapper.find('[data-test="step-filter"]').exists()).toBe(false)
+    await wrapper.find('[data-test="mode-tree"]').trigger('click')
+    expect(roots()).toEqual(['M01'])
+    expect(wrapper.get('[data-test="project-filter"]').text()).toContain('M01')
     await chooseOption(wrapper, '[data-test="project-filter"]', '')
-    expect(cards()).toHaveLength(4)
+    expect(roots()).toEqual(['M01', 'M02'])
+    expect(backlogProject('haifa')).toBeUndefined()
+    expect(fetchMock.mock.calls.length).toBe(calls)
+    wrapper.unmount()
+  })
+
+  it('restores the saved project on a new visit and isolates repositories', async () => {
+    go('#/r/haifa/backlog')
+    vi.stubGlobal('fetch', vi.fn(async () => ok(backlogData())))
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await chooseOption(wrapper, '[data-test="project-filter"]', 'M02')
+    wrapper.unmount()
+    const again = mount(BacklogView)
+    await flushPromises()
+    expect(again.find('[data-node="M01"]').exists()).toBe(false)
+    expect(again.find('[data-node="M02"]').exists()).toBe(true)
+    expect(again.get('[data-test="project-filter"]').text()).toContain('M02')
+    again.unmount()
+    go('#/r/other/backlog')
+    const other = mount(BacklogView)
+    await flushPromises()
+    expect(other.find('[data-node="M01"]').exists()).toBe(true)
+    expect(other.find('[data-node="M02"]').exists()).toBe(true)
+    expect(other.get('[data-test="project-filter"]').text()).toContain('vše')
+    expect(backlogProject('other')).toBeUndefined()
+    other.unmount()
+  })
+
+  it('ignores a saved project missing from the backlog', async () => {
+    go('#/r/haifa/backlog')
+    setBacklogProject('haifa', 'gone')
+    vi.stubGlobal('fetch', vi.fn(async () => ok(backlogData())))
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    expect(wrapper.get('[data-test="project-filter"]').text()).toContain('vše')
+    expect(wrapper.find('[data-node="M01"]').exists()).toBe(true)
+    expect(wrapper.find('[data-node="M02"]').exists()).toBe(true)
+    await wrapper.find('[data-test="mode-kanban"]').trigger('click')
+    expect(wrapper.findAll('[data-card]')).toHaveLength(4)
+    wrapper.unmount()
+  })
+
+  it('filters the root containers of a two-level backlog', async () => {
+    go('#/r/haifa/backlog')
+    const data = backlogData()
+    vi.stubGlobal('fetch', vi.fn(async () => ok(backlogData({
+      levels: ['step', 'task'],
+      items: data.items.flatMap((n) => n.kind === 'container' ? n.children : []),
+      steps: data.steps.map((s) => ({ ...s, project: null })),
+    }))))
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await chooseOption(wrapper, '[data-test="project-filter"]', 'M02-S01')
+    expect(wrapper.find('[data-node="M01-S01"]').exists()).toBe(false)
+    expect(wrapper.find('[data-node="M02-S01"]').exists()).toBe(true)
+    await wrapper.find('[data-test="mode-kanban"]').trigger('click')
+    expect(wrapper.findAll('[data-card]').map((c) => c.attributes('data-card'))).toEqual(['M02-S01-T01'])
     wrapper.unmount()
   })
 
@@ -1303,6 +1359,22 @@ describe('BacklogView', () => {
       expect(localStorage.getItem(HIDE_DONE_KEY)).toBe('0')
       expect(again.text()).toContain('M03')
       again.unmount()
+    })
+
+    it('clears the saved project along with other filters from an empty tree', async () => {
+      go('#/r/haifa/backlog')
+      vi.stubGlobal('fetch', vi.fn(async () => ok(withFinishedProject())))
+      const wrapper = mount(BacklogView)
+      await flushPromises()
+      await chooseOption(wrapper, '[data-test="project-filter"]', 'M03')
+      await wrapper.get('[data-test="hide-done"]').setValue(true)
+      expect(wrapper.get('[data-test="empty-filter"]').text()).toContain('Filtru nic neodpovídá.')
+      await wrapper.get('[data-test="clear-filter"]').trigger('click')
+      expect(backlogProject('haifa')).toBeUndefined()
+      expect(wrapper.get('[data-test="project-filter"]').text()).toContain('vše')
+      expect(wrapper.find('[data-node="M01"]').exists()).toBe(true)
+      expect(wrapper.find('[data-node="M03"]').exists()).toBe(true)
+      wrapper.unmount()
     })
 
     it('hides done tasks from the graph', async () => {

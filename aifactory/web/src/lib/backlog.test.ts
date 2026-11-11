@@ -177,16 +177,17 @@ describe('newRun', () => {
   })
 })
 
-describe('kanban filter by project and step', () => {
-  it('returns the tasks of the project and step', async () => {
+describe('kanban filter by project', () => {
+  it('returns the tasks of the project', async () => {
     const { backlogData } = await import('@/test/backlogFixtures')
     const { filterKanban } = await import('./backlog')
     const data = backlogData()
     const ids = (f: Parameters<typeof filterKanban>[2]) => filterKanban(data.tasks, data.items, f).map((t) => t.id)
     expect(ids({})).toEqual(['M01-S01-T01', 'M01-S01-T02', 'M01-S01-T03', 'M02-S01-T01'])
     expect(ids({ project: 'M01' })).toEqual(['M01-S01-T01', 'M01-S01-T02', 'M01-S01-T03'])
-    expect(ids({ step: 'M02-S01' })).toEqual(['M02-S01-T01'])
-    expect(ids({ project: 'M01', step: 'M02-S01' })).toEqual([])
+    expect(ids({ project: 'M02' })).toEqual(['M02-S01-T01'])
+    expect(ids({ project: 'missing' })).toEqual([])
+    expect(filterKanban(data.tasks, undefined, { project: 'M01' })).toEqual([])
   })
 
   it('offers projects and the steps of the chosen project', async () => {
@@ -208,6 +209,39 @@ describe('kanban filter by project and step', () => {
     const top = [{ id: 'A', title: 'Area', path: 'a', project: null }]
     expect(projectOptions([], top)).toEqual([{ id: 'A', title: 'Area' }])
     expect(stepOptions(top)).toEqual([])
+  })
+})
+
+describe('saved backlog project', () => {
+  afterEach(() => {
+    localStorage.clear()
+    vi.restoreAllMocks()
+  })
+
+  it('reads, writes and clears the project independently for each repository', async () => {
+    const { backlogProject, setBacklogProject } = await import('./backlog')
+    expect(backlogProject('one')).toBeUndefined()
+    setBacklogProject('one', 'M01')
+    expect(localStorage.getItem('haifa.backlog.project.one')).toBe('M01')
+    expect(backlogProject('one')).toBe('M01')
+    expect(backlogProject('two')).toBeUndefined()
+    setBacklogProject('two', 'M02')
+    setBacklogProject('one', undefined)
+    expect(localStorage.getItem('haifa.backlog.project.one')).toBeNull()
+    expect(backlogProject('one')).toBeUndefined()
+    expect(backlogProject('two')).toBe('M02')
+    setBacklogProject('two', '')
+    expect(backlogProject('two')).toBeUndefined()
+  })
+
+  it('tolerates unavailable browser storage on reads and writes', async () => {
+    const { backlogProject, setBacklogProject } = await import('./backlog')
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('denied') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('denied') })
+    vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => { throw new Error('denied') })
+    expect(backlogProject('one')).toBeUndefined()
+    expect(() => setBacklogProject('one', 'M01')).not.toThrow()
+    expect(() => setBacklogProject('one', undefined)).not.toThrow()
   })
 })
 
