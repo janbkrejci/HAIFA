@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   GRAPH,
+  PROJECT_BACKLOG,
+  projectBacklogHref,
   LIBRARY_HREF,
   NEW_CONTAINER,
   NEW_STEP,
@@ -143,6 +145,12 @@ describe('the current route', () => {
 })
 
 describe('hrefs', () => {
+  it('links to a project backlog with encoded repo and project ids', () => {
+    const href = projectBacklogHref('a b/c', 'P /č')
+    expect(href).toBe('#/r/a%20b%2Fc/backlog/project/P%20%2F%C4%8D')
+    expect(parseRoute(href)).toEqual({ page: 'repo', repo: 'a b/c', screen: 'backlog', params: [PROJECT_BACKLOG, 'P /č'], redirect: null })
+  })
+
   it('carry the current repo', () => {
     expect(here('review')).toBe('#/r/haifa/review')
     expect(runHref('abc')).toBe('#/r/haifa/runs/abc')

@@ -168,6 +168,13 @@ export function taskHref(taskId: string): string {
 /** `#/r/<id>/backlog/graph/<id>`: the dependency graph of a module or step. */
 export const GRAPH = 'graph'
 
+/** `#/r/<repo>/backlog/project/<id>`: open the project's filtered tree once. */
+export const PROJECT_BACKLOG = 'project'
+
+export function projectBacklogHref(repoId: string, projectId: string): string {
+  return repoHref(repoId, 'backlog', PROJECT_BACKLOG, projectId)
+}
+
 /** Link to the dependency graph of a module or step. */
 export function graphHref(containerId: string): string {
   return here('backlog', GRAPH, containerId)

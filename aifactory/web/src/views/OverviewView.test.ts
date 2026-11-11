@@ -136,6 +136,8 @@ describe('OverviewView', () => {
     const assertGrouped = () => {
       const sections = card.findAll('[data-test="project-section"]')
       expect(sections).toHaveLength(2)
+      expect(sections.map((s) => s.get('h3.project-name a').attributes('href')))
+        .toEqual(['#/r/busy/backlog/project/A', '#/r/busy/backlog/project/B'])
       expect(sections[0].findAll('[data-test="row-running"]').map((r) => r.attributes('data-run'))).toEqual(['run-a'])
       expect(sections[0].find('[data-test="row-review"]').exists()).toBe(false)
       expect(sections[0].get('[data-state="ready"] b').text()).toBe('2')
