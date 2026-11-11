@@ -19,6 +19,7 @@ from test_web_library import client as client
 from test_web_library import initialize, response, state
 
 from aifactory.check import Probe, run_check
+from aifactory.check import context as check_context
 from aifactory.check.machine import SystemMachine
 from aifactory.web import machine
 from fake_exe import make_executable
@@ -239,6 +240,13 @@ class BlockingMachine(FakeMachine):
 
 
 def _small_budget(monkeypatch: pytest.MonkeyPatch, budget: float = 0.5) -> None:
+    # These tests exercise login deadlines, not repository discovery. A real git
+    # probe would correctly be refused with less than MIN_GIT_BUDGET remaining.
+    def outside_repository(start: Path) -> Path:
+        raise check_context.NotARepositoryError(start)
+
+    monkeypatch.setattr(check_context, "main_checkout", outside_repository)
+    monkeypatch.setattr(machine, "outside_repo", lambda: Path(tempfile.gettempdir()))
     monkeypatch.setattr(machine, "CHECK_BUDGET", budget)
     monkeypatch.setattr(machine, "RESULT_GRACE", 0.1)
 
@@ -298,6 +306,8 @@ def test_first_check_timeout_has_no_result_and_is_not_ok(
     state(client).check_machine = blocking
     _small_budget(monkeypatch)
     data = response(client.get("/api/machine/check?fresh=1"), 200, "check_timeout")
+    assert blocking.entered.is_set()
+    assert data["progress"]["step"] == "machine: logins"
     assert data["timed_out"] and not data["ok"] and not data["cached"]
     assert data["checked_at"] is None and data["findings"] == []
     blocking.release.set()
@@ -315,7 +325,7 @@ def test_concurrent_requests_share_one_check_and_its_timeout(
 ) -> None:
     blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
     home, global_state = state(client).home, state(client).library
-    monkeypatch.setattr(machine, "RESULT_GRACE", 0.1)
+    _small_budget(monkeypatch, budget=1.0)
     results: list[tuple[dict[str, Any], bool, str]] = []
 
     def request() -> None:
@@ -573,6 +583,53 @@ def test_registry_git_timeout_degrades_without_traceback(
     monkeypatch.setattr(inherit, "library_head", timed_out)
     counts = machine._harness_repos(tmp_path, FakeMachine(), machine.GlobalState())
     assert not any(counts.values())
+    assert not any(record.exc_info for record in caplog.records)
+
+
+@pytest.mark.parametrize("completed", [1, 2, 3])
+def test_registry_budget_expires_inside_context_without_starting_more_git(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    completed: int,
+) -> None:
+    import subprocess
+
+    from aifactory import procrun
+    from aifactory.library import inherit
+    from aifactory.web.registry import RepoEntry
+
+    clock = [100.0]
+    monkeypatch.setattr(procrun, "_clock", lambda: clock[0])
+    monkeypatch.setattr(machine, "REGISTRY_BUDGET", 10.0)
+    monkeypatch.setattr(inherit, "library_head", lambda root: "library-head")
+    entry = RepoEntry("a", "A", str(tmp_path), "")
+    monkeypatch.setattr(machine, "_registered", lambda home: [entry])
+    global_state = machine.GlobalState()
+    known = {entry.path: (("known",), frozenset({"claude"}))}
+    global_state.roster_counts = dict(known)
+    calls: list[list[str]] = []
+    commands = [
+        ["git", "rev-parse", "--show-toplevel"],
+        ["git", "worktree", "list", "--porcelain"],
+        ["git", "rev-parse", "--verify", "--quiet", "main^{commit}"],
+    ]
+    outputs = [str(tmp_path), f"worktree {tmp_path}\n", "repo-head\n"]
+
+    def finish(argv: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        assert len(calls) < completed, "git must not start with only 0.27 seconds left"
+        assert argv == commands[len(calls)]
+        output = outputs[len(calls)]
+        calls.append(argv)
+        if len(calls) == completed:
+            clock[0] = 109.73
+        return subprocess.CompletedProcess(argv, 0, output, "")
+
+    monkeypatch.setattr(subprocess, "run", finish)
+    counts = machine._harness_repos(tmp_path, FakeMachine(), global_state)
+    assert calls == commands[:completed]
+    assert counts["claude"] == 1
+    assert global_state.roster_counts == known
     assert not any(record.exc_info for record in caplog.records)
 
 

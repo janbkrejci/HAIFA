@@ -43,7 +43,7 @@ DEFAULT_TRACE_DB = ".factory/trace.db"
 
 # A new Windows git process needs useful time even when the enclosing probe has
 # almost exhausted its deadline. Propagate exhaustion; never misreport "no commits".
-MIN_GIT_BUDGET = 1.0
+MIN_GIT_BUDGET = procrun.MIN_GIT_BUDGET
 
 
 def require_git_budget() -> None:

@@ -11,9 +11,12 @@ chyba knihovny, seznamu repozitářů, rosteru či backlogu zobrazí upozorněn�
 výsledku. Pozdní odpověď po timeoutu ani starší souběžná kontrola stav nepřepíše.
 Timeout samotné kontroly počítače si zachovává původní označení.
 
-Čtení gitu v `web/repos.py` odmítne zbývající rozpočet pod jednu sekundu pomocí
+Společný `procrun.limit` i čtení gitu v `web/repos.py` odmítnou zbývající rozpočet pod jednu sekundu pomocí
 `BudgetExceeded`; takové odmítnutí se nezamění za repozitář bez commitů.
-Registry kontrolují rozpočet před načtením knihovny, kontextu repozitáře a rosteru.
+Limit platí pro každý git příkaz uvnitř kontextu, čtení base, commitu a rosteru.
+Ostatní sondy si zachovávají původní limity a git bez rozpočtu se nemění.
+Registry kontrolují rozpočet také po načtení kontextu a konfigurace: odmítnutí,
+které konfigurace převede na chybějící údaj nebo ConfigError, nepřepíše známý stav.
 Při timeoutu použijí známé počty pro stále registrované repozitáře. Timeouty
 registru a knihovny jsou zachyceny před cestou do `monitoring.once` nebo
 `monitoring.periodic`, kde obecná výjimka jinak vytváří stack trace přes
@@ -29,7 +32,7 @@ nebyl měřen; místo nepodloženého zvýšení limitů je vyčerpání rozpoč
 degradací na známý stav. Regrese používají falešné funkce a virtuální čas.
 
 Přímé volající byly hledány v celém `aifactory/tests/` a webových testech.
-Změněné chování pokrývají `test_web_machine.py`, `test_web_repos.py`,
+Změněné chování pokrývají `test_procrun.py`, `test_web_machine.py`, `test_web_repos.py`,
 `test_web_factory_roster.py`, `OverviewReadiness.test.ts`, `App.test.ts` a
 `test_machine_check_browser.py`. Plný roster dále používají testy editoru
 `RosterEditor.test.ts`, `FactoryView.test.ts` a test vlastního agenta

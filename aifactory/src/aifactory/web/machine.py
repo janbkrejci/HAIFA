@@ -495,6 +495,7 @@ def _harness_repos(home: Path, machine: Machine | None, state: GlobalState) -> d
 
             require_git_budget()
             library_key = (str(library_root()), library_head(library_root()))
+            require_git_budget()
         except subprocess.TimeoutExpired:
             for _, names in previous.values():
                 for name in names:
@@ -508,6 +509,9 @@ def _harness_repos(home: Path, machine: Machine | None, state: GlobalState) -> d
                 context = CheckContext(
                     Path(repo.path), offline=True, machine=adapter, require_repo=False
                 )
+                # config.source can translate a refused git command into a missing
+                # value. Do not cache that partial read as a real configuration.
+                require_git_budget()
                 if not context.in_repo:
                     continue
                 # Base and its commit are read again on every request. Working-tree
@@ -520,6 +524,7 @@ def _harness_repos(home: Path, machine: Machine | None, state: GlobalState) -> d
                     library_key,
                     _roster_files(context.main),
                 )
+                require_git_budget()
                 cached = previous.get(repo.path)
                 if cached is not None and cached[0] == key:
                     names = cached[1]
@@ -531,18 +536,22 @@ def _harness_repos(home: Path, machine: Machine | None, state: GlobalState) -> d
                         if roster is not None
                         else frozenset()
                     )
+                    require_git_budget()
                 current[repo.path] = (key, names)
                 for name in names:
                     counts[name] += 1
-            except subprocess.TimeoutExpired:
+            except (subprocess.TimeoutExpired, ConfigError, OSError) as exc:
+                left = procrun.remaining()
+                if not isinstance(exc, subprocess.TimeoutExpired) and (
+                    left is None or left >= procrun.MIN_GIT_BUDGET
+                ):
+                    continue
                 for saved in registered:
                     if saved.path not in current and saved.path in previous:
                         current[saved.path] = previous[saved.path]
                         for name in previous[saved.path][1]:
                             counts[name] += 1
                 break
-            except (ConfigError, OSError):
-                continue
     with state.roster_lock:
         state.roster_counts = current
     return counts
