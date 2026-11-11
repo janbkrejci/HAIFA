@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T114
 title: "Backlog: filtr projektu ve stromu i kanbanu, bez filtru stepu, zapamatovaný"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T116]
 writes: [aifactory/web/src/lib/backlog.ts, aifactory/web/src/lib/backlog.test.ts, aifactory/web/src/components/backlog/BacklogFilters.vue, aifactory/web/src/components/backlog/BacklogFilters.test.ts, aifactory/web/src/views/BacklogView.vue, aifactory/web/src/views/BacklogView.test.ts, aifactory/src/aifactory/guide/04-backlog.md, aifactory/tests/e2e/test_f3_browser.py, aifactory/src/aifactory/web/static/]
@@ -32,3 +32,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-11 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/221 · náklady $0.00
