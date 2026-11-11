@@ -17,7 +17,7 @@ import { chooseOption, openSelect, selectLabels } from '@/test/select'
 import { deferred, type Deferred } from '@/test/deferred'
 import { answerDialog } from '@/test/modal'
 import { useBacklogStatus } from '@/lib/backlogStatus'
-import { backlogProject, setBacklogProject, HIDE_DONE_KEY, resetTreeForTests } from '@/lib/backlog'
+import { backlogProject, setBacklogProject, isExpanded, HIDE_DONE_KEY, resetTreeForTests } from '@/lib/backlog'
 
 enableAutoUnmount(afterEach)
 
@@ -57,6 +57,57 @@ afterEach(() => {
 })
 
 describe('BacklogView', () => {
+  it('opens a project link in the tree, saves its filter and preserves other expansion', async () => {
+    go('#/r/haifa/backlog')
+    expandTree(['M02', 'M02-S01'])
+    setBacklogProject('other', 'M02')
+    vi.stubGlobal('fetch', vi.fn(async () => ok(backlogData())))
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    await wrapper.get('[data-test="mode-kanban"]').trigger('click')
+    const historyLength = window.history.length
+    const replace = vi.spyOn(window.history, 'replaceState')
+    go('#/r/haifa/backlog/project/M01')
+    await flushPromises()
+    expect(wrapper.find('[data-test="tree"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="project-filter"]').text()).toContain('M01')
+    expect(backlogProject('haifa')).toBe('M01')
+    expect(backlogProject('other')).toBe('M02')
+    expect(wrapper.find('[data-node="M01-S01"]').exists()).toBe(true)
+    expect(wrapper.find('[data-node="M02"]').exists()).toBe(false)
+    expect(isExpanded('M01')).toBe(true)
+    expect(isExpanded('M01-S01')).toBe(false)
+    expect(isExpanded('M02')).toBe(true)
+    expect(isExpanded('M02-S01')).toBe(true)
+    expect(window.location.hash).toBe('#/r/haifa/backlog')
+    expect(replace).toHaveBeenCalledWith(null, '', '#/r/haifa/backlog')
+    expect(window.history.length).toBe(historyLength + 1)
+    await wrapper.get('[data-test="mode-kanban"]').trigger('click')
+    expect(wrapper.find('[data-item="M01-S01-T02"]').exists()).toBe(true)
+    expect(wrapper.find('[data-item="M02-S01-T01"]').exists()).toBe(false)
+    // The consumed link must not force its project on later reloads.
+    await chooseOption(wrapper, '[data-test="project-filter"]', 'M02')
+    await wrapper.get('[data-test="refresh"]').trigger('click')
+    await flushPromises()
+    expect(backlogProject('haifa')).toBe('M02')
+    expect(wrapper.find('[data-item="M02-S01-T01"]').exists()).toBe(true)
+  })
+
+  it('opens an unknown project link as an unfiltered tree and clears the saved filter', async () => {
+    setBacklogProject('haifa', 'M01')
+    go('#/r/haifa/backlog/project/missing')
+    vi.stubGlobal('fetch', vi.fn(async () => ok(backlogData())))
+    const wrapper = mount(BacklogView)
+    await flushPromises()
+    expect(wrapper.find('[data-test="tree"]').exists()).toBe(true)
+    expect(wrapper.get('[data-test="project-filter"]').text()).toContain('vše')
+    expect(wrapper.find('[data-node="M01"]').exists()).toBe(true)
+    expect(wrapper.find('[data-node="M02"]').exists()).toBe(true)
+    expect(backlogProject('haifa')).toBeUndefined()
+    expect(window.location.hash).toBe('#/r/haifa/backlog')
+    expect(isExpanded('missing')).toBe(false)
+  })
+
   it('archives and restores projects from the tree without exposing their tasks in kanban', async () => {
     go('#/r/haifa/backlog')
     let archived = false

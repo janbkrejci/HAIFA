@@ -1,7 +1,7 @@
 ---
 id: HAIFA-REFINEMENT-T115
 title: "Přehled: klik na projekt otevře strom backlogu filtrovaný na projekt s rozbalenou první úrovní"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T114]
 writes: [aifactory/web/src/components/overview/RepoWork.vue, aifactory/web/src/components/overview/RepoCard.test.ts, aifactory/web/src/views/OverviewView.test.ts, aifactory/web/src/lib/router.ts, aifactory/web/src/lib/router.test.ts, aifactory/web/src/views/BacklogView.vue, aifactory/web/src/views/BacklogView.test.ts, aifactory/tests/e2e/test_multi_repo_browser.py, aifactory/src/aifactory/web/static/]
@@ -27,3 +27,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-11 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/222 · náklady $0.00

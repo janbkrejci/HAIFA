@@ -27,6 +27,8 @@ import {
   childContainerIds,
   commitBacklog,
   editTask,
+  expandKeys,
+  nodeKey,
   fetchBacklog,
   fetchGraph,
   fetchRunCheck,
@@ -82,6 +84,7 @@ import {
 import { isDbBusyText } from '@/lib/api'
 import {
   GRAPH,
+  PROJECT_BACKLOG,
   NEW_CONTAINER,
   NEW_INTENT,
   NEW_STEP,
@@ -112,6 +115,7 @@ const target = computed(() => params.value[0] ?? null)
 const routeKey = computed(() => params.value.join('/'))
 const isNew = computed(() => target.value === NEW_TASK)
 const isGraph = computed(() => target.value === GRAPH)
+const isProjectBacklog = computed(() => target.value === PROJECT_BACKLOG)
 const graphId = computed(() => (isGraph.value ? (params.value[1] ?? null) : null))
 const isNewStep = computed(() => target.value === NEW_STEP)
 const isIntent = computed(() => target.value === NEW_INTENT)
@@ -126,7 +130,7 @@ const newParent = computed(() =>
 /** `…/backlog/new/<step id>`: the step the new task form preselects. */
 const newTaskStep = computed(() => (isNew.value ? (params.value[1] ?? null) : null))
 const taskId = computed(() =>
-  target.value && !isNew.value && !isGraph.value && !isNewContainer.value && !isIntent.value
+  target.value && !isNew.value && !isGraph.value && !isProjectBacklog.value && !isNewContainer.value && !isIntent.value
     ? target.value
     : null,
 )
@@ -283,6 +287,15 @@ async function loadList() {
     const list = await fetchBacklog()
     if (seq === loadSeq) {
       data.value = list
+      if (isProjectBacklog.value) {
+        const selected = items.value.find((n) => n.kind === 'container' && n.id === params.value[1])
+        project.value = selected?.id ?? undefined
+        if (repoId.value) setBacklogProject(repoId.value, project.value)
+        mode.value = 'tree'
+        if (selected?.kind === 'container') expandKeys([nodeKey(selected)])
+        window.history.replaceState(null, '', here('backlog'))
+        window.dispatchEvent(new HashChangeEvent('hashchange'))
+      }
       if (isNew.value) newTaskReady.value = true
     }
   } catch (e) {

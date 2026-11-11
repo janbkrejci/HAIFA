@@ -59,6 +59,15 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(credentials))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex-home"))
     repo_a = make_f3_repo(tmp_path / "repo-a")
+    # A second project makes the overview show project headings and lets the browser
+    # prove that the link excludes another project's task in both backlog modes.
+    second = repo_a / "backlog/M02-web/S01-ui"
+    second.mkdir(parents=True)
+    (second.parent / "index.md").write_text("---\nid: M02\ntitle: Web\n---\n", encoding="utf-8")
+    (second / "index.md").write_text("---\nid: M02-S01\ntitle: UI\n---\n", encoding="utf-8")
+    (second / "M02-S01-T01-layout.md").write_text(
+        "---\nid: M02-S01-T01\ntitle: Layout\nstatus: todo\n---\n", encoding="utf-8"
+    )
     repo_b, bare = fresh_repo(tmp_path)
     before_install = git(repo_b, "rev-parse", "HEAD")
     script = fake_script(tmp_path / "fake.json")
@@ -273,6 +282,26 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
                     ), overview_a
                     expect(review).to_contain_text(f"PR #{pr['pr_id']}")
                     expect(running).to_have_count(0)
+                    project = card.locator('[data-project="M01"] h3.project-name a')
+                    expect(project).to_have_attribute("href", f"#/r/{id_a}/backlog/project/M01")
+                    project.focus()
+                    project.press("Enter")
+                    expect(page).to_have_url(f"{obs.url}/#/r/{id_a}/backlog")
+                    expect(page.locator('[data-test="tree"]')).to_be_visible()
+                    expect(page.locator('[data-node="M01-S01"]')).to_be_visible()
+                    expect(page.locator('[data-node="M02"]')).to_have_count(0)
+                    expect(page.locator('[data-test="project-filter"]')).to_contain_text("M01")
+                    assert (
+                        page.evaluate(
+                            "key => localStorage.getItem(key)", f"haifa.backlog.project.{id_a}"
+                        )
+                        == "M01"
+                    )
+                    page.locator('[data-test="mode-kanban"]').click()
+                    expect(page.locator(f'[data-item="{task}"]')).to_be_visible()
+                    expect(page.locator('[data-item="M02-S01-T01"]')).to_have_count(0)
+                    expect(page.locator('[data-test="project-filter"]')).to_contain_text("M01")
+                    _menu(page, "switch-overview")
                     expect(
                         page.locator('[data-test="total-review"] [data-test="total-count"]')
                     ).to_have_text("1")
