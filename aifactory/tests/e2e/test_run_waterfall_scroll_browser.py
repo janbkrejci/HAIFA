@@ -217,7 +217,7 @@ def _serve(details: dict[str, dict[str, Any]]) -> Any:
                 data = {
                     **{k: detail[k] for k in ("run", "session", "agents", "cursors")},
                     "events": [],
-                    "phases": [],
+                    "phases": detail["phases"],
                     "gates": [],
                     "envelopes": [],
                     "usage_delta": {"read": 0, "written": 0},
@@ -284,6 +284,33 @@ def _assert_in_viewport(page: Page, selector: str) -> None:
     assert box["x"] >= 0 and box["x"] + box["width"] <= width + 0.5, (selector, box, width)
 
 
+def _at_right(page: Page) -> None:
+    page.wait_for_function("""() => {
+        const el = document.querySelector('[data-test="waterfall-scroll"]');
+        return el && Math.abs(el.scrollWidth - el.clientWidth - el.scrollLeft) <= 2;
+    }""")
+
+
+def _grow(page: Page, details: dict[str, dict[str, Any]], start: datetime) -> None:
+    """Append queued work on the same lane so the minimum-width canvas must grow."""
+    phases = details["long-run"]["phases"]
+    for _ in range(10):
+        seq = len(phases) + 1
+        phases.append(_phase("long-run", f"extra-{seq}", seq, status="queued"))
+    details["long-run"] = _detail("long-run", "running", start, phases)
+    previous = page.locator('[data-test="waterfall-scroll"]').evaluate("el => el.scrollWidth")
+    page.evaluate("""() => window.waterfallLive.dispatchEvent(new MessageEvent('trace', {
+        data: JSON.stringify({run_ids: ['long-run'], task_ids: [], phases: 1, events: 0})
+    }))""")
+    expect(page.locator("button.block")).to_have_count(len(phases))
+    page.wait_for_function(
+        """previous =>
+        document.querySelector('[data-test="waterfall-scroll"]').scrollWidth > previous
+    """,
+        arg=previous,
+    )
+
+
 def test_long_run_waterfall_scrolls_locally() -> None:
     now = datetime.now(UTC)
     long_start = now - timedelta(minutes=30)
@@ -314,12 +341,15 @@ def test_long_run_waterfall_scrolls_locally() -> None:
         "long-run": _detail("long-run", "running", long_start, long_phases),
         "short-run": _detail("short-run", "succeeded", short_start, short_phases),
     }
-    last = long_phases[-1]
 
     with sync_playwright() as playwright:
         browser = _launch(playwright)
         try:
             page = browser.new_page(viewport={"width": 1280, "height": 900})
+            page.add_init_script("""window.EventSource = class extends EventTarget {
+                constructor() { super(); window.waterfallLive = this; }
+                close() {}
+            }""")
             page.route("**/*", _serve(details))
             page.goto("http://haifa.test/#/r/haifa/runs/long-run")
             region = page.locator('[data-test="waterfall-scroll"]')
@@ -331,9 +361,12 @@ def test_long_run_waterfall_scrolls_locally() -> None:
             blocks = region.locator("button.block")
             expect(blocks).to_have_count(len(long_phases))
 
+            _at_right(page)
             geometry = region.evaluate(GEOMETRY)
             assert geometry["scrollWidth"] > geometry["clientWidth"] + 1000, geometry
-            assert geometry["scrollLeft"] == 0
+            assert (
+                abs(geometry["scrollLeft"] - geometry["scrollWidth"] + geometry["clientWidth"]) <= 2
+            )
             _check_lanes(geometry)
             # every lane keeps its own phases: one builder lane holds the dozens of builds
             builder = next(lane for lane in geometry["lanes"] if lane["id"] == "agent:builder")
@@ -343,11 +376,49 @@ def test_long_run_waterfall_scrolls_locally() -> None:
             _assert_in_viewport(page, "header.head")
             _assert_in_viewport(page, '[data-test="waterfall"]')
 
-            # scroll the gantt to its end: the axis moves with every lane, labels stay put
-            region.evaluate("el => { el.scrollLeft = el.scrollWidth }")
+            toggle = page.get_by_role("checkbox", name="Automaticky posouvat pohled")
+            expect(toggle).to_be_checked()
+            _grow(page, details, long_start)
+            _at_right(page)
+            # Native keyboard scrolling pauses following; data growth preserves that offset.
+            region.focus()
+            region.evaluate("""el => {
+                window.waterfallScrollEnd = new Promise(resolve =>
+                    el.addEventListener('scrollend', () => resolve(), {once: true}));
+            }""")
+            region.press("ArrowLeft")
+            expect(toggle).not_to_be_checked()
+            page.evaluate("window.waterfallScrollEnd")
+            manual_left = region.evaluate("el => el.scrollLeft")
+            _grow(page, details, long_start)
+            expect(toggle).not_to_be_checked()
+            assert abs(region.evaluate("el => el.scrollLeft") - manual_left) <= 2
+            # Position just short of the new edge, then return with a native horizontal key.
+            region.evaluate("el => { el.scrollLeft = el.scrollWidth - el.clientWidth - 20 }")
+            region.press("ArrowRight")
+            expect(toggle).to_be_checked()
+            _at_right(page)
+            _grow(page, details, long_start)
+            _at_right(page)
+            # Space operates the native accessible checkbox in both directions.
+            toggle.focus()
+            toggle.press("Space")
+            expect(toggle).not_to_be_checked()
+            paused = region.evaluate("el => el.scrollLeft")
+            _grow(page, details, long_start)
+            assert abs(region.evaluate("el => el.scrollLeft") - paused) <= 2
+            toggle.press("Space")
+            expect(toggle).to_be_checked()
+            _at_right(page)
+            before_resize = region.evaluate("el => el.clientWidth")
+            page.set_viewport_size({"width": 1000, "height": 900})
             page.wait_for_function(
-                "document.querySelector('[data-test=\"waterfall-scroll\"]').scrollLeft > 0"
+                """width =>
+                document.querySelector('[data-test="waterfall-scroll"]').clientWidth < width
+            """,
+                arg=before_resize,
             )
+            _at_right(page)
             scrolled = region.evaluate(GEOMETRY)
             assert scrolled["scrollLeft"] >= scrolled["scrollWidth"] - scrolled["clientWidth"] - 1
             _check_lanes(scrolled)
@@ -355,6 +426,7 @@ def test_long_run_waterfall_scrolls_locally() -> None:
                 assert abs(lane["label"]["left"] - scrolled["region"]["left"]) < 1.5, lane["label"]
             _assert_document_fits(page)
 
+            last = details["long-run"]["phases"][-1]
             target = region.locator(f'button.block[data-phase="{last["phase_id"]}"]')
             # bring the block into the window first: a scroll dismisses an open tooltip
             target.scroll_into_view_if_needed()
@@ -386,6 +458,7 @@ def test_long_run_waterfall_scrolls_locally() -> None:
             short = region.evaluate(GEOMETRY)
             assert short["scrollWidth"] <= short["clientWidth"], short
             expect(region).not_to_have_attribute("data-overflow", "true")
+            expect(toggle).to_have_count(0)
             _check_lanes(short)
             _assert_document_fits(page)
         finally:
