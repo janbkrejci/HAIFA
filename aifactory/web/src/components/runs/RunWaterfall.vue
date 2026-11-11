@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // The run's waterfall (gantt), ported from the sssf visualizer's SessionTrace.vue.
 // Layout lives in lib/waterfall.ts; this component only renders it.
-import { computed, onBeforeUnmount, onMounted, ref, type Component } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch, type Component } from 'vue'
 import { Bot, Check, Circle, LoaderCircle, SquareTerminal, UserRound, X } from 'lucide-vue-next'
 import { hexAlpha } from '@/lib/events'
 import { fmtDuration, fmtInt } from '@/lib/format'
@@ -36,8 +36,17 @@ const MIN_TRACK_PX = 320
 
 // One scroll region holds the axis and every lane, so they scroll together and stay aligned.
 const scroller = ref<HTMLElement | null>(null)
+const canvas = ref<HTMLElement | null>(null)
 const trackPx = ref(DEFAULT_TRACK_PX)
 let observer: ResizeObserver | undefined
+const following = ref(true)
+const overflowing = ref(false)
+const EDGE_PX = 2
+let frame: number | undefined
+let disposed = false
+let measuredWidth = 0
+let measuredScrollWidth = 0
+let lastLeft = 0
 
 function measure() {
   const w = scroller.value?.clientWidth ?? 0
@@ -45,17 +54,77 @@ function measure() {
   if (w > 0) trackPx.value = Math.max(w - LABEL_PX, MIN_TRACK_PX)
 }
 
-onMounted(() => {
+function syncScroll() {
+  const el = scroller.value
+  if (!el) return
+  const overflow = el.scrollWidth > el.clientWidth
+  if (!overflow || !overflowing.value) following.value = true
+  overflowing.value = overflow
+  measuredWidth = el.clientWidth
+  measuredScrollWidth = el.scrollWidth
+  if (overflow && following.value) el.scrollLeft = el.scrollWidth - el.clientWidth
+  lastLeft = el.scrollLeft
+}
+
+// Wait for Vue's width update and browser layout, coalescing data and resize notifications.
+function scheduleScroll() {
+  void nextTick(() => {
+    if (disposed || frame !== undefined) return
+    frame = requestAnimationFrame(() => {
+      frame = undefined
+      syncScroll()
+    })
+  })
+}
+
+function onScroll() {
+  const el = scroller.value
+  if (!el) return
+  // Layout can clamp the offset or move the right edge before ResizeObserver runs.
+  // Only a changed offset with unchanged dimensions represents a manual scroll.
+  if (el.clientWidth !== measuredWidth || el.scrollWidth !== measuredScrollWidth) {
+    measure()
+    scheduleScroll()
+    return
+  }
+  if (el.scrollLeft !== lastLeft) {
+    following.value = el.scrollWidth - el.clientWidth - el.scrollLeft <= EDGE_PX
+    lastLeft = el.scrollLeft
+  }
+}
+
+function toggleFollowing(event: Event) {
+  following.value = (event.target as HTMLInputElement).checked
+  if (following.value) syncScroll()
+}
+
+watch([scroller, canvas], () => {
+  observer?.disconnect()
   measure()
   if (typeof ResizeObserver !== 'undefined' && scroller.value) {
-    observer = new ResizeObserver(measure)
+    observer = new ResizeObserver(() => {
+      measure()
+      scheduleScroll()
+    })
     observer.observe(scroller.value)
+    if (canvas.value) observer.observe(canvas.value)
   }
+  scheduleScroll()
+}, { flush: 'post' })
+
+watch(() => props.detail.run.run_id, () => {
+  following.value = true
+  scheduleScroll()
 })
 
-onBeforeUnmount(() => observer?.disconnect())
+onBeforeUnmount(() => {
+  disposed = true
+  observer?.disconnect()
+  if (frame !== undefined) cancelAnimationFrame(frame)
+})
 
 const timeline = computed(() => buildTimeline(props.detail, props.now, trackPx.value))
+watch(timeline, scheduleScroll, { flush: 'post' })
 // A run that fits fills the region; a longer one gets a canvas as wide as its layout needs.
 const canvasStyle = computed(() =>
   timeline.value.overflow ? { width: `${LABEL_PX + timeline.value.width}px` } : { width: '100%' },
@@ -139,16 +208,21 @@ function select(p: PhaseRow) {
 <template>
   <p v-if="!hasPhases" class="faint">Žádné fáze v trace.</p>
   <div v-else class="waterfall" data-test="waterfall">
+    <label v-if="overflowing" class="wf-follow">
+      <input type="checkbox" :checked="following" @change="toggleFollowing" />
+      Automaticky posouvat pohled
+    </label>
     <div
       ref="scroller"
       class="wf-scroll"
       data-test="waterfall-scroll"
-      :data-overflow="timeline.overflow || undefined"
+      :data-overflow="overflowing || undefined"
       role="region"
       aria-label="Časová osa fází"
       tabindex="0"
+      @scroll="onScroll"
     >
-      <div class="wf-canvas" data-test="waterfall-canvas" :style="canvasStyle">
+      <div ref="canvas" class="wf-canvas" data-test="waterfall-canvas" :style="canvasStyle">
         <div class="row axis-row">
           <div class="label" />
           <div class="track">
@@ -262,13 +336,20 @@ function select(p: PhaseRow) {
 }
 
 /* The only horizontal scroll of the detail: axis and lanes move together. */
+.wf-follow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
 .wf-scroll {
   overflow-x: auto;
   overflow-y: hidden;
 }
 
 .wf-canvas {
-  min-width: 100%;
+  min-width: max(100%, 560px);
 }
 
 .row {

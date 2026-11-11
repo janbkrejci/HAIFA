@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RunWaterfall from './RunWaterfall.vue'
 import { AGENT_FALLBACK_COLORS } from '@/lib/events'
 import type { PhaseRow, RunDetail } from '@/lib/runs'
@@ -7,6 +7,7 @@ import { MIN_BLOCK_PX } from '@/lib/waterfall'
 import { detail, events, moreEvents } from '@/test/runsFixtures'
 
 const NOW = Date.parse('2026-01-01T10:10:00Z')
+enableAutoUnmount(afterEach)
 
 function withAgent(): RunDetail {
   const d = detail()
@@ -195,7 +196,6 @@ describe('RunWaterfall', () => {
   it('scrolls a long run in one region holding the axis and every lane', () => {
     const wrapper = mount(RunWaterfall, { props: { detail: longDetail(), events: [], now: Date.parse('2026-01-01T10:05:00Z') } })
     const scroll = wrapper.find('[data-test="waterfall-scroll"]')
-    expect(scroll.attributes('data-overflow')).toBe('true')
     expect(wrapper.findAll('[data-test="waterfall-scroll"]')).toHaveLength(1)
     expect(scroll.find('.axis-row').exists()).toBe(true)
     expect(scroll.findAll('[data-lane]')).toHaveLength(wrapper.findAll('[data-lane]').length)
@@ -220,6 +220,10 @@ describe('RunWaterfall', () => {
     let width = 240 + 1600
     let resize: (() => void) | undefined
     vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width)
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(function (this: HTMLElement) {
+      return Math.max(width, Number.parseFloat(this.querySelector<HTMLElement>('.wf-canvas')?.style.width ?? '') || 0)
+    })
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { queueMicrotask(() => cb(0)); return 1 })
     vi.stubGlobal(
       'ResizeObserver',
       class {
@@ -248,5 +252,107 @@ describe('RunWaterfall', () => {
     await flushPromises()
     expect(scroll().attributes('data-overflow')).toBe('true')
     expect(Number.parseFloat((wrapper.find('[data-test="waterfall-canvas"]').element as HTMLElement).style.width)).toBeGreaterThan(840)
+  })
+})
+
+describe('RunWaterfall following', () => {
+  function layout() {
+    let width = 800
+    let content = 2400
+    let resize = () => {}
+    const disconnect = vi.fn()
+    const observe = vi.fn()
+    const frames = new Map<number, FrameRequestCallback>()
+    let id = 0
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(() => width)
+    vi.spyOn(HTMLElement.prototype, 'scrollWidth', 'get').mockImplementation(() => content)
+    vi.stubGlobal('requestAnimationFrame', (cb: FrameRequestCallback) => { frames.set(++id, cb); return id })
+    vi.stubGlobal('cancelAnimationFrame', (n: number) => frames.delete(n))
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: () => void) { resize = cb }
+      observe = observe
+      disconnect = disconnect
+    })
+    return {
+      disconnect, observe, frames,
+      resize(w: number, c: number) { width = w; content = c; resize() },
+      async settle() {
+        await flushPromises()
+        const pending = [...frames.values()]
+        frames.clear()
+        pending.forEach((cb) => cb(0))
+        await flushPromises()
+      },
+    }
+  }
+
+  it('follows real overflow, ignores layout/programmatic scrolls and respects manual offsets and selection', async () => {
+    const l = layout()
+    const wrapper = mount(RunWaterfall, { props: { detail: detail(), events: [], now: NOW } })
+    await l.settle()
+    const region = wrapper.get('[data-test="waterfall-scroll"]')
+    const el = region.element as HTMLElement
+    const toggle = () => wrapper.get('input[type="checkbox"]')
+    // This short timeline still overflows on a narrow viewport.
+    expect(el.scrollLeft).toBe(1600)
+    expect((toggle().element as HTMLInputElement).checked).toBe(true)
+    await region.trigger('scroll')
+    l.resize(800, 3000)
+    await region.trigger('scroll') // browser layout event before the observer's frame
+    await l.settle()
+    expect(el.scrollLeft).toBe(2200)
+    el.scrollLeft = 400
+    await region.trigger('scroll') // scrollbar, wheel and keyboard share this event
+    expect((toggle().element as HTMLInputElement).checked).toBe(false)
+    await wrapper.setProps({ phaseId: 'p1', now: NOW + 1000 })
+    l.resize(700, 3400)
+    await l.settle()
+    expect(el.scrollLeft).toBe(400)
+    el.scrollLeft = 2699 // tolerate rounding at the right edge
+    await region.trigger('scroll')
+    expect((toggle().element as HTMLInputElement).checked).toBe(true)
+    l.resize(600, 3800)
+    await l.settle()
+    expect(el.scrollLeft).toBe(3200)
+    await toggle().setValue(false)
+    l.resize(600, 4200)
+    await l.settle()
+    expect(el.scrollLeft).toBe(3200)
+    await toggle().setValue(true)
+    expect(el.scrollLeft).toBe(3600)
+    await toggle().setValue(false)
+    await wrapper.setProps({ detail: { ...detail(), run: { ...detail().run, run_id: 'another' } } })
+    await l.settle()
+    expect((toggle().element as HTMLInputElement).checked).toBe(true)
+    expect(el.scrollLeft).toBe(3600)
+  })
+
+  it('starts observing when phases arrive, resets after overflow disappears and cancels pending work', async () => {
+    const l = layout()
+    const d = detail()
+    const wrapper = mount(RunWaterfall, { props: { detail: { ...d, phases: [] }, events: [], now: NOW } })
+    await l.settle()
+    expect(l.observe).not.toHaveBeenCalled()
+    await wrapper.setProps({ detail: d })
+    await l.settle()
+    expect(l.observe).toHaveBeenCalledTimes(2)
+    const el = wrapper.get('[data-test="waterfall-scroll"]').element as HTMLElement
+    expect(el.scrollLeft).toBe(1600)
+    await wrapper.get('input').setValue(false)
+    l.resize(800, 800)
+    await l.settle()
+    expect(wrapper.find('input').exists()).toBe(false)
+    l.resize(500, 800)
+    await l.settle()
+    expect(el.scrollLeft).toBe(300)
+    expect((wrapper.get('input').element as HTMLInputElement).checked).toBe(true)
+    l.resize(400, 900)
+    await flushPromises()
+    expect(l.frames.size).toBe(1)
+    wrapper.unmount()
+    expect(l.disconnect).toHaveBeenCalled()
+    expect(l.frames.size).toBe(0)
+    await l.settle()
+    expect(el.scrollLeft).toBe(300)
   })
 })
