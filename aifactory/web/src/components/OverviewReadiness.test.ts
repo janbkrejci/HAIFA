@@ -44,6 +44,24 @@ beforeEach(() => vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] }))
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals() })
 
 describe('overview readiness', () => {
+  it.each([false, true])('warns about unchecked or stale results and explicitly retries (stale=%s)', async stale => {
+    const options: StubOptions = { machine: { ...machine, ok: false, checked: stale, stale, checked_at: stale ? machine.checked_at : null } }
+    const fetchMock = stub(options)
+    const wrapper = mount(OverviewReadiness)
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/machine/check')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/machine/check?fresh=1')
+    expect(wrapper.get('[data-test="readiness-warning"]').text()).toContain(stale ? 'Zastaralý výsledek' : 'zatím nebyl zkontrolován')
+    expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(false)
+    options.machine = machine
+    await wrapper.get('[data-test="readiness-machine-retry"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/machine/check?fresh=1')
+    expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
+  })
+
+
   it.each([0, 1])('reads only the project summary for onboarding (%s projects)', async projects => {
     const fetchMock = stub({ projects })
     const wrapper = mount(OverviewReadiness)

@@ -66,9 +66,9 @@ async function load(fresh = false) {
 }
 onBeforeUnmount(() => stopProgress?.())
 
-/** After a write to the library: check again, and let the topbar chips follow. */
+/** After a library write: read the updated library rules and let the topbar chips follow. */
 async function onLibraryChanged() {
-  await load(true)
+  await load()
   window.dispatchEvent(new Event('factory-applied'))
 }
 
@@ -90,9 +90,10 @@ onMounted(() => { void load() })
       <p v-if="error" role="alert" data-test="setup-error">{{ error }}</p>
       <p v-if="loading" data-test="setup-busy">{{ progress ? `Probíhá kontrola – čeká na: ${progress}` : 'Načítám…' }}</p>
       <p v-if="!loading && timeout" role="alert" data-test="machine-timeout">{{ timeout }}</p>
+      <p v-if="!loading && report && !timeout && (report.checked === false || report.stale)" role="alert" data-test="machine-status">{{ report.checked === false ? 'Počítač zatím nebyl zkontrolován.' : 'Zastaralý výsledek kontroly počítače.' }} Pro aktuální stav spusť ruční kontrolu tlačítkem Znovu zkontrolovat.</p>
       <div v-if="report && report.checked_at" class="summary" data-test="machine-summary">
-        <p class="verdict" :class="counts.error || report.timed_out ? 'is-bad' : 'is-ok'" data-test="machine-verdict">
-          <template v-if="report.timed_out">Poslední známý stav: </template>
+        <p class="verdict" :class="counts.error || report.timed_out || report.stale ? 'is-bad' : 'is-ok'" data-test="machine-verdict">
+          <template v-if="report.timed_out || report.stale">Poslední známý stav: </template>
           <template v-if="!counts.error && !counts.warning">Počítač je v pořádku</template>
           <template v-else>{{ counts.error }} chyb, {{ counts.warning }} varování</template>
         </p>

@@ -40,7 +40,7 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
         <li v-for="(issue, index) in issues" :key="index">
           <strong>{{ issue.title }}</strong>
           <span>{{ issue.hint }}</span>
-          <button v-if="issue.retry" type="button" class="action" data-test="readiness-timeout-retry" @click="recheck">{{ issue.action }}</button>
+          <button v-if="issue.retry" type="button" class="action" :data-test="issue.id === 'timeout' ? 'readiness-timeout-retry' : 'readiness-machine-retry'" @click="recheck">{{ issue.action }}</button>
           <button v-else-if="issue.repo" type="button" class="action" :disabled="removing !== null" @click="remove(issue.repo)">{{ issue.action }}</button>
           <button v-else-if="issue.href === '#harness-settings'" type="button" class="action" @click="openHarnesses">{{ issue.action }}</button>
           <span v-else class="actions">
