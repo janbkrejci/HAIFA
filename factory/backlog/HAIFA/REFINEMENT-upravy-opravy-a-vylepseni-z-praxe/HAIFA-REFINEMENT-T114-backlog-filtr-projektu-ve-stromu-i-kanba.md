@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T114
 title: "Backlog: filtr projektu ve stromu i kanbanu, bez filtru stepu, zapamatovaný"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T116]
 writes: [aifactory/web/src/lib/backlog.ts, aifactory/web/src/lib/backlog.test.ts, aifactory/web/src/components/backlog/BacklogFilters.vue, aifactory/web/src/components/backlog/BacklogFilters.test.ts, aifactory/web/src/views/BacklogView.vue, aifactory/web/src/views/BacklogView.test.ts, aifactory/src/aifactory/guide/04-backlog.md, aifactory/tests/e2e/test_f3_browser.py, aifactory/src/aifactory/web/static/]
