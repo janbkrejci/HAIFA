@@ -66,7 +66,7 @@ describe('Knihovna page', () => {
     expect(wrapper.find('[data-test="library-pull"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="library-connect"]').exists()).toBe(true)
   })
-  it.each(['init', 'clone'])('sets up the library (%s) from the section, then checks again', async action => {
+  it.each(['init', 'clone'])('sets up the library (%s) from the section, then reads the updated state', async action => {
     const fetchMock = api(); const wrapper = mount(SetupView, { attachTo: document.body }); await flushPromises()
     const applied = vi.fn(); window.addEventListener('factory-applied', applied)
     if (action === 'clone') await wrapper.get('[data-test="library-url"]').setValue('https://example/library.git')
@@ -77,7 +77,8 @@ describe('Knihovna page', () => {
     const call = fetchMock.mock.calls.find(([url]) => url === '/api/library/apply')!
     expect(JSON.parse(call[1]!.body as string)).toEqual({ action, options: action === 'clone' ? { url: 'https://example/library.git' } : {}, digest: 'reviewed' })
     expect(wrapper.text()).toContain('Knihovna připravena')
-    expect(fetchMock).toHaveBeenCalledWith('/api/machine/check?fresh=1')
+    expect(fetchMock).toHaveBeenCalledWith('/api/machine/check')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/machine/check?fresh=1')
     expect(applied).toHaveBeenCalled()
     window.removeEventListener('factory-applied', applied)
   })
@@ -136,6 +137,23 @@ describe('Knihovna page', () => {
     vi.stubGlobal('fetch', fetchMock)
     return fetchMock
   }
+  it.each([false, true])('warns about an unchecked or stale result and checks only on click (stale=%s)', async stale => {
+    const fetchMock = machineApi(fresh => envelope({
+      ok: fresh, findings: [], checked: fresh || stale,
+      checked_at: fresh || stale ? '2026-11-10T10:00:00Z' : null,
+      cached: stale && !fresh, stale: stale && !fresh,
+    }, fresh))
+    const wrapper = mount(SetupView); await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/machine/check')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/machine/check?fresh=1')
+    expect(wrapper.get('[data-test="machine-status"]').text()).toContain(stale ? 'Zastaralý výsledek' : 'zatím nebyl zkontrolován')
+    expect(wrapper.find('[data-test="setup-busy"]').exists()).toBe(false)
+    expect(wrapper.find('.is-ok').exists()).toBe(false)
+    await wrapper.get('[data-test="machine-refresh"]').trigger('click'); await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/machine/check?fresh=1')
+    expect(wrapper.find('[data-test="machine-status"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="machine-verdict"]').classes()).toContain('is-ok')
+  })
   const timedOut = (checkedAt: string | null) => new Response(JSON.stringify({
     ok: false,
     data: { ok: false, findings: [], checked_at: checkedAt, cached: !!checkedAt, stale: true, timed_out: true, progress: { seq: 2, offline: false, step: 'machine: logins', detail: 'claude auth status', started_at: '', elapsed: 60, budget: 60, running: true } },
@@ -168,7 +186,7 @@ describe('Knihovna page', () => {
       const wrapper = mount(SetupView); await flushPromises()
       await vi.advanceTimersByTimeAsync(2000)
       expect(wrapper.get('[data-test="setup-busy"]').text()).toBe('Probíhá kontrola – čeká na: machine: logins (claude auth status) · 2 s')
-      // A library write checks again while the first read still runs.
+      // A library write reads updated rules while the first read still runs.
       wrapper.findComponent(LibrarySection).vm.$emit('changed')
       await flushPromises()
       expect(answers).toHaveLength(2)

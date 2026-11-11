@@ -7,13 +7,25 @@ until the test answers it, as a slow check would be.
 import json
 import mimetypes
 import re
+import socket
+import sys
+import threading
+import time
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
 
 import pytest
+import uvicorn
 from playwright.sync_api import Route, expect, sync_playwright
 from test_f3_browser import _launch
+
+from aifactory.codeprint import CodeWatch
+from aifactory.web import create_multi_app, machine
+from aifactory.web.limits import LimitsSource
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "check"))
+from factory_check_repo import FakeMachine  # noqa: E402
 
 STATIC = Path(__file__).resolve().parents[2] / "src/aifactory/web/static"
 pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
@@ -191,3 +203,66 @@ def test_readiness_on_kanban_does_not_request_a_second_board_browser() -> None:
             assert requests.count("/api/repos/a/backlog") == 1
         finally:
             browser.close()
+
+
+@pytest.mark.parametrize("previous_result", [False, True])
+def test_new_overview_tab_never_starts_a_server_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, previous_result: bool
+) -> None:
+    """Use the real API: both missing and invalidated caches must stay read-only."""
+    monkeypatch.delenv("HAIFA_LIBRARY", raising=False)
+    home = tmp_path / "home"
+    app = create_multi_app(
+        home=home,
+        user_home=tmp_path,
+        code_watch=CodeWatch(tmp_path / "code"),
+        limits_source=LimitsSource(readers={}),
+    )
+    fake = FakeMachine()
+    app.state.check_machine = fake
+    global_state = app.state.library
+    if previous_result:
+        # The same explicit check as startup, followed by a library/harness write.
+        machine.check_view(home, global_state, offline=False, fresh=True, machine=fake)
+        global_state.invalidate()
+    calls, seq = list(fake.calls), global_state.seq
+    requests: list[str] = []
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    server = uvicorn.Server(uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning"))
+    thread = threading.Thread(target=server.run, kwargs={"sockets": [sock]}, daemon=True)
+    thread.start()
+    try:
+        deadline = time.monotonic() + 15
+        while not server.started:
+            assert thread.is_alive() and time.monotonic() < deadline, "server did not start"
+            time.sleep(0.01)
+        with sync_playwright() as playwright:
+            browser = _launch(playwright)
+            context = browser.new_context(service_workers="block")
+            context.set_default_timeout(30_000)
+            context.on("request", lambda request: requests.append(request.url))
+            try:
+                for _ in range(2):
+                    page = context.new_page()
+                    with page.expect_response(lambda r: "/api/machine/check" in r.url) as answer:
+                        page.goto(f"http://127.0.0.1:{port}/#/overview")
+                    data = answer.value.json()["data"]
+                    assert not data["ok"]
+                    if previous_result:
+                        assert data["stale"]
+                    else:
+                        assert data["checked"] is False
+                    expect(page.locator(".topbar [data-test='readiness-warning']")).to_be_visible()
+                    assert fake.calls == calls and global_state.seq == seq
+                checks = [url for url in requests if "/api/machine/check" in url]
+                assert len(checks) == 2 and all("fresh=" not in url for url in checks)
+                assert not global_state.jobs
+            finally:
+                context.close()
+                browser.close()
+    finally:
+        server.should_exit = True
+        thread.join(timeout=15)
+        sock.close()

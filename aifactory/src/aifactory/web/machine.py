@@ -1,4 +1,4 @@
-"""Global machine checks: cached reads, explicit and server scheduled refreshes.
+"""Global machine checks: read-only views, startup and explicit refreshes.
 
 The view keeps only actionable findings (see ``web.factory.actionable_findings``) and
 drops the info ``harness_missing`` of a harness no registered repository uses;
@@ -7,9 +7,11 @@ drops the info ``harness_missing`` of a harness no registered repository uses;
 One check runs as a ``CheckJob`` in its own thread with one time budget
 (``CHECK_BUDGET``): every probe and git call of the check gets only the time left
 (``procrun.budget``) and a timed-out probe is stopped with its process tree, never
-another process. Requests never wait on a lock held during a check: a request without a
-cached result, or with ``fresh``, joins the running job of the same mode (repeated
-clicks and other dashboards share it) or starts one, and waits at most until the job's
+another process. Requests never wait on a lock held during a check: a request joins
+a valid running job of the same mode (repeated clicks and other
+dashboards share it); only ``fresh`` starts a new job. Otherwise reads return the last
+known result (stale after invalidation), or ``checked=False`` when none exists.
+Requests joining a job wait at most until the job's
 deadline (plus ``RESULT_GRACE``). Past it the view is the last known result, marked
 ``stale`` with its ``checked_at``, plus ``timed_out`` and the step the check was at; a
 timeout is never a success and its partial result is never cached. A job's result
@@ -116,6 +118,7 @@ class CheckJob:
 class GlobalState:
     lock: threading.Lock = field(default_factory=threading.Lock)
     checks: dict[bool, CachedCheck] = field(default_factory=dict)
+    last_checks: dict[bool, CachedCheck] = field(default_factory=dict)
     # Held only to read or swap ``checks`` and ``jobs``, never while a check runs.
     cache_lock: threading.Lock = field(default_factory=threading.Lock)
     jobs: dict[bool, CheckJob] = field(default_factory=dict)
@@ -129,6 +132,7 @@ class GlobalState:
 
     def invalidate(self) -> None:
         with self.cache_lock:
+            self.last_checks.update(self.checks)
             self.checks.clear()
             # A job started before this change must not put its result in the cache.
             self.epoch += 1
@@ -139,7 +143,7 @@ class GlobalState:
         """The running check of ``offline`` and when the cached one was made."""
         with self.cache_lock:
             job = self.jobs.get(offline)
-            entry = self.checks.get(offline)
+            entry = self.checks.get(offline) or self.last_checks.get(offline)
             return {
                 "job": job.progress() if job is not None and not job.done.is_set() else None,
                 "checked_at": entry.report.get("checked_at") if entry is not None else None,
@@ -312,6 +316,7 @@ def _compose(entry: CachedCheck, library: list[dict[str, Any]] | None = None) ->
     """The report of ``entry`` with its findings (``library`` replaces the library part)."""
     findings = [*entry.findings, *(entry.library if library is None else library)]
     data = copy.deepcopy(entry.report)
+    data["checked"] = True
     data["findings"] = copy.deepcopy(findings)
     counts = dict.fromkeys(data.get("counts") or {}, 0)
     for finding in findings:
@@ -336,7 +341,7 @@ def _current_library(home: Path, offline: bool, machine: Machine | None) -> list
 
 
 def _empty(offline: bool) -> dict[str, Any]:
-    """A report with no result yet (a first check that ran out of time)."""
+    """A report with no completed check yet."""
     return {
         "in_repo": False,
         "repo": None,
@@ -354,6 +359,7 @@ def _empty(offline: bool) -> dict[str, Any]:
         "backlog": {},
         "findings": [],
         "checked_at": None,
+        "checked": False,
     }
 
 
@@ -377,35 +383,48 @@ def check_view(
     then the last known result (``stale``) and ``progress`` names the unfinished step.
     """
     with state.cache_lock:
-        entry = state.checks.get(offline)
-        job: CheckJob | None = None
-        if entry is None or fresh:
-            job = state.jobs.get(offline)
-            # Join the running check unless the library changed since it started or its
-            # budget is spent (it ends by itself; a retry gets a check of its own).
-            if job is None or job.epoch != state.epoch or job.expired():
-                job = _start(home, state, offline, machine, budget or CHECK_BUDGET)
+        entry = state.checks.get(offline) or state.last_checks.get(offline)
+        stale = offline not in state.checks and entry is not None
+        job = state.jobs.get(offline)
+        # Reads never replace expired or invalidated jobs. Only an explicit refresh
+        # can start another check; all valid concurrent requests share it.
+        if job is not None and (job.epoch != state.epoch or job.expired()):
+            job = None
+        if fresh and job is None:
+            job = _start(home, state, offline, machine, budget or CHECK_BUDGET)
     timed_out = False
     progress: dict[str, Any] | None = None
     if job is None:
-        assert entry is not None
-        try:
-            library = _current_library(home, offline, machine)
-        except procrun.BudgetExceeded:
-            library = None
-        # ``library_stale``: the library findings are the cached ones, not read now.
-        view = {**_compose(entry, library), "cached": True, "library_stale": library is None}
+        if entry is None:
+            view = {**_empty(offline), "cached": False}
+        else:
+            try:
+                library = _current_library(home, offline, machine)
+            except procrun.BudgetExceeded:
+                library = None
+            view = {
+                **_compose(entry, library),
+                "cached": True,
+                "library_stale": library is None,
+                "stale": stale,
+            }
+            if stale:
+                view["ok"] = False
     else:
         finished = job.done.wait(max(0.0, job.deadline - _clock()) + RESULT_GRACE)
         if finished and job.error is not None:
             raise job.error
         if finished and job.result is not None and not job.exhausted:
-            view = {**_compose(job.result), "cached": False}
+            with state.cache_lock:
+                stale = job.epoch != state.epoch
+            view = {**_compose(job.result), "cached": False, "stale": stale}
+            if stale:
+                view["ok"] = False
         else:
             timed_out = True
             progress = job.progress()
             with state.cache_lock:
-                last = state.checks.get(offline)
+                last = state.checks.get(offline) or state.last_checks.get(offline)
             view = _compose(last) if last is not None else _empty(offline)
             view.update(cached=last is not None, stale=True, ok=False)
             view["timed_out"] = True

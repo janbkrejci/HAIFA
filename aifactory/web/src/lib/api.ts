@@ -752,6 +752,8 @@ export interface MachineProgress {
   started_at: string; elapsed: number; budget: number; running: boolean
 }
 export interface MachineCheck {
+  /** False when no full check has completed yet. */
+  checked?: boolean
   ok: boolean; findings: CheckFinding[]
   /** When the shown result was checked; null when no check has finished yet. */
   checked_at: string | null

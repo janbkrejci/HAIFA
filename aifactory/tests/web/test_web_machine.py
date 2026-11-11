@@ -1,4 +1,4 @@
-"""Outside-repo checks, explicit home, read-only behavior and deterministic cache TTL."""
+"""Outside-repo checks, explicit home, read-only behavior and explicit refreshes."""
 
 from __future__ import annotations
 
@@ -32,7 +32,7 @@ def test_machine_cache_and_offline(client: TestClient, monkeypatch: pytest.Monke
     state(client).check_machine = fake
     clock = [100.0]
     monkeypatch.setattr(machine, "_clock", lambda: clock[0])
-    first = response(client.get("/api/machine/check"))
+    first = response(client.get("/api/machine/check?fresh=1"))
     assert not first["in_repo"] and not first["cached"]
     assert all(first[k] is None for k in ("repo", "state", "base", "commit"))
     assert {f["scope"] for f in first["findings"]} <= {"machine", "library"}
@@ -51,7 +51,7 @@ def test_machine_cache_and_offline(client: TestClient, monkeypatch: pytest.Monke
     assert not response(client.get("/api/machine/check?fresh=1"))["cached"]
     assert len(fake.calls) > calls
     calls = len(fake.calls)
-    assert not response(client.get("/api/machine/check?offline=1"))["cached"]
+    assert not response(client.get("/api/machine/check?offline=1&fresh=1"))["cached"]
     assert len(fake.calls) == calls
     assert response(client.get("/api/machine/check?offline=1"))["cached"]
     assert not state(client).home.exists()
@@ -62,7 +62,7 @@ def test_machine_cache_and_offline(client: TestClient, monkeypatch: pytest.Monke
 def test_machine_failure_matches_cli(client: TestClient) -> None:
     fake = FakeMachine(present=set())
     state(client).check_machine = fake
-    res = client.get("/api/machine/check")
+    res = client.get("/api/machine/check?fresh=1")
     data = response(res, 200, "checks_failed")
     report = run_check(
         machine.outside_repo(),
@@ -97,7 +97,7 @@ def test_machine_home_in_repo_and_override(
     override = tmp_path / "overridden-library"
     fake = FakeMachine(environ={**GIT_IDENTITY, "HAIFA_LIBRARY": str(override)})
     state(client).check_machine = fake
-    data = response(client.get("/api/machine/check"))
+    data = response(client.get("/api/machine/check?fresh=1"))
     assert not data["in_repo"]
     finding = next(f for f in data["findings"] if f["code"] == "library_missing")
     assert str(override) in finding["message"]
@@ -116,14 +116,14 @@ def test_machine_fake_executables(client: TestClient, monkeypatch: pytest.Monkey
     monkeypatch.setenv("PI_PATH", "missing-pi-for-test")
     monkeypatch.setenv("PATH", str(binary.parent) + os.pathsep + os.environ["PATH"])
     state(client).check_machine = SystemMachine()
-    data = response(client.get("/api/machine/check?offline=1"))
+    data = response(client.get("/api/machine/check?offline=1&fresh=1"))
     assert not any(
         f["code"] == "harness_missing" and "claude" in f["message"] for f in data["findings"]
     )
     assert not state(client).home.exists()
     initialize(client)
-    refreshed = response(client.get("/api/machine/check?offline=1"))
-    assert not refreshed["cached"]
+    refreshed = response(client.get("/api/machine/check?offline=1"), 200, "checks_failed")
+    assert refreshed["cached"] and refreshed["stale"]
     assert not any(f["code"] == "library_missing" for f in refreshed["findings"])
 
 
@@ -134,7 +134,7 @@ def test_harness_repo_counts_follow_registry_with_cached_probes(
 
     initialize(client)
     state(client).check_machine = FakeMachine()
-    first = response(client.get("/api/machine/check?offline=1"))
+    first = response(client.get("/api/machine/check?offline=1&fresh=1"))
     assert first["harness_repos"] == {"claude": 0, "codex": 0, "pi": 0}
     for name in ("one", "two"):
         repo = tmp_path / name
@@ -166,7 +166,7 @@ def test_missing_harness_info_only_for_harnesses_repos_use(
         assert isinstance(findings, list)
         return [f["message"].split()[1] for f in findings if f["code"] == "harness_missing"]
 
-    first = response(client.get("/api/machine/check?offline=1"))
+    first = response(client.get("/api/machine/check?offline=1&fresh=1"))
     assert missing(first) == []
     assert first["missing_harnesses"] == ["claude", "codex", "pi"]
     assert first["counts"]["info"] == sum(f["severity"] == "info" for f in first["findings"])
@@ -197,7 +197,7 @@ def test_machine_check_survives_a_deleted_working_directory(
         os.getcwd()
     assert machine.outside_repo().is_dir()
     state(client).check_machine = FakeMachine()
-    assert response(client.get("/api/machine/check"))["in_repo"] is False
+    assert response(client.get("/api/machine/check?fresh=1"))["in_repo"] is False
 
 
 def test_internal_error_says_where_a_nameless_error_was_raised(
@@ -209,7 +209,7 @@ def test_internal_error_says_where_a_nameless_error_was_raised(
     monkeypatch.setattr(machine, "run_check", fail)
     state(client).check_machine = FakeMachine()
     server = TestClient(client.app, base_url=str(client.base_url), raise_server_exceptions=False)
-    body = server.get("/api/machine/check").json()
+    body = server.get("/api/machine/check?fresh=1").json()
     assert body["error"]["code"] == "internal_error"
     message = body["error"]["message"]
     assert message.startswith("FileNotFoundError: [Errno 2] No such file or directory (in ")
@@ -255,7 +255,7 @@ def test_timeout_names_the_step_keeps_the_last_result_and_a_retry_checks_again(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     state(client).check_machine = FakeMachine(present={"git", "uv", "just", "claude"})
-    first = response(client.get("/api/machine/check"))
+    first = response(client.get("/api/machine/check?fresh=1"))
     blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
     state(client).check_machine = blocking
     _small_budget(monkeypatch)
@@ -275,6 +275,11 @@ def test_timeout_names_the_step_keeps_the_last_result_and_a_retry_checks_again(
     progress = response(client.get("/api/machine/progress"))
     assert progress["job"]["step"] == "machine: logins" and progress["job"]["running"]
     assert progress["checked_at"] == first["checked_at"]
+    # A page read skips the expired job without starting another one.
+    seq = state(client).library.seq
+    previous = response(client.get("/api/machine/check"))
+    assert previous["checked_at"] == first["checked_at"]
+    assert state(client).library.seq == seq and blocking.hung == 1
     # A retry does not join the expired job: it checks again and succeeds.
     retried = response(client.get("/api/machine/check?fresh=1"))
     assert not retried.get("timed_out") and not retried["cached"]
@@ -292,13 +297,17 @@ def test_first_check_timeout_has_no_result_and_is_not_ok(
     blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
     state(client).check_machine = blocking
     _small_budget(monkeypatch)
-    data = response(client.get("/api/machine/check"), 200, "check_timeout")
+    data = response(client.get("/api/machine/check?fresh=1"), 200, "check_timeout")
     assert data["timed_out"] and not data["ok"] and not data["cached"]
     assert data["checked_at"] is None and data["findings"] == []
     blocking.release.set()
     _idle(client)
-    # Nothing of the exhausted check was cached: the next read checks again.
+    # Nothing of the exhausted check was cached; a read must not retry it.
     assert not state(client).library.checks
+    calls = list(blocking.calls)
+    data = response(client.get("/api/machine/check"), 200, "checks_failed")
+    assert not data["checked"] and not data["ok"]
+    assert blocking.calls == calls
 
 
 def test_concurrent_requests_share_one_check_and_its_timeout(
@@ -333,28 +342,41 @@ def test_concurrent_requests_share_one_check_and_its_timeout(
     _idle(client)
 
 
-def test_joined_check_answers_every_waiting_request(client: TestClient) -> None:
+def test_joined_check_answers_every_waiting_request(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
     blocking = BlockingMachine(present={"git", "uv", "just", "claude"})
     home, global_state = state(client).home, state(client).library
     results: list[dict[str, Any]] = []
 
-    def request() -> None:
+    def request(fresh: bool) -> None:
         data, _, _ = machine.check_view(
-            home, global_state, offline=False, fresh=True, machine=blocking
+            home, global_state, offline=False, fresh=fresh, machine=blocking
         )
         results.append(data)
 
-    threads = [threading.Thread(target=request) for _ in range(3)]
-    for thread in threads:
-        thread.start()
+    startup = threading.Thread(target=request, args=(True,))
+    startup.start()
     assert blocking.entered.wait(5)
-    time.sleep(0.1)  # every request joined the hanging check
+    job = global_state.jobs[False]
+    joined = threading.Event()
+    original_wait = job.done.wait
+
+    def wait(timeout: float | None = None) -> bool:
+        joined.set()
+        return original_wait(timeout)
+
+    monkeypatch.setattr(job.done, "wait", wait)
+    reader = threading.Thread(target=request, args=(False,))
+    reader.start()
+    assert joined.wait(5), "the page read must join the startup job"
     blocking.release.set()
-    for thread in threads:
+    for thread in (startup, reader):
         thread.join(10)
+        assert not thread.is_alive()
     assert blocking.calls.count(("claude", "auth", "status")) == 1
-    assert len(results) == 3 and len({data["checked_at"] for data in results}) == 1
-    assert not any(data.get("timed_out") for data in results)
+    assert len(results) == 2 and len({data["checked_at"] for data in results}) == 1
+    assert all(data["checked"] and not data.get("timed_out") for data in results)
 
 
 def test_older_result_never_replaces_a_newer_one(client: TestClient) -> None:
@@ -390,7 +412,13 @@ def test_check_started_before_a_library_write_is_not_cached(client: TestClient) 
     thread.start()
     assert blocking.entered.wait(5)
     global_state.invalidate()  # a library sync while the check runs
-    # A request after the write does not join the old check; it reads the current state.
+    unread = FakeMachine()
+    empty, ok, _ = machine.check_view(
+        home, global_state, offline=False, fresh=False, machine=unread
+    )
+    assert not ok and not empty["checked"] and not unread.calls
+    assert global_state.seq == 1
+    # Only an explicit request after the write starts a replacement check.
     data, _, _ = machine.check_view(
         home, global_state, offline=False, fresh=True, machine=FakeMachine()
     )
@@ -415,7 +443,7 @@ def test_unresponsive_registry_read_is_bounded(
     init_repo(repo)
     register(client, repo)
     state(client).check_machine = FakeMachine()
-    assert response(client.get("/api/machine/check?offline=1"))["harness_repos"]["claude"] == 1
+    assert response(client.get("/api/machine/check?offline=1&fresh=1"))["harness_repos"]["claude"] == 1
     # The roster read gets no time left: the view still answers, without the counts.
     monkeypatch.setattr(machine, "REGISTRY_BUDGET", 0.0)
     data = response(client.get("/api/machine/check?offline=1"))
@@ -434,7 +462,7 @@ def test_cached_check_follows_a_library_changed_outside_the_dashboard(
     def codes(data: dict[str, Any]) -> set[str]:
         return {f["code"] for f in data["findings"]}
 
-    first = response(client.get("/api/machine/check"))
+    first = response(client.get("/api/machine/check?fresh=1"))
     assert "library_behind" not in codes(first)
     probes = len(fake.calls)
     # Another clone advances the remote; the library fetches it with git, not HAIFA.
@@ -454,3 +482,46 @@ def test_cached_check_follows_a_library_changed_outside_the_dashboard(
     assert synced["cached"] and "library_behind" not in codes(synced)
     # The expensive probes were not run again for these cached reads.
     assert len(fake.calls) == probes
+
+
+def test_read_without_result_never_starts_probes(client: TestClient) -> None:
+    fake = FakeMachine()
+    state(client).check_machine = fake
+    data = response(client.get("/api/machine/check"), 200, "checks_failed")
+    assert data["checked"] is False and data["ok"] is False
+    assert data["checked_at"] is None and not data.get("timed_out")
+    assert not fake.calls and not state(client).library.jobs
+
+
+def test_invalidated_result_is_read_as_stale_until_explicit_refresh(client: TestClient) -> None:
+    fake = FakeMachine()
+    state(client).check_machine = fake
+    first = response(client.get("/api/machine/check?fresh=1"))
+    calls = list(fake.calls)
+    global_state = state(client).library
+    global_state.invalidate()
+    stale = response(client.get("/api/machine/check"), 200, "checks_failed")
+    assert stale["checked"] and stale["stale"] and not stale["ok"]
+    assert stale["checked_at"] == first["checked_at"]
+    assert fake.calls == calls and not global_state.jobs
+    refreshed = response(client.get("/api/machine/check?fresh=1"))
+    assert refreshed["checked"] and not refreshed["stale"] and not refreshed["cached"]
+    assert len(fake.calls) > len(calls)
+    assert global_state.checks[False].report["checked_at"] == refreshed["checked_at"]
+
+
+def test_late_result_after_invalidation_is_not_available_to_reads(client: TestClient) -> None:
+    global_state = state(client).library
+    job = machine.CheckJob(
+        offline=False, seq=1, epoch=global_state.epoch, budget=30,
+        started=machine._clock(), started_at="",
+    )
+    global_state.invalidate()
+    machine._work(job, state(client).home, global_state, FakeMachine())
+    assert job.result is not None and not job.exhausted
+    assert not global_state.checks and not global_state.last_checks
+    fake = FakeMachine()
+    data, ok, _ = machine.check_view(
+        state(client).home, global_state, offline=False, fresh=False, machine=fake
+    )
+    assert not ok and not data["checked"] and not fake.calls

@@ -7,8 +7,8 @@ import { CHECK_DEADLINE_MS, CheckTimeout, beforeDeadline, followProgress, lastKn
 import { LIBRARY_HREF, SETUP_HREF, repoHref } from './router'
 import { repoStatusText } from './repos'
 
-/** `retry`: the issue's action runs the check again (a check that did not finish). */
-type Issue = Pick<Step, 'title' | 'hint' | 'href' | 'action'> & { id: Step['id'] | 'timeout'; repo?: RepoItem; retry?: boolean }
+/** `retry`: the issue's action explicitly runs a full machine check. */
+type Issue = Pick<Step, 'title' | 'hint' | 'href' | 'action'> & { id: Step['id'] | 'timeout' | 'machine-status'; repo?: RepoItem; retry?: boolean }
 /** The requests the readiness waits for, in the words shown while it waits. */
 const STEPS = { machine: 'kontrola počítače', library: 'stav knihovny', repos: 'seznam repozitářů', roster: 'roster', backlog: 'backlog' } as const
 type StepKey = keyof typeof STEPS
@@ -91,14 +91,21 @@ function createReadiness() {
       if (disposed || current !== generation) return
       const timedOut = machineTimeout(machine)
       if (!timedOut && machine.checked_at) lastCheckedAt = machine.checked_at
+      const unknown = machine.checked === false
+      const outdated = unknown || machine.stale
       const machineErrors = machine.findings.filter(f => f.severity === 'error' || f.severity === 'warning')
       issues.value = gettingStartedSteps({ check: machine, library, repos: registry.repos, rosterAgents, projects }).filter(step => {
-        if (step.id === 'machine' && (machineErrors.length || timedOut)) return false
+        if (step.id === 'machine' && (machineErrors.length || timedOut || outdated)) return false
         if (step.id === 'factory' && registry.repos.some(r => r.status !== 'ok')) return false
         if (step.id === 'roster' && rosterAgents > 0) return false
         return !step.done
       })
       if (timedOut) issues.value.unshift(timedOut)
+      else if (outdated) issues.value.unshift({
+        id: 'machine-status', title: unknown ? 'Počítač zatím nebyl zkontrolován' : 'Zastaralý výsledek kontroly počítače',
+        hint: 'Spusť ruční kontrolu pro aktuální stav počítače.', href: SETUP_HREF,
+        action: 'Zkontrolovat počítač', retry: true,
+      })
       for (const finding of machineErrors) {
       issues.value.push({ id: 'machine', title: timedOut ? `${finding.message} (poslední známý stav)` : finding.message, hint: finding.fix ?? 'Otevři stránku Knihovna a oprav uvedený problém.', href: finding.code === 'harness_test_failed' ? '#harness-settings' : finding.scope === 'library' ? LIBRARY_HREF : SETUP_HREF, action: finding.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači' })
       }
