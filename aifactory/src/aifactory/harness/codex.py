@@ -34,6 +34,9 @@ How the Codex CLI (checked against codex-cli 0.160.0) is driven:
   component goes down (a fresh counter), the reading is taken as it came.
   Codex reports no cost, so cost stays 0.0 rather than being invented.
 - ``request.tools`` is ignored: Codex has no tool allowlist.
+  The dashboard guide supplies its own per-call launch policy through
+  ``extra_args`` and ``env_overrides`` (``web/assistant_codex.py``); ordinary
+  factory calls leave these empty and keep native repo tools and skills.
   ``request.disallowed_commands`` is ignored too: ``codex exec`` has no flag to
   forbid a shell command (``SUPPORTS_DISALLOWED_COMMANDS``), which HAIFA reports
   at ``factory check`` and when a run starts.
@@ -58,7 +61,7 @@ import re
 import shutil
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -415,7 +418,9 @@ def _sandbox_args(read_only: bool = False) -> list[str]:
     ]
 
 
-def build_command(request: AgentRequest, thread_id: str = "") -> list[str]:
+def build_command(
+    request: AgentRequest, thread_id: str = "", *, extra_args: Sequence[str] = ()
+) -> list[str]:
     """argv for one turn: ``codex exec`` or, with a thread id, ``codex exec resume``."""
     _, model_id = resolve_model(request.model)
     effort = reasoning_effort(request.model, request.thinking)
@@ -433,6 +438,7 @@ def build_command(request: AgentRequest, thread_id: str = "") -> list[str]:
     ]
     if safe_mode():
         common += ["-c", "project_doc_max_bytes=0"]
+    common += extra_args
     if thread_id:
         return [CODEX_PATH, "exec", "resume", *common, "--", thread_id, "-"]
     return [CODEX_PATH, "exec", *common, "-C", str(request.cwd), "--", "-"]
@@ -451,6 +457,9 @@ def run(
     on_spawn: Callable[[int], None] | None = None,
     on_exit: Callable[[int], None] | None = None,
     on_wait: Callable[[int, int, str], None] | None = None,
+    *,
+    extra_args: Sequence[str] = (),
+    env_overrides: Mapping[str, str] | None = None,
 ) -> AgentResult:
     """Run one non-interactive Codex turn and return an ``AgentResult``.
 
@@ -460,7 +469,7 @@ def run(
     """
     provider, model_id = resolve_model(request.model)
     state = _SessionState(state_path(request))
-    cmd = build_command(request, state.thread_id)
+    cmd = build_command(request, state.thread_id, extra_args=extra_args)
 
     raw_path = Path(request.raw_output_path)
     raw_path.parent.mkdir(parents=True, exist_ok=True)
@@ -480,7 +489,7 @@ def run(
         text=True,
         bufsize=1,
         cwd=request.cwd,
-        env=operator_env(),
+        env={**operator_env(), **(env_overrides or {})},
         encoding="utf-8",
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
     )

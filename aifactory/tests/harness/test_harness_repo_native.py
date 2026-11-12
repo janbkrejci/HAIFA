@@ -146,6 +146,27 @@ def test_codex_safe_mode_isolates(
     assert "--ignore-user-config" in cmd
 
 
+def test_codex_guide_options_do_not_leak_into_factory_tasks(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    original_home = str(tmp_path / "operator-codex")
+    guide_home = str(tmp_path / "guide-codex")
+    monkeypatch.setenv("CODEX_HOME", original_home)
+    spawner = fake_popen(monkeypatch, ["codex_turn.jsonl", "codex_turn.jsonl"])
+    codex.run(
+        _request(tmp_path / "guide", "gpt-5.5"),
+        extra_args=["-c", "features.shell_tool=false", "-c", "project_doc_max_bytes=0"],
+        env_overrides={"CODEX_HOME": guide_home},
+    )
+    codex.run(_request(tmp_path / "task", "gpt-5.5"))
+    restricted, ordinary = spawner.calls
+    assert restricted.kwargs["env"]["CODEX_HOME"] == guide_home
+    assert ordinary.kwargs["env"]["CODEX_HOME"] == original_home
+    assert "features.shell_tool=false" in restricted.cmd
+    assert "features.shell_tool=false" not in ordinary.cmd
+    assert "project_doc_max_bytes=0" not in ordinary.cmd
+
+
 # ── pi ──────────────────────────────────────────────────────────────────────
 
 

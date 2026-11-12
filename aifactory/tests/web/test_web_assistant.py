@@ -450,7 +450,7 @@ def fake_unlimited(monkeypatch: pytest.MonkeyPatch, harness: str) -> list[Any]:
     return seen
 
 
-@pytest.mark.parametrize("harness", ["codex", "pi"])
+@pytest.mark.parametrize("harness", ["pi"])
 def test_harness_without_command_limit_falls_back_to_claude(
     setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, harness: str
 ) -> None:
@@ -467,7 +467,7 @@ def test_harness_without_command_limit_falls_back_to_claude(
     assert claude[0].allowed_commands == ["./guide", "./guide *"]
 
 
-@pytest.mark.parametrize("harness", ["codex", "pi"])
+@pytest.mark.parametrize("harness", ["pi"])
 def test_harness_without_command_limit_is_refused_without_claude(
     setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, harness: str
 ) -> None:
@@ -482,7 +482,7 @@ def test_harness_without_command_limit_is_refused_without_claude(
     assert not unlimited
 
 
-@pytest.mark.parametrize("harness", ["codex", "pi"])
+@pytest.mark.parametrize("harness", ["pi"])
 def test_thread_stored_on_unlimited_harness_is_refused(
     setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch, harness: str
 ) -> None:
@@ -491,11 +491,57 @@ def test_thread_stored_on_unlimited_harness_is_refused(
     fake_harness(monkeypatch)
     unlimited = fake_unlimited(monkeypatch, harness)
     thread_id = new_thread(client)
-    # A thread created before the guide refused codex and pi.
+    # A thread created before the guide refused pi.
     client.app.state.assistant.threads[thread_id].harness = harness  # type: ignore[attr-defined]
     answer = ask(client, thread_id, "Ahoj")["messages"][1]
     assert "cannot run on " + harness in answer["error"]
     assert not unlimited
+
+
+def fake_codex_guide(monkeypatch: pytest.MonkeyPatch) -> list[Any]:
+    seen: list[Any] = []
+
+    def run(request: Any, **kwargs: Any) -> AgentResult:
+        assert kwargs["home"] == haifa_home()
+        seen.append(request)
+        return AgentResult(text="Codex guide", returncode=0, tokens=10, cost=0.0)
+
+    monkeypatch.setattr("aifactory.web.assistant_codex.run", run)
+    return seen
+
+
+def test_codex_guide_without_claude_continues_in_restricted_transport(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _repo, _repo_id = setup
+    default_harness_settings(monkeypatch, "codex", claude_enabled=False)
+    guide = fake_codex_guide(monkeypatch)
+    unrestricted = fake_unlimited(monkeypatch, "codex")
+    thread_id = new_thread(client)
+    ask(client, thread_id, "Proč běh selhal?")
+    data = ask(client, thread_id, "Jak to napravit?")
+    assert data["harness"] == "codex"
+    assert data["messages"][-1]["text"] == "Codex guide"
+    assert len(guide) == 2
+    assert guide[0].session_id == guide[1].session_id
+    assert guide[0].allowed_commands == ["./guide", "./guide *"]
+    assert not unrestricted
+
+
+def test_codex_isolation_error_is_reported_without_unrestricted_retry(
+    setup: tuple[TestClient, Path, str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    client, _repo, _repo_id = setup
+    default_harness_settings(monkeypatch, "codex")
+    unrestricted = fake_unlimited(monkeypatch, "codex")
+
+    def refuse(*args: Any, **kwargs: Any) -> AgentResult:
+        raise ValueError("Codex version has not been verified for guide isolation")
+
+    monkeypatch.setattr("aifactory.web.assistant_codex.run", refuse)
+    answer = ask(client, new_thread(client), "Proč běh selhal?")["messages"][-1]
+    assert "not been verified" in answer["error"]
+    assert not unrestricted
 
 
 TASK_FILE = "backlog/P01/S01/P01-S01-T01-first.md"
@@ -768,9 +814,9 @@ def test_create_uses_local_binding_and_applies_guide_limit(
     from aifactory.repo_settings import RepositorySettings
 
     RepositorySettings(repo).update({"harness": "codex"})
-    if allow_codex:
-        monkeypatch.setattr("aifactory.web.assistant.GUIDE_HARNESSES", ("claude", "codex"))
-    codex = fake_unlimited(monkeypatch, "codex")
+    if not allow_codex:
+        monkeypatch.setattr("aifactory.web.assistant.GUIDE_HARNESSES", ("claude",))
+    codex = fake_codex_guide(monkeypatch)
     claude = fake_harness(monkeypatch)
     response = client.post(
         "/api/assistant/threads", json={"screen": {"repo": repo_id, "task": "P01-S01-T01"}}

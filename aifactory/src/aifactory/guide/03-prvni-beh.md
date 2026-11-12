@@ -10,7 +10,7 @@
 - **Chip kontroly:** fajfka/varování; tooltip **Systém v pořádku** / **Nalezeny problémy**. Klik zopakuje kontrolu / otevře **Problémy a řešení**.
 - **Chip knihovny:** knihovna/varování; tooltip **Knihovna OK** / **Založit knihovnu**. Otevře stránku **Knihovna**.
 - **Harnessy:** limity, při načítání spinner, bez harnessů varování s tooltipem; klik otevře **Harnessy tohoto počítače**.
-- **AI průvodce**: otázky s kontextem obrazovky; topbar otevře nové vlákno, **Starší vlákna** historii. Změny tasků, běhů, PR a follow-upů navrhuje kartou; provede je až **Provést**.
+- **AI průvodce**: Claude nebo Codex CLI 0.167.2, kontext obrazovky; podmínky v `README.md` distribuce. Topbar otevře nové vlákno, **Starší vlákna** historii. Změny navrhuje kartou; provede až **Provést**.
 - Příručka, motiv a přepínač rep.
 
 ## Problémy a řešení
