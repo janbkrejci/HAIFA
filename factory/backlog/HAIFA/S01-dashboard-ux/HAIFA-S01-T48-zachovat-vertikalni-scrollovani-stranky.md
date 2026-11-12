@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T48
 title: Zachovat vertikální scrollování stránky nad širokým kanbanem
-status: todo
+status: cancelled
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/web/src/components/backlog/KanbanBoard.vue, aifactory/web/src/components/backlog/KanbanBoard.test.ts, aifactory/web/src/views/BacklogView.vue, aifactory/tests/e2e/test_kanban_scroll_browser.py, aifactory/src/aifactory/web/static/]
