@@ -123,12 +123,12 @@ def redact(text: str, values: Iterable[str]) -> str:
 # ── repositories ─────────────────────────────────────────────────────────────────────────
 
 
-def registered(home: Path | None = None) -> dict[str, Path]:
+def registered(home: Path | None = None, *, repo_id: str | None = None) -> dict[str, Path]:
     """Registered repository id -> path."""
     from aifactory.web.registry import Registry
 
     state = Registry(home if home is not None else haifa_home()).snapshot()[0]
-    scope = os.environ.get("HAIFA_GUIDE_REPO")
+    scope = repo_id if repo_id is not None else os.environ.get("HAIFA_GUIDE_REPO")
     return {entry.id: Path(entry.path) for entry in state.repos if not scope or entry.id == scope}
 
 
@@ -252,9 +252,11 @@ USAGE = (
 )
 
 
-def execute(argv: Sequence[str], home: Path | None = None) -> tuple[int, str]:
+def execute(
+    argv: Sequence[str], home: Path | None = None, *, repo_id: str | None = None
+) -> tuple[int, str]:
     """``(exit code, output)`` of one guide command; the output is already redacted."""
-    repos = registered(home)
+    repos = registered(home, repo_id=repo_id)
     values = secrets(repos.values(), home)
     run_id = os.environ.get("HAIFA_RUN_ID", "guide")
     try:

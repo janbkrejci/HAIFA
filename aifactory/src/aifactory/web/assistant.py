@@ -16,10 +16,11 @@ retried run.
 The agent may run one command only, ``./guide`` in ``work/`` (``assistant_gate.py``): the
 allowlisted read-only ``factory`` commands with ``--json`` and read-only SQL on the trace
 DBs. claude runs with ``--permission-mode dontAsk`` and allow rules for that command
-(``AgentRequest.allowed_commands``). codex (its read-only sandbox still reads any file, e.g. a
-repository's ``.env``) and pi (no command limit at all) cannot enforce that limit, so the guide
-runs on claude only: a codex or pi selection falls back to claude, and without an enabled
-claude (or for a thread created on codex or pi) the guide refuses with ``harness_unavailable``.
+(``AgentRequest.allowed_commands``). Codex uses ``assistant_codex``: its general tools
+are disabled and the gate is exposed through stdio MCP. This launch policy applies to
+guide turns only, including resumed threads; ordinary factory tasks keep their tools.
+An unaudited Codex version is refused. pi has no command limit and falls back to claude;
+without an enabled claude (or for a thread stored on pi) it is refused.
 Threads created in a repository are restricted to that repository; threads created on the
 dashboard can read all registered repositories. Checkout changes during an answer are
 reported without rolling them back: they may belong to a concurrent editor or factory run.
@@ -62,6 +63,7 @@ from aifactory import guide as guide_chapters
 from aifactory.harness import canonical
 from aifactory.harness import load as load_harness
 from aifactory.harness import settings as harness_settings
+from aifactory.web import assistant_codex
 from aifactory.web import assistant_gate as gate
 from aifactory.web.workflow_advice import Cancellation
 from aifactory.workflow.adaptive import remove_tree
@@ -105,8 +107,8 @@ ACTION_FIELDS: dict[str, dict[str, tuple[type, bool]]] = {
     },
 }
 ACTION_LONG = ("body", "note")
-# Harnesses that enforce the ``./guide`` command limit (claude's dontAsk allow rules).
-GUIDE_HARNESSES = ("claude",)
+# Claude enforces command allow rules; Codex exposes only the gate through MCP.
+GUIDE_HARNESSES = ("claude", "codex")
 
 ReposSource = Callable[[], list[tuple[str, Path]]]
 
@@ -212,7 +214,7 @@ def guide_defaults() -> dict[str, str]:
 def unlimited_message(harness: str) -> str:
     return (
         f"the guide cannot run on {harness}: it cannot limit the agent to the {GUIDE_COMMAND} "
-        f"command (it could read .env files of the repositories); the guide needs claude"
+        "command (it could read .env files of the repositories); use claude or codex for the guide"
     )
 
 
@@ -945,10 +947,19 @@ class AssistantManager:
                     "on_spawn": self.cancelled.register,
                     "on_exit": self.cancelled.unregister,
                 }
+
+                def run_agent(agent_request: Any) -> Any:
+                    if thread.harness == "codex":
+                        try:
+                            return assistant_codex.run(
+                                agent_request, home=self.home, repo_id=thread.repo_id, **calls
+                            )
+                        except ValueError as exc:
+                            raise AssistantError("harness_unavailable", str(exc), 409) from exc
+                    return harness.run(agent_request, **calls)
+
                 try:
-                    result = harness.run(
-                        request(thread.session_id, not thread.context_sent), **calls
-                    )
+                    result = run_agent(request(thread.session_id, not thread.context_sent))
                     if result.returncode != 0 and _missing_session(result.text):
                         raise RuntimeError(result.text)
                 except RuntimeError as exc:
@@ -956,7 +967,7 @@ class AssistantManager:
                         raise
                     # The harness lost the conversation: a new session with the context.
                     thread.session_id = f"guide-{thread.id}-{uuid.uuid4().hex[:6]}"
-                    result = harness.run(request(thread.session_id, True), **calls)
+                    result = run_agent(request(thread.session_id, True))
         except BaseException as exc:  # noqa: BLE001 - the guard still runs
             failure = exc
         problems = guard.enforce()

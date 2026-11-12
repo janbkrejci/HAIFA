@@ -228,8 +228,10 @@ The guide (``assistant.py``, multi-repository app only) reads, never writes:
 ``GET /api/assistant/threads`` (newest first), ``POST /api/assistant/threads``
 (``{title?, screen?: {repo?, task?, run?}}``, HTTP 201; task/run context selects the binding,
 else computer defaults; invalid context returns HTTP 400 ``usage_error``.
-The guide runs on claude only, HTTP 409 ``harness_unavailable``
-without an enabled claude), ``GET /api/assistant/threads/{id}`` (with messages),
+The guide supports claude and an isolated Codex CLI 0.167.2 transport; pi falls back
+to claude. Unavailable selections return HTTP 409 ``harness_unavailable`` at creation;
+Codex isolation failures are reported in the answer),
+``GET /api/assistant/threads/{id}`` (with messages),
 ``DELETE /api/assistant/threads/{id}`` (the thread and its folder for good; HTTP 409 ``busy``
 while an answer runs),
 ``POST /api/assistant/threads/{id}/messages`` (``{text, screen?: {repo, task, run}}``,
