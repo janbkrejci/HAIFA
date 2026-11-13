@@ -27,6 +27,7 @@ from __future__ import annotations
 import datetime
 import os
 import shutil
+import tempfile
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -200,8 +201,8 @@ def _checked_pr(ctx: _Ctx, task_id: str) -> tuple[TaskPrRow, PrStatus]:
     return row, status
 
 
-def _catch_up_base(ctx: _Ctx) -> list[str]:
-    """Fast-forward local ``base`` to the remote one; return warnings, never raise."""
+def _catch_up_base(ctx: _Ctx, *, strict: bool = False) -> list[str]:
+    """Catch up base; resolve must fail when the remote base cannot be used."""
     settings = ctx.rc.config.settings
     base, remote, main = settings.base, settings.remote, ctx.main
     try:
@@ -212,17 +213,25 @@ def _catch_up_base(ctx: _Ctx) -> list[str]:
             main, "FETCH_HEAD"
         )
         ours = pgit.rev_parse(main, f"refs/heads/{base}")
-        if theirs is None or ours is None or theirs == ours:
+        if theirs is None or ours is None:
+            raise ProviderError("unknown_base", f"cannot read {base} or {remote}/{base}")
+        if theirs == ours:
             return []
         if pgit.is_ancestor(main, ours, theirs):
             pgit.advance_branch(main, base, theirs, ours, command="task approve")
             return []
         if pgit.is_ancestor(main, theirs, ours):
             return []
-        return [f"base {base} and {remote}/{base} have diverged; base not updated"]
+        raise ProviderError("base_diverged", f"base {base} and {remote}/{base} have diverged")
     except ProviderError as exc:
+        if strict:
+            raise ReviewError(
+                exc.code, f"base cannot be brought up to date: {exc.message}"
+            ) from exc
         return [f"base not updated: {exc.code}: {exc.message}"]
     except (RuntimeError, OSError) as exc:
+        if strict:
+            raise ReviewError("pull_failed", f"base cannot be brought up to date: {exc}") from exc
         return [f"base not updated: {exc}"]
 
 
@@ -696,7 +705,7 @@ def _dirty(path: Path) -> bool:
     return bool(gitops.git(path, "status", "--porcelain"))
 
 
-def _free_branch(ctx: _Ctx, row: TaskPrRow) -> None:
+def _free_branch(ctx: _Ctx, row: TaskPrRow) -> list[str]:
     """Remove every worktree of the PR's branch so a new run can check it out.
 
     Refuses when the branch is checked out in the main checkout or a worktree
@@ -708,13 +717,37 @@ def _free_branch(ctx: _Ctx, row: TaskPrRow) -> None:
         raise _main_checkout_error(ctx, row.branch)
     if other is not None and other not in worktrees:
         worktrees.append(other)
+    warnings: list[str] = []
     for path in worktrees:
-        if path.is_dir() and _dirty(path):
+        if not path.is_dir():
+            continue
+        # A failed git worktree remove can erase its metadata before failing to
+        # delete locked files on Windows. Preserve the remainder, never run git
+        # inside this broken checkout (it may even discover the main checkout).
+        top = gitops.read_git(path, "rev-parse", "--show-toplevel")
+        if top is None or Path(top).resolve() != path.resolve():
+            if path.is_symlink() or path.resolve().parent != _cleanup_root(ctx):
+                raise ReviewError("worktree_remove_failed", f"unsafe incomplete worktree: {path}")
+            from aifactory.worktree_processes import stop_directory_processes
+
+            try:
+                stop_directory_processes(path)
+            except OSError as exc:
+                raise ReviewError("worktree_remove_failed", f"{path}: {exc}") from exc
+            recovery = ctx.main / ".factory/recovered-worktrees"
+            gitops.ensure_excluded(ctx.main, ["/.factory/recovered-worktrees/"])
+            recovery.mkdir(parents=True, exist_ok=True)
+            saved = Path(tempfile.mkdtemp(prefix=f"{path.name}-", dir=recovery)) / path.name
+            path.rename(saved)
+            pgit.git(ctx.main, "worktree", "prune")
+            warnings.append(f"incomplete worktree {path}: remaining files preserved in {saved}")
+        elif _dirty(path):
             raise ReviewError(
                 "dirty_worktree", f"{path} has uncommitted changes, commit or drop them"
             )
     for path in worktrees:
         pgit.remove_worktree(ctx.main, path)
+    return warnings
 
 
 def return_task(
@@ -731,15 +764,15 @@ def return_task(
     ctx = _context(repo, provider)
     try:
         row, _ = _checked_pr(ctx, task_id)
-        _free_branch(ctx, row)
+        warnings = _free_branch(ctx, row)
         ctx.provider.comment(row.request(), f"Vráceno k přepracování:\n\n{note.strip()}")
     except ProviderError as exc:
         raise ReviewError(exc.code, exc.message) from exc
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
         raise ReviewError("worktree_failed", str(exc)) from exc
     finally:
         ctx.store.close()
-    return run_task(
+    result = run_task(
         repo,
         task_id,
         note=note.strip(),
@@ -748,6 +781,8 @@ def return_task(
         provider=ctx.provider,
         branch=row.branch,
     )
+    result.warnings = (*result.warnings, *warnings)
+    return result
 
 
 # ── publish ──────────────────────────────────────────────────────────────────
@@ -925,15 +960,15 @@ def resolve_task(
                 f"the PR of {task_id} builds on {stack.url} ({stack.task_id}), which is not "
                 "merged yet; it is rebased onto base after that merge",
             )
-        _free_branch(ctx, row)
-        warnings = _catch_up_base(ctx)
+        warnings = _catch_up_base(ctx, strict=True)
+        warnings.extend(_free_branch(ctx, row))
         base = ctx.rc.config.settings.base
         onto = pgit.rev_parse(ctx.main, f"refs/heads/{base}")
         if onto is None:
             raise ReviewError("unknown_base", f"base {base!r} does not exist")
     except ProviderError as exc:
         raise ReviewError(exc.code, exc.message) from exc
-    except RuntimeError as exc:
+    except (RuntimeError, OSError) as exc:
         raise ReviewError("worktree_failed", str(exc)) from exc
     finally:
         ctx.store.close()
@@ -1057,6 +1092,9 @@ def _clean_locked(
                 root = _cleanup_root(ctx)
                 if path.is_symlink() or path.resolve().parent != root:
                     raise RuntimeError("unregistered worktree is outside the worktrees directory")
+                from aifactory.worktree_processes import stop_directory_processes
+
+                stop_directory_processes(path)
                 shutil.rmtree(path)
         except (ProviderError, RuntimeError, OSError) as exc:
             result.warnings.append(f"worktree {path} not removed: {exc}")
@@ -1108,6 +1146,9 @@ def _clean_orphans(
                 ):
                     continue
                 try:
+                    from aifactory.worktree_processes import stop_directory_processes
+
+                    stop_directory_processes(path)
                     shutil.rmtree(path)
                     result.removed.append(
                         {

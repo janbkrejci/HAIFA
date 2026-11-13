@@ -14,7 +14,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from pathlib import Path
 
 from aifactory import procrun
@@ -221,10 +221,28 @@ def remove_worktree(root: Path, path: Path) -> bool:
         raise ProviderError("worktree_remove_failed", f"{path} is the main checkout")
     existed = path.exists()
     if existed:
+        from aifactory.worktree_processes import stop_directory_processes
+
+        if path.is_symlink():
+            raise ProviderError("worktree_remove_failed", f"{path} is a symlink")
+        entries = git(root, "worktree", "list", "--porcelain", "-z").split("\0")
+        if not any(
+            entry.startswith("worktree ")
+            and Path(entry.removeprefix("worktree ")).resolve() == path.resolve()
+            for entry in entries
+        ):
+            raise ProviderError("worktree_remove_failed", f"{path} is not a registered worktree")
+        try:
+            stop_directory_processes(path)
+        except OSError as exc:
+            raise ProviderError("worktree_remove_failed", f"{path}: {exc}") from exc
         result = _run(root, ("worktree", "remove", "--force", str(path)), None)
         if result.returncode != 0:
             raise ProviderError(
-                "worktree_remove_failed", f"git worktree remove {path}: {result.stderr.strip()}"
+                "worktree_remove_failed",
+                f"git worktree remove {path}: {result.stderr.strip()}; remaining files kept; "
+                "if Git metadata was removed, the next task resolve preserves the remainder "
+                "in .factory/recovered-worktrees before recreating the checkout",
             )
     git_ok(root, "worktree", "prune")
     from aifactory.harness.agent_dirs import remove_agent_dirs
@@ -325,6 +343,34 @@ def blob_at(root: Path, commit: str, path: str) -> tuple[str, str] | None:
 
 def read_blob(root: Path, blob: str) -> bytes:
     return _checked(run_bytes(root, ["cat-file", "blob", blob]), "commit_failed", "cat-file")
+
+
+def read_blobs(root: Path, blobs: Iterable[str]) -> dict[str, bytes]:
+    """Read distinct blobs in one process; parse by byte size, including binary data."""
+    names = list(dict.fromkeys(blobs))
+    if not names:
+        return {}
+    out = _checked(
+        run_bytes(
+            root, ["cat-file", "--batch"], input_bytes="".join(f"{b}\n" for b in names).encode()
+        ),
+        "pull_failed",
+        "cat-file --batch",
+    )
+    result: dict[str, bytes] = {}
+    offset = 0
+    for name in names:
+        end = out.find(b"\n", offset)
+        header = out[offset:end].split() if end >= 0 else []
+        if len(header) != 3 or header[0] != name.encode() or header[1] != b"blob":
+            raise ProviderError("pull_failed", f"cannot read blob {name}")
+        size = int(header[2])
+        start = end + 1
+        offset = start + size + 1
+        if out[offset - 1 : offset] != b"\n":
+            raise ProviderError("pull_failed", f"incomplete blob {name}")
+        result[name] = out[start : start + size]
+    return result
 
 
 def commit_tree_with(

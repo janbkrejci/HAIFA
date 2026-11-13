@@ -7,6 +7,7 @@ calls a model: the harnesses are scripted and the suite result is scripted too.
 
 from __future__ import annotations
 
+import shutil
 import subprocess
 from collections.abc import Callable, Iterator
 from pathlib import Path
@@ -448,6 +449,115 @@ def test_resolve_force_pushes(repo: Path, script: Script, tmp_path: Path) -> Non
     assert result.ok, (result.run.error, result.pr_error)
     assert git(origin, "rev-parse", BRANCH2) == tip(repo) != before
     assert is_ancestor(origin, git(origin, "rev-parse", "main"), git(origin, "rev-parse", BRANCH2))
+
+
+@pytest.mark.parametrize("dirty", [False, True])
+def test_resolve_requires_current_remote_base_before_removing_old_checkout(
+    repo: Path, script: Script, tmp_path: Path, dirty: bool
+) -> None:
+    from aifactory.providers import git as pgit
+
+    run_both(repo, script, ("src/app/loader.py", "LOADER = 1\n"))
+    origin = tmp_path / "origin.git"
+    subprocess.run(
+        ["git", "init", "-q", "--bare", "-b", "main", str(origin)], check=True, capture_output=True
+    )
+    git(repo, "remote", "add", "origin", str(origin))
+    git(repo, "push", "-q", "-u", "origin", "main")
+    git(repo, "push", "-q", "origin", BRANCH2)
+    before = git(repo, "rev-parse", "main")
+    newer = pgit.commit_tree_with(
+        repo, before, [(MODEL, "100644", pgit.hash_blob(repo, b"VALUE = 99\n"))], "remote advance"
+    )
+    pgit.push_ref(repo, "origin", newer, "main")
+    store = TaskRunStore(repo / ".factory/trace.db")
+    try:
+        previous = store.for_task(T02)[0]
+    finally:
+        store.close()
+    old_worktree = Path(previous.worktree)
+    if dirty:
+        write(repo, MODEL, "LOCAL WORK\n")
+        index = (repo / ".git/index").read_bytes()
+        branch = tip(repo)
+        with pytest.raises(ReviewError) as error:
+            resolve_task(repo, T02, code=ResolveCode([]))
+        assert error.value.code == "dirty_base"
+        assert "base cannot be brought up to date" in error.value.message
+        assert tip(repo) == branch
+        assert git(repo, "rev-parse", "main") == before
+        assert (repo / ".git/index").read_bytes() == index
+        assert (repo / MODEL).read_text() == "LOCAL WORK\n"
+        assert old_worktree.is_dir() and git(old_worktree, "rev-parse", "HEAD") == branch
+    else:
+        tester(script)
+        result = resolve_task(repo, T02, code=ResolveCode([True]))
+        assert result.ok, (result.run.error, result.pr_error)
+        assert git(repo, "rev-parse", "main") == newer
+        assert is_ancestor(repo, newer, BRANCH2)
+        assert stored_pr(repo).base_sha == newer
+
+
+def test_resolve_preserves_remainder_after_partial_worktree_remove(
+    repo: Path, script: Script, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.providers import ProviderError
+    from aifactory.providers import git as pgit
+
+    run_both(repo, script, ("src/app/loader.py", "LOADER = 1\n"))
+    store = TaskRunStore(repo / ".factory/trace.db")
+    try:
+        previous = store.for_task(T02)[0]
+    finally:
+        store.close()
+    old = Path(previous.worktree)
+    (old / "evidence.png").write_bytes(b"remaining evidence\x00")
+    metadata = Path(git(old, "rev-parse", "--absolute-git-dir"))
+    original_run = pgit._run
+
+    def partial_remove(cwd: Path, args: tuple[str, ...], input: str | None) -> Any:
+        if args[:2] == ("worktree", "remove"):
+            shutil.rmtree(metadata)
+            return subprocess.CompletedProcess(args, 1, "", "Invalid argument")
+        return original_run(cwd, args, input)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(pgit, "_run", partial_remove)
+        with pytest.raises(ProviderError, match="remaining files kept"):
+            pgit.remove_worktree(repo, old)
+    assert old.is_dir() and not metadata.exists()
+
+    tester(script)
+    result = resolve_task(repo, T02, code=ResolveCode([True]))
+
+    assert result.ok, result.run.error
+    saved = list((repo / ".factory/recovered-worktrees").glob("*/*/evidence.png"))
+    assert len(saved) == 1 and saved[0].read_bytes() == b"remaining evidence\x00"
+    assert any("remaining files preserved" in warning for warning in result.warnings)
+    assert not old.exists()
+    assert is_ancestor(repo, "main", BRANCH2)
+    assert git(repo, "status", "--porcelain") == ""
+
+
+def test_recovery_refuses_directories_outside_configured_worktrees(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from unittest.mock import Mock
+
+    from aifactory.providers import git as pgit
+    from aifactory.review import flow
+
+    outside = tmp_path / "personal"
+    outside.mkdir()
+    (outside / "evidence").write_bytes(b"keep")
+    ctx = Mock(main=repo)
+    ctx.rc.config.settings.worktrees_dir = ".factory/worktrees"
+    ctx.store.runs_on_branch.return_value = [Mock(worktree=str(outside))]
+    monkeypatch.setattr(pgit, "checked_out_in", lambda *_: None)
+    with pytest.raises(ReviewError, match="unsafe incomplete worktree"):
+        flow._free_branch(ctx, Mock(branch=BRANCH2))
+    assert (outside / "evidence").read_bytes() == b"keep"
+    assert not (repo / ".factory/recovered-worktrees").exists()
 
 
 def test_resolve_without_pr(repo: Path, script: Script, capsys: Capsys) -> None:

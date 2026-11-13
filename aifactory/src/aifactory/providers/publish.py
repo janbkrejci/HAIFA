@@ -672,28 +672,44 @@ class PullResult:
         }
 
 
-def _pull_files(root: Path, ours: str, theirs: str) -> list[PlannedFile]:
-    """The files a pull from `ours` to `theirs` changes, with both contents."""
+def _pull_files(
+    root: Path, ours: str, theirs: str, *, paths: set[str] | None = None
+) -> list[PlannedFile]:
+    """Read pull metadata and contents in two processes, optionally only for dirty paths.
+
+    Disable rename detection: a rename is a deletion and a creation, so both paths
+    participate in checking/staging local changes, regardless of git configuration.
+    """
     files: list[PlannedFile] = []
-    if theirs == ours:
+    if theirs == ours or paths == set():
         return files
-    proc = git.run_bytes(root, ["diff", "--name-only", "-z", ours, theirs], env=_READ_ENV)
+    proc = git.run_bytes(
+        root, ["diff", "--raw", "--no-abbrev", "--no-renames", "-z", ours, theirs], env=_READ_ENV
+    )
     if proc.returncode:
         raise ProviderError("pull_failed", "cannot read base diff")
-    for raw in proc.stdout.split(b"\0"):
-        if not raw:
+    entries = proc.stdout.split(b"\0")
+    changes: list[tuple[str, str | None, str | None, str | None, str | None]] = []
+    for header, raw_path in zip(entries[0:-1:2], entries[1::2], strict=True):
+        path = raw_path.decode("utf-8", "surrogateescape")
+        if paths is not None and path not in paths:
             continue
-        path = raw.decode("utf-8")
-        old, new = git.blob_at(root, ours, path), git.blob_at(root, theirs, path)
+        old_kind, kind, old_sha, sha, _status = header[1:].decode("ascii").split()
+        # Like blob_at, do not read gitlinks (their objects are commits, not blobs).
+        old_mode = old_kind if old_kind not in {"000000", "160000"} else None
+        mode = kind if kind not in {"000000", "160000"} else None
+        changes.append((path, old_mode, old_sha if old_mode else None, mode, sha if mode else None))
+    contents = git.read_blobs(root, (b for c in changes for b in (c[2], c[4]) if b))
+    for path, old_mode, old_blob, mode, blob in changes:
         files.append(
             PlannedFile(
                 path,
-                "create" if old is None else "delete" if new is None else "modify",
-                old[0] if old else None,
-                old[1] if old else None,
-                new[0] if new else None,
-                git.read_blob(root, new[1]) if new else None,
-                git.read_blob(root, old[1]) if old else None,
+                "create" if old_mode is None else "delete" if mode is None else "modify",
+                old_mode,
+                old_blob,
+                mode,
+                contents[blob] if blob else None,
+                contents[old_blob] if old_blob else None,
             )
         )
     return files
@@ -709,32 +725,45 @@ def _brought(checkout: Path, f: PlannedFile | None) -> bool:
     return disk.is_file() and not disk.is_symlink() and disk.read_bytes() == f.content
 
 
-def _dirty(checkout: Path, files: Sequence[PlannedFile] = ()) -> bool:
-    """Uncommitted changes of tracked files, except those the pull brings exactly.
-
-    A change factory proposed through a pull request (``base_changes: pr``) stays in the
-    working tree until the PR is merged; pulling that merge is no conflict.
-    """
+def _dirty_paths(checkout: Path, *, include_untracked: bool = False) -> set[str] | None:
+    """Local changes, including both sides of renames; None on status failure."""
     proc = git.run_bytes(
-        checkout, ["status", "--porcelain", "-z", "--untracked-files=no"], env=_READ_ENV
+        checkout,
+        [
+            "status",
+            "--porcelain",
+            "-z",
+            f"--untracked-files={'all' if include_untracked else 'no'}",
+        ],
+        env=_READ_ENV,
     )
     if proc.returncode != 0:
-        return True
-    planned = {f.path: f for f in files}
+        return None
+    paths: set[str] = set()
     entries = [e for e in proc.stdout.decode("utf-8", "surrogateescape").split("\0") if e]
     skip = False
     for entry in entries:
         if skip:  # the source path of a rename
             skip = False
-            if not _brought(checkout, planned.get(entry)):
-                return True
+            paths.add(entry)
             continue
         code, path = entry[:2], entry[3:]
         if "R" in code or "C" in code:
             skip = True
-        if not _brought(checkout, planned.get(path)):
-            return True
-    return False
+        paths.add(path)
+    return paths
+
+
+def _dirty(checkout: Path, files: Sequence[PlannedFile] = ()) -> bool:
+    """Uncommitted tracked changes, except those the pull brings exactly.
+
+    Factory's changes proposed through a PR stay on disk until its merge is pulled.
+    """
+    paths = _dirty_paths(checkout)
+    if paths is None:
+        return True
+    planned = {f.path: f for f in files}
+    return any(not _brought(checkout, planned.get(path)) for path in paths)
 
 
 def _stage_brought(checkout: Path, files: Sequence[PlannedFile]) -> None:
@@ -826,7 +855,11 @@ def pull_base(
             "base_diverged", f"{base} and {remote}/{base} have diverged; nothing changed"
         )
     where = git.checked_out_in(root, base)
-    files = _pull_files(root, ours, theirs)
+    files = (
+        _pull_files(root, ours, theirs, paths=_dirty_paths(where, include_untracked=True))
+        if where
+        else []
+    )
     if where is not None and _dirty(where, files):
         raise ProviderError(
             "dirty_base", f"{base} is checked out in {where} with uncommitted changes"
