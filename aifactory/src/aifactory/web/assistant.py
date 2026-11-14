@@ -9,8 +9,10 @@ The harness, model and thinking use the task's inherited T69 context binding whe
 with ``screen.task`` (or the current task of ``screen.run``) in a registered repository.
 Repo-only and absent context use the computer's harness settings; an unresolved binding
 uses the library agent ``guide`` defaults. The choice then obeys the guide harness limit
-below. A thread keeps the choice it was created with, so every message continues the same
-harness session (``claude --resume``, ``codex exec resume``, pi ``--session-id``) like a
+below. An explicit creation-time harness overrides repository and computer defaults,
+using only that harness's computer-local model and thinking. A thread keeps the choice it
+was created with, so every message continues the same
+harness session (``claude --resume``, ``codex exec resume``) like a
 retried run.
 
 The agent may run one command only, ``./guide`` in ``work/`` (``assistant_gate.py``): the
@@ -19,8 +21,9 @@ DBs. claude runs with ``--permission-mode dontAsk`` and allow rules for that com
 (``AgentRequest.allowed_commands``). Codex uses ``assistant_codex``: its general tools
 are disabled and the gate is exposed through stdio MCP. This launch policy applies to
 guide turns only, including resumed threads; ordinary factory tasks keep their tools.
-An unaudited Codex version is refused. pi has no command limit and falls back to claude;
-without an enabled claude (or for a thread stored on pi) it is refused.
+An unaudited Codex version is refused. pi has no command limit: an inherited computer
+choice falls back to claude, while an explicit or repository-local pi is refused.
+Without an enabled claude fallback (or for a thread stored on pi) it is refused.
 Threads created in a repository are restricted to that repository; threads created on the
 dashboard can read all registered repositories. Checkout changes during an answer are
 reported without rolling them back: they may belong to a concurrent editor or factory run.
@@ -646,6 +649,56 @@ class AssistantManager:
         with self.lock:
             return self._thread(thread_id).detail()
 
+    def _explicit_selection(self, name: str) -> dict[str, str]:
+        """Resolve a guide choice without first resolving the repository's harness."""
+        try:
+            name = canonical(name)
+            if name not in GUIDE_HARNESSES:
+                raise ValueError(unlimited_message(name))
+            selection = harness_settings.effective_override({}, {"harness": name})
+            if harness_settings.read() is not None and not selection.get("model"):
+                raise ValueError(
+                    f"harness {name} has no local model; fix computer harness settings"
+                )
+        except ValueError as exc:
+            raise AssistantError("harness_unavailable", str(exc), 409) from exc
+        return selection
+
+    def harnesses(self) -> list[dict[str, Any]]:
+        """Local choices only: no login check, model invocation or transport probe."""
+        try:
+            settings = harness_settings.read()
+        except ValueError as exc:
+            raise AssistantError("harness_unavailable", str(exc), 409) from exc
+        choices = []
+        for name in GUIDE_HARNESSES:
+            local = settings.harnesses[name] if settings else None
+            if local is not None and not local.enabled:
+                continue
+            try:
+                selection = self._explicit_selection(name)
+            except AssistantError as exc:
+                choices.append(
+                    {
+                        "harness": name,
+                        "model": local.model if local else "",
+                        "thinking": local.thinking if local else None,
+                        "usable": False,
+                        "reason": exc.message,
+                    }
+                )
+            else:
+                choices.append(
+                    {
+                        "harness": name,
+                        "model": selection.get("model", ""),
+                        "thinking": selection.get("thinking") or "medium",
+                        "usable": True,
+                        "reason": None,
+                    }
+                )
+        return choices
+
     def _context_values(self, screen: dict[str, str]) -> dict[str, object]:
         """Resolve registered context read-only, using a run's current backlog task."""
         from aifactory import backlog
@@ -687,7 +740,7 @@ class AssistantManager:
         return harness_values(task)
 
     def create(self, body: dict[str, Any]) -> dict[str, Any]:
-        unknown = sorted(set(body) - {"title", "screen"})
+        unknown = sorted(set(body) - {"title", "screen", "harness"})
         if unknown:
             raise AssistantError("usage_error", f"unknown keys: {', '.join(unknown)}")
         title = body.get("title") or ""
@@ -695,24 +748,13 @@ class AssistantManager:
             raise AssistantError("usage_error", "title must be a string of at most 200 characters")
         screen = parse_screen(body.get("screen"))
         self._context_values(screen)
-        try:
-            selection = harness_settings.context_binding(
-                {}, repo=dict(self.repos()).get(screen.get("repo", ""))
-            )
-        except ValueError as exc:
-            raise AssistantError("harness_unavailable", str(exc), 409) from exc
-        if not selection.get("harness"):
-            selection = guide_defaults()
-        if canonical(selection["harness"]) not in GUIDE_HARNESSES:
-            repo = dict(self.repos()).get(screen.get("repo", ""))
-            if repo is not None:
-                from aifactory.repo_settings import RepositorySettings
-
-                if RepositorySettings(repo).read().harness is not None:
-                    raise AssistantError(
-                        "harness_unavailable", unlimited_message(selection["harness"]), 409
-                    )
-            selection = claude_fallback(selection["harness"])
+        if "harness" in body:
+            name = body["harness"]
+            if not isinstance(name, str) or not name.strip():
+                raise AssistantError("usage_error", "harness must be a non-empty string")
+            selection = self._explicit_selection(name.strip())
+        else:
+            selection = self._inherited_selection(screen)
         harness = canonical(selection["harness"])
         thread_id = uuid.uuid4().hex[:12]
         now = _now()
@@ -732,6 +774,27 @@ class AssistantManager:
             self.threads[thread_id] = thread
             self._save(thread)
             return thread.detail()
+
+    def _inherited_selection(self, screen: dict[str, str]) -> dict[str, str]:
+        try:
+            selection = harness_settings.context_binding(
+                {}, repo=dict(self.repos()).get(screen.get("repo", ""))
+            )
+        except ValueError as exc:
+            raise AssistantError("harness_unavailable", str(exc), 409) from exc
+        if not selection.get("harness"):
+            selection = guide_defaults()
+        if canonical(selection["harness"]) not in GUIDE_HARNESSES:
+            repo = dict(self.repos()).get(screen.get("repo", ""))
+            if repo is not None:
+                from aifactory.repo_settings import RepositorySettings
+
+                if RepositorySettings(repo).read().harness is not None:
+                    raise AssistantError(
+                        "harness_unavailable", unlimited_message(selection["harness"]), 409
+                    )
+            selection = claude_fallback(selection["harness"])
+        return selection
 
     def send(self, thread_id: str, body: dict[str, Any]) -> dict[str, Any]:
         text, screen = parse_message(body)

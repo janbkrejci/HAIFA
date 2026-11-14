@@ -226,11 +226,21 @@ COLORTERM truecolor, default cwd is home. Sessions have no time limit or persist
 
 The guide (``assistant.py``, multi-repository app only) reads, never writes:
 ``GET /api/assistant/threads`` (newest first), ``POST /api/assistant/threads``
-(``{title?, screen?: {repo?, task?, run?}}``, HTTP 201; task/run context selects the binding,
-else computer defaults; invalid context returns HTTP 400 ``usage_error``.
-The guide supports claude and an isolated Codex CLI 0.167.2 transport; pi falls back
-to claude. Unavailable selections return HTTP 409 ``harness_unavailable`` at creation;
+(``{title?, harness?, screen?: {repo?, task?, run?}}``, HTTP 201; explicit harness takes
+precedence over repository and computer defaults and uses its own computer-local model
+and thinking. Without it, repository/computer inheritance and fallback are preserved.
+Invalid context or a non-string/empty harness returns HTTP 400 ``usage_error``.
+The guide supports claude and an isolated Codex CLI 0.167.2 transport. Explicit unknown,
+disabled or unsupported choices (including pi) return HTTP 409 ``harness_unavailable``
+before creating a thread, without fallback. The choice is stored for all later messages
+and session resumes; an existing conversation cannot change harness.
 Codex isolation failures are reported in the answer),
+``GET /api/assistant/harnesses`` returns ``{harnesses: [{harness, model, thinking,
+usable, reason}]}`` for supported, computer-enabled choices. An unusable local selection
+has ``usable: false`` and an explanatory ``reason``; valid ones have ``reason: null``.
+With no computer settings, empty model means the adapter default. Malformed computer
+settings return HTTP 409 ``harness_unavailable``. This list never runs a model and
+does not guarantee login or a successful run,
 ``GET /api/assistant/threads/{id}`` (with messages),
 ``DELETE /api/assistant/threads/{id}`` (the thread and its folder for good; HTTP 409 ``busy``
 while an answer runs),
@@ -2710,11 +2720,21 @@ async def assistant_threads(request: Request) -> JSONResponse:
     return JSONResponse(envelope_ok({"threads": data}))
 
 
-async def assistant_create(request: Request) -> JSONResponse:
-    """Create ``{title?, screen?: {repo?, task?, run?}}`` with a context-bound selection.
+async def assistant_harnesses(request: Request) -> JSONResponse:
+    """Supported local choices, without invoking a model or checking login."""
+    try:
+        data = await run_in_threadpool(_assistant(request).harnesses)
+    except AssistantError as exc:
+        return _assistant_error(exc)
+    return JSONResponse(envelope_ok({"harnesses": data}))
 
-    Task/run uses inherited binding, otherwise computer defaults; invalid context is HTTP
-    400 ``usage_error``, an unavailable harness is HTTP 409 ``harness_unavailable``.
+
+async def assistant_create(request: Request) -> JSONResponse:
+    """Create ``{title?, harness?, screen?: {repo?, task?, run?}}``.
+
+    Explicit harness uses its computer model/thinking; otherwise inherit as before.
+    Invalid context is HTTP 400 ``usage_error``; unavailable harness is HTTP 409
+    ``harness_unavailable``. Explicit choices never fall back.
     """
     try:
         body = await _json_body(request) if await request.body() else {}
@@ -2888,6 +2908,7 @@ def create_multi_app(
             Route("/fs/pick", fs_pick_status, methods=["GET"]),
             Route("/fs/pick", fs_pick, methods=["POST"]),
             Route("/overview", overview_get, methods=["GET"]),
+            Route("/assistant/harnesses", assistant_harnesses, methods=["GET"]),
             Route("/assistant/threads", assistant_threads, methods=["GET"]),
             Route("/assistant/threads", assistant_create, methods=["POST"]),
             Route("/assistant/threads/{thread_id}", assistant_thread, methods=["GET"]),

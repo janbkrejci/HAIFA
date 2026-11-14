@@ -957,13 +957,16 @@ def test_run_uses_current_task_binding_read_only(
         {"screen": {"repo": "$repo", "task": "P01-S01-T01", "run": "unknown"}},
     ],
 )
+@pytest.mark.parametrize("explicit", [False, True])
 def test_create_rejects_invalid_context_without_creating_thread(
-    setup: tuple[TestClient, Path, str], body: dict[str, Any]
+    setup: tuple[TestClient, Path, str], body: dict[str, Any], explicit: bool
 ) -> None:
     client, repo, repo_id = setup
     with_task(repo)
     run_context(repo)
     body = json.loads(json.dumps(body).replace("$repo", repo_id))
+    if explicit:
+        body["harness"] = "claude"
     response = client.post("/api/assistant/threads", json=body)
     assert response.status_code == 400, response.text
     assert response.json()["error"]["code"] == "usage_error"
@@ -1022,3 +1025,227 @@ def test_disabled_context_harness_is_not_silently_replaced(
     )
     assert response.status_code == 409, response.text
     assert response.json()["error"]["code"] == "harness_unavailable"
+
+
+@pytest.mark.parametrize("harness", ["claude", "codex"])
+@pytest.mark.parametrize("pi_state", ["enabled", "disabled", "no_model"])
+def test_explicit_harness_bypasses_repo_pi_and_persists(
+    setup: tuple[TestClient, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    harness: str,
+    pi_state: str,
+) -> None:
+    from aifactory.harness import settings
+    from aifactory.repo_settings import RepositorySettings
+    from aifactory.web.assistant import AssistantManager
+
+    client, repo, repo_id = setup
+    default_harness_settings(monkeypatch, "pi")
+    path = haifa_home() / settings.FILE
+    config = json.loads(path.read_text())
+    if pi_state != "enabled":
+        config["default_harness"] = "claude"
+        config["harnesses"]["pi"] = {
+            "enabled": pi_state != "disabled",
+            "model": "",
+            "thinking": None,
+        }
+    config["harnesses"][harness]["thinking"] = "high"
+    path.write_text(json.dumps(config))
+    project_binding(repo, "pi")
+    RepositorySettings(repo).update({"harness": "pi"})
+    claude = fake_harness(monkeypatch)
+    codex = fake_codex_guide(monkeypatch)
+    unrestricted = fake_unlimited(monkeypatch, "codex")
+    pi = fake_unlimited(monkeypatch, "pi")
+    response = client.post(
+        "/api/assistant/threads",
+        json={"harness": harness, "screen": {"repo": repo_id, "task": "P01-S01-T01"}},
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    thread_id = data["id"]
+    expected = (harness, "sonnet" if harness == "claude" else "gpt-5.5", "high")
+    assert tuple(data[k] for k in ("harness", "model", "thinking")) == expected
+    assert data["repo_id"] == repo_id
+    ask(client, thread_id, "První")
+    # Neither later repository choices nor changed computer defaults rebind a thread.
+    RepositorySettings(repo).update({"harness": "codex" if harness == "claude" else "claude"})
+    machine_settings(monkeypatch)
+    ask(client, thread_id, "Druhá")
+    stored = stored_thread(thread_id)
+    assert tuple(stored[k] for k in ("harness", "model", "thinking")) == expected
+    restarted = AssistantManager(haifa_home(), lambda: [(repo_id, repo)])
+    try:
+        detail = restarted.get(thread_id)
+        assert tuple(detail[k] for k in ("harness", "model", "thinking")) == expected
+        thread = restarted.threads[thread_id]
+        restarted._turn(thread, "Po restartu", {}, [])
+    finally:
+        restarted.close()
+    seen = claude if harness == "claude" else codex
+    assert len(seen) == 3
+    assert {(r.model, r.thinking, r.session_id) for r in seen} == {
+        (expected[1], expected[2], stored["session_id"])
+    }
+    assert all(r.allowed_commands == ["./guide", "./guide *"] for r in seen)
+    assert not (codex if harness == "claude" else claude)
+    assert not unrestricted and not pi
+    rejected = client.post(
+        f"/api/assistant/threads/{thread_id}/messages",
+        json={"text": "Změna", "harness": "codex"},
+    )
+    assert rejected.status_code == 400
+    rejected = client.post(
+        f"/api/assistant/threads/{thread_id}/messages",
+        json={"text": "Jiné repo", "screen": {"repo": "other"}},
+    )
+    assert rejected.status_code == 400
+    assert len(seen) == 3
+
+
+@pytest.mark.parametrize("invalid", ["unknown", "disabled", "pi", "no_model", "failed"])
+def test_explicit_harness_is_refused_without_thread_or_adapter(
+    setup: tuple[TestClient, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    invalid: str,
+) -> None:
+    from aifactory.harness import settings
+
+    client, _repo, _repo_id = setup
+    default_harness_settings(monkeypatch, "pi")
+    path = haifa_home() / settings.FILE
+    config = json.loads(path.read_text())
+    choice = config["harnesses"]["codex"]
+    if invalid == "disabled":
+        choice["enabled"] = False
+    elif invalid == "no_model":
+        choice["model"] = ""
+    elif invalid == "failed":
+        (haifa_home() / settings.TEST_FILE).write_text(
+            json.dumps({"codex": {"gpt-5.5": {"ok": False}}})
+        )
+    path.write_text(json.dumps(config))
+    seen = [fake_harness(monkeypatch), fake_codex_guide(monkeypatch)]
+    seen += [fake_unlimited(monkeypatch, h) for h in ("pi", "codex")]
+    name = invalid if invalid in ("unknown", "pi") else "codex"
+    response = client.post("/api/assistant/threads", json={"harness": name})
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "harness_unavailable"
+    assert response.json()["error"]["message"]
+    assert client.get("/api/assistant/threads").json()["data"]["threads"] == []
+    root = haifa_home() / "assistant/threads"
+    assert not root.exists() or not list(root.iterdir())
+    assert not any(seen)
+
+
+@pytest.mark.parametrize("harness", [None, "", " ", False, 1, [], {}])
+def test_explicit_harness_requires_nonempty_string(
+    setup: tuple[TestClient, Path, str],
+    harness: Any,
+) -> None:
+    client, _repo, _repo_id = setup
+    response = client.post("/api/assistant/threads", json={"harness": harness})
+    assert response.status_code == 400, response.text
+    assert response.json()["error"]["code"] == "usage_error"
+    assert client.get("/api/assistant/threads").json()["data"]["threads"] == []
+
+
+@pytest.mark.parametrize("state", ["valid", "disabled", "no_model", "failed", "thinking"])
+def test_harness_list_uses_local_rules_without_running_models(
+    setup: tuple[TestClient, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+    state: str,
+) -> None:
+    from aifactory.harness import settings
+
+    client, _repo, _repo_id = setup
+    default_harness_settings(monkeypatch, "pi")
+    path = haifa_home() / settings.FILE
+    config = json.loads(path.read_text())
+    choice = config["harnesses"]["codex"]
+    choice["thinking"] = "high"
+    if state == "disabled":
+        choice["enabled"] = False
+    elif state == "no_model":
+        choice["model"] = ""
+    elif state == "thinking":
+        choice["thinking"] = "invalid"
+    elif state == "failed":
+        (haifa_home() / settings.TEST_FILE).write_text(
+            json.dumps({"codex": {"gpt-5.5": {"ok": False}}})
+        )
+    path.write_text(json.dumps(config))
+    seen = [fake_harness(monkeypatch), fake_codex_guide(monkeypatch)]
+    seen += [fake_unlimited(monkeypatch, h) for h in ("pi", "codex")]
+    response = client.get("/api/assistant/harnesses")
+    assert response.status_code == 200, response.text
+    choices = {c["harness"]: c for c in response.json()["data"]["harnesses"]}
+    assert set(choices) == ({"claude"} if state == "disabled" else {"claude", "codex"})
+    assert choices["claude"] == {
+        "harness": "claude",
+        "model": "sonnet",
+        "thinking": "high",  # Unset local thinking uses Sonnet's computer baseline.
+        "usable": True,
+        "reason": None,
+    }
+    if state != "disabled":
+        codex = choices["codex"]
+        assert codex["model"] == choice["model"]
+        assert codex["usable"] == (state not in ("no_model", "failed"))
+        if codex["usable"]:
+            assert codex["reason"] is None
+            assert codex["thinking"] == ("medium" if state == "thinking" else "high")
+        else:
+            reason = "local model" if state == "no_model" else "failed its test"
+            assert reason in codex["reason"]
+    assert not any(seen)
+    assert not (haifa_home() / "assistant/threads").exists()
+
+
+def test_reloaded_pi_thread_cannot_run(
+    setup: tuple[TestClient, Path, str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aifactory.web.assistant import AssistantError, AssistantManager
+
+    client, repo, repo_id = setup
+    default_harness_settings(monkeypatch, "pi")
+    thread_id = new_thread(client)
+    path = haifa_home() / "assistant/threads" / thread_id / "thread.json"
+    stored = stored_thread(thread_id)
+    stored["harness"] = "pi"
+    path.write_text(json.dumps(stored))
+    pi = fake_unlimited(monkeypatch, "pi")
+    restarted = AssistantManager(haifa_home(), lambda: [(repo_id, repo)])
+    try:
+        assert restarted.get(thread_id)["harness"] == "pi"
+        with pytest.raises(AssistantError, match="cannot run on pi"):
+            restarted._turn(restarted.threads[thread_id], "Ahoj", {}, [])
+    finally:
+        restarted.close()
+    assert not pi
+
+
+def test_harness_list_reports_malformed_computer_settings(
+    setup: tuple[TestClient, Path, str],
+) -> None:
+    from aifactory.harness import settings
+
+    client, _repo, _repo_id = setup
+    path = haifa_home() / settings.FILE
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("invalid json")
+    response = client.get("/api/assistant/harnesses")
+    assert response.status_code == 409, response.text
+    assert response.json()["error"]["code"] == "harness_unavailable"
+
+
+def test_harness_list_without_computer_settings(setup: tuple[TestClient, Path, str]) -> None:
+    client, _repo, _repo_id = setup
+    response = client.get("/api/assistant/harnesses")
+    assert response.status_code == 200, response.text
+    assert response.json()["data"]["harnesses"] == [
+        {"harness": name, "model": "", "thinking": "medium", "usable": True, "reason": None}
+        for name in ("claude", "codex")
+    ]
