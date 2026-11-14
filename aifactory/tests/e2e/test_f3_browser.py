@@ -253,6 +253,10 @@ def _start_run(page: Page, server: Server, task_id: str, *, commit_first: bool) 
     page.locator('[data-test="run"]').click()
     dialog = page.locator('[data-test="run-dialog"]')
     expect(dialog).to_be_visible()
+    expect(dialog.locator('[data-test="run-auto"]')).to_have_count(0)
+    hint = dialog.locator('[data-test="run-continuation-hint"]')
+    expect(hint).to_have_text("Automatické pokračování řídí nastavení repozitáře na Přehledu.")
+    expect(hint.locator("a")).to_have_attribute("href", "#/overview")
     # the run check reads git on the server
     expect(dialog.locator('[data-test="run-loading"]')).to_have_count(0, timeout=SERVER_TIMEOUT_MS)
     not_in_base = dialog.locator('[data-test="not-in-base"]')
@@ -266,7 +270,13 @@ def _start_run(page: Page, server: Server, task_id: str, *, commit_first: bool) 
     start = dialog.locator('[data-test="run-start"]')
     expect(start).to_be_enabled(timeout=SERVER_TIMEOUT_MS)
     known = {r["run_id"] for r in task_runs(server.api, task_id)}
-    start.click()
+    with page.expect_request(
+        lambda request: request.method == "POST" and request.url.endswith(f"/tasks/{task_id}/run")
+    ) as start_request:
+        start.click()
+    payload = start_request.value.post_data_json
+    assert isinstance(payload, dict)
+    assert "auto" not in payload
 
     def new_run() -> str | None:
         fresh = [r["run_id"] for r in task_runs(server.api, task_id) if r["run_id"] not in known]

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 // Prepare and start a task run (`factory task run [--note] [--force] [--harness] [--model]
-// [--thinking] [--auto]`): what the run uses (workflow, writes, base, task text),
+// [--thinking]`): what the run uses (workflow, writes, base, task text),
 // the warnings first (uncommitted config D4, task not in base, unmet dependencies, a running
-// run), a harness for this run only and auto continue.
+// run) and a harness for this run only. Continuation uses the local repository policy.
 import { computed, ref } from 'vue'
 import {
   RUN_HARNESSES,
@@ -19,7 +19,7 @@ import {
 import { fetchFactoryRoster, type FactoryRosterAgent } from '@/lib/api'
 import { errorText, shortSha } from '@/lib/format'
 import { useLevels } from '@/lib/names'
-import { currentRepoId, here, runHref } from '@/lib/router'
+import { currentRepoId, here, OVERVIEW_HREF, runHref } from '@/lib/router'
 import type { SelectOption } from '@/lib/select'
 import MarkdownView from '@/components/ui/MarkdownView.vue'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
@@ -53,7 +53,6 @@ const note = ref('')
 const harness = ref('')
 const model = ref('')
 const thinking = ref('')
-const auto = ref(false)
 const level = useLevels()
 const taskNoun = computed(() => levelNoun(level.task.value))
 const taskLabel = computed(() => levelLabel(level.task.value))
@@ -137,7 +136,6 @@ function start(force: boolean) {
   if (harness.value) input.harness = harness.value
   if (model.value.trim()) input.model = model.value.trim()
   if (thinking.value) input.thinking = thinking.value
-  if (auto.value) input.auto = true
   emit('start', input)
 }
 </script>
@@ -248,11 +246,9 @@ function start(force: boolean) {
       </table>
     </details>
 
-    <label class="check">
-      <input v-model="auto" type="checkbox" class="switch" role="switch" data-test="run-auto" :disabled="busy" />
-      Po úspěchu pokračovat dalšími tasky (auto continue)
-    </label>
-    <p class="faint hint">Pořadí a vyloučení tasků řídí kanban (sloupce Připraveno a Odloženo).</p>
+    <p class="faint hint" data-test="run-continuation-hint">
+      Automatické pokračování řídí nastavení repozitáře na <a :href="OVERVIEW_HREF">Přehledu</a>.
+    </p>
 
     <label class="note">
       <span>Poznámka (volitelná)</span>
@@ -406,13 +402,6 @@ summary {
   align-items: center;
   gap: 10px;
   color: var(--green);
-}
-
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text);
 }
 
 .hint {
