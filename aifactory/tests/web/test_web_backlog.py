@@ -254,9 +254,7 @@ def test_no_trace_db_means_no_runtime_states(tmp_path: Path) -> None:
     assert not (root / ".factory" / "trace.db").exists()
 
 
-def test_trace_read_warning_remains_text(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def test_trace_read_warning_remains_text(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     from aifactory.web import overview
 
     root = make_backlog_repo(tmp_path / "repo", with_trace=True)
