@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 from pydantic import ValidationError
 
-from advice_fixture import make_repo
+from advice_fixture import git, make_repo
 from aifactory.backlog import Backlog, Container, Task
 from aifactory.config import ProjectSettings
 from aifactory.engine import agents
@@ -512,7 +512,15 @@ def test_read_only_guard_and_cleanup(
     answers.append(write)
     with pytest.raises(TriageUnavailable, match="backlog"):
         ask_triager(repo, [report()], backlog)
-    assert (repo / "backlog/P01/S01/P01-S01-T01-first.md").read_bytes() == original
+    assert (repo / "backlog/P01/S01/P01-S01-T01-first.md").read_text() == "Also forbidden"
+    manifest = next((repo / ".factory/data/triage").rglob("main/manifest.json"))
+    saved = json.loads(manifest.read_text())
+    assert (
+        git(repo, "show", f"{saved['head']}:backlog/P01/S01/P01-S01-T01-first.md").encode()
+        == original
+    )
+    conflict = manifest.parent.parent / "main-conflict/files/backlog/P01/S01/P01-S01-T01-first.md"
+    assert conflict.read_text() == "Also forbidden"
     assert not Path(seen[0].cwd).exists()
     with pytest.raises(sqlite3.ProgrammingError, match="closed"):
         tracers[0].conn.execute("SELECT 1")

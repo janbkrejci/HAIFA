@@ -2,14 +2,79 @@
 
 import json
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from playwright.sync_api import Page, Route, expect, sync_playwright
-from test_f3_browser import _launch
+from test_f3_browser import _choose, _launch
 from test_limits_layout import _server
 
 pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
+
+
+def test_runs_paging_browser() -> None:
+    fallback = _server("live")
+    requests: list[dict[str, list[str]]] = []
+
+    def serve(route: Route) -> None:
+        url = urlsplit(route.request.url)
+        if url.path != "/api/repos/haifa/runs":
+            fallback(route)
+            return
+        query = parse_qs(url.query)
+        requests.append(query)
+        offset = int(query.get("offset", ["0"])[0])
+        total = 1 if query.get("state") else 101
+        rows = [
+            {
+                "run_id": f"run-{i}",
+                "task_id": "T1",
+                "state": "failed",
+                "started_at": "2026-01-01T00:00:00Z",
+                "phases": [],
+            }
+            for i in range(offset, min(offset + 100, total))
+        ]
+        route.fulfill(
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "ok": True,
+                    "data": {
+                        "runs": rows,
+                        "tasks": ["T1"],
+                        "total": total,
+                        "offset": offset,
+                        "limit": 100,
+                    },
+                    "error": None,
+                    "warnings": [],
+                }
+            ),
+        )
+
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        try:
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.route("**/*", serve)
+            page.goto("http://haifa.test/#/r/haifa/runs")
+            expect(page.locator('[data-test="page-count"]')).to_have_text("1–100 z 101")
+            page.locator('[data-test="next-page"]').click()
+            expect(page.locator('[data-test="page-count"]')).to_have_text("101–101 z 101")
+            expect(page.locator('[data-test="next-page"]')).to_be_disabled()
+            page.locator('[data-test="state-filter"]').scroll_into_view_if_needed()
+            page.evaluate(
+                "() => new Promise(resolve => requestAnimationFrame("
+                "() => requestAnimationFrame(resolve)))"
+            )
+            _choose(page, '[data-test="state-filter"]', "failed")
+            expect(page.locator('[data-test="page-count"]')).to_have_text("1–1 z 1")
+            expect(page.locator('[data-test="previous-page"]')).to_be_disabled()
+            assert requests[-1] == {"state": ["failed"]}
+            _assert_document_fits(page)
+        finally:
+            browser.close()
 
 
 def _assert_document_fits(page: Page) -> None:

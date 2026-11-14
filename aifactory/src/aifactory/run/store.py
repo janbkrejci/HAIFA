@@ -106,6 +106,7 @@ from aifactory import database, failure, oscompat
 from aifactory.engine.tracer import BUSY_TIMEOUT
 from aifactory.engine.utils import now_iso
 from aifactory.providers.base import PullRequest
+from aifactory.run.changes import install as install_changes
 from aifactory.run.errors import TaskRunError
 
 RUNNING, SUCCEEDED, FAILED, ABORTED = "running", "succeeded", "failed", "aborted"
@@ -317,6 +318,7 @@ _COLUMNS = (
     "failure_kind",
     "failure_detail",
     "harness_start",
+    "pid_created_at",
 )
 # columns added to task_runs after its first release; older DBs get them on open
 # (``pr_body``: the PR body a succeeded run could not send; not part of ``TaskRunRow``)
@@ -332,6 +334,7 @@ _RUN_ADDED_COLUMNS = {
     "failure_kind": "TEXT",
     "failure_detail": "TEXT",
     "harness_start": "TEXT",
+    "pid_created_at": "REAL",
 }
 # who started a run (``task_runs.started_by``)
 STARTED_MANUAL, STARTED_AUTO_CONTINUE, STARTED_AUTO_RESOLVE = (
@@ -381,6 +384,7 @@ class TaskRunRow:
     failure_detail: str | None = None  # JSON object with the failure's facts
     # JSON object: the harness switch at the start of a run (``run/quota_chain.py``); None: none
     harness_start: str | None = None
+    pid_created_at: float | None = None
 
     def retry_list(self) -> list[dict[str, Any]]:
         """One item per retry, oldest first (see the module docstring)."""
@@ -726,6 +730,7 @@ class TaskRunStore:
         self.conn.execute(
             "CREATE INDEX IF NOT EXISTS task_runs_page ON task_runs(archived, started_at)"
         )
+        install_changes(self.conn)
         if database.is_remote(db_path):
             self.conn.execute(
                 "CREATE TABLE IF NOT EXISTS haifa_owners "
@@ -761,14 +766,20 @@ class TaskRunStore:
         if task_id is not None:
             where, args = "state = ? AND task_id = ?", (RUNNING, task_id)
         for row in self._select(where, args):
-            if self.owned_here(row.run_id) and not _alive(row.pid):
+            if self.owned_here(row.run_id) and (
+                not _alive(row.pid)
+                or (
+                    row.pid is not None
+                    and oscompat.process_matches(row.pid, row.pid_created_at) is False
+                )
+            ):
                 self.conn.execute(
                     "UPDATE task_runs SET state = ?, ended_at = ?, error = ?, pause = NULL, "
                     "failure_kind = ?, failure_detail = ? WHERE run_id = ?",
                     (
                         ABORTED,
                         _now(),
-                        f"process {row.pid} is gone",
+                        f"process {row.pid} is gone or its PID was reused",
                         failure.PROCESS_GONE,
                         _detail_json({"pid": row.pid}),
                         row.run_id,
@@ -811,6 +822,7 @@ class TaskRunStore:
             if busy:
                 raise already_running(busy[0])
             self._own(row.run_id)
+            row.pid_created_at = oscompat.process_created_at(row.pid)
             self.conn.execute(
                 f"INSERT INTO task_runs ({', '.join(_COLUMNS)}) "
                 f"VALUES ({', '.join('?' for _ in _COLUMNS)})",
@@ -852,12 +864,13 @@ class TaskRunStore:
             retries = json.dumps([*row.retry_list(), retry], ensure_ascii=False)
             self._own(run_id)
             self.conn.execute(
-                "UPDATE task_runs SET state = ?, pid = ?, ended_at = NULL, error = NULL, "
+                "UPDATE task_runs SET state = ?, pid = ?, pid_created_at = ?, "
+                "ended_at = NULL, error = NULL, "
                 "pause = NULL, pr_error = NULL, pr_body = NULL, retries = ?, "
                 "failure_kind = NULL, failure_detail = NULL, note = COALESCE(?, note), "
                 "stacked_on = COALESCE(?, stacked_on) "
                 "WHERE run_id = ?",
-                (RUNNING, pid, retries, note, stacked_on, run_id),
+                (RUNNING, pid, oscompat.process_created_at(pid), retries, note, stacked_on, run_id),
             )
         final = self.get(run_id)
         assert final is not None
@@ -1078,6 +1091,20 @@ class TaskRunStore:
         ).fetchall()
         return [(str(k or ""), str(n or ""), int(p), str(c or "")) for k, n, p, c in rows]
 
+    def process_identities(self, run_id: str) -> dict[int, float | None]:
+        """Creation times of the latest live process rows; legacy rows are unknown."""
+        if not self._has_table("processes"):
+            return {}
+        columns = {r[1] for r in self.conn.execute("PRAGMA table_info(processes)")}
+        if "pid_created_at" not in columns:
+            return {}
+        rows = self.conn.execute(
+            "SELECT pid, pid_created_at FROM processes WHERE adw_id = ? "
+            "AND ended_at IS NULL ORDER BY id",
+            (run_id,),
+        ).fetchall()
+        return {int(pid): created_at for pid, created_at in rows}
+
     def close_processes(self, run_id: str) -> None:
         """Close the run's process rows and a still `running` session in the trace."""
         now = _now()
@@ -1115,6 +1142,48 @@ class TaskRunStore:
         with self._txn():
             self._reap()
         return self._select("1 = 1", ())
+
+    def run_page(
+        self,
+        *,
+        state: str | None = None,
+        task: str | None = None,
+        archived: bool = False,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> tuple[list[TaskRunRow], int, list[str]]:
+        """Filter and page in SQL, hydrating only the requested slice of history."""
+        where = ["archived = ?"]
+        args: list[Any] = [int(archived)]
+        if state == PAUSED:
+            where.extend(["state = ?", "pause = ?"])
+            args.extend([RUNNING, PAUSED])
+        elif state:
+            where.append("state = ?")
+            args.append(state)
+        if task:
+            where.append("task_id = ?")
+            args.append(task)
+        clause = " AND ".join(where)
+        with self._txn():
+            self._reap()
+            total = int(
+                self.conn.execute(
+                    f"SELECT COUNT(*) FROM task_runs WHERE {clause}", tuple(args)
+                ).fetchone()[0]
+            )
+            rows = self.conn.execute(
+                f"SELECT {', '.join(_COLUMNS)} FROM task_runs WHERE {clause} "
+                "ORDER BY started_at DESC, rowid DESC LIMIT ? OFFSET ?",
+                (*args, max(0, limit), max(0, offset)),
+            ).fetchall()
+            tasks = [
+                r[0]
+                for r in self.conn.execute(
+                    "SELECT DISTINCT task_id FROM task_runs ORDER BY task_id"
+                )
+            ]
+        return [self._row(r) for r in rows], total, tasks
 
     # -- archive --
 

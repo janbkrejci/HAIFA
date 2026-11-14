@@ -15,6 +15,7 @@ import pytest
 from starlette.testclient import TestClient
 from trace_fixture import T1, T2, make_repo, make_trace_db
 
+from aifactory import oscompat
 from aifactory.run import TaskRunStore
 from aifactory.run.stop import StopResult
 from aifactory.skill import envelope_problems
@@ -192,7 +193,10 @@ def test_events_paginate(repo: Path, tmp_path: Path) -> None:
 
 def _set_pid(repo: Path, run_id: str, pid: int) -> None:
     store = TaskRunStore(repo / ".factory" / "trace.db")
-    store.conn.execute("UPDATE task_runs SET pid = ? WHERE run_id = ?", (pid, run_id))
+    store.conn.execute(
+        "UPDATE task_runs SET pid = ?, pid_created_at = ? WHERE run_id = ?",
+        (pid, oscompat.process_created_at(pid), run_id),
+    )
     store.close()
 
 

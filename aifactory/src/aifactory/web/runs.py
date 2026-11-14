@@ -31,6 +31,8 @@ from aifactory.run.task import existing_store, session_dir_of
 RUN_STATES = ("running", "paused", "succeeded", "failed", "aborted", "stopped")
 DEFAULT_EVENTS_LIMIT = 500
 MAX_EVENTS_LIMIT = 1000
+DEFAULT_RUNS_LIMIT = 100
+MAX_RUNS_LIMIT = 500
 
 JsonDict = dict[str, Any]
 
@@ -208,6 +210,7 @@ def _summary(
         "task_title": titles.get(row.task_id),
         "workflow": row.workflow,
         "state": row.state,
+        "owned_here": store.owned_here(row.run_id),
         "branch": row.branch,
         "started_at": row.started_at,
         "ended_at": row.ended_at,
@@ -282,7 +285,7 @@ def _totals(summaries: list[JsonDict]) -> JsonDict:
 
 
 def _empty_list() -> JsonDict:
-    return {"runs": [], "tasks": []}
+    return {"runs": [], "tasks": [], "total": 0, "offset": 0, "limit": DEFAULT_RUNS_LIMIT}
 
 
 def _empty_totals() -> JsonDict:
@@ -290,33 +293,40 @@ def _empty_totals() -> JsonDict:
 
 
 def list_runs(
-    repo: Path, *, state: str | None = None, task: str | None = None, archived: bool = False
+    repo: Path,
+    *,
+    state: str | None = None,
+    task: str | None = None,
+    archived: bool = False,
+    limit: int = DEFAULT_RUNS_LIMIT,
+    offset: int = 0,
 ) -> tuple[JsonDict, list[str]]:
     """Runs newest first, filtered by ``state`` and ``task`` (cost totals: ``run_totals``).
 
     ``archived`` picks the archived runs instead of the active (not archived) ones.
+    Filtering and pagination precede hydration. ``total`` counts matching rows;
+    ``tasks`` retains all task IDs so filters remain usable on every page.
     """
     if state and state not in RUN_STATES:
         raise TaskRunError(
             "invalid_status", f"invalid run state '{state}', allowed: {', '.join(RUN_STATES)}"
         )
+    if not 1 <= limit <= MAX_RUNS_LIMIT or offset < 0:
+        raise TaskRunError(
+            "invalid_pagination", f"limit must be 1..{MAX_RUNS_LIMIT}; offset must be >= 0"
+        )
     store = existing_store(repo)
     if store is None:
-        return _empty_list(), []
+        return {**_empty_list(), "offset": offset, "limit": limit}, []
     try:
-        rows = store.all_runs()
+        rows, total, tasks = store.run_page(
+            state=state, task=task, archived=archived, limit=limit, offset=offset
+        )
         titles, warnings = _task_titles(repo) if rows else ({}, [])
         summaries = _summaries(store, rows, titles)
     finally:
         store.close()
-    shown = [
-        s
-        for s in summaries
-        if s["archived"] == archived
-        and (not state or s["state"] == state or (state == "paused" and s["pause"] == state))
-        and (not task or s["task_id"] == task)
-    ]
-    data = {"runs": shown, "tasks": sorted({s["task_id"] for s in summaries})}
+    data = {"runs": summaries, "tasks": tasks, "total": total, "offset": offset, "limit": limit}
     return data, warnings
 
 

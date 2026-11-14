@@ -11,6 +11,8 @@ import json
 import sqlite3
 from pathlib import Path
 
+from aifactory import oscompat
+
 from .data_types import AgentConfig, EventRecord, GateReport, Phase
 from .utils import ensure_dir, new_id, now_iso
 
@@ -96,7 +98,8 @@ CREATE INDEX IF NOT EXISTS gate_results_run ON gate_results(adw_id);
 
 # Columns added after a schema shipped. CREATE TABLE IF NOT EXISTS never
 # revisits an existing table, so additive changes need an explicit ALTER.
-MIGRATIONS = [("agent_sessions", "color", "TEXT"),
+MIGRATIONS = [("processes", "pid_created_at", "REAL"),
+              ("agent_sessions", "color", "TEXT"),
               ("gate_results", "checks_json", "TEXT"),
               ("sessions", "adw_name", "TEXT"),
               ("agent_sessions", "context_tokens", "INTEGER"),
@@ -202,9 +205,9 @@ class Tracer:
         run running, and how do I stop it".
         """
         self.conn.execute(
-            "INSERT INTO processes (adw_id, kind, name, pid, command, started_at)"
-            " VALUES (?,?,?,?,?,?)",
-            (adw_id, kind, name, pid, command[:500], now_iso()),
+            "INSERT INTO processes (adw_id, kind, name, pid, command, started_at, pid_created_at)"
+            " VALUES (?,?,?,?,?,?,?)",
+            (adw_id, kind, name, pid, command[:500], now_iso(), oscompat.process_created_at(pid)),
         )
 
     def process_end(self, adw_id: str, pid: int) -> None:

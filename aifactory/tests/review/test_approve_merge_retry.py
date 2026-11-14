@@ -18,7 +18,7 @@ from aifactory.config import load_run_config
 from aifactory.config.settings import AzureSettings
 from aifactory.providers import git as pgit
 from aifactory.providers.azure import AzCli, AzureProvider
-from aifactory.providers.github import GitHubProvider
+from aifactory.providers.github import GhCli, GitHubProvider
 from aifactory.review import ReviewError, approve_task
 from aifactory.run import TaskPrRow, TaskRunStore, run_task
 
@@ -52,14 +52,15 @@ def repo_fixture(tmp_path: Path) -> Path:
 
 
 def view(
-    state: str = "OPEN", merge: str | None = None, mergeable: str | None = None
+    origin: Path, state: str = "OPEN", merge: str | None = None, mergeable: str | None = None
 ) -> dict[str, Any]:
     return reply(
         {
             "state": state,
             "mergeable": mergeable or ("MERGEABLE" if state == "OPEN" else "UNKNOWN"),
             "mergeCommit": {"oid": merge} if merge else None,
-        }
+        },
+        head=(origin, BRANCH),
     )
 
 
@@ -92,7 +93,7 @@ def test_approve_again_after_transient_merge_failure(
         monkeypatch,
         {
             "pr create": reply("https://github.com/o/r/pull/7\n"),
-            "pr view": view(),
+            "pr view": view(origin),
             "pr checks": NO_CHECKS,
             "pr merge": reply(exit=1, stderr=BASE_MODIFIED),
         },
@@ -119,7 +120,7 @@ def test_approve_again_after_transient_merge_failure(
 
     log.clear()
     log.respond("pr merge", reply(""))
-    log.respond("pr view", [view(), view(), view(), view("MERGED", MERGE_SHA)])
+    log.respond("pr view", [view(origin)] * 4 + [view(origin, "MERGED", MERGE_SHA)])
 
     result = approve_task(repo, T01, provider=provider)
 
@@ -167,13 +168,15 @@ def _github_task(
 def test_approve_retries_not_mergeable_while_unknown(
     repo: Path, script: Script, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    provider, log, _ = _github_task(
+    provider, log, origin = _github_task(
         repo, script, tmp_path, monkeypatch, attempts=1, merge_attempts=5
     )
-    unknown = view(mergeable="UNKNOWN")
-    # approve's check, the head of the checks, merge's wait (all unknown), status after the
+    unknown = view(origin, mergeable="UNKNOWN")
+    # approve's check, head before/after checks, merge's wait (all unknown), status after the
     # rejection, merged
-    log.respond("pr view", [view(), view()] + [unknown] * 5 + [unknown, view("MERGED", MERGE_SHA)])
+    log.respond(
+        "pr view", [view(origin)] * 3 + [unknown] * 5 + [unknown, view(origin, "MERGED", MERGE_SHA)]
+    )
     log.respond("pr merge", [reply(exit=1, stderr=NOT_MERGEABLE), reply("")])
 
     result = approve_task(repo, T01, provider=provider)
@@ -190,7 +193,7 @@ def test_approve_not_mergeable_runs_out(
     provider, log, origin = _github_task(
         repo, script, tmp_path, monkeypatch, attempts=1, merge_attempts=3
     )
-    log.respond("pr view", [view(), view(), view(mergeable="UNKNOWN")])
+    log.respond("pr view", [view(origin)] * 3 + [view(origin, mergeable="UNKNOWN")])
     log.respond("pr merge", reply(exit=1, stderr=NOT_MERGEABLE))
 
     with pytest.raises(ReviewError) as info:
@@ -207,8 +210,8 @@ def test_approve_not_mergeable_runs_out(
 def test_approve_not_mergeable_conflicting_not_retried(
     repo: Path, script: Script, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    provider, log, _ = _github_task(repo, script, tmp_path, monkeypatch, attempts=1)
-    log.respond("pr view", [view(), view(), view(), view(mergeable="CONFLICTING")])
+    provider, log, origin = _github_task(repo, script, tmp_path, monkeypatch, attempts=1)
+    log.respond("pr view", [view(origin)] * 4 + [view(origin, mergeable="CONFLICTING")])
     log.respond("pr merge", reply(exit=1, stderr=NOT_MERGEABLE))
 
     with pytest.raises(ReviewError) as info:
@@ -291,3 +294,25 @@ def test_azure_approve_final_push_before_vote_and_retry(
     assert pgit.remote_branch_exists(repo, "origin", BRANCH) is False
     assert result.deleted_branches == [BRANCH, f"origin/{BRANCH}"]
     assert result.merge_sha == MERGE_SHA
+
+
+def test_fake_view_reads_pushed_head_only_when_opted_in(
+    repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    origin = tmp_path / "origin.git"
+    git(tmp_path, "init", "-q", "--bare", "-b", "main", str(origin))
+    git(repo, "remote", "add", "origin", str(origin))
+    git(repo, "push", "-q", "origin", f"main:{BRANCH}")
+    log = install_fake_gh(tmp_path, monkeypatch, {"pr view": view(origin)})
+    gh = GhCli(repo)
+    first = gh.json("pr", "view", "7")["headRefOid"]
+    assert first == git(origin, "rev-parse", BRANCH)
+    write(repo, "README.md", "updated head\n")
+    git(repo, "add", "README.md")
+    git(repo, "commit", "-qm", "Update head")
+    git(repo, "push", "-q", "origin", f"main:{BRANCH}")
+    second = gh.json("pr", "view", "7")["headRefOid"]
+    assert second == git(origin, "rev-parse", BRANCH) and second != first
+    for scripted in ({"state": "OPEN"}, {"headRefOid": None}, {"headRefOid": "old"}):
+        log.respond("pr view", reply(scripted))
+        assert gh.json("pr", "view", "7") == scripted

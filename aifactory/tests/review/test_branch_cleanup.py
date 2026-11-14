@@ -82,7 +82,10 @@ def test_approve_deletes_after_restack(
             monkeypatch,
             {
                 "pr create": reply("https://github.com/o/r/pull/7\n"),
-                "pr view": reply({"state": "OPEN", "mergeable": "MERGEABLE"}),
+                "pr view": reply(
+                    {"state": "OPEN", "mergeable": "MERGEABLE"},
+                    head=(tmp_path / "origin.git", f"factory/{T01}-1"),
+                ),
                 "pr checks": reply(exit=1, stderr="no checks reported"),
             },
         )

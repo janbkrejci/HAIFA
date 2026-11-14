@@ -14,8 +14,9 @@ import pytest
 from aifactory import database
 from aifactory.backlog import edit_task, load_backlog
 from aifactory.backlog.edit import TaskEditError
+from aifactory.backlog.model import Backlog, Issue
 from aifactory.config import ConfigError
-from aifactory.config.settings import LocalSettings
+from aifactory.config.settings import LocalSettings, ProjectSettings
 from aifactory.database.server import DatabaseServer
 from aifactory.run.errors import TaskRunError
 from aifactory.run.store import TaskRunRow, TaskRunStore
@@ -373,3 +374,88 @@ def test_network_failure_does_not_create_local_database(
     with pytest.raises(sqlite3.OperationalError, match="shared database unavailable"):
         database.connect(path)
     assert not path.exists()
+
+
+def test_idle_backlog_sync_reads_only_revision(
+    repos: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.database import backlog as shared
+
+    a, _ = repos
+    loaded = load_backlog(a)
+    path = shared._path(a)
+    assert path is not None
+    baseline = shared._baseline(path)
+    stamp = baseline.stat().st_mtime_ns
+    queries: list[str] = []
+    connect = database.connect
+
+    class ReadOnlyProbe:
+        def __init__(self, conn: sqlite3.Connection) -> None:
+            self.conn = conn
+
+        def execute(self, sql: str, parameters: tuple[object, ...] = ()) -> sqlite3.Cursor:
+            queries.append(sql)
+            return self.conn.execute(sql, parameters)
+
+        def close(self) -> None:
+            self.conn.close()
+
+    monkeypatch.setattr(
+        shared, "connect", lambda *args, **kwargs: ReadOnlyProbe(connect(*args, **kwargs))
+    )
+    shared.synchronize(a, loaded.settings)
+    assert queries == ["SELECT revision FROM haifa_backlog_revision WHERE id = 1"]
+    assert baseline.stat().st_mtime_ns == stamp
+
+
+def test_remote_sync_cannot_replace_baseline_during_validated_edit(
+    repos: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+
+    from aifactory.backlog import edit as edits
+    from aifactory.database import backlog as shared
+
+    a, b = repos
+    loaded = load_backlog(a)
+    load_backlog(b)
+    loaded_edit, release_edit, entered_sync = (
+        threading.Event(),
+        threading.Event(),
+        threading.Event(),
+    )
+    write = edits._write_checked
+    synchronize = shared._synchronize
+
+    def delayed(
+        backlog: Backlog, baseline: list[Issue], changes: dict[str, str], command: str
+    ) -> bool:
+        if backlog.root == a:
+            loaded_edit.set()
+            assert release_edit.wait(10)
+        return write(backlog, baseline, changes, command)
+
+    def observed(root: Path, settings: ProjectSettings) -> None:
+        if root == a and threading.current_thread().name.startswith("sync"):
+            entered_sync.set()
+        return synchronize(root, settings)
+
+    monkeypatch.setattr(edits, "_write_checked", delayed)
+    monkeypatch.setattr(shared, "_synchronize", observed)
+    with ThreadPoolExecutor(max_workers=1, thread_name_prefix="edit") as editor:
+        with ThreadPoolExecutor(max_workers=1, thread_name_prefix="sync") as syncer:
+            pending_edit = editor.submit(edit_task, a, "P-S-T", body="Local draft")
+            assert loaded_edit.wait(10)
+            edit_task(b, "P-S-T", title="New remote title")
+            pending_sync = syncer.submit(shared.synchronize, a, loaded.settings)
+            try:
+                assert not entered_sync.wait(0.2), "sync must wait for the complete edit"
+            finally:
+                release_edit.set()
+            with pytest.raises(TaskEditError) as failure:
+                pending_edit.result(timeout=10)
+            assert failure.value.code == "remote_backlog_conflict"
+            pending_sync.result(timeout=10)
+    assert load_backlog(a).by_id["P-S-T"].title == "New remote title"
+    assert "Local draft" not in (a / TASK).read_text()

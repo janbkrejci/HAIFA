@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { runHref } from '@/lib/router'
 import type { ReviewAction, ReviewDetail } from '@/lib/review'
+import { useUnsavedGuard } from '@/lib/leaveGuard'
 import { useConfirm } from '@/lib/confirm'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -17,6 +18,7 @@ const props = defineProps<{
 const emit = defineEmits<{ approve: []; return: [note: string]; resolve: [] }>()
 
 const note = ref('')
+useUnsavedGuard(() => note.value.trim().length > 0)
 const running = computed(() => props.detail.running_run ?? null)
 const blocked = computed(() => props.busy || running.value !== null)
 const conflict = computed(() => props.detail.mergeability === 'conflict')

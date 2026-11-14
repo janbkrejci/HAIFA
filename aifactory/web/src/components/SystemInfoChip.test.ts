@@ -105,7 +105,7 @@ describe('SystemInfoChip', () => {
     fetchMock.mockResolvedValueOnce(envelope(system('warning', GB)))
     finish(envelope({ advice_directories: ['orphan'], repos: [{ removed: [{}], deleted_branches: ['branch'] }], freed_bytes: GB, warnings: ['kept dirty tree'] }))
     await flushPromises()
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/machine/system')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/machine/system', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const chip = wrapper.get('button')
     expect(chip.attributes('aria-label')).toContain('odstraněno 3 položek, uvolněné místo: 1 GB')
     expect(chip.attributes('aria-label')).toContain('kept dirty tree')
@@ -143,7 +143,7 @@ describe('SystemInfoChip', () => {
     await answerDialog(true)
     expect(wrapper.get('button').attributes('aria-label')).toContain('Úklid se nepodařil: Úklid už běží')
     expect(wrapper.get('button').attributes('disabled')).toBeUndefined()
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/machine/system')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/machine/system', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it.each(['disk', 'memory'] as const)('rejects a response missing %s without crashing the topbar', async missing => {

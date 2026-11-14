@@ -23,11 +23,11 @@ describe('updates', () => {
     updates.activate()
     await flushPromises()
     expect(fetch.mock.calls).toHaveLength(2)
-    expect(fetch).toHaveBeenLastCalledWith('/api/updates?fresh=1')
+    expect(fetch).toHaveBeenLastCalledWith('/api/updates?fresh=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     updates.state.value.status = 'error'
     updates.activate()
     await flushPromises()
-    expect(fetch).toHaveBeenLastCalledWith('/api/updates?fresh=1')
+    expect(fetch).toHaveBeenLastCalledWith('/api/updates?fresh=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
   it('installs the available update and reloads for a fresh system check after restart', async () => {
     let checks = 0

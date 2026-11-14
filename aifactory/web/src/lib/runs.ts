@@ -91,6 +91,7 @@ export interface RunSummary {
   task_title: string | null
   workflow: string | null
   state: RunState
+  owned_here?: boolean
   branch: string
   started_at: string
   ended_at: string | null
@@ -141,6 +142,10 @@ export interface RunTotals {
 
 export interface RunsResponse {
   runs: RunSummary[]
+  tasks?: string[]
+  total?: number
+  offset?: number
+  limit?: number
 }
 
 export interface Session {
@@ -354,8 +359,13 @@ export interface StopResponse {
 }
 
 /** `archived`: the archived runs instead of the active (not archived) ones. */
-export function fetchRuns(archived = false): Promise<RunsResponse> {
-  return getApi<RunsResponse>(archived ? '/runs?archived=1' : '/runs')
+export function fetchRuns(archived = false, options: { offset?: number; limit?: number; state?: string; task?: string } = {}): Promise<RunsResponse> {
+  const query = new URLSearchParams()
+  if (archived) query.set('archived', '1')
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined && value !== '') query.set(key, String(value))
+  }
+  return getApi<RunsResponse>(`/runs${query.size ? `?${query}` : ''}`)
 }
 
 /** Cost totals over every run; the Runs page asks for them when its costs section opens. */

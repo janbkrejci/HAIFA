@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import TerminalOverlay from './components/terminal/TerminalOverlay.vue'
+import { asyncView } from './lib/asyncView'
 import { createSecretKeys } from './lib/secretKeys'
 import { errorText } from './lib/format'
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
@@ -24,7 +24,7 @@ import {
 import { useTheme } from './lib/theme'
 import { cancelLeave, confirmLeave, leaveDialog } from './lib/leaveGuard'
 import ConfirmDialog from './components/ui/ConfirmDialog.vue'
-import SetupView from './views/SetupView.vue'
+
 import OverviewView from './views/OverviewView.vue'
 import ProblemsView from './views/ProblemsView.vue'
 import GuideView from './views/GuideView.vue'
@@ -44,6 +44,9 @@ import RepoSwitcher from './components/RepoSwitcher.vue'
 import RemoveRepoDialog from './components/repos/RemoveRepoDialog.vue'
 import Spinner from './components/ui/Spinner.vue'
 import Tooltip from './components/ui/Tooltip.vue'
+
+const TerminalOverlay = asyncView(() => import('./components/terminal/TerminalOverlay.vue'))
+const SetupView = asyncView(() => import('./views/SetupView.vue'))
 
 const terminalOpen = ref(false)
 const secretKeys = createSecretKeys()

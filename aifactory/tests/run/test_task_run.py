@@ -124,7 +124,9 @@ def test_outputs_are_named_by_task(repo: Path, script: Script) -> None:
 
 
 @pytest.mark.parametrize("harness", ["claude", "codex", "pi"])
-def test_write_to_main_checkout_is_reverted(tmp_path: Path, script: Script, harness: str) -> None:
+def test_unattributed_main_changes_are_preserved_and_block_run(
+    tmp_path: Path, script: Script, harness: str
+) -> None:
     repo = make_run_repo(tmp_path / "repo", harness)
 
     def stray(wt: Path) -> None:
@@ -140,14 +142,16 @@ def test_write_to_main_checkout_is_reverted(tmp_path: Path, script: Script, harn
     error = result.run.error or ""
     assert "main checkout" in error
     assert "app_docs/x.md" in error and "README.md" in error
-    assert not (repo / "app_docs" / "x.md").exists()
-    assert (repo / "README.md").read_text(encoding="utf-8") == "readme\n"
-    assert git(repo, "status", "--porcelain") == ""
+    assert (repo / "app_docs" / "x.md").read_text() == "stray\n"
+    assert (repo / "README.md").read_text(encoding="utf-8") == "hijacked\n"
+    assert "conflicting change preserved" in error
     assert [call.harness for call in script.calls] == [harness]
     assert Path(script.calls[0].cwd).resolve() == Path(result.run.worktree)
 
 
-def test_agent_reverting_main_checkout_work_is_restored(repo: Path, script: Script) -> None:
+def test_main_deletion_retains_original_evidence_without_rewriting_checkout(
+    repo: Path, script: Script
+) -> None:
     write(repo, "README.md", "engineer wip\n")
     write(repo, "notes/wip.txt", "draft\n")
 
@@ -161,8 +165,12 @@ def test_agent_reverting_main_checkout_work_is_restored(repo: Path, script: Scri
     result = run_task(repo, T01)
 
     assert result.run.state == "failed"
-    assert (repo / "README.md").read_text(encoding="utf-8") == "engineer wip\n"
-    assert (repo / "notes" / "wip.txt").read_text(encoding="utf-8") == "draft\n"
+    assert (repo / "README.md").read_text(encoding="utf-8") == "readme\n"
+    assert not (repo / "notes" / "wip.txt").exists()
+    saved = repo / ".factory/data/sessions" / result.run.run_id / "guard_backup"
+    original = next(saved.glob("*/main/files/README.md"))
+    assert original.read_text() == "engineer wip\n"
+    assert (original.parent / "notes/wip.txt").read_text() == "draft\n"
     error = result.run.error or ""
     assert "main checkout: README.md" in error
     assert "main checkout: notes/wip.txt" in error
@@ -205,14 +213,16 @@ def test_agent_commit_outside_writes_is_reverted(repo: Path, script: Script) -> 
     assert "HEAD" in error and "src/other.py" in error
 
 
-def test_breach_is_reverted_even_when_gate_fails(repo: Path, script: Script) -> None:
+def test_main_breach_is_preserved_and_reported_even_when_gate_fails(
+    repo: Path, script: Script
+) -> None:
     script.on("planner", lambda wt: write(repo, "app_docs/x.md", "stray\n"))
     script.add("planner", ok(artifacts=["specs/missing.md"]))
 
     result = run_task(repo, T01)
 
     assert result.run.state == "failed"
-    assert not (repo / "app_docs" / "x.md").exists()
+    assert (repo / "app_docs" / "x.md").read_text() == "stray\n"
     assert "app_docs/x.md" in (result.run.error or "")
 
 
@@ -226,7 +236,7 @@ def test_artifact_in_main_checkout_is_rejected(repo: Path, script: Script) -> No
     assert result.run.state == "failed"
     error = result.run.error or ""
     assert f"main checkout: {SPEC}" in error
-    assert not (repo / SPEC).exists()
+    assert (repo / SPEC).read_text() == "# spec\n"
 
 
 def test_empty_commit_does_not_fail(repo: Path, script: Script) -> None:
@@ -725,3 +735,26 @@ def test_local_binding_keeps_explicit_workflow_override_visible(
     record = result.workflow_run.records[0]
     assert (record.harness, record.model, record.thinking) == ("claude", model, thinking)
     assert "harness=codex" in (result.run.note or "")
+
+
+def test_concurrent_human_main_edit_keeps_index_and_conflict_evidence(
+    repo: Path, script: Script
+) -> None:
+    def human_edit(wt: Path) -> None:
+        write(repo, "README.md", "human staged work\n")
+        git(repo, "add", "README.md")
+        write(repo, "README.md", "human unsaved work\n")
+        write(repo, "notes/new.txt", "human new file\n")
+
+    script.on("planner", human_edit)
+    script.add("planner", ok())
+    result = run_task(repo, T01)
+    assert result.run.state == "failed"
+    assert result.run.failure_kind == "writes_violation"
+    assert (repo / "README.md").read_text() == "human unsaved work\n"
+    assert git(repo, "show", ":README.md") == "human staged work"
+    assert (repo / "notes/new.txt").read_text() == "human new file\n"
+    saved = repo / ".factory/data/sessions" / result.run.run_id / "guard_backup"
+    evidence = next(saved.glob("*/main-conflict/files/README.md"))
+    assert evidence.read_text() == "human unsaved work\n"
+    assert (evidence.parent / "notes/new.txt").read_text() == "human new file\n"

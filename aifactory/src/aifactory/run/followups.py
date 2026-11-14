@@ -466,21 +466,17 @@ def reconcile_ids(
             merged = fixed
         else:
             try:
-                tree = git.git(root, "merge-tree", "--write-tree", fixed, target).splitlines()[0]
-            except RuntimeError as exc:
+                merged = git.merge_commit(
+                    root,
+                    fixed,
+                    target,
+                    "merge",
+                    "Merge current target and reconcile follow-up IDs",
+                )
+            except ProviderError as exc:
                 raise ProviderError(
                     "follow_up_collision", f"cannot merge follow-ups into {base}: {exc}"
                 ) from exc
-            merged = git.git(
-                root,
-                "commit-tree",
-                tree,
-                "-p",
-                fixed,
-                "-p",
-                target,
-                input="Merge current target and reconcile follow-up IDs\n",
-            )
         with _snapshot(root, merged, settings) as combined:
             baseline = {(i.code, i.path, i.message) for i in check_backlog(latest)}
             problems = [

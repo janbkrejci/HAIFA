@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import BackLink from '@/components/ui/BackLink.vue'
 import ReviewDetail from '@/components/review/ReviewDetail.vue'
@@ -61,6 +61,8 @@ const shownDetail = computed(() =>
 )
 /** Number of the latest screen load: an answer of an older load is dropped. */
 let loadSeq = 0
+let refreshPending = false
+onBeforeUnmount(() => { loadSeq += 1; refreshPending = false })
 
 function setDetail(id: string, data: ReviewDetailData | null) {
   detail.value = data
@@ -157,24 +159,26 @@ function onRetry() {
 
 /** Refresh the list quietly (no spinner). */
 async function refreshList() {
+  const seq = ++loadSeq
   try {
     const data = normalise(await fetchReviews({ done: showDone.value }))
-    if (!taskId.value) {
+    if (seq === loadSeq && !taskId.value) {
       list.value = data
       listReady.value = true
     }
   } catch (e) {
-    error.value = `PR se nepodařilo načíst: ${message(e)}`
+    if (seq === loadSeq) error.value = `PR se nepodařilo načíst: ${message(e)}`
   }
 }
 
 /** Refresh the open PR quietly, keeping the page when it fails. */
 async function refreshDetail(id: string) {
+  const seq = ++loadSeq
   try {
     const data = await fetchReview(id)
-    if (taskId.value === id && data?.pr) setDetail(id, data)
+    if (seq === loadSeq && taskId.value === id && data?.pr) setDetail(id, data)
   } catch (e) {
-    error.value = `PR tasku ${id} se nepodařilo obnovit: ${message(e)}`
+    if (seq === loadSeq && taskId.value === id) error.value = `PR tasku ${id} se nepodařilo obnovit: ${message(e)}`
   }
 }
 
@@ -197,23 +201,29 @@ function idle(): boolean {
   return !busy.value && !loading.value
 }
 
+/** Coalesce live events arriving while a load or mutation is in progress. */
+function requestRefresh() {
+  if (!idle()) { refreshPending = true; return }
+  refreshPending = false
+  if (taskId.value) void refreshDetail(taskId.value)
+  else void refreshList()
+}
+
+watch([busy, loading], () => {
+  if (idle() && refreshPending) requestRefresh()
+})
+
 function onFiles(event: LiveFilesEvent) {
-  if (!idle()) return
   const id = taskId.value
-  if (id) {
-    if (event.truncated || touchesTask(event.paths, id)) void refreshDetail(id)
-  } else if (event.areas.includes('backlog')) void refreshList()
+  if (id ? event.truncated || touchesTask(event.paths, id) : event.areas.includes('backlog')) requestRefresh()
 }
 
 function onTrace(event: LiveTraceEvent) {
-  if (!idle()) return
   const id = taskId.value
-  if (id) {
-    if (event.task_ids.includes(id)) void refreshDetail(id)
-  } else if (event.runs_changed) void refreshList()
+  if (id ? event.task_ids.includes(id) : event.runs_changed) requestRefresh()
 }
 
-useLive({ files: onFiles, trace: onTrace, resync: () => idle() && reload() })
+useLive({ files: onFiles, trace: onTrace, resync: requestRefresh })
 
 async function act(key: ReviewAction, run: () => Promise<void>, failure: string) {
   busy.value = true

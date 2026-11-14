@@ -123,7 +123,7 @@ async function onStop() {
           <Play v-else :size="16" /> Pokračovat
         </button>
         <button
-          v-if="run.state === 'running'"
+          v-if="run.state === 'running' && run.owned_here !== false"
           type="button"
           class="stop"
           data-test="stop-run"
@@ -135,6 +135,7 @@ async function onStop() {
           <CircleStop v-else :size="16" /> Zastavit
         </button>
         <RetryRunButton v-if="canRetry(run) && !card" :run-id="run.run_id" @started="emit('retried')" />
+        <span v-if="run.state === 'running' && run.owned_here === false" class="faint" data-test="remote-run">Běží na jiném stroji; zastavení je dostupné tam.</span>
       </div>
       <DemoSteps v-if="demo !== null" :run="run" :phases="phases" />
       <FailureCard v-if="card" :run="run" :phases="phases" @retried="emit('retried')" @cancelled="emit('cancelled')" @done="emit('done')" />

@@ -61,9 +61,11 @@ trace DB is not created. Git is read only through the config readers, which run 
 ``GIT_OPTIONAL_LOCKS=0``; there is no ``git fetch`` and no provider call. The PR states in
 ``task_prs`` are kept fresh by the dashboard's background refresh (``pr_refresh.py``). The
 config state is kept for ``CONFIG_TTL`` seconds and the task titles for ``TASKS_TTL`` seconds
-per repository. Repositories are computed concurrently with ``REPO_TIMEOUT`` seconds each; a
+per repository; file/directory metadata invalidates task reads before expiry. Repositories
+are computed concurrently with ``REPO_TIMEOUT`` seconds each; a
 slow or broken repository comes back with ``state`` ``timeout`` or ``error`` and a warning, the
-others as usual.
+others as usual. A completed timed-out computation is delivered on the next poll with
+``stale: true``; the following poll computes fresh state.
 """
 
 from __future__ import annotations
@@ -94,6 +96,8 @@ from aifactory.backlog import (
     load_for_edit,
 )
 from aifactory.backlog.derived import ancestors
+from aifactory.backlog.loader import load_settings
+from aifactory.backlog.roots import backlog_roots
 from aifactory.config import ConfigError
 from aifactory.config.loader import load_config
 from aifactory.config.repo_state import repo_state
@@ -141,13 +145,36 @@ STARTABLE_STATES = frozenset({"ok", "uncommitted"})
 class _Tasks:
     index: TaskIndex
     backlog: Backlog | None
-    stamps: dict[str, tuple[int, int] | None] = field(default_factory=dict)
+    stamps: dict[str, tuple[int, int, int] | None] = field(default_factory=dict)
 
 
-def _task_stamp(root: Path, path: str) -> tuple[int, int] | None:
+def _task_stamps(root: Path, backlog: Backlog | None) -> dict[str, tuple[int, int, int] | None]:
+    """Stat known files and directories; directory changes catch additions and Git moves."""
+    paths = {".factory/config.yaml"}
+    try:
+        settings = backlog.settings if backlog is not None else load_settings(root)
+    except (ConfigError, OSError, ValueError):
+        settings = None
+    if settings is not None:
+        # Watch intermediate wildcard directories too, including currently empty roots.
+        for pattern in settings.backlog_patterns:
+            parts = Path(pattern).parts
+            for i in range(len(parts)):
+                parents = root.glob(str(Path(*parts[:i]))) if i else [root]
+                paths.update(str(parent) for parent in parents if parent.is_dir())
+        for directory in backlog_roots(root, settings):
+            top = root / directory
+            paths.add(str(top))
+            for current, _dirs, files in os.walk(top):
+                paths.add(current)
+                paths.update(str(Path(current) / name) for name in files if name.endswith(".md"))
+    return {path: _task_stamp(root, path) for path in paths}
+
+
+def _task_stamp(root: Path, path: str) -> tuple[int, int, int] | None:
     try:
         stat = (root / path).stat()
-        return stat.st_mtime_ns, stat.st_size
+        return stat.st_mtime_ns, stat.st_ctime_ns, stat.st_size
     except OSError:
         return None
 
@@ -177,6 +204,26 @@ def _process(pid: int | None) -> str:
     except (OSError, OverflowError, ValueError):
         return "unknown"
     return "alive"
+
+
+def _row_process(row: sqlite3.Row) -> str:
+    # A PID has meaning only on the machine that claimed it.
+    if "owned_here" in row.keys() and not row["owned_here"]:
+        return "unknown"
+    if "pid_created_at" in row.keys() and row["pid_created_at"] is not None:
+        if oscompat.process_matches(row["pid"], row["pid_created_at"]) is False:
+            return "ended"
+    return _process(row["pid"])
+
+
+def _ownership(conn: sqlite3.Connection, id_column: str) -> str:
+    if not _has_table(conn, "haifa_owners"):
+        return "1 AS owned_here"
+    # MACHINE is a generated hexadecimal identity, never supplied by a request.
+    return (
+        f"COALESCE((SELECT machine = '{database.MACHINE}' FROM haifa_owners "
+        f"WHERE id = {id_column}), 0) AS owned_here"
+    )
 
 
 class _TtlCache:
@@ -266,6 +313,7 @@ class _Trace:
     excluded: frozenset[str] = frozenset()
     sync_prs: list[sqlite3.Row] = field(default_factory=list)
     auto_actions: list[JsonDict] = field(default_factory=list)
+    activity: list[str] = field(default_factory=list)
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> set[str]:
@@ -280,32 +328,44 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
     costs: dict[str, tuple[float, int]] = {}
     excluded: frozenset[str] = frozenset()
     sync_prs: list[sqlite3.Row] = []
+    activity: list[str] = []
     if _has_table(conn, "task_runs"):
         run_columns = _columns(conn, "task_runs")
         pause = "pause" if "pause" in run_columns else "NULL AS pause"
         kind = "failure_kind" if "failure_kind" in run_columns else "NULL AS failure_kind"
         branch = "branch" if "branch" in run_columns else "NULL AS branch"
         pr_error = "pr_error" if "pr_error" in run_columns else "NULL AS pr_error"
+        identity = "pid_created_at" if "pid_created_at" in run_columns else "NULL AS pid_created_at"
         runs = conn.execute(
             "SELECT rowid, run_id, task_id, state, started_at, ended_at, pid, workflow, error, "
-            f"{pause}, {kind}, {branch}, {pr_error} FROM task_runs "
+            f"{pause}, {kind}, {branch}, {pr_error}, {identity}, "
+            f"{_ownership(conn, 'run_id')} FROM task_runs WHERE rowid IN ("
+            "SELECT rowid FROM (SELECT rowid, state, ROW_NUMBER() OVER "
+            "(PARTITION BY task_id ORDER BY started_at DESC, rowid DESC) AS rank "
+            "FROM task_runs) WHERE rank = 1 OR state = 'running') "
             "ORDER BY started_at DESC, rowid DESC"
         ).fetchall()
+        activity.extend(
+            v
+            for v in conn.execute("SELECT MAX(started_at), MAX(ended_at) FROM task_runs").fetchone()
+            if v
+        )
     if _has_table(conn, "task_operations"):
         # Reuse the shared display/capacity derivation without inventing task_runs.
         # A claimed live run carries richer phase/pause evidence than its launcher.
         live_tasks = {
-            r["task_id"] for r in runs if r["state"] == "running" and _process(r["pid"]) != "ended"
+            r["task_id"] for r in runs if r["state"] == "running" and _row_process(r) != "ended"
         }
         operations = conn.execute(
             "SELECT operation_id AS run_id, task_id, 'running' AS state, started_at, "
             "NULL AS ended_at, pid, action AS workflow, NULL AS error, NULL AS pause, "
-            "NULL AS failure_kind, NULL AS branch, NULL AS pr_error "
+            "NULL AS failure_kind, NULL AS branch, NULL AS pr_error, "
+            f"{_ownership(conn, 'operation_id')} "
             "FROM task_operations ORDER BY started_at DESC, rowid DESC"
         ).fetchall()
         pending = []
         for operation in operations:
-            if operation["task_id"] in live_tasks or _process(operation["pid"]) == "ended":
+            if operation["task_id"] in live_tasks or _row_process(operation) == "ended":
                 continue
             pending.append(operation)
             live_tasks.add(operation["task_id"])
@@ -319,10 +379,21 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
         merged = "merged_at" if "merged_at" in columns else "NULL AS merged_at"
         error = "auto_merge_error" if "auto_merge_error" in columns else "NULL AS auto_merge_error"
         approved = "approved_at" if "approved_at" in columns else "NULL AS approved_at"
+        branches = [r["branch"] for r in runs if r["branch"]]
+        branch_filter = (
+            " OR branch IN (" + ",".join("?" for _ in branches) + ")" if branches else ""
+        )
         prs = conn.execute(
             "SELECT rowid, branch, task_id, pr_id, url, state, created_at, updated_at, "
-            f"{merged}, {error}, {approved} FROM task_prs"
+            f"{merged}, {error}, {approved} FROM task_prs WHERE rowid IN ("
+            "SELECT rowid FROM (SELECT rowid, ROW_NUMBER() OVER "
+            "(PARTITION BY task_id, state = 'open' ORDER BY created_at DESC, rowid DESC) AS rank "
+            f"FROM task_prs) WHERE rank = 1){branch_filter}",
+            branches,
         ).fetchall()
+        activity.extend(
+            v for v in conn.execute("SELECT MAX(updated_at) FROM task_prs").fetchone() if v
+        )
     if _has_table(conn, "sync_prs"):
         sync_prs = conn.execute(
             "SELECT branch, url, state, tasks, created_at FROM sync_prs "
@@ -349,7 +420,7 @@ def _read_trace(conn: sqlite3.Connection) -> _Trace:
             running_ids,
         ):
             costs[row["adw_id"]] = (float(row["total_cost"] or 0.0), int(row["total_tokens"] or 0))
-    return _Trace(runs, prs, phases, costs, excluded, sync_prs, auto_actions)
+    return _Trace(runs, prs, phases, costs, excluded, sync_prs, auto_actions, activity)
 
 
 def _auto_actions(conn: sqlite3.Connection) -> list[JsonDict]:
@@ -446,6 +517,7 @@ def _lists(
     now: datetime,
     root: Path,
     backlog: Backlog | None = None,
+    merge_policy: JsonDict | None = None,
 ) -> tuple[JsonDict, str | None]:
     def title(task_id: str) -> str | None:
         hit = tasks.get(task_id)
@@ -464,7 +536,7 @@ def _lists(
             continue
         if _closed(tasks, row["task_id"]):
             continue
-        process = _process(row["pid"])
+        process = _row_process(row)
         active.add(row["task_id"])
         listed.add(row["task_id"])
         cost, tokens = trace.costs.get(row["run_id"], (0.0, 0))
@@ -480,6 +552,7 @@ def _lists(
                 "cost": round(cost, 6),
                 "tokens": tokens,
                 "process": process,
+                "owned_here": bool(row["owned_here"]) if "owned_here" in row.keys() else True,
                 "status_label": PROCESS_ENDED if process == "ended" else None,
                 "pause": row["pause"],
             }
@@ -497,8 +570,12 @@ def _lists(
         opened = _time(pr["created_at"])
         age = None if opened is None else round(max(0.0, (now - opened).total_seconds()), 1)
         task = backlog.by_id.get(pr["task_id"]) if backlog is not None else None
-        merges = waits_for_automerge(
-            root, task if isinstance(task, Task) else None, pr["auto_merge_error"]
+        merges = (
+            isinstance(task, Task) and bool(merge_policy["value"]) and not pr["auto_merge_error"]
+            if merge_policy is not None
+            else waits_for_automerge(
+                root, task if isinstance(task, Task) else None, pr["auto_merge_error"]
+            )
         )
         waiting = bool(pr["approved_at"] and not pr["auto_merge_error"])
         (approved if waiting else automerge if merges else review).append(
@@ -541,6 +618,7 @@ def _lists(
     last: tuple[datetime, str] | None = None
     stamps = [v for r in trace.runs for v in (r["started_at"], r["ended_at"])]
     stamps += [p["updated_at"] for p in trace.prs]
+    stamps += trace.activity
     for value in stamps:
         parsed = _time(value)
         if parsed is not None and (last is None or parsed > last[0]):
@@ -613,9 +691,9 @@ def _task_index(root: Path) -> tuple[_Tasks, list[str]]:
     try:
         backlog = load_for_edit(root)
     except (ConfigError, TaskEditError, OSError, ValueError) as exc:
-        return _Tasks({}, None), [f"task titles are not available: {exc}"]
+        return _Tasks({}, None, _task_stamps(root, None)), [f"task titles are not available: {exc}"]
     index = {t.id: (t.title, t.status, t.path) for t in iter_tasks(backlog)}
-    stamps = {task_id: _task_stamp(root, hit[2]) for task_id, hit in index.items()}
+    stamps = _task_stamps(root, backlog)
     return _Tasks(index, backlog, stamps), []
 
 
@@ -628,7 +706,7 @@ def _active_runs(trace: _Trace | None) -> list[sqlite3.Row]:
         for r in trace.runs
         if r["state"] == "running"
         and not r["run_id"].startswith("operation-")
-        and _process(r["pid"]) != "ended"
+        and _row_process(r) != "ended"
     ]
 
 
@@ -640,10 +718,14 @@ def _project_id(backlog: Backlog | None, task_id: str | None) -> str | None:
 
 
 def _task_summary(
-    backlog: Backlog, trace: _Trace | None, active: list[sqlite3.Row]
+    backlog: Backlog,
+    trace: _Trace | None,
+    active: list[sqlite3.Row],
+    merge_policy: JsonDict | None = None,
 ) -> tuple[JsonDict, list[str], list[JsonDict]]:
     """Repository/project board-state counts (including zeros) and ready ids, in one pass."""
     rt = _display_runtime(trace.runs, trace.prs) if trace is not None else _display_runtime([], [])
+    rt.merge_policy = merge_policy
     # Keep capacity's pre-existing ready calculation separate from display handoffs.
     active_ids = {r["task_id"] for r in active}
     counts: JsonDict = dict.fromkeys(BOARD_STATES, 0)
@@ -763,6 +845,7 @@ class Overview:
         # while its computation still runs a new request waits for it instead of adding a thread.
         self._pool = ThreadPoolExecutor(max_workers=WORKERS, thread_name_prefix="overview")
         self._inflight: dict[tuple[str, str], Future[JsonDict]] = {}
+        self._delayed: set[tuple[str, str]] = set()
         self._inflight_lock = threading.Lock()
 
     def repo(self, entry: RepoEntry) -> JsonDict:
@@ -777,16 +860,9 @@ class Overview:
         root = layout.toplevel
         config, config_warnings = self._configs.get(key, root, lambda: _config_view(root))
         tasks, task_warnings = self._tasks.get(key, TASKS_TTL, lambda: _task_index(root))
+        if any(stamp != _task_stamp(root, path) for path, stamp in tasks.stamps.items()):
+            tasks, task_warnings = self._tasks.get(key, 0, lambda: _task_index(root))
         trace, trace_warnings = _trace_view(trace_db_of(root))
-        if trace is not None:
-            handoffs = {r["task_id"] for r in trace.runs if r["state"] == "succeeded"}
-            handoffs.update(p["task_id"] for p in trace.prs if p["state"] == "merged")
-            if any(
-                task_id in tasks.index
-                and tasks.stamps.get(task_id) != _task_stamp(root, tasks.index[task_id][2])
-                for task_id in handoffs
-            ):
-                tasks, task_warnings = self._tasks.get(key, 0, lambda: _task_index(root))
         item = _stub(entry, _state(config), [*config_warnings, *task_warnings, *trace_warnings])
         item["config"] = config
         from aifactory.repo_settings import RepositorySettings, SettingsError
@@ -804,13 +880,22 @@ class Overview:
 
         active = _active_runs(trace)
         summary, ready, projects = (
-            (None, [], []) if tasks.backlog is None else _task_summary(tasks.backlog, trace, active)
+            (None, [], [])
+            if tasks.backlog is None
+            else _task_summary(tasks.backlog, trace, active, item["auto_merge_policy"])
         )
         item["tasks"] = summary
         item["projects"] = projects
         item["factory"] = _factory(root, item["state"], ready, trace, active, self.control)
         if trace is not None:
-            lists, last = _lists(trace, tasks.index, datetime.now(UTC), root, tasks.backlog)
+            lists, last = _lists(
+                trace,
+                tasks.index,
+                datetime.now(UTC),
+                root,
+                tasks.backlog,
+                item["auto_merge_policy"],
+            )
             item.update(lists)
             item["has_trace"] = True
             item["last_activity"] = last
@@ -820,16 +905,40 @@ class Overview:
         key = (entry.id, entry.path)
         with self._inflight_lock:
             future = self._inflight.get(key)
-            if future is None or future.done():
+            delayed = key in self._delayed
+            if future is None:
                 future = self._pool.submit(self.repo, entry)
                 self._inflight[key] = future
+        delivered = False
         try:
-            return await asyncio.wait_for(asyncio.shield(asyncio.wrap_future(future)), self.timeout)
+            result = await asyncio.wait_for(
+                asyncio.shield(asyncio.wrap_future(future)), self.timeout
+            )
+            delivered = True
+            return {**result, "stale": delayed}
         except TimeoutError:
+            if (
+                future.done()
+                and not future.cancelled()
+                and isinstance(future.exception(), TimeoutError)
+            ):
+                delivered = True
+                return _stub(entry, "error", [f"TimeoutError: {future.exception()}"])
+            with self._inflight_lock:
+                self._delayed.add(key)
             warning = f"repository {entry.id} did not answer within {self.timeout:g} s"
             return _stub(entry, "timeout", [warning])
         except Exception as exc:  # one broken repository never fails the response
+            delivered = True
             return _stub(entry, "error", [f"{type(exc).__name__}: {exc}"])
+        finally:
+            # A timeout retains its future, including a result completed between polls.
+            # Remove only after delivery; a newer request may already own another future.
+            if delivered:
+                with self._inflight_lock:
+                    if self._inflight.get(key) is future:
+                        del self._inflight[key]
+                        self._delayed.discard(key)
 
     async def collect(self) -> tuple[JsonDict, list[str]]:
         """``({repos, totals}, registry warnings)`` for every registered repository."""
@@ -841,6 +950,7 @@ class Overview:
         with self._inflight_lock:
             for key in [k for k in self._inflight if k not in keep]:
                 del self._inflight[key]
+                self._delayed.discard(key)
         repos = list(await asyncio.gather(*(self._bounded(e) for e in state.repos)))
         totals = {
             "repos": len(repos),

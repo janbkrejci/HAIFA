@@ -142,7 +142,7 @@ describe('fetchPhasePrompts', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
     expect(await fetchPhasePrompts('r ok', 'p1')).toEqual(data)
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r%20ok/phases/p1/prompts')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r%20ok/phases/p1/prompts', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 })
 
@@ -220,9 +220,9 @@ describe('archived runs', () => {
   it('asks for the archived list only in the archived view', async () => {
     const fetchMock = stubFetch()
     await fetchRuns()
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await fetchRuns(true)
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs?archived=1')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs?archived=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('posts the archive and delete actions', async () => {

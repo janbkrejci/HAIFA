@@ -9,12 +9,14 @@ import sys
 from collections.abc import Iterator
 from pathlib import Path
 
+import psutil
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web"))
 
 from trace_fixture import T1, T2, make_trace_db  # noqa: E402
 
+from aifactory import oscompat  # noqa: E402
 from aifactory.run import STOPPED, TaskRunError, TaskRunStore, stop_run  # noqa: E402
 from aifactory.run.store import FAILED  # noqa: E402
 from cli_json import run_json  # noqa: E402
@@ -46,17 +48,23 @@ def _db(repo: Path) -> Path:
 def _repo(tmp_path: Path, pid: int) -> Path:
     repo = make_trace_db(tmp_path / "repo", os.getpid())
     store = TaskRunStore(_db(repo))
-    store.conn.execute("UPDATE task_runs SET pid = ? WHERE run_id = 'r-run'", (pid,))
+    store.conn.execute(
+        "UPDATE task_runs SET pid = ?, pid_created_at = ? WHERE run_id = 'r-run'",
+        (pid, oscompat.process_created_at(pid)),
+    )
     store.close()
     return repo
 
 
 def _add_process(repo: Path, kind: str, pid: int, command: str) -> None:
     conn = sqlite3.connect(str(_db(repo)))
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(processes)")}
+    if "pid_created_at" not in columns:
+        conn.execute("ALTER TABLE processes ADD COLUMN pid_created_at REAL")
     conn.execute(
-        "INSERT INTO processes (adw_id, kind, name, pid, command, started_at) "
-        "VALUES ('r-run', ?, 'planner', ?, ?, '2026-01-03T10:00:00+00:00')",
-        (kind, pid, command),
+        "INSERT INTO processes (adw_id, kind, name, pid, command, started_at, pid_created_at) "
+        "VALUES ('r-run', ?, 'planner', ?, ?, '2026-01-03T10:00:00+00:00', ?)",
+        (kind, pid, command, oscompat.process_created_at(pid)),
     )
     conn.commit()
     conn.close()
@@ -173,3 +181,124 @@ def test_cli_stop(tmp_path: Path, procs: Spawn, capsys: Capsys) -> None:
     rc, env = run_json(capsys, ["task", "stop", T1, "--run", "r-ok", "--json", "--repo", str(repo)])
     assert rc == 2
     assert env["error"]["code"] == "run_not_running"
+
+
+def test_stop_never_signals_recycled_parent(tmp_path: Path, procs: Spawn) -> None:
+    unrelated = _sleeper(procs)
+    repo = _repo(tmp_path, unrelated.pid)
+    with sqlite3.connect(_db(repo)) as conn:
+        conn.execute(
+            "UPDATE task_runs SET pid_created_at = pid_created_at - 100 WHERE run_id = 'r-run'"
+        )
+    with pytest.raises(TaskRunError, match="run_not_running"):
+        stop_run(repo, "r-run", timeout=0)
+    assert unrelated.poll() is None
+    assert _state(repo, "r-run") == "aborted"
+
+
+def test_stop_refuses_legacy_parent_without_identity(tmp_path: Path, procs: Spawn) -> None:
+    unrelated = _sleeper(procs)
+    repo = _repo(tmp_path, unrelated.pid)
+    with sqlite3.connect(_db(repo)) as conn:
+        conn.execute("UPDATE task_runs SET pid_created_at = NULL WHERE run_id = 'r-run'")
+    with pytest.raises(TaskRunError, match="process_identity_unconfirmed"):
+        stop_run(repo, "r-run", timeout=0)
+    assert unrelated.poll() is None
+    assert _state(repo, "r-run") == "running"
+
+
+@pytest.mark.parametrize("created_at", [None, 1.0])
+def test_stop_skips_recycled_or_legacy_child_with_same_command(
+    tmp_path: Path, procs: Spawn, created_at: float | None
+) -> None:
+    run = _sleeper(procs)
+    unrelated = _sleeper(procs)
+    repo = _repo(tmp_path, run.pid)
+    _add_process(repo, "agent", unrelated.pid, Path(sys.executable).name)
+    with sqlite3.connect(_db(repo)) as conn:
+        conn.execute(
+            "UPDATE processes SET pid_created_at = ? WHERE pid = ?", (created_at, unrelated.pid)
+        )
+    result = stop_run(repo, "r-run", timeout=1)
+    assert result.signalled == [run.pid]
+    assert result.unverified == [unrelated.pid]
+    assert unrelated.poll() is None
+
+
+def test_force_escalation_rechecks_identity(
+    tmp_path: Path, procs: Spawn, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.run import stop
+
+    run = _sleeper(procs)
+    repo = _repo(tmp_path, run.pid)
+    calls: list[tuple[int, bool]] = []
+
+    def signal(pid: int, *, force: bool, created_at: float | None) -> bool:
+        calls.append((pid, force))
+        # Simulate reuse after TERM without signalling any real process.
+        monkeypatch.setattr(oscompat, "process_matches", lambda pid, created_at: False)
+        return True
+
+    monkeypatch.setattr(stop, "_signal", signal)
+    result = stop_run(repo, "r-run", timeout=0)
+    assert calls == [(run.pid, False)]
+    assert result.killed == []
+    assert run.poll() is None
+
+
+def test_windows_descendants_are_captured_child_first(monkeypatch: pytest.MonkeyPatch) -> None:
+    from types import SimpleNamespace
+
+    from aifactory.run import stop
+
+    child = SimpleNamespace(pid=12, create_time=lambda: 2.0)
+    grandchild = SimpleNamespace(pid=13, create_time=lambda: 3.0)
+
+    def children(*, recursive: bool) -> list[object]:
+        assert recursive
+        return [child, grandchild]
+
+    parent = SimpleNamespace(create_time=lambda: 1.0, children=children)
+    monkeypatch.setattr(psutil, "Process", lambda pid: parent)
+    assert stop._descendants(11, 1.0) == [(13, 3.0), (12, 2.0)]
+    assert stop._descendants(11, 9.0) == []
+    assert stop._descendants(11, None) == []
+
+
+def test_windows_stop_keeps_descendant_identity_for_escalation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from types import SimpleNamespace
+
+    from aifactory.run import stop
+
+    parent = 2_000_000_000
+    repo = _repo(tmp_path, parent)
+    with sqlite3.connect(_db(repo)) as conn:
+        conn.execute("UPDATE task_runs SET pid_created_at = 1 WHERE run_id = 'r-run'")
+    monkeypatch.setattr(stop, "sys", SimpleNamespace(platform="win32"))
+    monkeypatch.setattr(stop, "_alive", lambda pid: True)
+    monkeypatch.setattr(stop, "_running", lambda pid: True)
+    monkeypatch.setattr(stop, "_descendants", lambda pid, created_at: [(13, 3.0), (12, 2.0)])
+    calls: list[tuple[int, bool, float | None]] = []
+
+    def signal(pid: int, *, force: bool, created_at: float | None) -> bool:
+        calls.append((pid, force, created_at))
+        return True
+
+    monkeypatch.setattr(stop, "_signal", signal)
+    # Child 12's PID is reused between TERM and KILL. No real PID is signalled.
+    monkeypatch.setattr(
+        oscompat, "process_matches", lambda pid, created_at: not (pid == 12 and len(calls) >= 3)
+    )
+    result = stop_run(repo, "r-run", timeout=0)
+    assert calls == [
+        (13, False, 3.0),
+        (12, False, 2.0),
+        (parent, False, 1.0),
+        (13, True, 3.0),
+        (parent, True, 1.0),
+    ]
+    assert result.signalled == [13, 12, parent]
+    assert result.killed == [13, parent]

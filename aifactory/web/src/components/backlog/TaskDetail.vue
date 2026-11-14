@@ -218,7 +218,7 @@ watch(
   (next, previous) => {
     const sameTask = next.task.id === previous?.task.id
     // Preserve a draft across live refreshes while the task remains editable.
-    if (!sameTask || saving || !editing.value || inProgress.value || finished.value) {
+    if (!sameTask || (saving && !props.busy && !props.error) || !editing.value || inProgress.value || finished.value) {
       closeEdit()
       saving = false
     }
@@ -395,6 +395,7 @@ function onEdit(input: EditTaskInput) {
           :workflows="workflows"
           :task="task"
           :task-body="detail.body"
+          :revision="detail.revision"
           :busy="busy"
           :pending="action === 'edit'"
           :error="error"

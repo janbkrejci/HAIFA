@@ -39,7 +39,7 @@ describe('review api', () => {
     const fetchMock = vi.fn(async (_url: string) => ok({ prs: [] }))
     vi.stubGlobal('fetch', fetchMock)
     await fetchReviews()
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/review')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/review', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('posts return with a note and resolve with an empty body', async () => {

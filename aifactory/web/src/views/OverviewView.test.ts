@@ -313,7 +313,7 @@ describe('OverviewView', () => {
     await wrapper.get('[data-test="overview-refresh"]').trigger('click')
     await flushPromises()
     expect(overviewCalls(fetchMock)).toBe(4)
-    expect(fetchMock.mock.calls.every(([, init]) => init === undefined)).toBe(true)
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method || init.method === 'GET')).toBe(true)
   })
 
   it('pauses the reload in a hidden tab and reloads on return', async () => {

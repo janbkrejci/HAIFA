@@ -59,19 +59,19 @@ describe('backlog api', () => {
   it('asks for the whole backlog', async () => {
     const fetchMock = stubFetch(() => ok({ items: [] }))
     await fetchBacklog()
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('encodes task ids', async () => {
     const fetchMock = stubFetch(() => ok({}))
     await fetchTask('a/b')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/a%2Fb')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/a%2Fb', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('asks for task documents by task id', async () => {
     const fetchMock = stubFetch(() => ok({ task_id: 'a/b', documents: [] }))
     await fetchTaskDocuments('a/b')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/a%2Fb/documents')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/a%2Fb/documents', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('posts writes as JSON', async () => {
@@ -112,12 +112,12 @@ describe('backlog api', () => {
   it('calls the run, graph and auto-continue endpoints', async () => {
     const fetchMock = stubFetch(() => ok({}))
     await fetchRunCheck('T1')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/T1/run-check')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/tasks/T1/run-check', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await startRun('T1', { note: 'z UI', force: true })
     expect(fetchMock.mock.lastCall?.[0]).toBe('/api/repos/haifa/backlog/tasks/T1/run')
     expect(fetchMock.mock.lastCall?.[1]?.body).toBe('{"note":"z UI","force":true}')
     await fetchGraph('M01/S01')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/containers/M01%2FS01/graph')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/backlog/containers/M01%2FS01/graph', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await setAutoContinue('M01', 'inherit')
     expect(fetchMock.mock.lastCall?.[0]).toBe('/api/repos/haifa/backlog/containers/M01/auto-continue')
     expect(fetchMock.mock.lastCall?.[1]?.body).toBe('{"mode":"inherit"}')

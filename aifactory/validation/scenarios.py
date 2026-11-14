@@ -1242,17 +1242,22 @@ def b1(ctx: Context) -> ScenarioResult:
     head_readme = git(ctx.repo, "show", "HEAD:README.md", check=False)
     readme_now = readme.read_text(encoding="utf-8")
     res.check(
-        "write_reverted",
-        not breach.exists()
-        and readme_now == before_readme
-        and readme_now.rstrip("\n") == head_readme.rstrip("\n")
-        and after_status == before_status,
-        f"{BREACH_FILE} exists: {breach.exists()}; README.md unchanged: "
-        f"{readme_now == before_readme}; status {after_status!r} (before {before_status!r})",
+        "conflicting_write_preserved",
+        breach.is_file()
+        and breach.read_text(encoding="utf-8") == "written outside the worktree\n"
+        and readme_now == before_readme + "\nB1: written outside the worktree\n"
+        and head_readme.rstrip("\n") == before_readme.rstrip("\n")
+        and "conflicting change preserved" in message,
+        f"{BREACH_FILE} exists: {breach.exists()}; README.md conflict preserved: "
+        f"{readme_now != before_readme}; status {after_status!r} (before {before_status!r})",
     )
     if run_id:
         phases = ctx.phase_rows(run_id)
         build = phases.get("build", {})
+        evidence = list(
+            (ctx.session_dir(run_id) / "guard_backup").glob("*/main-conflict/manifest.json")
+        )
+        res.check("conflict_evidence_saved", bool(evidence), str(evidence))
         breaches = ctx.events(run_id, "error", "permission_breach")
         res.check(
             "phase_failed",
@@ -1273,6 +1278,12 @@ def b1(ctx: Context) -> ScenarioResult:
         "model k ověření nepotřebuje; zápisy jdou do negitignorovaných souborů, "
         "gitignorované hlídač nevidí"
     )
+    # Only the validation driver knows these exact writes came from its fixture.
+    # Restore them after recording the preserved conflict, for later scenarios.
+    if breach.is_file() and breach.read_text(encoding="utf-8") == "written outside the worktree\n":
+        breach.unlink()
+    if readme_now == before_readme + "\nB1: written outside the worktree\n":
+        readme.write_text(before_readme, encoding="utf-8", newline="\n")
     return res
 
 
