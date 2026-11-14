@@ -165,7 +165,7 @@ describe('Knihovna page', () => {
     const wrapper = mount(SetupView); await flushPromises()
     const alert = wrapper.get('[data-test="machine-timeout"]').text()
     expect(alert).toContain('Kontrola nedoběhla do 60 s. Nedokončený krok: machine: logins (claude auth status).')
-    expect(alert).toContain('(před 5 min)')
+    expect(alert).toContain('(5 min. ago)')
     // The old result is never presented as a current success.
     expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('Poslední známý stav: Počítač je v pořádku')
     expect(wrapper.get('[data-test="machine-verdict"]').classes()).toContain('is-bad')

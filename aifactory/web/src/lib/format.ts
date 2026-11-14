@@ -1,10 +1,12 @@
+import { intlLocale, t } from './i18n'
+
 // Formatting, ported from the sssf visualizer's src/lib/format.ts.
 // Durations here are in SECONDS (the API's duration_s), not milliseconds.
 
 export function fmtDuration(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds) || seconds < 0) return '—'
-  if (seconds < 1) return `${seconds.toFixed(2)}s`
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
+  if (seconds < 1) return `${fmtNumber(seconds, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}s`
+  if (seconds < 60) return `${fmtNumber(seconds, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}s`
   const m = Math.floor(seconds / 60)
   const rem = Math.round(seconds % 60)
   if (m < 60) return `${m}m ${String(rem).padStart(2, '0')}s`
@@ -14,14 +16,14 @@ export function fmtDuration(seconds: number | null | undefined): string {
 
 export function fmtTokens(n: number | null | undefined): string {
   if (n == null) return '—'
-  if (n < 1000) return String(n)
-  if (n < 1_000_000) return `${(n / 1000).toFixed(1)}k`
-  return `${(n / 1_000_000).toFixed(2)}M`
+  if (n < 1000) return fmtNumber(n)
+  if (n < 1_000_000) return `${fmtNumber(n / 1000, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}k`
+  return `${fmtNumber(n / 1_000_000, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}M`
 }
 
 export function fmtCost(n: number | null | undefined): string {
   if (n == null) return '—'
-  return n >= 1 ? `$${n.toFixed(2)}` : `$${n.toFixed(4)}`
+  return money(n, n >= 1 ? 2 : 4)
 }
 
 /** Local date and time, or — for a missing or invalid timestamp. */
@@ -29,15 +31,15 @@ export function fmtTime(iso: string | null | undefined): string {
   if (!iso) return '—'
   const t = new Date(iso).getTime()
   if (!Number.isFinite(t)) return '—'
-  return new Date(t).toLocaleString('cs-CZ', { hour12: false })
+  return new Date(t).toLocaleString(intlLocale.value, { hour12: false })
 }
 
-/** Day, month and time without the year ("4. 10. 12:00"), or null for a missing or invalid timestamp. */
+/** Local day, month and time without the year, or null for a missing or invalid timestamp. */
 export function fmtDayTime(iso: string | null | undefined): string | null {
   if (!iso) return null
   const at = new Date(iso)
   if (Number.isNaN(at.getTime())) return null
-  return at.toLocaleString('cs-CZ', { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })
+  return at.toLocaleString(intlLocale.value, { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })
 }
 
 /** Local time of day only, or — for a missing or invalid timestamp. */
@@ -45,22 +47,29 @@ export function fmtClock(iso: string | null | undefined): string {
   if (!iso) return '—'
   const t = new Date(iso).getTime()
   if (!Number.isFinite(t)) return '—'
-  return new Date(t).toLocaleTimeString('cs-CZ', { hour12: false })
+  return new Date(t).toLocaleTimeString(intlLocale.value, { hour12: false })
 }
 
 /** Dollars to four places: per-component costs run to fractions of a cent. */
 export function fmtMoney4(n: number | null | undefined): string {
-  return `$${(n ?? 0).toFixed(4)}`
+  return money(n ?? 0, 4)
 }
 
-const INT = new Intl.NumberFormat('cs-CZ')
+function money(n: number, digits: number): string {
+  return fmtNumber(n, { style: 'currency', currency: 'USD', minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
 
-/** A whole count with Czech thousands separators. */
+/** Locale is read on every call so render/computed consumers track changes. */
+export function fmtNumber(n: number, options: Intl.NumberFormatOptions = {}): string {
+  return new Intl.NumberFormat(intlLocale.value, options).format(n)
+}
+
+/** A count with locale-specific separators. */
 export function fmtInt(n: number | null | undefined): string {
-  return INT.format(n ?? 0)
+  return fmtNumber(n ?? 0)
 }
 
-/** Czech plural: 1 → one, 2–4 → few, otherwise many. */
+/** Legacy Czech literals only, until their callers migrate to catalog plurals via t(). */
 export function plural(n: number, one: string, few: string, many: string): string {
   if (n === 1) return one
   if (n >= 2 && n <= 4) return few
@@ -126,16 +135,17 @@ export function fmtElapsed(seconds: number | null | undefined): string {
   return `${Math.floor(h / 24)}d ${String(h % 24).padStart(2, '0')}h`
 }
 
-/** How long ago: "právě teď", "před 5 min", "před 3 h", "před 2 d"; — for a missing age. */
+/** Localized relative age; — for a missing age. */
 export function fmtAge(seconds: number | null | undefined): string {
   if (seconds == null || !Number.isFinite(seconds)) return '—'
   const s = Math.max(0, Math.floor(seconds))
-  if (s < 60) return 'právě teď'
+  if (s < 60) return t('time.justNow')
+  const relative = new Intl.RelativeTimeFormat(intlLocale.value, { style: 'short' })
   const m = Math.floor(s / 60)
-  if (m < 60) return `před ${m} min`
+  if (m < 60) return relative.format(-m, 'minute')
   const h = Math.floor(m / 60)
-  if (h < 24) return `před ${h} h`
-  return `před ${Math.floor(h / 24)} d`
+  if (h < 24) return relative.format(-h, 'hour')
+  return relative.format(-Math.floor(h / 24), 'day')
 }
 
 /** The short form of a commit sha (first `n` characters); '' for a missing one. */

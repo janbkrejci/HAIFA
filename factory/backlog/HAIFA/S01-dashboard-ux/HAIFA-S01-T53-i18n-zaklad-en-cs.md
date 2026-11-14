@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T53
 title: "Vícejazyčnost dashboardu: společný základ EN/CS a lokalizované formátování"
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/tests/]
 ---
@@ -22,3 +22,4 @@ Ověření: vyhledat přímé volající v celém aifactory/tests/ a zvolit jen 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/232 · náklady $0.00
