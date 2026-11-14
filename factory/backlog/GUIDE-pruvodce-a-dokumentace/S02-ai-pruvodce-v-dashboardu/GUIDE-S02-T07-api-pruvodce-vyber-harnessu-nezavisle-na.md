@@ -1,7 +1,7 @@
 ---
 id: GUIDE-S02-T07
 title: "API průvodce: výběr harnessu nezávisle na repozitáři"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/assistant.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_assistant.py]
@@ -28,3 +28,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/225 · náklady $0.00
