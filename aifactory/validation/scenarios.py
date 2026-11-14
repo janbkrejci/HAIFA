@@ -52,12 +52,15 @@ FORCED_REVIEW_HAPPY: tuple[str, ...] = (
     "commit_plan",
     "build",
     "test_plan",
+    "scoped_plan",
     "test_1",
     "review_1",
     "revise_1",
     "replan_1",
     "retest_1",
     "review_2",
+    "final_plan",
+    "final_test",
     "commit_build",
     "changes",
     "document",
@@ -79,7 +82,11 @@ CORE_PHASES: tuple[str, ...] = (
 )
 # phases a real model may add: repair rounds with their new plans, review rounds
 # with the new plan and retest after a revision.
-EXTRA_PHASE = re.compile(r"^(?:fix|test|test_plan|review|revise|replan|retest)_\d+$")
+EXTRA_PHASE = re.compile(
+    r"^(?:(?:fix|test|test_plan|review|revise|replan|retest)_\d+|"
+    r"scoped_plan(?:_\d+)?|final_plan|final_test|"
+    r"final_(?:repair|repair_plan|retest|review)_\d+)$"
+)
 R1_HARNESSES = frozenset({"claude", "codex", "pi"})
 
 R1_TASK = "M02-S01-T02"  # --version; later merged outside factory (R3)
