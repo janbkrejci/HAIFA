@@ -12,6 +12,7 @@ import {
   contextLabel,
   deleteThread,
   describeScreen,
+  fetchAssistantHarnesses,
   linkify,
   newThread,
   openThread,
@@ -23,16 +24,18 @@ import {
   showThreads,
   streamedAnswer,
   suggestions,
+  type AssistantHarness,
   type AssistantMessage,
   type ScreenContext,
   type ThreadSummary,
 } from '@/lib/assistant'
 import { useConfirm } from '@/lib/confirm'
-import { fmtDayTime } from '@/lib/format'
+import { errorText, fmtDayTime } from '@/lib/format'
 import { renderMarkdown } from '@/lib/markdown'
 import { usePage, useRepoId, useRoute, useRouteParams } from '@/lib/router'
 import ActionCard from './ActionCard.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import SelectMenu from '@/components/ui/SelectMenu.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 
@@ -83,6 +86,39 @@ const thread = computed(() => assistant.thread)
 const messages = computed<AssistantMessage[]>(() => thread.value?.messages ?? [])
 const busy = computed(() => !!thread.value?.busy || assistant.sending)
 const empty = computed(() => !assistant.loading && messages.value.length === 0 && !busy.value)
+const harnesses = ref<AssistantHarness[]>([])
+const harnessesLoading = ref(false)
+const harnessesError = ref('')
+const usableHarnesses = computed(() => harnesses.value.filter((h) => h.usable))
+const harnessOptions = computed(() => [
+  { value: '', label: 'Podle nastavení' },
+  ...usableHarnesses.value.map((h) => ({ value: h.harness, label: h.harness })),
+])
+const selectedHarness = computed(() => harnesses.value.find((h) => h.harness === assistant.selectedHarness))
+
+async function loadHarnesses(): Promise<void> {
+  harnessesLoading.value = true
+  harnessesError.value = ''
+  try {
+    harnesses.value = await fetchAssistantHarnesses()
+    if (!usableHarnesses.value.some((h) => h.harness === assistant.selectedHarness)) assistant.selectedHarness = ''
+  } catch (err) {
+    harnessesError.value = errorText(err)
+  } finally {
+    harnessesLoading.value = false
+  }
+}
+
+function openHarnessSettings(): void {
+  window.dispatchEvent(new Event('harness-settings-open'))
+}
+
+watch(
+  () => assistant.open && !assistant.thread && !assistant.loading,
+  (choose) => { if (choose) void loadHarnesses() },
+  { immediate: true },
+)
+
 const answering = computed(() => harnessLabel(thread.value?.harness, thread.value?.model, thread.value?.thinking))
 
 function harnessLabel(harness?: string, model?: string, thinking?: string | null): string {
@@ -126,6 +162,7 @@ const log = ref<HTMLElement | null>(null)
 async function submit(text = draft.value): Promise<void> {
   const sent = await send(text, context.value)
   if (sent && text === draft.value) draft.value = ''
+  if (!sent && !draft.value) draft.value = text
 }
 
 function onKey(event: KeyboardEvent): void {
@@ -151,7 +188,7 @@ watch(
         <Sparkles :size="16" aria-hidden="true" />
         <strong>AI průvodce</strong>
         <span v-if="answering" class="who" data-test="assistant-harness">{{ answering }}</span>
-        <span v-else class="who faint" data-test="assistant-harness">harness z nastavení počítače</span>
+        <span v-else class="who faint" data-test="assistant-harness">Podle nastavení</span>
       </div>
       <div class="head-actions">
         <Tooltip text="Starší vlákna">
@@ -261,6 +298,18 @@ watch(
       <p v-if="assistant.error" class="error composer-error" data-test="assistant-error">{{ assistant.error }}</p>
 
       <form class="composer" @submit.prevent="submit()">
+        <div v-if="!thread && !assistant.loading" class="harness-choice" data-test="assistant-harness-choice">
+          <label>Harness nového vlákna
+            <SelectMenu v-model="assistant.selectedHarness" :options="harnessOptions" label="Harness nového vlákna" data-test="assistant-harness-select" :disabled="assistant.sending || harnessesLoading" />
+          </label>
+          <p v-if="selectedHarness" class="faint" data-test="assistant-harness-preview">Model: {{ selectedHarness.model || 'výchozí model harnessu' }} · Thinking: {{ selectedHarness.thinking || 'výchozí nastavení harnessu' }}</p>
+          <p class="faint">Guide zatím vyžaduje podporovaný harness s omezenými nástroji (Claude nebo Codex). Pi není podporovaný. Volba platí jen pro nové vlákno.</p>
+          <p v-if="harnessesLoading" class="faint" data-test="assistant-harness-loading">Načítám harnessy…</p>
+          <p v-else-if="harnessesError" class="error" role="alert" data-test="assistant-harness-error">Harnessy se nepodařilo načíst: {{ harnessesError }} <button type="button" @click="loadHarnesses">Zkusit znovu</button></p>
+          <p v-else-if="!usableHarnesses.length" class="faint" data-test="assistant-harness-none">Není dostupný žádný podporovaný harness pro Guide.</p>
+          <p v-for="item in harnesses.filter(h => !h.usable)" :key="item.harness" class="faint">{{ item.harness }}: {{ item.reason }}</p>
+          <button type="button" class="suggestion" data-test="assistant-harness-settings" @click="openHarnessSettings">Harnessy tohoto počítače</button>
+        </div>
         <div v-if="context" class="chip" data-test="assistant-context">
           <span>{{ contextLabel(context) }}</span>
           <button type="button" class="chip-remove" aria-label="Odebrat kontext obrazovky" data-test="assistant-context-remove" @click="removeContext">
@@ -283,6 +332,8 @@ watch(
 </template>
 
 <style scoped>
+.harness-choice { font-size: 12px; }
+.harness-choice p { margin: 6px 0; }
 .assistant {
   position: fixed;
   top: 0;
