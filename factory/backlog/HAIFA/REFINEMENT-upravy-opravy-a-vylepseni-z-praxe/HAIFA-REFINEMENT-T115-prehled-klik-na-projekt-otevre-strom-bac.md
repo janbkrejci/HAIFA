@@ -2,6 +2,7 @@
 id: HAIFA-REFINEMENT-T115
 title: "Přehled: klik na projekt otevře strom backlogu filtrovaný na projekt s rozbalenou první úrovní"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [HAIFA-REFINEMENT-T114]
 writes: [aifactory/web/src/components/overview/RepoWork.vue, aifactory/web/src/components/overview/RepoCard.test.ts, aifactory/web/src/views/OverviewView.test.ts, aifactory/web/src/lib/router.ts, aifactory/web/src/lib/router.test.ts, aifactory/web/src/views/BacklogView.vue, aifactory/web/src/views/BacklogView.test.ts, aifactory/tests/e2e/test_multi_repo_browser.py, aifactory/src/aifactory/web/static/]

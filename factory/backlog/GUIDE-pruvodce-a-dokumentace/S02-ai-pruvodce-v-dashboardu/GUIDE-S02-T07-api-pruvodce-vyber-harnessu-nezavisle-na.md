@@ -2,6 +2,7 @@
 id: GUIDE-S02-T07
 title: "API průvodce: výběr harnessu nezávisle na repozitáři"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: []
 writes: [aifactory/src/aifactory/web/assistant.py, aifactory/src/aifactory/web/app.py, aifactory/tests/web/test_web_assistant.py]

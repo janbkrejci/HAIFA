@@ -2,6 +2,7 @@
 id: GUIDE-S02-T08
 title: "Panel Guide: zvolit harness před první zprávou"
 status: done
+archived: true
 workflow: build-test-review
 depends_on: [GUIDE-S02-T07]
 writes: [aifactory/web/src/lib/assistant.ts, aifactory/web/src/lib/assistant.test.ts, aifactory/web/src/components/assistant/AssistantPanel.vue, aifactory/web/src/components/assistant/AssistantPanel.test.ts, aifactory/tests/e2e/test_assistant_browser.py, aifactory/src/aifactory/web/static/, aifactory/src/aifactory/guide/03-prvni-beh.md, docs/decisions.md]
