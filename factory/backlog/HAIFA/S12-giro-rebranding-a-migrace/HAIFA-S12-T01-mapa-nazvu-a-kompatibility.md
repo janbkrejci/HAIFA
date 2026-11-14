@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S12-T01
 title: GIRO — mapa názvů, kompatibility a cílového repozitáře
-status: todo
+status: done
 depends_on: []
 writes: [docs/rebranding/, docs/decisions.md]
 ---
@@ -43,3 +43,4 @@ Ověření: inventura proti aktuálním zdrojům, kontrola úplnosti mapování 
 
 ## Běhy
 <!-- doplňuje factory při schválení PR -->
+- 2026-11-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/233 · náklady $0.00
