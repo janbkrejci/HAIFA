@@ -2,6 +2,7 @@
 id: HAIFA-S01-T50
 title: "Přehled: indikovat necommitnutý backlog každého repozitáře"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/tests/]
 ---

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T49
 title: Odstranit nefunkční auto continue z dialogu spuštění tasku
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S11-T02, HAIFA-S11-T06]
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/src/aifactory/guide/, aifactory/tests/]

@@ -2,6 +2,7 @@
 id: HAIFA-S01-T51
 title: "Přehled Po projektech: skrýt dokončené projekty s možností jejich zobrazení"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/tests/]
 ---
