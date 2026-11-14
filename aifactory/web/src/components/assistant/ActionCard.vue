@@ -5,6 +5,7 @@
 import { computed, onMounted, ref } from 'vue'
 import {
   ACTION_STATES,
+  assistantUnavailableReason,
   actionHref,
   actionPreview,
   actionTitle,
@@ -60,10 +61,10 @@ const multiline = (text: string | null) => !!text && (text.includes('\n') || tex
       </template>
     </dl>
     <div v-if="action.status === 'proposed'" class="buttons">
-      <button type="button" class="primary" :disabled="busy" data-test="assistant-action-run" @click="executeAction(threadId, action)">
+      <button type="button" class="primary" :disabled="!!assistantUnavailableReason || busy" data-test="assistant-action-run" @click="executeAction(threadId, action)">
         <Spinner v-if="busy" /> Provést
       </button>
-      <button type="button" :disabled="busy" data-test="assistant-action-dismiss" @click="dismissAction(threadId, action)">Zahodit</button>
+      <button type="button" :disabled="!!assistantUnavailableReason || busy" data-test="assistant-action-dismiss" @click="dismissAction(threadId, action)">Zahodit</button>
     </div>
     <p v-else class="state" data-test="assistant-action-state">
       {{ stateLabel }}<template v-if="action.outcome?.message">: {{ action.outcome.message }}</template>

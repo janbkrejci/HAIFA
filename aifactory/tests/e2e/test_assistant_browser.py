@@ -157,6 +157,92 @@ def test_assistant_conversation_browser(tmp_path: Path, monkeypatch: pytest.Monk
             browser.close()
 
 
+@pytest.mark.parametrize("intent_path", ["intent", "intent/P01-S01"])
+def test_assistant_unavailable_on_intent_browser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, intent_path: str
+) -> None:
+    monkeypatch.setenv("HAIFA_HOME", str(tmp_path / "home"))
+    repo = make_repo(tmp_path / "repo")
+    release = threading.Event()
+    fake_harness(monkeypatch, release)
+    reason = "Průvodce není při návrhu záměru dostupný."
+    with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
+        browser = _launch(p)
+        page = browser.new_page()
+        page.set_default_timeout(15000)
+        writes: list[Any] = []
+        page.on(
+            "request", lambda request: writes.append(request) if request.method == "POST" else None
+        )
+        intent_url = f"{url}/#/r/{identifier}/backlog/{intent_path}"
+        task_url = f"{url}/#/r/{identifier}/backlog/P01-S01-T01"
+        try:
+            # Direct entry: the disabled control still has keyboard-accessible help.
+            page.goto(intent_url)
+            toggle = page.locator('[data-test="assistant-toggle"]')
+            expect(toggle).to_be_disabled()
+            help_anchor = page.locator('[data-test="assistant-toggle-help"]')
+            expect(help_anchor).to_have_attribute("tabindex", "0")
+            help_anchor.focus()
+            expect(page.get_by_role("tooltip")).to_have_text(reason)
+            page.keyboard.press("Escape")
+            expect(page.locator('[data-test="assistant-panel"]')).to_have_count(0)
+
+            page.goto(task_url)
+            toggle.click()
+            panel = page.locator('[data-test="assistant-panel"]')
+            draft = panel.locator('[data-test="assistant-input"]')
+            draft.fill("První otázka")
+            panel.locator('[data-test="assistant-send"]').click()
+            expect(panel.locator('[data-test="assistant-streaming"] strong')).to_have_text(
+                "trace DB"
+            )
+            draft.fill("Rozepsaná otázka")
+            count = len(writes)
+            page.goto(intent_url)
+            expect(toggle).to_be_disabled()
+            expect(panel.locator('[data-test="assistant-unavailable"]')).to_have_text(reason)
+            expect(draft).to_be_disabled()
+            expect(draft).to_have_value("Rozepsaná otázka")
+            expect(panel.locator('[data-test="assistant-context"]')).to_have_count(0)
+            # Trigger the handlers directly as well as checking disabled controls.
+            panel.locator("form").evaluate("form => form.requestSubmit()")
+            draft.dispatch_event("keydown", {"key": "Enter"})
+            release.set()
+            expect(panel.locator('[data-test="assistant-answer"]')).to_contain_text(
+                "selhal v testech"
+            )
+            assert len(writes) == count
+            expect(panel.locator('[data-test="assistant-user"]')).to_have_count(1)
+
+            page.goto(task_url)
+            expect(draft).to_be_enabled()
+            expect(draft).to_have_value("Rozepsaná otázka")
+            with page.expect_request(
+                lambda request: request.method == "POST" and request.url.endswith("/messages")
+            ) as sent:
+                draft.press("Enter")
+            assert sent.value.post_data_json == {
+                "text": "Rozepsaná otázka",
+                "screen": {"repo": identifier, "task": "P01-S01-T01"},
+            }
+            expect(panel.locator('[data-test="assistant-answer"]')).to_have_count(2)
+
+            # Reload on Intent restores history, but cannot send even via a forced submit.
+            page.goto(intent_url)
+            page.reload()
+            expect(panel.locator('[data-test="assistant-answer"]')).to_have_count(2)
+            expect(draft).to_be_disabled()
+            count = len(writes)
+            panel.locator("form").evaluate("form => form.requestSubmit()")
+            draft.dispatch_event("keydown", {"key": "Enter"})
+            expect(panel.locator('[data-test="assistant-unavailable"]')).to_have_text(reason)
+            assert len(writes) == count
+        finally:
+            release.set()
+            browser.close()
+
+
 def test_assistant_select_harness_for_pi_repo_browser(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

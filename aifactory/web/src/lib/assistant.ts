@@ -4,10 +4,10 @@
 //
 // The state lives at module level, so the open thread survives every screen change; the id of
 // the open thread and whether the panel is open are kept for the tab (sessionStorage).
-import { reactive } from 'vue'
+import { computed, reactive } from 'vue'
 import { ApiError, deleteGlobal, getApi, getGlobal, postGlobal } from './api'
 import { errorText } from './format'
-import { GRAPH, NEW_CONTAINER, NEW_STEP, NEW_TASK, type Page, type Screen } from './router'
+import { GRAPH, NEW_CONTAINER, NEW_INTENT, NEW_STEP, NEW_TASK, usePage, useRepoId, useRoute, useRouteParams, type Page, type Screen } from './router'
 
 // ── API ──────────────────────────────────────────────────────────────────────────────────
 
@@ -339,7 +339,7 @@ export const running = reactive(new Set<string>())
  * endpoint, same guards as the manual action), then its outcome is recorded in the thread.
  */
 export async function executeAction(threadId: string, action: ProposedAction): Promise<void> {
-  if (action.status !== 'proposed' || running.has(action.id)) return
+  if (assistantUnavailableReason.value || action.status !== 'proposed' || running.has(action.id)) return
   running.add(action.id)
   try {
     const call = actionRequest(action)
@@ -363,7 +363,7 @@ export async function executeAction(threadId: string, action: ProposedAction): P
 
 /** The user does not want the proposal; the guide learns it with the next message. */
 export async function dismissAction(threadId: string, action: ProposedAction): Promise<void> {
-  if (action.status !== 'proposed' || running.has(action.id)) return
+  if (assistantUnavailableReason.value || action.status !== 'proposed' || running.has(action.id)) return
   running.add(action.id)
   try {
     applyRecord(threadId, await recordOutcome(threadId, action.id, 'dismissed', ''))
@@ -398,6 +398,7 @@ export async function taskNow(repo: string, task: string): Promise<TaskNow | nul
 // ── the screen ───────────────────────────────────────────────────────────────────────────
 
 export type ScreenKind =
+  | 'intent'
   | 'run'
   | 'task'
   | 'pr'
@@ -424,11 +425,19 @@ export function describeScreen(page: Page, repo: string | null, screen: Screen, 
     return { kind, context: null }
   }
   const first = params[0]
+  if (screen === 'backlog' && first === NEW_INTENT) return { kind: 'intent', context: null }
   if (screen === 'runs' && first) return { kind: 'run', context: { repo, run: first } }
   if (screen === 'backlog' && first && !NOT_TASKS.includes(first)) return { kind: 'task', context: { repo, task: first } }
   if (screen === 'review' && first) return { kind: 'pr', context: { repo, task: first } }
   return { kind: screen, context: { repo } }
 }
+
+/** Availability follows the accepted route, including a restored open panel. */
+export const assistantUnavailableReason = computed(() =>
+  describeScreen(usePage().value, useRepoId().value, useRoute().value, useRouteParams().value).kind === 'intent'
+    ? 'Průvodce není při návrhu záměru dostupný.'
+    : null,
+)
 
 /** The chip of the screen context: `repo haifa · task X`. */
 export function contextLabel(context: ScreenContext): string {
@@ -833,7 +842,7 @@ export function restoreOpen(): void {
 /** Send `text` with the screen context; creates the thread when it is new. */
 export async function send(text: string, screen: ScreenContext | null): Promise<boolean> {
   const body = text.trim()
-  if (!body || assistant.sending || assistant.thread?.busy) return false
+  if (assistantUnavailableReason.value || !body || assistant.sending || assistant.thread?.busy) return false
   const mine = generation
   assistant.sending = true
   assistant.error = null
@@ -844,6 +853,8 @@ export async function send(text: string, screen: ScreenContext | null): Promise<
       assistant.thread = created
       remember()
     }
+    // Navigation while creating a thread must not start a message on Intent.
+    if (assistantUnavailableReason.value) return false
     const id = assistant.thread.id
     const result = await sendMessage(id, body, screen)
     // the reactive thread, unless the user opened another one meanwhile

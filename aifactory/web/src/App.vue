@@ -4,7 +4,7 @@ import { createSecretKeys } from './lib/secretKeys'
 import { errorText } from './lib/format'
 import { computed, onBeforeUnmount, onMounted, ref, watch, watchEffect } from 'vue'
 import { BookOpen, Sparkles, Trash2 } from 'lucide-vue-next'
-import { assistant, restoreOpen, toggleOpen } from './lib/assistant'
+import { assistant, assistantUnavailableReason, restoreOpen, toggleOpen } from './lib/assistant'
 import AssistantPanel from './components/assistant/AssistantPanel.vue'
 import { fetchHealth, fetchRepos, type Health, type RepoItem } from './lib/api'
 import { useCodeState } from './lib/code'
@@ -202,18 +202,21 @@ onBeforeUnmount(() => {
         <LibraryChip />
         <SystemInfoChip />
         <LimitsBar :providers="limits.providers.value" :loading="limits.loading.value" :usable="limits.usable.value" @open="harnessDialog = true" />
-        <Tooltip text="AI průvodce: zeptej se na repa, tasky a běhy">
-          <button
-            class="guide-link"
-            :class="{ active: assistant.open }"
-            type="button"
-            aria-label="AI průvodce"
-            :aria-pressed="assistant.open"
-            data-test="assistant-toggle"
-            @click="toggleOpen"
-          >
-            <Sparkles class="theme-icon" aria-hidden="true" />
-          </button>
+        <Tooltip :text="assistantUnavailableReason || 'AI průvodce: zeptej se na repa, tasky a běhy'">
+          <span :tabindex="assistantUnavailableReason ? 0 : undefined" :aria-label="assistantUnavailableReason || undefined" data-test="assistant-toggle-help">
+            <button
+              class="guide-link"
+              :class="{ active: assistant.open }"
+              type="button"
+              aria-label="AI průvodce"
+              :aria-pressed="assistant.open"
+              :disabled="!!assistantUnavailableReason"
+              data-test="assistant-toggle"
+              @click="toggleOpen"
+            >
+              <Sparkles class="theme-icon" aria-hidden="true" />
+            </button>
+          </span>
         </Tooltip>
         <Tooltip text="Uživatelská a administrační příručka">
           <a class="guide-link" :class="{ active: viewPage === 'guide' }" :href="GUIDE_HREF" aria-label="Příručka" data-test="guide-link">
