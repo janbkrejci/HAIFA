@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale, t } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { describe, expect, it } from 'vitest'
 import { useConfirm } from './confirm'
 
@@ -27,4 +33,21 @@ describe('useConfirm', () => {
     c.confirm()
     await expect(second).resolves.toBe(true)
   })
+})
+
+
+it('keeps a pending question and its answer while translated labels update', async () => {
+  setLocale('en')
+  const c = useConfirm()
+  const answer = c.ask(() => ({ title: t('leave.title'), message: t('leave.message') }))
+  expect(c.dialog.title).toBe('Discard unsaved changes?')
+  expect(c.dialog.confirmLabel).toBe('Confirm')
+  setLocale('cs')
+  expect(c.dialog.open).toBe(true)
+  expect(c.dialog.title).toBe('Zahodit neuložené změny?')
+  expect(c.dialog.message).toContain('Rozepsané změny')
+  expect(c.dialog.confirmLabel).toBe('Potvrdit')
+  expect(c.dialog.cancelLabel).toBe('Zrušit')
+  c.confirm()
+  await expect(answer).resolves.toBe(true)
 })

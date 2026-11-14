@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The aifactory code on disk changed since the dashboard started (lib/code.ts): writes are off
 // until the server restarts.
 import Spinner from '@/components/ui/Spinner.vue'
@@ -10,8 +11,7 @@ const emit = defineEmits<{ restart: [] }>()
 <template>
   <div v-if="stale || error" class="code-banner" role="alert" data-test="code-banner">
     <p v-if="stale">
-      Kód HAIFA se od spuštění dashboardu změnil. Zápisy jsou vypnuté, dokud dashboard
-      nerestartuješ.
+      {{ t('code.stale') }}
     </p>
     <p v-if="error" class="code-error" data-test="code-error">{{ error }}</p>
     <button
@@ -23,7 +23,7 @@ const emit = defineEmits<{ restart: [] }>()
       @click="emit('restart')"
     >
       <Spinner v-if="restarting" />
-      {{ restarting ? 'Restartuji…' : 'Restartovat dashboard' }}
+      {{ restarting ? t('code.restarting') : t('code.restart') }}
     </button>
   </div>
 </template>

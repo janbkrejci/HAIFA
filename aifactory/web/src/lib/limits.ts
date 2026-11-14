@@ -3,6 +3,7 @@
 // The 5-hour and the weekly window, shown small in the topbar.
 import { onBeforeUnmount, onMounted, ref, watch, type Ref } from 'vue'
 import { getGlobal } from './api'
+import { t } from './i18n'
 import { fmtDayTime } from './format'
 import { currentRepoId, useRepoId } from './router'
 import { fetchHarnessSettings } from './machineHarnesses'
@@ -48,18 +49,18 @@ export function pct(value: number): number {
 
 /** "zbývá 30 % · obnoví se 4. 10. 12:00 · naposledy změřeno …" for the tooltip of one window. */
 export function windowTip(provider: LimitProvider, window: LimitWindow): string {
-  const name = window.id === '5h' ? '5hodinový limit' : 'týdenní limit'
-  let text = `${provider.label}, ${name}: zbývá ${pct(window.left)} %, využito ${pct(window.used)} %`
+  const name = window.id === '5h' ? t('limits.fiveHours') : t('limits.week')
+  let text = t('limits.window', { provider: provider.label, name, left: pct(window.left), used: pct(window.used) })
   const resets = fmtDayTime(window.resets_at)
-  if (resets) text += ` · obnoví se ${resets}`
+  if (resets) text += t('limits.resets', { time: resets })
   const measured = fmtDayTime(provider.measured_at)
-  if (measured) text += ` · naposledy změřeno ${measured}`
-  if (provider.stale && provider.error) text += ` (${provider.error})`
+  if (measured) text += t('limits.measured', { time: measured })
+  if (provider.stale) text += ` (${t('limits.loadError')})`
   return text
 }
 
 export function unavailableTip(provider: LimitProvider): string {
-  return `${provider.label}: limity nedostupné · ${provider.error || 'limity zatím nebyly změřeny'}`
+  return t('limits.unavailable', { provider: provider.label, error: provider.stale ? t('limits.loadError') : provider.error || t('limits.unmeasured') })
 }
 
 /**
@@ -82,7 +83,7 @@ export function useLimits(repo: Ref<string | null> = useRepoId()) {
         fetchLimits(id).catch(() => null), fetchHarnessSettings().catch(() => null),
       ])
       if (mine === generation) {
-        providers.value = limits?.providers ?? providers.value.map(p => ({ ...p, stale: true, error: 'dashboard nemohl načíst limity' }))
+        providers.value = limits?.providers ?? providers.value.map(p => ({ ...p, stale: true }))
         usable.value = catalog?.settings?.harnesses
           ? Object.entries(catalog.settings.harnesses).some(([name, choice]) =>
             choice.enabled && catalog.available[name] && !!choice.model && catalog.tests?.[name]?.[choice.model]?.ok !== false)
@@ -90,7 +91,7 @@ export function useLimits(repo: Ref<string | null> = useRepoId()) {
       }
     } catch {
       if (mine === generation) {
-        providers.value = providers.value.map((p) => ({ ...p, stale: true, error: 'dashboard nemohl načíst limity' }))
+        providers.value = providers.value.map((p) => ({ ...p, stale: true }))
       }
     } finally { if (mine === generation) loading.value = false }
   }

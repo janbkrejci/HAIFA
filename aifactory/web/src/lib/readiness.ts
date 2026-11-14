@@ -10,10 +10,10 @@ import { findingTitle, dashboardError } from './dashboardMessages'
 /** `retry`: the issue's action explicitly runs a full machine check. */
 type Issue = Pick<Step, 'title' | 'hint' | 'href' | 'action'> & { id: Step['id'] | 'timeout' | 'machine-status'; repo?: RepoItem; retry?: boolean; diagnostics?: string }
 /** The requests the readiness waits for, in the words shown while it waits. */
-const STEPS = { get machine() { return t('dashboard.machineStep') }, get library() { return t('dashboard.libraryStep') }, get repos() { return t('dashboard.reposStep') }, roster: 'roster', backlog: 'backlog' } as const
+const STEPS = { machine: 'readiness.step.machine', library: 'readiness.step.library', repos: 'readiness.step.repos', roster: 'readiness.step.roster', backlog: 'readiness.step.backlog', evaluation: 'readiness.step.evaluation' } as const
 type StepKey = Exclude<CheckStepId, 'evaluation'>
 function stepLabel(step: CheckStep): string {
-  const label = step.id === 'evaluation' ? t('dashboard.evaluate') : STEPS[step.id]
+  const label = t(STEPS[step.id])
   return step.detail ? `${label}: ${step.detail}` : label
 }
 

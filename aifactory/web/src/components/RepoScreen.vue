@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Everything of one repo page: the config and backlog statuses (their chips are in the topbar), the live updates and the screen.
 // App.vue keys it by the repo id, so a switch of the repo drops all of it (view data, run
 // cursors, subscriptions, banners) and the new repo starts clean.
@@ -82,7 +83,7 @@ onBeforeUnmount(() => {
 
 <template>
   <main>
-    <nav class="screen-tabs" aria-label="Obrazovky repozitáře">
+    <nav class="screen-tabs" :aria-label="t('nav.repoScreens')">
       <a
         v-for="screen in SCREENS"
         :key="screen.id"

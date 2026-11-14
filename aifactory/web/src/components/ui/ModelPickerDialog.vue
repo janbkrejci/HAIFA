@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed, nextTick, ref, watch } from 'vue'
 import { Check, Search } from 'lucide-vue-next'
 import ConfirmDialog from './ConfirmDialog.vue'
@@ -28,14 +29,14 @@ function navigate(event: KeyboardEvent) {
 </script>
 
 <template>
-  <ConfirmDialog :open="open" :title="`Model pro ${harness}`" confirm-label="Vybrat model" :confirm-disabled="!filtered.includes(selected)" @cancel="emit('close')" @confirm="choose">
-    <label class="model-search"><Search :size="18" aria-hidden="true" /><input ref="search" v-model="query" data-test="model-picker-search" type="search" aria-label="Filtrovat modely" placeholder="Filtrovat modely…" @keydown.enter.prevent.stop="choose"></label>
-    <p class="model-count">{{ filtered.length }} z {{ models.length }} modelů</p>
-    <div class="model-list" role="listbox" aria-label="Dostupné modely" data-test="model-picker-list" @keydown="navigate">
+  <ConfirmDialog :open="open" :title="t('model.title', { harness })" :confirm-label="t('model.choose')" :confirm-disabled="!filtered.includes(selected)" @cancel="emit('close')" @confirm="choose">
+    <label class="model-search"><Search :size="18" aria-hidden="true" /><input ref="search" v-model="query" data-test="model-picker-search" type="search" :aria-label="t('model.filter')" :placeholder="t('model.placeholder')" @keydown.enter.prevent.stop="choose"></label>
+    <p class="model-count">{{ t('model.count', { count: filtered.length, total: models.length }) }}</p>
+    <div class="model-list" role="listbox" :aria-label="t('model.available')" data-test="model-picker-list" @keydown="navigate">
       <button v-for="modelName in filtered" :key="modelName" type="button" role="option" :aria-selected="selected === modelName" :tabindex="selected === modelName || (!filtered.includes(selected) && modelName === filtered[0]) ? 0 : -1" :data-model="modelName" @click="selected = modelName" @dblclick="selected = modelName; choose()">
         <span>{{ modelName }}</span><Check v-if="selected === modelName" :size="16" aria-hidden="true" />
       </button>
-      <p v-if="!filtered.length" class="no-models">Žádný model neodpovídá filtru.</p>
+      <p v-if="!filtered.length" class="no-models">{{ t('model.empty') }}</p>
     </div>
   </ConfirmDialog>
 </template>

@@ -48,8 +48,29 @@ def _envelope(data: Any, code: str | None = None) -> str:
     return json.dumps({"ok": code is None, "data": data, "error": error, "warnings": []})
 
 
-def test_manual_check_shows_progress_timeout_and_retry_browser() -> None:
+@pytest.mark.parametrize(
+    ("locale", "checking_label", "machine_step"),
+    [
+        ("en", "Check in progress – Waiting for:", "machine check"),
+        ("cs", "Probíhá kontrola – Čeká na:", "kontrola počítače"),
+    ],
+)
+def test_manual_check_shows_progress_timeout_and_retry_browser(
+    locale: str, checking_label: str, machine_step: str
+) -> None:
     held: list[Route] = []
+    timeout_title, unfinished_step, last_result = {
+        "en": (
+            "The check did not finish within 60 s",
+            "Unfinished step",
+            "Showing the last known result from",
+        ),
+        "cs": (
+            "Kontrola nedoběhla do 60 s",
+            "Nedokončený krok",
+            "Zobrazen poslední známý výsledek z",
+        ),
+    }[locale]
 
     def serve(route: Route) -> None:
         url = urlsplit(route.request.url)
@@ -80,24 +101,27 @@ def test_manual_check_shows_progress_timeout_and_retry_browser() -> None:
     with sync_playwright() as playwright:
         browser = _launch(playwright)
         context = browser.new_context(service_workers="block")
+        context.add_init_script(
+            f'localStorage.setItem("haifa.dashboard.locale", {json.dumps(locale)});'
+        )
         context.set_default_timeout(30_000)
         try:
             page = context.new_page()
-            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/problems")
+            expect(page.locator("html")).to_have_attribute("lang", locale)
             page.locator("[data-test='readiness-retry']").click()
             # The chip and the page name what the check waits for and for how long.
             progress = page.locator("[data-test='readiness-progress']")
             expect(progress).to_contain_text(
-                "kontrola počítače: machine: logins (claude auth status)"
+                f"{machine_step}: machine: logins (claude auth status)"
             )
             expect(progress).to_contain_text(" s")
             chip = page.locator(".status-icon-chip[data-test='readiness-checking']")
             expect(chip).to_have_attribute(
                 "aria-label",
                 re.compile(
-                    r"^Probíhá kontrola – čeká na: kontrola počítače: machine: logins "
+                    rf"^{re.escape(checking_label)} {re.escape(machine_step)}: machine: logins "
                     r"\(claude auth status\) · \d+ s$"
                 ),
             )
@@ -115,12 +139,12 @@ def test_manual_check_shows_progress_timeout_and_retry_browser() -> None:
                 content_type="application/json", body=_envelope(stale, "check_timeout")
             )
             timeout = page.locator("[data-test='readiness-warning'] li").filter(
-                has_text="Kontrola nedoběhla do 60 s"
+                has_text=timeout_title
             )
             expect(timeout).to_contain_text(
-                "Nedokončený krok: kontrola počítače: machine: logins (claude auth status)."
+                f"{unfinished_step}: {machine_step}: machine: logins (claude auth status)."
             )
-            expect(timeout).to_contain_text("Zobrazen poslední známý výsledek z")
+            expect(timeout).to_contain_text(last_result)
             expect(page.locator(".status-icon-chip[data-test='readiness-warning']")).to_be_visible()
             # Retry runs a new check; its answer replaces the timeout.
             timeout.locator("[data-test='readiness-timeout-retry']").click()
@@ -134,7 +158,7 @@ def test_manual_check_shows_progress_timeout_and_retry_browser() -> None:
                 content_type="application/json",
                 body=_envelope({**CHECK, "checked_at": "2026-11-10T10:01:00Z", "cached": False}),
             )
-            expect(page.locator("text=Kontrola nedoběhla")).to_have_count(0)
+            expect(timeout).to_have_count(0)
         finally:
             context.close()
             browser.close()

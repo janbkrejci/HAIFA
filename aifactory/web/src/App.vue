@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { locale, t } from './lib/i18n'
 import { asyncView } from './lib/asyncView'
 import { createSecretKeys } from './lib/secretKeys'
 import { errorText } from './lib/format'
@@ -61,7 +62,7 @@ const viewPage = page
 const repoId = useRepoId()
 const { theme, toggle } = useTheme()
 const themeLabel = computed(() =>
-  theme.value === 'dark' ? 'Přepnout na světlý motiv' : 'Přepnout na tmavý motiv',
+  theme.value === 'dark' ? t('shell.lightTheme') : t('shell.darkTheme'),
 )
 
 const health = ref<Health | null>(null)
@@ -108,19 +109,20 @@ const repoState = computed<'loading' | 'unknown' | 'ok'>(() => {
 })
 
 watchEffect(() => {
+  document.documentElement.lang = locale.value
   if (page.value === 'repo') {
     const name = currentRepo.value?.name ?? repoId.value ?? ''
     document.title = `${name} · ${SCREEN_LABELS[route.value]} · HAIFA`
   } else if (page.value === 'setup') {
-    document.title = 'Knihovna · HAIFA'
+    document.title = `${t('nav.library')} · HAIFA`
   } else if (page.value === 'repos-add') {
-    document.title = 'Přidat repozitář · HAIFA'
+    document.title = `${t('nav.addRepo')} · HAIFA`
   } else if (page.value === 'problems') {
-    document.title = 'Problémy a řešení · HAIFA'
+    document.title = `${t('nav.problems')} · HAIFA`
   } else if (page.value === 'guide') {
-    document.title = 'Příručka · HAIFA'
+    document.title = `${t('nav.guide')} · HAIFA`
   } else {
-    document.title = 'Přehled · HAIFA'
+    document.title = `${t('nav.overview')} · HAIFA`
   }
 })
 
@@ -177,7 +179,7 @@ onBeforeUnmount(() => {
           v-if="showBacklogChip"
           kind="backlog"
           title="Backlog"
-          commit-label="Commitnout backlog"
+          :commit-label="t('commit.backlog')"
           chip
           :status="backlogStatus.status.value"
           :committing="backlogStatus.committing.value"
@@ -189,9 +191,9 @@ onBeforeUnmount(() => {
         <UncommittedBanner
           v-if="showBacklogChip"
           kind="config"
-          title="Konfigurace"
-          chip-text="Necommitnutá konfigurace"
-          commit-label="Commitnout konfiguraci"
+          :title="t('commit.config')"
+          :chip-text="t('commit.configDirty')"
+          :commit-label="t('commit.configAction')"
           chip
           :panel="false"
           :status="configStatus.status.value"
@@ -202,13 +204,13 @@ onBeforeUnmount(() => {
         <LibraryChip />
         <SystemInfoChip />
         <LimitsBar :providers="limits.providers.value" :loading="limits.loading.value" :usable="limits.usable.value" @open="harnessDialog = true" />
-        <Tooltip :text="assistantUnavailableReason || 'AI průvodce: zeptej se na repa, tasky a běhy'">
+        <Tooltip :text="assistantUnavailableReason || t('shell.assistantHint')">
           <span :tabindex="assistantUnavailableReason ? 0 : undefined" :aria-label="assistantUnavailableReason || undefined" data-test="assistant-toggle-help">
             <button
               class="guide-link"
               :class="{ active: assistant.open }"
               type="button"
-              aria-label="AI průvodce"
+              :aria-label="t('shell.assistant')"
               :aria-pressed="assistant.open"
               :disabled="!!assistantUnavailableReason"
               data-test="assistant-toggle"
@@ -218,8 +220,8 @@ onBeforeUnmount(() => {
             </button>
           </span>
         </Tooltip>
-        <Tooltip text="Uživatelská a administrační příručka">
-          <a class="guide-link" :class="{ active: viewPage === 'guide' }" :href="GUIDE_HREF" aria-label="Příručka" data-test="guide-link">
+        <Tooltip :text="t('shell.guideHint')">
+          <a class="guide-link" :class="{ active: viewPage === 'guide' }" :href="GUIDE_HREF" :aria-label="t('nav.guide')" data-test="guide-link">
             <BookOpen class="theme-icon" aria-hidden="true" />
           </a>
         </Tooltip>
@@ -252,21 +254,21 @@ onBeforeUnmount(() => {
     />
     <template v-if="viewPage === 'repo'">
       <main v-if="repoState === 'loading'" class="page-loading" data-test="repo-loading">
-        <Spinner /> Načítám repozitáře…
+        <Spinner /> {{ t('shell.loadingRepos') }}
       </main>
       <main v-else-if="repoState === 'unknown'">
         <EmptyScreen
-          :heading="`Repo ${repoId} v dashboardu není`"
-          hint="Dashboard takový repozitář nezná. Vyber jiný v přehledu."
+          :heading="t('shell.unknownRepo', { repo: repoId ?? '' })"
+          :hint="t('shell.unknownHint')"
           data-test="unknown-repo"
         >
-          <a :href="OVERVIEW_HREF" class="overview-link" data-test="unknown-repo-overview">Přehled repozitářů</a>
+          <a :href="OVERVIEW_HREF" class="overview-link" data-test="unknown-repo-overview">{{ t('shell.repoOverview') }}</a>
         </EmptyScreen>
       </main>
       <main v-else-if="currentRepo?.status === 'missing'">
         <EmptyScreen
-          :heading="`Složka repozitáře ${currentRepo.name} chybí`"
-          :hint="`${currentRepo.path} neexistuje. Repo můžeš odebrat z dashboardu.`"
+          :heading="t('shell.missingRepo', { name: currentRepo.name })"
+          :hint="t('shell.missingHint', { path: currentRepo.path })"
           data-test="missing-repo"
         >
           <button
@@ -276,10 +278,10 @@ onBeforeUnmount(() => {
             data-test="missing-remove"
             @click="missingRemoval.remove(currentRepo)"
           >
-            <Trash2 :size="14" aria-hidden="true" /> Odebrat z dashboardu
+            <Trash2 :size="14" aria-hidden="true" /> {{ t('shell.remove') }}
           </button>
           <p v-if="missingRemoval.error.value" class="remove-error" data-test="remove-error">
-            Repo se nepodařilo odebrat: {{ missingRemoval.error.value }}
+            {{ t('shell.removeError', { error: missingRemoval.error.value }) }}
           </p>
         </EmptyScreen>
         <RemoveRepoDialog :removal="missingRemoval" />

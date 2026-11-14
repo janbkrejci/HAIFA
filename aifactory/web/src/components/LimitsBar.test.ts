@@ -1,8 +1,14 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import LimitsBar from './LimitsBar.vue'
-import { pct, useLimits, windowTip, type LimitProvider } from '../lib/limits'
+import { pct, unavailableTip, useLimits, windowTip, type LimitProvider } from '../lib/limits'
 
 const CLAUDE: LimitProvider = {
   harness: 'claude',
@@ -169,4 +175,22 @@ describe('limits helpers', () => {
     expect(state.providers.value).toEqual([CLAUDE])
     wrapper.unmount()
   })
+})
+
+
+it('updates window and unavailable tooltips without replacing the limits', async () => {
+  setLocale('en')
+  const wrapper = mount(LimitsBar, { props: { providers: [CLAUDE] } })
+  const bar = wrapper.get('[role="progressbar"]')
+  const element = bar.element
+  expect(bar.attributes('aria-label')).toContain('5-hour limit')
+  expect(bar.attributes('aria-label')).toContain('remaining')
+  setLocale('cs')
+  await wrapper.vm.$nextTick()
+  expect(bar.attributes('aria-label')).toContain('5hodinový limit')
+  expect(bar.element).toBe(element)
+  expect(unavailableTip({ ...CLAUDE, windows: [], error: null })).toContain('limity zatím nebyly změřeny')
+  setLocale('en')
+  expect(unavailableTip({ ...CLAUDE, windows: [], error: null })).toContain('limits have not been measured yet')
+  wrapper.unmount()
 })

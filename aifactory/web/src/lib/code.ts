@@ -1,8 +1,9 @@
 // HAIFA builds itself: a merge into this repo can change the aifactory package under the running
 // dashboard. /api/code says whether the code on disk differs from the one the server started
 // with; /api/restart replaces the server process. Writes are refused (409 stale_code) meanwhile.
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { getGlobal, postGlobal } from './api'
+import { t } from './i18n'
 import { errorText } from './format'
 
 export interface CodeState {
@@ -36,7 +37,9 @@ const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve,
 export function useCodeState(options: CodeStateOptions = {}) {
   const stale = ref(false)
   const restarting = ref(false)
-  const error = ref<string | null>(null)
+  const restartError = ref<string | null>(null)
+  const timedOut = ref(false)
+  const error = computed(() => timedOut.value ? t('code.timeout') : restartError.value === null ? null : t('code.failed', { error: restartError.value }))
   let started: string | null = null
   let timer: ReturnType<typeof setInterval> | null = null
 
@@ -52,13 +55,14 @@ export function useCodeState(options: CodeStateOptions = {}) {
 
   async function restart(): Promise<void> {
     restarting.value = true
-    error.value = null
+    restartError.value = null
+    timedOut.value = false
     const before = started
     try {
       await restartDashboard()
     } catch (e) {
       restarting.value = false
-      error.value = `Restart se nepodařilo spustit: ${errorText(e)}`
+      restartError.value = errorText(e)
       return
     }
     const wait = options.wait ?? sleep
@@ -75,7 +79,7 @@ export function useCodeState(options: CodeStateOptions = {}) {
       }
     }
     restarting.value = false
-    error.value = 'Dashboard se do minuty nerestartoval. Spusť ho ručně: just dash'
+    timedOut.value = true
   }
 
   const onFocus = () => void check()

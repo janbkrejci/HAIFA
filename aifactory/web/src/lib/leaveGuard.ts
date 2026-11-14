@@ -3,6 +3,7 @@
 // button) and the browser asks before a reload or close. Bind `leaveDialog` to the
 // one <ConfirmDialog> in App.vue.
 import { getCurrentInstance, onBeforeUnmount } from 'vue'
+import { t } from './i18n'
 import { useConfirm } from './confirm'
 
 type DirtyCheck = () => boolean
@@ -38,13 +39,13 @@ export const cancelLeave = confirmer.cancel
 
 /** Asks whether to drop the unsaved changes; resolves true when the user discards them. */
 export function askDiscard(): Promise<boolean> {
-  return confirmer.ask({
-    title: 'Zahodit neuložené změny?',
-    message: 'Rozepsané změny nejsou uložené. Když odejdeš, přijdeš o ně.',
-    confirmLabel: 'Zahodit změny',
-    cancelLabel: 'Zůstat',
+  return confirmer.ask(() => ({
+    title: t('leave.title'),
+    message: t('leave.message'),
+    confirmLabel: t('leave.confirm'),
+    cancelLabel: t('leave.cancel'),
     tone: 'danger',
-  })
+  }))
 }
 
 /** The hash the app shows; a blocked change returns the URL to it. */

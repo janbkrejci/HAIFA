@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue'
+import { t } from './i18n'
 import { acceptHash, allowHashChange } from './leaveGuard'
 
 // Hash routes of the multi-repo dashboard:
@@ -15,15 +16,18 @@ export type Screen = 'backlog' | 'runs' | 'review' | 'factory'
 export type Page = 'overview' | 'repos-add' | 'setup' | 'problems' | 'guide' | 'repo'
 
 export const SCREENS: readonly { id: Screen; label: string }[] = [
-  { id: 'backlog', label: 'Backlog' },
-  { id: 'runs', label: 'Běhy' },
-  { id: 'review', label: 'Review' },
-  { id: 'factory', label: 'Factory' },
+  { id: 'backlog', get label() { return t('nav.backlog') } },
+  { id: 'runs', get label() { return t('nav.runs') } },
+  { id: 'review', get label() { return t('nav.review') } },
+  { id: 'factory', get label() { return t('nav.factory') } },
 ]
 
-export const SCREEN_LABELS: Readonly<Record<Screen, string>> = Object.fromEntries(
-  SCREENS.map((s) => [s.id, s.label]),
-) as Record<Screen, string>
+export const SCREEN_LABELS: Readonly<Record<Screen, string>> = {
+  get backlog() { return t('nav.backlog') },
+  get runs() { return t('nav.runs') },
+  get review() { return t('nav.review') },
+  get factory() { return t('nav.factory') },
+}
 
 const IDS: readonly string[] = SCREENS.map((s) => s.id)
 

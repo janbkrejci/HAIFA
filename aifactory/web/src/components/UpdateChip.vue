@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import './ui/statusIconChip.css'
 import { computed } from 'vue'
 import { ArrowUpCircle, ClockCheck, TriangleAlert } from 'lucide-vue-next'
@@ -9,16 +10,16 @@ import Tooltip from './ui/Tooltip.vue'
 const updates = useUpdates()
 const state = updates.state
 const label = computed(() => ({
-  checking: 'Kontrola aktualizací',
-  current: 'Systém je aktuální',
-  available: 'Je k dispozici aktualizace',
-  waiting: 'Aktualizace čeká na tasky',
-  error: 'Nepodařilo se zkontrolovat aktualizace',
-  installing: 'Instaluji aktualizaci…',
+  checking: t('updates.checking'),
+  current: t('updates.current'),
+  available: t('updates.available'),
+  waiting: t('updates.waiting'),
+  error: t('updates.error'),
+  installing: t('updates.installing'),
 })[state.value.status])
 const hint = computed(() => state.value.error || (state.value.status === 'available'
-  ? `Verze ${state.value.target_version}: kliknutím stáhneš a nainstaluješ aktualizaci, restartuješ dashboard a spustíš kontrolu systému.`
-  : 'Kliknutím zopakuješ kontrolu.'))
+  ? t('updates.installHint', { version: state.value.target_version ?? '' })
+  : t('updates.retryHint')))
 const description = computed(() => `${label.value} – ${hint.value}`)
 </script>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Shared markdown view: rendered preview (default) or raw source, switched by tabs.
 // `previewOnly` shows just the rendered preview, without the tabs.
 import { computed, ref } from 'vue'
@@ -24,7 +25,7 @@ const blank = computed(() => !props.source.trim())
           :aria-selected="mode === 'preview'"
           @click="mode = 'preview'"
         >
-          Náhled
+          {{ t('markdown.preview') }}
         </button>
         <button
           type="button"
@@ -34,7 +35,7 @@ const blank = computed(() => !props.source.trim())
           :aria-selected="mode === 'source'"
           @click="mode = 'source'"
         >
-          Zdroj
+          {{ t('markdown.source') }}
         </button>
       </div>
       <div v-if="previewOnly || mode === 'preview'" class="md" data-test="md-preview" v-html="html" />

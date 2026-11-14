@@ -1,5 +1,6 @@
 import { setLocale } from '@/lib/i18n'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, ref } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import App from './App.vue'
 import UpdateChip from './components/UpdateChip.vue'
@@ -908,3 +909,70 @@ describe('App', () => {
 
 beforeEach(() => setLocale('cs'))
 afterEach(() => setLocale('en'))
+
+it('updates shell labels, open switcher counts, title and lang without remounting the screen', async () => {
+  setLocale('en')
+  stubApi({ handler: url => {
+    if (url === '/api/library?items=0') return envelope({ exists: true })
+    if (url === '/api/overview') return envelope(overview([ovRepo('haifa', { running: [running()] })]))
+    return undefined
+  } })
+  go('#/r/haifa/runs')
+  let mounts = 0
+  const Screen = defineComponent({
+    setup() { mounts++; return { draft: ref('unfinished') } },
+    template: '<input data-test="locale-draft" v-model="draft">',
+  })
+  const wrapper = mount(App, { global: { stubs: { RepoScreen: Screen } } })
+  await flushPromises()
+  const field = wrapper.get('[data-test="locale-draft"]')
+  await field.setValue('user content: český text')
+  await wrapper.get('[data-test="switcher-button"]').trigger('click')
+  await flushPromises()
+  const menu = wrapper.get('[data-test="switcher-menu"]').element
+  expect(document.title).toBe('HAIFA · Runs · HAIFA')
+  expect(document.documentElement.lang).toBe('en')
+  expect(wrapper.get('[data-test="update-chip"]').attributes('aria-label')).toContain('System is up to date')
+  expect(wrapper.get('[data-test="library-chip-ok"]').attributes('aria-label')).toBe('Library OK – click to open the library')
+  expect(wrapper.get('[data-test="guide-link"]').attributes('aria-label')).toBe('Guide')
+  expect(wrapper.get('[data-test="count-running"]').attributes('aria-label')).toBe('Running: 1')
+  await wrapper.get('[data-test="guide-link"]').trigger('focusin')
+  expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe('User and administrator guide')
+  setLocale('cs')
+  await flushPromises()
+  expect(document.title).toBe('HAIFA · Běhy · HAIFA')
+  expect(document.documentElement.lang).toBe('cs')
+  expect(wrapper.get('[data-test="update-chip"]').attributes('aria-label')).toContain('Systém je aktuální')
+  expect(wrapper.get('[data-test="library-chip-ok"]').attributes('aria-label')).toBe('Knihovna OK – kliknutím otevřeš knihovnu')
+  expect(wrapper.get('[data-test="guide-link"]').attributes('aria-label')).toBe('Příručka')
+  expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe('Uživatelská a administrační příručka')
+  expect(wrapper.get('[data-test="count-running"]').attributes('aria-label')).toBe('Běží: 1')
+  expect(wrapper.get('[data-test="switcher-menu"]').element).toBe(menu)
+  expect((field.element as HTMLInputElement).value).toBe('user content: český text')
+  expect(mounts).toBe(1)
+  setLocale('en')
+  await flushPromises()
+  expect(document.title).toBe('HAIFA · Runs · HAIFA')
+  expect(mounts).toBe(1)
+})
+
+
+it.each([
+  ['#/overview', 'Overview', 'Přehled'],
+  ['#/setup', 'Library', 'Knihovna'],
+  ['#/repos/add', 'Add repository', 'Přidat repozitář'],
+  ['#/problems', 'Problems and solutions', 'Problémy a řešení'],
+  ['#/guide', 'Guide', 'Příručka'],
+])('translates the page title and switcher at %s', async (hash, en, cs) => {
+  stubApi()
+  go(hash)
+  const wrapper = mount(App, { global: { stubs: { OverviewView: true, SetupView: true, ReposAddView: true, ProblemsView: true, GuideView: true } } })
+  await flushPromises()
+  for (const [language, label] of [['en', en], ['cs', cs]] as const) {
+    setLocale(language)
+    await flushPromises()
+    expect(document.title).toBe(`${label} · HAIFA`)
+    expect(wrapper.get('[data-test="switcher-current"]').text()).toBe(label)
+    expect(document.documentElement.lang).toBe(language)
+  }
+})

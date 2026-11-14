@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
@@ -107,7 +113,7 @@ describe('SystemInfoChip', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenLastCalledWith('/api/machine/system', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const chip = wrapper.get('button')
-    expect(chip.attributes('aria-label')).toContain('odstraněno 3 položek, uvolněné místo: 1 GB')
+    expect(chip.attributes('aria-label')).toContain('odstraněny 3 položky, uvolněné místo: 1 GB')
     expect(chip.attributes('aria-label')).toContain('kept dirty tree')
     expect(chip.attributes('aria-label')).toContain('Paměť: volná 1 GB')
     expect(chip.classes()).toContain('info')
@@ -158,4 +164,29 @@ describe('SystemInfoChip', () => {
     expect(wrapper.find('.lucide-hard-drive').exists()).toBe(true)
     expect(wrapper.find('.lucide-triangle-alert').exists()).toBe(false)
   })
+})
+
+
+it('translates an open cleanup question and its result without repeating the request', async () => {
+  setLocale('en')
+  const fetchMock = stubApi()
+  const wrapper = mount(SystemInfoChip)
+  await flushPromises()
+  const chip = wrapper.get('[data-test="system-info-chip"]')
+  expect(chip.attributes('aria-label')).toContain('Disk: 40 GB free / 100 GB total')
+  await chip.trigger('click')
+  expect(openDialog()?.textContent).toContain('Clean disk?')
+  const dialog = openDialog()
+  setLocale('cs')
+  await nextTick()
+  expect(openDialog()).toBe(dialog)
+  expect(openDialog()?.textContent).toContain('Uklidit disk?')
+  await answerDialog(true)
+  expect(chip.attributes('aria-label')).toContain('Úklid: odstraněny 3 položky')
+  const requests = fetchMock.mock.calls.length
+  setLocale('en')
+  await nextTick()
+  expect(chip.attributes('aria-label')).toContain('Cleanup: removed 3 items, freed space: 1 GB.')
+  expect(chip.attributes('aria-label')).toContain('kept dirty tree')
+  expect(fetchMock.mock.calls).toHaveLength(requests)
 })
