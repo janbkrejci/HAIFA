@@ -19,9 +19,10 @@ import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import { NO_FEEDBACK, type ControlFeedback } from './feedback'
 
-const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removing?: boolean; byProject?: boolean }>(), {
+const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removing?: boolean; byProject?: boolean; showFinished?: boolean }>(), {
   removing: false,
   byProject: false,
+  showFinished: false,
 })
 const emit = defineEmits<{ remove: [repo: OverviewRepo]; changed: [] }>()
 
@@ -81,11 +82,11 @@ async function onSync() {
 
     <template v-else>
     <p v-if="repo.stale" role="status" class="faint" data-test="repo-stale">Výsledek předchozího načítání; další aktualizace ověří stav.</p>
-    <RepoControls @changed="emit('changed')" :repo="repo" :feedback="feedback" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
+    <RepoControls @changed="emit('changed')" :repo="repo" :feedback="feedback" :show-summary="!byProject || (repo.projects?.length ?? 0) === 0" />
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
 
-    <RepoWork :repo="repo" :now="now" :by-project="byProject">
+    <RepoWork :repo="repo" :now="now" :by-project="byProject" :show-finished="showFinished">
 
       <section v-if="mergedOutside.length" class="group" data-test="merged-outside">
         <h3>Sloučeno mimo factory</h3>

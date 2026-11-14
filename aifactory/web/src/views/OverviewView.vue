@@ -13,6 +13,8 @@ import { fmtAge, fmtTime, ts } from '@/lib/format'
 import {
   TOTALS,
   readByProject,
+  readShowFinished,
+  writeShowFinished,
   writeByProject,
   activeRuns,
   matchesFilter,
@@ -51,7 +53,9 @@ const removal = useRemoveRepo(() => {
 const { remove, removing, error: removeError } = removal
 const byProject = ref(readByProject())
 watch(byProject, writeByProject)
-const hasMultipleProjects = computed(() => sorted.value.some((r) => (r.projects?.length ?? 0) > 1))
+const showFinished = ref(readShowFinished())
+watch(showFinished, writeShowFinished)
+const hasProjects = computed(() => sorted.value.some((r) => (r.projects?.length ?? 0) > 0))
 const filter = ref<OverviewFilter | null>(null)
 /** The outcome of the last factory button of each calm repo, by repo id. */
 const feedback = ref<Record<string, ControlFeedback>>({})
@@ -87,8 +91,11 @@ function activity(iso: string | null): string {
   <section v-else class="overview-view" data-test="repo-page">
     <div class="head">
       <h1>Přehled</h1>
-      <label v-if="hasMultipleProjects" class="project-switch">
+      <label v-if="hasProjects" class="project-switch">
         <input v-model="byProject" type="checkbox" class="switch" role="switch" data-test="by-project" /> Po projektech
+      </label>
+      <label v-if="byProject && hasProjects" class="project-switch">
+        <input v-model="showFinished" type="checkbox" class="switch" role="switch" data-test="show-finished" /> Zobrazit hotové
       </label>
       <button
         type="button"
@@ -130,7 +137,7 @@ function activity(iso: string | null): string {
           :key="repo.id"
           :repo="repo"
           :now="now"
-          :by-project="byProject"
+          :by-project="byProject" :show-finished="showFinished"
           :removing="removing === repo.id"
           @remove="remove"
           @changed="refresh"
@@ -150,8 +157,8 @@ function activity(iso: string | null): string {
             </div>
           </div>
           <RepoBacklogStatus :repo="repo" />
-          <RepoControls @changed="refresh" :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
-          <RepoWork v-if="byProject && (repo.projects?.length ?? 0) > 1" :repo="repo" :now="now" :by-project="byProject" />
+          <RepoControls @changed="refresh" :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" :show-summary="!byProject || (repo.projects?.length ?? 0) === 0" />
+          <RepoWork v-if="byProject && (repo.projects?.length ?? 0) > 0" :repo="repo" :now="now" :by-project="byProject" :show-finished="showFinished" />
           <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>
         </li>
       </ul>

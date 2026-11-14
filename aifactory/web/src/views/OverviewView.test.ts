@@ -3,7 +3,7 @@ import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import OverviewView from './OverviewView.vue'
 import RepoControls from '@/components/overview/RepoControls.vue'
 import type { OverviewData, RepoItem } from '@/lib/api'
-import { BY_PROJECT_KEY, OVERVIEW_POLL_MS } from '@/lib/overview'
+import { BY_PROJECT_KEY, SHOW_FINISHED_KEY, OVERVIEW_POLL_MS } from '@/lib/overview'
 import { config, factory, failed, overview, repo, review, running, tasks } from '@/test/overviewFixtures'
 import { answerDialog, openDialog } from '@/test/modal'
 import { defineComponent, onMounted } from 'vue'
@@ -68,6 +68,7 @@ enableAutoUnmount(afterEach)
 
 beforeEach(() => {
   localStorage.removeItem(BY_PROJECT_KEY)
+  localStorage.removeItem(SHOW_FINISHED_KEY)
   vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
   vi.setSystemTime(NOW)
   visibility = 'visible'
@@ -166,10 +167,10 @@ describe('OverviewView', () => {
     assertGrouped()
   })
 
-  it('hides the project switch when no repo has multiple projects', async () => {
+  it('offers the project switch even for a single project', async () => {
     stubOverview(() => overview([repo('old'), repo('single', { projects: [{ id: 'A', title: 'Alpha', tasks: tasks() }] })]))
     const wrapper = await mountView()
-    expect(wrapper.find('[data-test="by-project"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="by-project"]').exists()).toBe(true)
   })
 
   it('groups calm repos by default and remembers switching to the summary', async () => {
@@ -480,4 +481,39 @@ it('keeps one backlog indicator per calm or active repo in both modes and update
   vi.advanceTimersByTime(OVERVIEW_POLL_MS)
   await flushPromises()
   expect(wrapper.findAll('[data-test="repo-backlog-status"]')).toHaveLength(2)
+})
+
+describe('show finished projects', () => {
+  it('keeps the switch and repo controls when all projects are hidden and remembers the choice', async () => {
+    stubOverview(() => overview([repo('calm', { tasks: tasks({ done: 1 }), projects: [{ id: 'A', title: 'Finished', tasks: tasks({ done: 1 }) }] })]))
+    const wrapper = await mountView()
+    expect(wrapper.find('[data-test="project-section"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="calm-repo"]').exists()).toBe(true)
+    const toggle = wrapper.get('[data-test="show-finished"]')
+    expect((toggle.element as HTMLInputElement).checked).toBe(false)
+    await toggle.setValue(true)
+    expect(wrapper.findAll('[data-test="project-section"]')).toHaveLength(1)
+    expect(localStorage.getItem(SHOW_FINISHED_KEY)).toBe('1')
+    wrapper.unmount()
+    const again = await mountView()
+    expect((again.get('[data-test="show-finished"]').element as HTMLInputElement).checked).toBe(true)
+    expect(again.findAll('[data-test="project-section"]')).toHaveLength(1)
+    await again.get('[data-test="show-finished"]').setValue(false)
+    expect(localStorage.getItem(SHOW_FINISHED_KEY)).toBe('0')
+    await again.get('[data-test="by-project"]').setValue(false)
+    expect(again.find('[data-test="show-finished"]').exists()).toBe(false)
+    expect(again.get('[data-test="task-summary"]').text()).toContain('Hotovo')
+  })
+
+  it('returns a reopened task on refresh without changing the hidden preference', async () => {
+    let counts = tasks({ done: 1 })
+    stubOverview(() => overview([repo('calm', { projects: [{ id: 'A', title: 'Alpha', tasks: counts }] })]))
+    const wrapper = await mountView()
+    expect(wrapper.findAll('[data-test="project-section"]')).toHaveLength(0)
+    counts = tasks({ ready: 1 })
+    await wrapper.get('[data-test="overview-refresh"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('[data-test="project-section"]')).toHaveLength(1)
+    expect(wrapper.get('[data-test="project-section"]').text()).toContain('Připraveno')
+  })
 })

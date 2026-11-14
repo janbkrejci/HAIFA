@@ -5,9 +5,9 @@ import type { OverviewRepo } from '@/lib/api'
 import { activeRuns, approvedPrs, automergePrs, failedRows, projectSections, reviewLink, runLink, runningKey, runningLink, stateClass, taskSummary } from '@/lib/overview'
 import { fmtAge, fmtCost, fmtElapsed, ts } from '@/lib/format'
 
-const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; byProject?: boolean }>(), { byProject: false })
-const grouped = computed(() => props.byProject && (props.repo.projects?.length ?? 0) > 1)
-const sections = computed(() => grouped.value ? projectSections(props.repo) : [{ id: null, title: '', repo: props.repo }])
+const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; byProject?: boolean; showFinished?: boolean }>(), { byProject: false, showFinished: false })
+const grouped = computed(() => props.byProject && (props.repo.projects?.length ?? 0) > 0)
+const sections = computed(() => grouped.value ? projectSections(props.repo, props.showFinished) : [{ id: null, title: '', repo: props.repo }])
 function since(iso: string | null | undefined): number | null {
   const t = ts(iso)
   return Number.isFinite(t) ? Math.max(0, (props.now - t) / 1000) : null

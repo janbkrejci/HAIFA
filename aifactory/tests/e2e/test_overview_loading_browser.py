@@ -122,7 +122,23 @@ def test_overview_shows_local_controls_without_legacy_preview() -> None:
 
 
 def test_overview_backlog_indicator_refreshes_in_both_modes() -> None:
-    counts = {"todo": 0, "ready": 0, "done": 1}
+    counts = dict.fromkeys(
+        (
+            "todo",
+            "ready",
+            "human",
+            "blocked",
+            "failed",
+            "running",
+            "in review",
+            "approved",
+            "awaiting merge",
+            "done",
+            "cancelled",
+        ),
+        0,
+    )
+    counts["done"] = 1
     projects = [
         {"id": "A", "title": "Finished", "tasks": counts},
         {"id": "B", "title": "Also finished", "tasks": counts},
@@ -209,6 +225,31 @@ def test_overview_backlog_indicator_refreshes_in_both_modes() -> None:
             page = browser.new_page()
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/overview")
+            calm_row = page.locator('[data-test="calm-repo"][data-repo="haifa"]')
+            active_card = page.locator('[data-test="overview-card"][data-repo="active"]')
+            expect(calm_row.locator('[data-test="project-section"]')).to_have_count(0)
+            expect(active_card.locator('[data-test="project-section"]')).to_have_count(1)
+            expect(active_card.locator('[data-test="row-review"]')).to_have_count(1)
+            expect(
+                page.locator('[data-test="total-review"] [data-test="total-count"]')
+            ).to_have_text("1")
+            toggle = page.locator('[data-test="show-finished"]')
+            toggle.check()
+            expect(calm_row.locator('[data-test="project-section"]')).to_have_count(2)
+            page.reload()
+            expect(toggle).to_be_checked()
+            expect(calm_row.locator('[data-test="project-section"]')).to_have_count(2)
+            toggle.uncheck()
+            # Reopening a task restores its project on the next overview read.
+            projects[0]["tasks"] = {**counts, "done": 0, "ready": 1}
+            page.locator('[data-test="overview-refresh"]').click()
+            expect(calm_row.locator('[data-test="project-section"]')).to_have_count(1)
+            expect(calm_row.locator('[data-test="project-section"]')).to_have_attribute(
+                "data-project", "A"
+            )
+            page.locator('[data-test="by-project"]').uncheck()
+            expect(toggle).to_have_count(0)
+            expect(calm_row.locator('[data-test="task-summary"]')).to_contain_text("Hotovo")
             for grouped in (True, False):
                 page.locator('[data-test="by-project"]').set_checked(grouped)
                 for repo_id, selector in (("haifa", "calm-repo"), ("active", "overview-card")):
