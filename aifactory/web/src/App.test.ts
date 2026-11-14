@@ -85,6 +85,24 @@ afterEach(() => {
 })
 
 describe('App', () => {
+  it.each(['intent', 'intent/P01-S01'])('disables the guide on %s with keyboard-accessible help', async (path) => {
+    stubApi()
+    go(`#/r/haifa/backlog/${path}`)
+    const wrapper = mount(App, { global: { stubs: { RepoScreen: true } } })
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-toggle"]').attributes('disabled')).toBeDefined()
+    const help = wrapper.get('[data-test="assistant-toggle-help"]')
+    expect(help.attributes('tabindex')).toBe('0')
+    await help.trigger('focusin')
+    await flushPromises()
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Průvodce není při návrhu záměru dostupný.')
+    await help.trigger('focusout')
+    go('#/r/haifa/backlog/P01-S01-T01')
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-toggle"]').attributes('disabled')).toBeUndefined()
+    expect(help.attributes('tabindex')).toBeUndefined()
+  })
+
   it.each([
     ['current', 'Systém je aktuální', 'lucide-clock-check'],
     ['available', 'Je k dispozici aktualizace', 'lucide-circle-arrow-up'],

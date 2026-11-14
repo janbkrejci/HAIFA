@@ -9,6 +9,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { History, Plus, Sparkles, Trash2, X } from 'lucide-vue-next'
 import {
   assistant,
+  assistantUnavailableReason,
   contextLabel,
   deleteThread,
   describeScreen,
@@ -160,6 +161,7 @@ const draft = ref('')
 const log = ref<HTMLElement | null>(null)
 
 async function submit(text = draft.value): Promise<void> {
+  if (assistantUnavailableReason.value) return
   const sent = await send(text, context.value)
   if (sent && text === draft.value) draft.value = ''
   if (!sent && !draft.value) draft.value = text
@@ -263,6 +265,7 @@ watch(
             :key="question"
             type="button"
             class="suggestion"
+            :disabled="!!assistantUnavailableReason"
             data-test="assistant-suggestion"
             @click="submit(question)"
           >
@@ -297,6 +300,8 @@ watch(
 
       <p v-if="assistant.error" class="error composer-error" data-test="assistant-error">{{ assistant.error }}</p>
 
+      <p v-if="assistantUnavailableReason" class="faint composer-error" role="status" data-test="assistant-unavailable">{{ assistantUnavailableReason }}</p>
+
       <form class="composer" @submit.prevent="submit()">
         <div v-if="!thread && !assistant.loading" class="harness-choice" data-test="assistant-harness-choice">
           <label>Harness nového vlákna
@@ -318,13 +323,14 @@ watch(
         </div>
         <textarea
           v-model="draft"
+          :disabled="!!assistantUnavailableReason"
           rows="3"
           placeholder="Zeptej se průvodce…"
           aria-label="Zpráva průvodci"
           data-test="assistant-input"
           @keydown="onKey"
         />
-        <button type="submit" class="send" :disabled="busy || !draft.trim()" data-test="assistant-send">Odeslat</button>
+        <button type="submit" class="send" :disabled="!!assistantUnavailableReason || busy || !draft.trim()" data-test="assistant-send">Odeslat</button>
       </form>
     </template>
     <ConfirmDialog v-bind="dialog" @confirm="confirm" @cancel="cancel" />

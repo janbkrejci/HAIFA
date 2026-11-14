@@ -25,6 +25,10 @@ import {
 } from './assistant'
 
 describe('describeScreen', () => {
+  it.each(['intent', 'intent/P01-S01'])('never treats %s as a task', (path) => {
+    expect(describeScreen('repo', 'haifa', 'backlog', path.split('/'))).toEqual({ kind: 'intent', context: null })
+  })
+
   it('reads the run, the task and the PR of a repo screen', () => {
     expect(describeScreen('repo', 'haifa', 'runs', ['abc12345', 'p1'])).toEqual({
       kind: 'run',

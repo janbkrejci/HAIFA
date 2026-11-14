@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { chooseOption, selectLabels } from '@/test/select'
 import AssistantPanel from './AssistantPanel.vue'
-import { type AssistantHarness, assistant, openThread, resetAssistantForTests, restoreOpen, setOpen } from '@/lib/assistant'
+import { type AssistantHarness, assistant, dismissAction, executeAction, send, type ProposedAction, openThread, resetAssistantForTests, restoreOpen, setOpen } from '@/lib/assistant'
 import { FakeEventSource } from '@/test/fakeEventSource'
 
 function envelope(data: unknown, status = 200) {
@@ -104,6 +104,7 @@ function go(hash: string) {
 enableAutoUnmount(afterEach)
 
 beforeEach(() => {
+  go('#/overview')
   vi.stubGlobal('EventSource', FakeEventSource)
 })
 
@@ -121,6 +122,92 @@ async function openPanel() {
 }
 
 describe('AssistantPanel', () => {
+  it.each(['intent', 'intent/P01-S01'])('blocks all message entry points on direct %s', async (path) => {
+    const { sent } = stubApi()
+    go(`#/r/haifa/backlog/${path}`)
+    const wrapper = await openPanel()
+    expect(wrapper.get('[data-test="assistant-unavailable"]').text()).toBe('Průvodce není při návrhu záměru dostupný.')
+    expect(wrapper.find('[data-test="assistant-context"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="assistant-input"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="assistant-send"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="assistant-suggestion"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('form').trigger('submit')
+    await wrapper.get('[data-test="assistant-input"]').trigger('keydown', { key: 'Enter' })
+    await wrapper.get('[data-test="assistant-suggestion"]').trigger('click')
+    expect(await send('Obejít formulář', null)).toBe(false)
+    expect(sent).toEqual([])
+  })
+
+  it('keeps the draft, history and running response through Intent and sends on the next task', async () => {
+    const { sent } = stubApi()
+    go('#/r/haifa/backlog/P01-S01-T01')
+    const wrapper = await openPanel()
+    const input = wrapper.get('[data-test="assistant-input"]')
+    await input.setValue('První otázka')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    const stream = FakeEventSource.latest()
+    await input.setValue('Rozepsaná otázka')
+    go('#/r/haifa/backlog/intent')
+    await flushPromises()
+    expect(stream.closed).toBe(false)
+    expect(wrapper.findAll('[data-test="assistant-user"]')).toHaveLength(1)
+    await wrapper.get('form').trigger('submit')
+    await input.trigger('keydown', { key: 'Enter' })
+    expect(sent).toHaveLength(2)
+    expect((input.element as HTMLTextAreaElement).value).toBe('Rozepsaná otázka')
+    stream.emit('done', { seq: 2, message: { id: 'm2', role: 'assistant', text: 'Odpověď' } })
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Odpověď')
+    go('#/r/haifa/backlog/P01-S01-T02')
+    await flushPromises()
+    expect(input.attributes('disabled')).toBeUndefined()
+    await input.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(sent).toHaveLength(3)
+    expect(sent[2]!.body).toEqual({ text: 'Rozepsaná otázka', screen: { repo: 'haifa', task: 'P01-S01-T02' } })
+  })
+
+  it('restores the open thread on Intent while blocking sends and proposed actions without HTTP writes', async () => {
+    const { sent } = stubApi({ detail: structuredClone(WITH_PROPOSAL) })
+    go('#/r/haifa/backlog/intent/P01-S01')
+    sessionStorage.setItem('haifa.assistant.thread', THREAD.id)
+    sessionStorage.setItem('haifa.assistant.open', '1')
+    restoreOpen()
+    const wrapper = mount(AssistantPanel)
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-answer"]').text()).toContain('Navrhuji změnu.')
+    expect(wrapper.get('[data-test="assistant-action-run"]').attributes('disabled')).toBeDefined()
+    expect(wrapper.get('[data-test="assistant-action-dismiss"]').attributes('disabled')).toBeDefined()
+    await wrapper.get('form').trigger('submit')
+    expect(await send('Zpráva', { repo: 'haifa', task: 'intent' })).toBe(false)
+    await executeAction(THREAD.id, PROPOSAL as ProposedAction)
+    await dismissAction(THREAD.id, PROPOSAL as ProposedAction)
+    expect(sent).toEqual([])
+    go('#/r/haifa/backlog/P01-S01-T01')
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-action-run"]').attributes('disabled')).toBeUndefined()
+    await wrapper.get('[data-test="assistant-action-run"]').trigger('click')
+    await flushPromises()
+    expect(sent.map(s => s.url)).toEqual([
+      '/api/repos/haifa/backlog/tasks/P01-S01-T01/edit',
+      `/api/assistant/threads/${THREAD.id}/actions/p1`,
+    ])
+  })
+
+  it('does not start a message if navigation to Intent happens while creating its thread', async () => {
+    let resolve!: (response: Response) => void
+    const fetchMock = vi.fn(() => new Promise<Response>(done => { resolve = done }))
+    vi.stubGlobal('fetch', fetchMock)
+    go('#/r/haifa/backlog/P01-S01-T01')
+    const pending = send('Otázka', { repo: 'haifa', task: 'P01-S01-T01' })
+    go('#/r/haifa/backlog/intent')
+    resolve(envelope(THREAD))
+    expect(await pending).toBe(false)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(assistant.thread?.id).toBe(THREAD.id)
+  })
+
   it('recovers from default pi without losing the question, and resets the next thread', async () => {
     const { sent } = stubApi({ defaultPi: true })
     go('#/r/haifa/backlog')
