@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 from pathlib import Path
 
 import psutil
@@ -34,7 +35,8 @@ def test_claim_retry_and_trace_record_creation_time(tmp_path: Path) -> None:
     store = TaskRunStore(path)
     tracer = Tracer(path, tmp_path / "events.jsonl")
     try:
-        created_at = psutil.Process().create_time()
+        created_at = oscompat.process_created_at(os.getpid())
+        assert created_at is not None
         store.claim(row())
         claimed = store.get("run")
         assert claimed is not None and claimed.pid_created_at == created_at
@@ -77,6 +79,27 @@ def test_unknown_identity_does_not_reap_running_row(
         store.claim(row())
         monkeypatch.setattr(oscompat, "process_matches", lambda pid, created_at: None)
         assert store.running("task") is not None
+    finally:
+        store.close()
+
+
+@pytest.mark.skipif(sys.platform != "darwin", reason="macOS process clock correction")
+@pytest.mark.parametrize("adjustment", [-2, 2])
+def test_clock_correction_does_not_reap_live_process(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, adjustment: int
+) -> None:
+    platform = psutil._psplatform  # type: ignore[attr-defined]
+    store = TaskRunStore(tmp_path / "trace.db")
+    try:
+        store.claim(row())
+        claimed = store.get("run")
+        assert claimed is not None and claimed.pid_created_at is not None
+        created_at = claimed.pid_created_at
+        monkeypatch.setattr(platform, "INIT_BOOT_TIME", platform.INIT_BOOT_TIME + adjustment)
+        assert psutil.Process().create_time() != created_at
+        assert store.running("task") is not None
+        assert oscompat.process_created_at(os.getpid()) == created_at
+        assert oscompat.process_matches(os.getpid(), created_at - 10) is False
     finally:
         store.close()
 

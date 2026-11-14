@@ -26,12 +26,21 @@ from typing import Any
 import psutil
 
 
+def _creation_time(pid: int) -> float:
+    process = psutil.Process(pid)
+    if sys.platform == "darwin":
+        # psutil adjusts public create_time() against its observer's boot-clock
+        # reference. Use the same stable kernel value as psutil's PID identity.
+        return float(process._proc.create_time(monotonic=True))  # type: ignore[attr-defined]
+    return process.create_time()
+
+
 def process_created_at(pid: int | None) -> float | None:
     """OS creation time for a PID, or None when identity cannot be established."""
     if pid is None:
         return None
     try:
-        return psutil.Process(pid).create_time()
+        return _creation_time(pid)
     except (psutil.Error, OSError):
         return None
 
@@ -41,7 +50,7 @@ def process_matches(pid: int, created_at: float | None) -> bool | None:
     if created_at is None:
         return None
     try:
-        return psutil.Process(pid).create_time() == created_at
+        return _creation_time(pid) == created_at
     except psutil.NoSuchProcess:
         return False
     except (psutil.AccessDenied, OSError):
