@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T51
 title: "Přehled Po projektech: skrýt dokončené projekty s možností jejich zobrazení"
-status: todo
+status: done
 depends_on: []
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/tests/]
 ---
@@ -24,3 +24,4 @@ Ověření: vyhledat přímé volající v celém aifactory/tests/ a zvolit jen 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/230 · náklady $0.00
