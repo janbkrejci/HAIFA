@@ -5,6 +5,7 @@ status: todo
 depends_on: []
 related: [HAIFA-S01-T54]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/tests/]
+test_timeout: 2700
 ---
 
 ## Zadání
