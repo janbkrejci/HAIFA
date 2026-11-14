@@ -17,6 +17,8 @@ import {
   toggleOpen,
   send,
   createThread,
+  fetchAssistantHarnesses,
+  newThread,
   streamedAnswer,
   suggestions,
   type ProposedAction,
@@ -340,6 +342,48 @@ describe('opening the guide', () => {
     assistant.thread!.busy = false
     expect(await send('Again', screen)).toBe(true)
     expect(bodies).toHaveLength(3)
+  })
+
+  it('loads the guide harness catalog and propagates API errors', async () => {
+    const harnesses = [{ harness: 'claude', model: 'sonnet', thinking: 'medium', usable: true, reason: null }]
+    const fetchMock = vi.fn(async () => respond({ harnesses }))
+    vi.stubGlobal('fetch', fetchMock)
+    expect(await fetchAssistantHarnesses()).toEqual(harnesses)
+    expect(fetchMock).toHaveBeenCalledWith('/api/assistant/harnesses')
+    fetchMock.mockResolvedValueOnce(respond({ harnesses: [] }))
+    expect(await fetchAssistantHarnesses()).toEqual([])
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, error: { code: 'harness_unavailable', message: 'Broken settings' } }), { status: 409 }))
+    await expect(fetchAssistantHarnesses()).rejects.toThrow('Broken settings')
+  })
+
+  it.each([{}, { harnesses: null }, { harnesses: {} }])('treats a missing or invalid harness list as empty: %j', async (data) => {
+    vi.stubGlobal('fetch', vi.fn(async () => respond(data)))
+    expect(await fetchAssistantHarnesses()).toEqual([])
+  })
+
+  it('passes an explicit harness only at creation and resets it for a new thread', async () => {
+    const calls: { url: string; body: unknown }[] = []
+    vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+      calls.push({ url, body: JSON.parse(String(init?.body)) })
+      if (url === '/api/assistant/threads') return respond({ ...detail, harness: 'codex', messages: [] })
+      return respond({ thread: detail, message: detail.messages[0], seq: 1 })
+    }))
+    setOpen(true)
+    assistant.selectedHarness = 'codex'
+    expect(await send('Question', { repo: 'haifa' })).toBe(true)
+    expect(calls[0]!.body).toEqual({ screen: { repo: 'haifa' }, harness: 'codex' })
+    expect(assistant.thread?.harness).toBe('codex')
+    assistant.thread!.busy = false
+    await send('Again', null)
+    expect(calls.map((c) => c.body)).toEqual([
+      { screen: { repo: 'haifa' }, harness: 'codex' },
+      { text: 'Question', screen: { repo: 'haifa' } },
+      { text: 'Again' },
+    ])
+    newThread()
+    expect(assistant.selectedHarness).toBe('')
+    await send('New question', null)
+    expect(calls[3]!.body).toEqual({})
   })
 
   it('keeps createThread compatible without a screen', async () => {

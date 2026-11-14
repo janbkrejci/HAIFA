@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
+import { chooseOption, selectLabels } from '@/test/select'
 import AssistantPanel from './AssistantPanel.vue'
-import { assistant, openThread, resetAssistantForTests, restoreOpen, setOpen } from '@/lib/assistant'
+import { type AssistantHarness, assistant, openThread, resetAssistantForTests, restoreOpen, setOpen } from '@/lib/assistant'
 import { FakeEventSource } from '@/test/fakeEventSource'
 
 function envelope(data: unknown, status = 200) {
@@ -49,7 +50,7 @@ interface Sent {
 }
 
 function stubApi(
-  options: { runState?: string; threads?: unknown[]; detail?: unknown; busy?: boolean; deleteBusy?: boolean } = {},
+  options: { runState?: string; threads?: unknown[]; detail?: unknown; busy?: boolean; deleteBusy?: boolean; harnesses?: AssistantHarness[]; harnessError?: boolean; defaultPi?: boolean } = {},
 ) {
   const sent: Sent[] = []
   const deleted: string[] = []
@@ -66,7 +67,17 @@ function stubApi(
       return envelope({ action, message })
     }
     if (url.startsWith('/api/repos/haifa/runs/')) return envelope({ run: { state: options.runState ?? 'failed' } })
-    if (url === '/api/assistant/threads' && init?.method === 'POST') return envelope(THREAD, 201)
+    if (url === '/api/assistant/harnesses') {
+      if (options.harnessError) return failure('harness_unavailable', 'Invalid settings', 409)
+      return envelope({ harnesses: options.harnesses ?? [
+        { harness: 'claude', model: 'sonnet', thinking: 'medium', usable: true, reason: null },
+        { harness: 'codex', model: 'gpt-5.5', thinking: 'high', usable: true, reason: null },
+      ] })
+    }
+    if (url === '/api/assistant/threads' && init?.method === 'POST') {
+      if (options.defaultPi && !body.harness) return failure('harness_unavailable', 'Guide cannot run on pi', 409)
+      return envelope({ ...THREAD, harness: body.harness || THREAD.harness }, 201)
+    }
     if (url === '/api/assistant/threads') return envelope({ threads: options.threads ?? [] })
     if (url.endsWith('/messages')) {
       if (options.busy) return failure('busy', 'the guide is still answering in this thread', 409)
@@ -110,6 +121,86 @@ async function openPanel() {
 }
 
 describe('AssistantPanel', () => {
+  it('recovers from default pi without losing the question, and resets the next thread', async () => {
+    const { sent } = stubApi({ defaultPi: true })
+    go('#/r/haifa/backlog')
+    const wrapper = await openPanel()
+    const selector = '[data-test="assistant-harness-select"]'
+    expect(await selectLabels(wrapper, selector)).toEqual(['Podle nastavení', 'claude', 'codex'])
+    await wrapper.get('[data-test="assistant-input"]').setValue('Původní otázka')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-error"]').text()).toContain('cannot run on pi')
+    expect((wrapper.get('[data-test="assistant-input"]').element as HTMLTextAreaElement).value).toBe('Původní otázka')
+    await chooseOption(wrapper, selector, 'codex')
+    expect(wrapper.get('[data-test="assistant-harness-preview"]').text()).toContain('gpt-5.5 · Thinking: high')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(sent[1]!.body).toEqual({ screen: { repo: 'haifa' }, harness: 'codex' })
+    expect(sent[2]!.body).toEqual({ text: 'Původní otázka', screen: { repo: 'haifa' } })
+    expect(wrapper.find(selector).exists()).toBe(false)
+    // The header uses the saved binding returned by create, not the preview.
+    expect(wrapper.get('[data-test="assistant-harness"]').text()).toBe('codex · claude-opus-5-5 · medium')
+    FakeEventSource.latest().emit('done', { seq: 2 })
+    await flushPromises()
+    await wrapper.get('[data-test="assistant-input"]').setValue('Další otázka')
+    await wrapper.get('form').trigger('submit')
+    await flushPromises()
+    expect(sent.filter((s) => s.url === '/api/assistant/threads')).toHaveLength(2)
+    expect(sent[3]!.body).toEqual({ text: 'Další otázka', screen: { repo: 'haifa' } })
+    await wrapper.get('[data-test="assistant-new"]').trigger('click')
+    await flushPromises()
+    expect(wrapper.get(selector).attributes('data-value')).toBe('')
+    expect(wrapper.find('[data-test="assistant-harness-preview"]').exists()).toBe(false)
+  })
+
+  it('loads choices before sending', async () => {
+    const { fetchMock } = stubApi()
+    const wrapper = await openPanel()
+    expect(fetchMock).toHaveBeenCalledWith('/api/assistant/harnesses')
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
+    expect(wrapper.get('[data-test="assistant-harness-select"]').attributes('disabled')).toBeUndefined()
+  })
+
+  it('shows a loading state until the harness API responds', async () => {
+    let resolve!: (response: Response) => void
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((done) => { resolve = done })))
+    const wrapper = await openPanel()
+    expect(wrapper.get('[data-test="assistant-harness-loading"]').text()).toContain('Načítám')
+    expect(wrapper.get('[data-test="assistant-harness-select"]').attributes('disabled')).toBeDefined()
+    resolve(envelope({ harnesses: [] }))
+    await flushPromises()
+    expect(wrapper.find('[data-test="assistant-harness-loading"]').exists()).toBe(false)
+  })
+
+  it('shows an API error and allows retry', async () => {
+    const options = { harnessError: true }
+    stubApi(options)
+    const wrapper = await openPanel()
+    expect(wrapper.get('[data-test="assistant-harness-error"]').text()).toContain('Invalid settings')
+    options.harnessError = false
+    await wrapper.get('[data-test="assistant-harness-error"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[data-test="assistant-harness-error"]').exists()).toBe(false)
+    expect(await selectLabels(wrapper, '[data-test="assistant-harness-select"]')).toContain('claude')
+  })
+
+  it.each([{ harnesses: [] }, { harnesses: [{ harness: 'codex', model: '', thinking: null, usable: false, reason: 'Chybí model' }] }])(
+    'explains when no supported harness is usable: %j', async ({ harnesses }) => {
+      stubApi({ harnesses })
+      const wrapper = await openPanel()
+      expect(wrapper.get('[data-test="assistant-harness-none"]').text()).toContain('Není dostupný')
+      expect(await selectLabels(wrapper, '[data-test="assistant-harness-select"]')).toEqual(['Podle nastavení'])
+      expect(wrapper.text()).toContain('Pi není podporovaný')
+      if (harnesses.length) expect(wrapper.text()).toContain('Chybí model')
+      const opened = vi.fn()
+      window.addEventListener('harness-settings-open', opened)
+      await wrapper.get('[data-test="assistant-harness-settings"]').trigger('click')
+      expect(opened).toHaveBeenCalledOnce()
+      window.removeEventListener('harness-settings-open', opened)
+    },
+  )
+
   it('offers why a failed run failed, with the run as a context chip', async () => {
     stubApi({ runState: 'failed' })
     go('#/r/haifa/runs/740183f7')
@@ -259,6 +350,7 @@ describe('AssistantPanel', () => {
     expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Nic neběží.')
     expect(wrapper.get('[data-test="assistant-harness"]').text()).toBe(label)
     expect(assistant.thread?.id).toBe('ffffffffffff')
+    expect(wrapper.find('[data-test="assistant-harness-select"]').exists()).toBe(false)
 
     await wrapper.get('[data-test="assistant-new"]').trigger('click')
     expect(wrapper.findAll('[data-test="assistant-suggestion"]')).toHaveLength(3)

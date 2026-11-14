@@ -157,6 +157,70 @@ def test_assistant_conversation_browser(tmp_path: Path, monkeypatch: pytest.Monk
             browser.close()
 
 
+def test_assistant_select_harness_for_pi_repo_browser(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rejected pi default can be replaced for this thread using a fake Claude adapter."""
+    from aifactory.repo_settings import RepositorySettings
+
+    repo = make_repo(tmp_path / "repo")
+    home = tmp_path / "home"
+    monkeypatch.setenv("HAIFA_HOME", str(home))
+    RepositorySettings(repo).update({"harness": "pi"})
+    release = threading.Event()
+    release.set()
+    seen = fake_harness(monkeypatch, release)
+    with dashboard(repo, home) as (url, identifier), sync_playwright() as p:
+        browser = _launch(p)
+        page = browser.new_page()
+        page.set_default_timeout(15000)
+        try:
+            page.goto(f"{url}/#/r/{identifier}/runs")
+            page.locator('[data-test="assistant-toggle"]').click()
+            panel = page.locator('[data-test="assistant-panel"]')
+            choice = panel.locator('[data-test="assistant-harness-select"]')
+            expect(choice).to_be_enabled()
+            expect(choice).to_have_text("Podle nastavení")
+            question = "Proč selhal první task?"
+            panel.locator('[data-test="assistant-input"]').fill(question)
+            panel.locator('[data-test="assistant-send"]').click()
+            expect(panel.locator('[data-test="assistant-error"]')).to_contain_text("pi")
+            expect(panel.locator('[data-test="assistant-input"]')).to_have_value(question)
+            choice.click()
+            options = page.get_by_role("listbox", name="Harness nového vlákna")
+            expect(options.get_by_role("option", name="pi", exact=True)).to_have_count(0)
+            options.get_by_role("option", name="claude", exact=True).click()
+            expect(panel.locator('[data-test="assistant-harness-preview"]')).to_contain_text(
+                "Model:"
+            )
+            with page.expect_response(
+                lambda response: (
+                    response.request.method == "POST"
+                    and response.url.endswith("/api/assistant/threads")
+                )
+            ) as created:
+                panel.locator('[data-test="assistant-send"]').click()
+            assert created.value.request.post_data_json == {
+                "screen": {"repo": identifier},
+                "harness": "claude",
+            }
+            binding = created.value.json()["data"]
+            expect(panel.locator('[data-test="assistant-answer"]')).to_contain_text(
+                "selhal v testech"
+            )
+            expect(choice).to_have_count(0)
+            assert binding["harness"] == "claude"
+            assert seen[0].model == binding["model"]
+            assert RepositorySettings(repo).read().harness == "pi"
+            page.reload()
+            expect(panel.locator('[data-test="assistant-harness"]')).to_contain_text("claude")
+            expect(choice).to_have_count(0)
+            panel.locator('[data-test="assistant-new"]').click()
+            expect(choice).to_have_text("Podle nastavení")
+        finally:
+            browser.close()
+
+
 def test_assistant_proposed_action_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A proposal is a card; the task changes only after Provést, and the outcome is shown."""
     repo = make_repo(tmp_path / "repo")

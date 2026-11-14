@@ -96,8 +96,24 @@ export function fetchThread(id: string): Promise<ThreadDetail> {
   return getGlobal<ThreadDetail>(`${THREADS}/${encodeURIComponent(id)}`)
 }
 
-export function createThread(screen: ScreenContext | null = null): Promise<ThreadDetail> {
-  return postGlobal<ThreadDetail>(THREADS, screen && Object.keys(screen).length ? { screen } : {})
+export interface AssistantHarness {
+  harness: string
+  model: string
+  thinking: string | null
+  usable: boolean
+  reason: string | null
+}
+
+export async function fetchAssistantHarnesses(): Promise<AssistantHarness[]> {
+  const data = await getGlobal<{ harnesses?: AssistantHarness[] }>('/assistant/harnesses')
+  return Array.isArray(data.harnesses) ? data.harnesses : []
+}
+
+export function createThread(screen: ScreenContext | null = null, harness = ''): Promise<ThreadDetail> {
+  const body: { screen?: ScreenContext; harness?: string } = {}
+  if (screen && Object.keys(screen).length) body.screen = screen
+  if (harness) body.harness = harness
+  return postGlobal<ThreadDetail>(THREADS, body)
 }
 
 /** Delete a thread for good (HTTP 409 `busy` while the guide answers in it). */
@@ -585,6 +601,7 @@ export const assistant = reactive({
   thread: null as ThreadDetail | null,
   loading: false,
   sending: false,
+  selectedHarness: '',
   /** The answer being written: its text so far and the commands the guide ran. */
   streaming: null as Streaming | null,
   error: null as string | null,
@@ -744,6 +761,7 @@ export function newThread(): void {
   generation++
   closeStream()
   assistant.thread = null
+  assistant.selectedHarness = ''
   assistant.loading = false
   assistant.listing = false
   assistant.streaming = null
@@ -771,6 +789,7 @@ export async function deleteThread(id: string): Promise<boolean> {
       generation++
       closeStream()
       assistant.thread = null
+      assistant.selectedHarness = ''
       assistant.streaming = null
       assistant.error = null
       remember()
@@ -820,7 +839,7 @@ export async function send(text: string, screen: ScreenContext | null): Promise<
   assistant.error = null
   try {
     if (!assistant.thread) {
-      const created = await createThread(screen)
+      const created = await createThread(screen, assistant.selectedHarness)
       if (mine !== generation) return false
       assistant.thread = created
       remember()
@@ -870,6 +889,7 @@ export function resetAssistantForTests(): void {
     thread: null,
     loading: false,
     sending: false,
+    selectedHarness: '',
     streaming: null,
     error: null,
     deleting: null,
