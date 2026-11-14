@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The three-dot menu of a repo in the overview (a card or a calm row); it holds the removal of the
 // repo from the dashboard. Closes on a click outside, on Escape and after choosing an item.
 import { onBeforeUnmount, ref } from 'vue'
@@ -59,7 +60,7 @@ onBeforeUnmount(() => listen(false))
       class="menu-button"
       aria-haspopup="menu"
       :aria-expanded="open ? 'true' : 'false'"
-      :aria-label="`Akce repozitáře ${name}`"
+      :aria-label="t('dashboard.repoActions', { name })"
       data-test="repo-menu"
       @click="toggle"
     >
@@ -74,7 +75,7 @@ onBeforeUnmount(() => listen(false))
         :data-test="itemTest"
         @click="remove"
       >
-        <Trash2 :size="14" aria-hidden="true" /> Odebrat repozitář
+        <Trash2 :size="14" aria-hidden="true" /> {{ t('dashboard.removeRepo') }}
       </button>
     </div>
   </div>

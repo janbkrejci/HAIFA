@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The strip above every screen of the sample repository: what it is, what the last
 // "Vyzkoušet na ukázce" started, and the way out (own repo, remove the sample).
 import { computed } from 'vue'
@@ -14,21 +15,21 @@ const start = computed(() => (lastStart.value?.repoId === props.repoId ? lastSta
 <template>
   <section class="demo-banner" data-test="demo-banner">
     <p class="what">
-      <strong>Ukázkové repo.</strong>
-      Tři malé tasky nad knihovnou textstats; HAIFA na nich ukáže celý cyklus task, běh, PR a merge.
+      <strong>{{ t('dashboard.demoRepo') }}</strong>
+      {{ t('dashboard.demoIntro') }}
     </p>
     <p v-if="start?.runId" class="started" data-test="demo-started">
-      Task {{ DEMO_TASK }} běží<template v-if="start.harness"> s harnessem {{ start.harness.harness }} ({{ start.harness.model }})</template>:
-      <a :href="runHref(start.runId)" data-test="demo-run-link">sledovat běh {{ start.runId }}</a>
+      {{ t('dashboard.demoRunning', { task: DEMO_TASK }) }}<template v-if="start.harness"> {{ t('dashboard.demoHarness', { harness: start.harness.harness, model: start.harness.model }) }}</template>:
+      <a :href="runHref(start.runId)" data-test="demo-run-link">{{ t('dashboard.watchRun', { id: start.runId }) }}</a>
     </p>
     <p v-else-if="start && !start.error" class="started" data-test="demo-started">
-      Task {{ DEMO_TASK }} se spouští; běh najdeš v záložce Běhy.
+      {{ t('dashboard.demoStarting', { task: DEMO_TASK }) }}
     </p>
     <p v-if="start?.error" class="error" role="alert" data-test="demo-start-error">
-      Task {{ DEMO_TASK }} se nepodařilo spustit: {{ start.error }}
+      {{ t('dashboard.demoStartFailed', { task: DEMO_TASK, error: start.error }) }}
     </p>
     <div class="actions">
-      <a :href="REPOS_ADD_HREF" class="add-link" data-test="demo-add-repo"><Plus :size="14" aria-hidden="true" /> Přidat vlastní repozitář</a>
+      <a :href="REPOS_ADD_HREF" class="add-link" data-test="demo-add-repo"><Plus :size="14" aria-hidden="true" /> {{ t('dashboard.addOwnRepo') }}</a>
       <RemoveDemoButton :path="path" />
     </div>
   </section>

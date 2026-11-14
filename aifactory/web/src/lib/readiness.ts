@@ -1,26 +1,30 @@
-import { inject, onBeforeUnmount, onMounted, provide, ref, type InjectionKey } from 'vue'
+import { t } from './i18n'
+import { inject, onBeforeUnmount, onMounted, provide, ref, computed, type InjectionKey } from 'vue'
 import { ApiError, READ_TIMEOUT_MS, fetchFactoryRosterSummary, fetchMachineCheck, fetchRepos, getGlobal, type MachineCheck, type RepoItem } from './api'
 import { fetchLibrarySummary } from './library'
 import { focusRepo, gettingStartedSteps, type Step } from './gettingStarted'
-import { errorText } from './format'
-import { CHECK_DEADLINE_MS, CheckTimeout, beforeDeadline, followProgress, lastKnown, serverStep } from './machineProgress'
+import { CHECK_DEADLINE_MS, CheckTimeout, beforeDeadline, followProgress, lastKnown, serverStep, type CheckStep, type CheckStepId } from './machineProgress'
 import { LIBRARY_HREF, SETUP_HREF, repoHref } from './router'
-import { repoStatusText } from './repos'
+import { findingTitle, dashboardError } from './dashboardMessages'
 
 /** `retry`: the issue's action explicitly runs a full machine check. */
-type Issue = Pick<Step, 'title' | 'hint' | 'href' | 'action'> & { id: Step['id'] | 'timeout' | 'machine-status'; repo?: RepoItem; retry?: boolean }
+type Issue = Pick<Step, 'title' | 'hint' | 'href' | 'action'> & { id: Step['id'] | 'timeout' | 'machine-status'; repo?: RepoItem; retry?: boolean; diagnostics?: string }
 /** The requests the readiness waits for, in the words shown while it waits. */
-const STEPS = { machine: 'kontrola počítače', library: 'stav knihovny', repos: 'seznam repozitářů', roster: 'roster', backlog: 'backlog' } as const
-type StepKey = keyof typeof STEPS
+const STEPS = { get machine() { return t('dashboard.machineStep') }, get library() { return t('dashboard.libraryStep') }, get repos() { return t('dashboard.reposStep') }, roster: 'roster', backlog: 'backlog' } as const
+type StepKey = Exclude<CheckStepId, 'evaluation'>
+function stepLabel(step: CheckStep): string {
+  const label = step.id === 'evaluation' ? t('dashboard.evaluate') : STEPS[step.id]
+  return step.detail ? `${label}: ${step.detail}` : label
+}
 
-function timeoutIssue(step: string, seconds: number, checkedAt: string | null | undefined): Issue {
-  const known = lastKnown(checkedAt)
+function timeoutIssue(step: CheckStep, seconds: number, checkedAt: string | null | undefined): Issue {
+  const known = () => lastKnown(checkedAt)
   return {
     id: 'timeout',
-    title: `Kontrola nedoběhla do ${seconds} s`,
-    hint: `Nedokončený krok: ${step}. ` + (known ? `Zobrazen poslední známý výsledek ${known}.` : 'Dřívější výsledek není k dispozici.'),
+    get title() { return t('dashboard.checkTimeout', { seconds }) },
+    get hint() { return t('dashboard.unfinishedStep', { step: stepLabel(step) }) + (known() ? t('dashboard.lastResult', { known: known()! }) : t('dashboard.noPrevious')) },
     href: SETUP_HREF,
-    action: 'Zkontrolovat znovu',
+    get action() { return t('dashboard.checkAgain') },
     retry: true,
   }
 }
@@ -29,7 +33,8 @@ function createReadiness() {
   const phase = ref<'loading' | 'checking' | 'warning' | 'success' | null>(null)
   const issues = ref<Issue[]>([])
   /** What the running check waits for (with the server's step of the machine check). */
-  const step = ref<string | null>(null)
+  const stepSource = ref<CheckStep | null>(null)
+  const step = computed(() => stepSource.value ? stepLabel(stepSource.value) : null)
   /** Seconds since the running check started. */
   const elapsed = ref(0)
   let checking = false
@@ -54,29 +59,29 @@ function createReadiness() {
     let failedStep: StepKey | null = null
     const pending = new Set<StepKey>()
     let server: string | null = null
-    const waitingFor = () => {
+    const waitingFor = (): CheckStep => {
       const first = [...pending][0]
-      if (!first) return 'vyhodnocení'
-      return first === 'machine' && server ? `${STEPS.machine}: ${server}` : STEPS[first]
+      if (!first) return { id: 'evaluation' }
+      return { id: first, ...(first === 'machine' && server ? { detail: server } : {}) }
     }
     function track<T>(key: StepKey, promise: Promise<T>): Promise<T> {
       pending.add(key)
       return promise.catch(error => {
         failedStep ??= key
         if (error instanceof ApiError && error.code === 'request_timeout') {
-          throw new CheckTimeout(STEPS[key], READ_TIMEOUT_MS / 1000)
+          throw new CheckTimeout({ id: key }, READ_TIMEOUT_MS / 1000)
         }
         throw error
       }).finally(() => pending.delete(key))
     }
     stopProgress?.()
     elapsed.value = 0
-    step.value = null
+    stepSource.value = null
     stopProgress = followProgress((seconds, serverStepText) => {
       if (current !== generation) return
       server = serverStepText
       elapsed.value = seconds
-      step.value = waitingFor()
+      stepSource.value = waitingFor()
     }, () => pending.has('machine'))
     const deadline = Date.now() + CHECK_DEADLINE_MS
     const seconds = Math.round(CHECK_DEADLINE_MS / 1000)
@@ -125,17 +130,17 @@ function createReadiness() {
       })
       if (timedOut) issues.value.unshift(timedOut)
       else if (outdated) issues.value.unshift({
-        id: 'machine-status', title: unknown ? 'Počítač zatím nebyl zkontrolován' : 'Zastaralý výsledek kontroly počítače',
-        hint: 'Spusť ruční kontrolu pro aktuální stav počítače.', href: SETUP_HREF,
-        action: 'Zkontrolovat počítač', retry: true,
+        id: 'machine-status', get title() { return unknown ? t('dashboard.unchecked') : t('dashboard.staleCheck') },
+        get hint() { return t('dashboard.manualCheckHint') }, href: SETUP_HREF,
+        get action() { return t('dashboard.checkMachine') }, retry: true,
       })
       for (const finding of machineErrors) {
-      issues.value.push({ id: 'machine', title: timedOut ? `${finding.message} (poslední známý stav)` : finding.message, hint: finding.fix ?? 'Otevři stránku Knihovna a oprav uvedený problém.', href: finding.code === 'harness_test_failed' ? '#harness-settings' : finding.scope === 'library' ? LIBRARY_HREF : SETUP_HREF, action: finding.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači' })
+      issues.value.push({ id: 'machine', get title() { return timedOut ? t('dashboard.lastKnownFinding', { message: findingTitle(finding.code) }) : findingTitle(finding.code) }, get hint() { return t('dashboard.fixHint') }, diagnostics: [finding.message, finding.fix].filter(Boolean).join('\n'), href: finding.code === 'harness_test_failed' ? '#harness-settings' : finding.scope === 'library' ? LIBRARY_HREF : SETUP_HREF, get action() { return finding.code === 'harness_test_failed' ? t('dashboard.configureHarnesses') : t('dashboard.fixComputer') } })
       }
       for (const item of registry.repos.filter(r => r.status !== 'ok')) {
         const uncommitted = item.status === 'uncommitted'
         const unavailable = ['missing', 'not_git'].includes(item.status)
-        issues.value.push({ id: 'factory', title: `${item.name}: ${repoStatusText(item.status)}`, hint: uncommitted ? 'Commitni změny konfigurace, aby je běhy mohly používat.' : unavailable ? 'Odeber neplatný záznam a přidej správnou složku repozitáře.' : 'Nainstaluj factory v repozitáři.', href: repoHref(item.id, 'factory', ...(uncommitted ? ['config_commit'] : [])), action: uncommitted ? 'Commitnout konfiguraci' : unavailable ? 'Odebrat z dashboardu' : 'Nainstalovat factory', ...(unavailable ? { repo: item } : {}) })
+        issues.value.push({ id: 'factory', get title() { return `${item.name}: ${item.status === 'uncommitted' ? t('dashboard.uncommittedConfig') : item.status === 'missing' ? t('dashboard.missingFolder') : item.status === 'not_git' ? t('dashboard.notGit') : t('dashboard.notInstalled')}` }, get hint() { return uncommitted ? t('dashboard.commitHint') : unavailable ? t('dashboard.invalidRepoHint') : t('dashboard.installRepoHint') }, href: repoHref(item.id, 'factory', ...(uncommitted ? ['config_commit'] : [])), get action() { return uncommitted ? t('dashboard.commitConfig') : unavailable ? t('dashboard.removeDashboard') : t('dashboard.installFactory') }, ...(unavailable ? { repo: item } : {}) })
       }
       if (issues.value.length) phase.value = 'warning'
       else phase.value = 'success'
@@ -146,8 +151,8 @@ function createReadiness() {
           issues.value = [machineDone ? auxiliaryIssue(error.step) : timeoutIssue(error.step, error.seconds, lastCheckedAt), ...issues.value.filter(i => i.id !== 'timeout')]
         } else {
           issues.value = machineDone
-            ? [auxiliaryIssue(STEPS[failedStep ?? 'machine'], errorText(error)), ...issues.value.filter(i => i.id !== 'timeout')]
-            : [{ id: 'machine', title: 'Kontrolu se nepodařilo dokončit.', hint: errorText(error), href: SETUP_HREF, action: 'Otevřít stránku Knihovna' }]
+            ? [auxiliaryIssue({ id: failedStep ?? 'machine' }, error), ...issues.value.filter(i => i.id !== 'timeout')]
+            : [{ id: 'machine', get title() { return t('dashboard.checkFailed') }, get hint() { return dashboardError(error) }, href: SETUP_HREF, get action() { return t('dashboard.openLibrary') } }]
         }
         phase.value = 'warning'
       }
@@ -159,32 +164,32 @@ function createReadiness() {
         stopProgress = undefined
         checking = false
         manualRunning = false
-        step.value = null
+        stepSource.value = null
         elapsed.value = 0
       }
     }
   }
 
-  function auxiliaryIssue(step: string, error?: string): Issue {
-    const known = lastKnown(lastCheckedAt)
+  function auxiliaryIssue(step: CheckStep, error?: unknown): Issue {
+    const known = () => lastKnown(lastCheckedAt)
     return {
-      id: 'timeout', title: `Údaj není k dispozici: ${step}`,
-      hint: `Nedokončený krok: ${step}. ` + (known ? `Zobrazen poslední známý výsledek ${known}. ` : '') + (error ?? ''),
-      href: SETUP_HREF, action: 'Zkontrolovat znovu', retry: true,
+      id: 'timeout', get title() { return t('dashboard.unavailableStep', { step: stepLabel(step) }) },
+      get hint() { return t('dashboard.unfinishedStep', { step: stepLabel(step) }) + (known() ? t('dashboard.lastResultSpace', { known: known()! }) : '') + (error === undefined ? '' : dashboardError(error)) },
+      href: SETUP_HREF, get action() { return t('dashboard.checkAgain') }, retry: true,
     }
   }
 
   function machineIssues(machine: MachineCheck): Issue[] {
     const result: Issue[] = machine.findings.filter(f => f.severity === 'error' || f.severity === 'warning').map(f => ({
-      id: 'machine', title: f.message, hint: f.fix ?? 'Otevři stránku Knihovna a oprav uvedený problém.',
+      id: 'machine', get title() { return findingTitle(f.code) }, get hint() { return t('dashboard.fixHint') }, diagnostics: [f.message, f.fix].filter(Boolean).join('\n'),
       href: f.code === 'harness_test_failed' ? '#harness-settings' : f.scope === 'library' ? LIBRARY_HREF : SETUP_HREF,
-      action: f.code === 'harness_test_failed' ? 'Nastavit a testovat harnessy' : 'Opravit na tomto počítači',
+      get action() { return f.code === 'harness_test_failed' ? t('dashboard.configureHarnesses') : t('dashboard.fixComputer') },
     }))
     const timeout = machineTimeout(machine)
     if (timeout) result.unshift(timeout)
     else if (machine.checked === false || machine.stale) result.unshift({
-      id: 'machine-status', title: machine.checked === false ? 'Počítač zatím nebyl zkontrolován' : 'Zastaralý výsledek kontroly počítače',
-      hint: 'Spusť ruční kontrolu pro aktuální stav počítače.', href: SETUP_HREF, action: 'Zkontrolovat počítač', retry: true,
+      id: 'machine-status', get title() { return machine.checked === false ? t('dashboard.unchecked') : t('dashboard.staleCheck') },
+      get hint() { return t('dashboard.manualCheckHint') }, href: SETUP_HREF, get action() { return t('dashboard.checkMachine') }, retry: true,
     })
     return result
   }
@@ -193,8 +198,8 @@ function createReadiness() {
   function machineTimeout(machine: MachineCheck): Issue | null {
     if (!machine.timed_out) return null
     const budget = machine.progress?.budget ?? Math.round(CHECK_DEADLINE_MS / 1000)
-    const unfinished = serverStep(machine.progress) ?? STEPS.machine
-    return timeoutIssue(`${STEPS.machine}: ${unfinished}`, budget, machine.checked_at)
+    const detail = serverStep(machine.progress)
+    return timeoutIssue({ id: 'machine', ...(detail ? { detail } : {}) }, budget, machine.checked_at)
   }
 
   // The server checks once at start; a page load reads that result, later checks are explicit.

@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { deferredError } from '@/lib/dashboardMessages'
+import { feedbackText } from '@/components/overview/feedback'
 // "Odebrat ukázku": after a confirmation, the sample leaves the dashboard and its folder is
 // deleted (DELETE /api/demo); then the overview opens.
 import { ref } from 'vue'
 import { Trash2 } from 'lucide-vue-next'
 import { useConfirm } from '@/lib/confirm'
 import { lastStart, removeDemo, useDemoRepo } from '@/lib/demo'
-import { errorText } from '@/lib/format'
 import { OVERVIEW_HREF } from '@/lib/router'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -14,16 +16,19 @@ const props = defineProps<{ path?: string | null }>()
 // without a path of its own, the folder of the open sample
 const demoPath = useDemoRepo()
 const { dialog, ask, confirm, cancel } = useConfirm()
+const removalPath = ref('')
 const busy = ref(false)
-const error = ref<string | null>(null)
+const error = ref<string | (() => string) | null>(null)
 
 async function remove() {
   error.value = null
   const path = props.path || demoPath.value
+  removalPath.value = path ? ` ${path}` : ''
   const ok = await ask({
-    title: 'Odebrat ukázku?',
-    message: `Ukázka zmizí z dashboardu a smaže se celá její složka${path ? ` ${path}` : ''} i s běhy a větvemi. Kdykoli ji můžeš vytvořit znovu.`,
-    confirmLabel: 'Odebrat ukázku',
+    title: t('dashboard.removeDemoTitle'),
+    message: t('dashboard.removeDemoBody', { path: path ? ` ${path}` : '' }),
+    confirmLabel: t('dashboard.removeDemo'),
+    cancelLabel: t('common.cancel'),
     tone: 'danger',
   })
   if (!ok) return
@@ -34,7 +39,7 @@ async function remove() {
     window.location.hash = OVERVIEW_HREF
     window.dispatchEvent(new Event('factory-applied'))
   } catch (err) {
-    error.value = errorText(err)
+    error.value = deferredError(err)
   } finally {
     busy.value = false
   }
@@ -44,11 +49,13 @@ async function remove() {
 <template>
   <span class="remove-demo">
     <button type="button" class="remove-button" :disabled="busy" :aria-busy="busy || undefined" data-test="remove-demo" @click="remove">
-      <Spinner v-if="busy" /><Trash2 v-else :size="14" aria-hidden="true" /> Odebrat ukázku
+      <Spinner v-if="busy" /><Trash2 v-else :size="14" aria-hidden="true" /> {{ t('dashboard.removeDemo') }}
     </button>
-    <span v-if="error" class="remove-error" role="alert" data-test="remove-demo-error">Ukázku se nepodařilo odebrat: {{ error }}</span>
+    <span v-if="error" class="remove-error" role="alert" data-test="remove-demo-error">{{ t('dashboard.removeDemoFailed') }} {{ feedbackText(error) }}</span>
   </span>
-  <ConfirmDialog v-bind="dialog" @confirm="confirm" @cancel="cancel" />
+  <ConfirmDialog v-bind="dialog" :title="t('dashboard.removeDemoTitle')"
+      :message="t('dashboard.removeDemoBody', { path: removalPath })"
+      :confirm-label="t('dashboard.removeDemo')" :cancel-label="t('common.cancel')" @confirm="confirm" @cancel="cancel" />
 </template>
 
 <style scoped>

@@ -282,6 +282,7 @@ export interface OverviewFailed {
 
 /** An automatic action of an auto-continue chain after a failure (run.heal, `task_chains.events`). */
 export interface OverviewAutoAction {
+  detail?: { from?: { harness?: string }; to?: { harness?: string } }
   project?: string | null
   at: string
   /** `fallback` (quota: another harness), `retry` (process gone) or `close` (nothing to do). */
@@ -409,10 +410,18 @@ export function importLegacyRepoSettings(id: string, choices: Record<string, unk
 }
 
 /** One repository of GET /api/overview. */
+export interface OverviewWarning {
+  code: string
+  params: Record<string, string | number>
+  /** Original server diagnostic, never translated or parsed. */
+  message: string
+}
+
 export interface OverviewRepo {
   stale?: boolean
   local_settings?: LocalRepoSettings | null
   local_settings_error?: string | null
+  local_settings_error_code?: string | null
   projects?: OverviewProject[]
   id: string
   name: string
@@ -436,6 +445,7 @@ export interface OverviewRepo {
   config: OverviewConfig | null
   last_activity: string | null
   warnings: string[]
+  warning_details?: OverviewWarning[]
   /** Null for a repo that is missing, not git, slow or broken. */
   tasks?: OverviewTaskCounts | null
   factory?: OverviewFactory | null

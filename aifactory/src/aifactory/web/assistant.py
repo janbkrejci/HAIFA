@@ -722,7 +722,7 @@ class AssistantManager:
         if run_id:
             trace, errors = _trace_view(trace_db_of(repo))
             if errors:
-                raise AssistantError("usage_error", "; ".join(errors))
+                raise AssistantError("usage_error", "; ".join(error["message"] for error in errors))
             run = next((r for r in trace.runs if r["run_id"] == run_id), None) if trace else None
             if run is None:
                 raise AssistantError("usage_error", f"unknown run {run_id!r}")

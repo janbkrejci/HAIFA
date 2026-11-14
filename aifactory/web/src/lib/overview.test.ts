@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 import {
   activeRuns,
@@ -185,10 +186,10 @@ describe('overview formats', () => {
     expect(fmtElapsed(185)).toBe('3m 05s')
     expect(fmtElapsed(3720)).toBe('1h 02m')
     expect(fmtElapsed(null)).toBe('—')
-    expect(fmtAge(10)).toBe('just now')
-    expect(fmtAge(300)).toBe('5 min. ago')
-    expect(fmtAge(7200)).toBe('2 hr. ago')
-    expect(fmtAge(2 * 86400)).toBe('2 days ago')
+    expect(fmtAge(10)).toBe('právě teď')
+    expect(fmtAge(300)).toBe('před 5 min')
+    expect(fmtAge(7200)).toBe('před 2 h')
+    expect(fmtAge(2 * 86400)).toBe('před 2 dny')
   })
 })
 
@@ -448,3 +449,6 @@ describe('finished project preference', () => {
     expect(() => writeShowFinished(true)).not.toThrow()
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

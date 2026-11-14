@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The factory buttons of a repo on the overview, shown as small icons in the top right corner of a
 // card or a calm row: Spustit továrnu (ready tasks into the free parallel slots), Pauza / Pokračovat
 // / Stop for every running run. The action name is in the tooltip and in aria-label. A finished
@@ -14,7 +15,7 @@ import {
   type OverviewRepo,
 } from '@/lib/api'
 import { useConfirm } from '@/lib/confirm'
-import { errorText, plural } from '@/lib/format'
+import { deferredError, skipReason } from '@/lib/dashboardMessages'
 import { canPause, canResume, canStart, canStop } from '@/lib/overview'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -24,6 +25,7 @@ import { NO_FEEDBACK, type ControlFeedback } from './feedback'
 const props = defineProps<{ repo: OverviewRepo }>()
 const emit = defineEmits<{ changed: []; feedback: [feedback: ControlFeedback] }>()
 
+const stopCount = ref(0)
 const starting = ref(false)
 const pausing = ref(false)
 const resuming = ref(false)
@@ -39,21 +41,21 @@ const { dialog, ask, confirm: onDialogConfirm, cancel: onDialogCancel } = useCon
 
 function startMessage(result: FactoryStartResult): string {
   const n = result.started.length
-  if (n > 0) return `Spuštěno ${n} ${plural(n, 'běh', 'běhy', 'běhů')}`
+  if (n > 0) return t('dashboard.started', { count: n }, n)
   const why = result.skipped
     .slice(0, 3)
-    .map((s) => `${s.task_id} (${s.detail || s.reason})`)
+    .map((s) => `${s.task_id} (${skipReason(s.reason)})`)
     .join(', ')
-  return `Nic se nespustilo${why ? `: ${why}` : ''}`
+  return `${t('dashboard.nothingStarted')}${why ? `: ${why}` : ''}`
 }
 
-async function act(busy: typeof starting, call: () => Promise<string | null>) {
+async function act(busy: typeof starting, call: () => Promise<ControlFeedback | null>) {
   busy.value = true
   emit('feedback', NO_FEEDBACK)
   try {
-    emit('feedback', { message: await call(), error: null })
+    emit('feedback', await call() ?? NO_FEEDBACK)
   } catch (err) {
-    emit('feedback', { message: null, error: errorText(err) })
+    emit('feedback', { message: null, error: deferredError(err) })
   } finally {
     busy.value = false
     emit('changed')
@@ -61,7 +63,11 @@ async function act(busy: typeof starting, call: () => Promise<string | null>) {
 }
 
 function onStart() {
-  return act(starting, async () => startMessage(await controlStart(props.repo.id)))
+  return act(starting, async () => {
+    const result = await controlStart(props.repo.id)
+    return { message: () => startMessage(result), error: null,
+      diagnostics: result.skipped.map(s => `${s.task_id}: ${s.detail}`).join('\n') }
+  })
 }
 
 function onPause() {
@@ -80,10 +86,12 @@ function onResume() {
 
 async function onStop() {
   const n = props.repo.running.filter((r) => r.process !== 'ended').length
+  stopCount.value = n
   const ok = await ask({
-    title: `Zastavit všechny běhy repozitáře ${props.repo.name}?`,
-    message: `Zastaví se ${n} ${plural(n, 'běh', 'běhy', 'běhů')}; řetězy auto-continue už nic dalšího nespustí.`,
-    confirmLabel: 'Zastavit',
+    title: t('dashboard.stopTitle', { name: props.repo.name }),
+    message: t('dashboard.stopBody', { count: n }, n),
+    confirmLabel: t('dashboard.stopConfirm'),
+    cancelLabel: t('common.cancel'),
     tone: 'danger',
   })
   if (!ok) return
@@ -96,12 +104,12 @@ async function onStop() {
 
 <template>
   <div v-if="anything" class="repo-actions" data-test="factory-actions">
-    <Tooltip v-if="showStart" text="Spustit továrnu">
+    <Tooltip v-if="showStart" :text="t('dashboard.start')">
       <button
         type="button"
         class="start"
         data-test="factory-start"
-        aria-label="Spustit továrnu"
+        :aria-label="t('dashboard.start')"
         :disabled="starting"
         :aria-busy="starting || undefined"
         @click="onStart"
@@ -110,12 +118,12 @@ async function onStop() {
         <Play v-else :size="14" aria-hidden="true" />
       </button>
     </Tooltip>
-    <Tooltip v-if="showPause" text="Pauza">
+    <Tooltip v-if="showPause" :text="t('dashboard.pause')">
       <button
         type="button"
         class="pause"
         data-test="factory-pause"
-        aria-label="Pauza"
+        :aria-label="t('dashboard.pause')"
         :disabled="pausing"
         :aria-busy="pausing || undefined"
         @click="onPause"
@@ -124,12 +132,12 @@ async function onStop() {
         <Pause v-else :size="14" aria-hidden="true" />
       </button>
     </Tooltip>
-    <Tooltip v-if="showResume" text="Pokračovat">
+    <Tooltip v-if="showResume" :text="t('dashboard.resume')">
       <button
         type="button"
         class="pause"
         data-test="factory-resume"
-        aria-label="Pokračovat"
+        :aria-label="t('dashboard.resume')"
         :disabled="resuming"
         :aria-busy="resuming || undefined"
         @click="onResume"
@@ -138,12 +146,12 @@ async function onStop() {
         <Play v-else :size="14" aria-hidden="true" />
       </button>
     </Tooltip>
-    <Tooltip v-if="showStop" text="Stop">
+    <Tooltip v-if="showStop" :text="t('dashboard.stop')">
       <button
         type="button"
         class="stop"
         data-test="factory-stop"
-        aria-label="Stop"
+        :aria-label="t('dashboard.stop')"
         :disabled="stopping"
         :aria-busy="stopping || undefined"
         @click="onStop"
@@ -153,7 +161,10 @@ async function onStop() {
       </button>
     </Tooltip>
 
-    <ConfirmDialog v-bind="dialog" @confirm="onDialogConfirm" @cancel="onDialogCancel" />
+    <ConfirmDialog v-bind="dialog"
+      :title="t('dashboard.stopTitle', { name: repo.name })"
+      :message="t('dashboard.stopBody', { count: stopCount }, stopCount)"
+      :confirm-label="t('dashboard.stopConfirm')" :cancel-label="t('common.cancel')" @confirm="onDialogConfirm" @cancel="onDialogCancel" />
   </div>
 </template>
 

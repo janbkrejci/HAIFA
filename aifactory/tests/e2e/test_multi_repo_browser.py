@@ -108,6 +108,7 @@ def test_multi_repo_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
 
                 context.route("**/*", local_only)
                 page = context.new_page()
+                page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
 
                 def no_dialog(dialog: Dialog) -> None:
                     net.dialogs.append(f"{dialog.type}: {dialog.message}")

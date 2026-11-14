@@ -86,6 +86,7 @@ def test_failure_card_of_a_failed_run(tmp_path: Path) -> None:
 
         context.route("**/*", only_local)
         page = context.new_page()
+        page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         try:
             page.goto(f"/#/r/{obs.repo_id}/backlog")
             task_id = _create_task(page, "Failing task", "Keep the existing implementation.")

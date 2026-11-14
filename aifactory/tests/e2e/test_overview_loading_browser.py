@@ -42,6 +42,7 @@ def test_slow_repo_loading_overlay() -> None:
         browser = _launch(playwright)
         try:
             page = browser.new_page()
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/overview")
             card = page.locator('[data-test="overview-card"][data-repo="haifa"]')
@@ -108,6 +109,7 @@ def test_overview_shows_local_controls_without_legacy_preview() -> None:
         browser = _launch(playwright)
         try:
             page = browser.new_page()
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/overview")
             controls = page.locator('[data-test="local-repo-controls"]')
@@ -223,6 +225,7 @@ def test_overview_backlog_indicator_refreshes_in_both_modes() -> None:
         browser = _launch(playwright)
         try:
             page = browser.new_page()
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/overview")
             calm_row = page.locator('[data-test="calm-repo"][data-repo="haifa"]')
@@ -270,5 +273,64 @@ def test_overview_backlog_indicator_refreshes_in_both_modes() -> None:
             ).to_have_text("Stav backlogu se nepodařilo přečíst")
             page.locator('[data-repo="active"] [data-test="repo-backlog-status"]').click()
             expect(page).to_have_url("http://haifa.test/#/r/active/backlog")
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize(
+    "locale,heading,running_label", [("en", "Overview", "Running"), ("cs", "Přehled", "Běží")]
+)
+def test_overview_locale_at_narrow_width(locale: str, heading: str, running_label: str) -> None:
+    """Each client renders its own locale; long filter labels fit at 390 px."""
+    item: dict[str, Any] = {
+        "id": "haifa",
+        "name": "Moje české repo",
+        "path": "/work/ukázka",
+        "state": "ok",
+        "config": None,
+        "factory": None,
+        "tasks": None,
+        "running": [],
+        "review": [],
+        "failed": [],
+        "warnings": [],
+        "last_activity": None,
+    }
+    fallback = _server("live")
+
+    def serve(route: Route) -> None:
+        if urlsplit(route.request.url).path != "/api/overview":
+            fallback(route)
+            return
+        route.fulfill(
+            content_type="application/json",
+            body=json.dumps({"ok": True, "data": {"repos": [item]}, "warnings": []}),
+        )
+
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        try:
+            page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.add_init_script(
+                f"localStorage.setItem('haifa.dashboard.locale', {json.dumps(locale)})"
+            )
+            page.route("**/*", serve)
+            page.goto("http://haifa.test/#/overview")
+            view = page.locator('[data-test="repo-page"]')
+            expect(view.locator("h1")).to_have_text(heading)
+            expect(view.locator('[data-test="total-running"]')).to_contain_text(running_label)
+            expect(view.locator('[data-test="calm-repo"]')).to_contain_text("Moje české repo")
+            for button in view.locator(".total").all():
+                expect(button).to_be_visible()
+                box = button.bounding_box()
+                assert box is not None and box["x"] >= 0 and box["x"] + box["width"] <= 390
+            assert view.evaluate("el => el.scrollWidth <= el.clientWidth")
+            view.locator('[data-test="total-running"]').click()
+            expect(view.locator('[data-test="total-running"]')).to_have_attribute(
+                "aria-pressed", "true"
+            )
+            expect(view.locator('[data-test="calm-repo"]')).to_have_count(0)
+            page.reload()
+            expect(view.locator("h1")).to_have_text(heading)
         finally:
             browser.close()

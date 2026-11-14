@@ -1,8 +1,10 @@
+import { t } from './i18n'
 // The overview (#/overview): what runs, waits for review and failed in every registered repo.
 // Pure helpers (urgency, totals, filter, links) and useOverview, which polls GET /api/overview
 // every 2 s while the tab is visible, reloads on focus and on demand; it never writes.
-import { onScopeDispose, ref, type Ref } from 'vue'
+import { computed, onScopeDispose, ref, type Ref } from 'vue'
 import {
+  ApiError,
   fetchOverview,
   type OverviewData,
   type OverviewFailed,
@@ -10,10 +12,9 @@ import {
   type OverviewReview,
   type OverviewRunning,
 } from './api'
-import { BOARD_STATES, STATE_LABELS, type BoardState } from './backlog'
+import { BOARD_STATES, type BoardState } from './backlog'
 import { repoHref } from './router'
-import { errorText, plural } from './format'
-import { failureLabel } from './failure'
+import { dashboardStateLabel, dashboardFailureLabel, dashboardError } from './dashboardMessages'
 
 export const OVERVIEW_POLL_MS = 2000
 
@@ -21,12 +22,12 @@ export const OVERVIEW_POLL_MS = 2000
 export type OverviewFilter = 'running' | 'review' | 'approved' | 'automerge' | 'failed' | 'problems'
 
 export const TOTALS: readonly { id: OverviewFilter; label: string }[] = [
-  { id: 'running', label: 'Běží' },
-  { id: 'review', label: 'Čeká na review' },
-  { id: 'approved', label: 'Schváleno, čeká na CI' },
-  { id: 'automerge', label: 'Čeká na automerge PR' },
-  { id: 'failed', label: 'Selhalo' },
-  { id: 'problems', label: 'Problémy' },
+  { id: 'running', get label() { return t('dashboard.running') } },
+  { id: 'review', get label() { return t('dashboard.review') } },
+  { id: 'approved', get label() { return t('dashboard.approved') } },
+  { id: 'automerge', get label() { return t('dashboard.automerge') } },
+  { id: 'failed', get label() { return t('dashboard.failed') } },
+  { id: 'problems', get label() { return t('dashboard.problems') } },
 ]
 
 /** Urgency of a repo card, most urgent first. A PR waiting for auto-merge needs nobody, so it
@@ -62,12 +63,12 @@ const STATE_PROBLEMS: Partial<Record<OverviewRepo['state'], Problem['kind']>> = 
 }
 
 const PROBLEM_TEXT: Record<Problem['kind'], string> = {
-  not_installed: 'Nenainstalováno',
-  invalid: 'Neplatná konfigurace',
-  uncommitted: 'Necommitnutá konfigurace',
-  missing: 'Složka nenalezena',
-  not_git: 'Není git repozitář',
-  error: 'Repo se nepodařilo přečíst',
+  get not_installed() { return t('dashboard.notInstalled') },
+  get invalid() { return t('dashboard.invalidConfig') },
+  get uncommitted() { return t('dashboard.uncommittedConfig') },
+  get missing() { return t('dashboard.missingFolder') },
+  get not_git() { return t('dashboard.notGit') },
+  get error() { return t('dashboard.repoReadFailed') },
 }
 
 /** Manually approved PRs waiting for CI (older responses have no list). */
@@ -94,14 +95,14 @@ export function failedRows(repo: OverviewRepo): FailedRow[] {
       task_id: r.task_id,
       task_title: r.task_title,
       error: null,
-      label: r.status_label ?? PROCESS_ENDED,
+      label: t('dashboard.processEnded'),
     }))
   const failed = repo.failed.map((f: OverviewFailed) => ({
     run_id: f.run_id,
     task_id: f.task_id,
     task_title: f.task_title,
     error: f.error,
-    label: failureLabel(f.failure_kind) || null,
+    label: dashboardFailureLabel(f.failure_kind) || null,
   }))
   return [...ended, ...failed]
 }
@@ -129,11 +130,11 @@ export function problems(repo: OverviewRepo): Problem[] {
 /** Unknown backlog state must never imply a confirmed clean checkout. */
 export function backlogText(repo: OverviewRepo): string | null {
   const backlog = repo.backlog
-  if (repo.state === 'timeout' || backlog?.state === 'loading') return 'Načítám stav backlogu…'
-  if (!backlog || backlog.state === 'error') return 'Stav backlogu se nepodařilo přečíst'
+  if (repo.state === 'timeout' || backlog?.state === 'loading') return t('dashboard.loadingBacklog')
+  if (!backlog || backlog.state === 'error') return t('dashboard.backlogFailed')
   if (backlog.state === 'clean') return null
   const n = backlog.count
-  return `Necommitnutý backlog: ${n} ${plural(n ?? 0, 'soubor', 'soubory', 'souborů')}`
+  return t('dashboard.dirtyBacklog', { count: n ?? 0 }, n ?? 0)
 }
 
 /** Whether the repo has a problem: a state or config problem, or warnings. */
@@ -175,7 +176,7 @@ export function taskSummary(repo: Pick<OverviewRepo, 'tasks'>): TaskSummaryItem[
   if (!tasks) return []
   return TASK_SUMMARY_STATES.filter((state) => (tasks[state] ?? 0) > 0).map((state) => ({
     state,
-    label: STATE_LABELS[state],
+    label: dashboardStateLabel(state),
     count: tasks[state],
   }))
 }
@@ -240,7 +241,7 @@ export function projectSections(repo: OverviewRepo, showFinished = false): { id:
     projects.map((p) => ({ id: p.id, title: p.title, tasks: p.tasks }))
   const lists = [repo.running, repo.review, repo.approved ?? [], repo.automerge ?? [], repo.failed]
   if (lists.some((rows) => rows.some((row) => row.project == null || !ids.has(row.project)))) {
-    sections.push({ id: null, title: 'Bez projektu', tasks: null })
+    sections.push({ id: null, title: t('dashboard.noProject'), tasks: null })
   }
   const unassignedActivity = (repo.factory?.running ?? 0) > repo.running.length
     || (repo.factory?.paused ?? 0) + (repo.factory?.pausing ?? 0) > repo.running.filter((r) => r.pause).length
@@ -278,7 +279,7 @@ export function canStop(repo: OverviewRepo): boolean {
 
 /** "dobíhá 1 běh", "dobíhají 2 běhy", "dobíhá 5 běhů". */
 export function runsFinishing(n: number): string {
-  return `${plural(n, 'dobíhá', 'dobíhají', 'dobíhá')} ${n} ${plural(n, 'běh', 'běhy', 'běhů')}`
+  return t('dashboard.finishing', { count: n }, n)
 }
 
 /** The state of a stop or pause of the whole repo. */
@@ -292,21 +293,21 @@ export function controlStatus(repo: OverviewRepo): ControlStatus | null {
   if (!control) return null
   if (control.action === 'stop') {
     const n = control.pending.length
-    if (n > 0) return { kind: 'stopping', text: `Zastavuje se – ${runsFinishing(n)}` }
-    return { kind: 'stopped', text: 'Zastaveno' }
+    if (n > 0) return { kind: 'stopping', text: `${t('dashboard.stopping')} – ${runsFinishing(n)}` }
+    return { kind: 'stopped', text: t('dashboard.stopped') }
   }
   const ids = new Set(control.run_ids)
   const affected = activeRuns(repo).filter((r) => r.run_id !== null && ids.has(r.run_id))
   const left = affected.filter((r) => r.pause !== 'paused').length
-  if (left > 0) return { kind: 'pausing', text: `Pozastavuje se – ${runsFinishing(left)}` }
-  if (affected.length > 0) return { kind: 'paused', text: 'Pozastaveno' }
+  if (left > 0) return { kind: 'pausing', text: `${t('dashboard.pausing')} – ${runsFinishing(left)}` }
+  if (affected.length > 0) return { kind: 'paused', text: t('dashboard.paused') }
   return null
 }
 
 /** The errors of a stop of the whole repo, one line each. */
 export function controlErrors(repo: OverviewRepo): string[] {
   return (repo.factory?.control?.errors ?? []).map(
-    (e) => `Nepodařilo se: ${e.task_id ?? e.run_id} – ${e.message}`,
+    (e) => t('dashboard.controlError', { id: e.task_id ?? e.run_id, error: dashboardError(new ApiError(e.code, e.message)) }),
   )
 }
 
@@ -398,7 +399,8 @@ export interface OverviewPoll {
  */
 export function useOverview(intervalMs = OVERVIEW_POLL_MS): OverviewPoll {
   const data = ref<OverviewData | null>(null)
-  const error = ref<string | null>(null)
+  const failure = ref<unknown>(null)
+  const error = computed(() => failure.value === null ? null : dashboardError(failure.value))
   const loading = ref(false)
   let generation = 0
   let currentRead: AbortController | undefined
@@ -413,10 +415,10 @@ export function useOverview(intervalMs = OVERVIEW_POLL_MS): OverviewPoll {
       const next = await fetchOverview(currentRead.signal)
       if (mine !== generation) return
       data.value = next
-      error.value = null
+      failure.value = null
     } catch (err) {
       if (mine !== generation) return
-      error.value = errorText(err)
+      failure.value = err
     } finally {
       if (mine === generation) loading.value = false
     }

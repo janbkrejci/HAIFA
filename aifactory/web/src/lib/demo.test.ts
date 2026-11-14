@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { DEMO_TASK, demoFinished, demoSteps, firstTestedHarness, lastStart, startDemo } from './demo'
 import type { HarnessCatalog } from './machineHarnesses'
 import type { PhaseDot, RunSummary } from './runs'
@@ -85,7 +86,7 @@ describe('startDemo', () => {
 
     const result = await startDemo()
 
-    expect(result).toMatchObject({ repoId: 'demo', harness: null, runId: null, error: 'already running' })
+    expect(result).toMatchObject({ repoId: 'demo', harness: null, runId: null, error: 'Task už běží.' })
   })
 })
 
@@ -118,3 +119,6 @@ describe('demoSteps', () => {
     expect(demoSteps(run('failed'), [phase('build')]).some((s) => s.state === 'current')).toBe(false)
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

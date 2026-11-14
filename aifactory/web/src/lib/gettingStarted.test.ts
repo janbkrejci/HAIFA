@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { CheckFinding, MachineCheck, RepoItem } from './api'
 import { focusRepo, gettingStartedSteps, nextStep, type GettingStartedInput } from './gettingStarted'
 import { detectedHarnesses } from './roster'
@@ -78,3 +79,6 @@ describe('detectedHarnesses', () => {
     expect(detectedHarnesses(null)).toEqual([])
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

@@ -176,7 +176,8 @@ def _runtime(repo: Path) -> tuple[_Runtime, list[str]]:
     from aifactory.web.overview import _trace_view
     from aifactory.web.repos import trace_db_of
 
-    trace, warnings = _trace_view(trace_db_of(repo))
+    trace, trace_warnings = _trace_view(trace_db_of(repo))
+    warnings = [warning["message"] for warning in trace_warnings]
     rt = _display_runtime(trace.runs, trace.prs) if trace is not None else _Runtime()
     try:
         store = existing_store(repo)

@@ -1,3 +1,4 @@
+import { setLocale } from '@/lib/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import OverviewView from '@/views/OverviewView.vue'
@@ -135,7 +136,7 @@ describe('overview readiness', () => {
         await flushPromises()
         expect(fetchMock.mock.calls.length).toBe(before)
       }
-      finishManual(envelope({ ...machine, findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] }))
+      finishManual(envelope({ ...machine, findings: [{ code: 'git_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] }))
       await flushPromises()
       expect(wrapper.find('[data-test="readiness-warning"]').exists()).toBe(true)
       const result = wrapper.text()
@@ -164,7 +165,7 @@ describe('overview readiness', () => {
 
   it.each([true, false])('silently reads cached results after factory-applied and preserves issues (chip=%s)', async chip => {
     const options: { machine: MachineCheck; pending?: Promise<Response> } = {
-      machine: { ...machine, findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] },
+      machine: { ...machine, findings: [{ code: 'git_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] },
     }
     const fetchMock = stub(options)
     const wrapper = mount(OverviewReadiness, { props: { chip } })
@@ -195,7 +196,7 @@ describe('overview readiness', () => {
   })
 
   it('links the warning chip to problems and provides concrete fixes on that page', async () => {
-    const options: { machine: MachineCheck; pending?: Promise<Response> } = { machine: { ...machine, ok: false, findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] } }
+    const options: { machine: MachineCheck; pending?: Promise<Response> } = { machine: { ...machine, ok: false, findings: [{ code: 'git_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] } }
     const fetchMock = stub(options)
     const chip = mount(OverviewReadiness, { props: { chip: true } })
     const detail = mount(OverviewReadiness)
@@ -204,8 +205,9 @@ describe('overview readiness', () => {
     expect(chip.get('[data-test="readiness-warning"]').text()).toBe('')
     expect(chip.get('[data-test="readiness-warning"]').attributes('aria-label')).toBe('Nalezeny problémy – kliknutím otevřeš seznam problémů')
     expect(chip.get('[data-test="readiness-warning"]').attributes('href')).toBe('#/problems')
-    expect(detail.get('[data-test="readiness-warning"] strong').text()).toBe('Chybí Git.')
-    expect(detail.get('[data-test="readiness-warning"] li span').text()).toBe('Nainstaluj Git.')
+    expect(detail.get('[data-test="readiness-warning"] strong').text()).toBe('Git není dostupný')
+    expect(detail.get('[data-test="readiness-warning"] li span').text()).toBe('Otevři stránku Knihovna a oprav uvedený problém.')
+    expect(detail.get('details').text()).toContain('Nainstaluj Git.')
     expect(detail.get('[data-test="readiness-warning"] a').attributes('href')).toBe('#/setup')
     options.machine = machine
     let finish!: (response: Response) => void
@@ -232,7 +234,7 @@ describe('overview readiness', () => {
     await answerDialog(true)
     await vi.advanceTimersByTimeAsync(1500)
     expect(wrapper.find('[data-test="readiness-checking"]').exists()).toBe(false)
-    expect(wrapper.get('[data-test="readiness-warning"]').text()).toContain('Missing: chybí')
+    expect(wrapper.get('[data-test="readiness-warning"]').text()).toContain('Missing: Složka nenalezena')
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/machine/check')).toHaveLength(2)
     expect(fetchMock).not.toHaveBeenCalledWith('/api/machine/check?fresh=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     finish(envelope(machine))
@@ -245,7 +247,7 @@ describe('overview readiness', () => {
     const wrapper = mount(OverviewReadiness)
     await flushPromises()
     const warning = wrapper.get('[data-test="readiness-warning"]')
-    expect(warning.text()).toContain('A: neuložená konfigurace')
+    expect(warning.text()).toContain('A: Necommitnutá konfigurace')
     expect(warning.get('a').attributes('href')).toBe('#/r/a/factory/config_commit')
     expect(warning.text()).not.toContain('První projekt')
   })
@@ -301,7 +303,7 @@ describe('overview readiness', () => {
   it('retains the first completed machine result when the follow-up expires', async () => {
     const checkedAt = '2026-11-10T12:00:00Z'
     stub({
-      machine: { ...machine, checked_at: checkedAt, findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] },
+      machine: { ...machine, checked_at: checkedAt, findings: [{ code: 'git_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: 'Nainstaluj Git.', action: null }] },
       roster: new Promise<Response>(() => {}),
     })
     const wrapper = mount(OverviewReadiness)
@@ -311,13 +313,13 @@ describe('overview readiness', () => {
     expect(warning).toContain('Chybí Git.')
     expect(warning).toContain('Údaj není k dispozici: roster')
     expect(warning).toContain('Zobrazen poslední známý výsledek z')
-    expect(warning).toContain(new Date(checkedAt).toLocaleString('en-US', { hour12: false }))
+    expect(warning).toContain(new Date(checkedAt).toLocaleString('cs-CZ', { hour12: false }))
     expect(warning).not.toContain('Dřívější výsledek není k dispozici')
     expect(warning).not.toContain('Kontrola nedoběhla')
   })
 
   it.each(['library', 'repos', 'roster', 'backlog'] as const)('retains machine findings when %s fails', async failed => {
-    const original = stub({ machine: { ...machine, checked_at: '2026-11-10T12:00:00Z', findings: [{ code: 'tool_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: null, action: null }] } })
+    const original = stub({ machine: { ...machine, checked_at: '2026-11-10T12:00:00Z', findings: [{ code: 'git_missing', severity: 'error', scope: 'machine', message: 'Chybí Git.', fix: null, action: null }] } })
     const failing = { library: '/api/library?items=0', repos: '/api/repos', roster: '/api/repos/a/factory/roster?summary=1', backlog: '/api/repos/a/backlog/summary' }[failed]
     vi.stubGlobal('fetch', vi.fn((url: string, init?: RequestInit) => {
       if (url === failing) return Promise.reject(new Error('Údaj nelze načíst'))
@@ -372,8 +374,8 @@ describe('overview readiness', () => {
     const items = wrapper.findAll('[data-test="readiness-warning"] li').map(li => li.text())
     expect(items[0]).toContain('Kontrola nedoběhla do 60 s')
     expect(items[0]).toContain('Nedokončený krok: kontrola počítače: machine: logins (claude auth status).')
-    expect(items[0]).toContain('(10 min. ago)')
-    expect(items.some(text => text.includes('the library is 7 commit(s) behind (poslední známý stav)'))).toBe(true)
+    expect(items[0]).toContain('(před 10 min)')
+    expect(items.some(text => text.includes('Knihovna potřebuje aktualizaci (poslední známý stav)'))).toBe(true)
     expect(wrapper.find('[data-test="readiness-timeout-retry"]').exists()).toBe(true)
   })
 
@@ -393,3 +395,43 @@ describe('overview readiness', () => {
     expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))
+
+it.each(['server', 'request_timeout', 'auxiliary_timeout', 'auxiliary_error'] as const)(
+  'retranslates the stored %s step CS → EN → CS without a request', async kind => {
+    const original = stub({ machine: kind === 'server'
+      ? { ...machine, timed_out: true, progress: { seq: 1, step: 'machine: logins', detail: 'codex auth status', budget: 60, elapsed: 60, started_at: '', running: false, offline: false } }
+      : machine })
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const failed = kind === 'request_timeout' ? url.startsWith('/api/machine/check') : url === '/api/library?items=0'
+      if (kind !== 'server' && failed) {
+        if (kind === 'auxiliary_error') throw new Error('technical diagnostic')
+        return new Response(JSON.stringify({ ok: false, data: null, warnings: [], error: {
+          code: 'request_timeout', message: 'technical diagnostic', issues: [],
+        } }), { status: 504 })
+      }
+      return original(url, init)
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(OverviewReadiness)
+    await flushPromises()
+    const warning = wrapper.get('[data-test="readiness-warning"]')
+    const calls = fetchMock.mock.calls.length
+    const auxiliary = kind.startsWith('auxiliary')
+    for (const [language, label, otherLabel] of [
+      ['cs', auxiliary ? 'stav knihovny' : 'kontrola počítače', auxiliary ? 'library status' : 'computer check'],
+      ['en', auxiliary ? 'library status' : 'computer check', auxiliary ? 'stav knihovny' : 'kontrola počítače'],
+      ['cs', auxiliary ? 'stav knihovny' : 'kontrola počítače', auxiliary ? 'library status' : 'computer check'],
+    ] as const) {
+      setLocale(language)
+      await flushPromises()
+      expect(warning.text()).toContain(label)
+      expect(warning.text()).not.toContain(otherLabel)
+      expect(wrapper.get('[data-test="readiness-warning"]').element).toBe(warning.element)
+      expect(fetchMock.mock.calls).toHaveLength(calls)
+      if (kind === 'server') expect(warning.text()).toContain('machine: logins (codex auth status)')
+    }
+  },
+)

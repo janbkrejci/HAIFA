@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import App from './App.vue'
 import UpdateChip from './components/UpdateChip.vue'
@@ -904,3 +905,6 @@ describe('App', () => {
     expect(wrapper.get('[data-test="assistant-answer"]').text()).toBe('Restored answer')
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

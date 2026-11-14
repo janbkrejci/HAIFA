@@ -51,7 +51,7 @@ async function load(fresh = false) {
   stopProgress = followProgress((seconds, server) => { elapsed.value = seconds; step.value = server }, () => true)
   const seconds = Math.round(CHECK_DEADLINE_MS / 1000)
   try {
-    const result = await beforeDeadline(fetchMachineCheck(fresh), Date.now() + CHECK_DEADLINE_MS, () => step.value ?? 'kontrola počítače', seconds)
+    const result = await beforeDeadline(fetchMachineCheck(fresh), Date.now() + CHECK_DEADLINE_MS, () => ({ id: 'machine', detail: step.value ?? 'kontrola počítače' }), seconds)
     // A later answer of an older check never replaces a newer result.
     if (current === generation) report.value = result
   } catch (e) {

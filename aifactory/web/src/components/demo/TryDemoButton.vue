@@ -1,16 +1,18 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { deferredError } from '@/lib/dashboardMessages'
+import { feedbackText } from '@/components/overview/feedback'
 // "Vyzkoušet na ukázce": creates the sample repository, starts its first task with the first
 // tested harness and opens its backlog on that task (lib/demo.ts).
 import { ref } from 'vue'
 import { FlaskConical } from 'lucide-vue-next'
 import { DEMO_TASK, startDemo } from '@/lib/demo'
-import { errorText } from '@/lib/format'
 import { repoHref } from '@/lib/router'
 import Spinner from '@/components/ui/Spinner.vue'
 
 const emit = defineEmits<{ started: [repoId: string] }>()
 const busy = ref(false)
-const error = ref<string | null>(null)
+const error = ref<string | (() => string) | null>(null)
 
 async function run() {
   busy.value = true
@@ -21,7 +23,7 @@ async function run() {
     emit('started', result.repoId)
     window.location.hash = repoHref(result.repoId, 'backlog', DEMO_TASK)
   } catch (err) {
-    error.value = errorText(err)
+    error.value = deferredError(err)
   } finally {
     busy.value = false
   }
@@ -32,9 +34,9 @@ async function run() {
   <span class="try-demo">
     <button type="button" class="try-button" :disabled="busy" :aria-busy="busy || undefined" data-test="try-demo" @click="run">
       <Spinner v-if="busy" /><FlaskConical v-else :size="14" aria-hidden="true" />
-      {{ busy ? 'Připravuji ukázku…' : 'Vyzkoušet na ukázce' }}
+      {{ busy ? t('dashboard.preparingDemo') : t('dashboard.tryDemo') }}
     </button>
-    <span v-if="error" class="try-error" role="alert" data-test="try-demo-error">Ukázku se nepodařilo připravit: {{ error }}</span>
+    <span v-if="error" class="try-error" role="alert" data-test="try-demo-error">{{ t('dashboard.tryDemoFailed') }} {{ feedbackText(error) }}</span>
   </span>
 </template>
 

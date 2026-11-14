@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it } from 'vitest'
 import { enableAutoUnmount, mount } from '@vue/test-utils'
 import RepoControls from './RepoControls.vue'
 import type { OverviewControl, OverviewRepo } from '@/lib/api'
@@ -65,7 +66,7 @@ describe('RepoControls', () => {
       }),
     )
     expect(stopped.find('[data-test="factory-control-status"]').text()).toBe('Zastaveno')
-    expect(stopped.find('[data-test="factory-control-errors"]').text()).toBe('Nepodařilo se: T2 – jinde')
+    expect(stopped.find('[data-test="factory-control-errors"]').text()).toBe('Nepodařilo se: T2 – Běh patří jinému počítači.')
   })
 
   it('shows the pause going on, then paused', () => {
@@ -101,3 +102,6 @@ describe('RepoControls', () => {
     expect(wrapper.find('[data-test="factory-slots"]').text()).toBe('Sloty: 1/2 · v review 1')
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

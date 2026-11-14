@@ -451,18 +451,37 @@ def _auto_actions(conn: sqlite3.Connection) -> list[JsonDict]:
     return actions[:AUTO_ACTIONS_LIMIT]
 
 
-def _trace_view(db: Path) -> tuple[_Trace | None, list[str]]:
+def _warning(code: str, message: str, **params: str | float) -> JsonDict:
+    """Stable UI identity alongside the untouched diagnostic for older clients."""
+    return {"code": code, "params": params, "message": message}
+
+
+def _trace_view(db: Path) -> tuple[_Trace | None, list[JsonDict]]:
     """The trace rows the overview needs; None without a trace DB. Never writes."""
     try:
         conn = _open_ro(db)
     except sqlite3.Error as exc:
-        return _Trace([], [], {}, {}), [f"trace DB {db} is not readable: {exc}"]
+        return _Trace([], [], {}, {}), [
+            _warning(
+                "trace_unreadable",
+                f"trace DB {db} is not readable: {exc}",
+                path=str(db),
+                error=str(exc),
+            )
+        ]
     if conn is None:
         return None, []
     try:
         return _read_trace(conn), []
     except sqlite3.Error as exc:
-        return _Trace([], [], {}, {}), [f"trace DB {db} is not readable: {exc}"]
+        return _Trace([], [], {}, {}), [
+            _warning(
+                "trace_unreadable",
+                f"trace DB {db} is not readable: {exc}",
+                path=str(db),
+                error=str(exc),
+            )
+        ]
     finally:
         conn.close()
 
@@ -661,13 +680,19 @@ def _lists(
 # --- config and backlog -----------------------------------------------------------------
 
 
-def _config_view(root: Path) -> tuple[JsonDict | None, list[str]]:
+def _config_view(root: Path) -> tuple[JsonDict | None, list[JsonDict]]:
     """The config state of ``root``: installed, invalid in base, uncommitted (D4)."""
     try:
         st = repo_state(root)
     except ConfigError as exc:
-        return None, [f"the configuration state is not available: {exc}"]
-    warnings: list[str] = []
+        return None, [
+            _warning(
+                "config_state_unavailable",
+                f"the configuration state is not available: {exc}",
+                error=str(exc),
+            )
+        ]
+    warnings: list[JsonDict] = []
     invalid = False
     issues: list[str] = []
     if st.commit and st.config_in_base:
@@ -681,7 +706,13 @@ def _config_view(root: Path) -> tuple[JsonDict | None, list[str]]:
         try:
             uncommitted = [c.to_dict() for c in config_changes(root, st.commit)]
         except ConfigError as exc:
-            warnings.append(f"uncommitted configuration is not known: {exc}")
+            warnings.append(
+                _warning(
+                    "config_changes_unavailable",
+                    f"uncommitted configuration is not known: {exc}",
+                    error=str(exc),
+                )
+            )
     config = {
         "factory_state": st.state,
         "installed": st.config_in_base or st.state == "uncommitted",
@@ -708,11 +739,15 @@ def _backlog_view(root: Path) -> JsonDict:
     }
 
 
-def _task_index(root: Path) -> tuple[_Tasks, list[str]]:
+def _task_index(root: Path) -> tuple[_Tasks, list[JsonDict]]:
     try:
         backlog = load_for_edit(root)
     except (ConfigError, TaskEditError, OSError, ValueError) as exc:
-        return _Tasks({}, None, _task_stamps(root, None)), [f"task titles are not available: {exc}"]
+        return _Tasks({}, None, _task_stamps(root, None)), [
+            _warning(
+                "task_titles_unavailable", f"task titles are not available: {exc}", error=str(exc)
+            )
+        ]
     index = {t.id: (t.title, t.status, t.path) for t in iter_tasks(backlog)}
     stamps = _task_stamps(root, backlog)
     return _Tasks(index, backlog, stamps), []
@@ -819,7 +854,7 @@ def _state(config: JsonDict | None) -> str:
     return "ok"
 
 
-def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
+def _stub(entry: RepoEntry, state: str, warnings: list[JsonDict]) -> JsonDict:
     return {
         "id": entry.id,
         "name": entry.name,
@@ -842,8 +877,10 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         },
         "local_settings": None,
         "local_settings_error": None,
+        "local_settings_error_code": None,
         "last_activity": None,
-        "warnings": warnings,
+        "warnings": [warning["message"] for warning in warnings],
+        "warning_details": warnings,
         "tasks": None,
         "projects": [],
         "factory": None,
@@ -879,11 +916,23 @@ class Overview:
         """One repository item (synchronous; the caller runs it in a thread)."""
         path = Path(entry.path)
         if not path.is_dir():
-            return _stub(entry, "missing", [f"the folder {entry.path} is missing"])
+            return _stub(
+                entry,
+                "missing",
+                [
+                    _warning(
+                        "folder_missing", f"the folder {entry.path} is missing", path=entry.path
+                    )
+                ],
+            )
         key = (entry.id, entry.path)
         layout = self._layouts.get(key, path, lambda: repo_layout(path))
         if layout is None or layout.toplevel is None:
-            return _stub(entry, "not_git", [f"{entry.path} is not a git working tree"])
+            return _stub(
+                entry,
+                "not_git",
+                [_warning("not_git", f"{entry.path} is not a git working tree", path=entry.path)],
+            )
         root = layout.toplevel
         config, config_warnings = self._configs.get(key, root, lambda: _config_view(root))
         tasks, task_warnings = self._tasks.get(key, TASKS_TTL, lambda: _task_index(root))
@@ -902,8 +951,14 @@ class Overview:
         except SettingsError as exc:
             item["local_settings"] = None
             item["local_settings_error"] = f"{exc.code}: {exc}"
+            item["local_settings_error_code"] = exc.code
             item["state"] = "error"
             item["warnings"].append(item["local_settings_error"])
+            item["warning_details"].append(
+                _warning(
+                    "local_settings_unavailable", item["local_settings_error"], error_code=exc.code
+                )
+            )
             return item
 
         active = _active_runs(trace)
@@ -951,14 +1006,30 @@ class Overview:
                 and isinstance(future.exception(), TimeoutError)
             ):
                 delivered = True
-                return _stub(entry, "error", [f"TimeoutError: {future.exception()}"])
+                return _stub(
+                    entry,
+                    "error",
+                    [
+                        _warning(
+                            "repo_error",
+                            f"TimeoutError: {future.exception()}",
+                            error=str(future.exception()),
+                        )
+                    ],
+                )
             with self._inflight_lock:
                 self._delayed.add(key)
             warning = f"repository {entry.id} did not answer within {self.timeout:g} s"
-            return _stub(entry, "timeout", [warning])
+            return _stub(
+                entry, "timeout", [_warning("repo_timeout", warning, seconds=self.timeout)]
+            )
         except Exception as exc:  # one broken repository never fails the response
             delivered = True
-            return _stub(entry, "error", [f"{type(exc).__name__}: {exc}"])
+            return _stub(
+                entry,
+                "error",
+                [_warning("repo_error", f"{type(exc).__name__}: {exc}", error=str(exc))],
+            )
         finally:
             # A timeout retains its future, including a result completed between polls.
             # Remove only after delivery; a newer request may already own another future.

@@ -83,6 +83,7 @@ def test_manual_check_shows_progress_timeout_and_retry_browser() -> None:
         context.set_default_timeout(30_000)
         try:
             page = context.new_page()
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/problems")
             page.locator("[data-test='readiness-retry']").click()
@@ -194,6 +195,7 @@ def test_readiness_on_kanban_does_not_request_a_second_board_browser() -> None:
         browser = _launch(playwright)
         try:
             page = browser.new_page(service_workers="block")
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/r/a/backlog")
             expect(page.locator("[data-test='readiness-success']")).to_be_visible()
@@ -249,6 +251,7 @@ def test_new_overview_tab_never_starts_a_server_check(
             try:
                 for _ in range(2):
                     page = context.new_page()
+                    page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
                     with page.expect_response(lambda r: "/api/machine/check" in r.url) as answer:
                         page.goto(f"http://127.0.0.1:{port}/#/overview")
                     data = answer.value.json()["data"]
