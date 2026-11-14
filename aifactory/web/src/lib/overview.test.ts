@@ -6,6 +6,9 @@ import {
   BY_PROJECT_KEY,
   projectSections,
   readByProject,
+  readShowFinished,
+  writeShowFinished,
+  SHOW_FINISHED_KEY,
   writeByProject,
   canPause,
   canResume,
@@ -374,5 +377,74 @@ describe('backlog status', () => {
     expect(backlogText(repo('a', { backlog: { state: 'error', count: null, error: 'denied' } })))
       .toBe('Stav backlogu se nepodařilo přečíst')
     expect(backlogText(repo('a', { backlog: undefined }))).toBe('Stav backlogu se nepodařilo přečíst')
+  })
+})
+
+describe('finished project visibility', () => {
+  const finished = { id: 'A', title: 'Alpha', tasks: tasks({ done: 2, cancelled: 1 }) }
+  const visible = (over: Parameters<typeof repo>[1] = {}) => projectSections(repo('r', { projects: [finished], ...over }), false)
+
+  it('hides one or all completed projects, preserves repo totals and can show them explicitly', () => {
+    const r = repo('r', { projects: [finished, { ...finished, id: 'B' }], tasks: tasks({ done: 4, cancelled: 2 }) })
+    expect(projectSections(r, false)).toEqual([])
+    expect(projectSections(r, true).map((s) => s.id)).toEqual(['A', 'B'])
+    expect(visible()).toEqual([])
+    expect(visible({ projects: [{ ...finished, tasks: tasks({ cancelled: 1 }) }] })).toEqual([])
+    expect(r.tasks).toEqual(tasks({ done: 4, cancelled: 2 }))
+  })
+
+  it('keeps empty, incomplete, unknown and invalid counts visible', () => {
+    for (const counts of [tasks(), null, { done: 1 }, { ...tasks({ done: 1 }), future: 0 }, tasks({ done: -1 }), tasks({ done: NaN }), tasks({ done: 1.5 })]) {
+      expect(visible({ projects: [{ ...finished, tasks: counts as typeof finished.tasks }] })).toHaveLength(1)
+    }
+    for (const state of ['todo', 'ready', 'human', 'blocked', 'failed', 'running', 'in review', 'approved', 'awaiting merge'] as const) {
+      expect(visible({ projects: [{ ...finished, tasks: tasks({ done: 1, [state]: 1 }) }] })).toHaveLength(1)
+    }
+  })
+
+  it('keeps runtime work and unresolved merges visible despite terminal backlog counts', () => {
+    for (const over of [
+      { running: [running({ project: 'A' })] },
+      { running: [running({ project: 'A', pause: 'paused' })] },
+      { running: [operation('starting', { project: 'A' })] },
+      { running: [running({ project: 'A', process: 'ended' })] },
+      { review: [review({ project: 'A' })] },
+      { approved: [review({ project: 'A' })] },
+      { automerge: [review({ project: 'A' })] },
+      { failed: [failed({ project: 'A' })] },
+      { merged_outside: [mergedOutside({ project: 'A' })] },
+      { stale: true },
+      { factory: factory({ running: 1 }) },
+      { factory: factory({ paused: 1 }) },
+      { factory: factory({ control: { action: 'stop' as const, pending: ['r'], run_ids: ['r'], errors: [], started_at: '', finished_at: null } }) },
+    ]) expect(visible(over)).toHaveLength(1)
+  })
+
+  it('keeps unassigned work and brings reopened tasks back on fresh data', () => {
+    const r = repo('r', { projects: [finished, { id: 'B', title: 'Beta', tasks: tasks({ ready: 1 }) }], running: [running({ project: null })] })
+    expect(projectSections(r, false).map((s) => s.id)).toEqual(['B', null])
+    r.projects![0].tasks = tasks({ ready: 1, done: 1 })
+    expect(projectSections(r, false).map((s) => s.id)).toEqual(['A', 'B', null])
+  })
+})
+
+
+describe('finished project preference', () => {
+  afterEach(() => { localStorage.removeItem(SHOW_FINISHED_KEY); vi.restoreAllMocks() })
+
+  it('defaults to hidden and persists both explicit choices', () => {
+    localStorage.removeItem(SHOW_FINISHED_KEY)
+    expect(readShowFinished()).toBe(false)
+    writeShowFinished(true)
+    expect(readShowFinished()).toBe(true)
+    writeShowFinished(false)
+    expect(readShowFinished()).toBe(false)
+  })
+
+  it('works when browser storage is unavailable', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => { throw new Error('blocked') })
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => { throw new Error('blocked') })
+    expect(readShowFinished()).toBe(false)
+    expect(() => writeShowFinished(true)).not.toThrow()
   })
 })

@@ -316,12 +316,11 @@ describe('RepoCard projects', () => {
     expect(sections[0].find('[data-test="row-running"]').exists()).toBe(false)
   })
 
-  it('keeps one-project repos in aggregate mode', async () => {
+  it('groups even one project and restores aggregate mode', async () => {
     const card = mount(RepoCard, { props: { repo: repo('single', { projects: projects.slice(0, 1), tasks: tasks({ ready: 2 }) }), now: Date.now(), byProject: true } })
-    expect(card.find('[data-test="project-section"]').exists()).toBe(false)
-    const before = card.text()
+    expect(card.findAll('[data-test="project-section"]')).toHaveLength(1)
     await card.setProps({ byProject: false })
-    expect(card.text()).toBe(before)
+    expect(card.find('[data-test="project-section"]').exists()).toBe(false)
   })
 })
 
@@ -384,4 +383,25 @@ describe('repository backlog', () => {
     await card.setProps({ repo: repo('a') })
     expect(card.find('[data-test="repo-backlog-status"]').exists()).toBe(false)
   })
+})
+
+it('filters completed projects without hiding merge warnings, repo controls or aggregate counts', async () => {
+  const card = mount(RepoCard, { props: { repo: repo('r', {
+    projects: [
+      { id: 'A', title: 'Finished', tasks: tasks({ done: 1 }) },
+      { id: 'B', title: 'Unsynced', tasks: tasks({ done: 1 }) },
+    ],
+    tasks: tasks({ done: 2 }),
+    merged_outside: [mergedOutside({ project: 'B' })],
+    backlog: { state: 'dirty', count: 1, error: null },
+  }), now: Date.now(), byProject: true } })
+  expect(card.findAll('[data-test="project-section"]').map((s) => s.attributes('data-project'))).toEqual(['B'])
+  expect(card.findAll('[data-test="row-merged-outside"]')).toHaveLength(1)
+  expect(card.find('[data-test="sync-open"]').exists()).toBe(true)
+  expect(card.find('[data-test="repo-backlog-status"]').exists()).toBe(true)
+  await card.setProps({ showFinished: true })
+  expect(card.findAll('[data-test="project-section"]')).toHaveLength(2)
+  await card.setProps({ showFinished: false, byProject: false })
+  expect(card.find('[data-test="project-section"]').exists()).toBe(false)
+  expect(card.get('[data-state="done"] b').text()).toBe('2')
 })

@@ -180,6 +180,40 @@ export function taskSummary(repo: Pick<OverviewRepo, 'tasks'>): TaskSummaryItem[
   }))
 }
 
+export const SHOW_FINISHED_KEY = 'haifa.overview.showFinished'
+
+export function readShowFinished(): boolean {
+  try {
+    return typeof localStorage !== 'undefined' && localStorage.getItem(SHOW_FINISHED_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+
+export function writeShowFinished(on: boolean): void {
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(SHOW_FINISHED_KEY, on ? '1' : '0')
+  } catch {
+    // The switch still works when browser storage is unavailable.
+  }
+}
+
+/** Only complete, known counts can prove completion; runtime work takes precedence. */
+export function isFinishedProject(section: { id: string | null; repo: OverviewRepo }): boolean {
+  const { id, repo } = section
+  const counts = repo.tasks
+  if (id === null || !counts || repo.stale || repo.state === 'timeout') return false
+  if (!BOARD_STATES.every((state) => Number.isSafeInteger(counts[state]) && counts[state] >= 0)) return false
+  if (Object.keys(counts).some((state) => !BOARD_STATES.includes(state as BoardState))) return false
+  if (counts.done + counts.cancelled === 0) return false
+  if (BOARD_STATES.some((state) => state !== 'done' && state !== 'cancelled' && counts[state] > 0)) return false
+  if (repo.running.length || repo.review.length || approvedPrs(repo).length || automergePrs(repo).length || repo.failed.length) return false
+  if (repo.merged_outside?.some((row) => row.project === id)) return false
+  // Pending controls cannot always be assigned to a project; keep projects visible until settled.
+  if (repo.factory?.control?.pending.length || repo.factory?.control?.errors.length) return false
+  return true
+}
+
 export const BY_PROJECT_KEY = 'haifa.overview.byProject'
 
 export function readByProject(): boolean {
@@ -199,7 +233,7 @@ export function writeByProject(on: boolean): void {
 }
 
 /** Project slices keep repo identity for links; only work lists and task counts change. */
-export function projectSections(repo: OverviewRepo): { id: string | null; title: string; repo: OverviewRepo }[] {
+export function projectSections(repo: OverviewRepo, showFinished = false): { id: string | null; title: string; repo: OverviewRepo }[] {
   const projects = repo.projects ?? []
   const ids = new Set(projects.map((p) => p.id))
   const sections: { id: string | null; title: string; tasks: OverviewRepo['tasks'] }[] =
@@ -208,6 +242,8 @@ export function projectSections(repo: OverviewRepo): { id: string | null; title:
   if (lists.some((rows) => rows.some((row) => row.project == null || !ids.has(row.project)))) {
     sections.push({ id: null, title: 'Bez projektu', tasks: null })
   }
+  const unassignedActivity = (repo.factory?.running ?? 0) > repo.running.length
+    || (repo.factory?.paused ?? 0) + (repo.factory?.pausing ?? 0) > repo.running.filter((r) => r.pause).length
   return sections.map(({ id, title, tasks }) => {
     const belongs = (row: { project?: string | null }) =>
       id === null ? row.project == null || !ids.has(row.project) : row.project === id
@@ -217,7 +253,7 @@ export function projectSections(repo: OverviewRepo): { id: string | null; title:
         approved: approvedPrs(repo).filter(belongs),
         automerge: (repo.automerge ?? []).filter(belongs), failed: repo.failed.filter(belongs) },
     }
-  })
+  }).filter((section) => showFinished || unassignedActivity || !isFinishedProject(section))
 }
 
 /** Spustit továrnu: a ready task and a free parallel slot. */
