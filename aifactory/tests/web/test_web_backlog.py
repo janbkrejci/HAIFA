@@ -254,6 +254,24 @@ def test_no_trace_db_means_no_runtime_states(tmp_path: Path) -> None:
     assert not (root / ".factory" / "trace.db").exists()
 
 
+def test_trace_read_warning_remains_text(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.web import overview
+
+    root = make_backlog_repo(tmp_path / "repo", with_trace=True)
+
+    def unreadable(db: Path) -> None:
+        raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(overview, "_open_ro", unreadable)
+    body = _get(_client(root, tmp_path), "/api/backlog")
+    assert body["warnings"] == [
+        f"trace DB {root / '.factory/trace.db'} is not readable: database is locked"
+    ]
+    assert _states(body["data"])[B2] == "ready"
+
+
 @pytest.mark.parametrize(
     ("state", "pr_error", "expected"),
     [

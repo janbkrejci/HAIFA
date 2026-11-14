@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // In the run detail of the sample: the steps of its run (worktree, build, test, review, PR,
 // merge) with a short explanation each; after the merge the way to an own repository.
 import { computed } from 'vue'
@@ -16,8 +17,8 @@ const waitsForReview = computed(() => current.value?.id === 'merge')
 </script>
 
 <template>
-  <section class="demo-steps" aria-label="Co se v ukázce děje" data-test="demo-steps">
-    <h3>Co se právě děje</h3>
+  <section class="demo-steps" :aria-label="t('dashboard.demoStepsLabel')" data-test="demo-steps">
+    <h3>{{ t('dashboard.demoCurrent') }}</h3>
     <ol>
       <li v-for="step in steps" :key="step.id" :class="step.state" :data-step="step.id" :data-state="step.state">
         <Check v-if="step.state === 'done'" :size="15" aria-hidden="true" />
@@ -28,12 +29,12 @@ const waitsForReview = computed(() => current.value?.id === 'merge')
       </li>
     </ol>
     <p v-if="waitsForReview" class="next" data-test="demo-review-hint">
-      Běh je hotový a PR čeká na tebe: <a :href="reviewHref(run.task_id)" data-test="demo-review-link">otevřít Review a schválit</a>.
+      {{ t('dashboard.demoReady') }} <a :href="reviewHref(run.task_id)" data-test="demo-review-link">{{ t('dashboard.demoReview') }}</a>.
     </p>
     <div v-if="finished" class="finished" data-test="demo-finished">
-      <p>Hotovo: ukázka prošla celým cyklem task, běh, PR a merge. Teď to zkus na vlastním repozitáři.</p>
+      <p>{{ t('dashboard.demoFinished') }}</p>
       <div class="actions">
-        <a :href="REPOS_ADD_HREF" class="add-link" data-test="demo-finished-add-repo"><Plus :size="14" aria-hidden="true" /> Přidat vlastní repozitář</a>
+        <a :href="REPOS_ADD_HREF" class="add-link" data-test="demo-finished-add-repo"><Plus :size="14" aria-hidden="true" /> {{ t('dashboard.addOwnRepo') }}</a>
         <RemoveDemoButton />
       </div>
     </div>

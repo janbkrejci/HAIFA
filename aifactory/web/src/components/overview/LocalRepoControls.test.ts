@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import LocalRepoControls from './LocalRepoControls.vue'
 import { fetchLegacyRepoSettings, importLegacyRepoSettings, patchLocalRepoSettings, type LocalRepoSettings } from '@/lib/api'
@@ -131,4 +132,29 @@ describe('machine-local repository controls', () => {
     expect(checked(wrapper)).toBe(false)
     expect(wrapper.get('[data-test="local-harness"]').attributes('aria-label')).toBe('Výchozí harness')
   })
+})
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))
+
+it('keeps a pending local write and confirmed controls when locale changes', async () => {
+  let resolve!: (value: LocalRepoSettings) => void
+  vi.mocked(patchLocalRepoSettings).mockReturnValueOnce(new Promise(r => { resolve = r }))
+  const wrapper = panel()
+  await flushPromises()
+  await wrapper.get('[data-test="local-auto-continue"]').setValue(false)
+  setLocale('en')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Saving…')
+  expect(checked(wrapper)).toBe(true)
+  expect(wrapper.get('fieldset').attributes('disabled')).toBeDefined()
+  expect(patchLocalRepoSettings).toHaveBeenCalledTimes(1)
+  resolve(local(false))
+  await flushPromises()
+  expect(checked(wrapper)).toBe(false)
+  expect(wrapper.text()).toContain('Saved')
+  setLocale('cs')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Uloženo')
+  expect(checked(wrapper)).toBe(false)
 })

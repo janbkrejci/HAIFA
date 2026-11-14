@@ -403,8 +403,7 @@ def _app_with(home: Path, tmp_path: Path, ov: Overview) -> TestClient:
     return TestClient(app, base_url=BASE)
 
 
-# limit, sleep of the slow repo and response bound; on Windows the other repo alone needs
-# ~8 git processes of 0.15-0.3 s each, and a loaded full suite (xdist) slows them elsewhere too
+# Limit, controlled delay of the slow repo and response bound, with scheduling margin.
 LIMIT, SLOW, BOUND = (4.0, 8.0, 7.0) if sys.platform == "win32" else (1.0, 3.0, 2.5)
 
 
@@ -413,15 +412,17 @@ def test_slow_repo_times_out_and_the_others_answer(
 ) -> None:
     home = tmp_path / "home"
     registry = register(home, repo_a, repo_b)
-    real = overview._backlog_view
+    ov = Overview(registry, timeout=LIMIT)
+    # Keep real repository payloads, but exclude variable Git latency from the timeout check.
+    items = {entry.id: ov.repo(entry) for entry in registry.snapshot()[0].repos}
 
-    def slow(root: Path) -> Any:
-        if "alpha" in str(root):
+    def slow(entry: RepoEntry) -> dict[str, Any]:
+        if entry.id == "alpha":
             time.sleep(SLOW)
-        return real(root)
+        return items[entry.id]
 
-    monkeypatch.setattr(overview, "_backlog_view", slow)
-    client = _app_with(home, tmp_path, Overview(registry, timeout=LIMIT))
+    monkeypatch.setattr(ov, "repo", slow)
+    client = _app_with(home, tmp_path, ov)
     start = time.monotonic()
     data = _get(client)
     took = time.monotonic() - start
@@ -430,6 +431,13 @@ def test_slow_repo_times_out_and_the_others_answer(
     assert repos["alpha"]["projects"] == []
     assert repos["alpha"]["backlog"]["state"] == "loading"
     assert "did not answer" in repos["alpha"]["warnings"][0]
+    assert repos["alpha"]["warning_details"] == [
+        {
+            "code": "repo_timeout",
+            "params": {"seconds": LIMIT},
+            "message": repos["alpha"]["warnings"][0],
+        }
+    ]
     assert repos["beta"]["state"] == "ok"
     assert repos["beta"]["backlog"]["state"] == "clean"
     assert {r["run_id"] for r in repos["beta"]["running"]} == {"b-r-run", "b-r-dead"}
@@ -453,6 +461,13 @@ def test_broken_repo_gives_an_error_and_the_others_answer(
     assert repos["alpha"]["state"] == "error"
     assert repos["alpha"]["projects"] == []
     assert repos["alpha"]["warnings"] == ["RuntimeError: kaputt"]
+    assert repos["alpha"]["warning_details"] == [
+        {
+            "code": "repo_error",
+            "params": {"error": "kaputt"},
+            "message": "RuntimeError: kaputt",
+        }
+    ]
     assert repos["beta"]["state"] == "ok"
     assert repos["beta"]["failed"]
 
@@ -1499,6 +1514,21 @@ def test_local_settings_errors_do_not_acknowledge_off(
         item = _by_id(_get(client))[entry.id]
         assert item["local_settings"] is None
         assert "repo_settings_invalid" in item["local_settings_error"]
+        assert item["local_settings_error_code"] == "repo_settings_invalid"
+        # Locale belongs to clients; simultaneous reads share only locale-neutral data.
+        from concurrent.futures import ThreadPoolExecutor
+
+        def read_locale(locale: str) -> dict[str, Any]:
+            data: dict[str, Any] = client.get(
+                "/api/overview", headers={"Accept-Language": locale}
+            ).json()["data"]
+            return data
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            english, czech = list(pool.map(read_locale, ("en", "cs")))
+        assert english["repos"][0]["local_settings_error_code"] == "repo_settings_invalid"
+        assert czech["repos"][0]["local_settings_error_code"] == "repo_settings_invalid"
+        assert service.path.read_text(encoding="utf-8") == "broken"
         rmtree(root)
         assert client.patch(url, json={"auto_continue": False}).status_code == 404
 
@@ -1635,3 +1665,53 @@ def test_backlog_compares_with_base_instead_of_head(tmp_path: Path) -> None:
     ov = Overview(Registry(tmp_path / "home"))
     entry = RepoEntry(id="base", name="base", path=str(root), added_at="2026-01-01")
     assert ov.repo(entry)["backlog"] == {"state": "dirty", "count": 1, "error": None}
+
+
+@pytest.mark.parametrize("failure_at", ["open", "read"])
+def test_trace_warning_has_stable_code_and_original_diagnostic(
+    repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure_at: str
+) -> None:
+    home = tmp_path / "home"
+    register(home, repo_a)
+
+    def unreadable(*args: object) -> Any:
+        raise sqlite3.OperationalError("diagnostic /work/české")
+
+    monkeypatch.setattr(overview, "_open_ro" if failure_at == "open" else "_read_trace", unreadable)
+    with _client(home, tmp_path) as client:
+        item = _get(client)["repos"][0]
+    warning = item["warning_details"][0]
+    assert warning == {
+        "code": "trace_unreadable",
+        "params": {"path": str(_db(repo_a)), "error": "diagnostic /work/české"},
+        "message": f"trace DB {_db(repo_a)} is not readable: diagnostic /work/české",
+    }
+    assert item["warnings"] == [warning["message"]]
+
+
+def test_configuration_warning_is_locale_neutral_and_keeps_diagnostic(
+    repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from aifactory.config.errors import ConfigError, ConfigIssue
+
+    home = tmp_path / "home"
+    register(home, repo_a)
+    error = ConfigError([ConfigIssue("/work/české/config.yaml", "original diagnostic")])
+
+    def unavailable(*args: object) -> Any:
+        raise error
+
+    monkeypatch.setattr(overview, "config_changes", unavailable)
+    with _client(home, tmp_path) as client:
+        english = client.get("/api/overview", headers={"Accept-Language": "en"}).json()["data"]
+        czech = client.get("/api/overview", headers={"Accept-Language": "cs"}).json()["data"]
+    warnings = english["repos"][0]["warning_details"]
+    assert warnings == czech["repos"][0]["warning_details"]
+    assert warnings == [
+        {
+            "code": "config_changes_unavailable",
+            "params": {"error": str(error)},
+            "message": f"uncommitted configuration is not known: {error}",
+        }
+    ]
+    assert english["repos"][0]["warnings"] == [warnings[0]["message"]]

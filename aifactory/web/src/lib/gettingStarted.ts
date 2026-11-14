@@ -1,3 +1,4 @@
+import { t } from './i18n'
 // The steps of the first visit: from this machine to the first project of a backlog. The
 // unfinished ones are readiness issues (topbar chip, #/problems on the overview). Pure: the
 // readiness loads the inputs, this decides the states.
@@ -49,63 +50,63 @@ export function gettingStartedSteps(input: GettingStartedInput): Step[] {
   return [
     {
       id: 'machine',
-      title: 'Počítač',
+      get title() { return t('dashboard.machine') },
       done: !!check?.ok,
-      hint: check ? (check.ok ? 'Kontrola počítače bez chyb.' : 'Kontrola počítače hlásí chyby.') : 'Kontrola počítače ještě neproběhla.',
+      get hint() { return check ? (check.ok ? t('dashboard.machineOk') : t('dashboard.machineErrors')) : t('dashboard.machineUnchecked') },
       href: SETUP_HREF,
-      action: 'Zkontrolovat počítač',
+      get action() { return t('dashboard.checkMachine') },
     },
     {
       id: 'library',
-      title: 'Knihovna',
+      get title() { return t('dashboard.library') },
       done: library?.exists === true,
-      hint: library?.exists ? 'Knihovna agentů a workflow je připravená.' : 'Založ knihovnu ze semínka nebo naklonuj týmovou.',
+      get hint() { return library?.exists ? t('dashboard.libraryReady') : t('dashboard.libraryPrepareHint') },
       href: LIBRARY_HREF,
-      action: 'Připravit knihovnu',
+      get action() { return t('dashboard.prepareLibrary') },
     },
     {
       id: 'harnesses',
-      title: 'Harnessy',
+      get title() { return t('dashboard.harnesses') },
       done: harnesses.length > 0,
-      hint: harnesses.length ? `Přihlášené: ${harnesses.join(', ')}.` : 'Nainstaluj a přihlas aspoň jeden harness (claude, codex nebo pi).',
+      get hint() { return harnesses.length ? t('dashboard.signedIn', { names: harnesses.join(', ') }) : t('dashboard.installHarness') },
       href: SETUP_HREF,
-      action: 'Zkontrolovat harnessy',
+      get action() { return t('dashboard.checkHarnesses') },
     },
     {
       id: 'repo',
-      title: 'Repozitář',
+      get title() { return t('dashboard.repository') },
       done: !!repos?.length,
-      hint: repos?.length ? `V dashboardu: ${repos.map((r) => r.name).join(', ')}.` : 'Přidej repozitář, ve kterém bude factory pracovat.',
+      get hint() { return repos?.length ? t('dashboard.registered', { names: repos.map((r) => r.name).join(', ') }) : t('dashboard.addRepoHint') },
       href: REPOS_ADD_HREF,
-      action: 'Přidat repozitář',
+      get action() { return t('dashboard.addRepo') },
     },
     {
       id: 'factory',
-      title: 'Factory v repu',
+      get title() { return t('dashboard.factoryRepo') },
       done: installed,
-      hint: installed
-        ? 'Factory je nainstalovaná a commitnutá.'
+      get hint() { return installed
+        ? t('dashboard.factoryInstalled')
         : repo?.status === 'uncommitted'
-          ? `Konfigurace factory v ${repo.name} není commitnutá.`
-          : 'Nainstaluj factory v záložce Factory repa.',
+          ? t('dashboard.repoConfigDirty', { name: repo.name })
+          : t('dashboard.installFactoryHint') },
       href: factoryHref,
-      action: repo?.status === 'uncommitted' ? 'Commitnout konfiguraci' : 'Nainstalovat factory',
+      get action() { return repo?.status === 'uncommitted' ? t('dashboard.commitConfig') : t('dashboard.installFactory') },
     },
     {
       id: 'roster',
-      title: 'Harnessy a modely repa',
+      get title() { return t('dashboard.repoAgents') },
       done: installed && (input.rosterAgents ?? 0) > 0,
-      hint: 'Zkontroluj harness, model a přemýšlení agentů v záložce Factory.',
+      get hint() { return t('dashboard.checkAgentsHint') },
       href: factoryHref,
-      action: 'Zkontrolovat agenty',
+      get action() { return t('dashboard.checkAgents') },
     },
     {
       id: 'project',
-      title: 'První projekt',
+      get title() { return t('dashboard.firstProject') },
       done: (input.projects ?? 0) > 0,
-      hint: 'Založ v backlogu projekt, pak kroky a tasky.',
+      get hint() { return t('dashboard.createProjectHint') },
       href: repo ? repoHref(repo.id, 'backlog', NEW_CONTAINER) : REPOS_ADD_HREF,
-      action: 'Založit projekt',
+      get action() { return t('dashboard.createProject') },
     },
   ]
 }

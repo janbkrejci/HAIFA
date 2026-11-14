@@ -1,3 +1,4 @@
+import { setLocale } from '@/lib/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import OverviewView from './OverviewView.vue'
@@ -198,7 +199,7 @@ describe('OverviewView', () => {
     const calm = wrapper.findAll('[data-test="calm-repo"]')
     expect(calm.map((c) => c.attributes('data-repo'))).toEqual(['calm-a', 'calm-b'])
     expect(calm[0].text()).toContain('v klidu')
-    expect(calm[0].get('[data-test="last-activity"]').text()).toContain('1 hr. ago')
+    expect(calm[0].get('[data-test="last-activity"]').text()).toContain('před 1 h')
     expect(calm[0].find('[data-test="row-running"]').exists()).toBe(false)
   })
 
@@ -265,12 +266,12 @@ describe('OverviewView', () => {
     expect(run.text()).toContain('build-test-review')
     expect(run.get('[data-test="row-phase"]').text()).toBe('build · pokus 2')
     expect(run.get('[data-test="row-elapsed"]').text()).toBe('5m 00s')
-    expect(run.get('[data-test="row-cost"]').text()).toBe('$1.25')
+    expect(run.get('[data-test="row-cost"]').text()).toBe(new Intl.NumberFormat('cs-CZ', { style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(1.25))
 
     const pr = wrapper.get('[data-repo="waiting"] [data-test="row-review"]')
     expect(pr.attributes('href')).toBe('#/r/waiting/review/M01-S01-T02')
     expect(pr.text()).toContain('PR #42')
-    expect(pr.get('[data-test="row-age"]').text()).toBe('1 hr. ago')
+    expect(pr.get('[data-test="row-age"]').text()).toBe('před 1 h')
     expect(pr.text()).toContain('podle trace')
 
     const fails = wrapper.get('[data-repo="broken"]').findAll('[data-test="row-failed"]')
@@ -283,7 +284,7 @@ describe('OverviewView', () => {
     expect(cfg.attributes('href')).toBe('#/r/dirty/factory/config_commit')
     expect(cfg.text()).toBe('Necommitnutá konfigurace')
 
-    expect(wrapper.get('[data-repo="busy"] [data-test="last-activity"]').text()).toContain('5 min. ago')
+    expect(wrapper.get('[data-repo="busy"] [data-test="last-activity"]').text()).toContain('před 5 min')
   })
 
   it('counts the elapsed time of a run in the browser', async () => {
@@ -517,3 +518,6 @@ describe('show finished projects', () => {
     expect(wrapper.get('[data-test="project-section"]').text()).toContain('Připraveno')
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

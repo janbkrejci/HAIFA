@@ -9,9 +9,11 @@ import { resetLiveForTests } from '@/lib/live'
 import { factoryCheck, installPlan } from '@/test/factoryFixtures'
 import { CLEAN_STATUS, DIRTY_STATUS } from '@/test/settingsFixtures'
 import { answerDialog } from '@/test/modal'
+import { setLocale } from '@/lib/i18n'
 
 enableAutoUnmount(afterEach)
 afterEach(() => {
+  setLocale('en')
   resetConfigStatusForTests(); resetBacklogStatusForTests(); resetNamesForTests(); resetLiveForTests()
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
@@ -46,7 +48,8 @@ it('opens the reviewed config commit on its route and refreshes status only afte
   expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/factory/check?fresh=1'))).toBe(true)
 })
 
-it('shows the sample banner only for the sample repository', async () => {
+it.each([['en', 'Demo repository'], ['cs', 'Ukázkové repo']])('shows the sample banner only for the sample repository (%s)', async (language, label) => {
+  setLocale(language)
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     let data: unknown = { items: [], levels: [], tasks: [] }
     if (url.endsWith('/config/status')) data = CLEAN_STATUS
@@ -57,6 +60,6 @@ it('shows the sample banner only for the sample repository', async () => {
   const plain = mount(RepoScreen); await flushPromises()
   expect(plain.find('[data-test="demo-banner"]').exists()).toBe(false)
   const demo = mount(RepoScreen, { props: { demo: true, path: '/h/demo' } }); await flushPromises()
-  expect(demo.get('[data-test="demo-banner"]').text()).toContain('Ukázkové repo')
+  expect(demo.get('[data-test="demo-banner"]').text()).toContain(label)
   expect(demo.find('[data-test="remove-demo"]').exists()).toBe(true)
 })

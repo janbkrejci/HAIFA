@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // #/overview: what runs, waits for review and failed in every registered repo (GET /api/overview).
 // Totals on top filter the cards; cards go by urgency and calm repos fold into a short row each
 // (the name with the path in a tooltip, the factory buttons and the menu, the newest activity last).
@@ -25,7 +26,7 @@ import {
   type OverviewFilter,
 } from '@/lib/overview'
 import { REPOS_ADD_HREF, repoHref } from '@/lib/router'
-import { ADD_REPO_HINT, useRemoveRepo } from '@/lib/repos'
+import { useRemoveRepo } from '@/lib/repos'
 import EmptyScreen from '@/components/EmptyScreen.vue'
 import TryDemoButton from '@/components/demo/TryDemoButton.vue'
 import RepoBacklogStatus from '@/components/overview/RepoBacklogStatus.vue'
@@ -74,28 +75,28 @@ function toggleFilter(id: OverviewFilter) {
 }
 
 function activity(iso: string | null): string {
-  if (!iso) return 'bez aktivity'
-  const t = ts(iso)
-  if (!Number.isFinite(t)) return 'bez aktivity'
-  return `${fmtAge((now.value - t) / 1000)} (${fmtTime(iso)})`
+  if (!iso) return t('dashboard.noActivity')
+  const timestamp = ts(iso)
+  if (!Number.isFinite(timestamp)) return t('dashboard.noActivity')
+  return `${fmtAge((now.value - timestamp) / 1000)} (${fmtTime(iso)})`
 }
 </script>
 
 <template>
   <div v-if="empty">
-    <EmptyScreen heading="Žádné repozitáře" :hint="ADD_REPO_HINT" data-test="no-repos">
-      <a :href="REPOS_ADD_HREF" class="add-link" data-test="add-repo-link"><Plus :size="14" aria-hidden="true" /> Přidat repozitář</a>
+    <EmptyScreen :heading="t('dashboard.noRepos')" :hint="t('dashboard.emptyHint')" data-test="no-repos">
+      <a :href="REPOS_ADD_HREF" class="add-link" data-test="add-repo-link"><Plus :size="14" aria-hidden="true" /> {{ t('dashboard.addRepo') }}</a>
       <TryDemoButton @started="emit('changed')" />
     </EmptyScreen>
   </div>
   <section v-else class="overview-view" data-test="repo-page">
     <div class="head">
-      <h1>Přehled</h1>
+      <h1>{{ t('dashboard.overview') }}</h1>
       <label v-if="hasProjects" class="project-switch">
-        <input v-model="byProject" type="checkbox" class="switch" role="switch" data-test="by-project" /> Po projektech
+        <input v-model="byProject" type="checkbox" class="switch" role="switch" data-test="by-project" /> {{ t('dashboard.byProject') }}
       </label>
       <label v-if="byProject && hasProjects" class="project-switch">
-        <input v-model="showFinished" type="checkbox" class="switch" role="switch" data-test="show-finished" /> Zobrazit hotové
+        <input v-model="showFinished" type="checkbox" class="switch" role="switch" data-test="show-finished" /> {{ t('dashboard.showFinished') }}
       </label>
       <button
         type="button"
@@ -104,16 +105,16 @@ function activity(iso: string | null): string {
         :disabled="loading"
         @click="refresh"
       >
-        <RefreshCw :size="14" aria-hidden="true" :class="{ spinning: loading }" /> Obnovit
+        <RefreshCw :size="14" aria-hidden="true" :class="{ spinning: loading }" /> {{ t('dashboard.refresh') }}
       </button>
     </div>
 
-    <p v-if="removeError" class="error" data-test="remove-error">Repo se nepodařilo odebrat: {{ removeError }}</p>
-    <p v-if="overviewError" class="error" data-test="overview-error">Přehled se nepodařilo načíst: {{ overviewError }}</p>
-    <p v-if="!data && !overviewError" class="loading" data-test="overview-loading"><Spinner /> Načítám přehled…</p>
+    <p v-if="removeError" class="error" data-test="remove-error">{{ t('dashboard.removeFailed') }} {{ removeError }}</p>
+    <p v-if="overviewError" class="error" data-test="overview-error">{{ t('dashboard.overviewFailed') }} {{ overviewError }}</p>
+    <p v-if="!data && !overviewError" class="loading" data-test="overview-loading"><Spinner /> {{ t('dashboard.loadingOverview') }}</p>
 
     <template v-if="data">
-      <div class="totals" role="group" aria-label="Součty">
+      <div class="totals" role="group" :aria-label="t('dashboard.totals')">
         <button
           v-for="total in TOTALS"
           :key="total.id"
@@ -129,7 +130,7 @@ function activity(iso: string | null): string {
         </button>
       </div>
 
-      <p v-if="filter && !shown.length" class="none" data-test="overview-none">Žádné repo neodpovídá filtru.</p>
+      <p v-if="filter && !shown.length" class="none" data-test="overview-none">{{ t('dashboard.noneMatching') }}</p>
 
       <div class="cards">
         <RepoCard
@@ -150,7 +151,7 @@ function activity(iso: string | null): string {
             <Tooltip :text="repo.path">
               <a :href="repoHref(repo.id, 'backlog')" class="calm-name">{{ repo.name }}</a>
             </Tooltip>
-            <span class="calm-state">v klidu</span>
+            <span class="calm-state">{{ t('dashboard.calm') }}</span>
             <div class="calm-tools">
               <RepoActions :repo="repo" @feedback="feedback[repo.id] = $event" @changed="refresh" />
               <RepoMenu :name="repo.name" :removing="removing === repo.id" item-test="calm-remove" @remove="remove(repo)" />
@@ -159,12 +160,12 @@ function activity(iso: string | null): string {
           <RepoBacklogStatus :repo="repo" />
           <RepoControls @changed="refresh" :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" :show-summary="!byProject || (repo.projects?.length ?? 0) === 0" />
           <RepoWork v-if="byProject && (repo.projects?.length ?? 0) > 0" :repo="repo" :now="now" :by-project="byProject" :show-finished="showFinished" />
-          <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>
+          <span class="calm-activity" data-test="last-activity">{{ t('dashboard.lastActivity') }} {{ activity(repo.last_activity) }}</span>
         </li>
       </ul>
 
       <p class="add-repo">
-        <a :href="REPOS_ADD_HREF" class="add-link" data-test="overview-add-repo"><Plus :size="14" aria-hidden="true" /> Přidat repozitář</a>
+        <a :href="REPOS_ADD_HREF" class="add-link" data-test="overview-add-repo"><Plus :size="14" aria-hidden="true" /> {{ t('dashboard.addRepo') }}</a>
       </p>
     </template>
   </section>
@@ -193,6 +194,8 @@ function activity(iso: string | null): string {
 }
 
 .head {
+  flex-wrap: wrap;
+  gap: 12px;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -266,6 +269,7 @@ h1 {
 }
 
 .total-label {
+  overflow-wrap: anywhere;
   color: var(--dim);
   font-size: 14px;
 }
@@ -370,5 +374,12 @@ h1 {
 
 .none {
   color: var(--dim);
+}
+@media (max-width: 640px) {
+  .overview-view { padding: 16px; }
+  .totals { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .project-switch { margin: 0; }
+  .calm-head { flex-wrap: wrap; white-space: normal; }
+  .calm-name { overflow-wrap: anywhere; min-width: 0; }
 }
 </style>

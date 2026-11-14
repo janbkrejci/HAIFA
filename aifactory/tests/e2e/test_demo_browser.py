@@ -148,6 +148,7 @@ def test_demo_from_empty_overview_to_merge(tmp_path: Path, monkeypatch: pytest.M
 
             context.route("**/*", local_only)
             page = context.new_page()
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
 
             def no_dialog(dialog: Dialog) -> None:
                 dialogs.append(f"{dialog.type}: {dialog.message}")

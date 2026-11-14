@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The factory state of a repo on the overview, under the header with the buttons (RepoActions):
 // the outcome of the last button, the progress of a stop or pause ("dobíhá" → "Zastaveno"/
 // "Pozastaveno"), its errors and the tasks per board state. The progress comes from the overview,
@@ -8,7 +9,7 @@ import type { OverviewRepo } from '@/lib/api'
 import { controlErrors, controlStatus, stateClass, taskSummary } from '@/lib/overview'
 import LocalRepoControls from './LocalRepoControls.vue'
 import Spinner from '@/components/ui/Spinner.vue'
-import { NO_FEEDBACK, type ControlFeedback } from './feedback'
+import { NO_FEEDBACK, feedbackText, type ControlFeedback } from './feedback'
 
 const props = withDefaults(defineProps<{ repo: OverviewRepo; feedback?: ControlFeedback; showSummary?: boolean }>(), {
   feedback: () => NO_FEEDBACK,
@@ -48,8 +49,9 @@ const anything = computed(
       {{ status.text }}
     </span>
 
-    <p v-if="feedback.message" class="message" data-test="factory-start-message">{{ feedback.message }}</p>
-    <p v-if="feedback.error" class="error" data-test="factory-control-error">{{ feedback.error }}</p>
+    <p v-if="feedback.message" class="message" data-test="factory-start-message">{{ feedbackText(feedback.message) }}</p>
+    <details v-if="feedback.diagnostics"><summary>{{ t('dashboard.diagnostics') }}</summary><pre>{{ feedback.diagnostics }}</pre></details>
+    <p v-if="feedback.error" class="error" data-test="factory-control-error">{{ feedbackText(feedback.error) }}</p>
     <p v-for="(line, i) in errors" :key="i" class="error" data-test="factory-control-errors">{{ line }}</p>
 
     <div v-if="summary.length || factory" class="summary">
@@ -64,14 +66,15 @@ const anything = computed(
         >{{ item.label }} <b>{{ item.count }}</b></span>
       </span>
       <span v-if="factory && factory.max_parallel_runs !== null" class="slots" data-test="factory-slots">
-        Sloty: {{ factory.running }}/{{ factory.max_parallel_runs }}<template v-if="factory.in_review">
-          · v review {{ factory.in_review }}</template>
+        {{ t('dashboard.slots') }}: {{ factory.running }}/{{ factory.max_parallel_runs }}<template v-if="factory.in_review">
+          · {{ t('dashboard.inReview') }} {{ factory.in_review }}</template>
       </span>
     </div>
   </div>
 </template>
 
 <style scoped>
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .repo-controls {
   display: flex;
   flex-direction: column;

@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { nextTick, ref } from 'vue'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RunDetail from './RunDetail.vue'
@@ -274,12 +275,12 @@ describe('RunDetail', () => {
       d.phases = [{ ...d.phases[1]!, status: 'running', ended_at: null, duration_s: null }]
       const wrapper = mount(RunDetail, { props: { detail: d, events: [] } })
       const dur = () => wrapper.find('button.block[data-phase="p1"] .b-dur').text()
-      expect(dur()).toBe('10.0s')
-      expect(wrapper.find('.stats [data-stat="runtime"]').text()).toBe('10.0s')
+      expect(dur()).toBe('10,0s')
+      expect(wrapper.find('.stats [data-stat="runtime"]').text()).toBe('10,0s')
       vi.advanceTimersByTime(3000)
       await nextTick()
-      expect(dur()).toBe('13.0s')
-      expect(wrapper.find('.stats [data-stat="runtime"]').text()).toBe('13.0s')
+      expect(dur()).toBe('13,0s')
+      expect(wrapper.find('.stats [data-stat="runtime"]').text()).toBe('13,0s')
       expect(fetchSpy).not.toHaveBeenCalled()
       wrapper.unmount()
       expect(vi.getTimerCount()).toBe(0)
@@ -380,3 +381,6 @@ describe('RunDetail', () => {
     }
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

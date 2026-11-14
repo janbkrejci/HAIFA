@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed } from 'vue'
 import { projectBacklogHref } from '@/lib/router'
 import type { OverviewRepo } from '@/lib/api'
@@ -26,7 +27,7 @@ function reviewAge(opened: string | null, ageS: number | null): string {
       </div>
     </template>
     <section v-if="activeRuns(section.repo).length" class="group">
-      <h3>Běží</h3>
+      <h3>{{ t('dashboard.running') }}</h3>
       <a
         v-for="run in activeRuns(section.repo)"
         :key="runningKey(run)"
@@ -40,7 +41,7 @@ function reviewAge(opened: string | null, ageS: number | null): string {
         <span class="title">{{ run.task_title ?? '' }}</span>
         <span class="meta">{{ run.workflow ?? '—' }}</span>
         <span class="meta" data-test="row-phase">
-          <template v-if="run.phase">{{ run.phase.name }}<template v-if="run.phase.attempt"> · pokus {{ run.phase.attempt }}</template></template>
+          <template v-if="run.phase">{{ run.phase.name }}<template v-if="run.phase.attempt"> · {{ t('dashboard.attempt', { count: run.phase.attempt }) }}</template></template>
           <template v-else>—</template>
         </span>
         <span class="meta mono" data-test="row-elapsed">{{ fmtElapsed(since(run.started_at)) }}</span>
@@ -49,7 +50,7 @@ function reviewAge(opened: string | null, ageS: number | null): string {
     </section>
 
     <section v-if="section.repo.review.length" class="group">
-      <h3>Čeká na review</h3>
+      <h3>{{ t('dashboard.review') }}</h3>
       <a
         v-for="pr in section.repo.review"
         :key="pr.task_id"
@@ -62,12 +63,12 @@ function reviewAge(opened: string | null, ageS: number | null): string {
         <span class="title">{{ pr.task_title ?? '' }}</span>
         <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
         <span class="meta" data-test="row-age">{{ reviewAge(pr.opened_at, pr.age_s) }}</span>
-        <span class="meta faint">podle trace</span>
+        <span class="meta faint">{{ t('dashboard.trace') }}</span>
       </a>
     </section>
 
     <section v-if="approvedPrs(section.repo).length" class="group" data-test="approved">
-      <h3>Schváleno, čeká na CI</h3>
+      <h3>{{ t('dashboard.approved') }}</h3>
       <a
         v-for="pr in approvedPrs(section.repo)"
         :key="pr.task_id"
@@ -80,12 +81,12 @@ function reviewAge(opened: string | null, ageS: number | null): string {
         <span class="title">{{ pr.task_title ?? '' }}</span>
         <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
         <span class="meta" data-test="row-age">{{ reviewAge(pr.opened_at, pr.age_s) }}</span>
-        <span class="meta faint">podle trace</span>
+        <span class="meta faint">{{ t('dashboard.trace') }}</span>
       </a>
     </section>
 
     <section v-if="automergePrs(section.repo).length" class="group" data-test="automerge">
-      <h3>Čeká na automerge PR</h3>
+      <h3>{{ t('dashboard.automerge') }}</h3>
       <a
         v-for="pr in automergePrs(section.repo)"
         :key="pr.task_id"
@@ -98,14 +99,14 @@ function reviewAge(opened: string | null, ageS: number | null): string {
         <span class="title">{{ pr.task_title ?? '' }}</span>
         <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
         <span class="meta" data-test="row-age">{{ reviewAge(pr.opened_at, pr.age_s) }}</span>
-        <span class="meta faint">podle trace</span>
+        <span class="meta faint">{{ t('dashboard.trace') }}</span>
       </a>
     </section>
 
     <slot v-if="!grouped" />
 
     <section v-if="failedRows(section.repo).length" class="group">
-      <h3>Selhalo</h3>
+      <h3>{{ t('dashboard.failed') }}</h3>
       <a
         v-for="row in failedRows(section.repo)"
         :key="row.run_id"
@@ -116,7 +117,7 @@ function reviewAge(opened: string | null, ageS: number | null): string {
       >
         <span class="task mono">{{ row.task_id }}</span>
         <span class="title">{{ row.task_title ?? '' }}</span>
-        <span class="error" data-test="row-error">{{ row.label ?? row.error ?? 'bez chyby' }}</span>
+        <span class="error" data-test="row-error">{{ row.label ?? row.error ?? t('dashboard.noError') }}</span>
       </a>
     </section>
 

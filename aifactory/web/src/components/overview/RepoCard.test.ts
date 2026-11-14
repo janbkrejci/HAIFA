@@ -1,3 +1,4 @@
+import { setLocale } from '@/lib/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RepoCard from './RepoCard.vue'
@@ -178,6 +179,7 @@ describe('RepoCard automatic actions', () => {
             run_id: 'r-quota',
             ok: true,
             text: 'Factory pokračovala na Claude Code po vyčerpání kvóty Codexu',
+            detail: { from: { harness: 'codex' }, to: { harness: 'claude' } },
           },
           {
             at: '2026-10-06T09:50:00Z',
@@ -342,7 +344,7 @@ describe('RepoCard pending operations', () => {
     expect(rows()[1].attributes('data-operation')).toBeUndefined()
     expect(rows()[1].attributes('href')).toBe('#/r/a/runs/claimed-1')
     expect(rows()[1].get('[data-test="row-phase"]').text()).toBe('build · pokus 2')
-    expect(rows()[1].get('[data-test="row-cost"]').text()).toContain('1.25')
+    expect(rows()[1].get('[data-test="row-cost"]').text()).toContain('1,25')
     expect(card.find('[data-test="factory-resume"]').exists()).toBe(true)
   })
 })
@@ -404,4 +406,36 @@ it('filters completed projects without hiding merge warnings, repo controls or a
   await card.setProps({ showFinished: false, byProject: false })
   expect(card.find('[data-test="project-section"]').exists()).toBe(false)
   expect(card.get('[data-state="done"] b').text()).toBe('2')
+})
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))
+
+const warningCases: [string, Record<string, string | number>, string, string][] = [
+  ['trace_unreadable', { path: '/work/české/trace.db' }, 'Databázi běhů', 'Could not read the run database'],
+  ['config_changes_unavailable', {}, 'Necommitnuté změny konfigurace', 'Uncommitted configuration changes'],
+  ['repo_timeout', { seconds: 2 }, 'Repozitář neodpověděl do 2 s.', 'The repository did not respond within 2 s.'],
+]
+it.each(warningCases)('retranslates coded warning %s and preserves its diagnostic', async (code, params, czech, english) => {
+  const message = 'Original diagnostic: uživatelská cesta /work/české'
+  const item = repo('a', { warnings: [message], warning_details: [{ code, params, message }] })
+  const card = mountWith(item)
+  const warning = card.get('[data-test="card-warnings"]')
+  for (const [language, description] of [['cs', czech], ['en', english], ['cs', czech]] as const) {
+    setLocale(language)
+    await flushPromises()
+    expect(warning.get('[data-test="warning-description"]').text()).toContain(description)
+    expect(warning.get('pre').text()).toBe(message)
+    expect(card.get('[data-test="card-warnings"]').element).toBe(warning.element)
+    expect(item.warnings).toEqual([message])
+  }
+})
+
+it('shows legacy diagnostics with a translated description without parsing their text', async () => {
+  const card = mountWith(repo('a', { warnings: ['trace DB arbitrary user content'] }))
+  expect(card.get('[data-test="warning-description"]').text()).toBe('Repozitář hlásí varování.')
+  setLocale('en')
+  await flushPromises()
+  expect(card.get('[data-test="warning-description"]').text()).toBe('The repository reported a warning.')
+  expect(card.get('[data-test="card-warnings"] pre').text()).toBe('trace DB arbitrary user content')
 })

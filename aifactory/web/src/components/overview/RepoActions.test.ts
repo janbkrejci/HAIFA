@@ -1,10 +1,11 @@
+import { setLocale } from '@/lib/i18n'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RepoActions from './RepoActions.vue'
 import type { OverviewRepo } from '@/lib/api'
 import { factory, repo, running, tasks } from '@/test/overviewFixtures'
 import { answerDialog } from '@/test/modal'
-import type { ControlFeedback } from './feedback'
+import { feedbackText, type ControlFeedback } from './feedback'
 
 const api = vi.hoisted(() => ({
   controlStart: vi.fn(),
@@ -39,7 +40,8 @@ function mountWith(r: OverviewRepo) {
 /** The last feedback emitted by the buttons. */
 function lastFeedback(wrapper: ReturnType<typeof mountWith>): ControlFeedback | undefined {
   const all = (wrapper.emitted('feedback') ?? []) as ControlFeedback[][]
-  return all[all.length - 1]?.[0]
+  const result = all[all.length - 1]?.[0]
+  return result && { message: result.message === null ? null : feedbackText(result.message), error: result.error === null ? null : feedbackText(result.error) }
 }
 
 describe('RepoActions', () => {
@@ -95,7 +97,7 @@ describe('RepoActions', () => {
     const wrapper = mountWith(repo('a', { factory: factory({ can_start: true, ready: 1 }) }))
     await wrapper.find('[data-test="factory-start"]').trigger('click')
     await flushPromises()
-    expect(lastFeedback(wrapper)).toEqual({ message: 'Nic se nespustilo: T1 (běh r9 (T9): src/)', error: null })
+    expect(lastFeedback(wrapper)).toEqual({ message: 'Nic se nespustilo: T1 (Překryv povolených cest)', error: null })
   })
 
   it('offers Pauza, Pokračovat and Stop by the runs, none when nothing runs', () => {
@@ -150,3 +152,6 @@ describe('RepoActions', () => {
     expect(wrapper.emitted('changed')).toHaveLength(1)
   })
 })
+
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

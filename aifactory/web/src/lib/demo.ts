@@ -1,3 +1,5 @@
+import { t } from './i18n'
+import { dashboardError } from './dashboardMessages'
 // The sample repository of `factory try` in the dashboard: "Vyzkoušet na ukázce" creates it
 // (POST /api/demo), starts its first task with the first tested harness of this computer and
 // opens its backlog; the run detail of the sample explains its steps; "Odebrat ukázku" removes it
@@ -5,7 +7,6 @@
 import { inject, ref, type InjectionKey, type Ref } from 'vue'
 import { deleteGlobal, postGlobal } from './api'
 import { RUN_HARNESSES } from './backlog'
-import { errorText } from './format'
 import { fetchHarnessSettings, type HarnessCatalog } from './machineHarnesses'
 import type { PhaseDot, RunSummary } from './runs'
 
@@ -89,7 +90,7 @@ export async function startDemo(): Promise<DemoStart> {
     )
     result.runId = started.run?.run_id ?? null
   } catch (err) {
-    result.error = errorText(err)
+    Object.defineProperty(result, 'error', { enumerable: true, get: () => dashboardError(err) })
   }
   lastStart.value = result
   return result
@@ -116,32 +117,32 @@ const STEP_TEXT: readonly { id: DemoStepId; title: string; text: string }[] = [
   {
     id: 'worktree',
     title: 'Worktree',
-    text: 'HAIFA založila pro běh vlastní větev a worktree. Tvůj checkout ukázky zůstává beze změny.',
+    get text() { return t('dashboard.demoWorktree') },
   },
   {
     id: 'build',
     title: 'Build',
-    text: 'Agent builder píše kód podle zadání tasku, jen do cest, které task povoluje.',
+    get text() { return t('dashboard.demoBuild') },
   },
   {
     id: 'test',
     title: 'Test',
-    text: 'Tester naplánuje kontroly a HAIFA je spustí. Když neprojdou, builder opravuje, dokud nejsou zelené.',
+    get text() { return t('dashboard.demoTest') },
   },
   {
     id: 'review',
     title: 'Review',
-    text: 'Commit vznikne jen ze zeleného kódu. Workflow s reviewerem nechá změnu ještě posoudit agentem.',
+    get text() { return t('dashboard.demoCommit') },
   },
   {
     id: 'pr',
     title: 'PR',
-    text: 'Hotová větev se publikuje jako pull request. Ukázka ho drží lokálně, bez GitHubu.',
+    get text() { return t('dashboard.demoPr') },
   },
   {
     id: 'merge',
     title: 'Merge',
-    text: 'PR schválíš v záložce Review a HAIFA ho sloučí do main. Tím je task hotový.',
+    get text() { return t('dashboard.demoMerge') },
   },
 ]
 

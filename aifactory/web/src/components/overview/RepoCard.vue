@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { deferredError } from '@/lib/dashboardMessages'
+import { feedbackText } from '@/components/overview/feedback'
+import { autoActionText, overviewWarningText } from '@/lib/dashboardMessages'
 // A repo card of the overview: the name (its path in a tooltip) with the factory buttons and the
 // menu in the top right corner, what runs, waits for review, waits for auto-merge and failed, what the factory did by
 // itself after a failure (auto_actions), its configuration
@@ -7,7 +11,7 @@
 // link to the sync PR that is already open; the sync PR is never opened automatically.
 import { computed, ref } from 'vue'
 import { backlogSync, type OverviewRepo } from '@/lib/api'
-import { errorText, fmtAge, fmtTime, ts } from '@/lib/format'
+import { fmtAge, fmtTime, ts } from '@/lib/format'
 import { problems, runLink } from '@/lib/overview'
 import { repoHref } from '@/lib/router'
 import RepoBacklogStatus from '@/components/overview/RepoBacklogStatus.vue'
@@ -26,6 +30,7 @@ const props = withDefaults(defineProps<{ repo: OverviewRepo; now: number; removi
 })
 const emit = defineEmits<{ remove: [repo: OverviewRepo]; changed: [] }>()
 
+const warnings = computed(() => props.repo.warning_details ?? props.repo.warnings.map(message => ({ code: 'unknown', params: {}, message })))
 const autoActions = computed(() => props.repo.auto_actions ?? [])
 const loading = computed(() => props.repo.state === 'timeout')
 const configProblems = computed(() => problems(props.repo).filter((p) => p.href !== null))
@@ -41,7 +46,7 @@ const feedback = ref<ControlFeedback>(NO_FEEDBACK)
 
 const mergedOutside = computed(() => props.repo.merged_outside ?? [])
 const syncing = ref(false)
-const syncError = ref<string | null>(null)
+const syncError = ref<string | (() => string) | null>(null)
 const syncUrl = ref<string | null>(null)
 const syncPrUrl = computed(() => props.repo.sync_pr?.url ?? syncUrl.value)
 
@@ -51,9 +56,9 @@ async function onSync() {
   try {
     const result = await backlogSync(props.repo.id)
     syncUrl.value = result.url
-    if (!result.url) syncError.value = 'Sync PR nebyl potřeba: nic k označení jako hotové.'
+    if (!result.url) syncError.value = () => t('dashboard.syncUnneeded')
   } catch (err) {
-    syncError.value = errorText(err)
+    syncError.value = deferredError(err)
   } finally {
     syncing.value = false
     emit('changed')
@@ -77,11 +82,11 @@ async function onSync() {
     <RepoBacklogStatus v-if="!loading" :repo="repo" />
 
     <div v-if="loading" class="loading-overlay" data-test="repo-loading" role="status">
-      <Spinner :size="22" /> Načítám repozitář…
+      <Spinner :size="22" /> {{ t('dashboard.loadingRepo') }}
     </div>
 
     <template v-else>
-    <p v-if="repo.stale" role="status" class="faint" data-test="repo-stale">Výsledek předchozího načítání; další aktualizace ověří stav.</p>
+    <p v-if="repo.stale" role="status" class="faint" data-test="repo-stale">{{ t('dashboard.staleRepo') }}</p>
     <RepoControls @changed="emit('changed')" :repo="repo" :feedback="feedback" :show-summary="!byProject || (repo.projects?.length ?? 0) === 0" />
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>
@@ -89,7 +94,7 @@ async function onSync() {
     <RepoWork :repo="repo" :now="now" :by-project="byProject" :show-finished="showFinished">
 
       <section v-if="mergedOutside.length" class="group" data-test="merged-outside">
-        <h3>Sloučeno mimo factory</h3>
+        <h3>{{ t('dashboard.mergedOutside') }}</h3>
         <a
           v-for="pr in mergedOutside"
           :key="pr.task_id"
@@ -105,7 +110,7 @@ async function onSync() {
           <span class="meta mono">{{ pr.pr_id ? `PR #${pr.pr_id}` : 'PR' }}</span>
         </a>
         <div class="sync">
-          <a v-if="syncPrUrl" :href="syncPrUrl" target="_blank" rel="noopener" data-test="sync-pr-link">Sync PR čeká na merge</a>
+          <a v-if="syncPrUrl" :href="syncPrUrl" target="_blank" rel="noopener" data-test="sync-pr-link">{{ t('dashboard.syncWaiting') }}</a>
           <button
             v-else
             type="button"
@@ -114,16 +119,16 @@ async function onSync() {
             :aria-busy="syncing || undefined"
             @click="onSync"
           >
-            <Spinner v-if="syncing" /> Otevřít sync PR
+            <Spinner v-if="syncing" /> {{ t('dashboard.openSync') }}
           </button>
-          <span v-if="syncError" class="sync-error" data-test="sync-error">{{ syncError }}</span>
+          <span v-if="syncError" class="sync-error" data-test="sync-error">{{ feedbackText(syncError) }}</span>
         </div>
       </section>
 
     </RepoWork>
 
     <section v-if="autoActions.length" class="group">
-      <h3>Factory zasáhla sama</h3>
+      <h3>{{ t('dashboard.autoActions') }}</h3>
       <a
         v-for="action in autoActions"
         :key="`${action.run_id}-${action.action}-${action.at}`"
@@ -135,13 +140,13 @@ async function onSync() {
         :data-run="action.run_id"
       >
         <span class="task mono">{{ action.task_id }}</span>
-        <span class="title" data-test="row-auto-text">{{ action.text }}</span>
+        <span class="title" data-test="row-auto-text">{{ autoActionText(action) }}</span>
         <span class="meta" data-test="row-auto-age">{{ fmtAge(since(action.at)) }}</span>
       </a>
     </section>
 
     <section v-if="configProblems.length" class="group">
-      <h3>Konfigurace</h3>
+      <h3>{{ t('dashboard.configuration') }}</h3>
       <a
         v-for="p in configProblems"
         :key="p.kind"
@@ -152,20 +157,24 @@ async function onSync() {
       >{{ p.text }}</a>
     </section>
 
-    <ul v-if="repo.warnings.length" class="warnings" data-test="card-warnings">
-      <li v-for="(w, i) in repo.warnings" :key="i">{{ w }}</li>
+    <ul v-if="warnings.length" class="warnings" data-test="card-warnings">
+      <li v-for="(warning, i) in warnings" :key="i">
+        <span data-test="warning-description">{{ overviewWarningText(warning) }}</span>
+        <details><summary>{{ t('dashboard.diagnostics') }}</summary><pre>{{ warning.message }}</pre></details>
+      </li>
     </ul>
 
     <footer class="activity" data-test="last-activity">
-      Poslední aktivita:
+      {{ t('dashboard.lastActivity') }}
       <template v-if="repo.last_activity">{{ fmtAge(since(repo.last_activity)) }} ({{ fmtTime(repo.last_activity) }})</template>
-      <template v-else>žádná</template>
+      <template v-else>{{ t('dashboard.none') }}</template>
     </footer>
     </template>
   </article>
 </template>
 
 <style scoped>
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 .repo-card {
   position: relative;
   display: flex;

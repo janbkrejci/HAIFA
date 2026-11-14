@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import './ui/statusIconChip.css'
 import { Check, Stethoscope, TriangleAlert } from 'lucide-vue-next'
 import { computed } from 'vue'
@@ -15,8 +16,8 @@ const emit = defineEmits<{ changed: [] }>()
 const { phase, issues, step, elapsed, recheck, refresh } = useReadiness()
 /** "kontrola počítače: machine: logins (claude auth status) · 12 s" once the check takes a while. */
 const progress = computed(() => elapsed.value >= PROGRESS_SHOWN_AFTER && step.value ? `${step.value} · ${elapsed.value} s` : '')
-const loadingLabel = computed(() => progress.value ? `Načítání stavu – čeká na: ${progress.value}` : 'Načítání stavu')
-const checkingLabel = computed(() => progress.value ? `Probíhá kontrola – čeká na: ${progress.value}` : 'Probíhá kontrola')
+const loadingLabel = computed(() => progress.value ? t('dashboard.loadingWait', { step: progress.value }) : t('dashboard.loadingStatus'))
+const checkingLabel = computed(() => progress.value ? t('dashboard.checkingWait', { step: progress.value }) : t('dashboard.checking'))
 const removal = useRemoveRepo(() => { emit('changed'); refresh() })
 const { remove, removing, error: removeError } = removal
 defineExpose({ recheck })
@@ -27,19 +28,20 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
   <template v-if="chip">
     <Tooltip v-if="phase === 'loading'" :text="loadingLabel"><span class="status-icon-chip checking" role="status" tabindex="0" :aria-label="loadingLabel" data-test="readiness-loading"><Spinner /><span v-if="progress" class="status-count" data-test="readiness-elapsed">{{ elapsed }} s</span></span></Tooltip>
     <Tooltip v-else-if="phase === 'checking'" :text="checkingLabel"><span class="status-icon-chip checking" role="status" tabindex="0" :aria-label="checkingLabel" data-test="readiness-checking"><Spinner /><span v-if="progress" class="status-count" data-test="readiness-elapsed">{{ elapsed }} s</span></span></Tooltip>
-    <Tooltip v-else-if="phase === 'success'" text="Systém v pořádku – kliknutím spustíš kontrolu znovu"><button type="button" class="status-icon-chip success" aria-label="Systém v pořádku – kliknutím spustíš kontrolu znovu" data-test="readiness-success" @click="recheck"><Stethoscope :size="14" aria-hidden="true" /></button></Tooltip>
-    <Tooltip v-else-if="phase === 'warning'" text="Nalezeny problémy – kliknutím otevřeš seznam problémů"><a href="#/problems" class="status-icon-chip warning" aria-label="Nalezeny problémy – kliknutím otevřeš seznam problémů" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
+    <Tooltip v-else-if="phase === 'success'" :text="t('dashboard.healthyHint')"><button type="button" class="status-icon-chip success" :aria-label="t('dashboard.healthyHint')" data-test="readiness-success" @click="recheck"><Stethoscope :size="14" aria-hidden="true" /></button></Tooltip>
+    <Tooltip v-else-if="phase === 'warning'" :text="t('dashboard.issuesHint')"><a href="#/problems" class="status-icon-chip warning" :aria-label="t('dashboard.issuesHint')" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
   </template>
   <div v-else-if="phase" class="readiness" :class="phase" :role="phase === 'warning' ? 'alert' : 'status'" :data-test="`readiness-${phase}`">
-    <p v-if="phase === 'loading'"><Spinner /> Načítání stavu</p>
-    <p v-else-if="phase === 'checking'"><Spinner /> Probíhá kontrola</p>
-    <p v-else-if="phase === 'success'"><Check :size="18" aria-hidden="true" /> Systém v pořádku</p>
+    <p v-if="phase === 'loading'"><Spinner /> {{ t('dashboard.loadingStatus') }}</p>
+    <p v-else-if="phase === 'checking'"><Spinner /> {{ t('dashboard.checking') }}</p>
+    <p v-else-if="phase === 'success'"><Check :size="18" aria-hidden="true" /> {{ t('dashboard.healthy') }}</p>
     <template v-else>
-      <p><TriangleAlert :size="18" aria-hidden="true" /> Nalezeny problémy</p>
+      <p><TriangleAlert :size="18" aria-hidden="true" /> {{ t('dashboard.issuesFound') }}</p>
       <ul>
         <li v-for="(issue, index) in issues" :key="index">
           <strong>{{ issue.title }}</strong>
           <span>{{ issue.hint }}</span>
+          <details v-if="issue.diagnostics"><summary>{{ t('dashboard.diagnostics') }}</summary><pre>{{ issue.diagnostics }}</pre></details>
           <button v-if="issue.retry" type="button" class="action" :data-test="issue.id === 'timeout' ? 'readiness-timeout-retry' : 'readiness-machine-retry'" @click="recheck">{{ issue.action }}</button>
           <button v-else-if="issue.repo" type="button" class="action" :disabled="removing !== null" @click="remove(issue.repo)">{{ issue.action }}</button>
           <button v-else-if="issue.href === '#harness-settings'" type="button" class="action" @click="openHarnesses">{{ issue.action }}</button>
@@ -51,8 +53,8 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
       </ul>
       <p v-if="removeError" role="alert">{{ removeError }}</p>
     </template>
-    <p v-if="(phase === 'loading' || phase === 'checking') && progress" class="progress" data-test="readiness-progress">Čeká na: {{ progress }}</p>
-    <button v-if="phase !== 'checking' && phase !== 'loading'" type="button" class="action" data-test="readiness-retry" @click="recheck">Zkontrolovat znovu</button>
+    <p v-if="(phase === 'loading' || phase === 'checking') && progress" class="progress" data-test="readiness-progress">{{ t('dashboard.waitFor') }} {{ progress }}</p>
+    <button v-if="phase !== 'checking' && phase !== 'loading'" type="button" class="action" data-test="readiness-retry" @click="recheck">{{ t('dashboard.checkAgain') }}</button>
   </div>
   <RemoveRepoDialog :removal="removal" />
 </template>
@@ -66,6 +68,7 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
 .readiness p.progress { margin-top: 6px; color: var(--dim); font-weight: 400; }
 ul { display: flex; flex-direction: column; gap: 14px; padding: 0; list-style: none; color: var(--text); }
 li { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; }
 li span { color: var(--dim); }
 .actions { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .action { display: inline-flex; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; color: var(--text); background: var(--surface); font: inherit; cursor: pointer; }

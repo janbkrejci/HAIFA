@@ -4,6 +4,7 @@
 // adds 2 s (72 s total). The 75 s page deadline leaves a transport margin.
 // The page also bounds the follow-up requests
 // (library, repositories, roster, backlog), so no step leaves the UI checking for ever.
+import { t } from './i18n'
 import { fetchMachineProgress, type MachineProgress } from './api'
 import { fmtAge, fmtTime } from './format'
 
@@ -14,10 +15,13 @@ export const PROGRESS_TICK_MS = 1_000
 /** From this many seconds on, the step and elapsed time are shown next to the spinner. */
 export const PROGRESS_SHOWN_AFTER = 2
 
+export type CheckStepId = 'machine' | 'library' | 'repos' | 'roster' | 'backlog' | 'evaluation'
+export interface CheckStep { id: CheckStepId; detail?: string }
+
 /** The check did not finish before the page's deadline; `step` is what it waited for. */
 export class CheckTimeout extends Error {
-  constructor(readonly step: string, readonly seconds: number) {
-    super(`Kontrola nedoběhla do ${seconds} s; nedokončený krok: ${step}`)
+  constructor(readonly step: CheckStep, readonly seconds: number) {
+    super(`Kontrola nedoběhla do ${seconds} s; nedokončený krok: ${step.detail ?? step.id}`)
     this.name = 'CheckTimeout'
   }
 }
@@ -33,7 +37,7 @@ export function lastKnown(checkedAt: string | null | undefined, now = Date.now()
   if (!checkedAt) return null
   const at = new Date(checkedAt).getTime()
   if (!Number.isFinite(at)) return null
-  return `z ${fmtTime(checkedAt)} (${fmtAge((now - at) / 1000)})`
+  return t('dashboard.knownAt', { time: fmtTime(checkedAt), age: fmtAge((now - at) / 1000) })
 }
 
 /**
@@ -73,7 +77,7 @@ export function followProgress(
 }
 
 /** `promise`, or a CheckTimeout naming `step()` once `deadline` (Date.now() ms) passes. */
-export function beforeDeadline<T>(promise: Promise<T>, deadline: number, step: () => string, seconds: number): Promise<T> {
+export function beforeDeadline<T>(promise: Promise<T>, deadline: number, step: () => CheckStep, seconds: number): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined
   const late = new Promise<never>((_, reject) => {
     timer = setTimeout(() => reject(new CheckTimeout(step(), seconds)), Math.max(0, deadline - Date.now()))
