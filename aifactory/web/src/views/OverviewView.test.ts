@@ -198,7 +198,7 @@ describe('OverviewView', () => {
     const calm = wrapper.findAll('[data-test="calm-repo"]')
     expect(calm.map((c) => c.attributes('data-repo'))).toEqual(['calm-a', 'calm-b'])
     expect(calm[0].text()).toContain('v klidu')
-    expect(calm[0].get('[data-test="last-activity"]').text()).toContain('před 1 h')
+    expect(calm[0].get('[data-test="last-activity"]').text()).toContain('1 hr. ago')
     expect(calm[0].find('[data-test="row-running"]').exists()).toBe(false)
   })
 
@@ -270,7 +270,7 @@ describe('OverviewView', () => {
     const pr = wrapper.get('[data-repo="waiting"] [data-test="row-review"]')
     expect(pr.attributes('href')).toBe('#/r/waiting/review/M01-S01-T02')
     expect(pr.text()).toContain('PR #42')
-    expect(pr.get('[data-test="row-age"]').text()).toBe('před 1 h')
+    expect(pr.get('[data-test="row-age"]').text()).toBe('1 hr. ago')
     expect(pr.text()).toContain('podle trace')
 
     const fails = wrapper.get('[data-repo="broken"]').findAll('[data-test="row-failed"]')
@@ -283,7 +283,7 @@ describe('OverviewView', () => {
     expect(cfg.attributes('href')).toBe('#/r/dirty/factory/config_commit')
     expect(cfg.text()).toBe('Necommitnutá konfigurace')
 
-    expect(wrapper.get('[data-repo="busy"] [data-test="last-activity"]').text()).toContain('před 5 min')
+    expect(wrapper.get('[data-repo="busy"] [data-test="last-activity"]').text()).toContain('5 min. ago')
   })
 
   it('counts the elapsed time of a run in the browser', async () => {

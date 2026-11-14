@@ -84,7 +84,7 @@ describe('format', () => {
   it('formats integers', () => {
     expect(fmtInt(999)).toBe('999')
     expect(fmtInt(null)).toBe('0')
-    expect(fmtInt(12345).replace(/\s/g, ' ')).toBe('12 345')
+    expect(fmtInt(12345).replace(/\s/g, ' ')).toBe('12,345')
   })
 
   it('picks the Czech plural', () => {
