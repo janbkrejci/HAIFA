@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   ApiError,
+  READ_TIMEOUT_MS,
   DB_BUSY_MESSAGE,
   addRepo,
   fetchFactoryCheck,
@@ -37,7 +38,7 @@ describe('api', () => {
       warnings: [],
     })
     await expect(fetchHealth()).resolves.toEqual({ app: 'haifa-dashboard', version: '0.1.0', home: '/home/.haifa' })
-    expect(fetchMock).toHaveBeenCalledWith('/api/health')
+    expect(fetchMock).toHaveBeenCalledWith('/api/health', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('patches only changed operating fields of the card repo, independent of the URL', async () => {
@@ -54,10 +55,10 @@ describe('api', () => {
     const fetchMock = stubFetch({ ok: true, data: { items: [] }, error: null, warnings: [] })
     expect(apiBase()).toBe('/api/repos/haifa')
     await getApi('/backlog')
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     window.location.hash = '#/r/my%20repo/runs'
     await getApi('/runs')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/my%20repo/runs')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/my%20repo/runs', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('sends nothing without a repo in the URL', async () => {
@@ -72,9 +73,9 @@ describe('api', () => {
     const fetchMock = stubFetch({ ok: true, data: { repos: [], home: '/h' }, error: null, warnings: [] })
     window.location.hash = '#/overview'
     await expect(getGlobal('/health')).resolves.toEqual({ repos: [], home: '/h' })
-    expect(fetchMock).toHaveBeenCalledWith('/api/health')
+    expect(fetchMock).toHaveBeenCalledWith('/api/health', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await expect(fetchRepos()).resolves.toEqual({ repos: [], home: '/h' })
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await postGlobal('/restart')
     expect(fetchMock).toHaveBeenLastCalledWith('/api/restart', { method: 'POST' })
   })
@@ -183,9 +184,9 @@ describe('repos and the Factory tab', () => {
       warnings: [],
     })
     await expect(fetchFactoryCheck()).resolves.toEqual(report)
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/factory/check')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/factory/check', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await fetchFactoryCheck({ fresh: true })
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/factory/check?fresh=1')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/factory/check?fresh=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('throws other errors of the check', async () => {
@@ -216,7 +217,7 @@ describe('repos and the Factory tab', () => {
       body: JSON.stringify({ uninstall: false }),
     })
     await fetchRepoRemoval('a b')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/a%20b/removal')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/a%20b/removal', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('adds a repo with only its path', async () => {
@@ -275,5 +276,58 @@ describe('factory plan and apply choices', () => {
     const body = JSON.parse(String((fetchMock.mock.calls[1] as unknown as [string, RequestInit])[1].body))
     expect(body).toEqual({ action: 'init', target: 'pr', digest: 'd', message: 'install', options: { base: 'main', provider: 'local' } })
     vi.unstubAllGlobals()
+  })
+})
+
+
+describe('read deadlines', () => {
+  afterEach(() => vi.useRealTimers())
+
+  it('releases a stalled read and aborts its request, then allows recovery', async () => {
+    vi.useFakeTimers()
+    let signal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
+      signal = init.signal as AbortSignal
+      return new Promise<Response>(() => {})
+    }))
+    const failed = expect(getGlobal('/health')).rejects.toMatchObject({ code: 'request_timeout' })
+    await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS)
+    await failed
+    expect(signal?.aborted).toBe(true)
+    stubFetch({ ok: true, data: { recovered: true }, error: null, warnings: [] })
+    await expect(getGlobal('/health')).resolves.toEqual({ recovered: true })
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('bounds a stalled response body and preserves explicit cancellation', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('fetch', vi.fn(async () => ({ json: () => new Promise(() => {}) })))
+    const failed = expect(getGlobal('/health')).rejects.toMatchObject({ code: 'request_timeout' })
+    await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS)
+    await failed
+    const controller = new AbortController()
+    let signal: AbortSignal | undefined
+    vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
+      signal = init.signal as AbortSignal
+      return new Promise<Response>((_, reject) => signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))))
+    }))
+    const aborted = expect(getApi('/backlog', controller.signal)).rejects.toMatchObject({ name: 'AbortError' })
+    controller.abort()
+    await aborted
+    expect(signal?.aborted).toBe(true)
+    expect(vi.getTimerCount()).toBe(0)
+  })
+
+  it('does not time out or repeat a mutation with an unknown outcome', async () => {
+    vi.useFakeTimers()
+    let finish!: (response: Response) => void
+    const fetchMock = vi.fn(() => new Promise<Response>((resolve) => { finish = resolve }))
+    vi.stubGlobal('fetch', fetchMock)
+    const pending = postApi('/runs/r1/stop')
+    await vi.advanceTimersByTimeAsync(READ_TIMEOUT_MS * 2)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(vi.getTimerCount()).toBe(0)
+    finish(new Response(JSON.stringify({ ok: true, data: { done: true }, error: null })))
+    await expect(pending).resolves.toEqual({ done: true })
   })
 })

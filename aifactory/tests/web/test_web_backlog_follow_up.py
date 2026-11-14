@@ -177,3 +177,118 @@ def test_cli_and_endpoint_refuse_a_task_that_is_not_done(
     assert body["error"]["code"] == "not_done"
     assert body["error"]["message"] == envelope["error"]["message"]
     assert git(root, "status", "--porcelain") == before
+
+
+def test_follow_up_repeated_request_reuses_task_and_start(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    git(root, "branch", "-M", "main")
+    launcher = RecordingLauncher()
+    client = _client(root, tmp_path, launcher)
+    payload = {"body": "Retry safe", "run": True, "request_id": "same-request-id-123"}
+    url = f"/api/backlog/tasks/{A1}/follow-up"
+    first = _check(client.post(url, json=payload), 202)["data"]
+    second = _check(client.post(url, json=payload), 202)["data"]
+    assert first["task"]["id"] == second["task"]["id"]
+    assert launcher.started == [first["task"]["id"]]
+    assert second["pending"]
+    assert len(_check(client.get(f"/api/backlog/tasks/{A1}"), 200)["data"]["followed_by"]) == 1
+
+
+@pytest.mark.parametrize("stage", ["commit", "start"])
+def test_follow_up_partial_failure_returns_existing_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, stage: str
+) -> None:
+    from aifactory import backlog as core
+    from aifactory.run.errors import TaskRunError
+
+    root = make_backlog_repo(tmp_path / "repo")
+    git(root, "branch", "-M", "main")
+    launcher = RecordingLauncher()
+
+    def fail(*args: Any, **kwargs: Any) -> None:
+        raise TaskRunError("test_failure", "Try again from task detail")
+
+    if stage == "commit":
+        monkeypatch.setattr(core, "commit_backlog", fail)
+    else:
+        monkeypatch.setattr(launcher, "start", fail)
+    client = _client(root, tmp_path, launcher)
+    payload = {"body": "Retry safe", "run": True, "request_id": "failed-request-123"}
+    url = f"/api/backlog/tasks/{A1}/follow-up"
+    first = _check(client.post(url, json=payload), 202)["data"]
+    second = _check(client.post(url, json=payload), 202)["data"]
+    assert first["error"]["code"] == "test_failure"
+    assert first["stage"] == stage
+    assert second["task"]["id"] == first["task"]["id"]
+    assert len(_check(client.get(f"/api/backlog/tasks/{A1}"), 200)["data"]["followed_by"]) == 1
+
+
+def test_follow_up_with_missing_start_journal_does_not_replay_start(tmp_path: Path) -> None:
+    from aifactory import backlog as core
+
+    root = make_backlog_repo(tmp_path / "repo")
+    launcher = RecordingLauncher()
+    created = core.follow_up_task(root, A1, "Saved before crash", request_id="crashed-request-123")
+    client = _client(root, tmp_path, launcher)
+    data = _check(
+        client.post(
+            f"/api/backlog/tasks/{A1}/follow-up",
+            json={
+                "body": "Saved before crash",
+                "run": True,
+                "request_id": "crashed-request-123",
+            },
+        ),
+        202,
+    )["data"]
+    assert data["task"]["id"] == created.task.id
+    assert data["error"]["code"] == "follow_up_incomplete"
+    assert launcher.started == []
+
+
+def test_follow_up_request_identity_cannot_be_reused_for_different_content(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path, RecordingLauncher())
+    url = f"/api/backlog/tasks/{A1}/follow-up"
+    _check(client.post(url, json={"body": "First", "request_id": "identity-request-123"}), 200)
+    failed = _check(
+        client.post(url, json={"body": "Different", "request_id": "identity-request-123"}), 409
+    )
+    assert failed["error"]["code"] == "edit_conflict"
+
+
+def test_follow_up_releases_backlog_lock_before_launch(tmp_path: Path) -> None:
+    from threading import Event, Thread
+
+    from aifactory import backlog as core
+
+    root = make_backlog_repo(tmp_path / "repo")
+    git(root, "branch", "-M", "main")
+    completed = Event()
+
+    class ConcurrentLauncher(RecordingLauncher):
+        def start(self, repo: Path, task_id: str, **kwargs: Any) -> None:
+            def edit_another_task() -> None:
+                core.edit_task(repo, A2, title="Concurrent edit")
+                completed.set()
+
+            worker = Thread(target=edit_another_task, daemon=True)
+            worker.start()
+            assert completed.wait(5), "launcher must not hold the backlog mutation lock"
+            worker.join(timeout=5)
+            super().start(repo, task_id, **kwargs)
+
+    launcher = ConcurrentLauncher()
+    client = _client(root, tmp_path, launcher)
+    data = _check(
+        client.post(
+            f"/api/backlog/tasks/{A1}/follow-up",
+            json={
+                "body": "Follow up",
+                "run": True,
+                "request_id": "separate-lock-123",
+            },
+        ),
+        202,
+    )["data"]
+    assert launcher.started == [data["task"]["id"]]

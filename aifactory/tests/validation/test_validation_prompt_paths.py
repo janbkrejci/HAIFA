@@ -98,10 +98,11 @@ def test_prompt_output_naming_meets_the_write_guard(tmp_path: Path, naming: str)
     if naming == "adw_id":
         assert proc.returncode == 1, (proc.stdout[-2000:], proc.stderr[-2000:])
         assert data["error"]["code"] == "run_failed"
-        assert "outside its task run" in json.dumps(data), data
+        assert data["data"]["run"]["failure_kind"] == "writes_violation", data
         assert "documenter" not in agents
         planned = next(c for c in calls if c["agent"] == "planner")
         assert str(planned["output"]).startswith("specs/") and "_slug.md" in str(planned["output"])
+        assert str(planned["output"]) in json.dumps(data), data
     else:
         assert proc.returncode == 0, (proc.stdout[-2000:], proc.stderr[-2000:])
         assert data["ok"] is True

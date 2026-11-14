@@ -86,6 +86,37 @@ describe('applyTail', () => {
     const evts = events()
     expect(applyTail(detail(), evts, tail()).events).toBe(evts)
   })
+
+  it('does not traverse unchanged history, but still updates run metadata and cursors', () => {
+    const current = detail()
+    const evts = events()
+    const fail = () => { throw new Error('unchanged history was traversed') }
+    Object.defineProperty(evts[0], 'rowid', { get: fail })
+    Object.defineProperty(current.phases[0], 'phase_id', { get: fail })
+    Object.defineProperty(current.gates[0], 'id', { get: fail })
+    Object.defineProperty(current.envelopes[0], 'envelope_id', { get: fail })
+    const update = tail({ run: { ...current.run, state: 'succeeded' }, session: current.session })
+    const merged = applyTail(current, evts, update)
+    expect(merged.events).toBe(evts)
+    expect(merged.detail.phases).toBe(current.phases)
+    expect(merged.detail.gates).toBe(current.gates)
+    expect(merged.detail.envelopes).toBe(current.envelopes)
+    expect(merged.detail.run).toBe(update.run)
+    expect(merged.detail.session).toBe(update.session)
+    expect(merged.detail.agents).toBe(update.agents)
+    expect(merged.detail.cursors).toEqual(update.cursors)
+  })
+
+  it('keeps history arrays when a replay contains only known rows', () => {
+    const current = detail()
+    const evts = events()
+    const merged = applyTail(current, evts, tail({
+      events: evts.slice(), gates: current.gates.slice(), envelopes: current.envelopes.slice(),
+    }))
+    expect(merged.events).toBe(evts)
+    expect(merged.detail.gates).toBe(current.gates)
+    expect(merged.detail.envelopes).toBe(current.envelopes)
+  })
 })
 
 describe('cursorsOf', () => {
@@ -111,7 +142,7 @@ describe('fetchPhasePrompts', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
     expect(await fetchPhasePrompts('r ok', 'p1')).toEqual(data)
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r%20ok/phases/p1/prompts')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r%20ok/phases/p1/prompts', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 })
 
@@ -189,9 +220,9 @@ describe('archived runs', () => {
   it('asks for the archived list only in the archived view', async () => {
     const fetchMock = stubFetch()
     await fetchRuns()
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await fetchRuns(true)
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs?archived=1')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs?archived=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
   })
 
   it('posts the archive and delete actions', async () => {

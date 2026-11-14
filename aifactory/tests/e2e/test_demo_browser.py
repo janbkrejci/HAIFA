@@ -59,7 +59,7 @@ def _script(path: Path, release: Path) -> Path:
             {"path": "textstats.py", "append": CHAR_COUNT},
         ],
     }
-    plan = {
+    plan: dict[str, Any] = {
         "envelope": {
             "status": "success",
             "summary": "the sample's unittest suite covers char_count",
@@ -79,7 +79,24 @@ def _script(path: Path, release: Path) -> Path:
         },
         "edits": [],
     }
-    script = {"agents": {"builder": [build], "tester": [plan], "test-reviewer": [approve]}}
+    scoped = {
+        **plan,
+        "envelope": {
+            **plan["envelope"],
+            "coverage": "scoped",
+            "reason": "the changed textstats module is covered by its direct unittest module",
+            "checks": [
+                {
+                    "name": "textstats",
+                    "argv": [sys.executable, "-m", "unittest", "tests.test_textstats"],
+                }
+            ],
+        },
+    }
+    # A full plan is deferred: scoped checks run first, then a final full plan.
+    script = {
+        "agents": {"builder": [build], "tester": [plan, scoped, plan], "test-reviewer": [approve]}
+    }
     path.write_text(json.dumps(script, indent=2), encoding="utf-8", newline="\n")
     return path
 

@@ -1,6 +1,6 @@
 """The hidden test that forces the test -> fix round of R10.
 
-``write_hidden(workdir)`` writes ``<workdir>/hidden/test_hidden_slugify.py``:
+``write_hidden(workdir)`` writes ``<workdir>/hidden/test_text_hidden_slugify.py``:
 outside the sandbox repo and every worktree. ``Context`` points
 ``HAIFA_VALIDATE_HIDDEN`` at that directory for every ``factory`` command, but
 the variable is only a channel into ``validation.worker``: the worker pops it
@@ -8,7 +8,7 @@ from ``os.environ`` (agents inherit ``os.environ`` through ``operator_env`` and
 so never see it) and ``install``s a wrapper around the engine's code test step
 (``aifactory.testing.executor.execute``, which runs the checks of the
 tester's plan). The wrapper ``placed`` the test at
-``tests/test_hidden_slugify.py`` of the run's worktree for the duration of
+``tests/test_text_hidden_slugify.py`` of the run's worktree for the duration of
 those checks only, where the sandbox's own ``just test`` discovers it, and
 removes it afterwards. ``exclude`` lists that path in the sandbox's
 ``info/exclude`` (not ``.gitignore``, which agents read), so a leftover is
@@ -27,7 +27,7 @@ from typing import Any
 
 HIDDEN_ENV = "HAIFA_VALIDATE_HIDDEN"
 HIDDEN_DIR = "hidden"
-HIDDEN_FILE = "test_hidden_slugify.py"
+HIDDEN_FILE = "test_text_hidden_slugify.py"
 HIDDEN_CLASS = "HiddenSlugifyTest"
 HIDDEN_EXPECTED = "x-empty"
 HIDDEN_TARGET = "tests/" + HIDDEN_FILE  # where `just test` of the sandbox discovers it

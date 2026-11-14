@@ -349,7 +349,7 @@ describe('opening the guide', () => {
     const fetchMock = vi.fn(async () => respond({ harnesses }))
     vi.stubGlobal('fetch', fetchMock)
     expect(await fetchAssistantHarnesses()).toEqual(harnesses)
-    expect(fetchMock).toHaveBeenCalledWith('/api/assistant/harnesses')
+    expect(fetchMock).toHaveBeenCalledWith('/api/assistant/harnesses', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     fetchMock.mockResolvedValueOnce(respond({ harnesses: [] }))
     expect(await fetchAssistantHarnesses()).toEqual([])
     fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ ok: false, error: { code: 'harness_unavailable', message: 'Broken settings' } }), { status: 409 }))

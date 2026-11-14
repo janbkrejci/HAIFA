@@ -97,11 +97,29 @@ def _iso(epoch: float) -> str | None:
         return None
 
 
-def _reversed_lines(path: Path) -> list[str]:
+def _reversed_lines(path: Path) -> Iterator[str]:
+    """Read JSONL backwards in blocks, retaining at most a block and the current line."""
     try:
-        return path.read_text(encoding="utf-8", errors="replace").splitlines()[::-1]
+        with path.open("rb") as stream:
+            position = stream.seek(0, os.SEEK_END)
+            fragments: list[bytes] = []
+            while position:
+                size = min(position, 64 * 1024)
+                position -= size
+                stream.seek(position)
+                lines = stream.read(size).split(b"\n")
+                fragments.append(lines.pop())
+                if lines:
+                    line = b"".join(reversed(fragments)).decode("utf-8", errors="replace")
+                    yield from reversed(line.splitlines())
+                    fragments = [lines[0]]
+                    for raw in reversed(lines[1:]):
+                        yield from reversed(raw.decode("utf-8", errors="replace").splitlines())
+            if fragments:
+                line = b"".join(reversed(fragments)).decode("utf-8", errors="replace")
+                yield from reversed(line.splitlines())
     except OSError:
-        return []
+        return
 
 
 # --- Claude -------------------------------------------------------------------------------

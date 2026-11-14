@@ -91,6 +91,7 @@ export interface RunSummary {
   task_title: string | null
   workflow: string | null
   state: RunState
+  owned_here?: boolean
   branch: string
   started_at: string
   ended_at: string | null
@@ -141,6 +142,10 @@ export interface RunTotals {
 
 export interface RunsResponse {
   runs: RunSummary[]
+  tasks?: string[]
+  total?: number
+  offset?: number
+  limit?: number
 }
 
 export interface Session {
@@ -354,8 +359,13 @@ export interface StopResponse {
 }
 
 /** `archived`: the archived runs instead of the active (not archived) ones. */
-export function fetchRuns(archived = false): Promise<RunsResponse> {
-  return getApi<RunsResponse>(archived ? '/runs?archived=1' : '/runs')
+export function fetchRuns(archived = false, options: { offset?: number; limit?: number; state?: string; task?: string } = {}): Promise<RunsResponse> {
+  const query = new URLSearchParams()
+  if (archived) query.set('archived', '1')
+  for (const [key, value] of Object.entries(options)) {
+    if (value !== undefined && value !== '') query.set(key, String(value))
+  }
+  return getApi<RunsResponse>(`/runs${query.size ? `?${query}` : ''}`)
 }
 
 /** Cost totals over every run; the Runs page asks for them when its costs section opens. */
@@ -418,18 +428,25 @@ export function bySeq(a: PhaseRow, b: PhaseRow): number {
   return sa !== sb ? sa - sb : (a.rowid ?? 0) - (b.rowid ?? 0)
 }
 
+function appendNew<T>(current: T[], incoming: T[], key: (row: T) => string | number): T[] {
+  if (!incoming.length) return current
+  const ids = new Set(current.map(key))
+  const added = incoming.filter((row) => !ids.has(key(row)))
+  return added.length ? [...current, ...added] : current
+}
+
 /** Merge a tail into a loaded run: phases by id, the rest appended without duplicates. */
 export function applyTail(
   detail: RunDetail,
   events: TraceEvent[],
   tail: RunTail,
 ): { detail: RunDetail; events: TraceEvent[] } {
-  const phases = new Map(detail.phases.map((p) => [p.phase_id, p]))
-  for (const p of tail.phases) phases.set(p.phase_id, p)
-  const gateIds = new Set(detail.gates.map((g) => g.id))
-  const envelopeIds = new Set(detail.envelopes.map((e) => e.envelope_id))
-  const rowids = new Set(events.map((e) => e.rowid))
-  const newEvents = tail.events.filter((e) => !rowids.has(e.rowid))
+  let phases = detail.phases
+  if (tail.phases.length) {
+    const byId = new Map(phases.map((p) => [p.phase_id, p]))
+    for (const p of tail.phases) byId.set(p.phase_id, p)
+    phases = [...byId.values()].sort(bySeq)
+  }
   const delta = tail.usage_delta ?? { read: 0, written: 0 }
   return {
     detail: {
@@ -441,15 +458,12 @@ export function applyTail(
         read: detail.usage.read + delta.read,
         written: detail.usage.written + delta.written,
       },
-      phases: [...phases.values()].sort(bySeq),
-      gates: [...detail.gates, ...tail.gates.filter((g) => !gateIds.has(g.id))],
-      envelopes: [
-        ...detail.envelopes,
-        ...tail.envelopes.filter((e) => !envelopeIds.has(e.envelope_id)),
-      ],
+      phases,
+      gates: appendNew(detail.gates, tail.gates, (g) => g.id),
+      envelopes: appendNew(detail.envelopes, tail.envelopes, (e) => e.envelope_id),
       cursors: { ...tail.cursors },
     },
-    events: newEvents.length ? [...events, ...newEvents] : events,
+    events: appendNew(events, tail.events, (e) => e.rowid),
   }
 }
 

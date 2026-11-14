@@ -4,7 +4,9 @@
 (so the dying process's ``finish(FAILED)`` cannot overwrite it), then sends
 SIGTERM to the coding-agent children recorded in the trace's ``processes``
 table, and last to the run's own process. A pid whose command no longer
-matches what was recorded is left alone (the pid was recycled). What does not
+matches what was recorded is left alone. OS creation time is checked before
+every signal, including the parent and force escalation. Legacy runs with no
+identity cannot safely be stopped by PID and require their original terminal. What does not
 exit within ``timeout`` seconds gets SIGKILL. The worktree and the branch stay;
 ``factory task clean`` removes them like those of any other unfinished run.
 """
@@ -18,6 +20,8 @@ import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+
+import psutil
 
 from aifactory import oscompat
 from aifactory.run.errors import TaskRunError
@@ -35,12 +39,14 @@ class StopResult:
     run: TaskRunRow
     signalled: list[int] = field(default_factory=list)
     killed: list[int] = field(default_factory=list)
+    unverified: list[int] = field(default_factory=list)
 
     def to_json(self) -> dict[str, object]:
         return {
             "run": self.run.to_json(),
             "signalled": list(self.signalled),
             "killed": list(self.killed),
+            "unverified": list(self.unverified),
         }
 
 
@@ -96,12 +102,41 @@ def _same_command(pid: int, recorded: str) -> bool:
     return any(words[0] in (name, os.path.splitext(name)[0]) for name in names if name)
 
 
-def _signal(pid: int, *, force: bool) -> bool:
+def _signal(pid: int, *, force: bool, created_at: float | None) -> bool:
+    # Keep the Process object through the signal: psutil checks PID reuse again.
+    if created_at is None:
+        return False
     try:
-        oscompat.kill(pid, force=force)
-    except (ProcessLookupError, PermissionError):
+        process = psutil.Process(pid)
+        if process.create_time() != created_at:
+            return False
+        if force:
+            process.kill()
+        else:
+            process.terminate()
+    except (psutil.Error, OSError):
         return False
     return True
+
+
+def _descendants(pid: int, created_at: float | None) -> list[tuple[int, float]]:
+    """Capture a verified parent's descendants before signalling it (children first)."""
+    if created_at is None:
+        return []
+    try:
+        process = psutil.Process(pid)
+        if process.create_time() != created_at:
+            return []
+        children = process.children(recursive=True)
+    except (psutil.Error, OSError):
+        return []
+    result: list[tuple[int, float]] = []
+    for child in reversed(children):
+        try:
+            result.append((child.pid, child.create_time()))
+        except (psutil.Error, OSError):
+            continue
+    return result
 
 
 def _open(repo: Path, run_id: str) -> TaskRunStore:
@@ -120,7 +155,13 @@ def stop_run(repo: Path, run_id: str, *, timeout: float = 10.0) -> StopResult:
             raise TaskRunError("unknown_run", f"no run {run_id}")
         if not store.owned_here(run_id):
             raise TaskRunError("remote_run", "stop this run on the machine that started it")
-        if row.state == RUNNING and not _alive(row.pid):
+        if row.state == RUNNING and (
+            not _alive(row.pid)
+            or (
+                row.pid is not None
+                and oscompat.process_matches(row.pid, row.pid_created_at) is False
+            )
+        ):
             store.for_task(row.task_id)  # reaps it: the process is gone
             row = store.get(run_id) or row
         if row.state != RUNNING:
@@ -131,32 +172,68 @@ def stop_run(repo: Path, run_id: str, *, timeout: float = 10.0) -> StopResult:
             raise TaskRunError(
                 "run_not_running", f"run {run_id} runs in this process and cannot stop itself"
             )
+        if row.pid is None or oscompat.process_matches(row.pid, row.pid_created_at) is not True:
+            raise TaskRunError(
+                "process_identity_unconfirmed",
+                "cannot safely stop this run: its process creation time is unavailable; "
+                "stop it in the terminal that started it",
+            )
         processes = store.live_processes(run_id)
+        identities = store.process_identities(run_id)
+        identities[row.pid] = row.pid_created_at
         if not store.mark_stopped(run_id, STOP_NOTE):
             current = store.get(run_id)
             state = current.state if current else "gone"
             raise TaskRunError("run_not_running", f"run {run_id} of task {row.task_id} is {state}")
 
         signalled: list[int] = []
+        unverified: list[int] = []
+
+        def terminate(pid: int) -> None:
+            # Windows previously stopped the full tree with taskkill /T. Capture
+            # descendants now so even orphaned children retain their identity for
+            # escalation; never rediscover them by a potentially recycled parent.
+            targets: list[tuple[int, float | None]] = list(
+                _descendants(pid, identities.get(pid)) if sys.platform == "win32" else []
+            )
+            targets.append((pid, identities.get(pid)))
+            for target, created_at in targets:
+                if target == os.getpid() or target in signalled:
+                    continue
+                identities[target] = created_at
+                if _signal(target, force=False, created_at=created_at):
+                    signalled.append(target)
+
         # Children first, then the parent (like sssf `just kill`).
         for kind, _name, pid, command in processes:
             if kind != "agent" or pid in signalled or pid == os.getpid():
                 continue
-            if not _running(pid) or not _same_command(pid, command):
+            if not _running(pid):
                 continue
-            if _signal(pid, force=False):
-                signalled.append(pid)
-        if row.pid is not None and row.pid not in signalled and _signal(row.pid, force=False):
-            signalled.append(row.pid)
+            if oscompat.process_matches(pid, identities.get(pid)) is not True or not _same_command(
+                pid, command
+            ):
+                unverified.append(pid)
+                continue
+            terminate(pid)
+        terminate(row.pid)
 
         deadline = time.monotonic() + timeout
-        while time.monotonic() < deadline and any(_running(p) for p in signalled):
+
+        def still_running(pid: int) -> bool:
+            return oscompat.process_matches(pid, identities.get(pid)) is True and _running(pid)
+
+        while time.monotonic() < deadline and any(still_running(p) for p in signalled):
             time.sleep(_POLL)
-        killed = [p for p in signalled if _running(p) and _signal(p, force=True)]
+        killed = [
+            p
+            for p in signalled
+            if still_running(p) and _signal(p, force=True, created_at=identities.get(p))
+        ]
 
         store.close_processes(run_id)
         final = store.get(run_id) or row
-        return StopResult(final, signalled, killed)
+        return StopResult(final, signalled, killed, unverified)
     finally:
         store.close()
 

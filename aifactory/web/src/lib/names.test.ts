@@ -20,7 +20,7 @@ describe('shared names', () => {
     )
     vi.stubGlobal('fetch', fetchMock)
     await refreshNames()
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/names')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/backlog/names', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(nameTip('M01')).toBe('Modul: Core')
     expect(nameTip('M01-S01-T01')).toBe('Task: Schema')
     expect(useLevels().top.value).toBe('module')

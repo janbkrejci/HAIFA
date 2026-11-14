@@ -6,7 +6,7 @@ Use Python 3.11+, uv, Bun and just. `just web-build` updates the shipped static 
 
 Before a task or follow-up runs, list any required paths outside its inherited `writes` (such as `docs/decisions.md` or `aifactory/web/src/`) in its own `writes`.
 
-The whole suite takes about 30 minutes on Windows. CI runs it on every pull request (`.github/workflows/ci.yml`) and auto-merge waits for it. A factory task run checks only what the change can affect, inside its test step's time limit:
+The whole suite takes about 30 minutes on Windows. `.github/workflows/ci.yml` builds releases on main and verifies installation on Ubuntu; it does not run PR tests, lint, type checks or Windows checks. Run the checks locally before merging. Auto-merge can accept a PR with no checks. A factory task run checks only what the change can affect, inside its test step's time limit:
 
 - `just lint` and `just typecheck`, always.
 - `just pytest <files or directories>` with the tests of the changed packages and of their direct callers. `aifactory/tests/<package>/` mirrors `aifactory/src/aifactory/<package>/`. Never the whole suite.

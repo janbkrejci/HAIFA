@@ -244,7 +244,7 @@ def test_busy_queue_and_task_state_are_rejected(tmp_path: Path) -> None:
     release = threading.Event()
 
     def runner(*args: Any) -> dict[str, object]:
-        release.wait(5)
+        release.wait()
         return output()
 
     manager = AdviceManager(runner)
@@ -356,13 +356,16 @@ def test_advice_save_survives_concurrent_guard_restoration(tmp_path: Path) -> No
         assert workflow_path.read_bytes() == saved_workflow
 
         # A second concurrent phase has the same older snapshot and overwrites both paths.
-        # Its restore must use journaled content rather than the pre-save content.
+        # Attribution is unknown: preserve current edits and retain factory content as evidence.
         task_path.write_text("agent overwrite")
         workflow_path.write_text("agent overwrite")
-        with pytest.raises(PermissionBreach, match="restored to the factory write"):
+        with pytest.raises(PermissionBreach, match="conflicting change preserved"):
             guard.enforce(run, None, agent, before_restore)
-        assert task_path.read_bytes() == saved_task
-        assert workflow_path.read_bytes() == saved_workflow
+        assert task_path.read_text() == "agent overwrite"
+        assert workflow_path.read_text() == "agent overwrite"
+        saved = before_restore["main_backup"].dir / "files"
+        assert (saved / task_path.relative_to(repo)).read_bytes() == saved_task
+        assert (saved / workflow_path.relative_to(repo)).read_bytes() == saved_workflow
 
 
 @pytest.mark.parametrize("task_id", ["P01-S01-T01", None])

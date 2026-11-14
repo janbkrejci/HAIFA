@@ -23,6 +23,31 @@ import time
 from contextlib import suppress
 from typing import Any
 
+import psutil
+
+
+def process_created_at(pid: int | None) -> float | None:
+    """OS creation time for a PID, or None when identity cannot be established."""
+    if pid is None:
+        return None
+    try:
+        return psutil.Process(pid).create_time()
+    except (psutil.Error, OSError):
+        return None
+
+
+def process_matches(pid: int, created_at: float | None) -> bool | None:
+    """True for the recorded process, False for gone/reused, None for unknown identity."""
+    if created_at is None:
+        return None
+    try:
+        return psutil.Process(pid).create_time() == created_at
+    except psutil.NoSuchProcess:
+        return False
+    except (psutil.AccessDenied, OSError):
+        return None
+
+
 # Seconds ProcessTree.kill waits for the stopped processes to be gone.
 KILL_WAIT = 10.0
 

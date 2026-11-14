@@ -37,7 +37,7 @@ browserové testy se tak spustí jen jednou.
 
 Struktura kódu a konvence jsou v [CLAUDE.md](CLAUDE.md), platná rozhodnutí v [docs/decisions.md](docs/decisions.md). Návod pro agenty, kteří HAIFA ovládají, vypíše `factory --skill`.
 
-[GitHub Actions](.github/workflows/ci.yml) na každém commitu do `main` spustí testy, typovou kontrolu a lint, ověří instalaci na Windows a vydá release `haifa-<major>.<minor>.<číslo běhu>.zip`. Commity jen backlogu nebo `.factory/` CI přeskakuje, pull requesty se jen testují.
+[GitHub Actions](.github/workflows/ci.yml) při změně produktu na `main` (nebo ručním spuštění) sestaví frontend, ověří instalaci balíčku na Ubuntu a vydají release `haifa-<major>.<minor>.<číslo běhu>.zip`. Změny pouze v `factory/`, `docs/` nebo `.factory/` release nespouštějí. Workflow nespouští testy pull requestů, lint, typovou kontrolu ani kontrolu na Windows; před mergem spusť lokálně `just check` a `just e2e`. PR bez checků může auto-merge sloučit.
 
 ## Licence
 

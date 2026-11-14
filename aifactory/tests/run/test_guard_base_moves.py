@@ -129,7 +129,7 @@ def test_factory_move_and_agent_branch_switch_is_a_breach(repo: Path, script: Sc
     assert "main checkout: HEAD — moved to refs/heads/other" in (result.run.error or "")
 
 
-def test_files_are_restored_against_the_new_head(repo: Path, script: Script) -> None:
+def test_unattributed_changes_against_new_head_are_preserved(repo: Path, script: Script) -> None:
     old, new = _side_commit(repo)
 
     def move(wt: Path) -> None:
@@ -144,8 +144,8 @@ def test_files_are_restored_against_the_new_head(repo: Path, script: Script) -> 
     error = result.run.error or ""
     assert "main checkout: README.md" in error
     assert "main checkout: HEAD" not in error
-    assert (repo / "README.md").read_text(encoding="utf-8") == "readme v2\n"
-    assert git(repo, "status", "--porcelain") == ""
+    assert (repo / "README.md").read_text(encoding="utf-8") == "hijacked\n"
+    assert "README.md" in git(repo, "status", "--porcelain")
 
 
 def _two_runs(repo: Path, script: Script, *, from_agent: bool) -> tuple[TaskRunRow, str]:

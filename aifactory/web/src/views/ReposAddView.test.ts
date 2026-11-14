@@ -95,7 +95,7 @@ function stub(options: Options = {}) {
       const parent = key === HOME ? null : key.slice(0, key.lastIndexOf('/')) || '/'
       return envelope({ path: key, parent, entries: options.dirs?.[key] ?? [], truncated: false })
     }
-    if (url === '/api/fs/pick' && !init) {
+    if (url === '/api/fs/pick' && !init?.method) {
       if (options.pickAvailable === 'error') return failure('boom', 'boom', 500)
       return envelope({ available: options.pickAvailable ?? false })
     }
@@ -403,7 +403,7 @@ describe('ReposAddView', () => {
     await field.setValue('~/co')
     await wait(200)
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith(`/api/fs/dirs?path=${encodeURIComponent(`${HOME}/`)}`)
+    expect(fetchMock).toHaveBeenCalledWith(`/api/fs/dirs?path=${encodeURIComponent(`${HOME}/`)}`, expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const items = wrapper.findAll('[data-test="path-suggestion"]')
     expect(items.map((i) => i.text().split('/')[0])).toEqual(['code', 'cold'])
     expect(items[0].find('[data-test="tag-git"]').exists()).toBe(true)

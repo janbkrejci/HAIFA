@@ -66,7 +66,7 @@ from pathlib import Path
 from typing import Any
 
 from aifactory.engine.data_types import AgentRequest, AgentResult
-from aifactory.engine.utils import env_flag, now_iso, operator_env, send_stdin
+from aifactory.engine.utils import env_flag, now_iso, operator_env, read_stderr, send_stdin
 from aifactory.failure import QuotaExhausted
 
 Event = dict[str, Any]
@@ -493,6 +493,7 @@ def run(
         encoding="utf-8",
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 0,
     )
+    stderr_read = read_stderr(process)
     send_stdin(process, request.prompt)
     if on_spawn:
         on_spawn(process.pid)
@@ -527,7 +528,7 @@ def run(
             if on_event:
                 on_event(event)
 
-    stderr = process.stderr.read() if process.stderr else ""
+    stderr = stderr_read.result()
     result.returncode = process.wait()
     if on_exit:
         on_exit(process.pid)

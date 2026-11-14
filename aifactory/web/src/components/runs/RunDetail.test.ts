@@ -14,6 +14,14 @@ afterEach(() => {
 })
 
 describe('RunDetail', () => {
+  it('explains remote ownership and hides local stop while retaining pause', () => {
+    const wrapper = mount(RunDetail, { props: {
+      detail: detail({ state: 'running', owned_here: false, pause: null }), events: [],
+    } })
+    expect(wrapper.find('[data-test="stop-run"]').exists()).toBe(false)
+    expect(wrapper.get('[data-test="remote-run"]').text()).toContain('jiném stroji')
+    expect(wrapper.find('[data-test="pause-run"]').exists()).toBe(true)
+  })
   it('shows already_running from retry when the task state is unknown', async () => {
     const message = 'task M01-S01-T01 is already running: run r-new (pid 123)'
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({

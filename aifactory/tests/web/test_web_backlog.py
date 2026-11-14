@@ -617,6 +617,7 @@ def test_api_calls_core_functions(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
         "related": None,
         "assignee": None,
         "clear_assignee": False,
+        "expected_revision": None,
     }
     assert calls[2][1] == (root, B1)
     assert calls[2][2] == {"depends_on": None, "related": [B2], "remove": False}
@@ -682,3 +683,17 @@ def test_commit_backlog_preserves_sync_warnings(
     assert body["warnings"] == [warning]
     assert body["data"]["warnings"] == [warning]
     assert body["data"]["merged"] is True
+
+
+def test_edit_rejects_stale_detail_revision(tmp_path: Path) -> None:
+    root = make_backlog_repo(tmp_path / "repo")
+    client = _client(root, tmp_path)
+    detail = _get(client, f"/api/backlog/tasks/{B1}")["data"]
+    url = f"/api/backlog/tasks/{B1}/edit"
+    _post(client, url, {"title": "Current", "expected_revision": detail["revision"]})
+    before = _file(root, B1).read_bytes()
+    failed = _post(
+        client, url, {"body": "Stale draft", "expected_revision": detail["revision"]}, 409
+    )
+    assert failed["error"]["code"] == "edit_conflict"
+    assert _file(root, B1).read_bytes() == before
