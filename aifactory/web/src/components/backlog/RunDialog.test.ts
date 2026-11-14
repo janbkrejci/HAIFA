@@ -29,6 +29,15 @@ function dialog(
 }
 
 describe('RunDialog', () => {
+  it('links continuation settings to the overview without a switch', () => {
+    const wrapper = dialog(runCheck())
+    expect(wrapper.find('[data-test="run-auto"]').exists()).toBe(false)
+    expect(wrapper.find('input[type="checkbox"], [role="switch"]').exists()).toBe(false)
+    const hint = wrapper.get('[data-test="run-continuation-hint"]')
+    expect(hint.text()).toBe('Automatické pokračování řídí nastavení repozitáře na Přehledu.')
+    expect(hint.get('a').attributes('href')).toBe('#/overview')
+  })
+
   it('starts without warnings, with the note', async () => {
     const wrapper = dialog(runCheck())
     expect(wrapper.find('[data-test="config-warning"]').exists()).toBe(false)
@@ -136,15 +145,15 @@ describe('RunDialog', () => {
     expect(older.get('[data-test="summary-writes"]').text()).toBe('src/')
   })
 
-  it('sends the harness for this run and auto continue', async () => {
+  it('sends the note and harness overrides without legacy auto', async () => {
     const wrapper = dialog(runCheck())
     await chooseOption(wrapper, '[data-test="run-harness-name"]', 'codex')
     await wrapper.get('[data-test="run-model"]').setValue(' gpt-5 ')
     await chooseOption(wrapper, '[data-test="run-thinking"]', 'high')
-    await wrapper.get('[data-test="run-auto"]').setValue(true)
+    await wrapper.get('[data-test="run-note"]').setValue(' poznámka ')
     await wrapper.get('[data-test="run-start"]').trigger('click')
     expect(wrapper.emitted('start')).toEqual([
-      [{ force: false, harness: 'codex', model: 'gpt-5', thinking: 'high', auto: true }],
+      [{ force: false, harness: 'codex', model: 'gpt-5', thinking: 'high', note: 'poznámka' }],
     ])
   })
 

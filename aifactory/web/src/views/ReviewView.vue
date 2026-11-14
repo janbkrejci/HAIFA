@@ -320,7 +320,7 @@ watch(
         {{ merged.note }}
       </p>
       <p class="merged-hint">
-        Pokud má krok zapnuté auto continue, další task se spustí automaticky; pořadí určuje kanban.
+        Automatické pokračování řídí místní nastavení repozitáře na Přehledu; pořadí určuje kanban.
       </p>
       <div class="merged-actions">
         <a v-if="merged.next" class="btn" :href="reviewHref(merged.next)" data-test="next-pr">

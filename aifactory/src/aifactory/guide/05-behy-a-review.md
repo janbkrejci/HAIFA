@@ -4,7 +4,7 @@ Běh provede workflow ve worktree a větvi `factory/<id-tasku>-<n>`.
 
 ## Spuštění a sledování
 
-**Spustit** (`factory task run ID`) otevře workflow, zápisy, varování na necommitnuté změny, **Harness pro tento běh**, **Po úspěchu pokračovat dalšími tasky (auto continue)** a poznámku. Běžící task ani task s otevřeným PR nespustíš. Nesplněné závislosti nelze obejít; stacked start je se `stacked_prs` povolený, čekají-li všechny v otevřených PR.
+**Spustit** (`factory task run ID`) otevře workflow, zápisy, varování na necommitnuté změny, **Harness pro tento běh** a poznámku. Automatické pokračování řídí nastavení repozitáře na [Přehledu](#/overview). Běžící task ani task s otevřeným PR nespustíš. Nesplněné závislosti nelze obejít; stacked start je se `stacked_prs` povolený, čekají-li všechny v otevřených PR.
 
 Záložka **Běhy** má **Aktivní** a **Archivované** běhy, panel **Náklady** a **Řetěz**. Fáze v detailu otevře prompty, výstup a živé události. **Pauza** dokončí fázi a čeká, **Pokračovat** pustí další, **Zastavit** běh ukončí (worktree zůstane).
 

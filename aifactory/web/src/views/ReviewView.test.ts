@@ -119,7 +119,7 @@ describe('ReviewView', () => {
     expect(wrapper.find('[data-test="notice"]').text()).toContain('Sloučeno (merge abcdef1)')
     expect(wrapper.find('[data-test="notice"]').text()).toContain('OB3')
     const box = wrapper.find('[data-test="merged"]')
-    expect(box.text()).toContain('pořadí určuje kanban')
+    expect(box.text()).toContain('Automatické pokračování řídí místní nastavení repozitáře na Přehledu; pořadí určuje kanban.')
     // no other open PR: only the way back to the list
     expect(wrapper.find('[data-test="next-pr"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="back-to-list"]').attributes('href')).toBe('#/r/haifa/review')

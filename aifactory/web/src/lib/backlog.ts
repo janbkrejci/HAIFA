@@ -501,7 +501,7 @@ export interface RunStart {
   /** The run was not claimed in time; it is still starting. */
   pending: boolean
   force: boolean
-  /** The run continues with further tasks after success (`--auto`). */
+  /** Legacy `--auto` value; continuation is controlled by local repository settings. */
   auto?: boolean
 }
 
@@ -529,7 +529,7 @@ export interface RunInput {
   harness?: string
   model?: string
   thinking?: string
-  /** Continue with further tasks after success (auto continue, `--auto`). */
+  /** Legacy API/CLI compatibility (`--auto`); continuation uses local repository settings. */
   auto?: boolean
 }
 
