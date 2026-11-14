@@ -2,6 +2,7 @@
 id: HAIFA-S01-T52
 title: "Intent: znepřístupnit AI průvodce a neposílat intent jako ID tasku"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/tests/]
 ---
