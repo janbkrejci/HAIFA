@@ -126,6 +126,16 @@ export function problems(repo: OverviewRepo): Problem[] {
   return kinds.map((kind) => ({ kind, text: PROBLEM_TEXT[kind], href: kind === 'uncommitted' ? commit : factory }))
 }
 
+/** Unknown backlog state must never imply a confirmed clean checkout. */
+export function backlogText(repo: OverviewRepo): string | null {
+  const backlog = repo.backlog
+  if (repo.state === 'timeout' || backlog?.state === 'loading') return 'Načítám stav backlogu…'
+  if (!backlog || backlog.state === 'error') return 'Stav backlogu se nepodařilo přečíst'
+  if (backlog.state === 'clean') return null
+  const n = backlog.count
+  return `Necommitnutý backlog: ${n} ${plural(n ?? 0, 'soubor', 'soubory', 'souborů')}`
+}
+
 /** Whether the repo has a problem: a state or config problem, or warnings. */
 export function hasProblems(repo: OverviewRepo): boolean {
   if (repo.state === 'timeout') return false

@@ -10,6 +10,7 @@ import { backlogSync, type OverviewRepo } from '@/lib/api'
 import { errorText, fmtAge, fmtTime, ts } from '@/lib/format'
 import { problems, runLink } from '@/lib/overview'
 import { repoHref } from '@/lib/router'
+import RepoBacklogStatus from '@/components/overview/RepoBacklogStatus.vue'
 import RepoActions from './RepoActions.vue'
 import RepoControls from './RepoControls.vue'
 import RepoWork from './RepoWork.vue'
@@ -71,6 +72,8 @@ async function onSync() {
         <RepoMenu :name="repo.name" :removing="removing" @remove="emit('remove', repo)" />
       </div>
     </header>
+
+    <RepoBacklogStatus v-if="!loading" :repo="repo" />
 
     <div v-if="loading" class="loading-overlay" data-test="repo-loading" role="status">
       <Spinner :size="22" /> Načítám repozitář…

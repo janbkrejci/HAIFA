@@ -432,6 +432,7 @@ export interface OverviewRepo {
   /** Tasks merged outside factory that `factory backlog sync` would mark done. */
   merged_outside?: OverviewMergedOutside[]
   sync_pr?: OverviewSyncPr | null
+  backlog?: { state: 'clean' | 'dirty' | 'loading' | 'error'; count: number | null; error: string | null }
   config: OverviewConfig | null
   last_activity: string | null
   warnings: string[]

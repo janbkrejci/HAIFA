@@ -445,3 +445,39 @@ describe('OverviewView', () => {
     expect(wrapper.find('[data-test="try-demo"]').exists()).toBe(false)
   })
 })
+
+it('keeps one backlog indicator per calm or active repo in both modes and updates on polling', async () => {
+  let dirty = true
+  const backlog = () => dirty
+    ? { state: 'dirty' as const, count: 3, error: null }
+    : { state: 'clean' as const, count: 0, error: null }
+  const projects = [
+    { id: 'A', title: 'Done', tasks: tasks({ done: 1 }) },
+    { id: 'B', title: 'Ready', tasks: tasks({ ready: 1 }) },
+  ]
+  stubOverview(() => overview([
+    repo('busy', { running: [running({ project: 'B' })], projects, backlog: backlog() }),
+    repo('calm', { projects, backlog: backlog() }),
+    repo('clean'),
+  ]))
+  const wrapper = await mountView()
+  for (const byProject of [true, false]) {
+    await wrapper.get('[data-test="by-project"]').setValue(byProject)
+    for (const [selector, id] of [['overview-card', 'busy'], ['calm-repo', 'calm']]) {
+      const row = wrapper.get(`[data-test="${selector}"][data-repo="${id}"]`)
+      const links = row.findAll('[data-test="repo-backlog-status"]')
+      expect(links).toHaveLength(1)
+      expect(links[0].attributes('href')).toBe(`#/r/${id}/backlog`)
+      expect(links[0].text()).toBe('Necommitnutý backlog: 3 soubory')
+    }
+    expect(wrapper.find('[data-repo="clean"] [data-test="repo-backlog-status"]').exists()).toBe(false)
+  }
+  dirty = false
+  vi.advanceTimersByTime(OVERVIEW_POLL_MS)
+  await flushPromises()
+  expect(wrapper.findAll('[data-test="repo-backlog-status"]')).toHaveLength(0)
+  dirty = true
+  vi.advanceTimersByTime(OVERVIEW_POLL_MS)
+  await flushPromises()
+  expect(wrapper.findAll('[data-test="repo-backlog-status"]')).toHaveLength(2)
+})

@@ -119,3 +119,115 @@ def test_overview_shows_local_controls_without_legacy_preview() -> None:
             assert submitted == []
         finally:
             browser.close()
+
+
+def test_overview_backlog_indicator_refreshes_in_both_modes() -> None:
+    counts = {"todo": 0, "ready": 0, "done": 1}
+    projects = [
+        {"id": "A", "title": "Finished", "tasks": counts},
+        {"id": "B", "title": "Also finished", "tasks": counts},
+    ]
+    calm: dict[str, Any] = {
+        "id": "haifa",
+        "name": "HAIFA",
+        "path": "/repos/haifa",
+        "state": "ok",
+        "config": None,
+        "factory": None,
+        "tasks": counts,
+        "projects": projects,
+        "running": [],
+        "review": [],
+        "failed": [],
+        "warnings": [],
+        "last_activity": None,
+        "backlog": {"state": "dirty", "count": 2, "error": None},
+    }
+    active = {
+        **calm,
+        "id": "active",
+        "name": "Active",
+        "review": [
+            {
+                "task_id": "B-T01",
+                "task_title": "Review",
+                "pr_id": "1",
+                "project": "B",
+                "url": "https://example.test/pr/1",
+                "branch": "task",
+                "opened_at": None,
+                "age_s": None,
+                "source": "trace",
+            }
+        ],
+    }
+    fallback = _server("live")
+
+    def serve(route: Route) -> None:
+        path = urlsplit(route.request.url).path
+        if path == "/api/repos":
+            route.fulfill(
+                content_type="application/json",
+                body=json.dumps(
+                    {
+                        "ok": True,
+                        "data": {
+                            "repos": [
+                                {
+                                    "id": item["id"],
+                                    "name": item["name"],
+                                    "path": item["path"],
+                                    "added_at": "",
+                                    "status": "ok",
+                                    "factory": None,
+                                }
+                                for item in (calm, active)
+                            ]
+                        },
+                        "warnings": [],
+                    }
+                ),
+            )
+            return
+        if path != "/api/overview":
+            fallback(route)
+            return
+        route.fulfill(
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "ok": True,
+                    "data": {"repos": [calm, active]},
+                    "warnings": [],
+                }
+            ),
+        )
+
+    with sync_playwright() as playwright:
+        browser = _launch(playwright)
+        try:
+            page = browser.new_page()
+            page.route("**/*", serve)
+            page.goto("http://haifa.test/#/overview")
+            for grouped in (True, False):
+                page.locator('[data-test="by-project"]').set_checked(grouped)
+                for repo_id, selector in (("haifa", "calm-repo"), ("active", "overview-card")):
+                    row = page.locator(f'[data-test="{selector}"][data-repo="{repo_id}"]')
+                    link = row.locator('[data-test="repo-backlog-status"]')
+                    expect(link).to_have_count(1)
+                    expect(link).to_be_visible()
+                    expect(link).to_have_text("Necommitnutý backlog: 2 soubory")
+                    expect(link).to_have_attribute("href", f"#/r/{repo_id}/backlog")
+            calm["backlog"] = {"state": "clean", "count": 0, "error": None}
+            active["backlog"] = {"state": "error", "count": None, "error": "denied"}
+            # The ordinary overview poll removes the committed indication without a reload.
+            expect(
+                page.locator('[data-repo="haifa"] [data-test="repo-backlog-status"]')
+            ).to_have_count(0)
+            expect(
+                page.locator('[data-repo="active"] [data-test="repo-backlog-status"]')
+            ).to_have_text("Stav backlogu se nepodařilo přečíst")
+            page.locator('[data-repo="active"] [data-test="repo-backlog-status"]').click()
+            expect(page).to_have_url("http://haifa.test/#/r/active/backlog")
+        finally:
+            browser.close()

@@ -97,6 +97,7 @@ export function repo(id: string, over: Partial<OverviewRepo> = {}): OverviewRepo
     approved: [],
     automerge: [],
     failed: [],
+    backlog: { state: 'clean', count: 0, error: null },
     config: config(),
     last_activity: '2026-10-06T10:00:00+00:00',
     warnings: [],

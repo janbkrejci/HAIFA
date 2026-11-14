@@ -354,3 +354,34 @@ it('labels a completed result from the preceding poll and clears the label when 
   await card.setProps({ repo: repo('a', { stale: false }) })
   expect(card.find('[data-test="repo-stale"]').exists()).toBe(false)
 })
+
+describe('repository backlog', () => {
+  it('shows one backlog link beside configuration in either project mode', async () => {
+    const card = mountWith(repo('a', {
+      state: 'uncommitted',
+      config: { factory_state: 'installed', installed: true, base: 'main', commit: 'abc', invalid: false,
+        issues: [], clean: false, uncommitted: [{ path: '.factory/config.yaml' }] },
+      backlog: { state: 'dirty', count: 2, error: null },
+      projects: [{ id: 'A', title: 'Alpha', tasks: tasks({ done: 1 }) },
+        { id: 'B', title: 'Beta', tasks: tasks({ ready: 1 }) }],
+    }))
+    for (const byProject of [false, true]) {
+      await card.setProps({ byProject })
+      expect(card.findAll('[data-test="repo-backlog-status"]')).toHaveLength(1)
+      const link = card.get('[data-test="repo-backlog-status"]')
+      expect(link.text()).toBe('Necommitnutý backlog: 2 soubory')
+      expect(link.attributes('href')).toBe('#/r/a/backlog')
+      expect(card.get('[data-test="row-config"]').text()).toBe('Necommitnutá konfigurace')
+      expect(card.find('[data-test="project-section"] [data-test="repo-backlog-status"]').exists()).toBe(false)
+    }
+    await card.setProps({ repo: repo('a', { backlog: { state: 'error', count: null, error: 'denied' } }) })
+    const errorLink = card.get('[data-test="repo-backlog-status"]')
+    expect(errorLink.attributes('title')).toBeUndefined()
+    expect(errorLink.attributes('href')).toBe('#/r/a/backlog')
+    await errorLink.trigger('focusin')
+    expect(document.body.querySelector('[data-test="tooltip"]')?.textContent?.trim()).toBe('denied')
+    expect(card.text()).toContain('Stav backlogu se nepodařilo přečíst')
+    await card.setProps({ repo: repo('a') })
+    expect(card.find('[data-test="repo-backlog-status"]').exists()).toBe(false)
+  })
+})
