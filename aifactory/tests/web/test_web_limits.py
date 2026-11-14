@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import os
 from pathlib import Path
@@ -14,6 +15,8 @@ from web_repo import git_repo
 from aifactory.web import create_app, create_multi_app
 from aifactory.web.limits import (
     LimitsSource,
+    _last_claude_windows,
+    _last_rate_limits,
     available_harnesses,
     claude_limits,
     codex_limits,
@@ -161,6 +164,65 @@ def test_codex_limits_without_logs(tmp_path: Path) -> None:
     entry = codex_limits(sessions=lambda: tmp_path / "missing")
     assert entry["windows"] == []
     assert entry["error"]
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r\n"])
+def test_reverse_log_reader_handles_blocks_utf8_and_partial_tail(
+    tmp_path: Path, newline: str
+) -> None:
+    path = tmp_path / "log.jsonl"
+    older = _token_count("older", {"used_percent": 10}, None)
+    primary = {"used_percent": 70, "note": "žluťoučký" * 20000}
+    latest = json.dumps(json.loads(_token_count("latest", primary, None)), ensure_ascii=False)
+    # A line longer than two blocks and multibyte characters crossing read boundaries.
+    padding = json.dumps({"text": "žluťoučký" * 20000}, ensure_ascii=False)
+    path.write_bytes(newline.join([older, latest, padding, '{"payload":']).encode())
+    assert _last_rate_limits(path) == (
+        "latest",
+        {"limit_id": "codex", "primary": primary, "secondary": None},
+    )
+    # Reopening must see replacement/rotation, not reuse a stale position or value.
+    replacement = tmp_path / "replacement.jsonl"
+    replacement.write_text(older, encoding="utf-8")
+    replacement.replace(path)
+    assert (_last_rate_limits(path) or (None,))[0] == "older"
+    with path.open("ab") as stream:
+        stream.write((newline + latest).encode())
+    assert (_last_rate_limits(path) or (None,))[0] == "latest"
+    path.unlink()
+    assert _last_rate_limits(path) is None
+
+
+@pytest.mark.parametrize("reader", ["claude", "codex"])
+def test_latest_limits_read_only_the_end_of_a_large_log(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, reader: str
+) -> None:
+    latest = (
+        _rate_event(0.2, 0.3, NOW + 100, NOW + 1000)
+        if reader == "claude"
+        else _token_count("latest", {"used_percent": 70}, None)
+    )
+    content = b'{"padding":"x"}\n' * 200000 + latest.encode() + b"\n\xffbroken\n"
+    reads: list[int] = []
+
+    class TrackedLog(io.BytesIO):
+        def read(self, size: int | None = -1) -> bytes:
+            data = super().read(size)
+            reads.append(len(data))
+            return data
+
+    monkeypatch.setattr(Path, "open", lambda *args, **kwargs: TrackedLog(content))
+    if reader == "claude":
+        assert (
+            _last_claude_windows(tmp_path / "log")
+            == json.loads(latest)["rate_limit_info"]["unifiedWindows"]
+        )
+    else:
+        assert _last_rate_limits(tmp_path / "log") == (
+            "latest",
+            json.loads(latest)["payload"]["rate_limits"],
+        )
+    assert sum(reads) <= 64 * 1024
 
 
 # -- the cached source ---------------------------------------------------------------------

@@ -87,6 +87,11 @@ CREATE TABLE IF NOT EXISTS agent_sessions (
   created_at    TEXT, last_used_at TEXT,
   PRIMARY KEY (adw_id, agent)
 );
+-- aifactory 3.6: run-scoped history reads must not scan every other run.
+CREATE INDEX IF NOT EXISTS events_run ON events(adw_id);
+CREATE INDEX IF NOT EXISTS phases_run ON phases(adw_id);
+CREATE INDEX IF NOT EXISTS envelopes_run ON envelopes(adw_id);
+CREATE INDEX IF NOT EXISTS gate_results_run ON gate_results(adw_id);
 """
 
 # Columns added after a schema shipped. CREATE TABLE IF NOT EXISTS never

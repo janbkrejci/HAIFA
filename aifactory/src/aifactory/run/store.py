@@ -722,6 +722,10 @@ class TaskRunStore:
         _add_columns(self.conn, "task_runs", _RUN_ADDED_COLUMNS)
         _add_columns(self.conn, "task_chains", _CHAIN_ADDED_COLUMNS)
         _add_columns(self.conn, "task_queue", {"archived": "INTEGER NOT NULL DEFAULT 0"})
+        # Older databases acquire archived above, before this index is created.
+        self.conn.execute(
+            "CREATE INDEX IF NOT EXISTS task_runs_page ON task_runs(archived, started_at)"
+        )
         if database.is_remote(db_path):
             self.conn.execute(
                 "CREATE TABLE IF NOT EXISTS haifa_owners "
