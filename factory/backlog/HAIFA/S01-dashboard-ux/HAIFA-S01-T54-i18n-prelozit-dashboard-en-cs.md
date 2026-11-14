@@ -2,7 +2,7 @@
 id: HAIFA-S01-T54
 title: Dokončit anglické a české UI dashboardu a zapnout výchozí EN
 status: todo
-depends_on: [HAIFA-S01-T53, HAIFA-S01-T50, HAIFA-S01-T51, HAIFA-S01-T52]
+depends_on: [HAIFA-S01-T53, HAIFA-S01-T50, HAIFA-S01-T51, HAIFA-S01-T52, HAIFA-TODO-T27, HAIFA-TODO-T28, HAIFA-TODO-T29, HAIFA-TODO-T30, HAIFA-TODO-T31, HAIFA-TODO-T32, HAIFA-TODO-T33, HAIFA-TODO-T34, HAIFA-TODO-T35]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/src/aifactory/guide/, aifactory/tests/]
 ---
 
