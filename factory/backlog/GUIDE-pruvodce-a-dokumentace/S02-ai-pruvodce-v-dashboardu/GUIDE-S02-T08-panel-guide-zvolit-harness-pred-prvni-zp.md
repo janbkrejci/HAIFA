@@ -1,7 +1,7 @@
 ---
 id: GUIDE-S02-T08
 title: "Panel Guide: zvolit harness před první zprávou"
-status: todo
+status: done
 workflow: build-test-review
 depends_on: [GUIDE-S02-T07]
 writes: [aifactory/web/src/lib/assistant.ts, aifactory/web/src/lib/assistant.test.ts, aifactory/web/src/components/assistant/AssistantPanel.vue, aifactory/web/src/components/assistant/AssistantPanel.test.ts, aifactory/tests/e2e/test_assistant_browser.py, aifactory/src/aifactory/web/static/, aifactory/src/aifactory/guide/03-prvni-beh.md, docs/decisions.md]
@@ -29,3 +29,4 @@ Hotovo znamená:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/226 · náklady $0.00
