@@ -19,6 +19,8 @@ the repository's auto-continue chains after a failure, newest first: ``task_chai
 ``run.heal.HealEvent.to_json()`` with the ``chain_id``),
 ``config`` (whether the factory is installed, an invalid configuration in base and uncommitted
 shared configuration, D4),
+``backlog`` (``state`` clean/dirty/loading/error, changed-file ``count`` or null,
+read ``error`` or null; the same base-relative changes as ``web.backlog.status``),
 ``last_activity`` and ``warnings``; ``totals`` sums them up. Every item of ``running`` has
 ``pause`` (``null``, ``pausing`` or ``paused``; ``null`` for a trace DB without the column).
 Before claim, a running item has ``run_id: null`` and an ``operation_id``; its
@@ -61,11 +63,12 @@ trace DB is not created. Git is read only through the config readers, which run 
 ``GIT_OPTIONAL_LOCKS=0``; there is no ``git fetch`` and no provider call. The PR states in
 ``task_prs`` are kept fresh by the dashboard's background refresh (``pr_refresh.py``). The
 config state is kept for ``CONFIG_TTL`` seconds and the task titles for ``TASKS_TTL`` seconds
-per repository; file/directory metadata invalidates task reads before expiry. Repositories
-are computed concurrently with ``REPO_TIMEOUT`` seconds each; a
-slow or broken repository comes back with ``state`` ``timeout`` or ``error`` and a warning, the
-others as usual. A completed timed-out computation is delivered on the next poll with
-``stale: true``; the following poll computes fresh state.
+per repository; file/directory metadata invalidates task reads before expiry. Backlog status
+is cached separately for ``BACKLOG_TTL`` seconds, so file edits and commits appear through
+the existing overview poll. Repositories are computed concurrently with ``REPO_TIMEOUT``
+seconds each; a slow or broken repository comes back with ``state`` ``timeout`` or ``error``
+and a warning, the others as usual. A completed timed-out computation is delivered on the
+next poll with ``stale: true``; the following poll computes fresh state.
 """
 
 from __future__ import annotations
@@ -103,6 +106,7 @@ from aifactory.config.loader import load_config
 from aifactory.config.repo_state import repo_state
 from aifactory.config.source import CommitSource
 from aifactory.config.status import config_changes
+from aifactory.run.errors import TaskRunError
 from aifactory.run.gitops import repo_layout
 from aifactory.run.queue import Slots
 from aifactory.web.backlog import (
@@ -114,6 +118,9 @@ from aifactory.web.backlog import (
     run_failed,
     waits_for_automerge,
 )
+from aifactory.web.backlog import (
+    status as backlog_status,
+)
 from aifactory.web.chains import max_parallel_runs_in
 from aifactory.web.config_cache import CONFIG_TTL as CONFIG_TTL
 from aifactory.web.config_cache import ConfigCache
@@ -124,6 +131,7 @@ from aifactory.web.repos import trace_db_of
 JsonDict = dict[str, Any]
 T = TypeVar("T")
 
+BACKLOG_TTL = 2.0  # s, refreshed by the existing overview poll
 TASKS_TTL = 60.0  # s, task titles and statuses per repository
 REPO_TIMEOUT = 2.0  # s, per repository
 if sys.platform == "win32":  # a cold repository runs ~8 git processes, each 0.15-0.3 s there
@@ -687,6 +695,19 @@ def _config_view(root: Path) -> tuple[JsonDict | None, list[str]]:
     return config, warnings
 
 
+def _backlog_view(root: Path) -> JsonDict:
+    """Use the backlog screen's read-only definition, independently of config/task caches."""
+    try:
+        data, _ = backlog_status(root)
+    except (TaskRunError, ConfigError, OSError, ValueError) as exc:
+        return {"state": "error", "count": None, "error": str(exc)}
+    return {
+        "state": "clean" if data["clean"] else "dirty",
+        "count": len(data["changes"]),
+        "error": None,
+    }
+
+
 def _task_index(root: Path) -> tuple[_Tasks, list[str]]:
     try:
         backlog = load_for_edit(root)
@@ -814,6 +835,11 @@ def _stub(entry: RepoEntry, state: str, warnings: list[str]) -> JsonDict:
         "merged_outside": [],
         "sync_pr": None,
         "config": None,
+        "backlog": {
+            "state": "loading" if state == "timeout" else "error",
+            "count": None,
+            "error": None,
+        },
         "local_settings": None,
         "local_settings_error": None,
         "last_activity": None,
@@ -841,6 +867,7 @@ class Overview:
         self._layouts = ConfigCache(clock)
         self._configs = ConfigCache(clock)
         self._tasks = _TtlCache(clock)
+        self._backlogs = _TtlCache(clock)
         # Own threads: a repository stuck past the limit never blocks the loop's executor, and
         # while its computation still runs a new request waits for it instead of adding a thread.
         self._pool = ThreadPoolExecutor(max_workers=WORKERS, thread_name_prefix="overview")
@@ -865,6 +892,7 @@ class Overview:
         trace, trace_warnings = _trace_view(trace_db_of(root))
         item = _stub(entry, _state(config), [*config_warnings, *task_warnings, *trace_warnings])
         item["config"] = config
+        item["backlog"] = self._backlogs.get(key, BACKLOG_TTL, lambda: _backlog_view(root))
         from aifactory.repo_settings import RepositorySettings, SettingsError
 
         try:
@@ -947,6 +975,7 @@ class Overview:
         self._layouts.prune(keep)
         self._configs.prune(keep)
         self._tasks.prune(keep)
+        self._backlogs.prune(keep)
         with self._inflight_lock:
             for key in [k for k in self._inflight if k not in keep]:
                 del self._inflight[key]

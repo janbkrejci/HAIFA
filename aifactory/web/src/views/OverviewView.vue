@@ -26,6 +26,7 @@ import { REPOS_ADD_HREF, repoHref } from '@/lib/router'
 import { ADD_REPO_HINT, useRemoveRepo } from '@/lib/repos'
 import EmptyScreen from '@/components/EmptyScreen.vue'
 import TryDemoButton from '@/components/demo/TryDemoButton.vue'
+import RepoBacklogStatus from '@/components/overview/RepoBacklogStatus.vue'
 import RepoActions from '@/components/overview/RepoActions.vue'
 import RepoCard from '@/components/overview/RepoCard.vue'
 import RepoControls from '@/components/overview/RepoControls.vue'
@@ -148,6 +149,7 @@ function activity(iso: string | null): string {
               <RepoMenu :name="repo.name" :removing="removing === repo.id" item-test="calm-remove" @remove="remove(repo)" />
             </div>
           </div>
+          <RepoBacklogStatus :repo="repo" />
           <RepoControls @changed="refresh" :repo="repo" :feedback="feedback[repo.id] ?? NO_FEEDBACK" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
           <RepoWork v-if="byProject && (repo.projects?.length ?? 0) > 1" :repo="repo" :now="now" :by-project="byProject" />
           <span class="calm-activity" data-test="last-activity">Poslední aktivita: {{ activity(repo.last_activity) }}</span>

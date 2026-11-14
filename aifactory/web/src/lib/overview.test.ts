@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { effectScope } from 'vue'
 import {
   activeRuns,
+  backlogText,
   BY_PROJECT_KEY,
   projectSections,
   readByProject,
@@ -356,5 +357,22 @@ describe('pending operations', () => {
 
   it('never treats an ended operation without a run as a failed run', () => {
     expect(failedRows(repo('a', { running: [operation('dead', { process: 'ended' })] }))).toEqual([])
+  })
+})
+
+
+describe('backlog status', () => {
+  it('distinguishes clean, dirty, loading, unreadable and absent status', () => {
+    expect(backlogText(repo('a'))).toBeNull()
+    for (const [count, word] of [[1, 'soubor'], [3, 'soubory'], [5, 'souborů']] as const) {
+      expect(backlogText(repo('a', { backlog: { state: 'dirty', count, error: null } })))
+        .toBe(`Necommitnutý backlog: ${count} ${word}`)
+    }
+    expect(backlogText(repo('a', { state: 'timeout' }))).toBe('Načítám stav backlogu…')
+    expect(backlogText(repo('a', { backlog: { state: 'loading', count: null, error: null } })))
+      .toBe('Načítám stav backlogu…')
+    expect(backlogText(repo('a', { backlog: { state: 'error', count: null, error: 'denied' } })))
+      .toBe('Stav backlogu se nepodařilo přečíst')
+    expect(backlogText(repo('a', { backlog: undefined }))).toBe('Stav backlogu se nepodařilo přečíst')
   })
 })

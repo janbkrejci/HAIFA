@@ -350,11 +350,14 @@ def test_overview_preserves_sqlite_posix_locks(
         reader.close()
 
 
+@pytest.mark.parametrize("dirty", [False, True])
 def test_git_reads_without_optional_locks_and_no_fetch(
-    repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    repo_a: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dirty: bool
 ) -> None:
     home = tmp_path / "home"
     register(home, repo_a)
+    if dirty:
+        write(repo_a, "backlog/new.md", "New backlog file\n")
     calls: list[tuple[list[str], dict[str, str] | None]] = []
     real_run = subprocess.run
 
@@ -364,11 +367,18 @@ def test_git_reads_without_optional_locks_and_no_fetch(
         return real_run(args, *rest, **kwargs)
 
     monkeypatch.setattr(subprocess, "run", record)
-    _get(_client(home, tmp_path))
+    item = _get(_client(home, tmp_path))["repos"][0]
+    assert item["backlog"] == {
+        "state": "dirty" if dirty else "clean",
+        "count": int(dirty),
+        "error": None,
+    }
     assert calls
     for args, env in calls:
         assert env is not None and env.get("GIT_OPTIONAL_LOCKS") == "0", args
-        assert "fetch" not in args, args
+        assert not {"fetch", "pull", "push", "commit", "add", "update-index"}.intersection(args), (
+            args
+        )
 
 
 def test_busy_trace_db_answers_within_a_second(repo_a: Path, tmp_path: Path) -> None:
@@ -403,14 +413,14 @@ def test_slow_repo_times_out_and_the_others_answer(
 ) -> None:
     home = tmp_path / "home"
     registry = register(home, repo_a, repo_b)
-    real = overview._trace_view
+    real = overview._backlog_view
 
-    def slow(db: Path) -> Any:
-        if "alpha" in str(db):
+    def slow(root: Path) -> Any:
+        if "alpha" in str(root):
             time.sleep(SLOW)
-        return real(db)
+        return real(root)
 
-    monkeypatch.setattr(overview, "_trace_view", slow)
+    monkeypatch.setattr(overview, "_backlog_view", slow)
     client = _app_with(home, tmp_path, Overview(registry, timeout=LIMIT))
     start = time.monotonic()
     data = _get(client)
@@ -418,8 +428,10 @@ def test_slow_repo_times_out_and_the_others_answer(
     repos = _by_id(data)
     assert repos["alpha"]["state"] == "timeout"
     assert repos["alpha"]["projects"] == []
+    assert repos["alpha"]["backlog"]["state"] == "loading"
     assert "did not answer" in repos["alpha"]["warnings"][0]
     assert repos["beta"]["state"] == "ok"
+    assert repos["beta"]["backlog"]["state"] == "clean"
     assert {r["run_id"] for r in repos["beta"]["running"]} == {"b-r-run", "b-r-dead"}
     assert took < BOUND
 
@@ -1534,3 +1546,92 @@ def test_local_harness_catalog_failure_does_not_save(
         assert response.status_code == 503
         assert response.json()["error"]["code"] == "harness_catalog_unavailable"
         assert not RepositorySettings(root, home).path.exists()
+
+
+@pytest.mark.parametrize(
+    "change", ["unstaged", "staged", "new", "staged_new", "deleted", "staged_deleted", "mixed"]
+)
+def test_backlog_changes_refresh_after_commit(tmp_path: Path, change: str) -> None:
+    root = make_installed_repo(tmp_path / "backlog")
+    now = [1000.0]
+    ov = Overview(Registry(tmp_path / "home"), clock=lambda: now[0])
+    entry = RepoEntry(id="backlog", name="backlog", path=str(root), added_at="2026-01-01")
+    clean = {"state": "clean", "count": 0, "error": None}
+    assert ov.repo(entry)["backlog"] == clean
+    path = "backlog/M01-core/S01-model/M01-S01-T01-runner.md"
+    if change in {"new", "staged_new"}:
+        path = "backlog/new.md"
+        write(root, path, "New backlog file\n")
+    elif "deleted" in change:
+        (root / path).unlink()
+    else:
+        with (root / path).open("a", encoding="utf-8") as stream:
+            stream.write("\nChanged\n")
+    if change in {"staged", "staged_new", "staged_deleted", "mixed"}:
+        subprocess.run(["git", "add", "--", path], cwd=root, check=True, capture_output=True)
+    if change == "mixed":
+        with (root / path).open("a", encoding="utf-8") as stream:
+            stream.write("More unstaged changes to the same file\n")
+    # The short cache is preserved; the next ordinary poll reads the change.
+    assert ov.repo(entry)["backlog"] == clean
+    now[0] += overview.BACKLOG_TTL
+    index = root / ".git/index"
+    before = (index.read_bytes(), index.stat().st_mtime_ns)
+    item = ov.repo(entry)
+    assert (index.read_bytes(), index.stat().st_mtime_ns) == before
+    assert item["backlog"] == {"state": "dirty", "count": 1, "error": None}
+    assert item["config"]["clean"] is True
+    commit_all(root, "backlog change")
+    now[0] += overview.BACKLOG_TTL
+    assert ov.repo(entry)["backlog"] == clean
+
+
+def test_backlog_status_isolated_and_outside_changes_ignored(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    alpha = make_installed_repo(tmp_path / "alpha")
+    beta = make_installed_repo(tmp_path / "beta")
+    home = tmp_path / "home"
+    registry = register(home, alpha, beta)
+    write(beta, "src/unrelated.txt", "outside backlog\n")
+    write(alpha, "backlog/new.md", "new\n")
+    now = [1000.0]
+    ov = Overview(registry, clock=lambda: now[0])
+    client = _app_with(home, tmp_path, ov)
+    repos = _by_id(_get(client))
+    assert repos["alpha"]["backlog"]["count"] == 1
+    assert repos["beta"]["backlog"] == {"state": "clean", "count": 0, "error": None}
+    real = getattr(overview, "backlog_status")  # noqa: B009
+
+    def broken(root: Path) -> Any:
+        if root == alpha:
+            raise OSError("backlog unreadable")
+        return real(root)
+
+    monkeypatch.setattr(overview, "backlog_status", broken)
+    now[0] += overview.BACKLOG_TTL
+    repos = _by_id(_get(client))
+    assert repos["alpha"]["backlog"] == {
+        "state": "error",
+        "count": None,
+        "error": "backlog unreadable",
+    }
+    assert repos["beta"]["backlog"]["state"] == "clean"
+    monkeypatch.setattr(overview, "backlog_status", real)
+    now[0] += overview.BACKLOG_TTL
+    assert _by_id(_get(client))["alpha"]["backlog"]["state"] == "dirty"
+
+
+def test_backlog_compares_with_base_instead_of_head(tmp_path: Path) -> None:
+    root = make_installed_repo(tmp_path / "base", config="base: release\ndocs_root: .\n")
+    subprocess.run(
+        ["git", "update-ref", "refs/heads/release", "HEAD"],
+        cwd=root,
+        check=True,
+        capture_output=True,
+    )
+    write(root, "backlog/new.md", "Committed on main but absent from base\n")
+    commit_all(root, "main only")
+    ov = Overview(Registry(tmp_path / "home"))
+    entry = RepoEntry(id="base", name="base", path=str(root), added_at="2026-01-01")
+    assert ov.repo(entry)["backlog"] == {"state": "dirty", "count": 1, "error": None}
