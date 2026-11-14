@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { describe, expect, it } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
@@ -120,7 +126,7 @@ describe('UncommittedBanner', () => {
     expect(banner.attributes('role')).toBe('status')
     const chip = wrapper.get('[data-test="backlog-chip"]')
     expect(chip.text()).toBe('2')
-    expect(chip.attributes('aria-label')).toContain('Necommitnutý backlog · 2 soubory')
+    expect(chip.attributes('aria-label')).toContain('Necommitnuté změny: Backlog · 2 soubory')
     expect(chip.find('svg').exists()).toBe(true)
     await chip.trigger('focusin')
     expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(chip.attributes('aria-label'))
@@ -178,5 +184,23 @@ it('opens the chip panel when a successful commit has warnings', async () => {
   await nextTick()
   expect(wrapper.get('[data-test="backlog-chip"]').attributes('aria-expanded')).toBe('true')
   expect(wrapper.get('[data-test="backlog-commit-warning"]').text()).toBe('run factory config pull later')
+  wrapper.unmount()
+})
+
+
+it.each([1, 2, 5])('translates %s changes while keeping the chip panel open', async count => {
+  setLocale('en')
+  const wrapper = backlog({ status: { ...BACKLOG, changes: Array.from({ length: count }, (_, i) => ({ path: `user/český-${i}.md`, status: 'modified' })) } })
+  const chip = wrapper.get('[data-test="backlog-chip"]')
+  await chip.trigger('click')
+  const panel = wrapper.get('[data-test="backlog-panel"]').element
+  expect(chip.attributes('aria-label')).toContain(`${count} ${count === 1 ? 'file' : 'files'}`)
+  expect(wrapper.get('[data-test="backlog-summary"]').text()).toBe(`Changes to commit: ${count} ${count === 1 ? 'change' : 'changes'}.`)
+  setLocale('cs')
+  await nextTick()
+  expect(chip.attributes('aria-expanded')).toBe('true')
+  expect(wrapper.get('[data-test="backlog-panel"]').element).toBe(panel)
+  expect(chip.attributes('aria-label')).toContain('user/český-0.md')
+  expect(wrapper.get('[data-test="backlog-summary"]').text()).toBe(`Commitne se ${count} ${count === 1 ? 'změna' : count === 2 ? 'změny' : 'změn'}.`)
   wrapper.unmount()
 })

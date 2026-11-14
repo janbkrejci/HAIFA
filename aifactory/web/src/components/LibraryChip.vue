@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import './ui/statusIconChip.css'
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { Library, TriangleAlert } from 'lucide-vue-next'
@@ -26,8 +27,8 @@ defineExpose({ load })
 </script>
 
 <template>
-  <Tooltip v-if="exists" text="Knihovna OK – kliknutím otevřeš knihovnu"><a :href="LIBRARY_HREF" class="status-icon-chip success" aria-label="Knihovna OK – kliknutím otevřeš knihovnu" data-test="library-chip-ok"><Library :size="14" aria-hidden="true" /></a></Tooltip>
-  <Tooltip v-else-if="exists === false" text="Založit knihovnu – kliknutím otevřeš knihovnu"><a :href="LIBRARY_HREF" class="status-icon-chip warning" aria-label="Založit knihovnu – kliknutím otevřeš knihovnu" data-test="library-chip-missing"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
+  <Tooltip v-if="exists" :text="t('library.ok')"><a :href="LIBRARY_HREF" class="status-icon-chip success" :aria-label="t('library.ok')" data-test="library-chip-ok"><Library :size="14" aria-hidden="true" /></a></Tooltip>
+  <Tooltip v-else-if="exists === false" :text="t('library.missing')"><a :href="LIBRARY_HREF" class="status-icon-chip warning" :aria-label="t('library.missing')" data-test="library-chip-missing"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
 </template>
 
 <style scoped>

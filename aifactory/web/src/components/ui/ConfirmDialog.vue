@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Shared modal confirmation dialog — replaces the browser confirm() across the dashboard.
 // Esc and a click outside cancel, Enter confirms, Tab stays inside, and focus
 // returns to the element that opened it. `hideConfirm` leaves only the cancel button, for a
@@ -18,7 +19,7 @@ const props = withDefaults(
     confirmDisabled?: boolean
     hideConfirm?: boolean
   }>(),
-  { message: '', confirmLabel: 'Potvrdit', cancelLabel: 'Zrušit', tone: 'default' },
+  { message: '', tone: 'default' },
 )
 
 const emit = defineEmits<{ confirm: []; cancel: [] }>()
@@ -127,7 +128,7 @@ function onKeydown(e: KeyboardEvent) {
         <slot />
         <div class="modal-actions">
           <button type="button" class="btn" data-test="confirm-cancel" @click="emit('cancel')">
-            {{ cancelLabel }}
+            {{ cancelLabel ?? t('common.cancel') }}
           </button>
           <button
             v-if="!hideConfirm"
@@ -139,7 +140,7 @@ function onKeydown(e: KeyboardEvent) {
             data-test="confirm-ok"
             @click="emit('confirm')"
           >
-            {{ confirmLabel }}
+            {{ confirmLabel ?? t('common.confirm') }}
           </button>
         </div>
       </div>

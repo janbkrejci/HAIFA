@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Modal picker of one backlog code with a search over the code and the title. The caller passes
 // only the codes that can be chosen (already chosen ones and the task itself are left out).
 // A click picks a code at once; arrows, Home and End move the selection, Enter picks it, Esc
@@ -53,16 +54,16 @@ function fromSearch(event: KeyboardEvent) {
 </script>
 
 <template>
-  <ConfirmDialog :open="open" :title="heading" confirm-label="Přidat" :confirm-disabled="!values.includes(selected)" @cancel="emit('close')" @confirm="choose">
-    <label class="code-search"><Search :size="18" aria-hidden="true" /><input ref="search" v-model="query" data-test="code-picker-search" type="search" aria-label="Hledat podle kódu nebo názvu" placeholder="Hledat podle kódu nebo názvu…" @keydown="fromSearch" @keydown.enter.prevent.stop="choose"></label>
-    <p class="code-count">{{ filtered.length }} z {{ options.length }}</p>
+  <ConfirmDialog :open="open" :title="heading" :confirm-label="t('common.add')" :confirm-disabled="!values.includes(selected)" @cancel="emit('close')" @confirm="choose">
+    <label class="code-search"><Search :size="18" aria-hidden="true" /><input ref="search" v-model="query" data-test="code-picker-search" type="search" :aria-label="t('picker.search')" :placeholder="t('picker.searchPlaceholder')" @keydown="fromSearch" @keydown.enter.prevent.stop="choose"></label>
+    <p class="code-count">{{ t('picker.count', { count: filtered.length, total: options.length }) }}</p>
     <div class="code-list" role="listbox" :aria-label="heading" data-test="select-list" @keydown="navigate">
       <button v-for="option in filtered" :key="option.value" type="button" role="option" :aria-selected="selected === option.value" :tabindex="selected === option.value ? 0 : -1" :data-value="option.value" @click="selected = option.value; choose()">
         <span class="code">{{ option.value }}</span>
         <span class="name">{{ titleOf(option) }}</span>
         <Check v-if="selected === option.value" :size="16" aria-hidden="true" />
       </button>
-      <p v-if="!filtered.length" class="no-codes">{{ options.length ? 'Nic neodpovídá hledání.' : 'Není co přidat.' }}</p>
+      <p v-if="!filtered.length" class="no-codes">{{ options.length ? t('picker.noMatches') : t('picker.nothingToAdd') }}</p>
     </div>
   </ConfirmDialog>
 </template>

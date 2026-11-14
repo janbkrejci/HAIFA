@@ -16,8 +16,8 @@ const emit = defineEmits<{ changed: [] }>()
 const { phase, issues, step, elapsed, recheck, refresh } = useReadiness()
 /** "kontrola počítače: machine: logins (claude auth status) · 12 s" once the check takes a while. */
 const progress = computed(() => elapsed.value >= PROGRESS_SHOWN_AFTER && step.value ? `${step.value} · ${elapsed.value} s` : '')
-const loadingLabel = computed(() => progress.value ? t('dashboard.loadingWait', { step: progress.value }) : t('dashboard.loadingStatus'))
-const checkingLabel = computed(() => progress.value ? t('dashboard.checkingWait', { step: progress.value }) : t('dashboard.checking'))
+const loadingLabel = computed(() => progress.value ? `${t('readiness.loading')} – ${t('readiness.waiting', { progress: progress.value })}` : t('readiness.loading'))
+const checkingLabel = computed(() => progress.value ? `${t('readiness.checking')} – ${t('readiness.waiting', { progress: progress.value })}` : t('readiness.checking'))
 const removal = useRemoveRepo(() => { emit('changed'); refresh() })
 const { remove, removing, error: removeError } = removal
 defineExpose({ recheck })
@@ -28,15 +28,15 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
   <template v-if="chip">
     <Tooltip v-if="phase === 'loading'" :text="loadingLabel"><span class="status-icon-chip checking" role="status" tabindex="0" :aria-label="loadingLabel" data-test="readiness-loading"><Spinner /><span v-if="progress" class="status-count" data-test="readiness-elapsed">{{ elapsed }} s</span></span></Tooltip>
     <Tooltip v-else-if="phase === 'checking'" :text="checkingLabel"><span class="status-icon-chip checking" role="status" tabindex="0" :aria-label="checkingLabel" data-test="readiness-checking"><Spinner /><span v-if="progress" class="status-count" data-test="readiness-elapsed">{{ elapsed }} s</span></span></Tooltip>
-    <Tooltip v-else-if="phase === 'success'" :text="t('dashboard.healthyHint')"><button type="button" class="status-icon-chip success" :aria-label="t('dashboard.healthyHint')" data-test="readiness-success" @click="recheck"><Stethoscope :size="14" aria-hidden="true" /></button></Tooltip>
-    <Tooltip v-else-if="phase === 'warning'" :text="t('dashboard.issuesHint')"><a href="#/problems" class="status-icon-chip warning" :aria-label="t('dashboard.issuesHint')" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
+    <Tooltip v-else-if="phase === 'success'" :text="t('readiness.okHint')"><button type="button" class="status-icon-chip success" :aria-label="t('readiness.okHint')" data-test="readiness-success" @click="recheck"><Stethoscope :size="14" aria-hidden="true" /></button></Tooltip>
+    <Tooltip v-else-if="phase === 'warning'" :text="t('readiness.warningHint')"><a href="#/problems" class="status-icon-chip warning" :aria-label="t('readiness.warningHint')" data-test="readiness-warning"><TriangleAlert :size="14" aria-hidden="true" /></a></Tooltip>
   </template>
   <div v-else-if="phase" class="readiness" :class="phase" :role="phase === 'warning' ? 'alert' : 'status'" :data-test="`readiness-${phase}`">
-    <p v-if="phase === 'loading'"><Spinner /> {{ t('dashboard.loadingStatus') }}</p>
-    <p v-else-if="phase === 'checking'"><Spinner /> {{ t('dashboard.checking') }}</p>
-    <p v-else-if="phase === 'success'"><Check :size="18" aria-hidden="true" /> {{ t('dashboard.healthy') }}</p>
+    <p v-if="phase === 'loading'"><Spinner /> {{ t('readiness.loading') }}</p>
+    <p v-else-if="phase === 'checking'"><Spinner /> {{ t('readiness.checking') }}</p>
+    <p v-else-if="phase === 'success'"><Check :size="18" aria-hidden="true" /> {{ t('readiness.ok') }}</p>
     <template v-else>
-      <p><TriangleAlert :size="18" aria-hidden="true" /> {{ t('dashboard.issuesFound') }}</p>
+      <p><TriangleAlert :size="18" aria-hidden="true" /> {{ t('readiness.warning') }}</p>
       <ul>
         <li v-for="(issue, index) in issues" :key="index">
           <strong>{{ issue.title }}</strong>
@@ -53,8 +53,8 @@ function openHarnesses() { window.dispatchEvent(new Event('harness-settings-open
       </ul>
       <p v-if="removeError" role="alert">{{ removeError }}</p>
     </template>
-    <p v-if="(phase === 'loading' || phase === 'checking') && progress" class="progress" data-test="readiness-progress">{{ t('dashboard.waitFor') }} {{ progress }}</p>
-    <button v-if="phase !== 'checking' && phase !== 'loading'" type="button" class="action" data-test="readiness-retry" @click="recheck">{{ t('dashboard.checkAgain') }}</button>
+    <p v-if="(phase === 'loading' || phase === 'checking') && progress" class="progress" data-test="readiness-progress">{{ t('readiness.waiting', { progress }) }}</p>
+    <button v-if="phase !== 'checking' && phase !== 'loading'" type="button" class="action" data-test="readiness-retry" @click="recheck">{{ t('common.retry') }}</button>
   </div>
   <RemoveRepoDialog :removal="removal" />
 </template>

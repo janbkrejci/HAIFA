@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import './ui/statusIconChip.css'
 // Changes kept in the working tree while runs read base (D4), as red chips in the topbar (so they
 // never move the page while you click in it): the backlog chip opens a short panel with the
@@ -10,7 +11,7 @@ import { TriangleAlert } from 'lucide-vue-next'
 import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
 import type { CommitStatus } from '@/lib/commitStatus'
-import { plural, shortSha } from '@/lib/format'
+import { shortSha } from '@/lib/format'
 
 const props = withDefaults(
   defineProps<{
@@ -43,15 +44,15 @@ const dirty = computed(() => (props.status && !props.status.clean ? props.status
 const sha = computed(() => shortSha(dirty.value?.commit))
 const files = computed(() => {
   const n = dirty.value?.changes.length ?? 0
-  return `${n} ${plural(n, 'soubor', 'soubory', 'souborů')}`
+  return t('counts.files', { count: n }, n)
 })
 
 const changes = computed(() => {
   const n = dirty.value?.changes.length ?? 0
-  return `${n} ${plural(n, 'změna', 'změny', 'změn')}`
+  return t('counts.changes', { count: n }, n)
 })
 
-const label = computed(() => props.chipText ?? `Necommitnutý ${props.title.toLocaleLowerCase('cs')}`)
+const label = computed(() => props.chipText ?? t('commit.dirty', { title: props.title }))
 const paths = computed(() => dirty.value?.changes.map((c) => c.path).join(', ') ?? '')
 const description = computed(() => `${label.value} · ${files.value}: ${paths.value}`)
 function onChip() {
@@ -146,15 +147,15 @@ onBeforeUnmount(() => {
       :style="panelStyle"
       :data-test="`${kind}-panel`"
     >
-      <p :data-test="`${kind}-summary`">Commitne se {{ changes }}.</p>
+      <p :data-test="`${kind}-summary`">{{ t('commit.summary', { changes }) }}</p>
       <p v-if="pr" class="pr" :data-test="`${kind}-pr`">
-        Změny čekají v pull requestu <a :href="pr.url" target="_blank" rel="noopener">{{ pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.
+        {{ t('commit.prBefore') }} <a :href="pr.url" target="_blank" rel="noopener">{{ pr.branch }}</a>{{ t('commit.prAfter') }}
       </p>
       <p v-for="warning in commitWarnings" :key="warning" class="pr" :data-test="`${kind}-commit-warning`">
         {{ warning }}
       </p>
       <p v-if="commitError" class="commit-error" :data-test="`${kind}-commit-error`">
-        Commit se nepodařil: {{ commitError }}
+        {{ t('commit.failed', { error: commitError }) }}
       </p>
       <button
         type="button"
@@ -177,9 +178,8 @@ onBeforeUnmount(() => {
   >
     <div class="line">
       <p>
-        <slot name="title">{{ title }}</slot> má necommitnuté změny. Běhy používají
-        <code>{{ dirty.base }}</code><template v-if="sha"> (<code>{{ sha }}</code>)</template>, dokud změny
-        necommitneš.
+        <slot name="title">{{ title }}</slot> {{ t('commit.beforeBase') }}
+        <code>{{ dirty.base }}</code><template v-if="sha"> (<code>{{ sha }}</code>)</template> {{ t('commit.afterBase') }}
       </p>
       <button
         type="button"
@@ -199,17 +199,17 @@ onBeforeUnmount(() => {
       </li>
     </ul>
     <p v-if="pr" class="pr" :data-test="`${kind}-pr`">
-      Změny čekají v pull requestu <a :href="pr.url" target="_blank" rel="noopener">{{ pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.
+      {{ t('commit.prBefore') }} <a :href="pr.url" target="_blank" rel="noopener">{{ pr.branch }}</a>{{ t('commit.prAfter') }}
     </p>
     <p v-for="warning in commitWarnings" :key="warning" class="pr" :data-test="`${kind}-commit-warning`">
       {{ warning }}
     </p>
     <p v-if="commitError" class="commit-error" :data-test="`${kind}-commit-error`">
-      Commit se nepodařil: {{ commitError }}
+      {{ t('commit.failed', { error: commitError }) }}
     </p>
   </div>
   <p v-else-if="statusError && !chip" class="status-error" :data-test="`${kind}-banner-error`">
-    <slot name="title">{{ title }}</slot>: stav nelze zjistit ({{ statusError }})
+    <slot name="title">{{ title }}</slot>: {{ t('commit.statusError', { error: statusError }) }}
   </p>
 </template>
 

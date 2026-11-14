@@ -1,3 +1,4 @@
+import { setLocale } from './i18n'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -23,6 +24,7 @@ function host(options: CodeStateOptions = {}) {
 }
 
 afterEach(() => {
+  setLocale('en')
   vi.unstubAllGlobals()
 })
 
@@ -64,6 +66,22 @@ describe('useCodeState', () => {
     await state().restart()
     expect(reload).not.toHaveBeenCalled()
     expect(state().restarting.value).toBe(false)
-    expect(state().error.value).toContain('just dash')
+    expect(state().error.value).toContain('did not restart within a minute')
+    setLocale('cs')
+    expect(state().error.value).toContain('Dashboard se do minuty nerestartoval')
   })
+})
+
+
+it('translates an existing restart failure while preserving the API detail', async () => {
+  setLocale('en')
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => url === '/api/restart'
+    ? envelope(null, false, 500) : envelope({ stale: true, started: 'old', current: 'new' })))
+  const { wrapper, state } = host()
+  await flushPromises()
+  await state().restart()
+  expect(state().error.value).toBe('Could not start restart: boom')
+  setLocale('cs')
+  expect(state().error.value).toBe('Restart se nepodařilo spustit: boom')
+  wrapper.unmount()
 })

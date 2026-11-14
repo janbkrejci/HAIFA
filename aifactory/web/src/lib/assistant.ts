@@ -1,3 +1,4 @@
+import { t } from './i18n'
 // The AI guide panel: its API (/api/assistant/…), the conversation state shared by every
 // screen, the screen context sent with a message, the suggested questions of an empty thread
 // and the dashboard links in an answer.
@@ -435,7 +436,7 @@ export function describeScreen(page: Page, repo: string | null, screen: Screen, 
 /** Availability follows the accepted route, including a restored open panel. */
 export const assistantUnavailableReason = computed(() =>
   describeScreen(usePage().value, useRepoId().value, useRoute().value, useRouteParams().value).kind === 'intent'
-    ? 'Průvodce není při návrhu záměru dostupný.'
+    ? t('shell.assistantUnavailable')
     : null,
 )
 

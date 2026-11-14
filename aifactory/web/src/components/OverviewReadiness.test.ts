@@ -285,7 +285,7 @@ describe('overview readiness', () => {
     options.pending = new Promise(resolve => { finish = resolve })
     await wrapper.get(chip ? '[data-test="readiness-success"]' : '[data-test="readiness-retry"]').trigger('click')
     await vi.advanceTimersByTimeAsync(2000)
-    const label = 'Probíhá kontrola – čeká na: kontrola počítače: machine: logins (claude auth status) · 2 s'
+    const label = 'Probíhá kontrola – Čeká na: kontrola počítače: machine: logins (claude auth status) · 2 s'
     if (chip) {
       expect(wrapper.get('[data-test="readiness-checking"]').attributes('aria-label')).toBe(label)
       expect(wrapper.get('[data-test="readiness-elapsed"]').text()).toBe('2 s')
@@ -421,9 +421,9 @@ it.each(['server', 'request_timeout', 'auxiliary_timeout', 'auxiliary_error'] as
     const calls = fetchMock.mock.calls.length
     const auxiliary = kind.startsWith('auxiliary')
     for (const [language, label, otherLabel] of [
-      ['cs', auxiliary ? 'stav knihovny' : 'kontrola počítače', auxiliary ? 'library status' : 'computer check'],
-      ['en', auxiliary ? 'library status' : 'computer check', auxiliary ? 'stav knihovny' : 'kontrola počítače'],
-      ['cs', auxiliary ? 'stav knihovny' : 'kontrola počítače', auxiliary ? 'library status' : 'computer check'],
+      ['cs', auxiliary ? 'stav knihovny' : 'kontrola počítače', auxiliary ? 'library status' : 'machine check'],
+      ['en', auxiliary ? 'library status' : 'machine check', auxiliary ? 'stav knihovny' : 'kontrola počítače'],
+      ['cs', auxiliary ? 'stav knihovny' : 'kontrola počítače', auxiliary ? 'library status' : 'machine check'],
     ] as const) {
       setLocale(language)
       await flushPromises()
@@ -435,3 +435,58 @@ it.each(['server', 'request_timeout', 'auxiliary_timeout', 'auxiliary_error'] as
     }
   },
 )
+
+it('translates the active step in the chip and tooltip without restarting the check', async () => {
+  setLocale('en')
+  const options: StubOptions = { progress: { job: { step: 'machine: logins', detail: 'claude auth status' }, checked_at: null } }
+  const fetchMock = stub(options)
+  const wrapper = mount(OverviewReadiness, { props: { chip: true } })
+  await flushPromises()
+  let finish!: (response: Response) => void
+  options.pending = new Promise(resolve => { finish = resolve })
+  await wrapper.get('[data-test="readiness-success"]').trigger('click')
+  await vi.advanceTimersByTimeAsync(2000)
+  const chip = wrapper.get('[data-test="readiness-checking"]')
+  const element = chip.element
+  await chip.trigger('focusin')
+  const requests = fetchMock.mock.calls.length
+  for (const [language, label] of [
+    ['en', 'Check in progress – Waiting for: machine check: machine: logins (claude auth status) · 2 s'],
+    ['cs', 'Probíhá kontrola – Čeká na: kontrola počítače: machine: logins (claude auth status) · 2 s'],
+    ['en', 'Check in progress – Waiting for: machine check: machine: logins (claude auth status) · 2 s'],
+  ] as const) {
+    setLocale(language)
+    await flushPromises()
+    expect(wrapper.get('[data-test="readiness-checking"]').element).toBe(element)
+    expect(chip.attributes('aria-label')).toBe(label)
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(label)
+    expect(wrapper.get('[data-test="readiness-elapsed"]').text()).toBe('2 s')
+    expect(fetchMock.mock.calls).toHaveLength(requests)
+  }
+  finish(envelope(machine))
+  await flushPromises()
+  expect(wrapper.find('[data-test="readiness-success"]').exists()).toBe(true)
+})
+
+it.each([
+  ['/api/library?items=0', 'library status', 'stav knihovny'],
+  ['/api/repos', 'repository list', 'seznam repozitářů'],
+  ['/api/repos/a/factory/roster?summary=1', 'roster', 'roster'],
+  ['/api/repos/a/backlog/summary', 'backlog', 'backlog'],
+])('translates the pending auxiliary step at %s', async (endpoint, en, cs) => {
+  setLocale('en')
+  const original = stub()
+  const pending = new Promise<Response>(() => {})
+  const fetchMock = vi.fn((url: string, init?: RequestInit) => url === endpoint ? pending : original(url, init))
+  vi.stubGlobal('fetch', fetchMock)
+  const wrapper = mount(OverviewReadiness, { props: { chip: true } })
+  await flushPromises()
+  await vi.advanceTimersByTimeAsync(2000)
+  const chip = wrapper.get('[data-test="readiness-loading"]')
+  expect(chip.attributes('aria-label')).toBe(`Loading status – Waiting for: ${en} · 2 s`)
+  const requests = fetchMock.mock.calls.length
+  setLocale('cs')
+  await flushPromises()
+  expect(chip.attributes('aria-label')).toBe(`Načítání stavu – Čeká na: ${cs} · 2 s`)
+  expect(fetchMock.mock.calls).toHaveLength(requests)
+})

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import './ui/statusIconChip.css'
 // Free session limits of Claude and Codex in the topbar: per window a thin bar that fills
 // from the left with the used share (neutral colour, not a success one) and the free percent.
@@ -16,16 +17,16 @@ const emit = defineEmits<{ open: [] }>()
 const orderedProviders = computed(() =>
   [...props.providers].sort((a, b) => Number(a.harness === 'codex') - Number(b.harness === 'codex')),
 )
-const statusDescription = computed(() => props.loading ? 'Harnessy – načítání nastavení harnessů' : empty.value ? 'Nakonfigurujte harnessy – kliknutím otevřeš nastavení harnessů' : '')
+const statusDescription = computed(() => props.loading ? t('limits.loading') : empty.value ? t('limits.empty') : '')
 </script>
 
 <template>
   <Tooltip :text="statusDescription">
-  <button type="button" class="limits-trigger" :class="{ 'harness-loading': loading, 'harness-empty': empty, 'status-icon-chip': loading || empty }" :aria-busy="loading || undefined" :aria-label="statusDescription || 'Usage limity a nastavení harnessů'" data-test="harness-settings-open" @click="emit('open')">
+  <button type="button" class="limits-trigger" :class="{ 'harness-loading': loading, 'harness-empty': empty, 'status-icon-chip': loading || empty }" :aria-busy="loading || undefined" :aria-label="statusDescription || t('limits.settings')" data-test="harness-settings-open" @click="emit('open')">
   <span v-if="loading" class="harness-status"><Spinner /></span>
   <span v-else-if="empty" class="harness-status"><TriangleAlert :size="14" aria-hidden="true" /></span>
-  <span v-else-if="!providers.length">Harnessy</span>
-  <span v-else class="compact-label">Harnessy</span>
+  <span v-else-if="!providers.length">{{ t('limits.harnesses') }}</span>
+  <span v-else class="compact-label">{{ t('limits.harnesses') }}</span>
   <div v-if="!loading && !empty && providers.length" class="limits" data-test="limits">
     <div
       v-for="provider in orderedProviders"
@@ -36,7 +37,7 @@ const statusDescription = computed(() => props.loading ? 'Harnessy – načítá
       <span class="limit-name">{{ provider.label }}</span>
       <div class="limit-windows">
         <Tooltip v-if="!provider.windows.length" :text="unavailableTip(provider)">
-          <span tabindex="0" :aria-label="unavailableTip(provider)" :data-test="`limits-${provider.harness}-unavailable`">nedostupné</span>
+          <span tabindex="0" :aria-label="unavailableTip(provider)" :data-test="`limits-${provider.harness}-unavailable`">{{ t('common.unavailable') }}</span>
         </Tooltip>
         <Tooltip v-for="window in provider.windows" :key="window.id" :text="windowTip(provider, window)">
           <span class="limit-window" tabindex="0" :data-test="`limit-${provider.harness}-${window.id}`">

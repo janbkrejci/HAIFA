@@ -1,6 +1,7 @@
 // Texts and helpers shared by the repo pages (overview, list, add, Factory tab) of the
 // multi-repo dashboard.
 import { ref } from 'vue'
+import { t } from './i18n'
 import {
   ApiError,
   removeRepo,
@@ -16,11 +17,11 @@ export const ADD_REPO_HINT =
   'Repozitář přidáš tlačítkem Přidat repozitář. Z terminálu ho zaregistruje a otevře příkaz factory obs --repo <cesta>.'
 
 export const REPO_STATUS_TEXT: Record<RepoStatus, string> = {
-  ok: 'ok',
-  uncommitted: 'neuložená konfigurace',
-  not_installed: 'nenainstalováno',
-  missing: 'chybí',
-  not_git: 'není git',
+  get ok() { return t('repo.ok') },
+  get uncommitted() { return t('repo.uncommitted') },
+  get not_installed() { return t('repo.not_installed') },
+  get missing() { return t('repo.missing') },
+  get not_git() { return t('repo.not_git') },
 }
 
 export function repoStatusText(status: string): string {
@@ -28,10 +29,10 @@ export function repoStatusText(status: string): string {
 }
 
 export const FACTORY_STATE_TEXT: Record<FactoryState, string> = {
-  none: 'Bez factory',
-  uncommitted: 'konfigurace jen v pracovním stromu (necommitnutá)',
-  unsupported: 'Nepodporováno: HAIFA tuto konfiguraci nepřevezme',
-  installed: 'Nainstalováno',
+  get none() { return t('factory.none') },
+  get uncommitted() { return t('factory.uncommitted') },
+  get unsupported() { return t('factory.unsupported') },
+  get installed() { return t('factory.installed') },
 }
 
 export function factoryStateText(state: string | null | undefined): string {

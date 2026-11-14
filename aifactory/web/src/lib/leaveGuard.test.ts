@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { setLocale } from './i18n'
+import { afterEach, describe, expect, it } from 'vitest'
 import { flushPromises } from '@vue/test-utils'
 import { TEST_HASH } from '@/test/setup'
 import { usePage } from './router'
@@ -57,4 +58,21 @@ describe('leave guard', () => {
     window.dispatchEvent(event)
     expect(event.defaultPrevented).toBe(true)
   })
+})
+
+
+afterEach(() => setLocale('en'))
+it('translates an open leave question without allowing navigation', async () => {
+  setLocale('en')
+  registerUnsaved(() => true)
+  go('#/guide')
+  expect(leaveDialog.title).toBe('Discard unsaved changes?')
+  setLocale('cs')
+  expect(leaveDialog.title).toBe('Zahodit neuložené změny?')
+  expect(leaveDialog.confirmLabel).toBe('Zahodit změny')
+  expect(leaveDialog.cancelLabel).toBe('Zůstat')
+  expect(window.location.hash).toBe(TEST_HASH)
+  cancelLeave()
+  await flushPromises()
+  expect(window.location.hash).toBe(TEST_HASH)
 })

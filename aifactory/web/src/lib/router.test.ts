@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it } from 'vitest'
 import {
   GRAPH,
@@ -197,4 +203,15 @@ describe('hrefs', () => {
     expect(repoHref('x', 'review', 'T1')).toBe('#/r/x/review/T1')
     expect(REPOS_ADD_HREF).toBe('#/repos/add')
   })
+})
+
+
+it('reads screen labels reactively without changing route identifiers', () => {
+  setLocale('en')
+  expect(SCREENS.map(s => s.label)).toEqual(['Backlog', 'Runs', 'Review', 'Factory'])
+  expect(SCREEN_LABELS.runs).toBe('Runs')
+  setLocale('cs')
+  expect(SCREENS.map(s => s.label)).toEqual(['Backlog', 'Běhy', 'Review', 'Factory'])
+  expect(SCREEN_LABELS.runs).toBe('Běhy')
+  expect(SCREENS.map(s => s.id)).toEqual(['backlog', 'runs', 'review', 'factory'])
 })

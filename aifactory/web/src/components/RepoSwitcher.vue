@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The repo switcher of the topbar: the current repo (or page) and the dashboard version; its menu
 // leads to the overview, every registered repo (same screen, no parameters) and the repo pages.
 // The page Knihovna (#/setup) is not in the menu; it opens from the library chip of the topbar.
@@ -39,13 +40,13 @@ async function loadCounts() {
   }
 }
 
-const COUNTS: readonly { key: keyof RepoCounts; label: string }[] = [
-  { key: 'running', label: 'Běží' },
-  { key: 'review', label: 'Čeká na review' },
-  { key: 'approved', label: 'Schváleno, čeká na CI' },
-  { key: 'automerge', label: 'Čeká na automerge PR' },
-  { key: 'failed', label: 'Selhalo' },
-]
+const COUNTS = computed(() => [
+  { key: 'running', label: t('counts.running') },
+  { key: 'review', label: t('counts.review') },
+  { key: 'approved', label: t('counts.approved') },
+  { key: 'automerge', label: t('counts.automerge') },
+  { key: 'failed', label: t('counts.failed') },
+] as const)
 
 /** The status label of a repo in the menu; a healthy repo has none. */
 function statusLabel(repo: RepoItem): string | null {
@@ -57,9 +58,10 @@ const current = computed(() => {
     const id = repoId.value ?? ''
     return props.repos?.find((r) => r.id === id)?.name ?? id
   }
-  if (page.value === 'setup') return 'Knihovna'
-  if (page.value === 'problems') return 'Problémy a řešení'
-  return page.value === 'repos-add' ? 'Přidat repozitář' : 'Přehled'
+  if (page.value === 'guide') return t('nav.guide')
+  if (page.value === 'setup') return t('nav.library')
+  if (page.value === 'problems') return t('nav.problems')
+  return page.value === 'repos-add' ? t('nav.addRepo') : t('nav.overview')
 })
 
 /** The folder that holds the repo (the path without its last segment). */
@@ -118,7 +120,7 @@ onBeforeUnmount(() => listen(false))
     >
       <span v-if="!healthError" class="live-dot" />
       <span class="current" data-test="switcher-current">{{ current }}</span>
-      <span v-if="healthError" class="api-down">API nedostupné</span>
+      <span v-if="healthError" class="api-down">{{ t('shell.apiDown') }}</span>
       <span v-else-if="health" class="version">v{{ health.version }}</span>
       <ChevronDown class="chevron" :size="14" aria-hidden="true" />
     </button>
@@ -130,7 +132,7 @@ onBeforeUnmount(() => listen(false))
         :class="{ active: page === 'overview' }"
         data-test="switch-overview"
         @click="close"
-      >Přehled</a>
+      >{{ t('nav.overview') }}</a>
       <div v-if="repos && repos.length" class="separator" />
       <a
         v-for="repo in repos ?? []"

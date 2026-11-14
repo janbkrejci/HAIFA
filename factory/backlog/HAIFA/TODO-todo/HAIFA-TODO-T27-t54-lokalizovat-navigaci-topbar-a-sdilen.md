@@ -1,7 +1,7 @@
 ---
 id: HAIFA-TODO-T27
 title: "T54: Lokalizovat navigaci, topbar a sdílené komponenty dashboardu"
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-S01-T54]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/tests/]
@@ -22,3 +22,4 @@ Task `HAIFA-S01-T54` na tomto tasku závisí a do jeho dokončení zůstává bl
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/236 · náklady $0.00
