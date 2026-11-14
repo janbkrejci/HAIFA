@@ -37,7 +37,7 @@ it('opens the reviewed config commit on its route and refreshes status only afte
   expect(w.find('[data-test="config-banner"]').exists()).toBe(false)
   expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/config/status'))).toBe(true)
   openConfigCommit('haifa')
-  window.dispatchEvent(new HashChangeEvent('hashchange')); await flushPromises()
+  window.dispatchEvent(new HashChangeEvent('hashchange')); await vi.dynamicImportSettled(); await flushPromises()
   expect(w.get('[data-test="factory-plan"]').text()).toContain('.factory/config.yaml')
   expect(applied).toBe(false)
   await w.get('[data-test="factory-perform"]').trigger('click'); await answerDialog(true)

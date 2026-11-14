@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { effectScope } from 'vue'
 import {
   activeRuns,
   BY_PROJECT_KEY,
@@ -24,6 +25,7 @@ import {
   taskSummary,
   totals,
   urgency,
+  useOverview,
 } from './overview'
 import { fmtAge, fmtElapsed } from './format'
 import { fetchOverview, type OverviewFactory } from './api'
@@ -37,6 +39,29 @@ const FAILED = repo('failed', { failed: [failed()] })
 const ENDED = repo('ended', { running: [running({ process: 'ended', status_label: 'proces skončil' })] })
 const DIRTY = repo('dirty', { state: 'uncommitted', config: config({ uncommitted: [{ path: '.factory/x' }], clean: false }) })
 const MISSING = repo('missing', { state: 'missing', config: null, has_trace: false, last_activity: null })
+
+it('cancels superseded overview reads and the final read on scope disposal', async () => {
+  const signals: AbortSignal[] = []
+  vi.stubGlobal('fetch', vi.fn((_url: string, init: RequestInit) => {
+    const signal = init.signal as AbortSignal
+    signals.push(signal)
+    return new Promise((_resolve, reject) => signal.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError'))))
+  }))
+  const scope = effectScope()
+  try {
+    const poll = scope.run(() => useOverview())!
+    const fresh = poll.refresh()
+    expect(signals[0].aborted).toBe(true)
+    expect(signals[1].aborted).toBe(false)
+    scope.stop()
+    expect(signals[1].aborted).toBe(true)
+    await fresh
+    expect(poll.error.value).toBeNull()
+  } finally {
+    scope.stop()
+    vi.unstubAllGlobals()
+  }
+})
 
 describe('fetchOverview projects', () => {
   afterEach(() => vi.unstubAllGlobals())
@@ -211,6 +236,8 @@ describe('overview factory controls', () => {
     expect([canPause(r), canResume(r), canStop(r)]).toEqual([true, true, true])
     const ended = repo('a', { running: [running({ process: 'ended' })] })
     expect([canPause(ended), canResume(ended), canStop(ended)]).toEqual([false, false, false])
+    const remote = repo('a', { running: [running({ owned_here: false, process: 'unknown' })] })
+    expect([canPause(remote), canStop(remote)]).toEqual([true, false])
   })
 
   it('says how many runs are still finishing, in Czech plural', () => {

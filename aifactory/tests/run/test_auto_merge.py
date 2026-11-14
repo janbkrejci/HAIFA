@@ -558,13 +558,14 @@ def test_operator_approve_records_operator(repo: Path, script: Script) -> None:
 # ── provider github with a fake gh ───────────────────────────────────────────
 
 
-def _view(state: str = "OPEN", merge: str | None = None) -> dict[str, Any]:
+def _view(origin: Path, state: str = "OPEN", merge: str | None = None) -> dict[str, Any]:
     return reply(
         {
             "state": state,
             "mergeable": "MERGEABLE" if state == "OPEN" else "UNKNOWN",
             "mergeCommit": {"oid": merge} if merge else None,
-        }
+        },
+        head=(origin, f"factory/{T01}-1"),
     )
 
 
@@ -603,7 +604,7 @@ def test_github_red_checks_block(
     repo: Path, script: Script, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     result, provider, log = _github_run(repo, script, tmp_path, monkeypatch)
-    log.respond("pr view", _view())
+    log.respond("pr view", _view(tmp_path / "origin.git"))
     log.respond(
         "pr checks", reply([{"name": "ci", "bucket": "fail"}, {"name": "lint", "bucket": "pass"}])
     )
@@ -634,9 +635,13 @@ def test_github_merges_without_red_checks(
     checks: dict[str, Any],
 ) -> None:
     result, provider, log = _github_run(repo, script, tmp_path, monkeypatch)
-    # auto-merge status, approve's status, the head of the checks, merge's status, the state
+    # auto-merge status, approve's status, head before/after checks, merge's status, the state
     # after `pr merge`
-    log.respond("pr view", [_view(), _view(), _view(), _view(), _view("MERGED", MERGE_SHA)])
+    log.respond(
+        "pr view",
+        [_view(tmp_path / "origin.git")] * 5
+        + [_view(tmp_path / "origin.git", "MERGED", MERGE_SHA)],
+    )
     log.respond("pr checks", checks)
     log.respond("pr merge", reply(""))
 
@@ -670,7 +675,11 @@ def test_github_waits_for_checks_to_finish(
     checks: list[dict[str, Any]],
 ) -> None:
     result, provider, log = _github_run(repo, script, tmp_path, monkeypatch)
-    log.respond("pr view", [_view(), _view(), _view(), _view(), _view("MERGED", MERGE_SHA)])
+    log.respond(
+        "pr view",
+        [_view(tmp_path / "origin.git")] * 5
+        + [_view(tmp_path / "origin.git", "MERGED", MERGE_SHA)],
+    )
     log.respond("pr checks", checks)
     log.respond("pr merge", reply(""))
 
@@ -689,7 +698,7 @@ def test_github_checks_running_past_the_limit_keep_the_pr_open(
     clock: _Clock,
 ) -> None:
     result, provider, log = _github_run(repo, script, tmp_path, monkeypatch)
-    log.respond("pr view", _view())
+    log.respond("pr view", _view(tmp_path / "origin.git"))
     log.respond("pr checks", PENDING)
 
     merge = try_auto_merge(repo, result, base_task(repo, T01), provider=provider)
@@ -764,7 +773,9 @@ def test_github_auto_merge_waits_for_slow_mergeability(
     settled = (
         [resolved]
         if mergeable == "CONFLICTING"
-        else [resolved, _view(), _view(), _view(), _view("MERGED", MERGE_SHA)]
+        else [resolved]
+        + [_view(tmp_path / "origin.git")] * 4
+        + [_view(tmp_path / "origin.git", "MERGED", MERGE_SHA)]
     )
     log.respond(
         "pr view",
@@ -806,7 +817,7 @@ def test_github_auto_merge_stops_if_unknown_pr_becomes_inactive(
     monkeypatch.setattr(automerge, "sleep", sleeps.append)
     provider = GitHubProvider(repo, load_run_config(repo).config.settings, sleep=sleeps.append)
     unknown = reply({"state": "OPEN", "mergeable": "UNKNOWN", "headRefOid": "x"})
-    log.respond("pr view", [unknown] * 31 + [_view(state, MERGE_SHA)])
+    log.respond("pr view", [unknown] * 31 + [_view(tmp_path / "origin.git", state, MERGE_SHA)])
     log.respond("pr checks", reply([]))
 
     merge = try_auto_merge(repo, result, base_task(repo, T01), provider=provider)

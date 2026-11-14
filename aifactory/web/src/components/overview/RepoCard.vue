@@ -77,6 +77,7 @@ async function onSync() {
     </div>
 
     <template v-else>
+    <p v-if="repo.stale" role="status" class="faint" data-test="repo-stale">Výsledek předchozího načítání; další aktualizace ověří stav.</p>
     <RepoControls @changed="emit('changed')" :repo="repo" :feedback="feedback" :show-summary="!byProject || (repo.projects?.length ?? 0) <= 1" />
 
     <p v-for="p in stateProblems" :key="p.kind" class="state-problem" :data-test="`state-${p.kind}`">{{ p.text }}</p>

@@ -17,6 +17,7 @@ import {
   type WriteError,
 } from '@/lib/backlog'
 import { fetchFactoryRoster, type FactoryRosterAgent } from '@/lib/api'
+import { askDiscard, useUnsavedGuard } from '@/lib/leaveGuard'
 import { errorText, shortSha } from '@/lib/format'
 import { useLevels } from '@/lib/names'
 import { currentRepoId, here, OVERVIEW_HREF, runHref } from '@/lib/router'
@@ -53,6 +54,13 @@ const note = ref('')
 const harness = ref('')
 const model = ref('')
 const thinking = ref('')
+const dirty = computed(() => !props.result && !!(note.value.trim() || harness.value || model.value.trim() || thinking.value))
+useUnsavedGuard(() => dirty.value)
+async function cancel() {
+  if (dirty.value && !(await askDiscard())) return
+  note.value = harness.value = model.value = thinking.value = ''
+  emit('cancel')
+}
 const level = useLevels()
 const taskNoun = computed(() => levelNoun(level.task.value))
 const taskLabel = computed(() => levelLabel(level.task.value))
@@ -277,7 +285,7 @@ function start(force: boolean) {
         <Spinner v-if="action === 'start'" />
         Spustit
       </button>
-      <button type="button" data-test="run-cancel" :disabled="busy" @click="emit('cancel')">
+      <button type="button" data-test="run-cancel" :disabled="busy" @click="cancel">
         Zavřít
       </button>
     </div>

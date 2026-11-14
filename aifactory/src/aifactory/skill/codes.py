@@ -22,6 +22,18 @@ class ErrorCode:
 
 
 _CODES: tuple[tuple[str, str, str], ...] = (
+    (
+        "edit_conflict",
+        "2",
+        "task changed since the editor loaded it; reload and reconcile the preserved draft",
+    ),
+    ("invalid_pagination", "2", "run page limit must be 1..500 and offset nonnegative"),
+    (
+        "process_identity_unconfirmed",
+        "2",
+        "process creation time is unavailable; stop the run in its original terminal",
+    ),
+    ("checks_head_unconfirmed", "2", "CI head could not be confirmed; the pull request stays open"),
     ("deprecated_option", "2", "legacy operating write; use factory config local set or import"),
     ("repo_settings_invalid", "2", "local repository or inherited harness settings are invalid"),
     ("repo_settings_version", "2", "local repository settings version is unsupported"),

@@ -14,6 +14,7 @@ from typing import Any
 import pytest
 from run_repo import T01, T02, Script, fake_env, git, make_run_repo, ok, write
 
+from aifactory import oscompat
 from aifactory.backlog import Task, load_backlog
 from aifactory.providers import git as pgit
 from aifactory.review import clean_worktrees, flow
@@ -50,8 +51,12 @@ def forget_pr(repo: Path, *, running: bool = False, pid: int | None = None) -> N
     try:
         store.conn.execute("DELETE FROM task_prs")
         store.conn.execute(
-            "UPDATE task_runs SET state = ?, pid = ?",
-            ("running" if running else "failed", pid or os.getpid()),
+            "UPDATE task_runs SET state = ?, pid = ?, pid_created_at = ?",
+            (
+                "running" if running else "failed",
+                pid or os.getpid(),
+                oscompat.process_created_at(pid or os.getpid()),
+            ),
         )
         store.conn.commit()
     finally:

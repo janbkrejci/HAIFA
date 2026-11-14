@@ -69,9 +69,9 @@ def test_task_list_project_filter(tmp_path: Path, capsys: Capsys) -> None:
     assert error["message"] == "unknown project 'P9'"
 
 
-def test_auto_continue_unknown_names_levels(tmp_path: Path, capsys: Capsys) -> None:
+def test_container_edit_unknown_names_levels(tmp_path: Path, capsys: Capsys) -> None:
     root = str(project_repo(tmp_path))
-    assert main(["backlog", "auto-continue", "NOPE", "--on", "--json", "--repo", root]) == 2
+    assert main(["backlog", "edit", "NOPE", "--title", "Title", "--json", "--repo", root]) == 2
     error = _json(capsys)["error"]
     assert error["code"] == "unknown_container"
     assert error["message"] == "no project or step 'NOPE'"
@@ -107,5 +107,5 @@ def test_old_module_levels_still_work(tmp_path: Path, capsys: Capsys) -> None:
     assert main(["backlog", "list", "--json", "--project", "M9", *repo]) == 2
     error = _json(capsys)["error"]
     assert (error["code"], error["message"]) == ("unknown_project", "unknown module 'M9'")
-    assert main(["backlog", "auto-continue", "X", "--on", "--json", *repo]) == 2
+    assert main(["backlog", "edit", "X", "--title", "Title", "--json", *repo]) == 2
     assert _json(capsys)["error"]["message"] == "no module or step 'X'"

@@ -157,7 +157,7 @@ describe('AssistantPanel', () => {
   it('loads choices before sending', async () => {
     const { fetchMock } = stubApi()
     const wrapper = await openPanel()
-    expect(fetchMock).toHaveBeenCalledWith('/api/assistant/harnesses')
+    expect(fetchMock).toHaveBeenCalledWith('/api/assistant/harnesses', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false)
     expect(wrapper.get('[data-test="assistant-harness-select"]').attributes('disabled')).toBeUndefined()
   })

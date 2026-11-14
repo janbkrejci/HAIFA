@@ -8,6 +8,7 @@ import pytest
 from backlog_repo import index_md, rewrite, task_md, write
 
 from aifactory.backlog import Task, Unmet, check_backlog, link_task, load_backlog, unmet
+from aifactory.providers.git import git
 from aifactory.run.queue import select_ready
 from aifactory.run.store import QueuePrefs
 from aifactory.web.backlog import container_graph
@@ -96,6 +97,8 @@ def test_link_task_adds_cross_project_dependency(cross_project_repo: Path) -> No
 
 
 def test_container_graph_shows_other_project_as_external(cross_project_repo: Path) -> None:
+    # The dashboard reads repository-local policy using the Git checkout identity.
+    git(cross_project_repo, "init", "-q")
     graph, warnings = container_graph(cross_project_repo, "B")
     assert warnings == []
     assert graph["container"]["id"] == "B"

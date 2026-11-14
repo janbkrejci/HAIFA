@@ -39,6 +39,7 @@ const props = defineProps<{
   /** The submit is running (spinner in Založit/Uložit). */
   pending?: boolean
   taskBody?: string
+  revision?: string
   initialTitle?: string
   initialBody?: string
   /** The step a new task starts in (`#/r/<id>/backlog/new/<step id>`). */
@@ -55,6 +56,8 @@ const emit = defineEmits<{
 }>()
 
 const task = props.task ?? null
+const initialRevision = props.revision
+const initialBody = props.taskBody ?? ''
 const initialStatus = task?.status ?? 'todo'
 const initialWorkflow = task?.own_workflow ?? ''
 const initialWrites = task?.own_writes ?? []
@@ -230,7 +233,7 @@ const editInput = computed<EditTaskInput>(() => {
   const input: EditTaskInput = {}
   if (!task) return input
   if (parameters.value) input.parameters = parameters.value
-  if (body.value !== (props.taskBody ?? '')) input.body = body.value
+  if (body.value !== initialBody) input.body = body.value
   if (!sameList(depends.value, task.depends_on ?? [])) input.depends_on = [...depends.value]
   if (!sameList(related.value, task.related ?? [])) input.related = [...related.value]
   if (title.value.trim() !== task.title) input.title = title.value.trim()
@@ -278,7 +281,7 @@ watch(
 function onSubmit() {
   if (!canSubmit.value) return
   settled.value = true
-  emit('submit', props.mode === 'add' ? addInput() : editInput.value)
+  emit('submit', props.mode === 'add' ? addInput() : { ...editInput.value, ...(initialRevision ? { expected_revision: initialRevision } : {}) })
 }
 
 /** Zrušit drops the changes only after the user agrees. */

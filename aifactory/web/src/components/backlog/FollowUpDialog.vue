@@ -7,6 +7,7 @@
 import { computed, ref } from 'vue'
 import { GitBranchPlus, X } from 'lucide-vue-next'
 import { commitBacklog, flattenIssues, followUpTask, type FollowUpResult, type WriteError } from '@/lib/backlog'
+import { askDiscard, useUnsavedGuard } from '@/lib/leaveGuard'
 import Spinner from '@/components/ui/Spinner.vue'
 import IssueList from './IssueList.vue'
 
@@ -17,6 +18,20 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ created: [result: FollowUpResult]; cancel: [] }>()
 
+let requestId = Array.from(crypto.getRandomValues(new Uint8Array(16)), (value) => value.toString(16).padStart(2, '0')).join('')
+const requestKey = `haifa.follow-up.${window.location.hash}.${props.taskId}`
+function requestIdentity(payload: object): string {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(requestKey) ?? 'null')
+    const content = JSON.stringify(payload)
+    if (saved?.content === content && typeof saved.id === 'string') requestId = saved.id
+    sessionStorage.setItem(requestKey, JSON.stringify({ id: requestId, content }))
+  } catch {
+    // Storage unavailable: retries within this dialog still share their identity.
+  }
+  return requestId
+}
+const settled = ref(false)
 const body = ref('')
 const title = ref('')
 const runNow = ref(true)
@@ -24,6 +39,19 @@ const saving = ref(false)
 const error = ref<WriteError | null>(null)
 /** The task was written but its backlog commit failed: it is opened, never created twice. */
 const uncommitted = ref<FollowUpResult | null>(null)
+
+const dirty = computed(() => !settled.value && !uncommitted.value && !!(body.value || title.value))
+useUnsavedGuard(() => dirty.value)
+async function cancel() {
+  if (dirty.value && !(await askDiscard())) return
+  settled.value = true
+  emit('cancel')
+}
+function created(result: FollowUpResult) {
+  settled.value = true
+  try { sessionStorage.removeItem(requestKey) } catch { /* storage unavailable */ }
+  emit('created', result)
+}
 
 const canSubmit = computed(() => !saving.value && !uncommitted.value && body.value.trim() !== '')
 const defaultTitle = computed(() => `Navazuje na ${props.taskId}: ${props.taskTitle}`)
@@ -35,16 +63,22 @@ async function submit() {
   const run = runNow.value
   let result: FollowUpResult | null = null
   try {
-    result = await followUpTask(props.taskId, {
+    const payload = {
       body: body.value.trim(),
       ...(title.value.trim() ? { title: title.value.trim() } : {}),
       run,
-    })
+    }
+    result = await followUpTask(props.taskId, { ...payload, request_id: requestIdentity(payload) })
+    if (result.error) {
+      error.value = { message: result.error.message, issues: [] }
+      uncommitted.value = result
+      return
+    }
     // with run the server has committed the backlog already
     if (!run) {
       result = { ...result, commit: await commitBacklog(`backlog: ${result.task.id} follows ${props.taskId}`) }
     }
-    emit('created', result)
+    created(result)
   } catch (e) {
     error.value = flattenIssues(e)
     if (result) uncommitted.value = result
@@ -58,7 +92,7 @@ async function submit() {
   <section class="follow-up-dialog" role="dialog" aria-labelledby="follow-up-title" data-test="follow-up-dialog">
     <div class="head">
       <h3 id="follow-up-title"><GitBranchPlus :size="16" aria-hidden="true" /> Navazující task na {{ taskId }}</h3>
-      <button type="button" class="icon" aria-label="Zavřít" data-test="follow-up-close" :disabled="saving" @click="emit('cancel')">
+      <button type="button" class="icon" aria-label="Zavřít" data-test="follow-up-close" :disabled="saving" @click="cancel">
         <X :size="16" />
       </button>
     </div>
@@ -79,9 +113,9 @@ async function submit() {
     <IssueList v-if="error" :message="error.message" :issues="error.issues" />
     <div v-if="uncommitted" class="actions">
       <p data-test="follow-up-uncommitted">
-        {{ uncommitted.task.id }} je zapsaný, ale backlog se nepodařilo commitnout. Commitni ho z banneru backlogu.
+        {{ uncommitted.task.id }} je zapsaný, ale dokončení akce selhalo. Otevři task a pokračuj z jeho detailu.
       </p>
-      <button type="button" class="primary" data-test="follow-up-open" @click="emit('created', uncommitted)">
+      <button type="button" class="primary" data-test="follow-up-open" @click="created(uncommitted)">
         Otevřít {{ uncommitted.task.id }}
       </button>
     </div>
@@ -96,7 +130,7 @@ async function submit() {
       >
         <Spinner v-if="saving" /> {{ runNow ? 'Založit a spustit' : 'Založit' }}
       </button>
-      <button type="button" data-test="follow-up-cancel" :disabled="saving" @click="emit('cancel')">Zrušit</button>
+      <button type="button" data-test="follow-up-cancel" :disabled="saving" @click="cancel">Zrušit</button>
     </div>
   </section>
 </template>

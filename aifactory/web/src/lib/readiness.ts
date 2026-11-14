@@ -1,5 +1,5 @@
 import { inject, onBeforeUnmount, onMounted, provide, ref, type InjectionKey } from 'vue'
-import { fetchFactoryRosterSummary, fetchMachineCheck, fetchRepos, getGlobal, type MachineCheck, type RepoItem } from './api'
+import { ApiError, READ_TIMEOUT_MS, fetchFactoryRosterSummary, fetchMachineCheck, fetchRepos, getGlobal, type MachineCheck, type RepoItem } from './api'
 import { fetchLibrarySummary } from './library'
 import { focusRepo, gettingStartedSteps, type Step } from './gettingStarted'
 import { errorText } from './format'
@@ -61,7 +61,13 @@ function createReadiness() {
     }
     function track<T>(key: StepKey, promise: Promise<T>): Promise<T> {
       pending.add(key)
-      return promise.catch(error => { failedStep ??= key; throw error }).finally(() => pending.delete(key))
+      return promise.catch(error => {
+        failedStep ??= key
+        if (error instanceof ApiError && error.code === 'request_timeout') {
+          throw new CheckTimeout(STEPS[key], READ_TIMEOUT_MS / 1000)
+        }
+        throw error
+      }).finally(() => pending.delete(key))
     }
     stopProgress?.()
     elapsed.value = 0

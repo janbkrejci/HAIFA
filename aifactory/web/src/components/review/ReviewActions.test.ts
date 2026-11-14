@@ -1,3 +1,4 @@
+import { hasUnsavedChanges } from '@/lib/leaveGuard'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ReviewActions from './ReviewActions.vue'
@@ -98,4 +99,18 @@ describe('ReviewActions', () => {
       expect(wrapper.find(`[data-test="${name}"]`).attributes('disabled')).toBeDefined()
     }
   })
+})
+
+it('protects a draft through failure and releases it after success or unmount', async () => {
+  const wrapper = mount(ReviewActions, { props: { detail: reviewDetail(), busy: false } })
+  expect(hasUnsavedChanges()).toBe(false)
+  await wrapper.get('[data-test="return-note"]').setValue('draft')
+  expect(hasUnsavedChanges()).toBe(true)
+  await wrapper.setProps({ busy: true })
+  await wrapper.setProps({ busy: false })
+  expect(hasUnsavedChanges()).toBe(true)
+  await wrapper.setProps({ returned: 1 })
+  expect(hasUnsavedChanges()).toBe(false)
+  wrapper.unmount()
+  expect(hasUnsavedChanges()).toBe(false)
 })

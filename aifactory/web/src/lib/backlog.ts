@@ -408,6 +408,7 @@ export interface TaskPr {
 }
 
 export interface TaskDetail {
+  revision?: string
   task: TaskNode
   body: string
   issues: ApiIssue[]
@@ -446,6 +447,7 @@ export interface AddTaskInput {
 }
 
 export interface EditTaskInput {
+  expected_revision?: string
   parameters?: Record<string, unknown>
   body?: string
   depends_on?: string[]
@@ -641,6 +643,7 @@ export function editTask(taskId: string, input: EditTaskInput): Promise<WriteRes
 
 /** `factory task follow-up ID --body TEXT [--title TEXT] [--run]`. */
 export interface FollowUpInput {
+  request_id?: string
   body: string
   title?: string
   /** Commit the backlog to base and start the new task at once. */
@@ -648,6 +651,8 @@ export interface FollowUpInput {
 }
 
 export interface FollowUpResult extends Omit<WriteResult, 'action'> {
+  stage?: 'commit' | 'start'
+  error?: { code: string; message: string }
   action: string
   /** The backlog commit made for `run`, null without it. */
   commit: BacklogCommitResult | null

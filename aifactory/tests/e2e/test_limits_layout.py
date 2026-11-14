@@ -1,4 +1,4 @@
-"""Measure the shipped dashboard in bundled Chromium, with no backend or network."""
+"""Measure the shipped dashboard in an available Chromium browser, with no backend or network."""
 
 import json
 import mimetypes
@@ -9,6 +9,7 @@ from urllib.parse import urlsplit
 
 import pytest
 from playwright.sync_api import Route, sync_playwright
+from test_f3_browser import _launch
 
 STATIC = Path(__file__).resolve().parents[2] / "src/aifactory/web/static"
 # Share the browser group so full-suite xdist runs do not launch layout browsers
@@ -81,7 +82,7 @@ def test_stacked_limits_do_not_overlap_topbar_controls(state: str) -> None:
     serve = _server(state)
 
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+        browser = _launch(playwright)
         page = browser.new_page()
         page.route("**/*", serve)
         for width in (1600, 1366, 1280):
@@ -153,7 +154,7 @@ def test_stacked_limits_do_not_overlap_topbar_controls(state: str) -> None:
 
 def test_repo_tabbar_has_no_vertical_scrollbar() -> None:
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch(headless=True)
+        browser = _launch(playwright)
         page = browser.new_page(viewport={"width": 1280, "height": 800})
         page.route("**/*", _server("live"))
         for screen in ("backlog", "runs", "review", "factory"):

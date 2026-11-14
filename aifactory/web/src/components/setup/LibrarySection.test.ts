@@ -45,7 +45,7 @@ describe('LibrarySection', () => {
     expect(wrapper.find('[data-test="item-add"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="item-old-version"]').exists()).toBe(false)
     await wrapper.get('[data-test="item-history"] button').trigger('click'); await flushPromises()
-    expect(mock).toHaveBeenCalledWith('/api/library/items/agent/agent-demo?version=old-hash')
+    expect(mock).toHaveBeenCalledWith('/api/library/items/agent/agent-demo?version=old-hash', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper.get('[data-test="item-old-version"]').text()).toContain('Prohlížíš starší verzi')
   })
   it('imports a folder only after preview and confirmation, without uploading content', async () => {

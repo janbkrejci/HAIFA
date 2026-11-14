@@ -17,6 +17,7 @@ from aifactory.config import ProjectSettings, load_run_config
 from aifactory.providers import CHECKS_NONE, ChecksStatus, ProviderError, PullRequest, publish
 from aifactory.providers import git as pgit
 from aifactory.providers.local import LocalProvider
+from aifactory.repo_settings import RepositorySettings
 from aifactory.review import ReviewError, approve_task
 from aifactory.review.automerge import _hosting_and_merge
 from aifactory.run import TaskRunStore, run_task
@@ -265,6 +266,7 @@ def test_same_path_follow_up_collision_is_repaired_before_mergeability_rejection
     assert other.committed
 
     if auto:
+        RepositorySettings(repo).update({"auto_merge": True})
         rc = load_run_config(repo)
         task = load_backlog(repo).by_id[T01]
         assert isinstance(task, Task)
@@ -312,6 +314,7 @@ def test_unrepairable_task_pr_records_dashboard_reason(repo: Path, script: Scrip
 
 
 def test_automerge_keeps_unrelated_conflict_open(repo: Path, script: Script) -> None:
+    RepositorySettings(repo).update({"auto_merge": True})
     provider = LocalProvider(repo, load_run_config(repo).config.settings)
     script.on("planner", lambda wt: write(wt, SPEC, "# PR spec\n"))
     script.add("planner", ok(artifacts=[SPEC], commit_message="Add spec"))

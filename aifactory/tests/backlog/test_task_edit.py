@@ -18,6 +18,7 @@ from aifactory.backlog import (
     load_backlog,
     parse_frontmatter,
 )
+from aifactory.backlog.model import Backlog, Issue
 
 
 def snapshot(root: Path) -> dict[str, bytes]:
@@ -240,3 +241,97 @@ def test_missing_backlog_dir_is_created(tmp_path: Path) -> None:
         add_task(root, "M01-S01", "X")
     _expect(exc, "unknown_step", 2)
     assert (root / "factory/backlog").is_dir()
+
+
+def test_serialized_edits_preserve_both_changes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+
+    from aifactory.backlog import edit as module
+
+    root = sample_repo(tmp_path)
+    entered, release, second_write = Event(), Event(), Event()
+    original = module._write_checked
+    calls = 0
+
+    def delayed(
+        backlog: Backlog, baseline: list[Issue], changes: dict[str, str], command: str
+    ) -> bool:
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            entered.set()
+            assert release.wait(5)
+        else:
+            second_write.set()
+        return original(backlog, baseline, changes, command)
+
+    monkeypatch.setattr(module, "_write_checked", delayed)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(edit_task, root, "M01-S01-T02", title="Changed title")
+        assert entered.wait(5)
+        second = pool.submit(edit_task, root, "M01-S01-T02", body="Changed body")
+        # The second edit must wait before loading its snapshot.
+        assert not second.done()
+        second_write.wait(0.1)
+        release.set()
+        first.result(timeout=10)
+        second.result(timeout=10)
+    task = load_backlog(root).by_id["M01-S01-T02"]
+    assert task.title == "Changed title"
+    assert "Changed body" in task.body
+
+
+def test_stale_edit_revision_preserves_file(tmp_path: Path) -> None:
+    from aifactory.backlog.edit import task_revision
+
+    root = sample_repo(tmp_path)
+    revision = task_revision((root / T02).read_text())
+    edit_task(root, "M01-S01-T02", title="New title", expected_revision=revision)
+    before = (root / T02).read_bytes()
+    with pytest.raises(TaskEditError, match="Task se mezitím") as error:
+        edit_task(root, "M01-S01-T02", body="Stale draft", expected_revision=revision)
+    assert error.value.code == "edit_conflict"
+    assert (root / T02).read_bytes() == before
+
+
+def test_concurrent_additions_get_distinct_ids(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    root = sample_repo(tmp_path)
+    ready = Barrier(2)
+
+    def add(title: str) -> str:
+        ready.wait(timeout=5)
+        return add_task(root, "M01-S01", title).task.id
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        ids = list(pool.map(add, ["First", "Second"]))
+    assert len(set(ids)) == 2
+    assert check_backlog(load_backlog(root)) == []
+
+
+def test_concurrent_dependencies_cannot_create_cycle(tmp_path: Path) -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+
+    root = sample_repo(tmp_path)
+    one = add_task(root, "M01-S01", "First").task.id
+    two = add_task(root, "M01-S01", "Second").task.id
+    ready = Barrier(2)
+
+    def link(pair: tuple[str, str]) -> bool:
+        ready.wait(timeout=5)
+        try:
+            link_task(root, pair[0], depends_on=[pair[1]])
+            return True
+        except TaskEditError as exc:
+            assert any(issue.code == "cycle" for issue in exc.issues)
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert sorted(pool.map(link, [(one, two), (two, one)])) == [False, True]
+    assert check_backlog(load_backlog(root)) == []

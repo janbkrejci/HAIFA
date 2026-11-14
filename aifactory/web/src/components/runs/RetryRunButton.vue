@@ -3,6 +3,7 @@
 // form with an optional note for the agents of the continuing phases.
 import { ref } from 'vue'
 import { RotateCcw } from 'lucide-vue-next'
+import { useUnsavedGuard } from '@/lib/leaveGuard'
 import { errorText } from '@/lib/format'
 import { retryRun, type RetryResponse } from '@/lib/runs'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -13,6 +14,7 @@ const emit = defineEmits<{ started: [result: RetryResponse] }>()
 
 const open = ref(false)
 const note = ref('')
+useUnsavedGuard(() => note.value.trim().length > 0)
 const busy = ref(false)
 const error = ref<string | null>(null)
 
@@ -47,7 +49,7 @@ async function submit() {
     <form v-if="open" class="retry-form" data-test="retry-form" @submit.prevent="submit">
       <label>
         Poznámka pro agenty (volitelná)
-        <textarea v-model="note" rows="3" data-test="retry-note" />
+        <textarea v-model="note" :disabled="busy" rows="3" data-test="retry-note" />
       </label>
       <p class="faint hint">
         Pokračuje ve stejném worktree a větvi od fáze, která selhala nebo byla zastavená. Hotové

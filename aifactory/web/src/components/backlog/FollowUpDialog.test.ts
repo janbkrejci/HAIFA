@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import FollowUpDialog from './FollowUpDialog.vue'
 import { ApiError } from '@/lib/api'
+import { hasUnsavedChanges, resetUnsavedForTests, cancelLeave } from '@/lib/leaveGuard'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
 vi.mock('@/lib/api', async (original) => ({ ...(await original<object>()), ...api }))
@@ -15,6 +16,8 @@ function dialog() {
 const COMMIT = { committed: true, commit: 'abc', base: 'main', paths: ['x.md'], pushed: false }
 
 beforeEach(() => {
+  resetUnsavedForTests()
+  sessionStorage.clear()
   api.postApi.mockReset().mockImplementation(async (path: string) => (path === '/backlog/commit' ? COMMIT : RESULT))
 })
 
@@ -47,7 +50,7 @@ describe('FollowUpDialog', () => {
     await wrapper.get('[data-test="follow-up-title"]').setValue('Docs')
     await wrapper.get('[data-test="follow-up-submit"]').trigger('click')
     await flushPromises()
-    expect(api.postApi).toHaveBeenCalledWith('/backlog/tasks/P-T01/follow-up', { body: 'Dodělat docs.', title: 'Docs', run: true })
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/tasks/P-T01/follow-up', { body: 'Dodělat docs.', title: 'Docs', run: true, request_id: expect.any(String) })
     expect(wrapper.emitted('created')?.[0]?.[0]).toMatchObject({ task: { id: 'P-T02' } })
   })
 
@@ -58,7 +61,7 @@ describe('FollowUpDialog', () => {
     expect(wrapper.get('[data-test="follow-up-submit"]').text()).toBe('Založit')
     await wrapper.get('[data-test="follow-up-submit"]').trigger('click')
     await flushPromises()
-    expect(api.postApi).toHaveBeenCalledWith('/backlog/tasks/P-T01/follow-up', { body: 'x', run: false })
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/tasks/P-T01/follow-up', { body: 'x', run: false, request_id: expect.any(String) })
     // without the run the dialog commits the backlog itself
     expect(api.postApi).toHaveBeenLastCalledWith('/backlog/commit', { message: 'backlog: P-T02 follows P-T01' })
     expect(wrapper.emitted('created')).toEqual([[{ ...RESULT, commit: COMMIT }]])
@@ -96,4 +99,62 @@ describe('FollowUpDialog', () => {
     await wrapper.get('[data-test="follow-up-cancel"]').trigger('click')
     expect(wrapper.emitted('cancel')).toEqual([[]])
   })
+})
+
+
+it('reuses the request identity after a lost response and keeps the draft guarded', async () => {
+  api.postApi.mockRejectedValueOnce(new Error('Lost response')).mockResolvedValueOnce(RESULT)
+  const wrapper = dialog()
+  await wrapper.get('[data-test="follow-up-body"]').setValue('Preserved draft')
+  expect(hasUnsavedChanges()).toBe(true)
+  await wrapper.get('[data-test="follow-up-submit"]').trigger('click')
+  await flushPromises()
+  expect(hasUnsavedChanges()).toBe(true)
+  const first = api.postApi.mock.calls[0]?.[1]
+  await wrapper.get('[data-test="follow-up-submit"]').trigger('click')
+  await flushPromises()
+  expect(api.postApi.mock.calls[1]?.[1]).toEqual(first)
+  expect(hasUnsavedChanges()).toBe(false)
+  wrapper.unmount()
+})
+
+it('partial server failure offers the already created task', async () => {
+  api.postApi.mockResolvedValue({ ...RESULT, stage: 'start', error: { code: 'failed', message: 'Start failed' } })
+  const wrapper = dialog()
+  await wrapper.get('[data-test="follow-up-body"]').setValue('Draft')
+  await wrapper.get('[data-test="follow-up-submit"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.text()).toContain('Start failed')
+  expect(wrapper.find('[data-test="follow-up-submit"]').exists()).toBe(false)
+  await wrapper.get('[data-test="follow-up-open"]').trigger('click')
+  expect(wrapper.emitted('created')?.[0]?.[0]).toMatchObject({ task: { id: 'P-T02' } })
+  wrapper.unmount()
+})
+
+it('keeps the follow-up open when discarding is cancelled', async () => {
+  const wrapper = dialog()
+  await wrapper.get('[data-test="follow-up-body"]').setValue('Draft')
+  await wrapper.get('[data-test="follow-up-cancel"]').trigger('click')
+  cancelLeave()
+  await flushPromises()
+  expect(wrapper.emitted('cancel')).toBeUndefined()
+  expect(hasUnsavedChanges()).toBe(true)
+  wrapper.unmount()
+})
+
+
+it('recovers request identity after remount with an unresolved response', async () => {
+  api.postApi.mockRejectedValueOnce(new Error('Lost response')).mockResolvedValueOnce(RESULT)
+  const first = dialog()
+  await first.get('[data-test="follow-up-body"]').setValue('Same draft')
+  await first.get('[data-test="follow-up-submit"]').trigger('click')
+  await flushPromises()
+  const request = api.postApi.mock.calls[0]?.[1]
+  first.unmount()
+  const retry = dialog()
+  await retry.get('[data-test="follow-up-body"]').setValue('Same draft')
+  await retry.get('[data-test="follow-up-submit"]').trigger('click')
+  await flushPromises()
+  expect(api.postApi.mock.calls[1]?.[1]).toEqual(request)
+  retry.unmount()
 })

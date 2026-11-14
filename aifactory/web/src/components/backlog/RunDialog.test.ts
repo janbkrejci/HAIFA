@@ -1,3 +1,4 @@
+import { cancelLeave, confirmLeave, hasUnsavedChanges } from '@/lib/leaveGuard'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { chooseOption } from '@/test/select'
@@ -168,8 +169,38 @@ describe('RunDialog', () => {
     ;(details.element as HTMLDetailsElement).open = true
     await details.trigger('toggle')
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/factory/roster')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/factory/roster', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper.get('[data-agent="builder"]').text()).toContain('opus')
     expect(wrapper.get('[data-agent="reviewer"]').text()).toContain('výchozí')
   })
+})
+
+it('protects a draft through failure and releases it after success or unmount', async () => {
+  const wrapper = dialog(runCheck())
+  expect(hasUnsavedChanges()).toBe(false)
+  await wrapper.get('[data-test="run-note"]').setValue('draft')
+  expect(hasUnsavedChanges()).toBe(true)
+  await wrapper.setProps({ busy: true })
+  await wrapper.setProps({ busy: false })
+  expect(hasUnsavedChanges()).toBe(true)
+  await wrapper.setProps({ result: runStart() })
+  expect(hasUnsavedChanges()).toBe(false)
+  wrapper.unmount()
+  expect(hasUnsavedChanges()).toBe(false)
+})
+
+it('keeps a cancelled discard confirmation open and clears the draft only after confirmation', async () => {
+  const wrapper = dialog(runCheck())
+  await wrapper.get('[data-test="run-note"]').setValue('draft')
+  await wrapper.get('[data-test="run-cancel"]').trigger('click')
+  cancelLeave()
+  await flushPromises()
+  expect(wrapper.emitted('cancel')).toBeUndefined()
+  expect(hasUnsavedChanges()).toBe(true)
+  await wrapper.get('[data-test="run-cancel"]').trigger('click')
+  confirmLeave()
+  await flushPromises()
+  expect(wrapper.emitted('cancel')).toHaveLength(1)
+  expect(hasUnsavedChanges()).toBe(false)
+  wrapper.unmount()
 })

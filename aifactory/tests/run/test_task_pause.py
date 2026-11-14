@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "web"))
 
 from trace_fixture import T1, T2, make_trace_db  # noqa: E402
 
+from aifactory import oscompat  # noqa: E402
 from aifactory.run import TaskRunError, TaskRunStore, pause_run, resume_run, run_task  # noqa: E402
 from aifactory.run import pause as pause_mod  # noqa: E402
 from aifactory.run.stop import running_run, stop_run  # noqa: E402
@@ -200,7 +201,10 @@ def sleeper_fixture() -> Iterator[subprocess.Popen[bytes]]:
 def _trace_repo(tmp_path: Path, pid: int) -> Path:
     repo = make_trace_db(tmp_path / "trace-repo", os.getpid())
     store = TaskRunStore(_db(repo))
-    store.conn.execute("UPDATE task_runs SET pid = ? WHERE run_id = 'r-run'", (pid,))
+    store.conn.execute(
+        "UPDATE task_runs SET pid = ?, pid_created_at = ? WHERE run_id = 'r-run'",
+        (pid, oscompat.process_created_at(pid)),
+    )
     store.close()
     return repo
 
@@ -273,3 +277,18 @@ def test_cli_pause_resume(tmp_path: Path, capsys: Capsys) -> None:
     rc, env = run_json(capsys, ["task", "resume", T1, *args])
     assert rc == 2
     assert env["error"]["code"] == "run_not_running"
+
+
+@pytest.mark.parametrize("action", [pause_run, resume_run])
+def test_pause_and_resume_reap_recycled_pid(
+    tmp_path: Path, sleeper: subprocess.Popen[bytes], action: Any
+) -> None:
+    repo = _trace_repo(tmp_path, sleeper.pid)
+    with sqlite3.connect(_db(repo)) as conn:
+        conn.execute(
+            "UPDATE task_runs SET pid_created_at = pid_created_at - 100 WHERE run_id = 'r-run'"
+        )
+    with pytest.raises(TaskRunError, match="run_not_running"):
+        action(repo, "r-run")
+    assert sleeper.poll() is None
+    assert _pause(repo, "r-run") == ("aborted", None)

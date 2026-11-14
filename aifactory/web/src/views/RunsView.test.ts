@@ -1,10 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { flushPromises, mount } from '@vue/test-utils'
+import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RunsView from './RunsView.vue'
 import { detail, events, prompts, runTotals, runsResponse } from '@/test/runsFixtures'
 import { LIVE_DEBOUNCE_MS, resetLiveForTests } from '@/lib/live'
 import { FakeEventSource, traceEvent } from '@/test/fakeEventSource'
 import { answerDialog } from '@/test/modal'
+import { chooseOption } from '@/test/select'
+
+enableAutoUnmount(afterEach)
 
 function ok(data: unknown) {
   return new Response(JSON.stringify({ ok: true, data, error: null, warnings: [] }))
@@ -35,29 +38,53 @@ afterEach(() => {
 })
 
 describe('RunsView', () => {
-  it('loads the list, without state and task filters, and the costs only when opened', async () => {
+  it('pages filtered results on the server and resets the page when a filter changes', async () => {
+    go('#/r/haifa/runs')
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.includes('/chains')) return ok({ chains: [] })
+      const page = new URL(url, 'http://localhost').searchParams
+      const response = runsResponse()
+      return ok({ ...response, total: page.get('state') ? 1 : 150, offset: Number(page.get('offset') ?? 0), tasks: ['T1', 'T2'] })
+    })
+    vi.stubGlobal('fetch', fetchMock)
+    const wrapper = mount(RunsView)
+    await flushPromises()
+    expect(wrapper.get('[data-test="page-count"]').text()).toBe('1–2 z 150')
+    await wrapper.get('[data-test="next-page"]').trigger('click')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs?offset=100', expect.anything())
+    await chooseOption(wrapper, '[data-test="state-filter"]', 'failed')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs?state=failed', expect.anything())
+    expect(wrapper.get('[data-test="previous-page"]').attributes('disabled')).toBeDefined()
+    await chooseOption(wrapper, '[data-test="task-filter"]', 'T2')
+    await flushPromises()
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs?state=failed&task=T2', expect.anything())
+    wrapper.unmount()
+  })
+  it('loads the list with state and task filters, and the costs only when opened', async () => {
     go('#/r/haifa/runs')
     const fetchMock = vi.fn(async (url: string) => ok(url === '/api/repos/haifa/runs/totals' ? runTotals() : runsResponse()))
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(RunsView)
     await flushPromises()
     expect(wrapper.find('h1').text()).toBe('Běhy')
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper.findAll('tr[data-run]')).toHaveLength(2)
     // costs are folded and not loaded until opened
     expect(wrapper.find('[data-test="backlog-total"]').exists()).toBe(false)
-    expect(fetchMock).not.toHaveBeenCalledWith('/api/repos/haifa/runs/totals')
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/repos/haifa/runs/totals', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     await wrapper.find('[data-section="costs"] [data-test="dsec-toggle"]').trigger('click')
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/totals')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/totals', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     expect(wrapper.find('[data-test="backlog-total"]').text()).toContain('$0.2600')
-    expect(wrapper.find('[data-test="state-filter"]').exists()).toBe(false)
-    expect(wrapper.find('[data-test="task-filter"]').exists()).toBe(false)
+    expect(wrapper.find('[data-test="state-filter"]').exists()).toBe(true)
+    expect(wrapper.find('[data-test="task-filter"]').exists()).toBe(true)
     await wrapper.find('[data-test="view-archived"]').trigger('click')
     await flushPromises()
     // the list reloads, and with costs open the totals too
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs?archived=1')
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs/totals')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs?archived=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs/totals', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     wrapper.unmount()
   })
 
@@ -93,7 +120,7 @@ describe('RunsView', () => {
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(RunsView)
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r-run')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r-run', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const back = wrapper.find('a[data-test="back"]')
     expect(back.find('svg').exists()).toBe(true)
     expect(back.text()).toBe('všechny běhy')
@@ -101,7 +128,7 @@ describe('RunsView', () => {
     await wrapper.find('[data-test="stop-run"]').trigger('click')
     await answerDialog(true)
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r-run/stop', { method: 'POST' })
-    const gets = fetchMock.mock.calls.filter(([url, init]) => url === '/api/repos/haifa/runs/r-run' && !init)
+    const gets = fetchMock.mock.calls.filter(([url, init]) => url === '/api/repos/haifa/runs/r-run' && !init?.method)
     expect(gets).toHaveLength(2)
     expect(wrapper.find('[data-test="stop-run"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('zastaveno')
@@ -271,7 +298,7 @@ describe('RunsView', () => {
     await debounce()
     await flushPromises()
     expect([runCalls(), chainCalls()]).toEqual([2, 2])
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     wrapper.unmount()
   })
 
@@ -407,7 +434,7 @@ describe('RunsView', () => {
 
       await wrapper.find('[data-test="view-archived"]').trigger('click')
       await flushPromises()
-      expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs?archived=1')
+      expect(fetchMock).toHaveBeenLastCalledWith('/api/repos/haifa/runs?archived=1', expect.objectContaining({ signal: expect.any(AbortSignal) }))
       expect(rows(wrapper)).toEqual(['r-ok'])
 
       await wrapper.find('[data-test="delete-archived"]').trigger('click')

@@ -98,7 +98,8 @@ def test_just_validate_local_b1(tmp_path: Path, marker: Path) -> None:
 
     b1 = json.loads((out / "B1.json").read_text(encoding="utf-8"))
     _assert_passed(out, "B1", b1)
-    assert checks(b1)["write_reverted"] is True
+    assert checks(b1)["conflicting_write_preserved"] is True
+    assert checks(b1)["conflict_evidence_saved"] is True
     assert checks(b1)["run_failed"] is True
     summary = json.loads((out / "summary.json").read_text(encoding="utf-8"))
     assert summary["remote"] == "local"

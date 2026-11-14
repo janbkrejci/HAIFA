@@ -30,6 +30,7 @@ from aifactory.providers import (
     PullRequest,
     get_provider,
 )
+from aifactory.review.errors import ReviewError
 from aifactory.run import gitops
 from aifactory.run.resolve import CI_FIX_WORKFLOW
 from aifactory.run.store import STARTED_AUTO_CI_FIX
@@ -89,9 +90,9 @@ def head_checks(
 
     A hosting that reports checks may still show the previous head (and its checks)
     right after a push; it gets ``AUTO_MERGE_CHECKS_APPEAR`` to show `head`. A hosting
-    without head info, or one that still shows another head after that, gets its
-    checks read as they are: the merge itself is bound to `head`
-    (``--match-head-commit``), so it never merges a head these checks did not see.
+    with unconfirmed head info must leave the PR open, even if its old checks
+    are green. Check the head again after settling checks to detect a concurrent
+    push. Providers without CI retain their explicit no-checks behavior.
     """
     if provider.reports_checks:
         start = _clock()
@@ -99,12 +100,22 @@ def head_checks(
             if guard is not None:
                 guard()
             seen = provider.status(request).head_sha
-            if seen is None or seen == head or _clock() - start >= AUTO_MERGE_CHECKS_APPEAR:
+            if seen == head:
                 break
+            if _clock() - start >= AUTO_MERGE_CHECKS_APPEAR:
+                raise ReviewError(
+                    "checks_head_unconfirmed",
+                    f"CI head is {seen or 'unknown'}; expected {head}; PR left open",
+                )
             sleep(AUTO_MERGE_CHECKS_DELAY)
-    if guard is None:
-        return settled_checks(provider, request)
-    return settled_checks(provider, request, guard)
+    checks = (
+        settled_checks(provider, request)
+        if guard is None
+        else settled_checks(provider, request, guard)
+    )
+    if provider.reports_checks and provider.status(request).head_sha != head:
+        raise ReviewError("checks_head_unconfirmed", "PR head changed while waiting for CI")
+    return checks
 
 
 def checks_reason(checks: ChecksStatus, rounds: int = 0) -> tuple[str, str] | None:

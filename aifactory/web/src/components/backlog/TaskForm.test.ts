@@ -470,3 +470,18 @@ describe('TaskForm', () => {
     wrapper.unmount()
   })
 })
+
+
+it('retains the original revision and draft through live refresh and conflict', async () => {
+  const wrapper = mount(TaskForm, {
+    props: { mode: 'edit', steps: [], workflows: [], task: taskNode(), taskBody: 'Original', revision: 'v1', busy: false, error: null },
+  })
+  await wrapper.get('[data-test="title"]').setValue('Draft title')
+  await wrapper.setProps({ taskBody: 'Changed remotely', revision: 'v2' })
+  await wrapper.get('form').trigger('submit')
+  expect(wrapper.emitted('submit')?.[0]?.[0]).toEqual({ title: 'Draft title', expected_revision: 'v1' })
+  await wrapper.setProps({ error: { message: 'Task changed', issues: [] } })
+  expect((wrapper.get('[data-test="title"]').element as HTMLInputElement).value).toBe('Draft title')
+  expect(hasUnsavedChanges()).toBe(true)
+  wrapper.unmount()
+})

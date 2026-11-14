@@ -73,12 +73,13 @@ def test_factory_write_started_by_the_agent_is_a_breach(repo: Path, script: Scri
     error = result.run.error or ""
     assert f"main checkout: {NEW_PATH}" in error
     assert f"main checkout: {T02_PATH}" in error
-    assert not (repo / NEW_PATH).exists()
-    assert "title: Loader\n" in (repo / T02_PATH).read_text(encoding="utf-8")
-    assert git(repo, "status", "--porcelain") == ""
+    assert (repo / NEW_PATH).exists()
+    assert "title: Loader v2\n" in (repo / T02_PATH).read_text(encoding="utf-8")
 
 
-def test_agent_write_after_factory_write_keeps_factory_content(repo: Path, script: Script) -> None:
+def test_unattributed_change_after_factory_write_preserves_current_content(
+    repo: Path, script: Script
+) -> None:
     def effect(wt: Path) -> None:
         with foreign():
             edit_task(repo, T02, title="Loader v2")
@@ -89,8 +90,8 @@ def test_agent_write_after_factory_write_keeps_factory_content(repo: Path, scrip
 
     assert result.run.state == "failed"
     error = result.run.error or ""
-    assert f"main checkout: {T02_PATH} — restored to the factory write" in error
-    assert "title: Loader v2" in (repo / T02_PATH).read_text(encoding="utf-8")
+    assert f"main checkout: {T02_PATH} — conflicting change preserved; origin unknown" in error
+    assert (repo / T02_PATH).read_text(encoding="utf-8") == "hijacked\n"
 
 
 def test_agent_write_before_factory_write_is_reported(repo: Path, script: Script) -> None:
@@ -121,9 +122,9 @@ def test_other_main_checkout_change_is_still_a_breach(repo: Path, script: Script
 
     assert result.run.state == "failed"
     error = result.run.error or ""
-    assert "main checkout: README.md — rolled back" in error
+    assert "main checkout: README.md — conflicting change preserved" in error
     assert NEW_PATH not in error
-    assert (repo / "README.md").read_text(encoding="utf-8") == "readme\n"
+    assert (repo / "README.md").read_text(encoding="utf-8") == "hijacked\n"
     assert (repo / NEW_PATH).is_file()
 
 

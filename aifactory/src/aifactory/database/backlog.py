@@ -20,8 +20,54 @@ def _path(root: Path) -> Path | None:
     return path if is_remote(path) else None
 
 
+# Protected by the same cross-process/local lock as synchronization.
+_SYNCED: dict[str, tuple[tuple[tuple[str, int, int, int], ...], int]] = {}
+
+
+def _stamps(
+    root: Path, settings: ProjectSettings, path: Path
+) -> tuple[tuple[str, int, int, int], ...]:
+    files = [
+        file
+        for directory in backlog_roots(root, settings)
+        for file in (root / directory).rglob("*.md")
+        if file.is_file()
+    ]
+    files.append(_baseline(path))
+    return tuple(
+        sorted(
+            (str(file), stat.st_mtime_ns, stat.st_size, stat.st_ctime_ns)
+            for file in files
+            if file.is_file()
+            for stat in [file.stat()]
+        )
+    )
+
+
+def _revision(conn: sqlite3.Connection) -> int | None:
+    try:
+        row = conn.execute("SELECT revision FROM haifa_backlog_revision WHERE id = 1").fetchone()
+    except sqlite3.OperationalError as exc:
+        if "no such table" not in str(exc):
+            raise
+        return None
+    return int(row[0]) if row is not None else None
+
+
 def _snapshot(conn: sqlite3.Connection) -> dict[str, str]:
-    conn.execute("CREATE TABLE IF NOT EXISTS haifa_backlog (path TEXT PRIMARY KEY, text TEXT)")
+    if _revision(conn) is None:
+        conn.execute("CREATE TABLE IF NOT EXISTS haifa_backlog (path TEXT PRIMARY KEY, text TEXT)")
+        conn.execute(
+            "CREATE TABLE IF NOT EXISTS haifa_backlog_revision "
+            "(id INTEGER PRIMARY KEY, revision INTEGER NOT NULL)"
+        )
+        conn.execute("INSERT OR IGNORE INTO haifa_backlog_revision VALUES (1, 0)")
+        for event in ("INSERT", "UPDATE", "DELETE"):
+            conn.execute(
+                f"CREATE TRIGGER IF NOT EXISTS haifa_backlog_{event.lower()} "
+                f"AFTER {event} ON haifa_backlog "
+                "BEGIN UPDATE haifa_backlog_revision SET revision = revision + 1 WHERE id = 1; END"
+            )
     return dict(conn.execute("SELECT path, text FROM haifa_backlog").fetchall())
 
 
@@ -46,6 +92,15 @@ def _synchronize(root: Path, settings: ProjectSettings) -> None:
     from aifactory.backlog.model import Backlog
     from aifactory.run import mainwrites
 
+    stamps = _stamps(root, settings, path)
+    conn = connect(path, isolation_level=None)
+    try:
+        revision = _revision(conn)
+        if revision is not None and _SYNCED.get(str(path)) == (stamps, revision):
+            return
+    finally:
+        conn.close()
+
     local = {
         file.relative_to(root).as_posix(): file.read_text(encoding="utf-8")
         for directory in backlog_roots(root, settings)
@@ -55,7 +110,11 @@ def _synchronize(root: Path, settings: ProjectSettings) -> None:
     previous = json.loads(_baseline(path).read_text()) if _baseline(path).is_file() else None
     conn = connect(path, isolation_level=None)
     try:
-        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            "BEGIN"
+            if previous is not None and local == previous and revision is not None
+            else "BEGIN IMMEDIATE"
+        )
         remote = _snapshot(conn)
         if not remote:
             for rel, text in local.items():
@@ -92,6 +151,7 @@ def _synchronize(root: Path, settings: ProjectSettings) -> None:
                     )
                 conn.execute("INSERT OR REPLACE INTO haifa_backlog VALUES (?, ?)", (rel, here))
                 remote[rel] = here
+        revision = _revision(conn)
         conn.execute("COMMIT")
     except BaseException:
         conn.rollback()
@@ -117,6 +177,8 @@ def _synchronize(root: Path, settings: ProjectSettings) -> None:
             command="backlog remote sync",
         )
     _save(path, remote)
+    if revision is not None:
+        _SYNCED[str(path)] = (_stamps(root, settings, path), revision)
 
 
 def _publish(root: Path, changes: dict[str, str]) -> None:
@@ -149,18 +211,22 @@ def _publish(root: Path, changes: dict[str, str]) -> None:
 def synchronize(root: Path, settings: ProjectSettings) -> None:
     path = _path(root)
     if path is not None:
+        from aifactory.backlog.edit import write_lock
         from aifactory.run.store import _path_lock
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        with _path_lock(path.with_suffix(".backlog.lock")).hold(30):
+        # Same order as edits: protect their loaded baseline through publication.
+        with write_lock(root), _path_lock(path.with_suffix(".backlog.lock")).hold(30):
             _synchronize(root, settings)
 
 
 def publish(root: Path, changes: dict[str, str]) -> None:
     path = _path(root)
     if path is not None:
+        from aifactory.backlog.edit import write_lock
         from aifactory.run.store import _path_lock
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        with _path_lock(path.with_suffix(".backlog.lock")).hold(30):
+        # Same order as edits: protect their loaded baseline through publication.
+        with write_lock(root), _path_lock(path.with_suffix(".backlog.lock")).hold(30):
             _publish(root, changes)

@@ -31,7 +31,7 @@ def test_placed_puts_the_test_into_tests_and_removes_it(tmp_path: Path) -> None:
 def test_placed_removes_the_test_after_an_exception(tmp_path: Path) -> None:
     root = tmp_path / "wt"
     (root / "tests" / "__pycache__").mkdir(parents=True)
-    pyc = root / "tests" / "__pycache__" / "test_hidden_slugify.cpython-312.pyc"
+    pyc = root / "tests" / "__pycache__" / "test_text_hidden_slugify.cpython-312.pyc"
     with pytest.raises(RuntimeError), hidden.placed(root, _source(tmp_path)):
         pyc.write_bytes(b"x")
         raise RuntimeError("boom")

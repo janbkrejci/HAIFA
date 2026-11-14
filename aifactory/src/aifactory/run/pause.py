@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from aifactory.run.errors import TaskRunError
-from aifactory.run.store import PAUSED, PAUSING, RUNNING, TaskRunRow, TaskRunStore, _alive
+from aifactory.run.store import PAUSED, PAUSING, RUNNING, TaskRunRow, TaskRunStore
 
 POLL_SECONDS = 1.0
 
@@ -63,8 +63,8 @@ def _running_row(store: TaskRunStore, run_id: str) -> TaskRunRow:
     row = store.get(run_id)
     if row is None:
         raise TaskRunError("unknown_run", f"no run {run_id}")
-    if row.state == RUNNING and store.owned_here(run_id) and not _alive(row.pid):
-        store.for_task(row.task_id)  # reaps it: the process is gone
+    if row.state == RUNNING:
+        store.for_task(row.task_id)  # reaps only local gone/reused process identities
         row = store.get(run_id) or row
     if row.state != RUNNING:
         raise TaskRunError("run_not_running", f"run {run_id} of task {row.task_id} is {row.state}")

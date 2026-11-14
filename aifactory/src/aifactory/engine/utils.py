@@ -8,12 +8,28 @@ import secrets
 import subprocess
 import sys
 import threading
+from concurrent.futures import Future
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 
 # aifactory: no load_dotenv() at import; `factory` loads $HAIFA_HOME/env at start (home.py)
+
+
+# aifactory 3.6: drain stderr while stdout streams, or a full stderr pipe stalls both sides.
+def read_stderr(process) -> Future[str]:
+    """Read concurrently, preserving the complete diagnostics and any read error."""
+    result: Future[str] = Future()
+
+    def read():
+        try:
+            result.set_result(process.stderr.read() if process.stderr else "")
+        except BaseException as exc:
+            result.set_exception(exc)
+
+    threading.Thread(target=read, name="agent-stderr", daemon=True).start()
+    return result
 
 
 # aifactory 3.1: prompts travel through stdin and files, never argv. Windows caps

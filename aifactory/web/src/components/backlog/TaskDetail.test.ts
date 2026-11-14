@@ -642,7 +642,7 @@ describe('TaskDetail', () => {
     await wrapper.get('[data-test="follow-up-body"]').setValue('Přidat export.')
     await wrapper.get('[data-test="follow-up-submit"]').trigger('click')
     await flushPromises()
-    expect(api.postApi).toHaveBeenCalledWith('/backlog/tasks/M01-S01-T02/follow-up', { body: 'Přidat export.', run: true })
+    expect(api.postApi).toHaveBeenCalledWith('/backlog/tasks/M01-S01-T02/follow-up', { body: 'Přidat export.', run: true, request_id: expect.any(String) })
     expect(wrapper.emitted('follow-up')).toEqual([[result]])
     expect(wrapper.find('[data-test="follow-up-dialog"]').exists()).toBe(false)
     wrapper.unmount()
@@ -686,4 +686,17 @@ describe('TaskDetail', () => {
     expect(wrapper.find('[data-test="task-documents"]').exists()).toBe(false)
     expect(wrapper.find('form').exists()).toBe(true)
   })
+})
+
+
+it('keeps the edit draft through a live refresh while save is pending or rejected', async () => {
+  const wrapper = mount(TaskDetail, { props: { detail: taskDetail(), workflows: [], busy: false, error: null } })
+  await wrapper.get('[data-test="edit"]').trigger('click')
+  await wrapper.get('[data-test="title"]').setValue('Preserved draft')
+  await wrapper.get('form').trigger('submit')
+  await wrapper.setProps({ busy: true, detail: taskDetail() })
+  expect(wrapper.find('form').exists()).toBe(true)
+  await wrapper.setProps({ busy: false, error: { message: 'Conflict', issues: [] }, detail: taskDetail() })
+  expect((wrapper.get('[data-test="title"]').element as HTMLInputElement).value).toBe('Preserved draft')
+  wrapper.unmount()
 })

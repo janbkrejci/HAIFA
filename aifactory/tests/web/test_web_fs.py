@@ -239,16 +239,25 @@ def test_pick_timeout(tmp_path: Path, user_home: Path) -> None:
     assert fs.PICK_TIMEOUT == 300
 
 
-def test_pick_one_at_a_time(tmp_path: Path, user_home: Path) -> None:
+def test_pick_one_at_a_time(
+    tmp_path: Path, user_home: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     bin_dir = tmp_path / "bin"
-    opened, release = tmp_path / "opened", tmp_path / "release"
-    _fake(
-        bin_dir,
-        "osascript",
-        f"touch {opened.as_posix()}\n"
-        f"while [ ! -f {release.as_posix()} ]; do sleep 0.05; done\necho /Users/ada/one\n",
-    )
-    client = _client(tmp_path, user_home, FolderPicker(platform="darwin", env=_env(bin_dir)))
+    _fake(bin_dir, "osascript", "exit 99\n")
+    opened, release = threading.Event(), threading.Event()
+    choices = iter(("one", "two"))
+
+    # Process execution has separate tests; synchronize this lock test in-process.
+    def run_dialog(dialog: Any) -> dict[str, Any]:
+        choice = next(choices)
+        if choice == "one":
+            opened.set()
+            release.wait()
+        return {"path": f"/Users/ada/{choice}"}
+
+    picker = FolderPicker(platform="darwin", env=_env(bin_dir))
+    monkeypatch.setattr(picker, "_run", run_dialog)
+    client = _client(tmp_path, user_home, picker)
     first: dict[str, Any] = {}
 
     def open_first() -> None:
@@ -257,19 +266,14 @@ def test_pick_one_at_a_time(tmp_path: Path, user_home: Path) -> None:
     thread = threading.Thread(target=open_first)
     thread.start()
     try:
-        deadline = time.monotonic() + 10
-        while not opened.exists():
-            assert time.monotonic() < deadline
-            time.sleep(0.02)
+        assert opened.wait(10), "the first request did not enter the picker"
         body = _check(client.post("/api/fs/pick"), 409)
         assert body["error"]["code"] == "picker_busy"
     finally:
-        release.touch()
+        release.set()
         thread.join(timeout=10)
+    assert not thread.is_alive()
     assert _check(first["response"], 200)["data"] == {"path": "/Users/ada/one"}
-    os.remove(release)
-    opened.unlink()
-    _fake(bin_dir, "osascript", "echo /Users/ada/two\n")
     assert _check(client.post("/api/fs/pick"), 200)["data"] == {"path": "/Users/ada/two"}
 
 

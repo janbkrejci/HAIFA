@@ -8,6 +8,7 @@ import RunDetail from '@/components/runs/RunDetail.vue'
 import RunsList from '@/components/runs/RunsList.vue'
 import ChainPanel from '@/components/runs/ChainPanel.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
+import SelectMenu from '@/components/ui/SelectMenu.vue'
 import { ApiError, isDbBusyText } from '@/lib/api'
 import { chainsOf, dismissChain, fetchChains, type Chain } from '@/lib/chains'
 import { useConfirm } from '@/lib/confirm'
@@ -47,6 +48,60 @@ const listReady = ref(false)
 const error = ref<string | null>(null)
 
 const runs = ref<RunSummary[]>([])
+const runTasks = ref<string[]>([])
+const stateFilter = ref('')
+const taskFilter = ref('')
+const stateOptions = [
+  { value: '', label: 'Všechny stavy' },
+  { value: 'running', label: 'Běží' },
+  { value: 'paused', label: 'Pozastavené' },
+  { value: 'succeeded', label: 'Úspěšné' },
+  { value: 'failed', label: 'Chyba' },
+  { value: 'aborted', label: 'Přerušené' },
+  { value: 'stopped', label: 'Zastavené' },
+]
+const taskOptions = computed(() => [
+  { value: '', label: 'Všechny tasky' },
+  ...runTasks.value.map((task) => ({ value: task, label: task })),
+])
+const offset = ref(0)
+const totalRuns = ref(0)
+const pageSize = 100
+let listSeq = 0
+let listLoadingSeq = 0
+
+async function readList(): Promise<boolean> {
+  const seq = ++listSeq
+  const data = await fetchRuns(archived.value, {
+    ...(offset.value ? { offset: offset.value } : {}),
+    ...(stateFilter.value ? { state: stateFilter.value } : {}),
+    ...(taskFilter.value ? { task: taskFilter.value } : {}),
+  }).catch((error: unknown) => {
+    if (seq === listSeq) throw error
+    return null
+  })
+  if (seq !== listSeq) return false
+  if (!data) return false
+  if (offset.value > 0 && data.total !== undefined && offset.value >= data.total) {
+    offset.value = Math.max(0, Math.floor((data.total - 1) / pageSize) * pageSize)
+    return readList()
+  }
+  runs.value = Array.isArray(data?.runs) ? data.runs : []
+  runTasks.value = data.tasks ?? [...new Set(runs.value.map((run) => run.task_id))]
+  totalRuns.value = data.total ?? runs.value.length
+  listReady.value = true
+  return true
+}
+
+function changePage(delta: number) {
+  offset.value = Math.max(0, offset.value + delta * pageSize)
+  void loadList()
+}
+
+function filterList() {
+  offset.value = 0
+  void loadList()
+}
 /** Auto-continue chains; a failure to load them leaves the list of runs alone. */
 const chains = ref<Chain[]>([])
 /** The chain being hidden. */
@@ -117,15 +172,15 @@ async function loadList() {
   loading.value = true
   error.value = null
   void loadChains()
+  const seq = ++listLoadingSeq
   try {
-    const data = await fetchRuns(archived.value)
-    runs.value = Array.isArray(data?.runs) ? data.runs : []
+    if (!await readList()) return
     if (totalsOpen.value) void loadTotals()
     listReady.value = true
   } catch (e) {
     error.value = `Běhy se nepodařilo načíst: ${message(e)}`
   } finally {
-    loading.value = false
+    if (seq === listLoadingSeq) loading.value = false
   }
 }
 
@@ -214,8 +269,7 @@ async function tail(id: string) {
 async function refreshList() {
   void loadChains()
   try {
-    const data = await fetchRuns(archived.value)
-    runs.value = Array.isArray(data?.runs) ? data.runs : []
+    if (!await readList()) return
     if (totalsOpen.value) void loadTotals()
     listReady.value = true
   } catch (e) {
@@ -295,6 +349,7 @@ async function onPublish() {
 function onArchivedView(value: boolean) {
   if (archived.value === value) return
   archived.value = value
+  offset.value = 0
   void loadList()
 }
 
@@ -399,6 +454,12 @@ watch(
     </template>
     <template v-else>
       <ChainPanel v-if="!archived" :chains="chains" :dismissing="dismissing" @dismiss="onDismissChain" />
+      <div class="run-filters">
+        <label>Stav <SelectMenu v-model="stateFilter" data-test="state-filter"
+          label="Stav běhu" :options="stateOptions" @update:model-value="filterList" /></label>
+        <label>Task <SelectMenu v-model="taskFilter" data-test="task-filter"
+          label="Task běhu" :options="taskOptions" @update:model-value="filterList" /></label>
+      </div>
       <RunsList
         :runs="runs"
         :ready="listReady"
@@ -412,6 +473,11 @@ watch(
         @archive-finished="onArchiveFinished"
         @delete-archived="onDeleteArchived"
       />
+      <nav v-if="listReady" class="run-pages" aria-label="Stránky běhů">
+        <button type="button" data-test="previous-page" :disabled="loading || offset === 0" @click="changePage(-1)">Předchozí</button>
+        <span data-test="page-count">{{ totalRuns ? offset + 1 : 0 }}–{{ offset + runs.length }} z {{ totalRuns }}</span>
+        <button type="button" data-test="next-page" :disabled="loading || offset + runs.length >= totalRuns" @click="changePage(1)">Další</button>
+      </nav>
       <CostTotals
         v-if="listReady"
         :open="totalsOpen"
@@ -426,6 +492,14 @@ watch(
 </template>
 
 <style scoped>
+.run-filters, .run-pages {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin: 16px 0;
+}
+.run-filters label { display: flex; align-items: center; gap: 8px; }
 .runs-view {
   padding: 28px;
   max-width: 1400px;

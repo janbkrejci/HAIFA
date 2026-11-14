@@ -42,14 +42,18 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import hashlib
+import json
 import os
 import re
 import shutil
 import tempfile
 import unicodedata
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass, field
+from functools import wraps
 from pathlib import Path
+from typing import ParamSpec, TypeVar
 
 from aifactory.backlog.derived import is_human
 from aifactory.backlog.loader import iter_containers, load_backlog
@@ -113,6 +117,38 @@ class WriteResult:
     task: Task
     backlog: Backlog
     issues: list[Issue] = field(default_factory=list)
+
+
+P = ParamSpec("P")
+R = TypeVar("R")
+
+
+@contextlib.contextmanager
+def write_lock(root: Path, operation: str = "backlog") -> Iterator[None]:
+    from aifactory.home import haifa_home
+    from aifactory.run.store import _path_lock
+
+    key = hashlib.sha256(str(root.resolve()).encode()).hexdigest()
+    path = haifa_home() / f"{operation}-locks" / f"{key}.lock"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with _path_lock(path).hold(30):
+        yield
+
+
+def serialized_write(fn: Callable[P, R]) -> Callable[P, R]:
+    """Hold the repository lock across loading, validation and replacement."""
+
+    @wraps(fn)
+    def locked(*args: P.args, **kwargs: P.kwargs) -> R:
+        root = Path(str(args[0] if args else kwargs.get("root", kwargs.get("repo"))))
+        with write_lock(root):
+            return fn(*args, **kwargs)
+
+    return locked
+
+
+def task_revision(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def slugify(text: str) -> str:
@@ -309,6 +345,7 @@ def _next_id(container: Container, step: str, reserved_ids: Iterable[str] = ()) 
     return f"{step}-T{n:0{width}d}"
 
 
+@serialized_write
 def add_task(
     root: Path,
     step: str,
@@ -324,6 +361,8 @@ def add_task(
     parameters: dict[str, object] | None = None,
     assignee: str | None = None,
     follows: str | None = None,
+    follow_up_request_id: str | None = None,
+    follow_up_request_hash: str | None = None,
 ) -> WriteResult:
     """Create a new ``todo`` task file in the directory of ``step``.
 
@@ -365,6 +404,9 @@ def add_task(
         _validate_parameters(parameters)
         fields.update({k: v for k, v in parameters.items() if v is not None})
     text = new_task_text(fields, body)
+    if follow_up_request_id is not None:
+        text = set_field(text, "follow_up_request_id", follow_up_request_id)
+        text = set_field(text, "follow_up_request_hash", follow_up_request_hash or "")
     return _commit(backlog, check_backlog(backlog), {rel: text}, "add", rel, task_id)
 
 
@@ -378,7 +420,10 @@ def follow_up_commit_message(new_id: str, task_id: str) -> str:
     return f"backlog: {new_id} follows {task_id}"
 
 
-def follow_up_task(root: Path, task_id: str, body: str, *, title: str | None = None) -> WriteResult:
+@serialized_write
+def follow_up_task(
+    root: Path, task_id: str, body: str, *, title: str | None = None, request_id: str | None = None
+) -> WriteResult:
     """A new ``todo`` task that follows the done task `task_id` (``factory task follow-up``).
 
     It goes into the same step, gets ``follows: <task_id>``, the original's own ``writes``
@@ -387,6 +432,28 @@ def follow_up_task(root: Path, task_id: str, body: str, *, title: str | None = N
     (``not_done``).
     """
     backlog = load_for_edit(root)
+    request_hash = task_revision(json.dumps([task_id, body, title], ensure_ascii=False))
+    if request_id is not None:
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{16,128}", request_id):
+            raise TaskEditError("invalid_value", "invalid follow-up request id")
+        from aifactory.backlog.frontmatter import parse_frontmatter
+
+        for existing in backlog.by_id.values():
+            if not isinstance(existing, Task):
+                continue
+            header, _ = parse_frontmatter(_read(root, existing))
+            if header.get("follow_up_request_id") == request_id:
+                if (
+                    existing.follows != task_id
+                    or header.get("follow_up_request_hash") != request_hash
+                ):
+                    raise TaskEditError(
+                        "edit_conflict",
+                        "follow-up request already used with different content",
+                        path=existing.path,
+                        id=existing.id,
+                    )
+                return WriteResult("follow-up", False, existing.path, existing, backlog)
     original = find_task(backlog, task_id)
     if original.status != "done":
         raise TaskEditError(
@@ -412,6 +479,8 @@ def follow_up_task(root: Path, task_id: str, body: str, *, title: str | None = N
         writes=list(original.writes) if "writes" in original.own else None,
         body=body,
         follows=original.id,
+        follow_up_request_id=request_id,
+        follow_up_request_hash=request_hash if request_id else None,
     )
 
 
@@ -441,6 +510,7 @@ def _apply(text: str, fn: str, key: str, value: str | list[str] | bool | int | N
         raise TaskEditError("invalid_value", f"cannot edit field '{key}': {exc}") from exc
 
 
+@serialized_write
 def edit_task(
     root: Path,
     task_id: str,
@@ -460,6 +530,7 @@ def edit_task(
     assignee: str | None = None,
     clear_assignee: bool = False,
     archived: bool | None = None,
+    expected_revision: str | None = None,
 ) -> WriteResult:
     """Change header fields of a task: title, status (todo|cancelled), workflow, writes,
     auto_merge (``clear_auto_merge`` removes the task's own value, so it inherits again),
@@ -493,6 +564,14 @@ def edit_task(
     baseline = check_backlog(backlog)
     task = find_task(backlog, task_id, baseline)
     text = _read(root, task)
+    if expected_revision is not None and task_revision(text) != expected_revision:
+        raise TaskEditError(
+            "edit_conflict",
+            "Task se mezitím změnil. Rozepsané změny zůstaly zachované; "
+            "porovnej je s aktuální verzí.",
+            path=task.path,
+            id=task_id,
+        )
     if title is not None:
         if not title.strip():
             raise TaskEditError("invalid_value", "title must not be empty", id=task_id)
@@ -563,6 +642,7 @@ def edit_task(
     return _commit(backlog, baseline, {task.path: text}, "edit", task.path, task_id)
 
 
+@serialized_write
 def complete_task(root: Path, task_id: str, entry: str) -> WriteResult:
     """``status: done`` and `entry` in ``## Běhy`` for a task that ends without a PR.
 
@@ -578,6 +658,7 @@ def complete_task(root: Path, task_id: str, entry: str) -> WriteResult:
     return _commit(backlog, baseline, {task.path: text}, "done", task.path, task_id)
 
 
+@serialized_write
 def link_task(
     root: Path,
     task_id: str,
@@ -651,6 +732,7 @@ def set_auto_merge(root: Path, container_id: str, enabled: bool | None) -> Conta
     return _set_container_flag(root, container_id, "auto_merge", enabled, "backlog auto-merge")
 
 
+@serialized_write
 def _set_container_flag(
     root: Path, container_id: str, key: str, enabled: bool | None, command: str
 ) -> ContainerWriteResult:
@@ -762,6 +844,7 @@ def _container_result(
     return ContainerWriteResult(action, changed, rel, found, after, check_backlog(after))
 
 
+@serialized_write
 def add_container(
     root: Path,
     parent: str | None,
@@ -870,6 +953,7 @@ def _check_container_value(key: str, value: object) -> str | list[str] | bool:
     )
 
 
+@serialized_write
 def edit_container(
     root: Path,
     container_id: str,
@@ -1005,6 +1089,7 @@ def _new_container_problems(
     return problems
 
 
+@serialized_write
 def add_batch(
     root: Path,
     tasks: list[NewTask],

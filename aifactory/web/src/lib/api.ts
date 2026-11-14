@@ -76,8 +76,33 @@ function postInit(body?: unknown): RequestInit {
   return init
 }
 
-async function request<T>(url: string, init?: RequestInit): Promise<T> {
-  return readEnvelope<T>(await (init === undefined ? fetch(url) : fetch(url, init)))
+/** Ordinary reads must eventually release loading state, including a stalled response body. */
+export const READ_TIMEOUT_MS = 30_000
+
+async function readRequest<T>(url: string, init: RequestInit | undefined, read: (response: Response) => Promise<T>, timeoutMs = READ_TIMEOUT_MS): Promise<T> {
+  if (init?.method && init.method !== 'GET') return read(await fetch(url, init))
+  const controller = new AbortController()
+  const external = init?.signal
+  const abort = () => controller.abort(external?.reason)
+  if (external?.aborted) abort()
+  else external?.addEventListener('abort', abort, { once: true })
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new ApiError('request_timeout', 'Načítání trvá příliš dlouho. Zkus to znovu.'))
+      controller.abort()
+    }, timeoutMs)
+  })
+  try {
+    return await Promise.race([fetch(url, { ...init, signal: controller.signal }).then(read), deadline])
+  } finally {
+    clearTimeout(timer)
+    external?.removeEventListener('abort', abort)
+  }
+}
+
+async function request<T>(url: string, init?: RequestInit, tolerated: readonly string[] = [], timeoutMs = READ_TIMEOUT_MS): Promise<T> {
+  return readRequest(url, init, (response) => readEnvelope<T>(response, tolerated), timeoutMs)
 }
 
 /** GET /api/repos/<current repo><path>; returns `data` or throws ApiError with the envelope's error.code. */
@@ -96,8 +121,8 @@ export async function deleteApi<T>(path: string): Promise<T> {
 }
 
 /** GET /api<path> of the dashboard itself (health, repos, code), not of a repo. */
-export async function getGlobal<T>(path: string): Promise<T> {
-  return request<T>(`/api${path}`)
+export async function getGlobal<T>(path: string, signal?: AbortSignal): Promise<T> {
+  return request<T>(`/api${path}`, signal ? { signal } : undefined)
 }
 
 /** POST /api<path> of the dashboard itself (restart). */
@@ -191,6 +216,7 @@ export interface OverviewPhase {
 
 /** A running run or a live operation before claim (GET /api/overview). */
 export interface OverviewRunning {
+  owned_here?: boolean
   project?: string | null
   run_id: string | null
   /** Stable identity before claim; omitted by older servers. */
@@ -384,6 +410,7 @@ export function importLegacyRepoSettings(id: string, choices: Record<string, unk
 
 /** One repository of GET /api/overview. */
 export interface OverviewRepo {
+  stale?: boolean
   local_settings?: LocalRepoSettings | null
   local_settings_error?: string | null
   projects?: OverviewProject[]
@@ -419,8 +446,8 @@ export interface OverviewData {
 }
 
 /** What runs, waits for review and failed in every registered repo; reads only. */
-export async function fetchOverview(): Promise<OverviewData> {
-  const data = await getGlobal<Partial<OverviewData>>('/overview')
+export async function fetchOverview(signal?: AbortSignal): Promise<OverviewData> {
+  const data = await getGlobal<Partial<OverviewData>>('/overview', signal)
   const repos = Array.isArray(data.repos) ? data.repos : []
   return {
     repos: repos.map((r) => ({
@@ -672,7 +699,7 @@ export const CHECK_REPORT_CODES = ['checks_failed'] as const
 
 export async function fetchFactoryCheck({ fresh }: { fresh?: boolean } = {}): Promise<FactoryCheck> {
   const url = apiBase() + '/factory/check' + (fresh ? '?fresh=1' : '')
-  return readEnvelope<FactoryCheck>(await fetch(url), CHECK_REPORT_CODES)
+  return request<FactoryCheck>(url, undefined, CHECK_REPORT_CODES)
 }
 
 
@@ -725,10 +752,11 @@ export function fetchFactoryPlan(body: FactoryRequest, id?: string): Promise<Fac
   }))
 }
 async function factoryEnvelope<T extends { warnings?: unknown }>(url: string, init?: RequestInit): Promise<T & { envelopeWarnings: string[] }> {
-  const response = await fetch(url, init)
-  const envelope = await response.clone().json() as Envelope<T>
-  const data = await readEnvelope<T>(response)
-  return { ...data, envelopeWarnings: envelope.warnings ?? [] }
+  return readRequest(url, init, async (response) => {
+    const envelope = await response.clone().json() as Envelope<T>
+    const data = await readEnvelope<T>(response)
+    return { ...data, envelopeWarnings: envelope.warnings ?? [] }
+  })
 }
 /** A write result with the result's and the envelope's warnings merged, each once. */
 async function applyEnvelope(url: string, body: unknown): Promise<FactoryResult & { envelopeWarnings: string[] }> {
@@ -771,7 +799,8 @@ export interface MachineCheck {
 /** Error codes of the machine check whose envelope still carries the (last known) report. */
 export const MACHINE_CHECK_CODES = [...CHECK_REPORT_CODES, 'check_timeout'] as const
 export async function fetchMachineCheck(fresh = false): Promise<MachineCheck> {
-  return readEnvelope<MachineCheck>(await fetch('/api/machine/check' + (fresh ? '?fresh=1' : '')), MACHINE_CHECK_CODES)
+  // Machine probes have a 60 s server budget and a richer 75 s page deadline.
+  return request<MachineCheck>('/api/machine/check' + (fresh ? '?fresh=1' : ''), undefined, MACHINE_CHECK_CODES, 90_000)
 }
 export function fetchMachineProgress(): Promise<{ job: MachineProgress | null; checked_at: string | null }> {
   return getGlobal('/machine/progress')

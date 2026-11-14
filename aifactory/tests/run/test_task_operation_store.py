@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from aifactory import oscompat
+from aifactory.repo_settings import RepositorySettings
 from aifactory.run import store as store_module
 from aifactory.run.queue import Slots
 from aifactory.run.store import TaskRunRow, TaskRunStore
@@ -22,6 +23,7 @@ def test_parallel_member_detects_reclaimed_run(
     from aifactory.run import members
 
     repo = make_run_repo(tmp_path / "repo")
+    RepositorySettings(repo).update({"auto_continue": True})
     db = repo / ".factory" / "trace.db"
     store = TaskRunStore(db)
     try:

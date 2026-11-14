@@ -1,4 +1,4 @@
-"""Check both checkouts after every agent call of a task run; undo what was not allowed.
+"""Check both checkouts after every agent call; undo forbidden worktree writes.
 
 The engine calls ``snapshot(run)`` before an agent phase and ``enforce(run,
 phase, agent, before)`` after it, also when the phase fails (harness error,
@@ -19,12 +19,11 @@ invalid JSON, a gate that stays red). ``TaskWriteGuard`` looks at two trees:
   Before every call the guard saves the uncommitted state of the main checkout
   (``backup.py``: tracked changes, staged or not, the index and untracked files
   that are not gitignored) under ``<session>/guard_backup/NNN/``. After the call
-  any difference is restored exactly, whether the agent changed a clean path or
-  reverted, edited or deleted the operator's own uncommitted work; whatever the
-  restore overwrites is kept under ``replaced/`` of that backup. Only the
-  worktrees directory, the session runtime and the trace DB (``main_ignored``)
-  are skipped. A moved ``HEAD`` or switched branch is reported but not undone;
-  then only the previously uncommitted files are put back.
+  unexplained differences are reported and preserved in place: a diff cannot
+  distinguish an agent write from a concurrent human edit. The state before the
+  phase and a snapshot of the conflicting state are retained for recovery. Only
+  the worktrees directory, session runtime and trace DB (``main_ignored``) are
+  skipped. A moved ``HEAD`` or switched branch is reported but not undone.
 
   Another factory command may fast-forward the base checked out there during
   the phase (``task approve`` of a concurrent run, ``backlog commit``,
@@ -33,7 +32,7 @@ invalid JSON, a gate that stays red). ``TaskWriteGuard`` looks at two trees:
   the branch is the same and the journal chains the ``HEAD`` before the phase to
   the ``HEAD`` now through moves of other processes only, the move is not a
   breach: the backup is switched to the new ``HEAD`` (and the index recorded
-  with the move) and files are checked and restored against it. A commit,
+  with the move) and files are checked against it. A commit,
   reset, checkout or branch switch of the agent, or a factory command the agent
   started itself (it carries the run's own id), stays a breach.
 
@@ -44,9 +43,8 @@ invalid JSON, a gate that stays red). ``TaskWriteGuard`` looks at two trees:
   (``mainwrites.py``) with the content they wrote. A write of another process is
   neither undone nor reported: the backup takes its content as the expected
   state of the path. A write that carries the run's own id is the agent's and
-  stays a breach. When both the factory and the agent write the same file, the
-  factory's content stays and the agent's write is undone and reported, no
-  matter which came first.
+  stays a breach. Further unexplained changes remain in place and are reported;
+  the journaled factory content is retained in the backup as well.
 
 Uncommitted work present before the phase is never discarded: if it cannot be
 saved, the agent is not started. Any breach raises
@@ -320,13 +318,16 @@ class TaskWriteGuard:
             accepted = accept(mainwrites.wait_for_writes(self.main_root, writes_start, unexplained))
             off = backup.verify(main_backup, self.main_ignored)
         if off:
-            outcomes = backup.restore(main_backup, self.main_ignored, off)
+            # Attribution is unavailable: this may be the operator editing main
+            # while the agent runs. Never roll their checkout or index back.
+            evidence = main_backup.dir.parent / "main-conflict"
+            try:
+                backup.capture(self.main_root, evidence, self.main_ignored)
+            except OSError as exc:
+                problems.append(f"{MAIN}: cannot snapshot conflicting state: {exc}")
             for path in off:
-                outcome = outcomes.get(path, "unchanged")
-                if path in accepted.states and outcome.startswith("restored"):
-                    outcome = "restored to the factory write"
                 main_paths.append(path)
-                problems.append(f"{MAIN}: {path} — {outcome}")
+                problems.append(f"{MAIN}: {path} — conflicting change preserved; origin unknown")
         for path in accepted.agent_first:
             if path not in off:
                 main_paths.append(path)
@@ -348,7 +349,7 @@ class TaskWriteGuard:
             return touched
         detail = "\n".join(f"  - {p}" for p in problems)
         raise permissions.PermissionBreach(
-            f"{agent.name} changed paths outside its task run:\n{detail}\n"
+            f"Changes outside {agent.name}'s task run detected:\n{detail}\n"
             f"task {self.scope.task_id} may only change {list(self.scope.paths)} "
             "inside its worktree",
             detail={

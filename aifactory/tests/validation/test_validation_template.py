@@ -289,14 +289,22 @@ def test_every_scripted_run_revises_the_first_written_file(repo: Path) -> None:
         script = fake_scripts.script_for(task_id, variant)
         agents = script["agents"]
         assert [r["envelope"]["approved"] for r in agents["reviewer"]] == [False, True]
-        # test_plan, a plan per fix, replan_1 after the revision
+        # Full request, scoped rounds (including a plan per fix), final confirmation.
         tester = agents["tester"]
-        assert [p["envelope"]["checks"] for p in tester] == [[fake_scripts.TEST_CHECK]] * len(
-            tester
+        scoped_count = 3 if variant == "slugify_with_repair" else 2
+        assert [p["envelope"]["coverage"] for p in tester] == [
+            "full",
+            *["scoped"] * scoped_count,
+            "full",
+        ]
+        assert (
+            tester[0]["envelope"]["checks"]
+            == tester[-1]["envelope"]["checks"]
+            == [fake_scripts.TEST_CHECK]
         )
-        causes = [p["envelope"].get("failure_cause", "") for p in tester]
-        fixes = [""] if variant == "slugify_with_repair" else []
-        assert causes == ["", *fixes, ""]
+        assert all(
+            p["envelope"]["checks"] == [fake_scripts.scoped_check(task_id)] for p in tester[1:-1]
+        )
         revise = agents["builder"][-1]
         assert revise["edits"] == [fake_scripts.revise_edit(revise["envelope"]["changed_files"][0])]
     breach = fake_scripts.script_for("M01-S01-T03", "breach", repo=repo)

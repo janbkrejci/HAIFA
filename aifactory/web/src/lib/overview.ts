@@ -227,7 +227,7 @@ export function canResume(repo: OverviewRepo): boolean {
 
 /** Stop: at least one claimed run that the backend can control. */
 export function canStop(repo: OverviewRepo): boolean {
-  return activeRuns(repo).some((r) => r.run_id !== null)
+  return activeRuns(repo).some((r) => r.run_id !== null && r.owned_here !== false)
 }
 
 /** "dobíhá 1 běh", "dobíhají 2 běhy", "dobíhá 5 běhů". */
@@ -355,13 +355,16 @@ export function useOverview(intervalMs = OVERVIEW_POLL_MS): OverviewPoll {
   const error = ref<string | null>(null)
   const loading = ref(false)
   let generation = 0
+  let currentRead: AbortController | undefined
   let timer: ReturnType<typeof setInterval> | undefined
 
   async function refresh(): Promise<void> {
     const mine = ++generation
+    currentRead?.abort()
+    currentRead = new AbortController()
     loading.value = true
     try {
-      const next = await fetchOverview()
+      const next = await fetchOverview(currentRead.signal)
       if (mine !== generation) return
       data.value = next
       error.value = null
@@ -407,6 +410,7 @@ export function useOverview(intervalMs = OVERVIEW_POLL_MS): OverviewPoll {
   onScopeDispose(() => {
     stop()
     generation += 1
+    currentRead?.abort()
     document.removeEventListener('visibilitychange', onVisibility)
     window.removeEventListener('focus', onFocus)
   })

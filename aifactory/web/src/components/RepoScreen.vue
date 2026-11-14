@@ -12,7 +12,8 @@ import { SCREENS, currentRepoId, here, useRoute, type Screen } from '@/lib/route
 import BacklogView from '@/views/BacklogView.vue'
 import RunsView from '@/views/RunsView.vue'
 import ReviewView from '@/views/ReviewView.vue'
-import FactoryView from '@/views/FactoryView.vue'
+import { asyncView } from '@/lib/asyncView'
+const FactoryView = asyncView(() => import('@/views/FactoryView.vue'))
 import DemoBanner from '@/components/demo/DemoBanner.vue'
 import { DEMO_REPO } from '@/lib/demo'
 

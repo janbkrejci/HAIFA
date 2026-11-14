@@ -451,12 +451,12 @@ def test_publish_github_applies_ci_gate(
     setup(repo)
     build(script, "one")
     review(script)
-    _, log, _ = failed_publish_run(repo, script, tmp_path, monkeypatch, prepared=True)
+    origin, log, _ = failed_publish_run(repo, script, tmp_path, monkeypatch, prepared=True)
     monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_TIMEOUT", 0.0)
     monkeypatch.setattr(ci, "AUTO_MERGE_CHECKS_APPEAR", 0.0)
     monkeypatch.setattr(ci, "CI_FIX_ROUNDS", 0)
-    views = [_view(), _view(), _view(), _view(), _view("MERGED", MERGE_SHA)]
-    log.respond("pr view", views if green else _view())
+    views = [_view(origin)] * 5 + [_view(origin, "MERGED", MERGE_SHA)]
+    log.respond("pr view", views if green else _view(origin))
     log.respond("pr checks", reply([{"name": "ci", "bucket": "pass" if green else "fail"}]))
 
     rc, env = publish_cli(capsys, repo)

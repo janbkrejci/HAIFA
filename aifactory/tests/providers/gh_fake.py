@@ -17,7 +17,7 @@ import pytest
 from fake_exe import make_executable
 
 _SCRIPT = """\
-import json, os, sys
+import json, os, subprocess, sys
 here = os.environ["AIFACTORY_FAKE_GH_STATE"]
 args = sys.argv[1:]
 stdin = sys.stdin.read()
@@ -35,7 +35,15 @@ if isinstance(answer, list):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(responses, f)
     answer = current
-sys.stdout.write(answer.get("stdout", ""))
+output = answer.get("stdout", "")
+if key == "pr view" and "head_ref" in answer:
+    root, ref = answer["head_ref"]
+    data = json.loads(output)
+    data["headRefOid"] = subprocess.check_output(
+        ["git", "-C", root, "rev-parse", ref], text=True, encoding="utf-8"
+    ).strip()
+    output = json.dumps(data)
+sys.stdout.write(output)
 sys.stderr.write(answer.get("stderr", ""))
 sys.exit(int(answer.get("exit", 0)))
 """
@@ -108,9 +116,15 @@ class GhLog:
         (self.state_dir / "calls.jsonl").unlink(missing_ok=True)
 
 
-def reply(stdout: object = "", exit: int = 0, stderr: str = "") -> dict[str, Any]:
+def reply(
+    stdout: object = "", exit: int = 0, stderr: str = "", *, head: tuple[Path, str] | None = None
+) -> dict[str, Any]:
+    """A scripted reply; `head` opts a pr-view reply into reading a real pushed ref."""
     text = stdout if isinstance(stdout, str) else json.dumps(stdout)
-    return {"stdout": text, "exit": exit, "stderr": stderr}
+    answer: dict[str, Any] = {"stdout": text, "exit": exit, "stderr": stderr}
+    if head is not None:
+        answer["head_ref"] = [str(head[0]), head[1]]
+    return answer
 
 
 def install_fake_gh(

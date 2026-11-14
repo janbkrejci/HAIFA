@@ -169,7 +169,7 @@ describe('PhaseDetail', () => {
     const wrapper = mountPhase('p1')
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r-ok/phases/p1/prompts')
+    expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/r-ok/phases/p1/prompts', expect.objectContaining({ signal: expect.any(AbortSignal) }))
     const section = await open(wrapper, 'prompts')
     expect(section.find('.dsec-count').text()).toBe('(2)')
     const panels = section.findAll('[data-test="prompt-panel"]')

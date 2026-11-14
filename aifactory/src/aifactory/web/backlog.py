@@ -23,6 +23,8 @@ for the user), ``failed`` (the newest run failed or was aborted, see ``run_faile
 
 from __future__ import annotations
 
+import hashlib
+import json
 import sqlite3
 import tempfile
 from collections.abc import Callable, Iterator
@@ -33,6 +35,7 @@ from typing import TYPE_CHECKING, Any
 from aifactory import backlog as core
 from aifactory import failure
 from aifactory.backlog import Backlog, Container, Task
+from aifactory.backlog.edit import _atomic_write, serialized_write, task_revision, write_lock
 from aifactory.backlog.taskfile import has_entry
 from aifactory.config import ConfigError, load_local, load_run_config
 from aifactory.config.loader import WORKFLOWS_DIR
@@ -98,6 +101,7 @@ ADD_KEYS = (
     "assignee",
 )
 EDIT_KEYS = (
+    "expected_revision",
     "parameters",
     "workflow_advice_id",
     "title",
@@ -115,7 +119,7 @@ EDIT_KEYS = (
     "related",
 )
 LINK_KEYS = ("depends_on", "related", "remove")
-FOLLOW_UP_KEYS = ("body", "title", "run")
+FOLLOW_UP_KEYS = ("body", "title", "run", "request_id")
 RUN_KEYS = ("note", "force", "harness", "model", "thinking", "auto")
 QUEUE_ORDER_KEYS = ("order",)
 EXCLUDE_KEYS = ("excluded",)
@@ -542,6 +546,7 @@ def _depends_ref(backlog: Backlog, dep: str, rt: _Runtime) -> JsonDict:
     return {"id": dep, "kind": "container", "title": node.title, "state": state}
 
 
+@serialized_write
 def task_detail(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
     """``factory task show --json`` plus ``depends`` and ``blocks`` with titles and states."""
     backlog = core.load_for_edit(repo)
@@ -576,6 +581,7 @@ def task_detail(repo: Path, task_id: str) -> tuple[JsonDict, list[str]]:
     data: JsonDict = {
         "task": _task_json(backlog, task, reverse, rt),
         "body": task.body,
+        "revision": task_revision((repo / task.path).read_text(encoding="utf-8")),
         "issues": own_issues,
         "runs": runs,
         "prs": prs,
@@ -714,6 +720,7 @@ def _opt_bool(body: JsonDict, key: str) -> bool:
     return value
 
 
+@serialized_write
 def add(
     repo: Path, body: JsonDict, *, advice: AdviceManager | None = None, render_response: bool = True
 ) -> tuple[JsonDict, list[str]]:
@@ -765,6 +772,7 @@ def ensure_task_not_running(repo: Path, task_id: str) -> None:
         )
 
 
+@serialized_write
 def edit(
     repo: Path,
     task_id: str,
@@ -805,11 +813,21 @@ def edit(
         related=_opt_str_list(body, "related"),
         assignee=_opt_str(body, "assignee"),
         clear_assignee=_opt_bool(body, "clear_assignee"),
+        expected_revision=_opt_str(body, "expected_revision"),
     )
     return _write_json(repo, result) if render_response else ({}, [])
 
 
 def follow_up(
+    repo: Path, task_id: str, body: JsonDict, launcher: Launcher
+) -> tuple[JsonDict, list[str]]:
+    # Keep request retries serialized without holding the backlog lock while a
+    # child claims its run (completion takes the run lock before the backlog lock).
+    with write_lock(repo, "follow-up"):
+        return _follow_up(repo, task_id, body, launcher)
+
+
+def _follow_up(
     repo: Path, task_id: str, body: JsonDict, launcher: Launcher
 ) -> tuple[JsonDict, list[str]]:
     """``factory task follow-up ID --body TEXT [--title] [--run]``: a task that follows the
@@ -819,20 +837,59 @@ def follow_up(
     text = _req_str(body, "body")
     title = _opt_str(body, "title")
     run = _opt_bool(body, "run")
-    result = core.follow_up_task(repo, task_id, text, title=title)
+    request_id = _opt_str(body, "request_id")
+    result = core.follow_up_task(repo, task_id, text, title=title, request_id=request_id)
     data, warnings = _write_json(repo, result)
     data["commit"] = None
     data["run"] = None
     data["pending"] = False
     if run:
+        from aifactory.home import haifa_home
+
         new_id = result.task.id
-        committed = core.commit_backlog(repo, core.follow_up_commit_message(new_id, task_id))
-        data["commit"] = committed.to_json()
-        warnings = warnings + list(committed.warnings)
-        _ensure_dependencies_met(repo, new_id)
-        row = launcher.start(repo, new_id, note=None, force=False)
-        data["run"] = None if row is None else row.to_json()
-        data["pending"] = row is None
+        key = hashlib.sha256(f"{repo.resolve()}:{new_id}".encode()).hexdigest()
+        journal = haifa_home() / "follow-ups" / f"{key}.json"
+        if request_id and journal.is_file():
+            saved = json.loads(journal.read_text(encoding="utf-8"))
+            if saved.get("stage") != "commit":
+                data.update(saved)
+                return data, warnings
+        elif request_id and not result.changed:
+            # The task identity survived, but this machine cannot know whether
+            # another process accepted the start. Never replay an unknown mutation.
+            data["stage"] = "start"
+            data["error"] = {
+                "code": "follow_up_incomplete",
+                "message": "Task už existuje. Ověř jeho běhy a pokračuj z detailu tasku.",
+            }
+            return data, warnings
+        if request_id:
+            journal.parent.mkdir(parents=True, exist_ok=True)
+        stage = "commit"
+        try:
+            committed = core.commit_backlog(repo, core.follow_up_commit_message(new_id, task_id))
+            data["commit"] = committed.to_json()
+            warnings = warnings + list(committed.warnings)
+            stage = "start"
+            _ensure_dependencies_met(repo, new_id)
+            if request_id:
+                # Persist BEFORE starting: a lost response or process crash must never
+                # start the same task a second time. The task detail can reconcile it.
+                journal.parent.mkdir(parents=True, exist_ok=True)
+                _atomic_write(
+                    journal, json.dumps({"pending": True, "stage": "start"}), str(journal)
+                )
+            row = launcher.start(repo, new_id, note=None, force=False)
+            data["run"] = None if row is None else row.to_json()
+            data["pending"] = row is None
+        except (TaskRunError, core.TaskEditError, OSError) as exc:
+            data["stage"] = stage
+            data["error"] = {"code": getattr(exc, "code", "follow_up_failed"), "message": str(exc)}
+        if request_id:
+            saved = {
+                k: v for k, v in data.items() if k in {"commit", "run", "pending", "stage", "error"}
+            }
+            _atomic_write(journal, json.dumps(saved), str(journal))
     return data, warnings
 
 

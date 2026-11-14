@@ -16,9 +16,8 @@ F2 (``validation.f2_backlog``): one script per task, and for ``task run
 M04-S01-T02 --auto`` (one process, two runs) the queues of both tasks of the
 chain one after the other (``chain_script``).
 
-The fake tester plans one check, the sandbox's ``just test`` (full coverage),
-for ``test_plan``, again after every fix and for ``replan_1`` after the forced
-revision. Every plan has the same check, so ``plan_keeps_checks`` passes.
+The fake tester requests the sandbox's whole suite, then narrows ordinary rounds
+to the changed module. The deferred whole suite runs once on the final code.
 There are no implicit tester triage calls or plan reviews.
 
 Envelope fields follow ``aifactory.engine.data_types`` (PlanOutput,
@@ -27,6 +26,7 @@ BuildOutput, TestPlanOutput, ReviewOutput, DocumentOutput).
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from functools import partial
 from pathlib import Path
@@ -150,13 +150,45 @@ def _build(summary: str, edits: list[dict[str, Any]], message: str) -> dict[str,
 TEST_CHECK = {"name": "test", "argv": ["just", "test"]}
 
 
-def test_plan(task_id: str) -> dict[str, Any]:
-    """The fake tester's plan: the sandbox's whole suite (``just test``)."""
+def scoped_check(task_id: str) -> dict[str, Any]:
+    """Discover only the changed module's tests (including hidden tests of that module)."""
+    if task_id in f2_backlog.BY_ID:
+        module = next(
+            Path(p).stem for p in f2_backlog.BY_ID[task_id].writes if p.startswith("tests/")
+        )
+    else:
+        module = (
+            "test_mathx"
+            if task_id.startswith("M01-S01")
+            else ("test_text" if task_id.startswith("M01-S02") else "test_cli")
+        )
+    return {
+        "name": "test",
+        "argv": [
+            sys.executable,
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+            "-t",
+            ".",
+            "-p",
+            f"{module}*.py",
+            "-q",
+        ],
+    }
+
+
+def test_plan(task_id: str, *, scoped: bool = False) -> dict[str, Any]:
+    """The changed module between edits; the whole suite for final confirmation."""
     envelope = _ok(
         f"the suite covers {task_id}",
-        coverage="full",
-        reason="the sandbox has one small suite; it covers the change",
-        checks=[dict(TEST_CHECK)],
+        coverage="scoped" if scoped else "full",
+        reason="check the changed module"
+        if scoped
+        else "confirm the final code on the whole suite",
+        checks=[scoped_check(task_id) if scoped else dict(TEST_CHECK)],
     )
     return {"envelope": envelope, "edits": []}
 
@@ -216,10 +248,12 @@ def _script(
         "agents": {
             "planner": [_plan(task_id, plan)],
             "builder": [*builds, _revise(revised)],
-            # test_plan, a plan after each fix, replan_1 after the revision
+            # full request -> scoped_plan, plans after fixes/revision, final_plan
             "tester": [
                 test_plan(task_id),
-                *[test_plan(task_id) for _ in builds[1:]],
+                test_plan(task_id, scoped=True),
+                *[test_plan(task_id, scoped=True) for _ in builds[1:]],
+                test_plan(task_id, scoped=True),
                 test_plan(task_id),
             ],
             "reviewer": _reviews(task_id, revised),
@@ -271,7 +305,7 @@ def _lerp_resolve() -> dict[str, Any]:
         "task": "M01-S01-T02",
         "agents": {
             "builder": [resolve],
-            "tester": [test_plan("M01-S01-T02")],
+            "tester": [test_plan("M01-S01-T02", scoped=True)],
         },
     }
 

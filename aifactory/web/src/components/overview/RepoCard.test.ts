@@ -347,3 +347,10 @@ describe('RepoCard pending operations', () => {
     expect(card.find('[data-test="factory-resume"]').exists()).toBe(true)
   })
 })
+
+it('labels a completed result from the preceding poll and clears the label when fresh', async () => {
+  const card = mountWith(repo('a', { stale: true }))
+  expect(card.get('[data-test="repo-stale"]').text()).toContain('Výsledek předchozího načítání')
+  await card.setProps({ repo: repo('a', { stale: false }) })
+  expect(card.find('[data-test="repo-stale"]').exists()).toBe(false)
+})

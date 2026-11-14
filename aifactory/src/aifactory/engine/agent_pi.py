@@ -31,7 +31,7 @@ from typing import Callable, Optional
 from aifactory.failure import QuotaExhausted  # aifactory 3.4
 
 from .data_types import PiRequest, PiResult
-from .utils import env_flag, now_iso, operator_env, prompt_file, send_stdin
+from .utils import env_flag, now_iso, operator_env, prompt_file, read_stderr, send_stdin
 
 PI_PATH = os.environ.get("PI_PATH", "pi")
 
@@ -457,6 +457,7 @@ def _attempt(request: PiRequest, on_event: Optional[Callable[[dict], None]] = No
                                stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                                text=True, bufsize=1, cwd=request.cwd,
                                env=operator_env(), encoding="utf-8")
+    stderr_read = read_stderr(process)  # aifactory 3.6: keep both output pipes draining
     send_stdin(process, request.prompt)
     if on_spawn:
         on_spawn(process.pid)
@@ -493,7 +494,7 @@ def _attempt(request: PiRequest, on_event: Optional[Callable[[dict], None]] = No
             if on_event:
                 on_event(event)
 
-    stderr = process.stderr.read() if process.stderr else ""
+    stderr = stderr_read.result()
     result.returncode = process.wait()
     if on_exit:
         on_exit(process.pid)

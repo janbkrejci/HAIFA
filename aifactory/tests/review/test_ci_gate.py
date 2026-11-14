@@ -503,7 +503,7 @@ def test_head_checks_ignore_the_previous_head(monkeypatch: pytest.MonkeyPatch) -
     checks = ci.head_checks(cast(GitProvider, hosting), PR, "new")
 
     assert checks == RED
-    assert hosting.reads == 3
+    assert hosting.reads == 4
     assert clock.sleeps == [ci.AUTO_MERGE_CHECKS_DELAY] * 2
 
 
@@ -675,3 +675,40 @@ def test_local_policy_never_falls_back_to_backlog(repo: Path, script: Script, br
     assert code == ("repo_settings_invalid" if broken else "auto_merge_disabled")
     assert provider.asked == []
     assert pr(repo).state == "open"
+
+
+@pytest.mark.parametrize("head", [None, "old"])
+def test_head_checks_refuses_unconfirmed_head(
+    monkeypatch: pytest.MonkeyPatch, head: str | None
+) -> None:
+    clock = _Clock()
+    monkeypatch.setattr(ci, "_clock", clock)
+    monkeypatch.setattr(ci, "sleep", clock.sleep)
+    hosting = _Hosting()
+    monkeypatch.setattr(hosting, "status", lambda pr: PrStatus("open", "mergeable", head_sha=head))
+
+    def wrong_checks(pr: PullRequest) -> ChecksStatus:
+        pytest.fail("unconfirmed head must not read old checks")
+
+    monkeypatch.setattr(hosting, "checks", wrong_checks)
+    with pytest.raises(ReviewError, match="checks_head_unconfirmed"):
+        ci.head_checks(cast(GitProvider, hosting), PR, "new")
+    assert clock.now == ci.AUTO_MERGE_CHECKS_APPEAR
+
+
+def test_head_checks_refuses_push_during_check_wait(monkeypatch: pytest.MonkeyPatch) -> None:
+    hosting = _Hosting()
+    heads = iter(["new", "other"])
+    monkeypatch.setattr(
+        hosting, "status", lambda pr: PrStatus("open", "mergeable", head_sha=next(heads))
+    )
+    with pytest.raises(ReviewError, match="checks_head_unconfirmed"):
+        ci.head_checks(cast(GitProvider, hosting), PR, "new")
+
+
+def test_head_checks_preserves_explicit_no_ci_provider(monkeypatch: pytest.MonkeyPatch) -> None:
+    hosting = _Hosting()
+    hosting.reports_checks = False
+    monkeypatch.setattr(hosting, "checks", lambda pr: NONE)
+    assert ci.head_checks(cast(GitProvider, hosting), PR, "new") == NONE
+    assert hosting.reads == 0

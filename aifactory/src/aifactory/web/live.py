@@ -90,6 +90,7 @@ class LiveWatcher:
         self._prs: dict[str, tuple[Any, ...]] = {}
         self._running: dict[str, str] = {}
         self._trace_ready = False
+        self._change_seq: int | None = None
 
     # -- configuration ---------------------------------------------------------------
 
@@ -110,6 +111,7 @@ class LiveWatcher:
         except OSError:
             text = None
         settings = parse_project_settings(text, str(config), [])
+        self._settings = settings or ProjectSettings()
         if settings is not None:
             backlog_dirs = backlog_roots(self.root, settings)
             worktrees_dir = settings.worktrees_dir
@@ -262,29 +264,49 @@ class LiveWatcher:
             running = {str(r[0]): str(r[1]) for r in rows}
         for phase_id in set(running) ^ set(self._running):
             run_ids.add(running.get(phase_id) or self._running[phase_id])
+        journal = _has_table(conn, "trace_changes")
+        task_ids: set[str] = set()
+        journal_changed = False
+        overflow = False
+        if journal:
+            bounds = conn.execute("SELECT MIN(seq), MAX(seq) FROM trace_changes").fetchone()
+            newest = int(bounds[1] or 0)
+            if self._trace_ready:
+                previous_seq = self._change_seq or 0
+                overflow = bool(bounds[0] and previous_seq < int(bounds[0]) - 1)
+                overflow |= newest < previous_seq
+                overflow |= self._change_seq is None and bool(self._runs or self._prs)
+                changes = conn.execute(
+                    "SELECT task_id, run_id FROM trace_changes WHERE seq > ?", (previous_seq,)
+                ).fetchall()
+                task_ids.update(str(row[0]) for row in changes if row[0])
+                run_ids.update(str(row[1]) for row in changes if row[1])
+                journal_changed = bool(changes)
+            self._change_seq = newest
         runs: dict[str, tuple[Any, ...]] = {}
-        if _has_table(conn, "task_runs"):
+        if _has_table(conn, "task_runs") and (not journal or run_ids):
             columns = {c[1] for c in conn.execute("PRAGMA table_info(task_runs)")}
             archived = "archived" if "archived" in columns else "0"
             pause = "pause" if "pause" in columns else "NULL"  # pausing -> paused shows at once
+            clause = " WHERE run_id IN (" + ",".join("?" for _ in run_ids) + ")" if journal else ""
             rows = conn.execute(
                 f"SELECT run_id, task_id, state, ended_at, head_sha, {archived}, {pause} "
-                "FROM task_runs"
+                f"FROM task_runs{clause}",
+                tuple(run_ids) if journal else (),
             ).fetchall()
             runs = {str(r[0]): tuple(r) for r in rows}
         prs: dict[str, tuple[Any, ...]] = {}
-        if _has_table(conn, "task_prs"):
+        if not journal and _has_table(conn, "task_prs"):
             rows = conn.execute(
                 "SELECT branch, task_id, state, updated_at FROM task_prs"
             ).fetchall()
             prs = {str(r[0]): tuple(r) for r in rows}
-        task_ids: set[str] = set()
-        for new, old in ((runs, self._runs), (prs, self._prs)):
+        for new, old in () if journal else ((runs, self._runs), (prs, self._prs)):
             for key in set(new) | set(old):
                 if new.get(key) != old.get(key):
                     row = new.get(key) or old[key]
                     task_ids.add(str(row[1]))
-        runs_changed = bool(task_ids)
+        runs_changed = bool(task_ids) or journal_changed
         for run_id in run_ids:
             run = runs.get(run_id)
             if run is not None:
@@ -292,6 +314,8 @@ class LiveWatcher:
         first = not self._trace_ready
         self._max_events, self._max_phases = max_events, max_phases
         self._runs, self._prs, self._running = runs, prs, running
+        if overflow:
+            return LiveEvent("resync", {})
         if first or not (run_ids or task_ids):
             return None
         return LiveEvent(
@@ -310,18 +334,19 @@ class LiveWatcher:
     def poll(self) -> list[LiveEvent]:
         """The changes since the previous call (``[]`` on the first, the baseline)."""
         events: list[LiveEvent] = []
+        if self._db is not None and database.is_remote(self._db):
+            from aifactory.backlog.edit import TaskEditError
+            from aifactory.database.backlog import synchronize
+
+            try:
+                if self._stamp(self.root / CONFIG_FILE) != self._config_stamp:
+                    self._configure()
+                synchronize(self.root, self._settings)
+            except (sqlite3.Error, ConfigError, OSError, TaskEditError):
+                pass
         files = self._poll_files()
         if files is not None:
             events.append(files)
-        if self._db is not None and database.is_remote(self._db):
-            # Remote Markdown edits become local file events on the next scan.
-            from aifactory.backlog.edit import TaskEditError
-            from aifactory.backlog.loader import load_backlog
-
-            try:
-                load_backlog(self.root)
-            except (sqlite3.Error, ConfigError, OSError, TaskEditError):
-                pass
         trace = self._poll_trace()
         if trace is not None:
             events.append(trace)

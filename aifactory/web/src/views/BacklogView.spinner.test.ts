@@ -173,7 +173,7 @@ describe('BacklogView spinners', () => {
     await wrapper.get('[data-test="run-start"]').trigger('click')
     await flushPromises()
     expect(spinners(wrapper)).toHaveLength(0)
-    expect(fetchMock.mock.calls.every(([, init]) => !init)).toBe(true)
+    expect(fetchMock.mock.calls.every(([, init]) => !init?.method)).toBe(true)
     expect(window.location.hash).toBe(`#/r/haifa/backlog/${TASK}`)
     wrapper.unmount()
   })

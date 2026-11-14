@@ -272,14 +272,26 @@ def test_failed_recommendation_finishes_trace_and_cleans_up(
         if failure == "exception"
         else UsageError
     )
-    with pytest.raises(expected):
+    with pytest.raises(expected) as rejected:
         recommend(repo, context(repo, "P01-S01-T01", {}), "failed-advice", cancelled)
     with sqlite3.connect(repo / ".factory/data/workflow-advice/failed-advice/trace.db") as db:
         status, ended = db.execute("SELECT status, ended_at FROM sessions").fetchone()
         assert status == "fail"
         assert ended
     assert all(not path.exists() for path in isolated)
-    assert task_path.read_text() == original
+    if failure == "write":
+        # Main has concurrent owners: detecting a diff cannot attribute it to
+        # the agent. Preserve the conflicting bytes and retain recovery evidence.
+        assert task_path.read_text() == "unapproved main write"
+        assert "conflicting change preserved" in str(rejected.value)
+        evidence = list(
+            (repo / ".factory/data/workflow-advice/failed-advice").rglob("main-conflict")
+        )
+        assert len(evidence) == 1
+        saved = evidence[0] / "files" / task_path.relative_to(repo)
+        assert saved.read_text() == "unapproved main write"
+    else:
+        assert task_path.read_text() == original
 
 
 def test_missing_planner_is_reported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

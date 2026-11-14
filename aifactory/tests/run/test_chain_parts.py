@@ -71,7 +71,10 @@ def test_task_chains_crud_and_reap(tmp_path: Path) -> None:
 def test_task_chains_schema_is_added_to_an_existing_db(tmp_path: Path) -> None:
     db = tmp_path / "trace.db"
     conn = sqlite3.connect(db)
-    conn.execute("CREATE TABLE task_runs (run_id TEXT PRIMARY KEY, task_id TEXT NOT NULL)")
+    conn.execute(
+        "CREATE TABLE task_runs (run_id TEXT PRIMARY KEY, task_id TEXT NOT NULL, "
+        "started_at TEXT NOT NULL)"
+    )
     conn.close()
     for _ in range(2):  # idempotent
         store = TaskRunStore(db)
