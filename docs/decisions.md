@@ -167,3 +167,65 @@ upgradovaném počítači nejsou součástí přechodu.
 - Historie běhů používá stránkování (`limit` 1–500, výchozí 100, `offset`). Přehled načítá aktuální stav tasků; omezený journal změn zachovává aktualizace i smazání starých běhů a při překročení historie vyžádá úplnou obnovu.
 - Běžné GET požadavky mají limit 30 sekund včetně načtení těla odpovědi; chyba uvolní stav načítání a dovolí opakování. Zápisy se automaticky neopakují. Review zahazuje starší odpovědi a po dokončení načítání zpracuje odloženou live aktualizaci. Rozepsané poznámky ve formulářích chrání stávající potvrzení odchodu.
 - Terminál, setup a nastavení factory se načítají až při otevření, s indikací načítání a možností obnovit stránku při chybě.
+
+## 2026-11-14: GIRO — identita a podporovaný přechod (S12-T01)
+
+Implementační kontrakt a inventura jsou v [docs/rebranding/giro.md](rebranding/giro.md).
+Jde o rozhodnutí pro T02–T07; současný produkt ani hosting se tímto zápisem nemění.
+Toto rozhodnutí pro rebranding zpřesňuje dosavadní popis distribuce a návratu;
+S11 identita podle common Git dir a lokální provozní volby zůstávají zachované.
+
+- **Značka a technické názvy:** GIRO, slogan `Goal in. Release out.`, primární
+  CLI `giro`, kompatibilní entry point `factory` do téže implementace. Distribuce
+  a wheel zůstávají `aifactory`, Python namespace `aifactory`, zdrojový projekt
+  `aifactory/` a `aifactory/src/aifactory/`. `.factory/`, `factory/`, task ID,
+  DB/protokolové klíče, frontendové storage klíče a knihovní identity se nepřejmenovávají
+  bez funkčního důvodu. Veřejný GIRO bundle je `giro-<verze>.zip`; poslední HAIFA
+  používá výhradně dosavadní `haifa-<verze>.zip`.
+- **Doba kompatibility:** alias `factory`, dokumentované `HAIFA_*`, legacy home
+  a čtení posledního HAIFA bundlu po celou GIRO 1.x a nejméně 12 měsíců od prvního
+  stabilního GIRO vydání. Odstranění až major 2 nebo později, po splnění obou
+  podmínek, samostatném rozhodnutí a alespoň 90denním předchozím upozornění.
+  Technické názvy a historické releasy nemají tímto stanoven konec životnosti.
+- **Prostředí a data:** zavést GIRO_* se stejnými příponami. V rámci vrstvy nové
+  jméno vítězí nad legacy; CLI > procesové prostředí > vybraný home/env > dosavadní
+  konfigurace/default. Prázdné je nenastaveno, neplatné neprázdné je chyba.
+  Home se určuje před načtením env, soubor jej nesmí přesměrovat. Podprocesy
+  dostávají oba aliasy se stejnou efektivní hodnotou. Default je XDG/home `giro`
+  vedle původního `haifa`, explicitní legacy home zůstává na své cestě.
+  Oba default adresáře bez dokončeného migračního manifestu znamenají blokaci,
+  nikoli tiché sloučení. Záloha celé konzistentní sady dat a knihovny, migrační
+  journal/marker, zastavení procesů a ověřený návrat jsou podmínky přechodu.
+  Poslední HAIFA odmítne zápis do migrovaných dat; pre-transition verze marker
+  neznají a jejich přímý přístup je nepodporovaný. Rollback obnoví software i data
+  ze zálohy, nikoli jen odstraní marker. Při přechodu nepoužívat destruktivní
+  `library seed --all`; zachovat lokální commity, dirty data i seed customizace.
+- **Hosting a knihovna:** navržené nové repo `janbkrejci/GIRO`, původní
+  `janbkrejci/HAIFA` zůstává pro historické odkazy a poslední HAIFA. Ověření
+  2026-11-14: autentizovaná identita janbkrejci má admin/push do veřejného HAIFA,
+  GET cílového repo vrací 404. To není rezervace ani definitivní důkaz dostupnosti;
+  T06 musí zopakovat kontrolu a potvrdit přesný cíl. Default knihovna zůstává
+  `https://github.com/janbkrejci/HAIFA-LIBRARY.git`, včetně historie a PR metadat;
+  nepřejmenovávat ji kvůli značce. T05 připraví inventuru, T06 případné provozní kroky.
+- **Kolize jména:** [PyPI giro](https://pypi.org/project/giro/) již označuje jiný
+  nástroj pro AI coding agenty s příkazem giro; [GIRO Inc.](https://www.giro.ca/en-us/our-solutions/segments/workforce-management/)
+  dodává HASTUS. Další primární zdroje a technické dopady jsou v kontraktu.
+  Nejde o právní posouzení dostupnosti značky. T06 musí před zveřejněním výslovně
+  zaznamenat rozhodnutí vlastníka vzhledem k těmto kolizím. Instalátory nesmějí
+  přepsat cizí giro na PATH ani návody doporučit cizí PyPI balíček.
+- **Jediná migrační cesta a pořadí:** stará HAIFA → poslední HAIFA s globálním
+  alertem „HAIFA se přejmenovává na GIRO“ a akcí „Klikněte zde pro přechod“ →
+  upgrade a restart z pevného nového GIRO repo. Použít existující updater,
+  nepřipravovat asset varianty pro všechny staré updatery. T04 uchová sestavitelný
+  zdroj poslední HAIFA s SHA/ref před T02/T03. Nové repo a ověřený GIRO release
+  musí existovat dříve, než vyjde HAIFA alert. Poslední HAIFA H má verzi 0.1.N,
+  první GIRO G 1.0.M, G > H; konkrétní N/M a zdrojové SHA doloží T05/T06.
+  Další GIRO update používá nové repo i při převzatém legacy override směřujícím
+  na původní HAIFA; explicitní nové/firemní override řeší kontrakt.
+- **Publikace a skutečný produkt:** T04 vypne push publikaci ze starého repo ještě
+  před rebrandingem, poslední HAIFA se smí vydat jen explicitně z uchovaného SHA;
+  poté staré repo nevydává nic dalšího. GIRO vydává jen nové repo. Současná CI
+  je release job pro veřejné main (frontend build, Ubuntu install smoke, bundle
+  a release); nemá PR testy, pytest, lint, mypy ani Windows/macOS kontrolu.
+  Produkt poskytuje workflow a PR/approve/merge, nikoli obecnou automatickou
+  publikaci každého uživatelského projektu. Slogan nesmí takovou funkci slibovat.
