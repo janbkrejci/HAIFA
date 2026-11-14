@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T49
 title: Odstranit nefunkční auto continue z dialogu spuštění tasku
-status: todo
+status: done
 depends_on: []
 related: [HAIFA-S11-T02, HAIFA-S11-T06]
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/src/aifactory/guide/, aifactory/tests/]
@@ -25,3 +25,4 @@ Ověření:
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-14 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/227 · náklady $0.00
