@@ -1,4 +1,4 @@
-"""`factory upgrade BUNDLE`: install a newer HAIFA from a ``haifa-<version>.zip`` bundle.
+"""`giro upgrade BUNDLE`: install a newer GIRO from a ``giro-<version>.zip`` bundle.
 
 The bundle (a path, or an ``https``/``file`` URL) is downloaded and unpacked into a temporary
 directory, every file listed in ``SHA256SUMS`` is verified, the target version is read from
@@ -10,7 +10,7 @@ refused: it is updated with ``git pull``.
 After a successful install the library is refreshed to the new version's seed
 (``refresh_library``): the **new** ``factory`` from ``uv tool dir --bin`` runs ``library
 status --json``, ``library clone --seed-fallback`` when the library is missing, and ``library
-seed --all``. The running process still has the old seed, so it cannot do this itself. A
+seed``. The running process still has the old seed, so it cannot do this itself. A
 failed refresh is a warning, never a failed upgrade. Repos are never touched: their
 ``.factory/`` copies are the customizations.
 
@@ -43,6 +43,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from aifactory import __version__
+from aifactory.environment import child_environment
 from aifactory.library.remote import library_min_factory_version, version_key
 
 SUMS_FILE = "SHA256SUMS"
@@ -52,7 +53,7 @@ URL_SCHEMES = ("https", "file")
 DOWNLOAD_TIMEOUT = 60.0
 RESTART_HINT = "restart a running dashboard (factory obs) to load the new version"
 HANDOFF_SCRIPT = Path(__file__).resolve().parent / "upgrade_handoff.ps1"
-HANDOFF_LOG = "haifa-upgrade.log"
+HANDOFF_LOG = "giro-upgrade.log"
 HANDOFF_HINT = "the installation finishes after this process exits"
 
 
@@ -266,7 +267,7 @@ def _factory_call(
         text=True,
         encoding="utf-8",
         errors="replace",
-        env=None if env is None else dict(env),
+        env=child_environment(env),
     )
 
 
@@ -279,9 +280,9 @@ def refresh_library(uv: str, environ: Mapping[str, str] | None = None) -> str | 
     """Refresh the library with the newly installed ``factory``; a warning, or None on success.
 
     ``library status --json``; when the library is missing ``library clone --seed-fallback``;
-    then ``library seed --all``.
+    then ``library seed``.
     """
-    hint = "the library was not refreshed; run: factory library seed --all"
+    hint = "the library was not refreshed; run: factory library seed"
     try:
         found = _factory_call([uv, "tool", "dir", "--bin"], environ)
     except OSError as exc:
@@ -289,7 +290,7 @@ def refresh_library(uv: str, environ: Mapping[str, str] | None = None) -> str | 
     bin_dir = found.stdout.strip() if found.returncode == 0 else ""
     if not bin_dir:
         return f"{hint} (uv tool dir --bin: {_failure(found)})"
-    factory = Path(bin_dir) / ("factory.exe" if os.name == "nt" else "factory")
+    factory = Path(bin_dir) / ("giro.exe" if os.name == "nt" else "giro")
     if not factory.is_file():
         return f"{hint} (factory is not at {factory})"
     try:
@@ -309,11 +310,11 @@ def refresh_library(uv: str, environ: Mapping[str, str] | None = None) -> str | 
                     "the library is not set up; run: factory library clone --seed-fallback "
                     f"({_failure(clone)})"
                 )
-        seed = _factory_call([str(factory), "library", "seed", "--all"], environ)
+        seed = _factory_call([str(factory), "library", "seed"], environ)
     except OSError as exc:
         return f"{hint} ({factory}: {exc})"
     if seed.returncode != 0:
-        return f"{hint} (factory library seed --all: {_failure(seed)})"
+        return f"{hint} (factory library seed: {_failure(seed)})"
     return None
 
 
@@ -333,7 +334,7 @@ def spawn_detached(argv: Sequence[str], env: Mapping[str, str]) -> None:
     )
     subprocess.Popen(
         list(argv),
-        env=dict(env),
+        env=child_environment(env),
         creationflags=flags,
         stdin=subprocess.DEVNULL,
         stdout=subprocess.DEVNULL,
@@ -401,7 +402,7 @@ def run_upgrade(
     refresh: bool = True,
     bundle_brand: str | None = None,
 ) -> UpgradeResult:
-    """Install HAIFA from the bundle ``source`` (path or URL); see the module docstring.
+    """Install GIRO from the bundle ``source`` (path or URL); see the module docstring.
 
     ``handoff`` (default: on Windows) hands the installation off to a detached script that
     then starts ``restart``, if given; the result has ``handed_off`` and the caller must exit.
@@ -415,7 +416,7 @@ def run_upgrade(
         )
     if handoff is None:
         handoff = needs_handoff()
-    work = Path(tempfile.mkdtemp(prefix="haifa-upgrade-"))
+    work = Path(tempfile.mkdtemp(prefix="giro-upgrade-"))
     handed_off = False
     try:
         zip_path = fetch_bundle(source, work)
@@ -437,7 +438,7 @@ def run_upgrade(
         if version_key(target) <= version_key(current):
             raise UpgradeError(
                 "up_to_date",
-                f"the bundle has HAIFA {target}, installed is {current}; nothing to upgrade",
+                f"the bundle has GIRO {target}, installed is {current}; nothing to upgrade",
                 exit_code=1,
                 data={**versions, "min_factory_version": minimum},
             )
@@ -472,7 +473,7 @@ def run_upgrade(
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
-                env=None if environ is None else dict(environ),
+                env=child_environment(environ),
             )
         except OSError as exc:
             raise UpgradeError(
@@ -486,7 +487,7 @@ def run_upgrade(
         if proc.returncode != 0:
             raise UpgradeError(
                 "upgrade_failed",
-                f"uv tool install exited with {proc.returncode}; HAIFA {current} stays installed",
+                f"uv tool install exited with {proc.returncode}; GIRO {current} stays installed",
                 exit_code=1,
                 data={**result.to_json(), "returncode": proc.returncode},
             )

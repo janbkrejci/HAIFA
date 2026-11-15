@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import socket
 import sqlite3
@@ -21,6 +20,7 @@ import yaml
 
 from aifactory import yamlload
 from aifactory.config.errors import ConfigError, ConfigIssue
+from aifactory.environment import value
 from aifactory.home import haifa_home
 
 _ENDPOINTS: dict[str, tuple[str, str]] = {}
@@ -51,7 +51,7 @@ def database_path(root: Path, local: Path, url: str | None = None) -> Path:
     label = str(haifa_home() / "database.yaml")
     try:
         if url is None:
-            url = os.environ.get("HAIFA_DATABASE_URL")
+            url = value("DATABASE_URL")
         if url is None and Path(label).is_file():
             data = yamlload.safe_load(Path(label).read_text(encoding="utf-8"))
             if not isinstance(data, dict) or set(data) != {"url"}:

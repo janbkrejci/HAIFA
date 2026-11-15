@@ -23,12 +23,12 @@ journal fools the guard (like a write to a gitignored path does).
 from __future__ import annotations
 
 import json
-import os
 import time
 from collections.abc import Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from aifactory.environment import value
 from aifactory.run import backup, gitops
 
 RUN_ENV = "HAIFA_RUN_ID"
@@ -74,7 +74,7 @@ def record(
             ref=ref,
             old=old,
             new=new,
-            run=os.environ.get(RUN_ENV) or None,
+            run=value(RUN_ENV) or None,
             index_tree=backup.index_tree(checkout) if checkout is not None else None,
             command=command,
         )

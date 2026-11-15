@@ -94,7 +94,7 @@ def _registry(home: Path) -> Any:
 
 def test_health(client: TestClient, home: Path) -> None:
     data = _get(client, "/api/health")["data"]
-    assert data["app"] == "haifa-dashboard"
+    assert data["app"] == "giro-dashboard"
     assert data["home"] == str(home)
     assert isinstance(data["version"], str)
 

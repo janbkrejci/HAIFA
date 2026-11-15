@@ -62,7 +62,7 @@ from aifactory.harness.override import THINKING_LEVELS
 from aifactory.library.inherit import copy_library_items
 from aifactory.providers import GitProvider, ProviderError, get_provider
 from aifactory.providers import git as provider_git
-from aifactory.run import basemoves, followups, gitops
+from aifactory.run import followups, gitops
 from aifactory.run.accept import accept_failure
 from aifactory.run.errors import TaskRunError
 from aifactory.run.follows import FollowedTask, followed_section, followed_task
@@ -1027,12 +1027,12 @@ def _execute_job(
     failure_kind: str | None = None  # decided where the failure arose (aifactory.failure)
     failure_detail: dict[str, Any] = {}
     prev = Path.cwd()
-    saved_run_env = os.environ.get(basemoves.RUN_ENV)
+    saved_run_env = {key: os.environ.get(key) for key in ("GIRO_RUN_ID", "HAIFA_RUN_ID")}
 
     try:
         try:
             os.chdir(worktree)
-            os.environ[basemoves.RUN_ENV] = row.run_id
+            os.environ["GIRO_RUN_ID"] = os.environ["HAIFA_RUN_ID"] = row.run_id
             with _signals_restored(), agent_workdir(job.workdir):
                 baseline = retry.baseline if retry is not None else None
                 if retry is not None and retry.onto is not None:
@@ -1066,10 +1066,11 @@ def _execute_job(
                     )
         finally:
             os.chdir(prev)
-            if saved_run_env is None:
-                os.environ.pop(basemoves.RUN_ENV, None)
-            else:
-                os.environ[basemoves.RUN_ENV] = saved_run_env
+            for key, previous in saved_run_env.items():
+                if previous is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = previous
     except Exception as exc:
         if resolve is not None or retry is not None:
             command = f"factory task {'resolve' if resolve is not None else 'retry'} {row.task_id}"

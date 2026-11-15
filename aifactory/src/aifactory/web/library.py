@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 from collections.abc import Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -14,6 +13,7 @@ from typing import Any
 import yaml
 
 from aifactory import yamlload
+from aifactory.environment import child_environment
 from aifactory.library import remote, reseed, share, store
 from aifactory.library.model import ITEM_TYPES
 from aifactory.providers import git
@@ -83,7 +83,7 @@ def parse_body(body: Mapping[str, Any], *, apply: bool = False) -> Request:
 
 
 def environment(home: Path) -> dict[str, str]:
-    return {**os.environ, "HAIFA_HOME": str(home)}
+    return child_environment(HOME=str(home))
 
 
 @contextmanager

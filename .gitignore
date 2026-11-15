@@ -26,7 +26,7 @@ aifactory/validation/results/*/local-*/
 aifactory/validation/results/**/*.db-shm
 aifactory/validation/results/**/*.db-wal
 
-# aifactory runtime of HAIFA developing itself (.factory/ config is committed)
+# aifactory runtime of GIRO developing itself (.factory/ config is committed)
 .factory/trace.db
 .factory/trace.db-*
 

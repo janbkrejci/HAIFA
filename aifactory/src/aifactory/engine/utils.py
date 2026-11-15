@@ -42,6 +42,7 @@ def send_stdin(process, text):
     all of its input would otherwise deadlock against this write. Bytes,
     because a text-mode pipe on Windows turns every newline into CRLF.
     """
+
     def write():
         stream = process.stdin
         if stream is None:
@@ -53,7 +54,7 @@ def send_stdin(process, text):
             else:
                 stream.write(text)
         except (BrokenPipeError, OSError, ValueError):
-            pass                            # the child exited early; its exit code says why
+            pass  # the child exited early; its exit code says why
         finally:
             try:
                 stream.close()
@@ -82,7 +83,9 @@ _agent_environment = ContextVar("agent_environment", default={})
 
 @contextmanager
 def agent_environment(values):
-    token = _agent_environment.set(dict(values))
+    from aifactory.environment import child_environment
+
+    token = _agent_environment.set(child_environment({}, **values))
     try:
         yield
     finally:
@@ -104,7 +107,16 @@ def operator_env() -> dict[str, str]:
     same `python3` the engineer gets in their terminal. The ADW's own imports
     are unaffected; this env is only ever handed to child processes.
     """
-    env = {**os.environ, **_agent_environment.get()}
+    from aifactory.environment import child_environment
+
+    env = child_environment(os.environ, **_agent_environment.get())
+    for channel in (
+        "GIRO_VALIDATE_FAKE",
+        "HAIFA_VALIDATE_FAKE",
+        "GIRO_VALIDATE_HIDDEN",
+        "HAIFA_VALIDATE_HIDDEN",
+    ):
+        env.pop(channel, None)
     venv = env.pop("VIRTUAL_ENV", "")
     if not venv:
         return env
@@ -166,8 +178,13 @@ def engineer_name() -> str:
     if name:
         return name
     try:
-        out = subprocess.run(["git", "config", "user.name"],
-                             capture_output=True, text=True, timeout=5, encoding="utf-8")
+        out = subprocess.run(
+            ["git", "config", "user.name"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            encoding="utf-8",
+        )
         if out.returncode == 0 and out.stdout.strip():
             return out.stdout.strip()
     except OSError:

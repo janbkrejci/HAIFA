@@ -83,7 +83,9 @@ def main(argv: list[str]) -> int:
     action, task_id = argv[1], argv[2]
     repo = Path(_option(argv, "--repo") or ".")
     note = _option(argv, "--note")
-    control = Path(os.environ[STUB_ENV])
+    from aifactory.environment import value
+
+    control = Path(value(STUB_ENV) or "")
     plan: dict[str, Any] = json.loads(control.read_text(encoding="utf-8")).get(task_id) or {}
     sid: int | None = None  # Windows has no sessions
     if sys.platform != "win32":

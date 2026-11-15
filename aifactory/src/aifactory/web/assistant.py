@@ -478,7 +478,8 @@ def prepare_workdir(work: Path, home: Path, repo_id: str | None = None) -> None:
     script = work / "guide"
     content = (
         "#!/bin/sh\n"
-        f"HAIFA_HOME={_sh_quote(str(home))} "
+        f"GIRO_HOME={_sh_quote(str(home))} HAIFA_HOME={_sh_quote(str(home))} "
+        f"GIRO_GUIDE_REPO={_sh_quote(repo_id or '')} "
         f"HAIFA_GUIDE_REPO={_sh_quote(repo_id or '')} exec {_sh_quote(sys.executable)} "
         '-m aifactory.web.assistant_gate "$@"\n'
     )
@@ -995,7 +996,9 @@ class AssistantManager:
         guard = RepoGuard(repos, work, turn, run_id)
         guard.snapshot()
         environment = {
+            "GIRO_RUN_ID": run_id,
             "HAIFA_RUN_ID": run_id,
+            "GIRO_HOME": str(self.home),
             "HAIFA_HOME": str(self.home),
             "CLAUDE_SAFE_MODE": "1",
             "CODEX_SAFE_MODE": "1",

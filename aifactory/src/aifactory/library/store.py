@@ -34,6 +34,7 @@ import yaml
 
 from aifactory import __version__, oscompat, yamlload
 from aifactory.engine.role_registry import Issue
+from aifactory.environment import value
 from aifactory.home import haifa_home
 from aifactory.library import history as hist
 from aifactory.library.load import (
@@ -90,7 +91,7 @@ class LibraryStoreError(Exception):
 def library_root(environ: Mapping[str, str] | None = None) -> Path:
     """``$HAIFA_LIBRARY``, else ``$HAIFA_HOME/library``."""
     env = os.environ if environ is None else environ
-    explicit = env.get(LIBRARY_ENV)
+    explicit = value(LIBRARY_ENV, env)
     if explicit:
         return Path(explicit).expanduser()
     return haifa_home(environ) / "library"

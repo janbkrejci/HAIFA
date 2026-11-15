@@ -205,7 +205,7 @@ def test_allowed_hosts_open_only_off_loopback() -> None:
 def test_obs_text_output(tmp_path: Path, capsys: pytest.CaptureFixture[str], served: Calls) -> None:
     root = init_repo(tmp_path / "repo")
     assert main(["obs", "--repo", str(root), "--port", "4702"]) == 0
-    assert "HAIFA dashboard: http://127.0.0.1:4702/#/r/repo/factory" in capsys.readouterr().out
+    assert "GIRO dashboard: http://127.0.0.1:4702/#/r/repo/factory" in capsys.readouterr().out
     assert served[0]["open_browser"] is True
 
 
@@ -263,7 +263,7 @@ def test_obs_reuses_a_running_dashboard(
     assert rc == 0 and env["data"]["reused"] is True
     assert len(opened) == 1
     assert main(["obs", "--no-open"]) == 0
-    assert "HAIFA dashboard už běží: http://127.0.0.1:4700/" in capsys.readouterr().out
+    assert "GIRO dashboard už běží: http://127.0.0.1:4700/" in capsys.readouterr().out
 
 
 def test_obs_port_in_use_by_another_service(
@@ -389,9 +389,9 @@ class _Response:
 @pytest.mark.parametrize(
     ("body", "ours"),
     [
-        ({"ok": True, "data": {"app": "haifa-dashboard", "version": "1"}}, True),
+        ({"ok": True, "data": {"app": "giro-dashboard", "version": "1"}}, True),
         ({"ok": True, "data": {"app": "other"}}, False),
-        ({"ok": False, "data": {"app": "haifa-dashboard"}}, False),
+        ({"ok": False, "data": {"app": "giro-dashboard"}}, False),
         ([1, 2], False),
         (None, False),
     ],

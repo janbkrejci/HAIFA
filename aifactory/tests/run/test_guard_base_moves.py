@@ -19,17 +19,17 @@ from test_auto_continue import T03, build, open_pr, setup_chain
 from aifactory.providers import git as pgit
 from aifactory.review import approve_task
 from aifactory.run import TaskRunRow, TaskRunStore, run_task
-from aifactory.run.basemoves import RUN_ENV
 
 
 @contextlib.contextmanager
 def foreign() -> Iterator[None]:
-    saved = os.environ.pop(RUN_ENV, None)
+    saved = {key: os.environ.pop(key, None) for key in ("GIRO_RUN_ID", "HAIFA_RUN_ID")}
     try:
         yield
     finally:
-        if saved is not None:
-            os.environ[RUN_ENV] = saved
+        for key, previous in saved.items():
+            if previous is not None:
+                os.environ[key] = previous
 
 
 @pytest.fixture(name="script")

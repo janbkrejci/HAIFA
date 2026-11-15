@@ -81,3 +81,25 @@ def test_home_guard_retains_the_session_baseline(
     else:
         with pytest.raises(AssertionError, match="the real HAIFA home"):
             next(guard)
+
+
+def test_home_guard_isolates_both_product_environment_aliases(
+    tmp_path: Path,
+    tmp_path_factory: pytest.TempPathFactory,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aifactory.home import haifa_home
+
+    real_home = tmp_path / "real-home"
+    real_home.mkdir()
+    for prefix in ("GIRO_", "HAIFA_"):
+        monkeypatch.setenv(prefix + "RUN_ID", "outer-factory-run")
+        monkeypatch.setenv(prefix + "SANDBOX_REPO", "live/sandbox")
+    guard = inspect.unwrap(environment._haifa_home)(real_home, {}, tmp_path_factory, monkeypatch)
+    isolated = next(guard)
+    assert haifa_home() == isolated
+    for prefix in ("GIRO_", "HAIFA_"):
+        assert prefix + "RUN_ID" not in os.environ
+        assert prefix + "SANDBOX_REPO" not in os.environ
+    with pytest.raises(StopIteration):
+        next(guard)

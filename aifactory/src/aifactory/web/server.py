@@ -21,6 +21,8 @@ from typing import Final
 import uvicorn
 from starlette.types import ASGIApp
 
+from aifactory.environment import value
+
 HOST: Final = "127.0.0.1"
 """The default address of the dashboard."""
 
@@ -32,7 +34,7 @@ _ANY: Final = frozenset({"0.0.0.0", "::", ""})
 
 _BROWSER_WAIT_S = 10.0
 
-APP_NAME: Final = "haifa-dashboard"
+APP_NAME: Final = "giro-dashboard"
 """``app`` of ``GET /api/health`` that marks a running HAIFA dashboard."""
 
 RESTART_ENV = "HAIFA_OBS_RESTART"
@@ -49,7 +51,7 @@ class PortInUseError(Exception):
 
 def resolve_host(host: str | None) -> str:
     """``host`` if given, else ``$HAIFA_DASH_HOST``, else 127.0.0.1."""
-    return host or os.environ.get(HOST_ENV) or HOST
+    return host or value(HOST_ENV) or HOST
 
 
 def allowed_hosts(host: str) -> list[str]:
@@ -120,7 +122,7 @@ def restart_process() -> None:
     Windows has no exec: ``os.execv`` starts a second process and leaves the console to both,
     so the new dashboard gets its own console window and this process exits.
     """
-    os.environ[RESTART_ENV] = "1"
+    os.environ["GIRO_OBS_RESTART"] = os.environ[RESTART_ENV] = "1"
     sys.stdout.flush()
     sys.stderr.flush()
     if sys.platform == "win32":

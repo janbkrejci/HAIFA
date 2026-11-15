@@ -1,13 +1,11 @@
-"""Build the HAIFA distribution bundle ``dist/haifa-<version>.zip`` (``just bundle``).
+"""Build the GIRO distribution bundle ``dist/giro-<version>.zip`` (``just bundle``).
 
-The zip holds one directory ``haifa-<version>/`` with exactly: the ``aifactory`` wheel,
+The zip holds one directory ``giro-<version>/`` with exactly: the ``aifactory`` wheel,
 ``constraints.txt`` (runtime dependencies pinned from ``uv.lock``), ``install.sh`` and
 ``uninstall.sh``, ``install.bat`` with ``install.ps1`` and ``uninstall.bat`` with
 ``uninstall.ps1`` (Windows, the batch files with CRLF line ends), ``INSTALL.md``,
 ``THIRD_PARTY_NOTICES`` and ``SHA256SUMS`` over all the other files.
-``INSTALL.md`` is the installation chapter of the guide (``src/aifactory/guide``) with
-``<verze>`` replaced by the version and the in-dashboard links (``#/guide/...``) reduced to
-their text, so the standalone guide and the dashboard agree.
+``INSTALL.md`` contains versioned local installation and migration instructions.
 The frontend is not built here: ``just bundle`` runs ``just web-build`` first, and the
 build packages whatever is in ``src/aifactory/web/static/``. No network is needed.
 """
@@ -16,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import hashlib
-import re
 import subprocess
 import sys
 import tempfile
@@ -107,11 +104,19 @@ def build_wheel(out_dir: Path, project: Path = PROJECT) -> Path:
 
 def install_guide(ver: str, project: Path = PROJECT) -> str:
     """The guide's installation chapter for version ``ver`` (the bundle's ``INSTALL.md``)."""
-    chapters = sorted((project / "src" / "aifactory" / "guide").glob("*-instalace.md"))
-    if len(chapters) != 1:
-        raise BundleError("the guide has no single installation chapter (*-instalace.md)")
-    text = chapters[0].read_text("utf-8").replace("<verze>", ver)
-    return re.sub(r"\[([^\]\n]+)\]\(#/[^)\s]*\)", r"\1", text)
+    return f"""# GIRO {ver} — Goal in. Release out.
+
+Unpack giro-{ver}.zip. On macOS/Linux run ./install.sh; on Windows run install.bat.
+The distribution remains aifactory; both giro and factory use the same installation.
+Check prerequisites with `giro check`. Upgrade with `giro upgrade PATH`.
+For an existing HAIFA use its transition button, or stop every writer and run
+`giro migrate --confirm --haifa-bundle PATH` with the verified last HAIFA bundle.
+The migration retains complete data and software backups beside the original home.
+Do not remove migration markers to bypass a failed migration. Stop all writers,
+preserve the new state and restore every path recorded in the retained plan.json,
+then reinstall the retained HAIFA bundle and verify it before removing restored markers.
+Uninstall with ./uninstall.sh or uninstall.bat; backups are never removed automatically.
+"""
 
 
 def _sha256(data: bytes) -> str:
@@ -119,7 +124,7 @@ def _sha256(data: bytes) -> str:
 
 
 def build_bundle(out_dir: Path, project: Path = PROJECT) -> Path:
-    """Build ``out_dir/haifa-<version>.zip`` and return its path."""
+    """Build ``out_dir/giro-<version>.zip`` and return its path."""
     if not (project / "src" / "aifactory" / "web" / "static" / "index.html").is_file():
         raise BundleError("frontend build missing: run `just web-build` first")
     ver = version(project)
@@ -142,8 +147,8 @@ def build_bundle(out_dir: Path, project: Path = PROJECT) -> Path:
     ).encode("utf-8")
 
     out_dir.mkdir(parents=True, exist_ok=True)
-    target = out_dir / f"haifa-{ver}.zip"
-    top = f"haifa-{ver}"
+    target = out_dir / f"giro-{ver}.zip"
+    top = f"giro-{ver}"
     with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as zf:
         for name in sorted(files):
             info = zipfile.ZipInfo(f"{top}/{name}", date_time=ZIP_TIME)

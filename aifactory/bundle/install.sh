@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installs HAIFA (the `factory` tool) from this bundle with uv. Bash on macOS/Linux, or Git Bash on native Windows.
+# Installs GIRO (the `factory` tool) from this bundle with uv. Bash on macOS/Linux, or Git Bash on native Windows.
 set -euo pipefail
 
 WHEEL="@WHEEL@"
@@ -22,11 +22,19 @@ else
     exit 1
 fi
 
+bin="$(uv tool dir --bin)"
+existing="$(command -v giro || true)"
+if [ -n "$existing" ]; then
+    if { [ "$existing" != "$bin/giro" ] && [ "$existing" != "$bin/giro.exe" ]; } || ! uv tool list | grep -Eq '^ *- giro(\.exe)?$'; then
+        echo "error: giro already exists on PATH ($existing); resolve the collision before installing." >&2
+        exit 1
+    fi
+fi
 uv tool install --force "$WHEEL" --constraints constraints.txt
 
-# The library: clone the default team library (HAIFA_LIBRARY_URL overrides it); without
+# The library: clone the default team library (GIRO_LIBRARY_URL overrides it); without
 # network a local library from the seed (factory warns). Then every seed item of the library
-# is refreshed to this version's seed (factory library seed --all); items the seed lacks and
+# is refreshed to this version's seed (giro library seed); items the seed lacks and
 # the repos' .factory/ copies (the customizations) stay. A failed refresh only warns.
 echo
 echo "== Setting up the library"
@@ -35,7 +43,7 @@ if [ -n "$bin" ] && command -v cygpath >/dev/null 2>&1; then
     bin="$(cygpath -u "$bin")"
 fi
 factory=""
-for candidate in "$bin/factory" "$bin/factory.exe"; do
+for candidate in "$bin/giro" "$bin/giro.exe"; do
     if [ -n "$bin" ] && [ -x "$candidate" ]; then
         factory="$candidate"
         break
@@ -43,25 +51,25 @@ for candidate in "$bin/factory" "$bin/factory.exe"; do
 done
 library=""
 if [ -z "$factory" ]; then
-    echo "warning: factory is not in the uv tool directory; set up the library later with:" >&2
-    echo "  factory library clone --seed-fallback" >&2
+    echo "warning: giro is not in the uv tool directory; set up the library later with:" >&2
+    echo "  giro library clone --seed-fallback" >&2
 elif status="$("$factory" library status --json 2>/dev/null)"; then
     library="ok"
 elif printf '%s' "$status" | grep -q '"library_missing"'; then
     if "$factory" library clone --seed-fallback; then
         library="ok"
     else
-        echo "warning: the library is not set up; run: factory library clone --seed-fallback" >&2
+        echo "warning: the library is not set up; run: giro library clone --seed-fallback" >&2
     fi
 else
-    echo "warning: factory library status failed; check the library with: factory check" >&2
+    echo "warning: giro library status failed; check the library with: giro check" >&2
 fi
 if [ -n "$library" ]; then
-    echo "Refreshing the library to HAIFA @VERSION@"
-    if ! "$factory" library seed --all; then
-        echo "warning: the library was not refreshed; run: factory library seed --all" >&2
+    echo "Refreshing the library to GIRO @VERSION@"
+    if ! "$factory" library seed; then
+        echo "warning: the library was not refreshed; run: giro library seed" >&2
     fi
 fi
 
 echo
-echo "HAIFA @VERSION@ installed. Check prerequisites and logins with: factory check"
+echo "GIRO @VERSION@ installed. Check prerequisites and logins with: giro check"

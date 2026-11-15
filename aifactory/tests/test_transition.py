@@ -20,7 +20,9 @@ from typing import Any
 import pytest
 from starlette.testclient import TestClient
 
-from aifactory import __version__, cli, migration_guard, oscompat, transition, upgrade
+from aifactory import cli, migration_guard, oscompat, transition, upgrade
+
+__version__ = "0.1.9999"
 from aifactory.library.remote import library_min_factory_version
 from aifactory.upgrade import UpgradeError, run_upgrade
 from aifactory.web import create_multi_app, updates
@@ -117,7 +119,7 @@ def test_dashboard_click_downloads_giro_and_verified_rollback_only_after_click(
     hosting: dict[str, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    source = updates.Updates(home=prepared_home, fetch=updates.latest_release)
+    source = updates.Updates(current=__version__, home=prepared_home, fetch=updates.latest_release)
     app = create_multi_app(home=prepared_home)
     app.state.updates = source
     monkeypatch.setattr(subprocess, "Popen", _fake_worker)
@@ -390,21 +392,54 @@ def test_another_process_lease_blocks_transition(
         assert error.value.code == "runs_active"
 
 
-def test_giro_guard_accepts_only_matching_completed_or_authorized_transaction(
-    prepared_home: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+@pytest.fixture
+def guard_plan(prepared_home: Path) -> dict[str, Any]:
     backup = prepared_home.parent / "retained"
     backup.mkdir()
-    plan = {
+    source = prepared_home.parent / "legacy"
+    source.mkdir()
+    saved = backup / "data/0/env"
+    saved.parent.mkdir(parents=True)
+    saved.write_text("original settings")
+    bundle = backup / "haifa-0.1.9999.zip"
+    bundle.write_bytes(b"verified software fixture")
+    giro = backup / "giro-1.0.1.zip"
+    giro.write_bytes(b"verified GIRO fixture")
+    tool = backup / "tool/python"
+    tool.parent.mkdir()
+    tool.write_bytes(b"retained interpreter")
+    plan: dict[str, Any] = {
         "format": 1,
         "id": "operation",
-        "source": str(prepared_home),
+        "source": str(source),
         "target": str(prepared_home),
         "backup": str(backup),
         "state": "prepared",
+        "original_version": "0.1.9999",
+        "target_version": "1.0.1",
+        "haifa_bundle": str(bundle),
+        "giro_bundle": str(giro),
+        "bundle_hashes": {
+            str(bundle): transition._digest(bundle),
+            str(giro): transition._digest(giro),
+        },
+        "tool_source": str(prepared_home.parent / "original-tool"),
+        "tool_hashes": {"python": transition._digest(tool)},
+        "paths": [str(source)],
+        "data_hashes": {str(saved.relative_to(backup)): transition._digest(saved)},
     }
+    return plan
+
+
+def test_giro_guard_accepts_only_matching_completed_or_authorized_transaction(
+    prepared_home: Path, guard_plan: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    plan = guard_plan
+    backup, source = Path(plan["backup"]), Path(plan["source"])
     (backup / "plan.json").write_text(json.dumps(plan))
     migration_guard.write_manifest(prepared_home, plan)
+    # T04's source pointer predates the worker's completed data backup.
+    migration_guard.write_manifest(source, {k: v for k, v in plan.items() if k != "data_hashes"})
     monkeypatch.setattr(migration_guard, "__version__", "1.0.1")
     with pytest.raises(UpgradeError):
         migration_guard.check_home(prepared_home)
@@ -415,7 +450,22 @@ def test_giro_guard_accepts_only_matching_completed_or_authorized_transaction(
     plan["state"] = "committed"
     (backup / "plan.json").write_text(json.dumps(plan))
     migration_guard.write_manifest(prepared_home, plan)
+    migration_guard.write_manifest(source, plan)
     migration_guard.check_home(prepared_home, writing=True)
+
+
+@pytest.mark.parametrize("field", ["giro_bundle", "tool_source", "tool_hashes"])
+def test_giro_guard_requires_coordinator_recovery_fields(
+    prepared_home: Path, guard_plan: dict[str, Any], field: str
+) -> None:
+    backup, source = Path(guard_plan["backup"]), Path(guard_plan["source"])
+    guard_plan["state"] = "committed"
+    del guard_plan[field]
+    (backup / "plan.json").write_text(json.dumps(guard_plan))
+    migration_guard.write_manifest(source, guard_plan)
+    migration_guard.write_manifest(prepared_home, guard_plan)
+    with pytest.raises(UpgradeError):
+        migration_guard.check_home(prepared_home, writing=True)
 
 
 @pytest.mark.parametrize("fails", [False, True])
@@ -468,23 +518,16 @@ def test_unwritable_migration_guard_refuses_cli_with_json_error(
 
 
 def test_giro_guard_rejects_a_conflicting_source_pointer(
-    prepared_home: Path, monkeypatch: pytest.MonkeyPatch
+    prepared_home: Path, guard_plan: dict[str, Any]
 ) -> None:
-    backup, source = prepared_home.parent / "retained", prepared_home.parent / "legacy"
-    backup.mkdir()
-    source.mkdir()
-    plan = {
-        "format": 1,
-        "id": "operation",
-        "source": str(source),
-        "target": str(prepared_home),
-        "backup": str(backup),
-        "state": "committed",
-    }
+    plan = guard_plan
+    backup, source = Path(plan["backup"]), Path(plan["source"])
+    plan["state"] = "committed"
     (backup / "plan.json").write_text(json.dumps(plan))
     migration_guard.write_manifest(prepared_home, plan)
+    migration_guard.write_manifest(source, plan)
+    migration_guard.check_home(prepared_home, writing=True)
     migration_guard.write_manifest(source, {**plan, "id": "different operation"})
-    monkeypatch.setattr(migration_guard, "__version__", "1.0.1")
     with pytest.raises(UpgradeError):
         migration_guard.check_home(prepared_home, writing=True)
 

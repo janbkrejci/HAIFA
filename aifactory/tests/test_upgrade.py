@@ -112,7 +112,7 @@ def uv_log(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     log = tmp_path / "uv.log"
     tools = tmp_path / "tools"
     tools.mkdir()
-    factory = tools / "factory"
+    factory = tools / "giro"
     factory.write_text(FAKE_FACTORY, encoding="utf-8", newline="\n")
     make_executable(factory)
     monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
@@ -163,7 +163,7 @@ def test_newer_version_installs_with_uv(tmp_path: Path, uv_log: Path, capsys: Ca
     assert Path(cwd).name == f"haifa-{NEWER}"
     assert not Path(cwd).exists()  # the temporary directory is gone
     # the new factory refreshes the library to its seed
-    assert _factory_calls(uv_log) == ["library status --json", "library seed --all"]
+    assert _factory_calls(uv_log) == ["library status --json", "library seed"]
     assert data["library_refreshed"] is True
     assert obj["warnings"] == []
 
@@ -177,7 +177,7 @@ def test_missing_library_is_cloned_before_the_refresh(
     assert _factory_calls(uv_log) == [
         "library status --json",
         "library clone --seed-fallback",
-        "library seed --all",
+        "library seed",
     ]
 
 
@@ -188,8 +188,8 @@ def test_failed_refresh_warns_and_the_upgrade_succeeds(
     code, obj = _run(capsys, str(make_bundle(tmp_path / "dist")))
     assert code == 0 and obj["ok"] and obj["data"]["installed"] is True
     assert obj["data"]["library_refreshed"] is False
-    assert _factory_calls(uv_log) == ["library status --json", "library seed --all"]
-    assert any("factory library seed --all" in w for w in obj["warnings"])
+    assert _factory_calls(uv_log) == ["library status --json", "library seed"]
+    assert any("factory library seed" in w for w in obj["warnings"])
 
 
 def test_missing_new_factory_warns(
@@ -383,7 +383,11 @@ def test_handoff_keeps_the_bundle_and_starts_the_script(tmp_path: Path, uv_log: 
         str(bundle),
         handoff=True,
         restart=["python.exe", "factory.exe", "obs"],
-        environ={"PSModulePath": "C:/pwsh/Modules", "HAIFA_OBS_RESTART": "1"},
+        environ={
+            "PSModulePath": "C:/pwsh/Modules",
+            "HAIFA_OBS_RESTART": "1",
+            "HAIFA_HOME": os.environ["HAIFA_HOME"],
+        },
         spawn=_record(calls),
     )
     assert result.handed_off and not result.installed
@@ -396,7 +400,7 @@ def test_handoff_keeps_the_bundle_and_starts_the_script(tmp_path: Path, uv_log: 
     text = script.read_text("utf-8")
     for call in ("tool dir --bin", "library status --json", "library clone --seed-fallback"):
         assert call in text
-    assert "library seed --all" in text
+    assert "library seed" in text
     assert _factory_calls(uv_log) == []  # the script refreshes the library, not this process
     plan = json.loads(plan_file.read_text("utf-8"))
     wheel = f"aifactory-{NEWER}-py3-none-any.whl"

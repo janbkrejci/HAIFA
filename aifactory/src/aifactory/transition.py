@@ -17,12 +17,14 @@ import sys
 import time
 import urllib.request
 import uuid
+from collections.abc import Mapping
 from contextlib import closing
 from pathlib import Path
 from typing import Any
 
 from aifactory import oscompat
 from aifactory.config.settings import load_local_checked
+from aifactory.environment import child_environment, value
 from aifactory.library.remote import version_key
 from aifactory.migration_guard import (
     MARKER,
@@ -111,12 +113,8 @@ def _copy(source: Path, target: Path) -> None:
         )
 
 
-def _data_paths(home: Path) -> tuple[list[Path], int]:
-    if (
-        os.environ.get("HAIFA_DATABASE_URL")
-        or os.environ.get("GIRO_DATABASE_URL")
-        or (home / "database.yaml").exists()
-    ):
+def _data_paths(home: Path, environ: Mapping[str, str] | None = None) -> tuple[list[Path], int]:
+    if value("DATABASE_URL", environ) or (home / "database.yaml").exists():
         raise UpgradeError(
             "migration_unsafe",
             "Shared database requires a coordinated offline backup before migration.",
@@ -125,7 +123,7 @@ def _data_paths(home: Path) -> tuple[list[Path], int]:
     if warnings:
         raise UpgradeError("migration_unsafe", "; ".join(warnings))
     paths = [home]
-    external = os.environ.get("HAIFA_LIBRARY")
+    external = value("LIBRARY", environ)
     if external:
         library = Path(external).expanduser()
         if not library.is_dir():
@@ -142,6 +140,16 @@ def _data_paths(home: Path) -> tuple[list[Path], int]:
             )
         trace = Path(local.trace_db).expanduser()
         trace = trace if trace.is_absolute() else root / trace
+        if trace.exists():
+            with closing(sqlite3.connect(trace.as_uri() + "?mode=ro", uri=True)) as database:
+                tables = {row[0] for row in database.execute("SELECT name FROM sqlite_master")}
+                if (
+                    "task_runs" in tables
+                    and database.execute(
+                        "SELECT 1 FROM task_runs WHERE state = 'running' LIMIT 1"
+                    ).fetchone()
+                ):
+                    raise UpgradeError("runs_active", f"Stop active runs before migrating: {root}")
         git = common_dir(root)
         if git is None:
             raise UpgradeError("migration_unsafe", f"Cannot find repository journal: {root}")
@@ -161,7 +169,7 @@ def prepare(home: Path, bundle: str, current: str, target: str) -> Path:
         check_home(home)
         require_quiet(home)
         paths, port = _data_paths(home)
-        destination = home if os.environ.get("HAIFA_HOME") else home.with_name("giro")
+        destination = home if value("HOME") else home.with_name("giro")
         if destination != home and destination.exists():
             raise UpgradeError("migration_unsafe", f"GIRO home already exists: {destination}")
         if sys.prefix == sys.base_prefix:
@@ -177,8 +185,14 @@ def prepare(home: Path, bundle: str, current: str, target: str) -> Path:
             f"https://github.com/janbkrejci/HAIFA/releases/download/v{current}/haifa-{current}.zip"
         )
         haifa = fetch_bundle(old_url, backup)
+        source_env = child_environment(HOME=str(home))
         checked = run_upgrade(
-            str(giro), current=current, expected_version=target, dry_run=True, bundle_brand="giro"
+            str(giro),
+            current=current,
+            expected_version=target,
+            dry_run=True,
+            bundle_brand="giro",
+            environ=source_env,
         )
         if checked.min_factory_version and version_key(target) < version_key(
             checked.min_factory_version
@@ -186,14 +200,16 @@ def prepare(home: Path, bundle: str, current: str, target: str) -> Path:
             raise UpgradeError(
                 "migration_unsafe", "GIRO release is below the library's minimum version."
             )
-        run_upgrade(str(haifa), current="0.0.0", expected_version=current, dry_run=True)
+        run_upgrade(
+            str(haifa), current="0.0.0", expected_version=current, dry_run=True, environ=source_env
+        )
         # Preserve a runnable Python + installed modules; uv may replace the original
         # environment. This is the existing updater's supervisor, not another installer.
         tool = backup / "tool"
         shutil.copytree(sys.prefix, tool, symlinks=True)
         python = tool / Path(sys.executable).relative_to(sys.prefix)
         command = restart_command()
-        host = os.environ.get("HAIFA_DASH_HOST") or "127.0.0.1"
+        host = value("DASH_HOST") or "127.0.0.1"
         for index, arg in enumerate(command):
             if arg == "--host":
                 host = command[index + 1]
@@ -383,7 +399,7 @@ def execute(plan_file: Path) -> None:
                     plan["haifa_bundle"],
                     current="0.0.0",
                     expected_version=plan["original_version"],
-                    environ=os.environ,
+                    environ=child_environment(HOME=str(source)),
                     handoff=False,
                     refresh=False,
                 )

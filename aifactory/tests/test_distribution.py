@@ -103,6 +103,7 @@ def test_env_file_loads_without_override(tmp_path: Path) -> None:
     err = io.StringIO()
     loaded = load_env_file(environ, stderr=err)
     assert sorted(loaded) == ["NEW_KEY", "QUOTED"]
+    assert environ["GIRO_HOME"] == str(home)
     assert environ["NEW_KEY"] == "new"
     assert environ["KEPT"] == "from-env"
     assert environ["QUOTED"] == "a b"
@@ -138,7 +139,7 @@ def test_factory_loads_env_file(tmp_path: Path) -> None:
         "import os, sys\n"
         "from aifactory.cli import main\n"
         "try:\n"
-        "    main(['--version'])\n"
+        "    main(['--skill'])\n"
         "except SystemExit:\n"
         "    pass\n"
         "print(os.environ['HAIFA_TEST_FROM_FILE'], os.environ['HAIFA_TEST_KEPT'])\n"
@@ -170,7 +171,7 @@ def test_engine_utils_import_does_not_load_dotenv() -> None:
 
 
 def test_env_file_cannot_redirect_the_home_after_migration_guard(tmp_path: Path) -> None:
-    home = tmp_path / "haifa"
+    home = tmp_path / "giro"
     _write_env(
         home,
         "HOME=/other\nXDG_CONFIG_HOME=/other\nHAIFA_HOME=/other\nGIRO_HOME=/other\nOPEN_KEY=1\n",

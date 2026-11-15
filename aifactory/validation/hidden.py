@@ -25,7 +25,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
-HIDDEN_ENV = "HAIFA_VALIDATE_HIDDEN"
+HIDDEN_ENV = "GIRO_VALIDATE_HIDDEN"
 HIDDEN_DIR = "hidden"
 HIDDEN_FILE = "test_text_hidden_slugify.py"
 HIDDEN_CLASS = "HiddenSlugifyTest"

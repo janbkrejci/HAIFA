@@ -15,7 +15,6 @@ names the project ``aifactory``.
 
 from __future__ import annotations
 
-import os
 import sqlite3
 import tomllib
 from collections.abc import Iterable
@@ -24,6 +23,7 @@ from pathlib import Path
 
 from aifactory import database
 from aifactory.config.settings import load_local
+from aifactory.environment import value
 from aifactory.home import haifa_home
 from aifactory.learn.collect import Objection, collect
 from aifactory.web.registry import ID_RE, Registry, RepoEntry, same_repo
@@ -91,9 +91,9 @@ def factory_repo(home: Path | None = None) -> RepoEntry | None:
     gives None.
     """
     entries, _warnings = _entries(home)
-    wanted = os.environ.get(FACTORY_REPO_ENV, "").strip()
-    if wanted:
-        return next((e for e in entries if e.id == wanted), None)
+    wanted = value(FACTORY_REPO_ENV)
+    if wanted is not None:
+        return next((e for e in entries if e.id == wanted.strip()), None)
     return next((e for e in entries if _is_factory(Path(e.path))), None)
 
 

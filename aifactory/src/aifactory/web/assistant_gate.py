@@ -31,6 +31,8 @@ from collections.abc import Iterable, Sequence
 from pathlib import Path
 from typing import Any
 
+from aifactory.environment import child_environment
+from aifactory.environment import value as env_value
 from aifactory.home import haifa_home
 
 ALLOWED: tuple[tuple[str, ...], ...] = (
@@ -128,7 +130,7 @@ def registered(home: Path | None = None, *, repo_id: str | None = None) -> dict[
     from aifactory.web.registry import Registry
 
     state = Registry(home if home is not None else haifa_home()).snapshot()[0]
-    scope = repo_id if repo_id is not None else os.environ.get("HAIFA_GUIDE_REPO")
+    scope = repo_id if repo_id is not None else env_value("GUIDE_REPO")
     return {entry.id: Path(entry.path) for entry in state.repos if not scope or entry.id == scope}
 
 
@@ -175,7 +177,7 @@ def run_factory(
         return 0, json.dumps({"ok": True, "data": data}, ensure_ascii=False)
     if "--json" not in words:
         words.append("--json")
-    env = {**os.environ, "HAIFA_RUN_ID": run_id or os.environ.get("HAIFA_RUN_ID", "guide")}
+    env = child_environment(RUN_ID=run_id or env_value("RUN_ID") or "guide")
     try:
         result = subprocess.run(
             [sys.executable, "-m", "aifactory", *words],
@@ -258,7 +260,7 @@ def execute(
     """``(exit code, output)`` of one guide command; the output is already redacted."""
     repos = registered(home, repo_id=repo_id)
     values = secrets(repos.values(), home)
-    run_id = os.environ.get("HAIFA_RUN_ID", "guide")
+    run_id = env_value("RUN_ID") or "guide"
     try:
         if list(argv[:1]) == ["repos"] and len(argv) == 1:
             listed = [{"id": key, "path": str(path)} for key, path in repos.items()]

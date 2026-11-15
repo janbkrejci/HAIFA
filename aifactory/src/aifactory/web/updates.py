@@ -17,7 +17,7 @@ from aifactory.library.remote import version_key
 from aifactory.upgrade import UpgradeError, editable_install, run_upgrade
 from aifactory.web.server import RESTART_ENV, exit_process, restart_command
 
-UPDATE_REPOSITORY = "janbkrejci/HAIFA"
+UPDATE_REPOSITORY = "janbkrejci/GIRO"
 MIGRATION_REPOSITORY = "janbkrejci/GIRO"
 
 
@@ -45,19 +45,16 @@ class Updates:
         clock: Callable[[], float] = time.monotonic,
         home: Path | None = None,
     ) -> None:
-        legacy = os.environ.get("HAIFA_UPDATE_REPO")
-        giro = current.startswith("1.")
+        from aifactory.environment import resolve
+
+        env = resolve(os.environ) if current.startswith("1.") else os.environ
         self.repository = (
             repository
             if repository is not None
             else (
-                (
-                    os.environ.get("GIRO_UPDATE_REPO")
-                    or (legacy if legacy != "janbkrejci/HAIFA" else None)
-                    or MIGRATION_REPOSITORY
-                )
-                if giro
-                else (legacy or UPDATE_REPOSITORY)
+                (env.get("GIRO_UPDATE_REPO") or UPDATE_REPOSITORY)
+                if current.startswith("1.")
+                else (env.get("HAIFA_UPDATE_REPO") or "janbkrejci/HAIFA")
             )
         )
         self.current = current
