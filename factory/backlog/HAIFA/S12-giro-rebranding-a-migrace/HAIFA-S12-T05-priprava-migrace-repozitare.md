@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S12-T05
 title: GIRO — připravit nové repo a pořadí obou vydání
-status: todo
+status: done
 depends_on: [HAIFA-S12-T03, HAIFA-S12-T04]
 writes: [docs/rebranding/, docs/decisions.md]
 ---
@@ -43,3 +43,4 @@ V tomto tasku se nemění žádný remote, hosting, lokální hlavní checkout a
 
 ## Běhy
 <!-- doplňuje factory při schválení PR -->
+- 2026-11-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/248 · náklady $0.00
