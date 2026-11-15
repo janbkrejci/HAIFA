@@ -114,17 +114,17 @@ watchEffect(() => {
   document.documentElement.lang = locale.value
   if (page.value === 'repo') {
     const name = currentRepo.value?.name ?? repoId.value ?? ''
-    document.title = `${name} · ${SCREEN_LABELS[route.value]} · HAIFA`
+    document.title = `${name} · ${SCREEN_LABELS[route.value]} · GIRO`
   } else if (page.value === 'setup') {
-    document.title = `${t('nav.library')} · HAIFA`
+    document.title = `${t('nav.library')} · GIRO`
   } else if (page.value === 'repos-add') {
-    document.title = `${t('nav.addRepo')} · HAIFA`
+    document.title = `${t('nav.addRepo')} · GIRO`
   } else if (page.value === 'problems') {
-    document.title = `${t('nav.problems')} · HAIFA`
+    document.title = `${t('nav.problems')} · GIRO`
   } else if (page.value === 'guide') {
-    document.title = `${t('nav.guide')} · HAIFA`
+    document.title = `${t('nav.guide')} · GIRO`
   } else {
-    document.title = `${t('nav.overview')} · HAIFA`
+    document.title = `${t('nav.overview')} · GIRO`
   }
 })
 
@@ -173,7 +173,9 @@ onBeforeUnmount(() => {
           <rect x="8" y="13.5" width="20" height="5" rx="2.5" fill="#c89bff" />
           <rect x="4" y="21" width="13" height="5" rx="2.5" fill="#5ad2dd" />
         </svg>
-        <a class="brand" :href="OVERVIEW_HREF">HAIFA</a>
+        <Tooltip text="Goal in. Release out.">
+          <a class="brand" :href="OVERVIEW_HREF" aria-label="GIRO — Goal in. Release out.">giro</a>
+        </Tooltip>
       </div>
 
       <div class="topbar-right">

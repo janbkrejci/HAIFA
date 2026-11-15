@@ -36,6 +36,7 @@ class Homes:
         self.user.mkdir()
         monkeypatch.setenv("HOME", str(self.user))
         monkeypatch.delenv("HAIFA_LIBRARY", raising=False)
+        monkeypatch.delenv("GIRO_LIBRARY", raising=False)
         for kind in ("AUTHOR", "COMMITTER"):
             monkeypatch.setenv(f"GIT_{kind}_NAME", "Ada Tester")
             monkeypatch.setenv(f"GIT_{kind}_EMAIL", "ada@example.com")
@@ -43,9 +44,10 @@ class Homes:
         _git(tmp, "init", "--bare", "--quiet", "-b", "main", str(self.bare))
 
     def use(self, name: str) -> Path:
-        """Switch HAIFA_HOME to home `name`; its library path."""
+        """Switch both compatible home names to home `name`; its library path."""
         home = self.user / name
         self.mp.setenv("HAIFA_HOME", str(home))
+        self.mp.setenv("GIRO_HOME", str(home))
         return home / "library"
 
     def skill(self, name: str, text: str = "Run the linter.") -> Path:
@@ -166,7 +168,7 @@ def test_write_in_b_behind_a_then_pull(homes: Homes, capsys: Capsys) -> None:
     before = _snapshot(lib_b)
     error = _fail(capsys, _import(homes, "fmt"))
     assert error["code"] == "library_behind"
-    assert error["data"]["fix"] == "factory library pull" and error["data"]["behind"] == 2
+    assert error["data"]["fix"] == "giro library pull" and error["data"]["behind"] == 2
     assert {k: v for k, v in _snapshot(lib_b).items() if k != "refs"} == {
         k: v for k, v in before.items() if k != "refs"
     }

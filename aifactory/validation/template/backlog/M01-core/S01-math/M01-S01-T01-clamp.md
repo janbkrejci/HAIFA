@@ -15,4 +15,4 @@ skipped until `clamp` exists).
 Constraints: standard library only, at most 40 changed lines.
 
 ## Běhy
-<!-- doplňuje HAIFA při schválení PR -->
+<!-- doplňuje GIRO při schválení PR -->

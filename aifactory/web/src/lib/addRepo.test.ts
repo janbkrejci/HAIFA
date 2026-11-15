@@ -42,7 +42,7 @@ describe('filterEntries', () => {
 
 describe('problemText', () => {
   it('has a reason for every known code and the server message otherwise', () => {
-    expect(problemText({ code: 'not_git', message: 'x' })).toContain('HAIFA nespouští git init')
+    expect(problemText({ code: 'not_git', message: 'x' })).toContain('GIRO nespouští git init')
     expect(problemText({ code: 'linked_worktree', message: 'x', main_checkout: '/w/main' })).toContain('/w/main')
     expect(problemText({ code: 'weird', message: 'server says' })).toBe('server says')
     expect(Object.keys(PROBLEM_TEXT).sort()).toEqual(
@@ -58,6 +58,6 @@ it('translates known folder problems on demand and preserves paths and unknown d
   expect(problemText(linked)).toBe('Složka je propojený worktree. Přidej hlavní checkout /w/česká cesta.')
   setLocale('en')
   expect(problemText(linked)).toBe('The folder is a linked worktree. Add the main checkout /w/česká cesta.')
-  expect(problemText({ code: 'not_git', message: 'raw' })).toBe('The folder is not in a Git repository. HAIFA does not run git init.')
+  expect(problemText({ code: 'not_git', message: 'raw' })).toBe('The folder is not in a Git repository. GIRO does not run git init.')
   expect(problemText(unknown)).toBe('Původní diagnostika')
 })

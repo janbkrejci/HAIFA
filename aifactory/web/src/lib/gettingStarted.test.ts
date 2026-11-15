@@ -54,7 +54,7 @@ describe('gettingStartedSteps', () => {
 
   it('sends an uninstalled or uncommitted repo to its Factory tab', () => {
     const fresh = gettingStartedSteps(input({ repos: [repo('n', 'not_installed')], rosterAgents: null, projects: null }))
-    expect(nextStep(fresh)).toMatchObject({ id: 'factory', href: '#/r/n/factory', action: 'Nainstalovat factory' })
+    expect(nextStep(fresh)).toMatchObject({ id: 'factory', href: '#/r/n/factory', action: 'Nainstalovat GIRO' })
     const dirty = gettingStartedSteps(input({ repos: [repo('d', 'uncommitted')], rosterAgents: null, projects: null }))
     expect(nextStep(dirty)).toMatchObject({ id: 'factory', action: 'Commitnout konfiguraci' })
     expect(done(input({ repos: [repo('d', 'uncommitted')], rosterAgents: 3 })).roster).toBe(false)

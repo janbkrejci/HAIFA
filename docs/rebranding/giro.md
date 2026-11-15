@@ -406,3 +406,30 @@ coverage=none nebo samotný plán nejsou provedené ověření. Timeout je neúp
 kontrola. Builder tyto příkazy nepředstírá jako vykonané a nespouští je místo runneru.
 Produktové regresní testy, frontend build, browser kontroly a plná sada nejsou
 pro samotnou změnu tohoto kontraktu potřebné.
+
+## Implementace uživatelské identity T03
+
+Aktivní dashboard používá slovní značku `giro`, titulky GIRO a slogan
+`Goal in. Release out.`; původní třípruhová ikona a její původ zůstávají.
+CS/EN příručka, README, agentní instrukce, demo a generovaný skill používají
+primárně `giro`. Frontendový balíček je privátní `giro-dashboard`.
+Seed nadále distribuuje jedinou položku `skill/factory` se stejným obsahem jako
+`giro --skill`; běhové kopie skillu nejsou zdrojem změn.
+
+Zbývající HAIFA v instalačních textech označuje poslední přechodovou verzi,
+aktivní staré release URL, legacy aliasy nebo zachované HAIFA-LIBRARY repo.
+Migrační překlady zůstávají součástí společného klienta, ale GIRO backend
+přechodový alert nenabízí. Staré prefixy storage a assistant protokolů výše
+zůstávají beze změny. Interní docstringy a komentáře s HAIFA popisují původ
+implementace; nejsou uživatelskou značkou. Validační sandboxy `HAIFA-E2E-*`,
+rezervované názvy a interní konstanty zůstávají technickými identifikátory.
+Historická task ID, backlogy, zápisy běhů a právní upozornění se nepřepisují.
+
+Instalační příručka rozlišuje připravený GIRO bundle od veřejné distribuce:
+před ověřeným T06 neslibuje funkční GIRO download URL. Automatický refresh
+používá nedestruktivní seed; `--all` je pouze explicitní přepsání uživatelem.
+
+Veřejné kotvy příručky `jak-haifa-funguje` a `zalozka-factory` zůstávají
+kompatibilními URL v obou jazycích; viditelné nadpisy používají GIRO. Bundle
+generuje `INSTALL.md` ze stejné instalační kapitoly a verzuje pouze GIRO příklady;
+`haifa-H.zip` označuje poslední HAIFA 0.1, nikoli verzi právě sestavovaného GIRO.

@@ -90,7 +90,7 @@ def test_sssf_repo_is_unsupported(tmp_path: Path) -> None:
     report = run_check(repo, machine=FakeMachine())
     assert (report.state, report.action) == ("unsupported", None)
     finding = _assert(report, "repo_unsupported", "repo", "error")
-    assert "sssf" in finding.message and "factory init" in (finding.fix or "")
+    assert "sssf" in finding.message and "giro init" in (finding.fix or "")
     assert [f.code for f in report.findings if f.scope == "repo"] == ["repo_unsupported"]
     assert not report.ok
 

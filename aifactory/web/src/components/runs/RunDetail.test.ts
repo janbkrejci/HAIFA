@@ -88,7 +88,7 @@ describe('RunDetail', () => {
 
   it('says who started the run', () => {
     const manual = mount(RunDetail, { props: { detail: detail(), events: events() } })
-    expect(manual.get('[data-test="started-by"]').text()).toBe('Spuštěno ručně (dashboard nebo factory task run)')
+    expect(manual.get('[data-test="started-by"]').text()).toBe('Spuštěno ručně (dashboard nebo giro task run)')
     const auto = mount(RunDetail, { props: { detail: detail({ started_by: 'auto-resolve' }), events: events() } })
     expect(auto.get('[data-test="started-by"]').text()).toBe('Spuštěno automaticky: auto-merge řeší konflikt PR')
     const fix = mount(RunDetail, { props: { detail: detail({ started_by: 'auto-ci-fix' }), events: events() } })

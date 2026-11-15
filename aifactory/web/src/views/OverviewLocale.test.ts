@@ -128,10 +128,10 @@ describe('overview locale without remounting', () => {
   it('uses action fields and request codes without interpreting saved sentences', () => {
     const action = { action: 'fallback', at: '', task_id: 'T', run_id: 'r', failure_kind: 'quota', ok: true, text: 'Uložená česká věta', detail: { from: { harness: 'codex' }, to: { harness: 'claude' } } }
     const error = new ApiError('run_in_progress', 'Uložená česká věta')
-    expect(autoActionText(action)).toContain('Factory continued with Claude Code')
+    expect(autoActionText(action)).toContain('GIRO continued with Claude Code')
     expect(dashboardError(error)).toBe('A run is in progress in the repository.')
     setLocale('cs')
-    expect(autoActionText(action)).toBe('Factory pokračovala na Claude Code po vyčerpání kvóty Codexu')
+    expect(autoActionText(action)).toBe('GIRO pokračovala na Claude Code po vyčerpání kvóty Codexu')
     expect(dashboardError(error)).toBe('V repozitáři právě probíhá běh.')
     expect(action.text).toBe('Uložená česká věta')
     expect(error.message).toBe('Uložená česká věta')

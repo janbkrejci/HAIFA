@@ -306,7 +306,7 @@ export const setupCs = {
   "setup.extensions": "Rozšíření pi",
   "setup.harnessTitle": "Harnessy tohoto počítače",
   "setup.saveSettings": "Uložit nastavení",
-  "setup.harnessHint": "Výchozí volby pro všechny factory na tomto počítači. Projekt a potom task mohou harness, model a thinking level přepsat.",
+  "setup.harnessHint": "Výchozí volby pro všechny GIRO na tomto počítači. Projekt a potom task mohou harness, model a thinking level přepsat.",
   "setup.loadingHarnesses": "Načítám harnessy a modely…",
   "setup.notInstalled": "Na tomto počítači není nainstalovaný.",
   "setup.enabled": "Zapnutý",

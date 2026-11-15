@@ -1,6 +1,6 @@
 # Validační scénáře aifactory (`just validate`)
 
-Skript připraví testovací repo se šablonou backlogu (`template/`) a spustí scénáře nad CLI `factory`. Ověřují rizika R1 až R5 a R10 (viz Scénáře), řešení konfliktu přes `task resolve` (RESOLVE), hlídač zápisů do hlavního checkoutu (B1) a akceptační scénář fáze F2 (F2). Každý běh úkolu má vynucené opravné kolo review → revise. R10 má navíc vynucené kolo test → fix.
+Skript připraví testovací repo se šablonou backlogu (`template/`) a spustí scénáře nad CLI `giro`. Ověřují rizika R1 až R5 a R10 (viz Scénáře), řešení konfliktu přes `task resolve` (RESOLVE), hlídač zápisů do hlavního checkoutu (B1) a akceptační scénář fáze F2 (F2). Každý běh úkolu má vynucené opravné kolo review → revise. R10 má navíc vynucené kolo test → fix.
 
 ```
 just validate --remote local     # bez sítě a bez modelů, zdarma
@@ -15,7 +15,7 @@ Další přepínače:
 - `--results-dir PATH`: kam se zapíšou výsledky (výchozí `aifactory/validation/results`).
 - `--r5-samples N`: počet měřených worktree (výchozí 3).
 - `--roster DIR`: pro daný běh nahradí `.factory/agents.yaml` a `.factory/workflows/simple-sdlc.yaml` ze šablony sandboxu soubory `DIR/agents.yaml` a `DIR/workflows/simple-sdlc.yaml`.
-  - Relativní cesta se bere od kořene HAIFA.
+  - Relativní cesta se bere od kořene GIRO.
   - Roster musí mít agenty `planner`, `builder`, `tester`, `reviewer` a `documenter`, jinak skript skončí kódem 2.
   - Prompty (`.factory/prompts/`) včetně pravidla reviewera zůstávají ze šablony.
   - Když roster nemá harness, který R1 nebo R10 ověřuje, scénář hlásí `inconclusive` místo `failed`. R1 potřebuje claude, codex i pi v jednom workflow, R10 build i fix na codexu. Skutečná chyba jiného checku zůstává `failed`.
@@ -27,7 +27,7 @@ Další přepínače:
 Kód návratu:
 - 0: všechny scénáře skončily `passed` nebo `inconclusive`;
 - 1: některý scénář skončil `failed`;
-- 2: chyba přípravy. Chybí `HAIFA_SANDBOX_REPO` nebo `HAIFA_AZURE_SANDBOX_REPO`, selže `gh auth status`, kontrola `az` (instalace, rozšíření `azure-devops`, přihlášení, dostupnost sandboxu, přístup gitu) nebo `factory harness check`, `just` není na PATH, nebo je neúplný roster.
+- 2: chyba přípravy. Chybí `HAIFA_SANDBOX_REPO` nebo `HAIFA_AZURE_SANDBOX_REPO`, selže `gh auth status`, kontrola `az` (instalace, rozšíření `azure-devops`, přihlášení, dostupnost sandboxu, přístup gitu) nebo `giro harness check`, `just` není na PATH, nebo je neúplný roster.
 
 ## Režimy
 
@@ -47,13 +47,13 @@ Skript naklonuje sandbox a z jeho výchozí větve založí novou base větev `h
 
 Preflight ověří `az --version`, rozšíření, přihlášení (`az account show`, s `AZURE_DEVOPS_EXT_PAT` se přeskočí), sandbox (`az repos show`) a že git sandbox přečte (`git ls-remote`).
 
-Git se k Azure DevOps přihlašuje přes HTTPS credential helper, který při každém volání gitu vypíše čerstvý token z `az account get-access-token` (resource Azure DevOps), nebo `AZURE_DEVOPS_EXT_PAT`. Helper je v repo-lokální konfiguraci klonu, takže ho sdílejí i worktree, které vytváří HAIFA. Globální helpery (třeba keychain) se pro sandbox vypnou, token se nikam neukládá.
+Git se k Azure DevOps přihlašuje přes HTTPS credential helper, který při každém volání gitu vypíše čerstvý token z `az account get-access-token` (resource Azure DevOps), nebo `AZURE_DEVOPS_EXT_PAT`. Helper je v repo-lokální konfiguraci klonu, takže ho sdílejí i worktree, které vytváří GIRO. Globální helpery (třeba keychain) se pro sandbox vypnou, token se nikam neukládá.
 
-Skript naklonuje sandbox a z jeho výchozí větve založí base větev `haifa-validate/<YYYYMMDD-HHMMSS>`. Výchozí větev sandboxu se nemění. Do `.factory/config.yaml` sandboxu přidá sekci `azure` (organizace, projekt, repo). Merge PR mimo factory (R3) jde přes `az repos pr update --status completed --squash true` a validace čeká, až Azure PR dokončí. Zavření PR mimo factory jde přes `az repos pr update --status abandoned`.
+Skript naklonuje sandbox a z jeho výchozí větve založí base větev `haifa-validate/<YYYYMMDD-HHMMSS>`. Výchozí větev sandboxu se nemění. Do `.factory/config.yaml` sandboxu přidá sekci `azure` (organizace, projekt, repo). Merge PR mimo giro (R3) jde přes `az repos pr update --status completed --squash true` a validace čeká, až Azure PR dokončí. Zavření PR mimo giro jde přes `az repos pr update --status abandoned`.
 
 ## Azure E2E s povinným schválením (`just validate-azure-e2e`)
 
-Samostatný scénář (`azure_e2e.py`), spouští ho operátor ručně, nikdy CI ani test. Ověřuje, že repo, do jehož `main` vede cesta jen přes PR s aspoň jedním schvalovatelem, projde s HAIFA bez člověka.
+Samostatný scénář (`azure_e2e.py`), spouští ho operátor ručně, nikdy CI ani test. Ověřuje, že repo, do jehož `main` vede cesta jen přes PR s aspoň jedním schvalovatelem, projde s GIRO bez člověka.
 
 ```
 just validate-azure-e2e                         # asolcz.visualstudio.com, projekt NEO_HEF
@@ -67,18 +67,18 @@ Předpoklady: `az` s rozšířením `azure-devops`, přihlášení (`az account 
 Kroky:
 1. `az repos create` založí dočasné repo a do `main` se pushne počáteční commit.
 2. Politika na `main`: minimálně 1 schvalovatel, autorův hlas se počítá (`creatorVoteCounts`), bez resetu po pushi. Přímý push do `main` musí Azure odmítnout (TF402455).
-3. Klon v dočasném adresáři se přidá do HAIFA stejně jako `POST /api/repos` (`add_repo`) s `base_changes: pr` a `base_pr_merge: auto`. Instalace jde přes PR `factory-init/<n>`, který factory schválí vlastním hlasem a mergne. Lokální `main` ho obsahuje a shoduje se s remote.
-4. Backlog (projekt `E2E`, workflow `build-review`, `auto_merge`, dva závislé tasky) jde přes `factory backlog commit` jako PR `factory-backlog/<n>`, automaticky schválený a mergnutý.
-5. Zapnutí lokálního `auto_continue` a `factory task run E2E-S01-T01` nad falešným harnessem (po běhu se lokální pokračování vypne): každý task má PR, auto-merge hlásí `reviewed: true`, PR je na Azure `completed` s hlasem autora 10 a bez `bypassPolicy`. Druhý task spustil řetěz sám (`started_by: auto-continue`), řetěz skončí `exhausted`.
+3. Klon v dočasném adresáři se přidá do GIRO stejně jako `POST /api/repos` (`add_repo`) s `base_changes: pr` a `base_pr_merge: auto`. Instalace jde přes PR `factory-init/<n>`, který giro schválí vlastním hlasem a mergne. Lokální `main` ho obsahuje a shoduje se s remote.
+4. Backlog (projekt `E2E`, workflow `build-review`, `auto_merge`, dva závislé tasky) jde přes `giro backlog commit` jako PR `factory-backlog/<n>`, automaticky schválený a mergnutý.
+5. Zapnutí lokálního `auto_continue` a `giro task run E2E-S01-T01` nad falešným harnessem (po běhu se lokální pokračování vypne): každý task má PR, auto-merge hlásí `reviewed: true`, PR je na Azure `completed` s hlasem autora 10 a bez `bypassPolicy`. Druhý task spustil řetěz sám (`started_by: auto-continue`), řetěz skončí `exhausted`.
 6. Lokální `main` = remote, oba tasky mají v remote base `status: done` a odkaz na PR pod `## Běhy`, `task_prs` je `merged` a hlavní checkout je čistý.
 
-Úklid běží ve `finally`, i po chybě nebo Ctrl+C: odregistrování z dashboardu (vlastní HAIFA home běhu, dashboard operátora se nemění), smazání politiky, `az repos delete` dočasného repa (jen podle jeho id), vysypání z koše projektu (recycle bin) a smazání lokálního adresáře. Pak se repo i politika znovu vyhledají. Azure smazanou politiku dál vrací podle id s `isDeleted: true`, to se počítá jako smazaná. Co zůstane, je chyba úklidu a celý běh skončí `failed`.
+Úklid běží ve `finally`, i po chybě nebo Ctrl+C: odregistrování z dashboardu (vlastní GIRO home běhu, dashboard operátora se nemění), smazání politiky, `az repos delete` dočasného repa (jen podle jeho id), vysypání z koše projektu (recycle bin) a smazání lokálního adresáře. Pak se repo i politika znovu vyhledají. Azure smazanou politiku dál vrací podle id s `isDeleted: true`, to se počítá jako smazaná. Co zůstane, je chyba úklidu a celý běh skončí `failed`.
 
-Výsledek je `results/<datum>/azure-e2e-<čas>/azure-e2e.json`: `outcome` (`passed`/`failed`), každý krok s `ok`, popisem, URL PR, hlasy, SHA hlavy a merge commitu, dále úklid (`cleanup.ok` a jeho kroky) a všechna volání `az` a `factory`. Logy příkazů jsou v `logs/` (git je ignoruje). Kód návratu: 0 prošlo, 1 selhal krok nebo úklid, 2 preflight.
+Výsledek je `results/<datum>/azure-e2e-<čas>/azure-e2e.json`: `outcome` (`passed`/`failed`), každý krok s `ok`, popisem, URL PR, hlasy, SHA hlavy a merge commitu, dále úklid (`cleanup.ok` a jeho kroky) a všechna volání `az` a `giro`. Logy příkazů jsou v `logs/` (git je ignoruje). Kód návratu: 0 prošlo, 1 selhal krok nebo úklid, 2 preflight.
 
 ## Vynucená opravná kola
 
-**test → fix (R10)**: `hidden.py` zapíše skrytý test do `<workdir>/hidden/test_text_hidden_slugify.py`, tedy mimo repo i worktree. Požadavek ze zadání nejde odvodit: prázdný slug je `x-empty`, tedy `slugify("!!!") == "x-empty"`. Každý příkaz `factory` dostane proměnnou `HAIFA_VALIDATE_HIDDEN=<workdir>/hidden`, ale ta slouží jen jako kanál do `validation.worker`. Worker ji hned odstraní z `os.environ`, takže ji agenti nezdědí, a obalí kódový krok `test` enginu (`aifactory.testing.executor.execute`, spouští kontroly z plánu testera). Jen na dobu tohoto kroku vloží skrytý test do `tests/test_text_hidden_slugify.py` worktree běhu, kde ho najde cílený výběr `test_text*.py` i závěrečný `just test`, a potom ho smaže. Agent ho tak na disku nikdy nevidí a nemůže ho ani odstranit. Cesta je v `info/exclude` sandboxu (ne v `.gitignore`, který agent čte), takže se případný zbytek nikdy necommitne. Proto `test_1` vždy selže. Selhání jde přímo builderovi, proběhne `fix` a po něm nový plán kontrol (`test_plan_1`). Běhy, ve kterých ještě `slugify` neexistuje, skrytý test přeskočí. Hlavní checkout spouští jen viditelné testy. Kontrola `hidden_unseen_by_agents` ověří, že skrytý test žádný agent neviděl.
+**test → fix (R10)**: `hidden.py` zapíše skrytý test do `<workdir>/hidden/test_text_hidden_slugify.py`, tedy mimo repo i worktree. Požadavek ze zadání nejde odvodit: prázdný slug je `x-empty`, tedy `slugify("!!!") == "x-empty"`. Každý příkaz `giro` dostane proměnnou `HAIFA_VALIDATE_HIDDEN=<workdir>/hidden`, ale ta slouží jen jako kanál do `validation.worker`. Worker ji hned odstraní z `os.environ`, takže ji agenti nezdědí, a obalí kódový krok `test` enginu (`aifactory.testing.executor.execute`, spouští kontroly z plánu testera). Jen na dobu tohoto kroku vloží skrytý test do `tests/test_text_hidden_slugify.py` worktree běhu, kde ho najde cílený výběr `test_text*.py` i závěrečný `just test`, a potom ho smaže. Agent ho tak na disku nikdy nevidí a nemůže ho ani odstranit. Cesta je v `info/exclude` sandboxu (ne v `.gitignore`, který agent čte), takže se případný zbytek nikdy necommitne. Proto `test_1` vždy selže. Selhání jde přímo builderovi, proběhne `fix` a po něm nový plán kontrol (`test_plan_1`). Běhy, ve kterých ještě `slugify` neexistuje, skrytý test přeskočí. Hlavní checkout spouští jen viditelné testy. Kontrola `hidden_unseen_by_agents` ověří, že skrytý test žádný agent neviděl.
 
 **review → revise (všechny běhy)**: reviewer v šabloně (`template/.factory/prompts/reviewer/{system,user}.md`) má pravidlo „Validation rule (haifa-validate)“. V prvním kole vždy zamítne a požaduje přidat řádek `# haifa-validate: revised` na konec prvního změněného souboru. Proběhne tedy `revise_1`, `replan_1` (tester podle review znovu zvolí kontroly), `retest_1` a `review_2`, které už schválí. Pravidlo je jen ve validační šabloně, ve výchozí konfiguraci produktu (`aifactory/src/`) není. Hlídá to test. Na githubu rozhoduje skutečný model: když pravidlo nedodrží a schválí hned napoprvé, scénář vyjde `inconclusive`, ne `failed`.
 
@@ -102,10 +102,10 @@ Celá sada spustí 13 běhů `simple-sdlc`: R1, R10, 2× R2, R4, v R3 běh `trun
 
 Výsledky se zapíšou do `results/<YYYY-MM-DD>/<remote>-<HHMMSS>/`:
 - `R1.json` … `RESOLVE.json`, `B1.json`, `F2.json`: výsledek scénáře;
-- `summary.json`: remote, sandbox, base, commit HAIFA, výsledky a všechny spuštěné příkazy;
+- `summary.json`: remote, sandbox, base, commit GIRO, výsledky a všechny spuštěné příkazy;
 - `trace/sssf.db`: kopie trace DB aifactory (`.factory/trace.db` sandboxu);
 - `trace/sessions/<run_id>/`: prompty, `raw_output.jsonl` a stav harnessů z běhů, na které výsledky odkazují;
-- `logs/`: stderr každého příkazu `factory`, a když běžel falešný harness, i jeho skript a záznam volání.
+- `logs/`: stderr každého příkazu `giro`, a když běžel falešný harness, i jeho skript a záznam volání.
 
 Lokální výsledky git ignoruje, výsledky z githubu a z azure se commitují.
 
@@ -123,9 +123,11 @@ JSON scénáře obsahuje tato pole:
 | R1 | `simple-sdlc.yaml` s plan na claude, build a revise na codexu a review na pi. Fáze jdou v pořadí `request → plan → commit_plan → build → test_plan → scoped_plan → test_1 → review_1 → revise_1 → replan_1 → retest_1 → review_2 → final_plan → final_test → commit_build → changes → document → commit_docs`. Harness každé fáze se čte z `agent_start` v trace. `review_1` zamítne, `revise_1` proběhne a `review_2` schválí. Očekávané harnessy se berou z rosteru. |
 | R10 | `slugify` neprojde skrytým testem, takže `test_1` selže a jeho výstup obsahuje `HiddenSlugifyTest`. Opravné kolo `fix_1` běží na codexu ve stejné session a `test_2` projde. Běh má i vynucené kolo review. Na githubu se navíc ověří jeden Codex thread (`codex exec resume`). |
 | R2 | Dva paralelní běhy (`clamp`, `lerp`) nad stejným řádkem `mathx.py`. Oba PR se otevřou, první se schválí a druhý skončí `conflict` (exit 2) bez změny base. |
-| RESOLVE | `factory task resolve` na konfliktní PR z R2: `rebase` → `resolve` (builder) → `test_plan` (tester) → `test`, bez konfliktních značek. Pak `task approve` a oba PR z R2 jsou `merged` a oba úkoly `done` v base. V local režimu ještě `just test` v čistém checkoutu base. |
-| R3 | Když R10 nebo R1 nejsou vybrané, R3 nejdřív sám spustí jejich úkoly a otevře jejich PR (neúspěšný běh je check `prerequisite_<task>`). Vazba na task jiného modulu blokuje běh (`unmet_dependencies`, exit 2). Pak přijde schválení ve factory (`status: done` a řádek pod `## Běhy` v base) a merge mimo factory. Následuje `backlog sync`, který otevře sync PR, a jeho merge. Dál vrácený PR (nový běh na stejné větvi) a zavřený PR: approve ho odmítne (`pr_not_open`, exit 2) a sync ho ignoruje. |
+| RESOLVE | `giro task resolve` na konfliktní PR z R2: `rebase` → `resolve` (builder) → `test_plan` (tester) → `test`, bez konfliktních značek. Pak `task approve` a oba PR z R2 jsou `merged` a oba úkoly `done` v base. V local režimu ještě `just test` v čistém checkoutu base. |
+| R3 | Když R10 nebo R1 nejsou vybrané, R3 nejdřív sám spustí jejich úkoly a otevře jejich PR (neúspěšný běh je check `prerequisite_<task>`). Vazba na task jiného modulu blokuje běh (`unmet_dependencies`, exit 2). Pak přijde schválení ve giro (`status: done` a řádek pod `## Běhy` v base) a merge mimo factory. Následuje `backlog sync`, který otevře sync PR, a jeho merge. Dál vrácený PR (nový běh na stejné větvi) a zavřený PR: approve ho odmítne (`pr_not_open`, exit 2) a sync ho ignoruje. |
 | R4 | Necommitnutá změna promptu i `agents.yaml` (`thinking: high` u planneru) se do běhu nedostane, protože konfigurace se čte z commitu v base. Běh na ni upozorní ve `warnings`. |
 | R5 | Čas `git worktree add`, velikost a počet souborů worktree a velikost `.git`. |
 | B1 | Falešný builder zapíše do hlavního checkoutu: nový soubor `B1-breach.md` a řádek do sledovaného `README.md`. Hlídač uchová konfliktní zápisy i zálohu pro porovnání a fáze `build` selže (event `permission_breach`). Běh skončí `run_failed` (exit 1) a neotevře PR. Validátor ověří zachovaný obsah a důkazy; teprve pak uklidí přesné změny vlastní fixture pro další scénáře. Gitignorované soubory hlídač nevidí, proto B1 zapisuje jen do negitignorovaných. |
-| F2 | Akceptace fáze F2 jen přes CLI. Scénář zapíše `index.md` modulů M03 (Unit conversions) a M04 (Statistics) a přes `factory task add` založí 5 tasků s vazbami: `M03-S01-T02` → `M03-S01-T01`, `M04-S01-T02` → `M04-S01-T01` a `M04-S01-T03` → `M03-S01-T01` + `M04-S01-T01` (vazba přes modul). `M03-S01-T01` a `M04-S01-T01` běží současně (`runs_overlapped`) a schválí se. Lokální `auto_continue` se zapne pro `task run M04-S01-T02`, který spustí i `M04-S01-T03` a řetěz skončí `exhausted`; lokální pokračování se vypne. Pak běží `M03-S01-T02` a zbylé tři tasky se schválí přes `task approve`. Kontroly: 5 mergnutých PR, `status: done` a odkaz na PR pod `## Běhy` u všech 5 tasků v base, žádný zápis mimo worktree (stav hlavního checkoutu, event `permission_breach`, do base jen povolené cesty), žádný zbylý worktree, `backlog check` projde a v local režimu i `just test` v čistém checkoutu base. Na ostatních scénářích nezávisí. |
+| F2 | Akceptace fáze F2 jen přes CLI. Scénář zapíše `index.md` modulů M03 (Unit conversions) a M04 (Statistics) a přes `giro task add` založí 5 tasků s vazbami: `M03-S01-T02` → `M03-S01-T01`, `M04-S01-T02` → `M04-S01-T01` a `M04-S01-T03` → `M03-S01-T01` + `M04-S01-T01` (vazba přes modul). `M03-S01-T01` a `M04-S01-T01` běží současně (`runs_overlapped`) a schválí se. Lokální `auto_continue` se zapne pro `task run M04-S01-T02`, který spustí i `M04-S01-T03` a řetěz skončí `exhausted`; lokální pokračování se vypne. Pak běží `M03-S01-T02` a zbylé tři tasky se schválí přes `task approve`. Kontroly: 5 mergnutých PR, `status: done` a odkaz na PR pod `## Běhy` u všech 5 tasků v base, žádný zápis mimo worktree (stav hlavního checkoutu, event `permission_breach`, do base jen povolené cesty), žádný zbylý worktree, `backlog check` projde a v local režimu i `just test` v čistém checkoutu base. Na ostatních scénářích nezávisí. |
+
+Názvy sandboxů `HAIFA-E2E-*`, `HAIFA-Azure-Sandbox`, interní konstanty `HAIFA_ROOT`/`HAIFA_AGENTS` a legacy proměnné `HAIFA_*` jsou kompatibilita validačního protokolu. Primární produktové proměnné používají prefix `GIRO_*`.

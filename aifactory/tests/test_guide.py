@@ -99,8 +99,8 @@ def test_translations_preserve_every_chapter_and_public_section_url() -> None:
         headings = re.findall(r"^## (.+)$", translated.markdown, re.MULTILINE)
         assert len(headings) == len(_sections(original.markdown))
         assert all(re.search(r"<!-- section:[a-z0-9-]+ -->$", h) for h in headings)
-    assert guide.chapter("uvod", locale="en").title == "What is HAIFA"
-    assert guide.chapter("uvod").title == "Co je HAIFA"
+    assert guide.chapter("uvod", locale="en").title == "What is GIRO"
+    assert guide.chapter("uvod").title == "Co je GIRO"
     with pytest.raises(ValueError, match="Unsupported guide locale"):
         guide.chapters(locale="../en")
 
@@ -112,7 +112,17 @@ def test_bundle_install_guide_is_the_installation_chapter() -> None:
     assert "](#/" not in text
     assert "[Řešení problémů]" not in text and "kapitole Řešení problémů" in text
     assert text.count("\n") == source.count("\n")
-    assert "haifa-9.9.9.zip" in text
+    assert "giro-9.9.9.zip" in text
+    assert "haifa-H.zip" in text
+    assert "uv tool uninstall aifactory" in text
+    assert "--keep-data" in text
+    assert "GIRO_LIBRARY_URL" in text
     assert "<verze>" not in text
-    for needle in ("./install.sh", "factory check", "factory upgrade", "factory obs"):
+    for needle in ("./install.sh", "giro check", "giro upgrade", "giro obs"):
         assert needle in text
+
+
+@pytest.mark.parametrize("locale", ["cs", "en"])
+def test_rebranded_sections_keep_their_public_urls(locale: str) -> None:
+    assert "jak-haifa-funguje" in _sections(guide.chapter("uvod", locale=locale).markdown)
+    assert "zalozka-factory" in _sections(guide.chapter("konfigurace", locale=locale).markdown)

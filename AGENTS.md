@@ -1,4 +1,4 @@
-# HAIFA development
+# GIRO development
 
 Python source: `aifactory/src/aifactory/`. Tests: `aifactory/tests/`. Vue frontend: `aifactory/web/`.
 
@@ -6,7 +6,7 @@ Use Python 3.11+, uv, Bun and just. `just web-build` updates the shipped static 
 
 Before a task or follow-up runs, list any required paths outside its inherited `writes` (such as `docs/decisions.md` or `aifactory/web/src/`) in its own `writes`.
 
-The whole suite takes about 30 minutes on Windows. `.github/workflows/ci.yml` builds releases on main and verifies installation on Ubuntu; it does not run PR tests, lint, type checks or Windows checks. Run the checks locally before merging. Auto-merge can accept a PR with no checks. A factory task run checks only what the change can affect, inside its test step's time limit:
+The whole suite takes about 30 minutes on Windows. `giro-release.yml` builds GIRO releases in the new repository behind its release gate; `ci.yml` publishes only the retained last HAIFA source. Release CI verifies installation on Ubuntu; it does not run PR tests, lint, type checks or Windows checks. Run the checks locally before merging. Auto-merge can accept a PR with no checks. A giro task run checks only what the change can affect, inside its test step's time limit:
 
 - `just lint` and `just typecheck`, always.
 - `just pytest <files or directories>` with the tests of the changed packages and of their direct callers. `aifactory/tests/<package>/` mirrors `aifactory/src/aifactory/<package>/`. Never the whole suite.
@@ -20,8 +20,10 @@ When adding or changing a protection or limit (write guards, timeouts, process k
 
 Regardless of these selection limits, run every test file edited by the change in at least one check of the test plan, including browser tests under `tests/e2e/`.
 
-Measured on the Windows factory machine (set check timeouts with margin): `just lint` 1 s, `just typecheck` 10 s, `just web-test` 90 s (bun install, vue-tsc, vitest), one browser test file 60–200 s, `just pytest` of one test directory 1–5 min.
+Measured on the Windows giro machine (set check timeouts with margin): `just lint` 1 s, `just typecheck` 10 s, `just web-test` 90 s (bun install, vue-tsc, vitest), one browser test file 60–200 s, `just pytest` of one test directory 1–5 min.
 
-Outside a factory run, `just check` and `just e2e` are the full gate.
+Outside a giro run, `just check` and `just e2e` are the full gate.
 
 Never commit credentials, runtime databases, agent transcripts or local machine configuration.
+
+GIRO uses `giro` as the primary CLI and “Goal in. Release out.” as its slogan. `factory`/`HAIFA_*` remain compatibility aliases; `.factory/`, `factory/`, distribution `aifactory`, library item `skill/factory` and HAIFA-LIBRARY keep their technical identities. Release targets and active legacy URLs are distinguished in `docs/rebranding/giro.md` and `docs/rebranding/release.md`.

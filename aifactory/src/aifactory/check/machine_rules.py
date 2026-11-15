@@ -58,7 +58,7 @@ def platform(ctx: CheckContext) -> Iterator[Finding]:
         "machine",
         "error",
         f"the platform '{name}' is not supported",
-        "HAIFA runs on macOS, Linux, WSL and Windows",
+        "GIRO runs on macOS, Linux, WSL and Windows",
     )
 
 
@@ -101,7 +101,7 @@ def tools(ctx: CheckContext) -> Iterator[Finding]:
             "uv_missing",
             "machine",
             "warning",
-            "uv is not on PATH; it installs and upgrades HAIFA (factory upgrade)",
+            "uv is not on PATH; it installs and upgrades GIRO (giro upgrade)",
             "install uv (https://docs.astral.sh/uv/)",
         )
 
@@ -368,7 +368,7 @@ def hosting(ctx: CheckContext) -> Iterator[Finding]:
             "machine",
             "info",
             f"--offline: logins to {provider} and the harnesses were not checked",
-            "run factory check without --offline",
+            "run giro check without --offline",
         )
 
 
@@ -452,7 +452,7 @@ def environment(ctx: CheckContext) -> Iterator[Finding]:
             "info",
             f"{name}={value} is set on this machine; it changes how every run of this "
             "harness behaves",
-            "unset it unless you want it (in the shell or $HAIFA_HOME/env)",
+            "unset it unless you want it (in the shell or $GIRO_HOME/env)",
         )
 
 

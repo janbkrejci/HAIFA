@@ -13,10 +13,10 @@ otherwise (team change)     ``kept`` with the diff, ``take`` with ``--take``
 ``seed`` is then set to S for every seed item; keys the seed no longer has stay. The write
 goes the way of every library write: lock, clean library, fetch, commit, push, fast-forward.
 
-With ``take_all`` every team-changed seed item is ``take`` (replaced), never ``kept``. On
-install and upgrade, ``factory library seed --all`` replaces every seed item; customizations
-live in the repos' ``.factory/``, which are never touched. Library items the seed does not
-have (team imports) stay.
+With ``take_all`` every team-changed seed item is ``take`` (replaced), never ``kept``.
+Automatic GIRO install and upgrade use non-destructive ``giro library seed``;
+team customizations and repository overrides remain intact. Library items absent
+from the seed stay. Only an explicit ``--all`` opts into replacing team changes.
 """
 
 from __future__ import annotations

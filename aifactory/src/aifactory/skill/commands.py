@@ -39,7 +39,7 @@ class CommandSpec:
 
     @property
     def name(self) -> str:
-        return "factory " + " ".join(self.path)
+        return "giro " + " ".join(self.path)
 
     def to_dict(self) -> dict[str, Any]:
         data = asdict(self)
@@ -143,7 +143,7 @@ def _value(arg: ArgSpec) -> str:
 
 
 def usage(spec: CommandSpec) -> str:
-    """``factory task run ID [--note TEXT] [--force] ... [--json] [--repo PATH]``."""
+    """``giro task run ID [--note TEXT] [--force] ... [--json] [--repo PATH]``."""
     parts = [spec.name]
     seen_groups: set[str] = set()
     for arg in spec.arguments:

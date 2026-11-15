@@ -1,4 +1,4 @@
-"""``factory config set|remove|move``: manage the repo's own copies of library items.
+"""``giro config set|remove|move``: manage the repo's own copies of library items.
 
 A repo inherits agents, workflows, skills and extensions from the library
 (``aifactory.library.inherit``); what it has in ``.factory/`` (and ``.claude/skills/``) is
@@ -16,7 +16,7 @@ are only read), so comments and key order stay.
 
 Every command computes a plan with a ``digest`` (``publish.plan_digest`` over the changed
 paths, for ``move`` combined with the library plan). Targets: ``worktree`` (the default:
-the files are written to the working tree, nothing is committed; ``factory config commit``
+the files are written to the working tree, nothing is committed; ``giro config commit``
 commits them later), ``direct`` (``--commit``: one commit on base through
 ``providers.publish``, pushed before base moves, the files reach the checkout afterwards)
 and ``pr`` (``--commit --pr``). ``--dry-run`` returns the plan of the target; ``--expect
@@ -643,8 +643,8 @@ def plan_move(state: RepoState, library: LibrarySnapshot, type: str, name: str) 
     if library.commit is None:
         raise LibraryStoreError(
             "library_missing",
-            "there is no library to move into; create one with factory library init "
-            "(or factory library clone)",
+            "there is no library to move into; create one with giro library init "
+            "(or giro library clone)",
         )
     item = repo_item(state, kind, name)
     change = Change(moved=item)
@@ -863,7 +863,7 @@ def finish_plan(
                         "dirty_paths",
                         "planned paths exist in the working tree with other content: "
                         + ", ".join(dirty)
-                        + "; commit them (factory config commit) or move them away first",
+                        + "; commit them (giro config commit) or move them away first",
                     )
                 )
         issues = _validate(state, change, missing, library)
@@ -1096,7 +1096,7 @@ def execute_plan(
             raise
         data = dict(exc.data or plan.to_json())
         data["library_commit"] = library_commit
-        data["fix"] = "run the same factory config move again; the library is done"
+        data["fix"] = "run the same giro config move again; the library is done"
         raise LibraryStoreError(
             exc.code,
             f"{exc.message}; the library already has the item "
@@ -1142,7 +1142,7 @@ def _write_repo(plan: ConfigPlan, command: Command, message: str | None) -> Conf
             written=True,
             extra_warnings=(
                 f"written to the working tree only; runs use {plan.state.base} until "
-                "factory config commit",
+                "giro config commit",
             ),
         )
     subject = (message or "").strip() or _subject(plan)

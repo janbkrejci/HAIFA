@@ -1,6 +1,6 @@
 # Příloha pro autory workflow
 
-Workflow je YAML se jménem, popisem, kroky a podmínkou přijetí `accept`. Vlastní ulož do `.factory/workflows/<jméno>.yaml` repa nebo do knihovny a ověř přes `factory workflow check .factory/workflows/<jméno>.yaml`.
+Workflow je YAML se jménem, popisem, kroky a podmínkou přijetí `accept`. Vlastní ulož do `.factory/workflows/<jméno>.yaml` repa nebo do knihovny a ověř přes `giro workflow check .factory/workflows/<jméno>.yaml`.
 
 ## Kroky
 

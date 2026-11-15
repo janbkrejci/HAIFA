@@ -241,3 +241,16 @@ def test_seed_all_restores_the_factory_skill(env: Env, capsys: Capsys) -> None:
     assert _actions(done)["skill/factory"] == "take"
     assert env.file(skill) == render_skill().encode("utf-8")
     assert _git(env.lib, "show", f"HEAD:{skill}") == render_skill().strip()
+
+
+def test_giro_seed_preserves_customized_factory_skill(env: Env, capsys: Capsys) -> None:
+    _ok(capsys, ["library", "init", "--json"])
+    skill = "skills/factory/SKILL.md"
+    assert b"# GIRO skill" in env.file(skill)
+    customized = env.file(skill) + b"\nteam note\n"
+    put(env.lib, skill, customized)
+    _git(env.lib, "commit", "--quiet", "-am", "team skill")
+    done = _ok(capsys, SEED)
+    assert _actions(done)["skill/factory"] == "kept"
+    assert env.file(skill) == customized
+    assert not (env.lib / "skills/giro").exists()

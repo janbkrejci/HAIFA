@@ -13,7 +13,7 @@ export interface LibraryItem {
   type: FactoryItemType; name: string; version: string; short_version: string; n: number
   purpose: string | null; description: string | null; date: string; author: string
 }
-/** A library change sent for review: the branch and, on GitHub, the pull request (never merged by HAIFA). */
+/** A library change sent for review: the branch and, on GitHub, the pull request (never merged by GIRO). */
 export interface LibraryPullRequest {
   branch: string; base: string; title: string; created: string; repo: string | null; head_repo: string | null
   url: string | null; number: number | null; state: string; fork: boolean
@@ -25,7 +25,7 @@ export interface LibraryStatus {
   dirty?: boolean; items?: LibraryItem[]; branch?: string; head?: string; last_fetch?: string | null; fetched?: boolean
   seed_update_available?: boolean; seed_updates?: string[]
   unsent?: number; sync_state?: LibrarySyncState; pull_requests?: LibraryPullRequest[]; pull_requests_error?: string | null
-  /** The team library cloned by default (HAIFA_LIBRARY_URL overrides it). */
+  /** The team library cloned by default (GIRO_LIBRARY_URL overrides it). */
   default_url?: string
 }
 /** A registered repo's own copy of a library item: it wins over the library (`same`: equal content). */
@@ -106,7 +106,7 @@ export function saveIgnore(repo: string, rules: IgnoreRule[]): Promise<RepoInven
 export function fetchRepoItem(item: RepoLibraryItem): Promise<RepoItemDetail> { return postGlobal('/library/repo-item', { repo: item.repo, type: item.type, path: item.path }) }
 
 export function groupLabel(group: typeof FINDING_GROUPS[number]): string {
-  if (group === 'haifa') return 'HAIFA'
+  if (group === 'haifa') return 'GIRO'
   if (group === 'hosting') return 'Hosting'
   return t(`setup.${group}`)
 }

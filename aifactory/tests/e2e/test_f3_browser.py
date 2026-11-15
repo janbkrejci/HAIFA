@@ -820,7 +820,7 @@ def test_add_and_remove_repo_in_browser(
     expect(card).not_to_have_attribute("data-state", "problem")
     expect(card.locator('[data-test="inspect-root"]')).to_have_text(str(second))
     expect(card.locator('[data-test="inspect-install-note"]')).to_contain_text(
-        "Factory už je v main. Přidání repo jen připojí k dashboardu, nic necommitne"
+        "GIRO už je v main. Přidání repo jen připojí k dashboardu, nic necommitne"
     )
     expect(card.locator('[data-test="inspect-via-pr"]')).to_have_count(0)
     page.locator('[data-test="inspect-add"]').click(timeout=SERVER_TIMEOUT_MS)

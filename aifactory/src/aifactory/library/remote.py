@@ -339,7 +339,7 @@ def _check_meta(repo: Path, head: str) -> None:
         raise LibraryStoreError("invalid_library", f"{LIBRARY_FILE} has no valid format")
     if fmt > FORMAT:
         raise LibraryStoreError(
-            "invalid_library", f"{LIBRARY_FILE} has format {fmt}, this HAIFA reads {FORMAT}"
+            "invalid_library", f"{LIBRARY_FILE} has format {fmt}, this GIRO reads {FORMAT}"
         )
     for key in ("id", "name"):
         if not isinstance(meta.get(key), str) or not meta[key].strip():
@@ -362,7 +362,7 @@ def clone_or_seed(
     init_library(environ=environ)
     warning = (
         f"cannot clone the library ({reason}); created a local library from the seed. "
-        "Clone the team library later: remove it and run factory library clone"
+        "Clone the team library later: remove it and run giro library clone"
     )
     return {**library_status(environ=environ), "fallback": True, "warning": warning}
 

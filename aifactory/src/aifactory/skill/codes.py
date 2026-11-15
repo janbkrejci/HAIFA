@@ -34,7 +34,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "process creation time is unavailable; stop the run in its original terminal",
     ),
     ("checks_head_unconfirmed", "2", "CI head could not be confirmed; the pull request stays open"),
-    ("deprecated_option", "2", "legacy operating write; use factory config local set or import"),
+    ("deprecated_option", "2", "legacy operating write; use giro config local set or import"),
     ("repo_settings_invalid", "2", "local repository or inherited harness settings are invalid"),
     ("repo_settings_version", "2", "local repository settings version is unsupported"),
     ("repo_settings_io", "2", "local repository settings could not be read or saved"),
@@ -133,7 +133,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("run_not_running", "2", "the run is not running (finished, stopped or aborted)"),
     ("remote_run", "2", "stop the shared run on the machine that started it"),
     ("run_running", "2", "the run is still running and cannot be archived"),
-    ("run_already_paused", "2", "the run is already pausing or paused (factory task pause)"),
+    ("run_already_paused", "2", "the run is already pausing or paused (giro task pause)"),
     ("run_not_paused", "2", "the run is not paused, there is nothing to resume"),
     ("run_not_archived", "2", "only an archived run can be deleted"),
     (
@@ -187,7 +187,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "task publish: the task (or the run's branch) already has a pull request",
     ),
     ("pr_not_open", "2", "the task's pull request is not open"),
-    ("conflict", "2", "the pull request conflicts with base (run factory task resolve)"),
+    ("conflict", "2", "the pull request conflicts with base (run giro task resolve)"),
     (
         "follow_up_collision",
         "2",
@@ -223,7 +223,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "base_behind",
         "2",
-        "the remote base has commits the local base lacks (run factory config pull)",
+        "the remote base has commits the local base lacks (run giro config pull)",
     ),
     ("base_diverged", "2", "the local base and the remote base have diverged; nothing changed"),
     (
@@ -268,13 +268,13 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "library_missing",
         "2",
-        "there is no library yet (run factory library init); config move needs one",
+        "there is no library yet (run giro library init); config move needs one",
     ),
     ("library_dirty", "2", "the library has uncommitted changes; commit or discard them"),
     (
         "library_behind",
         "2",
-        "the library is behind its remote (run factory library pull); nothing changed",
+        "the library is behind its remote (run giro library pull); nothing changed",
     ),
     (
         "library_diverged",
@@ -305,17 +305,17 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ),
     ("unknown_version", "2", "the item has no such version in its history (or it is ambiguous)"),
     ("not_in_seed", "2", "library seed --take: the installed seed has no such item"),
-    ("already_installed", "2", "factory init: .factory/config.yaml is committed"),
+    ("already_installed", "2", "giro init: .factory/config.yaml is committed"),
     (
         "existing_config",
         "2",
-        "factory init: the repo has an sssf installation (adws/adw_sssf_config/); HAIFA does "
+        "giro init: the repo has an sssf installation (adws/adw_sssf_config/); GIRO does "
         "not take it over",
     ),
     (
         "config_not_committed",
         "2",
-        "factory init --commit: .factory/config.yaml is only in the working tree; run factory "
+        "giro init --commit: .factory/config.yaml is only in the working tree; run giro "
         "config commit",
     ),
     (
@@ -336,19 +336,19 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "pr_failed",
         "1",
         "the run succeeded but push or pull request failed (task run, task publish); see "
-        "data.pr_error and retry with factory task publish",
+        "data.pr_error and retry with giro task publish",
     ),
     ("workflow_invalid", "1", "workflow check found problems; see error.issues"),
     ("harness_missing", "1", "a harness CLI is missing or broken; see data.harnesses"),
-    ("checks_failed", "1", "factory check found errors; see data.findings"),
+    ("checks_failed", "1", "giro check found errors; see data.findings"),
     (
         "check_timeout",
         "1",
         "dashboard API: the machine check did not finish within its time budget; data is the "
         "last known report (stale, checked_at) and data.progress the unfinished step",
     ),
-    ("skills_sync_failed", "2", "factory skills sync could not write .agents/skills"),
-    # factory upgrade.
+    ("skills_sync_failed", "2", "giro skills sync could not write .agents/skills"),
+    # giro upgrade.
     ("runs_active", "2", "stop active runs and writers before migration"),
     ("restart_failed", "2", "inspect the retained migration journal and restart diagnostic"),
     ("rollback_failed", "2", "stop writers and restore the verified retained backup"),
@@ -359,7 +359,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     ("migration_unsafe", "2", "stop writers and establish a verified offline backup"),
     ("update_busy", "1", "dashboard update is installing; wait for its restart"),
     ("update_unavailable", "1", "no newer installable release is available"),
-    ("editable_install", "2", "upgrade: factory is an editable install from the repo; git pull"),
+    ("editable_install", "2", "upgrade: giro is an editable install from the repo; git pull"),
     ("invalid_url", "2", "upgrade: the bundle URL is neither https nor file"),
     ("download_failed", "2", "upgrade: the bundle URL could not be downloaded"),
     ("bundle_invalid", "2", "upgrade: the bundle is missing, not a zip or lacks a file"),
@@ -377,7 +377,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
         "upgrade: uv tool install failed (data.stdout, data.stderr); the old version stays",
     ),
     # Dashboard.
-    ("port_in_use", "2", "the dashboard port is already taken (factory obs --port N)"),
+    ("port_in_use", "2", "the dashboard port is already taken (giro obs --port N)"),
     ("not_found", "2", "dashboard API: no such endpoint (HTTP 404)"),
     (
         "terminal_disabled",
@@ -402,7 +402,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "not_git",
         "2",
-        "dashboard API: the folder is not in a git repository; HAIFA runs no git init",
+        "dashboard API: the folder is not in a git repository; GIRO runs no git init",
     ),
     ("bare_repo", "2", "dashboard API: a bare repository has no working tree (HTTP 422)"),
     (
@@ -420,7 +420,7 @@ _CODES: tuple[tuple[str, str, str], ...] = (
     (
         "registry_invalid",
         "2",
-        "dashboard.yaml in the HAIFA home is invalid; fix it by hand, it is not overwritten",
+        "dashboard.yaml in the GIRO home is invalid; fix it by hand, it is not overwritten",
     ),
     (
         "outside_home",
@@ -526,7 +526,7 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "missing_file",
         "invalid_yaml",
     ),
-    # error.issues of `factory backlog propose` besides the backlog codes
+    # error.issues of `giro backlog propose` besides the backlog codes
     "proposal": (
         "invalid_value",
         "invalid_id",
@@ -537,17 +537,17 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "missing_done",
     ),
     "config": ("invalid_config",),
-    # data.items[].origin of the dashboard's factory items and roster
+    # data.items[].origin of the dashboard's giro items and roster
     "item_origin": ("repo", "library"),
-    # data.state of `factory check` and the state of a repo, first match wins
+    # data.state of `giro check` and the state of a repo, first match wins
     "repo_state": ("installed", "unsupported", "uncommitted", "none"),
-    # data.action of `factory check`: what the repo state calls for
+    # data.action of `giro check`: what the repo state calls for
     "repo_action": ("config_commit", "init"),
-    # data.items[].action of `factory library seed`
+    # data.items[].action of `giro library seed`
     "library_seed": ("create", "update", "unchanged", "kept", "take"),
-    # warnings of `factory library status` and `factory library clone`
+    # warnings of `giro library status` and `giro library clone`
     "library_status": ("seed_update_available",),
-    # data.sync_state of `factory library status`
+    # data.sync_state of `giro library status`
     "library_sync": ("unshared", "local", "pending", "behind", "synced"),
     # warnings `factory` prints on stderr at start
     "startup": ("env_file_mode",),
@@ -574,7 +574,7 @@ ISSUE_CODES: dict[str, tuple[str, ...]] = {
         "missing_description",
         "missing_entry",
     ),
-    # findings[].code of `factory check` (data.findings, not error.issues)
+    # findings[].code of `giro check` (data.findings, not error.issues)
     "check": (
         "factory_missing",
         "config_not_committed",

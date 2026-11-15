@@ -17,4 +17,4 @@ Constraints: standard library only, at most 40 changed lines. Needs `slugify`
 from M01-S02-T01 in base.
 
 ## Běhy
-<!-- doplňuje HAIFA při schválení PR -->
+<!-- doplňuje GIRO při schválení PR -->

@@ -610,10 +610,10 @@ it('retranslates suggestions and an open delete confirmation, keeping thread tit
   const older = { ...THREAD, title: 'Moje původní otázka', messages: 2 }
   stubApi({ threads: [older] })
   const wrapper = await openPanel()
-  expect(wrapper.get('[data-test="assistant-suggestion"]').text()).toBe('Co se teď ve factory děje?')
+  expect(wrapper.get('[data-test="assistant-suggestion"]').text()).toBe('Co se teď ve GIRO děje?')
   setLocale('en')
   await flushPromises()
-  expect(wrapper.get('[data-test="assistant-suggestion"]').text()).toBe('What is happening in factory now?')
+  expect(wrapper.get('[data-test="assistant-suggestion"]').text()).toBe('What is happening in GIRO now?')
   await wrapper.get('[data-test="assistant-threads"]').trigger('click')
   await flushPromises()
   expect(wrapper.get('[data-test="assistant-thread-item"]').text()).toContain('2 messages')

@@ -2,7 +2,7 @@
 
 Konfigurace je v `.factory/` repa: `config.yaml`, `agents.yaml` (roster agentů), volitelně `roles.yaml`, `workflows/` a `prompts/<agent>/`. Mimo git zůstávají `local.yaml` (trace DB, `database_url`), `trace.db` a `worktrees/`. Co repo nemá, dědí z knihovny.
 
-**Běhy čtou sdílenou konfiguraci z commitu v base.** Změnu commitni ikonou s tooltipem **Necommitnutá konfigurace** nebo `factory config commit` (na chráněnou base `--pr`). `factory config show` ukáže konfiguraci běhu.
+**Běhy čtou sdílenou konfiguraci z commitu v base.** Změnu commitni ikonou s tooltipem **Necommitnutá konfigurace** nebo `giro config commit` (na chráněnou base `--pr`). `giro config show` ukáže konfiguraci běhu.
 
 ## config.yaml
 
@@ -12,8 +12,8 @@ Konfigurace je v `.factory/` repa: `config.yaml`, `agents.yaml` (roster agentů)
 | `git_provider` | `local` | `local`, `github` (`gh`), `azure` (`az`, sekce `azure`). |
 | `merge_strategy` | `squash` | `squash` nebo `merge`. |
 | `github_approver` | — | Jiný účet v `gh`, který při schválení pošle approve review. |
-| `base_changes` | `direct` | `pr`: každou změnu base pošle factory pull requestem. |
-| `base_pr_merge` | `manual` | `auto`: tyto PR factory hned schválí a mergne. |
+| `base_changes` | `direct` | `pr`: každou změnu base pošle giro pull requestem. |
+| `base_pr_merge` | `manual` | `auto`: tyto PR giro hned schválí a mergne. |
 | `docs_root` | `factory` | Kořen `backlog/`, `specs/`, `docs/`. |
 | `protected_files` | `[".factory/"]` | Cesty, které agenti nemění. |
 | `max_parallel_runs` | `1` | Sloty pro souběžné tasky. |
@@ -22,17 +22,17 @@ Konfigurace je v `.factory/` repa: `config.yaml`, `agents.yaml` (roster agentů)
 
 Další klíče: `levels`, `workdir`, `worktrees_dir`, `generated`.
 
-## Záložka Factory
+## Záložka GIRO <!-- section:zalozka-factory -->
 
-- **Stav repa**, **Nainstalovat factory**, **Stáhnout konfiguraci z base** a po instalaci **Co dál**.
+- **Stav repa**, **Nainstalovat GIRO**, **Stáhnout konfiguraci z base** a po instalaci **Co dál**.
 - **Souhrn kontroly** a nálezy repa; vybrané opraví agent (**Vyřešit vybrané nálezy**).
-- **Nastavení repozitáře:** **Sdílené nastavení repozitáře** (mimo jiné **Změny base**, **Merge pull requestů factory**, **Stacked pull requesty**) a **Lokální necommitované nastavení** (trace DB). **Uložit** zapisuje do pracovního stromu.
+- **Nastavení repozitáře:** **Sdílené nastavení repozitáře** (mimo jiné **Změny base**, **Merge pull requestů GIRO**, **Stacked pull requesty**) a **Lokální necommitované nastavení** (trace DB). **Uložit** zapisuje do pracovního stromu.
 - **Nastavení agentů:** harness, model a přemýšlení agentů, **zděděno**, nebo **přepsáno**; **Upravit** a **Vrátit na zděděné**.
-- **Lekce**: **Najít lekce** (`factory learn scan`) seskupí opakované výtky běhů, se **Ze všech rep** (`--all`) všech rep. Lekci uloží do repa, kam patří (lekce o factory do repa HAIFA); hláška odkáže na sekci Lekce toho repa.
+- **Lekce**: **Najít lekce** (`giro learn scan`) seskupí opakované výtky běhů, se **Ze všech rep** (`--all`) všech rep. Lekci uloží do repa, kam patří (lekce o giro do repa GIRO); hláška odkáže na sekci Lekce toho repa.
 
 ## Agenti a harness
 
-Výchozí agenti: planner, scout, builder, tester, test-reviewer, reviewer, documenter. Agent má `harness` (vždy explicitně), `model`, `thinking` a `writes`. Celý roster přepneš `factory config roster set claude` (nebo `codex`).
+Výchozí agenti: planner, scout, builder, tester, test-reviewer, reviewer, documenter. Agent má `harness` (vždy explicitně), `model`, `thinking` a `writes`. Celý roster přepneš `giro config roster set claude` (nebo `codex`).
 
 Harness a model od nejslabšího po nejsilnější: roster repa, výchozí volby počítače (dialog **Harnessy tohoto počítače**), task (nebo jeho step a projekt), volba pro jeden běh, přepis na kroku workflow.
 

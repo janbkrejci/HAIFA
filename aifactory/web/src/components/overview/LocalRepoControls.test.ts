@@ -33,8 +33,8 @@ describe('machine-local repository controls', () => {
     expect(wrapper.attributes('aria-label')).toBe('Na tomto počítači: alpha')
     for (const text of [
       'Na tomto počítači',
-      'Platí pouze pro novou Factory na tomto počítači. Ukládá se ihned.',
-      'Staré volby v backlogu nová Factory nepoužívá. Bez místních voleb jsou automatizace vypnuté.',
+      'Platí pouze pro novou GIRO na tomto počítači. Ukládá se ihned.',
+      'Staré volby v backlogu nová GIRO nepoužívá. Bez místních voleb jsou automatizace vypnuté.',
       'Aktuální běhy doběhnou, další se nespustí',
     ]) expect(wrapper.text()).not.toContain(text)
     expect(wrapper.find('[data-test="local-auto-merge"]').exists()).toBe(true)

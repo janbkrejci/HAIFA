@@ -125,9 +125,7 @@ def _vet(ex: Examined, state: RegistryState) -> None:
     if layout is not None and layout.bare:
         raise RepoError("bare_repo", f"{path} is a bare repository without a working tree")
     if layout is None or layout.inside_git_dir:
-        raise RepoError(
-            "not_git", f"{path} is not in a git repository; HAIFA does not run git init"
-        )
+        raise RepoError("not_git", f"{path} is not in a git repository; GIRO does not run git init")
     if layout.toplevel is not None and in_run_worktree(layout.toplevel):
         raise RepoError("run_worktree", f"{path} is a worktree of a task run, not a repository")
     if layout.linked:
@@ -139,9 +137,7 @@ def _vet(ex: Examined, state: RegistryState) -> None:
             data={"main_checkout": str(main) if main is not None else None},
         )
     if layout.toplevel is None:
-        raise RepoError(
-            "not_git", f"{path} is not in a git repository; HAIFA does not run git init"
-        )
+        raise RepoError("not_git", f"{path} is not in a git repository; GIRO does not run git init")
     root = layout.toplevel
     ex.root = root
     if real != root:

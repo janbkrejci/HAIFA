@@ -41,7 +41,7 @@ def _ids(ids: list[str]) -> str:
 
 # -- install --
 
-UNSUPPORTED_FIX = "HAIFA will not convert it; install factory with factory init"
+UNSUPPORTED_FIX = "GIRO will not convert it; install GIRO with giro init"
 
 
 def install(ctx: CheckContext) -> Iterator[Finding]:
@@ -73,7 +73,7 @@ def install(ctx: CheckContext) -> Iterator[Finding]:
             "repo",
             "error",
             f"{ctx.base} has an sssf installation in adws/ and no .factory/config.yaml; "
-            "HAIFA does not run or convert sssf",
+            "GIRO does not run or convert sssf",
             UNSUPPORTED_FIX,
         )
     elif state.state == "installed":
@@ -411,7 +411,7 @@ def skills_mirror(ctx: CheckContext) -> Iterator[Finding]:
         commit_snapshot(ctx.main, ctx.commit, SOURCE),
         commit_snapshot(ctx.main, ctx.commit, MIRROR),
     )
-    fix = f"run factory skills sync and commit {MIRROR}"
+    fix = f"run giro skills sync and commit {MIRROR}"
     for name in diff.missing:
         yield Finding(
             "skill_mirror_missing",

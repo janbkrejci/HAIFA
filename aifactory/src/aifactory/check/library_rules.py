@@ -32,7 +32,7 @@ def library(ctx: CheckContext) -> Iterator[Finding]:
             "library",
             "warning",
             f"no library at {library_root(ctx.environ)}",
-            "factory library clone URL (the team library), or factory library init",
+            "giro library clone URL (the team library), or giro library init",
         )
         return
     path = data["library"]
@@ -54,7 +54,7 @@ def library(ctx: CheckContext) -> Iterator[Finding]:
             "library",
             "warning",
             f"the library is {data['behind']} commit(s) behind {data['remote']}, {when}",
-            "factory library pull",
+            "giro library pull",
         )
     unsent = data.get("unsent", data["ahead"])
     if unsent:
@@ -64,7 +64,7 @@ def library(ctx: CheckContext) -> Iterator[Finding]:
             "warning",
             f"the library has {unsent} commit(s) not sent to {data['remote']} in a pull "
             f"request, {when}",
-            "factory library push",
+            "giro library push",
         )
 
 
@@ -77,7 +77,7 @@ def seed(ctx: CheckContext) -> Iterator[Finding]:
         "library",
         "info",
         f"the installed seed has new versions of {_ids(list(data['seed_updates']))}",
-        "factory library seed",
+        "giro library seed",
     )
 
 
@@ -89,8 +89,8 @@ def factory_version(ctx: CheckContext) -> Iterator[Finding]:
         "factory_outdated",
         "machine",
         "error",
-        f"the library needs factory {data['min_factory_version']}, installed {__version__}",
-        "factory upgrade",
+        f"the library needs GIRO {data['min_factory_version']}, installed {__version__}",
+        "giro upgrade",
     )
 
 
