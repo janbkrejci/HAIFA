@@ -167,3 +167,15 @@ def test_engine_utils_import_does_not_load_dotenv() -> None:
     subprocess.run([sys.executable, "-c", code], check=True)
     source = (PACKAGE / "engine" / "utils.py").read_text(encoding="utf-8")
     assert "from dotenv" not in source
+
+
+def test_env_file_cannot_redirect_the_home_after_migration_guard(tmp_path: Path) -> None:
+    home = tmp_path / "haifa"
+    _write_env(
+        home,
+        "HOME=/other\nXDG_CONFIG_HOME=/other\nHAIFA_HOME=/other\nGIRO_HOME=/other\nOPEN_KEY=1\n",
+    )
+    environ = {"XDG_CONFIG_HOME": str(tmp_path)}
+    assert load_env_file(environ, stderr=io.StringIO()) == ["OPEN_KEY"]
+    assert environ == {"XDG_CONFIG_HOME": str(tmp_path), "OPEN_KEY": "1"}
+    assert env_file(environ) == home / "env"

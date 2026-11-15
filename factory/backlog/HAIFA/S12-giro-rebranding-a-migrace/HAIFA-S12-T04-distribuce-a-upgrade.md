@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S12-T04
 title: Poslední HAIFA — alert a upgrade na GIRO z nového repo
-status: todo
+status: done
 depends_on: [HAIFA-S12-T01]
 writes: [aifactory/, giro/, .github/workflows/, justfile, README.md, docs/rebranding/, docs/decisions.md]
 ---
@@ -47,3 +47,4 @@ Použij izolované home/tool adresáře a falešné nástroje; nic nepublikuj.
 
 ## Běhy
 <!-- doplňuje factory při schválení PR -->
+- 2026-11-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/245 · náklady $0.00

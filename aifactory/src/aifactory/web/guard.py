@@ -13,7 +13,9 @@ from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
 
+from aifactory.migration_guard import check_home
 from aifactory.skill.envelope import envelope_fail
+from aifactory.upgrade import UpgradeError
 
 WRITE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 
@@ -108,6 +110,14 @@ class StaleCodeMiddleware:
                     ),
                     status_code=409,
                 )
+                await response(scope, receive, send)
+                return
+            home = getattr(getattr(scope.get("app"), "state", None), "home", None)
+            try:
+                if home is not None:
+                    check_home(home, writing=True)
+            except UpgradeError as exc:
+                response = JSONResponse(envelope_fail(exc.code, exc.message), status_code=409)
                 await response(scope, receive, send)
                 return
             if watch is not None and not is_restart_path(scope["path"]) and watch.stale():

@@ -31,6 +31,7 @@ import ProblemsView from './views/ProblemsView.vue'
 import GuideView from './views/GuideView.vue'
 import OverviewReadiness from './components/OverviewReadiness.vue'
 import UpdateChip from './components/UpdateChip.vue'
+import MigrationBanner from './components/MigrationBanner.vue'
 import UncommittedBanner from './components/UncommittedBanner.vue'
 import LibraryChip from './components/LibraryChip.vue'
 import SystemInfoChip from './components/SystemInfoChip.vue'
@@ -248,6 +249,7 @@ onBeforeUnmount(() => {
         <RepoSwitcher :repos="repos" :health="health" :health-error="healthError" @refresh="reloadRepos" />
       </div>
     </header>
+    <MigrationBanner />
     <CodeStaleBanner
       :stale="code.stale.value"
       :restarting="code.restarting.value"

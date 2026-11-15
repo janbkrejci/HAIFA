@@ -3186,6 +3186,23 @@ def _leave_deleted_cwd() -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    from aifactory.home import haifa_home
+    from aifactory.migration_guard import check_home, process_lease
+    from aifactory.upgrade import UpgradeError
+
+    try:
+        with process_lease(haifa_home()):
+            if "obs" not in (sys.argv[1:] if argv is None else argv):
+                check_home(haifa_home(), writing=True)
+            return _main(argv)
+    except UpgradeError as exc:
+        if "--json" in (sys.argv[1:] if argv is None else argv):
+            return _emit_fail(exc.code, exc.message, exit_code=exc.exit_code)
+        print(f"factory: {exc.code}: {exc.message}", file=sys.stderr)
+        return exc.exit_code
+
+
+def _main(argv: Sequence[str] | None = None) -> int:
     if argv is None:
         oscompat.utf8_stdio()
     _leave_deleted_cwd()

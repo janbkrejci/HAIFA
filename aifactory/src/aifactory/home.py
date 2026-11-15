@@ -95,6 +95,10 @@ def load_env_file(
         )
     loaded: list[str] = []
     for key, value in dotenv_values(path).items():
+        # The home was selected and its migration lease acquired before this
+        # file was opened. It must not redirect subsequent writes to another home.
+        if key in {"HOME", "HAIFA_HOME", "GIRO_HOME", "XDG_CONFIG_HOME"}:
+            continue
         if value is None or key in env:
             continue
         env[key] = value

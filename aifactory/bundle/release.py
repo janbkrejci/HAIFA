@@ -2,11 +2,72 @@
 
 from __future__ import annotations
 
+import json
 import os
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 from bundle.build import PROJECT, version
+
+
+def check_transition() -> None:
+    """Fail closed on the preserved HAIFA source, before build and before publication."""
+    env = os.environ
+    if (
+        env.get("GITHUB_REPOSITORY") != "janbkrejci/HAIFA"
+        or env.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
+        or env.get("GITHUB_REF") != "refs/tags/haifa-transition-source"
+        or not re.fullmatch(r"[0-9a-f]{40}", env.get("HAIFA_TRANSITION_SHA", ""))
+        or env.get("GITHUB_SHA") != env.get("HAIFA_TRANSITION_SHA")
+        or env.get("HAIFA_TRANSITION_PUBLISHED") != "false"
+    ):
+        raise ValueError("Only the approved, unpublished HAIFA transition source may publish")
+    published = subprocess.run(
+        ["git", "ls-remote", "--tags", "origin", "refs/tags/haifa-transition-published"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.strip()
+    if published:
+        raise ValueError("The final HAIFA has already been published")
+    release = json.loads(
+        subprocess.run(
+            ["gh", "api", "repos/janbkrejci/GIRO/releases/latest"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )
+    tag = release.get("tag_name", "")
+    if not re.fullmatch(r"v1\.\d+\.\d+", tag) or release.get("draft") or release.get("prerelease"):
+        raise ValueError("A stable GIRO 1.x release must be available first")
+    name = f"giro-{tag[1:]}.zip"
+    url = f"https://github.com/janbkrejci/GIRO/releases/download/{tag}/{name}"
+    if (
+        sum(
+            a.get("name") == name and a.get("browser_download_url") == url
+            for a in release.get("assets", [])
+        )
+        != 1
+    ):
+        raise ValueError("The stable GIRO release must contain its canonical bundle")
+    previous = json.loads(
+        subprocess.run(
+            ["gh", "api", "repos/janbkrejci/HAIFA/releases/latest"],
+            capture_output=True,
+            text=True,
+            check=True,
+        ).stdout
+    )["tag_name"].removeprefix("v")
+    target = f"0.1.{int(env['GITHUB_RUN_NUMBER'])}"
+
+    def key(value: str) -> tuple[int, ...]:
+        return tuple(int(n) for n in value.split("."))
+
+    if not re.fullmatch(r"0\.1\.\d+", previous) or key(target) <= key(previous):
+        raise ValueError("The final HAIFA version must exceed the previous HAIFA release")
 
 
 def stamp(run_number: int, repository: str, project: Path = PROJECT) -> str:
@@ -35,4 +96,7 @@ def stamp(run_number: int, repository: str, project: Path = PROJECT) -> str:
 
 
 if __name__ == "__main__":
-    print(stamp(int(os.environ["GITHUB_RUN_NUMBER"]), os.environ["GITHUB_REPOSITORY"]))
+    if sys.argv[1:] == ["--check-transition"]:
+        check_transition()
+    else:
+        print(stamp(int(os.environ["GITHUB_RUN_NUMBER"]), os.environ["GITHUB_REPOSITORY"]))

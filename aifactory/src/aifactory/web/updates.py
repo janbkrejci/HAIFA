@@ -9,6 +9,7 @@ import threading
 import time
 import urllib.request
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 from aifactory import __version__
@@ -17,6 +18,7 @@ from aifactory.upgrade import UpgradeError, editable_install, run_upgrade
 from aifactory.web.server import RESTART_ENV, exit_process, restart_command
 
 UPDATE_REPOSITORY = "janbkrejci/HAIFA"
+MIGRATION_REPOSITORY = "janbkrejci/GIRO"
 
 
 def latest_release(repository: str) -> dict[str, Any]:
@@ -41,13 +43,25 @@ class Updates:
         current: str = __version__,
         fetch: Callable[[str], dict[str, Any]] = latest_release,
         clock: Callable[[], float] = time.monotonic,
+        home: Path | None = None,
     ) -> None:
+        legacy = os.environ.get("HAIFA_UPDATE_REPO")
+        giro = current.startswith("1.")
         self.repository = (
             repository
             if repository is not None
-            else os.environ.get("HAIFA_UPDATE_REPO", UPDATE_REPOSITORY)
+            else (
+                (
+                    os.environ.get("GIRO_UPDATE_REPO")
+                    or (legacy if legacy != "janbkrejci/HAIFA" else None)
+                    or MIGRATION_REPOSITORY
+                )
+                if giro
+                else (legacy or UPDATE_REPOSITORY)
+            )
         )
         self.current = current
+        self.home = home
         self.fetch = fetch
         self.clock = clock
         self._lock = threading.RLock()
@@ -55,15 +69,31 @@ class Updates:
         self._state: dict[str, Any] = {"status": "checking", "current_version": current}
         self.installing = False
 
-    def check(self, fresh: bool = False) -> dict[str, Any]:
+    def check(self, fresh: bool = False, *, migration: bool = False) -> dict[str, Any]:
         with self._lock:
             if self.installing:
                 return dict(self._state)
+            if self.home is not None and not fresh:
+                from aifactory.transition import ERROR_FILE
+
+                error_file = self.home / ERROR_FILE
+                if error_file.exists():
+                    try:
+                        detail = json.loads(error_file.read_text("utf-8"))["error"]
+                    except (OSError, ValueError, KeyError, TypeError) as exc:
+                        detail = f"Cannot read transition recovery diagnostic: {exc}"
+                    self._state = {
+                        "status": "error",
+                        "current_version": self.current,
+                        "error": detail,
+                    }
+                    return dict(self._state)
             ttl = 300 if self._state["status"] == "error" else 1800
             if not fresh and self.clock() - self._checked < ttl:
                 return dict(self._state)
             try:
-                release = self.fetch(self.repository)
+                repository = MIGRATION_REPOSITORY if migration else self.repository
+                release = self.fetch(repository)
                 target = str(release.get("tag_name", "")).removeprefix("v")
                 if (
                     not re.fullmatch(r"\d+\.\d+\.\d+", target)
@@ -71,15 +101,18 @@ class Updates:
                     or release.get("prerelease")
                 ):
                     raise ValueError("Vydání nemá platnou stabilní verzi.")
-                filename = f"haifa-{target}.zip"
+                if migration and not target.startswith("1."):
+                    raise ValueError("Přechod vyžaduje stabilní GIRO řady 1.x.")
+                brand = "giro" if migration or self.current.startswith("1.") else "haifa"
+                filename = f"{brand}-{target}.zip"
                 urls = [
                     a.get("browser_download_url")
                     for a in release.get("assets", [])
                     if isinstance(a, dict) and a.get("name") == filename
                 ]
-                prefix = f"https://github.com/{self.repository}/releases/download/"
-                if len(urls) != 1 or not isinstance(urls[0], str) or not urls[0].startswith(prefix):
-                    raise ValueError("Vydání neobsahuje instalační ZIP HAIFA.")
+                expected = f"https://github.com/{repository}/releases/download/{release.get('tag_name')}/{filename}"
+                if len(urls) != 1 or urls[0] != expected:
+                    raise ValueError(f"Vydání neobsahuje platný instalační ZIP {filename}.")
                 self._state = {
                     "status": "available"
                     if version_key(target) > version_key(self.current)
@@ -88,6 +121,7 @@ class Updates:
                     "target_version": target,
                     "bundle": urls[0],
                     "error": None,
+                    "migration": migration,
                 }
             except Exception as exc:
                 self._state = {
@@ -98,11 +132,15 @@ class Updates:
             self._checked = self.clock()
             return dict(self._state)
 
-    def begin(self) -> dict[str, Any]:
+    def begin(self, migration: bool = False) -> dict[str, Any]:
         with self._lock:
             if self.installing:
                 raise UpgradeError("update_busy", "Aktualizace již probíhá.")
-            state = self.check(fresh=True)
+            if migration and not self.current.startswith("0.1."):
+                raise UpgradeError(
+                    "update_unavailable", "Přechod je dostupný pouze z poslední HAIFA řady 0.1."
+                )
+            state = self.check(fresh=True, migration=migration)
             if state["status"] != "available":
                 raise UpgradeError(
                     "update_unavailable", state.get("error") or "Nová aktualizace není k dispozici."
@@ -127,12 +165,23 @@ class Updates:
         with the same command line again.
         """
         try:
+            if self._state.get("migration"):
+                from aifactory.transition import prepare
+
+                if self.home is None:
+                    raise UpgradeError("migration_unsafe", "Dashboard home is unavailable.")
+                prepare(
+                    self.home, self._state["bundle"], self.current, self._state["target_version"]
+                )
+                leave()
+                return
             result = run_upgrade(
                 self._state["bundle"],
                 current=self.current,
                 expected_version=self._state["target_version"],
                 environ={**os.environ, RESTART_ENV: "1"},
                 restart=restart_command(),
+                bundle_brand="giro" if self.current.startswith("1.") else None,
             )
             if result.handed_off:
                 leave()
@@ -147,6 +196,9 @@ class Updates:
                     **self._state,
                     "status": "error",
                     "error": f"Aktualizace selhala: {exc}",
+                    "error_code": exc.code
+                    if isinstance(exc, UpgradeError) and exc.code in {"runs_active", "update_busy"}
+                    else "install_failed",
                 }
                 self._checked = self.clock()
 
