@@ -1,17 +1,18 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed } from 'vue'
 import type { Mergeability } from '@/lib/review'
 
 const props = defineProps<{ value: Mergeability | string | null }>()
 
-const LABELS: Record<string, string> = {
-  mergeable: 'lze mergovat',
-  conflict: 'konflikt',
-  unknown: 'neznámé',
-}
+const LABELS = computed<Record<string, string>>(() => ({
+  mergeable: t('review.mergeable'),
+  conflict: t('review.conflict'),
+  unknown: t('review.unknown'),
+}))
 
-const cls = computed(() => (props.value && props.value in LABELS ? props.value : 'unknown'))
-const label = computed(() => LABELS[cls.value])
+const cls = computed(() => (props.value && props.value in LABELS.value ? props.value : 'unknown'))
+const label = computed(() => LABELS.value[cls.value])
 </script>
 
 <template>

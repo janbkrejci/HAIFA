@@ -1,5 +1,6 @@
+import { setLocale } from '@/lib/i18n'
 import { hasUnsavedChanges } from '@/lib/leaveGuard'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ReviewActions from './ReviewActions.vue'
 import { reviewDetail } from '@/test/reviewFixtures'
@@ -114,3 +115,7 @@ it('protects a draft through failure and releases it after success or unmount', 
   wrapper.unmount()
   expect(hasUnsavedChanges()).toBe(false)
 })
+
+// These existing behavior scenarios exercise Czech; locale switching is covered separately.
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

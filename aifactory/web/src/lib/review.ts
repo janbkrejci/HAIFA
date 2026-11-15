@@ -1,6 +1,7 @@
 // Open task PRs and their review, as served by /api/review (aifactory/web/review.py).
 // Approve, return and resolve call the same core functions as `factory task approve|return|resolve`.
 import { getApi, postApi } from './api'
+import { t } from './i18n'
 
 export type Mergeability = 'mergeable' | 'conflict' | 'unknown'
 export type ProviderState = 'open' | 'merged' | 'closed'
@@ -234,10 +235,11 @@ export function saveShowDone(value: boolean): void {
   }
 }
 
-/** Czech label of a done PR's state. */
+/** Localized label of a done PR's state. */
 export function doneLabel(state: string | null | undefined): string {
-  if (state === 'merged') return 'sloučeno'
-  if (state === 'closed') return 'zavřeno'
+  if (state === 'merged') return t('review.mergedState')
+  if (state === 'closed') return t('review.closed')
+  if (state === 'open') return t('review.open')
   return state ?? '—'
 }
 

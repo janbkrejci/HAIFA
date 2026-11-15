@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import DiffView from './DiffView.vue'
 import { reviewDetail } from '@/test/reviewFixtures'
@@ -11,7 +12,7 @@ describe('DiffView', () => {
     const sections = wrapper.findAll('[data-test="diff-file-section"]')
     expect(sections.map((s) => s.attributes('data-path'))).toEqual(['specs/x.md', 'img/logo.png'])
     for (const head of wrapper.findAll('button.dsec-head')) await head.trigger('click')
-    expect(wrapper.find('[data-test="diff-stat"]').text()).toContain('2 souborů')
+    expect(wrapper.find('[data-test="diff-stat"]').text()).toContain('2 soubory')
     expect(wrapper.find('[data-test="diff-stat"]').text()).toContain('+3')
     const files = wrapper.findAll('[data-test="diff-file"]')
     expect(files.map((f) => f.attributes('data-path'))).toEqual(['specs/x.md', 'img/logo.png'])
@@ -35,3 +36,7 @@ describe('DiffView', () => {
     expect(empty.find('[data-test="no-diff"]').exists()).toBe(true)
   })
 })
+
+// These existing behavior scenarios exercise Czech; locale switching is covered separately.
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

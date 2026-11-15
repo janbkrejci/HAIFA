@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed, ref, watch } from 'vue'
 import { runHref } from '@/lib/router'
 import type { ReviewAction, ReviewDetail } from '@/lib/review'
@@ -27,21 +28,21 @@ const actions = computed(() => props.detail.actions ?? { approve: false, return:
 const { dialog, ask, confirm: onDialogConfirm, cancel: onDialogCancel } = useConfirm()
 
 async function onApprove() {
-  const ok = await ask({
-    title: `Schválit a mergovat PR ${props.detail.task_id} do ${props.detail.pr.base}?`,
-    message: props.detail.approve_note,
-  })
+  const ok = await ask(() => ({
+    title: t('review.confirmApprove', { task: props.detail.task_id, base: props.detail.pr.base }),
+    message: t('review.approveNote'),
+  }))
   if (ok) emit('approve')
 }
 
 async function onReturn() {
   const text = note.value.trim()
   if (!text) return
-  const ok = await ask({
-    title: `Vrátit PR ${props.detail.task_id} agentovi s poznámkou?`,
+  const ok = await ask(() => ({
+    title: t('review.confirmReturn', { task: props.detail.task_id }),
     message: text,
-    confirmLabel: 'Vrátit',
-  })
+    confirmLabel: t('review.return'),
+  }))
   if (ok) emit('return', text)
 }
 
@@ -56,14 +57,13 @@ watch(
 <template>
   <div class="actions">
     <p v-if="running" class="info" data-test="running-info">
-      Na PR běží běh
+      {{ t('review.runningOnPr') }}
       <a :href="runHref(running.run_id)">{{ running.run_id }}</a>
-      ({{ running.workflow ?? '—' }}); akce počkají, až doběhne.
+      ({{ running.workflow ?? '—' }}); {{ t('review.waitRun') }}
     </p>
 
     <div v-if="conflict" class="conflict" data-test="conflict-banner">
-      PR nejde mergovat do {{ detail.pr.base }} – „Vyřešit konflikt s base“ spustí workflow resolve (rebase +
-      agent).
+      {{ t('review.conflictHint', { base: detail.pr.base }) }}
       <button
         type="button"
         class="btn primary"
@@ -73,7 +73,7 @@ watch(
         @click="emit('resolve')"
       >
         <Spinner v-if="pending === 'resolve'" />
-        Vyřešit konflikt s base
+        {{ t('review.resolve') }}
       </button>
     </div>
 
@@ -87,19 +87,19 @@ watch(
         @click="onApprove"
       >
         <Spinner v-if="pending === 'approve'" />
-        Schválit
+        {{ t('review.approve') }}
       </button>
-      <p class="note faint" data-test="ob3-note">{{ detail.approve_note }}</p>
+      <p class="note faint" data-test="ob3-note">{{ t('review.approveNote') }}</p>
     </div>
 
     <div class="block">
-      <label for="return-note" class="label">Vrátit s poznámkou</label>
+      <label for="return-note" class="label">{{ t('review.returnNote') }}</label>
       <textarea
         id="return-note"
         v-model="note"
         data-test="return-note"
         rows="3"
-        placeholder="Co má agent změnit…"
+        :placeholder="t('review.notePlaceholder')"
         :disabled="blocked || !actions.return"
       />
       <button
@@ -111,7 +111,7 @@ watch(
         @click="onReturn"
       >
         <Spinner v-if="pending === 'return'" />
-        Vrátit
+        {{ t('review.return') }}
       </button>
     </div>
 
@@ -125,7 +125,7 @@ watch(
         @click="emit('resolve')"
       >
         <Spinner v-if="pending === 'resolve'" />
-        Dorovnat s base
+        {{ t('review.rebase') }}
       </button>
     </div>
 

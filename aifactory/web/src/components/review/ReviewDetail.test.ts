@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
 import { answerDialog } from '@/test/modal'
 import ReviewDetail from './ReviewDetail.vue'
@@ -166,3 +167,7 @@ describe('ReviewDetail', () => {
     expect(wrapper.find('[data-test="approve"]').exists()).toBe(true)
   })
 })
+
+// These existing behavior scenarios exercise Czech; locale switching is covered separately.
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

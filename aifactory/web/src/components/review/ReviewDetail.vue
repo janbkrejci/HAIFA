@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed, reactive, watch } from 'vue'
 import DetailSection from '@/components/runs/DetailSection.vue'
 import StatusChip from '@/components/runs/StatusChip.vue'
@@ -83,8 +84,8 @@ const checks = () => (Array.isArray(props.detail.checks) ? props.detail.checks :
         >
         <span class="mono">{{ detail.pr.branch }} → {{ detail.pr.base }}</span>
         <MergeabilityChip :value="detail.mergeability" />
-        <span>stav PR {{ detail.provider_state ?? '—' }}</span>
-        <span class="mono" data-test="cost">{{ fmtCost(detail.cost) }} · {{ fmtTokens(detail.tokens) }} tok.</span>
+        <span>{{ t('review.prState') }} {{ doneLabel(detail.provider_state) }}</span>
+        <span class="mono" data-test="cost">{{ fmtCost(detail.cost) }} · {{ fmtTokens(detail.tokens) }} {{ t('review.tokens') }}</span>
         <span v-if="isLocal(detail.pr.url)" class="mono" data-test="pr-link">{{ detail.pr.url }}</span>
         <a v-else :href="detail.pr.url" target="_blank" rel="noopener" data-test="pr-link">
           PR #{{ detail.pr.pr_id }}
@@ -93,21 +94,21 @@ const checks = () => (Array.isArray(props.detail.checks) ? props.detail.checks :
     </header>
 
     <p v-if="detail.approved" data-test="approved-at">
-      Schváleno, čeká na CI<span v-if="detail.approved_at"> · {{ fmtTime(detail.approved_at) }}</span>
+      {{ t('review.approved') }}<span v-if="detail.approved_at"> · {{ fmtTime(detail.approved_at) }}</span>
     </p>
 
     <div class="actions-bar" data-test="actions">
       <p v-if="!readOnly && detail.pr.auto_merge_error" class="auto-error" data-test="auto-merge-error">
-        Auto-merge nesloučil: {{ detail.pr.auto_merge_error }} – schval ručně.
+        {{ t('review.autoFailure', { error: detail.pr.auto_merge_error }) }}
       </p>
       <p v-if="readOnly" class="readonly" data-test="read-only">
-        PR je {{ doneLabel(doneState) }}
+        {{ t('review.prIs') }} {{ doneLabel(doneState) }}
         <span v-if="detail.pr.merged_at ?? detail.pr.updated_at" class="dim"
           >({{ fmtTime(detail.pr.merged_at ?? detail.pr.updated_at) }})</span
         >
-        – jen pro čtení, akce nejsou dostupné.
+        {{ t('review.readOnly') }}
         <span v-if="mergedByAuto(detail.pr)" class="auto-chip" data-test="merged-by-auto"
-          >Sloučil auto-merge</span
+          >{{ t('review.mergedAuto') }}</span
         >
       </p>
       <ReviewActions
@@ -122,12 +123,12 @@ const checks = () => (Array.isArray(props.detail.checks) ? props.detail.checks :
       />
     </div>
 
-    <DetailSection title="Popis PR" :open="open.body" @toggle="open.body = !open.body">
+    <DetailSection :title="t('review.body')" :open="open.body" @toggle="open.body = !open.body">
       <MarkdownView :source="detail.pr.body ?? ''" data-test="pr-body" />
     </DetailSection>
 
-    <DetailSection title="Běhy" :count="runs().length" :open="open.runs" @toggle="open.runs = !open.runs">
-      <p v-if="!runs().length" class="faint">Žádné běhy</p>
+    <DetailSection :title="t('review.runs')" :count="runs().length" :open="open.runs" @toggle="open.runs = !open.runs">
+      <p v-if="!runs().length" class="faint">{{ t('review.noRuns') }}</p>
       <ul v-else class="runs">
         <li v-for="r in runs()" :key="r.run_id">
           <a :href="runHref(r.run_id)" class="mono" data-test="run-link">{{ r.run_id }}</a>
@@ -135,17 +136,17 @@ const checks = () => (Array.isArray(props.detail.checks) ? props.detail.checks :
           <StatusChip :status="r.state" />
           <span class="dim">{{ fmtTime(r.started_at) }}</span>
           <span class="mono">{{ fmtCost(r.cost) }}</span>
-          <span v-if="r.note" class="faint">poznámka: {{ r.note }}</span>
+          <span v-if="r.note" class="faint">{{ t('review.note') }}: {{ r.note }}</span>
           <span v-if="r.error" class="err">{{ r.error }}</span>
         </li>
       </ul>
     </DetailSection>
 
-    <DetailSection title="Gates a testy" :count="checks().length" :open="open.checks" @toggle="open.checks = !open.checks">
+    <DetailSection :title="t('review.checks')" :count="checks().length" :open="open.checks" @toggle="open.checks = !open.checks">
       <ChecksList :checks="checks()" />
     </DetailSection>
 
-    <DetailSection title="Verdikt revieweru" :open="open.review" @toggle="open.review = !open.review">
+    <DetailSection :title="t('review.verdict')" :open="open.review" @toggle="open.review = !open.review">
       <ReviewVerdict :verdict="detail.review ?? null" />
     </DetailSection>
 
@@ -156,8 +157,8 @@ const checks = () => (Array.isArray(props.detail.checks) ? props.detail.checks :
       @toggle="open.diff = !open.diff"
     >
       <p v-if="detail.stacked_on" class="faint" data-test="stacked-on">
-        Navazuje na PR <a :href="detail.stacked_on.url" target="_blank" rel="noopener">{{ detail.stacked_on.url }}</a>
-        ({{ detail.stacked_on.task_id }}), který ještě není mergnutý. Diff ukazuje jen změny tohoto tasku.
+        {{ t('review.stacked') }} <a :href="detail.stacked_on.url" target="_blank" rel="noopener">{{ detail.stacked_on.url }}</a>
+        ({{ detail.stacked_on.task_id }}), {{ t('review.stackedHint') }}
       </p>
       <DiffView v-if="detail.diff" :key="detail.task_id" :diff="detail.diff" />
     </DetailSection>

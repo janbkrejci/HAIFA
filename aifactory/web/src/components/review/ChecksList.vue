@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import type { CheckResult } from '@/lib/review'
 
 defineProps<{ checks: CheckResult[] }>()
 </script>
 
 <template>
-  <p v-if="!checks.length" class="faint" data-test="no-checks">Gates ani testy neběžely</p>
+  <p v-if="!checks.length" class="faint" data-test="no-checks">{{ t('review.noChecks') }}</p>
   <ul v-else class="checks">
     <li v-for="(c, i) in checks" :key="i" data-test="check" :class="c.passed ? 'pass' : 'fail'">
       <span class="mark">{{ c.passed ? '✓' : '✗' }}</span>

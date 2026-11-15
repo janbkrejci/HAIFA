@@ -49,9 +49,9 @@ describe('Factory operations', () => {
     expect(files[0]!.get('pre').text().match(/full-content/g)).toHaveLength(200)
     expect(files[1]!.get('[data-kind="del"]').text()).toBe('-old')
     expect(files[1]!.get('[data-kind="add"]').text()).toBe('+new')
-    expect(files[2]!.get('[data-test="binary"]').text()).toBe('binární soubor')
+    expect(files[2]!.get('[data-test="binary"]').text()).toBe('binary file')
     expect(files[3]!.text()).toContain('100755')
-    expect(files[3]!.text()).toContain('změna režimu souboru')
+    expect(files[3]!.text()).toContain('file mode change')
   })
   it('applies once on double-click and offers the backlog after success', async () => {
     const applying = deferred<Awaited<ReturnType<typeof applyFactoryPlan>>>()
