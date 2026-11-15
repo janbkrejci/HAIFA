@@ -1,10 +1,5 @@
-import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
 import { setLocale } from '@/lib/i18n'
-
-beforeLocaleTest(() => setLocale('cs'))
-afterLocaleTest(() => setLocale('en'))
-
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { mergeNames, resetNamesForTests } from '@/lib/names'
 import ReviewList from './ReviewList.vue'
@@ -174,3 +169,7 @@ describe('ReviewList', () => {
     expect(missing.find('[data-test="done"]').text()).toContain('Nic')
   })
 })
+
+// These existing behavior scenarios exercise Czech; locale switching is covered separately.
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))

@@ -4,10 +4,10 @@ import { RefreshCw } from 'lucide-vue-next'
 import BackLink from '@/components/ui/BackLink.vue'
 import ReviewDetail from '@/components/review/ReviewDetail.vue'
 import ReviewList from '@/components/review/ReviewList.vue'
-import { ApiError, isDbBusy, isDbBusyText } from '@/lib/api'
+import { ApiError, isDbBusy } from '@/lib/api'
 import { touchesTask, useLive, type LiveFilesEvent, type LiveTraceEvent } from '@/lib/live'
 import { here, reviewHref, runHref, useRouteParams } from '@/lib/router'
-import { errorText, shortSha } from '@/lib/format'
+import { shortSha } from '@/lib/format'
 import { newRun } from '@/lib/backlog'
 import {
   approvePr,
@@ -24,14 +24,20 @@ import {
   type ReviewList as ReviewListData,
 } from '@/lib/review'
 
+import { t } from '@/lib/i18n'
+import type { MessageKey } from '@/lib/i18n/catalogs'
+import { reviewError } from '@/lib/reviewMessages'
+
 const params = useRouteParams()
 const taskId = computed(() => params.value[0] ?? null)
 
 const loading = ref(false)
 const busy = ref(false)
-const error = ref<string | null>(null)
+const errorSource = ref<(() => string) | null>(null)
+const error = computed(() => errorSource.value?.() ?? null)
+const retryable = ref(false)
 /** The PR this screen just merged, and the next PR waiting for approval (null: none). */
-const merged = ref<{ taskId: string; sha: string; note: string; next: string | null } | null>(null)
+const merged = ref<{ taskId: string; sha: string; next: string | null } | null>(null)
 /** The task whose approve goes on in the background (waits for CI on GitHub). */
 const approving = ref<string | null>(null)
 /** Bumped after a successful return: ReviewActions clears the note. */
@@ -89,13 +95,7 @@ function normalise(data: Partial<ReviewListData> | null | undefined): ReviewList
   }
 }
 
-function message(e: unknown): string {
-  if (e instanceof ApiError) {
-    if (e.code === 'conflict') return `${e.message} – použij Vyřešit konflikt s base`
-    return e.message
-  }
-  return errorText(e)
-}
+
 
 /** The next open PR to approve after `id`: one waiting for review first, else any other. */
 async function nextPr(id: string): Promise<string | null> {
@@ -111,14 +111,18 @@ async function nextPr(id: string): Promise<string | null> {
 async function loadList() {
   const seq = ++loadSeq
   loading.value = true
-  error.value = null
+  errorSource.value = null
+  retryable.value = false
   try {
     const data = normalise(await fetchReviews({ done: showDone.value }))
     if (seq !== loadSeq) return
     list.value = data
     listReady.value = true
   } catch (e) {
-    if (seq === loadSeq) error.value = `PR se nepodařilo načíst: ${message(e)}`
+    if (seq === loadSeq) {
+      errorSource.value = () => t('review.loadFailed', { error: reviewError(e) })
+      retryable.value = isDbBusy(e)
+    }
   } finally {
     if (seq === loadSeq) loading.value = false
   }
@@ -127,7 +131,8 @@ async function loadList() {
 async function loadDetail(id: string) {
   const seq = ++loadSeq
   loading.value = true
-  error.value = null
+  errorSource.value = null
+  retryable.value = false
   // another PR: drop the previous one at once, a reload of the same PR keeps it shown
   if (detailFor.value !== id) setDetail(id, null)
   try {
@@ -137,8 +142,10 @@ async function loadDetail(id: string) {
   } catch (e) {
     if (seq !== loadSeq || taskId.value !== id) return
     setDetail(id, null)
-    if (e instanceof ApiError && e.code === 'no_pr') error.value = `Task ${id} nemá PR: ${e.message}`
-    else error.value = `PR tasku ${id} se nepodařilo načíst: ${message(e)}`
+    errorSource.value = () => e instanceof ApiError && e.code === 'no_pr'
+      ? t('review.noPr', { task: id })
+      : t('review.detailFailed', { task: id, error: reviewError(e) })
+    retryable.value = isDbBusy(e)
   } finally {
     if (seq === loadSeq) loading.value = false
   }
@@ -167,7 +174,10 @@ async function refreshList() {
       listReady.value = true
     }
   } catch (e) {
-    if (seq === loadSeq) error.value = `PR se nepodařilo načíst: ${message(e)}`
+    if (seq === loadSeq) {
+      errorSource.value = () => t('review.loadFailed', { error: reviewError(e) })
+      retryable.value = isDbBusy(e)
+    }
   }
 }
 
@@ -178,7 +188,10 @@ async function refreshDetail(id: string) {
     const data = await fetchReview(id)
     if (seq === loadSeq && taskId.value === id && data?.pr) setDetail(id, data)
   } catch (e) {
-    if (seq === loadSeq && taskId.value === id) error.value = `PR tasku ${id} se nepodařilo obnovit: ${message(e)}`
+    if (seq === loadSeq && taskId.value === id) {
+      errorSource.value = () => t('review.refreshFailed', { task: id, error: reviewError(e) })
+      retryable.value = isDbBusy(e)
+    }
   }
 }
 
@@ -225,17 +238,19 @@ function onTrace(event: LiveTraceEvent) {
 
 useLive({ files: onFiles, trace: onTrace, resync: requestRefresh })
 
-async function act(key: ReviewAction, run: () => Promise<void>, failure: string) {
+async function act(key: ReviewAction, run: () => Promise<void>, failure: MessageKey) {
   busy.value = true
   pendingAction.value = key
   waiting.value = false
   knownRuns = new Set((detail.value?.runs ?? []).map((r) => r.run_id))
-  error.value = null
+  errorSource.value = null
+  retryable.value = false
   merged.value = null
   approving.value = null
   started.value = null
   retryAction.value = null
-  let failed: string | null = null
+  let failed: (() => string) | null = null
+  let failedBusy = false
   try {
     await run()
     // `pending`: the run is still starting; the spinner stays until live updates bring it
@@ -243,14 +258,21 @@ async function act(key: ReviewAction, run: () => Promise<void>, failure: string)
     const answer = started.value as ActionStarted | null
     waiting.value = answer?.pending === true && !answer.run
   } catch (e) {
-    failed = `${failure}: ${message(e)}`
+    failed = () => `${t(failure)}: ${reviewError(e)}`
+    failedBusy = isDbBusy(e)
     if (isDbBusy(e)) retryAction.value = () => void act(key, run, failure)
   } finally {
     busy.value = false
     if (!waiting.value) pendingAction.value = null
   }
   if (taskId.value) await loadDetail(taskId.value)
-  if (failed) error.value = error.value ? `${failed} · ${error.value}` : failed
+  if (failed) {
+    // loadDetail may have replaced the null assigned before the action.
+    const loadError = errorSource.value as (() => string) | null
+    const actionError = failed
+    errorSource.value = () => loadError ? `${actionError()} · ${loadError()}` : actionError()
+    retryable.value ||= failedBusy
+  }
 }
 
 function onApprove() {
@@ -263,8 +285,8 @@ function onApprove() {
       return
     }
     const next = await nextPr(id)
-    merged.value = { taskId: id, sha: shortSha(result.merge_sha), note: result.approve_note ?? '', next }
-  }, 'Schválení selhalo')
+    merged.value = { taskId: id, sha: shortSha(result.merge_sha), next }
+  }, 'review.approveFailed')
 }
 
 function onReturn(note: string) {
@@ -273,7 +295,7 @@ function onReturn(note: string) {
   void act('return', async () => {
     started.value = await returnPr(id, note)
     returned.value += 1
-  }, 'Vrácení selhalo')
+  }, 'review.returnFailed')
 }
 
 function onResolve() {
@@ -281,7 +303,7 @@ function onResolve() {
   if (!id) return
   void act('resolve', async () => {
     started.value = await resolvePr(id)
-  }, 'Vyřešení konfliktu selhalo')
+  }, 'review.resolveFailed')
 }
 
 watch(showDone, (value) => {
@@ -310,46 +332,45 @@ watch(
   <section class="review-view">
     <div class="view-head">
       <h1>Review</h1>
-      <BackLink v-if="taskId" :href="here('review')" label="všechny PR" />
+      <BackLink v-if="taskId" :href="here('review')" :label="t('review.allPrs')" />
       <label v-if="!taskId" class="show-done">
-        <input v-model="showDone" type="checkbox" data-test="show-done" /> Zobrazit hotové
+        <input v-model="showDone" type="checkbox" data-test="show-done" /> {{ t('review.showDone') }}
       </label>
       <button type="button" class="refresh" data-test="refresh" :disabled="loading" @click="reload">
-        <RefreshCw :size="16" :class="{ spin: loading }" /> Obnovit
+        <RefreshCw :size="16" :class="{ spin: loading }" /> {{ t('review.refresh') }}
       </button>
     </div>
     <p v-if="error" class="error-bar" data-test="error">
       {{ error }}
-      <button v-if="isDbBusyText(error)" type="button" class="retry" data-test="retry" @click="onRetry">
-        Zkusit znovu
+      <button v-if="retryable" type="button" class="retry" data-test="retry" @click="onRetry">
+        {{ t('review.retry') }}
       </button>
     </p>
     <div v-if="merged && merged.taskId === taskId" class="notice merged" data-test="merged">
       <p data-test="notice">
-        <strong>Sloučeno</strong><template v-if="merged.sha"> (merge {{ merged.sha }})</template>.
-        {{ merged.note }}
+        <strong>{{ t('review.merged') }}</strong><template v-if="merged.sha"> (merge {{ merged.sha }})</template>.
+        {{ t('review.approveNote') }}
       </p>
       <p class="merged-hint">
-        Automatické pokračování řídí místní nastavení repozitáře na Přehledu; pořadí určuje kanban.
+        {{ t('review.continueHint') }}
       </p>
       <div class="merged-actions">
         <a v-if="merged.next" class="btn" :href="reviewHref(merged.next)" data-test="next-pr">
-          Další PR ke schválení
+          {{ t('review.next') }}
         </a>
-        <a class="btn" :href="here('review')" data-test="back-to-list">Zpět na seznam</a>
+        <a class="btn" :href="here('review')" data-test="back-to-list">{{ t('review.back') }}</a>
       </div>
     </div>
     <p v-if="approving && approving === taskId" class="notice" data-test="approve-started">
-      Schvalování běží na pozadí: čeká na CI, při červené CI proběhne oprava do téhož PR.
-      Výsledek uvidíš v detailu PR a v Bězích.
+      {{ t('review.approvingHint') }}
     </p>
     <p v-if="started" class="notice" data-test="started">
       <template v-if="started.run">
-        Spuštěn běh
+        {{ t('review.started') }}
         <a :href="runHref(started.run.run_id)">{{ started.run.run_id }}</a>
-        ({{ started.action === 'return' ? 'vrácení' : 'resolve' }})
+        ({{ started.action === 'return' ? t('review.returnAction') : 'resolve' }})
       </template>
-      <template v-else>Běh se spouští…</template>
+      <template v-else>{{ t('review.starting') }}</template>
     </p>
 
     <template v-if="taskId">
@@ -364,7 +385,7 @@ watch(
         @resolve="onResolve"
       />
       <p v-else-if="loading" class="faint" data-test="detail-loading">
-        <span class="mono" data-test="loading-id">{{ taskId }}</span> · Načítám…
+        <span class="mono" data-test="loading-id">{{ taskId }}</span> · {{ t('review.loading') }}
       </p>
     </template>
     <ReviewList v-else :list="list" :ready="listReady" :loading="loading" :show-done="showDone" />

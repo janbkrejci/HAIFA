@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed } from 'vue'
 import { fmtCost, fmtTime, fmtTokens } from '@/lib/format'
 import { here, reviewHref, runHref } from '@/lib/router'
@@ -29,10 +30,10 @@ const other = computed(() => prs.value.filter((p) => !p.approved && !p.awaiting_
 
 // "Čeká na automerge PR" needs nobody, so it only shows when it has a PR.
 const sections = computed(() => [
-  { key: 'awaiting', title: 'Čeká na review', items: awaiting.value },
-  ...(approved.value.length ? [{ key: 'approved', title: 'Schváleno, čeká na CI', items: approved.value }] : []),
-  ...(automerge.value.length ? [{ key: 'automerge', title: 'Čeká na automerge PR', items: automerge.value }] : []),
-  { key: 'other', title: 'Ostatní otevřené PR', items: other.value },
+  { key: 'awaiting', title: t('review.awaiting'), items: awaiting.value },
+  ...(approved.value.length ? [{ key: 'approved', title: t('review.approved'), items: approved.value }] : []),
+  ...(automerge.value.length ? [{ key: 'automerge', title: t('review.automerge'), items: automerge.value }] : []),
+  { key: 'other', title: t('review.other'), items: other.value },
 ])
 
 /** Merged and closed PRs, newest first. */
@@ -57,25 +58,25 @@ function isLocal(url: string): boolean {
 <template>
   <div class="review-list">
     <template v-if="!ready">
-      <p v-if="loading" class="faint" data-test="list-loading">Načítám…</p>
+      <p v-if="loading" class="faint" data-test="list-loading">{{ t('review.loading') }}</p>
     </template>
     <p v-else-if="!prs.length" class="empty-state" data-test="no-prs">
-      Žádné PR ke schválení. Spusť task v <a :href="here('backlog')" data-test="no-prs-backlog">Backlogu</a>
-      nebo sleduj <a :href="here('runs')" data-test="no-prs-runs">běžící běhy</a>.
+      {{ t('review.empty') }} <a :href="here('backlog')" data-test="no-prs-backlog">{{ t('review.backlog') }}</a>
+      {{ t('review.orWatch') }} <a :href="here('runs')" data-test="no-prs-runs">{{ t('review.runningRuns') }}</a>.
     </p>
     <template v-else>
       <section v-for="s in sections" :key="s.key" class="group" :data-test="s.key">
         <h2>{{ s.title }} <span class="dim">({{ s.items.length }})</span></h2>
-        <p v-if="!s.items.length" class="faint">Nic</p>
+        <p v-if="!s.items.length" class="faint">{{ t('review.none') }}</p>
         <table v-else class="table">
           <thead>
             <tr>
               <th>{{ taskLabel }}</th>
               <th data-test="project-col">{{ projectLabel }}</th>
-              <th>Mergeabilita</th>
-              <th>Běh</th>
-              <th class="num">Náklady</th>
-              <th class="num">Tokeny</th>
+              <th>{{ t('review.mergeability') }}</th>
+              <th>{{ t('review.run') }}</th>
+              <th class="num">{{ t('review.cost') }}</th>
+              <th class="num">{{ t('review.tokens') }}</th>
               <th>PR</th>
             </tr>
           </thead>
@@ -95,13 +96,13 @@ function isLocal(url: string): boolean {
                 <MergeabilityChip :value="p.mergeability" />
                 <Tooltip v-if="p.pr.auto_merge_error" :text="p.pr.auto_merge_error">
                   <span class="auto-note" data-test="auto-merge-error" tabindex="0"
-                    >auto-merge nesloučil</span
+                    >{{ t('review.autoFailed') }}</span
                   >
                 </Tooltip>
               </td>
               <td data-col="run">
                 <a v-if="p.running_run" :href="runHref(p.running_run.run_id)">
-                  běží {{ p.running_run.workflow ?? '' }}
+                  {{ t('review.running') }} {{ p.running_run.workflow ?? '' }}
                 </a>
                 <span v-else class="faint">—</span>
               </td>
@@ -119,16 +120,16 @@ function isLocal(url: string): boolean {
       </section>
     </template>
     <section v-if="ready && showDone" class="group" data-test="done">
-      <h2>Hotové <span class="dim">({{ done.length }})</span></h2>
-      <p v-if="!done.length" class="faint">Nic</p>
+      <h2>{{ t('review.done') }} <span class="dim">({{ done.length }})</span></h2>
+      <p v-if="!done.length" class="faint">{{ t('review.none') }}</p>
       <table v-else class="table">
         <thead>
           <tr>
             <th>{{ taskLabel }}</th>
             <th data-test="project-col">{{ projectLabel }}</th>
-            <th>Stav</th>
-            <th>Datum</th>
-            <th class="num">Náklady</th>
+            <th>{{ t('review.state') }}</th>
+            <th>{{ t('review.date') }}</th>
+            <th class="num">{{ t('review.cost') }}</th>
             <th>PR</th>
           </tr>
         </thead>

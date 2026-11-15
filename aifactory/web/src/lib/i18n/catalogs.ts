@@ -1,3 +1,4 @@
+import { reviewEn, reviewCs } from './review'
 import { runsEn, runsCs } from './runs'
 import { backlogEn, backlogCs } from './backlog'
 
@@ -5,6 +6,7 @@ import { backlogEn, backlogCs } from './backlog'
 export const en = {
   ...backlogEn,
   ...runsEn,
+  ...reviewEn,
   "dashboard.warning.trace_unreadable": "Could not read the run database {path}.",
   "dashboard.warning.config_state_unavailable": "Configuration status is unavailable.",
   "dashboard.warning.config_changes_unavailable": "Uncommitted configuration changes are unavailable.",
@@ -405,6 +407,7 @@ export const en = {
 export const cs: Record<keyof typeof en, string> = {
   ...backlogCs,
   ...runsCs,
+  ...reviewCs,
   "dashboard.warning.trace_unreadable": "Databázi běhů {path} se nepodařilo přečíst.",
   "dashboard.warning.config_state_unavailable": "Stav konfigurace není dostupný.",
   "dashboard.warning.config_changes_unavailable": "Necommitnuté změny konfigurace nejsou dostupné.",

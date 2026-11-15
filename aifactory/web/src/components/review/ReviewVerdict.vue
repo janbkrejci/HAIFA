@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import type { ReviewVerdict } from '@/lib/review'
 import { runHref } from '@/lib/router'
 
@@ -6,24 +7,24 @@ defineProps<{ verdict: ReviewVerdict | null }>()
 </script>
 
 <template>
-  <p v-if="!verdict" class="faint" data-test="no-verdict">Review neběželo</p>
+  <p v-if="!verdict" class="faint" data-test="no-verdict">{{ t('review.noVerdict') }}</p>
   <div v-else class="verdict" data-test="verdict">
     <p class="head">
       <strong :class="verdict.approved ? 'ok' : 'bad'" data-test="verdict-state">
-        {{ verdict.approved ? 'schváleno' : 'neschváleno' }}
+        {{ verdict.approved ? t('review.yes') : t('review.no') }}
       </strong>
       <span class="dim"> · {{ verdict.agent ?? 'reviewer' }} · </span>
-      <a :href="runHref(verdict.run_id)">běh {{ verdict.run_id }}</a>
+      <a :href="runHref(verdict.run_id)">{{ t('review.run') }} {{ verdict.run_id }}</a>
     </p>
     <p v-if="verdict.summary" class="summary">{{ verdict.summary }}</p>
     <template v-if="verdict.blocking.length">
-      <h4>Blokující</h4>
+      <h4>{{ t('review.blocking') }}</h4>
       <ul data-test="blocking">
         <li v-for="(b, i) in verdict.blocking" :key="i">{{ b }}</li>
       </ul>
     </template>
     <template v-if="verdict.findings.length">
-      <h4>Požadavky</h4>
+      <h4>{{ t('review.requirements') }}</h4>
       <ul class="findings">
         <li v-for="(f, i) in verdict.findings" :key="i" data-test="finding">
           <span :class="f.met ? 'ok' : 'bad'">{{ f.met ? '✓' : '✗' }}</span>

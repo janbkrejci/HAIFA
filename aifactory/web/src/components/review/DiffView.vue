@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { reactive } from 'vue'
+import { t } from '@/lib/i18n'
+import { computed, reactive } from 'vue'
 import DiffContent from './DiffContent.vue'
 import DetailSection from '@/components/runs/DetailSection.vue'
 import { type DiffStatus, type ReviewDiff } from '@/lib/review'
 
 defineProps<{ diff: ReviewDiff }>()
 
-const STATUS: Record<DiffStatus, string> = {
-  added: 'přidán',
-  modified: 'změněn',
-  deleted: 'smazán',
-  renamed: 'přejmenován',
-}
+const STATUS = computed<Record<DiffStatus, string>>(() => ({
+  added: t('review.added'),
+  modified: t('review.modified'),
+  deleted: t('review.deleted'),
+  renamed: t('review.renamed'),
+}))
 
 // Every file starts collapsed; the parent re-keys this view per PR.
 const open = reactive<Record<string, boolean>>({})
@@ -20,12 +21,12 @@ const open = reactive<Record<string, boolean>>({})
 <template>
   <div class="diff">
     <p class="stat" data-test="diff-stat">
-      {{ diff.stat.files }} souborů ·
+      {{ t('review.files', { count: diff.stat.files }, diff.stat.files) }} ·
       <span class="add">+{{ diff.stat.additions }}</span>
       <span class="del">−{{ diff.stat.deletions }}</span>
-      <span class="faint"> · proti {{ diff.base }}</span>
+      <span class="faint"> · {{ t('review.against', { base: diff.base }) }}</span>
     </p>
-    <p v-if="!diff.files.length" class="faint" data-test="no-diff">Žádné změny</p>
+    <p v-if="!diff.files.length" class="faint" data-test="no-diff">{{ t('review.noDiff') }}</p>
     <DetailSection
       v-for="f in diff.files"
       :key="f.path"
@@ -40,7 +41,7 @@ const open = reactive<Record<string, boolean>>({})
           <span class="status" :class="f.status">{{ STATUS[f.status] ?? f.status }}</span>
           <span class="add">+{{ f.additions }}</span>
           <span class="del">−{{ f.deletions }}</span>
-          <span v-if="f.truncated" class="warn" data-test="truncated">diff zkrácen</span>
+          <span v-if="f.truncated" class="warn" data-test="truncated">{{ t('review.truncated') }}</span>
         </p>
         <DiffContent :binary="f.binary" :patch="f.patch" />
       </div>

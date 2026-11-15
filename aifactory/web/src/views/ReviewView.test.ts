@@ -1,3 +1,4 @@
+import { setLocale } from '@/lib/i18n'
 import { fmtTime } from '@/lib/format'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -209,7 +210,7 @@ describe('ReviewView', () => {
   it('keeps the return note when the return fails', async () => {
     go('#/r/haifa/review/M01-S01-T01')
     const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
-      init?.method === 'POST' ? fail('bad_state', 'PR is not open', 409) : ok(reviewDetail()),
+      init?.method === 'POST' ? fail('pr_not_open', 'PR is not open', 409) : ok(reviewDetail()),
     )
     vi.stubGlobal('fetch', fetchMock)
     const wrapper = mount(ReviewView)
@@ -217,7 +218,7 @@ describe('ReviewView', () => {
     await wrapper.find('[data-test="return-note"]').setValue('přidej test')
     await wrapper.find('[data-test="return"]').trigger('click')
     await answerDialog(true)
-    expect(wrapper.find('[data-test="error"]').text()).toContain('Vrácení selhalo: PR is not open')
+    expect(wrapper.find('[data-test="error"]').text()).toContain('Vrácení selhalo: PR už není otevřené.')
     expect((wrapper.find('[data-test="return-note"]').element as HTMLTextAreaElement).value).toBe('přidej test')
     wrapper.unmount()
   })
@@ -278,7 +279,7 @@ describe('ReviewView', () => {
     await wrapper.find('[data-test="approve"]').trigger('click')
     await answerDialog(true)
     const text = wrapper.find('[data-test="error"]').text()
-    expect(text).toContain('PR has a conflict')
+    expect(text).toContain('PR má konflikt')
     expect(text).toContain('použij Vyřešit konflikt s base')
     wrapper.unmount()
   })
@@ -578,3 +579,7 @@ it('coalesces relevant live events during the initial load into a deferred refre
   expect(fetchMock).toHaveBeenCalledTimes(2)
   wrapper.unmount()
 })
+
+// These existing behavior scenarios exercise Czech; locale switching is covered separately.
+beforeEach(() => setLocale('cs'))
+afterEach(() => setLocale('en'))
