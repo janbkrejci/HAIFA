@@ -590,8 +590,8 @@ it('switches panel labels without changing the draft, messages, proposals or str
   const panel = wrapper.get('[data-test="assistant-panel"]').element
   const calls = fetchMock.mock.calls.length
   for (const language of ['cs', 'en'] as const) {
-    setLocale(language)
-    await flushPromises()
+    await chooseOption(wrapper, '[data-test="language-select"]', language)
+    expect(localStorage.getItem('haifa.dashboard.locale')).toBe(language)
     expect(wrapper.get('[data-test="assistant-panel"]').element).toBe(panel)
     expect(wrapper.get('[data-test="assistant-panel"]').attributes('aria-label')).toBe(language === 'cs' ? 'AI průvodce' : 'AI guide')
     expect(wrapper.get('[data-test="assistant-send"]').text()).toBe(language === 'cs' ? 'Odeslat' : 'Send')

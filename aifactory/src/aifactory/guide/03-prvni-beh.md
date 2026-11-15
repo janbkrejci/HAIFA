@@ -11,7 +11,7 @@
 - **Chip knihovny:** knihovna/varování; tooltip **Knihovna OK** / **Založit knihovnu**. Otevře stránku **Knihovna**.
 - **Harnessy:** limity, při načítání spinner, bez harnessů varování s tooltipem; klik otevře **Harnessy tohoto počítače**.
 - **AI průvodce**: Claude/Codex (`README.md`), omezené nástroje; pi nepodporuje. Před zprávou: **Podle nastavení**/harness (model/thinking), pouze nové vlákno, nemění nastavení repa. Topbar: nové; **Starší vlákna**: historie. Změny: **Provést**.
-- Příručka, motiv a přepínač rep.
+- Příručka, motiv, **English**/**Čeština**, přepínač rep.
 
 ## Problémy a řešení
 

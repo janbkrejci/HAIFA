@@ -1,5 +1,6 @@
 // Waterfall (gantt) layout of a run, ported from the sssf visualizer's SessionTrace.vue.
 // Pure functions: lanes, the time axis and block geometry, testable without a DOM.
+import { t } from './i18n'
 import { agentColor, eventOk, mergeToolStarts, parseAgentStart } from './events'
 import { axisTicks, ts } from './format'
 import {
@@ -105,7 +106,7 @@ export function buildLanes(detail: RunDetail, events: TraceEvent[]): Lane[] {
       label: detail.session?.engineer ?? 'engineer',
       model: null,
       context: null,
-      meta: 'požadavek',
+      meta: t('runs.pozadavek_175'),
       color: ENGINEER_COLOR,
       phases: phases.filter((p) => p.kind === 'engineer'),
     },
@@ -114,7 +115,7 @@ export function buildLanes(detail: RunDetail, events: TraceEvent[]): Lane[] {
     lanes.push({
       id: 'code',
       kind: 'code',
-      label: 'kód',
+      label: t('runs.code'),
       model: null,
       context: null,
       meta: 'workspace',

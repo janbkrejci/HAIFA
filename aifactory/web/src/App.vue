@@ -45,6 +45,7 @@ import RepoSwitcher from './components/RepoSwitcher.vue'
 import RemoveRepoDialog from './components/repos/RemoveRepoDialog.vue'
 import Spinner from './components/ui/Spinner.vue'
 import Tooltip from './components/ui/Tooltip.vue'
+import LanguageSelect from './components/LanguageSelect.vue'
 
 const TerminalOverlay = asyncView(() => import('./components/terminal/TerminalOverlay.vue'))
 const SetupView = asyncView(() => import('./views/SetupView.vue'))
@@ -243,6 +244,7 @@ onBeforeUnmount(() => {
           </svg>
         </button>
         </Tooltip>
+        <LanguageSelect />
         <RepoSwitcher :repos="repos" :health="health" :health-error="healthError" @refresh="reloadRepos" />
       </div>
     </header>
