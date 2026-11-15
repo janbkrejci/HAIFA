@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S12-T03
 title: GIRO — dashboard, dokumentace, demo a skilly
-status: todo
+status: done
 depends_on: [HAIFA-S12-T02]
 writes: [aifactory/, giro/, README.md, AGENTS.md, CLAUDE.md, docs/, justfile]
 ---
@@ -37,3 +37,4 @@ hlavní značku a onboarding. Nezaváděj test zakazující historická slova v�
 
 ## Běhy
 <!-- doplňuje factory při schválení PR -->
+- 2026-11-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/247 · náklady $0.00
