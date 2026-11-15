@@ -5,6 +5,8 @@ import { currentRepoId } from './router'
 
 /** One validation problem (`error.issues[i]`), e.g. a `backlog check` issue. */
 export interface ApiIssue {
+  message_code?: string
+  params?: Record<string, string | number>
   code: string
   message: string
   path: string | null
@@ -167,6 +169,8 @@ function toIssues(raw: unknown): ApiIssue[] {
     .filter((i): i is Record<string, unknown> => typeof i === 'object' && i !== null)
     .map((i) => ({
       code: str(i.code) ?? 'unknown',
+      ...(typeof i.message_code === 'string' ? { message_code: i.message_code } : {}),
+      ...(i.params && typeof i.params === 'object' ? { params: i.params as Record<string, string | number> } : {}),
       message: str(i.message) ?? '',
       path: str(i.path),
       id: str(i.id),

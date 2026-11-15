@@ -20,6 +20,7 @@ from learn_fixture import fake_learner, make_learn_repo, register_learn_repos
 pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
 
 RULE = "Add a test for every new CLI command."
+ASYNC_TIMEOUT_MS = 20_000
 
 
 def test_learn_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -36,29 +37,38 @@ def test_learn_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
         page = browser.new_page()
-        page.set_default_timeout(20000)
+        page.set_default_timeout(ASYNC_TIMEOUT_MS)
         try:
             page.goto(f"{url}/#/r/{identifier}/factory")
             section = page.locator('[data-test="lessons"]')
-            expect(section.locator('[data-test="lessons-empty"]')).to_be_visible()
+            expect(section.locator('[data-test="lessons-empty"]')).to_be_visible(
+                timeout=ASYNC_TIMEOUT_MS
+            )
             # Ze všech rep is on by default; this repo alone has the objections here
             switch = section.locator('[data-test="lessons-all"]')
             expect(switch).to_be_checked()
             switch.uncheck()
             section.locator('[data-test="lessons-scan"]').click()
 
+            # Playwright assertions have their own timeout, independent of page actions.
+            expect(section.locator('[data-test="lessons-scan-done"]')).to_contain_text(
+                "lessons: 1", timeout=ASYNC_TIMEOUT_MS
+            )
             card = section.locator('[data-test="lesson"][data-state="proposed"]')
-            expect(card).to_have_count(1)
+            expect(card).to_have_count(1, timeout=ASYNC_TIMEOUT_MS)
             expect(card.locator('[data-test="lesson-rule"]')).to_have_text(RULE)
-            expect(card.locator('[data-test="lesson-occurrences"]')).to_have_text("2 běhy")
+            expect(card.locator('[data-test="lesson-occurrences"]')).to_have_text("2 runs")
             expect(card.locator('[data-test="lesson-run"]')).to_have_text(["run-a", "run-b"])
-            expect(section.locator('[data-test="lessons-scan-done"]')).to_contain_text("lekcí: 1")
             expect(section.locator('[data-test="lessons-elsewhere"]')).to_have_count(0)
 
             card.locator('[data-test="lesson-accept"]').click()
-            expect(section.locator('[data-test="lessons-notice"]')).to_contain_text("P01-LEARN-T01")
+            expect(section.locator('[data-test="lessons-notice"]')).to_contain_text(
+                "P01-LEARN-T01", timeout=ASYNC_TIMEOUT_MS
+            )
             accepted = section.locator('[data-test="lesson"][data-state="accepted"]')
-            expect(accepted.locator('[data-test="lesson-task"]')).to_have_text("P01-LEARN-T01")
+            expect(accepted.locator('[data-test="lesson-task"]')).to_have_text(
+                "P01-LEARN-T01", timeout=ASYNC_TIMEOUT_MS
+            )
             expect(accepted.locator('[data-test="lesson-waiting"]')).to_be_visible()
             expect(card).to_have_count(0)
             page.screenshot(path=str(tmp_path / "learn.png"), full_page=True)
@@ -97,16 +107,19 @@ def test_learn_browser_all_repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
         assert identifier == "haifa"
         browser = _launch(p)
         page = browser.new_page()
-        page.set_default_timeout(20000)
+        page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
+        page.set_default_timeout(ASYNC_TIMEOUT_MS)
         try:
             page.goto(f"{url}/#/r/haifa/factory")
             section = page.locator('[data-test="lessons"]')
-            expect(section.locator('[data-test="lessons-empty"]')).to_be_visible()
+            expect(section.locator('[data-test="lessons-empty"]')).to_be_visible(
+                timeout=ASYNC_TIMEOUT_MS
+            )
             expect(section.locator('[data-test="lessons-all"]')).to_be_checked()
             section.locator('[data-test="lessons-scan"]').click()
 
             expect(section.locator('[data-test="lessons-scan-done"]')).to_contain_text(
-                "ze všech rep (2)"
+                "ze všech rep (2)", timeout=ASYNC_TIMEOUT_MS
             )
             notice = section.locator('[data-test="lessons-elsewhere"]')
             expect(notice).to_contain_text("Do jiných rep se uložilo 1 lekce")
@@ -115,7 +128,7 @@ def test_learn_browser_all_repos(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
             page.wait_for_url("**/#/r/app/factory/lessons")
 
             card = page.locator('[data-test="lessons"] [data-test="lesson"][data-state="proposed"]')
-            expect(card).to_have_count(1)
+            expect(card).to_have_count(1, timeout=ASYNC_TIMEOUT_MS)
             expect(card.locator('[data-test="lesson-rule"]')).to_have_text(RULE)
             expect(card.locator('[data-test="lesson-origin"]')).to_have_text(["haifa", "app"])
             expect(card.locator('[data-test="lesson-complaint-repo"]')).to_have_text(

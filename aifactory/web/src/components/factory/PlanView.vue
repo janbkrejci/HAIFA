@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The preview of a reviewed plan, shared by the factory and library operations:
 // what it says first (slot), warnings, blockers, library items and the files with their diffs.
 import { computed } from 'vue'
@@ -22,7 +23,7 @@ const props = withDefaults(defineProps<{
 }>(), { title: null, collapsed: false })
 
 const warnings = computed(() =>
-  [...(props.plan.warnings ?? []), ...(props.plan.envelopeWarnings ?? [])].map((w) => (typeof w === 'string' ? w : w.message)),
+  [...(props.plan.warnings ?? []), ...(props.plan.envelopeWarnings ?? [])],
 )
 </script>
 
@@ -30,10 +31,11 @@ const warnings = computed(() =>
   <section class="plan-view">
     <h2 v-if="title">{{ title }}</h2>
     <slot />
-    <p v-for="(w, i) in warnings" :key="i" class="warning" data-test="plan-warning">Varování: {{ w }}</p>
-    <p v-for="b in plan.blockers ?? []" :key="b.code" role="alert" class="error" data-test="plan-blocker">
-      {{ planCodeText(b.code) }}: {{ b.message }}<template v-if="b.fix"> Oprava: {{ b.fix }}</template>
-    </p>
+    <div v-for="(w, i) in warnings" :key="i" class="warning" data-test="plan-warning">{{ t('factoryUi.warning') }} <template v-if="typeof w !== 'string' && w.code">{{ planCodeText(w.code) }}</template><details><summary>{{ t('factoryUi.technical') }}</summary>{{ typeof w === 'string' ? w : w.message }}</details></div>
+    <div v-for="b in plan.blockers ?? []" :key="b.code" role="alert" class="error" data-test="plan-blocker">
+      {{ planCodeText(b.code) }}
+      <details><summary>{{ t('factoryUi.technical') }}</summary>{{ b.message }}<p v-if="b.fix">{{ b.fix }}</p></details>
+    </div>
     <ul v-if="plan.items?.length" class="items" data-test="plan-items">
       <li v-for="i in plan.items" :key="`${i.type}/${i.name}`">
         {{ i.type }}/{{ i.name }} · {{ planCodeText(i.action) }}<template v-if="i.version"> · {{ i.version }}</template>

@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
+import { nextTick } from 'vue'
+import { setLocale } from '@/lib/i18n'
 import SettingsForm from './SettingsForm.vue'
 import { SETTINGS } from '@/test/settingsFixtures'
 import type { SettingsData, SettingsSaveInput } from '@/lib/settings'
@@ -131,4 +133,30 @@ describe('SettingsForm', () => {
     await chooseOption(wrapper, '[data-test="git_provider"]', 'azure')
     expect(wrapper.find('[data-test="azure-hint"]').exists()).toBe(true)
   })
+})
+
+
+it('changes EN/CS labels without resetting drafts or changing API enum values', async () => {
+  setLocale('en')
+  const wrapper = mountForm()
+  try {
+    await wrapper.get('[data-test="base"]').setValue('draft/base')
+    await wrapper.get('[data-test="protected_files"]').setValue('vlastní/cesta\nkeep.md')
+    await wrapper.get('[data-test="trace_db"]').setValue('draft.db')
+    await chooseOption(wrapper, '[data-test="base_changes"]', 'pr')
+    await chooseOption(wrapper, '[data-test="base_pr_merge"]', 'auto')
+    for (const lang of ['cs', 'en'] as const) {
+      setLocale(lang)
+      await nextTick()
+      expect(wrapper.get('[data-test="save"]').text()).toBe(lang === 'cs' ? 'Uložit' : 'Save')
+      expect(wrapper.text()).toContain(lang === 'cs' ? 'Base větev' : 'Base branch')
+      expect((wrapper.get('[data-test="base"]').element as HTMLInputElement).value).toBe('draft/base')
+      expect((wrapper.get('[data-test="trace_db"]').element as HTMLInputElement).value).toBe('draft.db')
+      expect(wrapper.get('[data-test="base_changes"]').attributes('data-value')).toBe('pr')
+    }
+    await wrapper.get('form').trigger('submit')
+    expect(submitted(wrapper)).toEqual([{ shared: {
+      base: 'draft/base', protected_files: ['vlastní/cesta', 'keep.md'], base_changes: 'pr', base_pr_merge: 'auto',
+    }, local: { trace_db: 'draft.db' } }])
+  } finally { wrapper.unmount(); setLocale('en') }
 })

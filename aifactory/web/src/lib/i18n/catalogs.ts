@@ -1,9 +1,11 @@
+import { factoryEn, factoryCs } from './factory'
 import { reviewEn, reviewCs } from './review'
 import { runsEn, runsCs } from './runs'
 import { backlogEn, backlogCs } from './backlog'
 
 /** Stable UI keys only. IDs, routes, API codes and user content never belong here. */
 export const en = {
+  ...factoryEn,
   ...backlogEn,
   ...runsEn,
   ...reviewEn,
@@ -405,6 +407,7 @@ export const en = {
 }
 
 export const cs: Record<keyof typeof en, string> = {
+  ...factoryCs,
   ...backlogCs,
   ...runsCs,
   ...reviewCs,

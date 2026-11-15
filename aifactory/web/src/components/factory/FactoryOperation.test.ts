@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { ApiError, applyBasePull, fetchBasePullPlan, applyFactoryPlan, fetchFactoryPlan, fetchOverview, type FactoryPlan, type FactoryInitPlan, type FactoryPullPlan } from '@/lib/api'
@@ -36,7 +42,8 @@ describe('Factory operations', () => {
     expect(vi.mocked(fetchFactoryPlan).mock.calls.at(-1)![0].options).toEqual({ base: 'main', provider: 'local',
       azure: { organization: '', project: '', repository: '' }, docs_root: 'custom-docs' })
   })
-  it('renders full content, text patches, binary and mode-only changes', async () => {
+  it.each(['en', 'cs'] as const)('renders full content, text patches, binary and mode-only changes in %s', async (language) => {
+    setLocale(language)
     vi.mocked(fetchFactoryPlan).mockResolvedValue(preview({ files: [
       { path: '.factory/config.yaml', action: 'create', diff: '', content: 'base: main\n' + 'full-content\n'.repeat(200), binary: false },
       { path: 'changed.txt', action: 'modify', diff: '@@ -1 +1 @@\n-old\n+new', content: null, binary: false },
@@ -49,9 +56,9 @@ describe('Factory operations', () => {
     expect(files[0]!.get('pre').text().match(/full-content/g)).toHaveLength(200)
     expect(files[1]!.get('[data-kind="del"]').text()).toBe('-old')
     expect(files[1]!.get('[data-kind="add"]').text()).toBe('+new')
-    expect(files[2]!.get('[data-test="binary"]').text()).toBe('binary file')
+    expect(files[2]!.get('[data-test="binary"]').text()).toBe(language === 'en' ? 'binary file' : 'binární soubor')
     expect(files[3]!.text()).toContain('100755')
-    expect(files[3]!.text()).toContain('file mode change')
+    expect(files[3]!.text()).toContain(language === 'en' ? 'Empty file or file mode change' : 'Prázdný soubor nebo změna režimu souboru')
   })
   it('applies once on double-click and offers the backlog after success', async () => {
     const applying = deferred<Awaited<ReturnType<typeof applyFactoryPlan>>>()
@@ -227,4 +234,27 @@ describe('Factory operations', () => {
     const w = operation(); await flushPromises()
     expect(w.find('[data-test="install-test_command"]').exists()).toBe(false)
   })
+})
+
+
+it('keeps installation choices, commit message and confirmation open across EN/CS switches', async () => {
+  setLocale('en')
+  const w = operation(); await flushPromises()
+  await w.get('[data-test="install-base"]').setValue('draft/base'); await flushPromises()
+  await w.get('[data-test="install-docs_root"]').setValue('draft/docs'); await flushPromises()
+  await w.get('[data-test="factory-message"]').setValue('Vlastní commit message')
+  setLocale('cs'); await flushPromises()
+  expect((w.get('[data-test="install-base"]').element as HTMLInputElement).value).toBe('draft/base')
+  expect((w.get('[data-test="install-docs_root"]').element as HTMLInputElement).value).toBe('draft/docs')
+  await w.get('[data-test="factory-perform"]').trigger('click')
+  expect(openDialog()?.textContent).toContain('Commitnout')
+  const count = vi.mocked(fetchFactoryPlan).mock.calls.length
+  setLocale('en'); await flushPromises()
+  expect(openDialog()?.textContent).toContain('Commit 1 files')
+  expect(fetchFactoryPlan).toHaveBeenCalledTimes(count)
+  await answerDialog(true)
+  expect(applyFactoryPlan).toHaveBeenCalledWith(expect.objectContaining({
+    action: 'init', message: 'Vlastní commit message', target: 'base',
+    options: expect.objectContaining({ base: 'draft/base', docs_root: 'draft/docs', provider: 'local' }),
+  }), 'a')
 })

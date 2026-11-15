@@ -1,6 +1,7 @@
 // The Lekce section of the Factory screen (`/learn`): the lessons of `factory learn`, the scan
 // that finds them (Najít lekce, optionally over the objections of every registered repo), and
 // Přijmout (a backlog task) or Zamítnout of one lesson.
+import { t } from './i18n'
 import { getApi, postApi } from './api'
 
 export type LessonState = 'proposed' | 'accepted' | 'rejected'
@@ -75,10 +76,10 @@ export interface AcceptedLesson {
 }
 
 export const SOURCE_TEXT: Record<string, string> = {
-  review: 'review',
-  test_review: 'review testů',
-  test_triage: 'triáž testů',
-  revise: 'oprava',
+  get review() { return t('factoryUi.sourceReview') },
+  get test_review() { return t('factoryUi.sourceTestReview') },
+  get test_triage() { return t('factoryUi.sourceTestTriage') },
+  get revise() { return t('factoryUi.sourceRevise') },
 }
 
 /** Where the rule of a lesson belongs, e.g. `AGENTS.md` or `skill release`. */

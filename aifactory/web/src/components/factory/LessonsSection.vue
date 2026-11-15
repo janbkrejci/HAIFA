@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { factoryDiagnostic, factoryErrorText } from '@/lib/factoryMessages'
 // The Lekce section of the Factory screen: the lessons `factory learn scan` found in the
 // objections that kept coming back in the runs. A proposed lesson shows its rule, where the
 // rule belongs, its occurrences with links to the runs, Přijmout (`factory learn accept`: a
@@ -13,7 +15,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Search } from 'lucide-vue-next'
 import { ApiError } from '@/lib/api'
-import { errorText, fmtTime, plural } from '@/lib/format'
+import { fmtTime } from '@/lib/format'
 import {
   SOURCE_TEXT,
   acceptLesson,
@@ -40,12 +42,12 @@ const lessons = ref<Lesson[]>([])
 const scan = ref<LessonScan | null>(null)
 const loading = ref(true)
 /** The error of Najít lekce, Přijmout or Zamítnout; `loadError` is the one of the list. */
-const error = ref<string | null>(null)
-const loadError = ref<string | null>(null)
+const error = ref<unknown>(null)
+const loadError = ref<unknown>(null)
 const starting = ref(false)
 /** The lesson a request is running for (Přijmout or Zamítnout). */
 const acting = ref<string | null>(null)
-const notice = ref<string | null>(null)
+const notice = ref<{ id: string; task: string; existed: boolean; committed: boolean } | null>(null)
 /** The lesson whose acceptance needs a project chosen by the person, with the choice. */
 const projectFor = ref<string | null>(null)
 const project = ref('')
@@ -86,13 +88,11 @@ function complaintTaskHref(c: LessonComplaint): string {
 }
 
 function originTip(lesson: Lesson): string {
-  return lesson.origin.length === 1
-    ? `Výtky této lekce jsou z běhů repa ${lesson.origin[0]}.`
-    : `Výtky této lekce jsou z běhů rep ${lesson.origin.join(', ')}.`
+  return t('factoryUi.lessonOrigin', { repos: lesson.origin.join(', ') })
 }
 
 function lessonsCount(n: number): string {
-  return `${n} ${plural(n, 'lekce', 'lekce', 'lekcí')}`
+  return t('factoryUi.lessonCount', { count: n }, n)
 }
 
 const params = useRouteParams()
@@ -122,7 +122,7 @@ async function load(): Promise<void> {
     loadError.value = null
     if (scan.value?.state === 'running') timer = setTimeout(() => void load(), props.pollMs)
   } catch (e) {
-    if (mine === generation) loadError.value = errorText(e)
+    if (mine === generation) loadError.value = e
   } finally {
     if (mine === generation) loading.value = false
   }
@@ -136,7 +136,7 @@ async function findLessons(): Promise<void> {
   try {
     scan.value = await startLessonScan({ all: allRepos.value })
   } catch (e) {
-    error.value = errorText(e)
+    error.value = e
   } finally {
     starting.value = false
   }
@@ -151,15 +151,13 @@ async function accept(lesson: Lesson, chosen: string | null = null): Promise<voi
   try {
     const result = await acceptLesson(lesson.id, chosen)
     projectFor.value = null
-    notice.value = result.existed
-      ? `Lekce ${lesson.id} už je task ${result.task.id}.`
-      : `Lekce ${lesson.id} je task ${result.task.id}${result.committed ? ', commitnutý do base' : ''}. Spusť ho v Backlogu.`
+    notice.value = { id: lesson.id, task: result.task.id, existed: result.existed, committed: result.committed }
   } catch (e) {
     if (e instanceof ApiError && e.code === 'project_required') {
       projectFor.value = lesson.id
       project.value = projectOptions.value[0]?.value ?? ''
     } else {
-      error.value = errorText(e)
+      error.value = e
     }
   } finally {
     acting.value = null
@@ -176,7 +174,7 @@ async function dismiss(lesson: Lesson): Promise<void> {
     await dismissLesson(lesson.id)
     if (projectFor.value === lesson.id) projectFor.value = null
   } catch (e) {
-    error.value = errorText(e)
+    error.value = e
   } finally {
     acting.value = null
   }
@@ -184,11 +182,11 @@ async function dismiss(lesson: Lesson): Promise<void> {
 }
 
 function runs(n: number): string {
-  return `${n} ${plural(n, 'běh', 'běhy', 'běhů')}`
+  return t('factoryUi.runCount', { count: n }, n)
 }
 
 function inRuns(n: number): string {
-  return `${n} ${plural(n, 'běhu', 'bězích', 'bězích')}`
+  return t('factoryUi.inRuns', { count: n }, n)
 }
 
 onMounted(() => void load())
@@ -199,52 +197,53 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <CollapsibleSection ref="section" v-model:open="open" heading="Lekce" class="lessons" data-test="lessons">
+  <CollapsibleSection ref="section" v-model:open="open" :heading="t('factoryUi.lessons')" class="lessons" data-test="lessons">
     <template #aside>
       <div class="scan-controls">
-        <Tooltip text="Projde výtky běhů všech rep v dashboardu a každou lekci uloží do repa, kam pravidlo patří.">
+        <Tooltip :text="t('factoryUi.scanTip')">
           <label class="all-repos">
             <input v-model="allRepos" type="checkbox" class="switch" role="switch" :disabled="scanning || busy" data-test="lessons-all" />
-            Ze všech rep
+            {{ t('factoryUi.allRepos') }}
           </label>
         </Tooltip>
         <button type="button" class="btn" :disabled="scanning || busy" data-test="lessons-scan" @click="findLessons">
-          <Search :size="14" aria-hidden="true" /> Najít lekce
+          <Search :size="14" aria-hidden="true" /> {{ t('factoryUi.scan') }}
         </button>
       </div>
     </template>
     <p class="hint">
-      Výtky, které se opakují v bězích, seskupí agent learner do lekcí. Přijatá lekce se stane taskem, který pravidlo zapíše do
-      repa; po merge jeho PR tu uvidíš, jestli se výtka ještě objevuje.
+      {{ t('factoryUi.lessonsIntro') }}
     </p>
-    <p v-if="scanning" class="status" data-test="lessons-scanning"><Spinner /> Agent learner hledá lekce ve výtkách běhů…</p>
-    <p v-else-if="scan?.state === 'failed'" class="error" data-test="lessons-scan-error">{{ scan.error }}</p>
+    <p v-if="scanning" class="status" data-test="lessons-scanning"><Spinner /> {{ t('factoryUi.scanning') }}</p>
+    <div v-else-if="scan?.state === 'failed'" class="error" data-test="lessons-scan-error">{{ t('factoryUi.scanFailed') }}<details><summary>{{ t('factoryUi.technical') }}</summary>{{ scan.error }}</details></div>
     <p v-else-if="scan?.state === 'done' && scan.result" class="status" data-test="lessons-scan-done">
-      Hledání {{ fmtTime(scan.finished_at) }}: {{ scan.result.objections }} výtek z {{ runs(scan.result.runs) }},
-      <template v-if="scan.all && scan.result.repos">ze všech rep ({{ scan.result.repos }}), </template>
-      lekcí: {{ scan.result.lessons }}<template v-if="scan.result.repeats">, opakování přijatých lekcí: {{ scan.result.repeats }}</template>.
+      {{ t('factoryUi.scanSummary', { time: fmtTime(scan.finished_at), objections: scan.result.objections, runs: scan.result.runs, lessons: scan.result.lessons }) }}
+      <template v-if="scan.all && scan.result.repos">{{ t('factoryUi.allReposFragment') }}{{ scan.result.repos }})</template>
+      <template v-if="scan.result.repeats">{{ t('factoryUi.repeatsFragment') }} {{ scan.result.repeats }}</template>.
     </p>
     <p v-if="elsewhere.length" class="notice" data-test="lessons-elsewhere">
-      Do jiných rep se uložilo {{ lessonsCount(elsewhereTotal) }}:
+      {{ t('factoryUi.elsewhereFragment') }} {{ lessonsCount(elsewhereTotal) }}:
       <template v-for="([repo, n], i) in elsewhere" :key="repo"
         ><template v-if="i">, </template
         ><a :href="lessonsHref(repo)" class="mono" data-test="lessons-elsewhere-link" :data-repo="repo">{{ repo }}</a> ({{ n }})</template
-      >. Najdeš je v sekci Lekce toho repa.
+      >{{ t('factoryUi.elsewhereHint') }}
     </p>
-    <p v-for="(w, i) in scanWarnings" :key="`w-${i}`" class="dim" data-test="lessons-scan-warning">{{ w }}</p>
-    <p v-if="error" class="error" data-test="lessons-error">{{ error }}</p>
-    <p v-if="loadError" class="error" data-test="lessons-load-error">Lekce se nepodařilo načíst: {{ loadError }}</p>
-    <p v-if="notice" class="notice" data-test="lessons-notice">{{ notice }}</p>
-    <p v-if="loading" class="status"><Spinner /> Načítám lekce…</p>
+    <div v-for="(w, i) in scanWarnings" :key="`w-${i}`" class="dim" data-test="lessons-scan-warning"><details><summary>{{ t('factoryUi.warning') }} {{ t('factoryUi.technical') }}</summary>{{ w }}</details></div>
+    <p v-if="error" class="error" data-test="lessons-error">{{ factoryErrorText(error) }}</p>
+    <details v-if="error"><summary>{{ t('factoryUi.technical') }}</summary>{{ factoryDiagnostic(error) }}</details>
+    <p v-if="loadError" class="error" data-test="lessons-load-error">{{ t('factoryUi.lessonsFailed') }} {{ factoryErrorText(loadError) }}</p>
+    <details v-if="loadError"><summary>{{ t('factoryUi.technical') }}</summary>{{ factoryDiagnostic(loadError) }}</details>
+    <p v-if="notice" class="notice" data-test="lessons-notice">{{ t(notice.existed ? 'factoryUi.lessonExisted' : notice.committed ? 'factoryUi.lessonCommitted' : 'factoryUi.lessonCreated', { id: notice.id, task: notice.task }) }}</p>
+    <p v-if="loading" class="status"><Spinner /> {{ t('factoryUi.loadingLessons') }}</p>
     <p v-else-if="!lessons.length && !scanning" class="empty" data-test="lessons-empty">
-      Zatím žádné lekce. Najít lekce projde výtky všech běhů repa, se Ze všech rep i ostatních rep v dashboardu.
+      {{ t('factoryUi.lessonsEmpty') }}
     </p>
 
     <ul v-if="proposed.length" class="list">
       <li v-for="lesson in proposed" :key="lesson.id" class="lesson" data-test="lesson" :data-lesson="lesson.id" data-state="proposed">
         <p class="rule" data-test="lesson-rule">{{ lesson.rule }}</p>
         <p class="meta">
-          <span class="mono">{{ lesson.id }}</span> · do <span class="mono" data-test="lesson-target">{{ targetText(lesson) }}</span>
+          <span class="mono">{{ lesson.id }}</span> {{ t('factoryUi.intoFragment') }} <span class="mono" data-test="lesson-target">{{ targetText(lesson) }}</span>
           · <span data-test="lesson-occurrences">{{ runs(lesson.occurrences) }}</span>
           <template v-if="lesson.origin?.length">
             ·
@@ -265,28 +264,28 @@ onBeforeUnmount(() => {
           </li>
         </ul>
         <div v-if="projectFor === lesson.id" class="project" data-test="lesson-project">
-          <span>Z běhů nejde poznat projekt. Vyber, kam task patří:</span>
-          <SelectMenu v-model="project" :options="projectOptions" label="Projekt" data-test="lesson-project-select" />
+          <span>{{ t('factoryUi.chooseProject') }}</span>
+          <SelectMenu v-model="project" :options="projectOptions" :label="t('factoryUi.project')" data-test="lesson-project-select" />
           <button type="button" class="btn" :disabled="!project || busy" data-test="lesson-project-accept" @click="accept(lesson, project)">
-            Přijmout do projektu
+            {{ t('factoryUi.acceptProject') }}
           </button>
         </div>
         <div class="actions">
           <button type="button" class="btn primary" :disabled="busy" data-test="lesson-accept" @click="accept(lesson)">
-            <Spinner v-if="acting === lesson.id" /> Přijmout
+            <Spinner v-if="acting === lesson.id" /> {{ t('factoryUi.accept') }}
           </button>
-          <button type="button" class="btn" :disabled="busy" data-test="lesson-dismiss" @click="dismiss(lesson)">Zamítnout</button>
+          <button type="button" class="btn" :disabled="busy" data-test="lesson-dismiss" @click="dismiss(lesson)">{{ t('factoryUi.dismiss') }}</button>
         </div>
       </li>
     </ul>
 
     <template v-if="accepted.length">
-      <h3>Přijaté</h3>
+      <h3>{{ t('factoryUi.accepted') }}</h3>
       <ul class="list">
         <li v-for="lesson in accepted" :key="lesson.id" class="lesson" data-test="lesson" :data-lesson="lesson.id" data-state="accepted">
           <p class="rule">{{ lesson.rule }}</p>
           <p class="meta">
-            <span class="mono">{{ lesson.id }}</span> · do <span class="mono">{{ targetText(lesson) }}</span>
+            <span class="mono">{{ lesson.id }}</span> {{ t('factoryUi.intoFragment') }} <span class="mono">{{ targetText(lesson) }}</span>
             <template v-if="lesson.task_id"> · task <a :href="taskHref(lesson.task_id)" class="mono" data-test="lesson-task">{{ lesson.task_id }}</a></template>
             <template v-if="lesson.pr"> · <a :href="lesson.pr.url" target="_blank" rel="noopener">PR</a></template>
             <template v-if="lesson.origin?.length">
@@ -299,20 +298,20 @@ onBeforeUnmount(() => {
             </template>
           </p>
           <p v-if="lesson.effect" class="effect" data-test="lesson-effect">
-            Před merge PR ({{ fmtTime(lesson.effect.merged_at) }}) se výtka objevila v
-            <strong data-test="lesson-before">{{ inRuns(lesson.effect.before.runs) }}</strong>, po něm v
+            {{ t('factoryUi.beforeMergeFragment') }}{{ fmtTime(lesson.effect.merged_at) }}{{ t('factoryUi.objectionBeforeFragment') }}
+            <strong data-test="lesson-before">{{ inRuns(lesson.effect.before.runs) }}</strong>{{ t('factoryUi.objectionAfterFragment') }}
             <strong data-test="lesson-after">{{ inRuns(lesson.effect.after.runs) }}</strong>.
-            <span class="dim">Výtky po merge doplní další Najít lekce.</span>
+            <span class="dim">{{ t('factoryUi.effectHint') }}</span>
           </p>
           <p v-else class="dim" data-test="lesson-waiting">
-            {{ runs(lesson.occurrences) }} s výtkou. Účinek se ukáže po merge PR tasku.
+            {{ runs(lesson.occurrences) }} {{ t('factoryUi.effectWaiting') }}
           </p>
         </li>
       </ul>
     </template>
 
     <details v-if="rejected.length" class="rejected" data-test="lessons-rejected">
-      <summary>Zamítnuté ({{ rejected.length }})</summary>
+      <summary>{{ t('factoryUi.rejectedFragment') }}{{ rejected.length }})</summary>
       <ul>
         <li v-for="lesson in rejected" :key="lesson.id">
           <span class="mono">{{ lesson.id }}</span> {{ lesson.rule }}<template v-if="lesson.reason"> – {{ lesson.reason }}</template>

@@ -84,11 +84,11 @@ export async function fetchConfigStatus(): Promise<ConfigStatus | null> {
 }
 
 /** Issues by field (`issue.id`); issues without a field go under ''. */
-export function fieldErrors(issues: ApiIssue[]): Record<string, string[]> {
+export function fieldErrors(issues: ApiIssue[], message = (issue: ApiIssue) => issue.message): Record<string, string[]> {
   const out: Record<string, string[]> = {}
   for (const issue of issues) {
     const key = issue.id ?? ''
-    ;(out[key] ??= []).push(issue.message)
+    ;(out[key] ??= []).push(message(issue))
   }
   return out
 }
