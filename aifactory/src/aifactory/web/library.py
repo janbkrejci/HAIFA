@@ -118,13 +118,13 @@ def warnings(data: Mapping[str, Any]) -> list[str]:
     result = []
     if data.get("compatible") is False:
         result.append(
-            f"the library needs factory {data['min_factory_version']}, "
+            f"the library needs GIRO {data['min_factory_version']}, "
             f"installed is {data['factory_version']}"
         )
     if data.get("seed_update_available"):
         result.append(
             "seed_update_available: the installed seed has new versions of "
-            f"{', '.join(data['seed_updates'])}; run factory library seed"
+            f"{', '.join(data['seed_updates'])}; run giro library seed"
         )
     return result
 

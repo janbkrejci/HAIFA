@@ -77,7 +77,7 @@ def is_restart_path(path: str) -> bool:
 
 
 STALE_MESSAGE = (
-    "Kód HAIFA se od spuštění dashboardu změnil. Restartuj dashboard (tlačítko v liště "
+    "Kód GIRO se od spuštění dashboardu změnil. Restartuj dashboard (tlačítko v liště "
     "nebo just dash), zápisy jsou do té doby vypnuté."
 )
 
@@ -106,7 +106,7 @@ class StaleCodeMiddleware:
             if updates is not None and updates.installing:
                 response = JSONResponse(
                     envelope_fail(
-                        "update_busy", "Probíhá aktualizace HAIFA. Počkej na restart dashboardu."
+                        "update_busy", "Probíhá aktualizace GIRO. Počkej na restart dashboardu."
                     ),
                     status_code=409,
                 )

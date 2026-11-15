@@ -487,7 +487,7 @@ describe('FailureCard', () => {
     })
     await flushPromises()
     expect(actions(wrapper)).toEqual(['Pokračovat', 'Zrušit task'])
-    expect(fact(wrapper, 'refused')).toEqual(['backlog/x.md — cesta v backlogu, backlog zapisuje jen factory'])
+    expect(fact(wrapper, 'refused')).toEqual(['backlog/x.md — cesta v backlogu, backlog zapisuje jen GIRO'])
   })
 
   it('says why the task could not be cancelled', async () => {

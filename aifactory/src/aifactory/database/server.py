@@ -132,7 +132,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="HAIFA public read/write shared database")
+    parser = argparse.ArgumentParser(description="GIRO public read/write shared database")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", default=4710, type=int)
     parser.add_argument("--data-dir", type=Path, required=True)

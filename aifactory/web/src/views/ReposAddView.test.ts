@@ -244,7 +244,7 @@ describe('ReposAddView', () => {
     const card = wrapper.get('[data-test="inspect-card"]')
     expect(card.get('[data-test="inspect-state"]').text()).toBe('Nainstalováno')
     expect(card.get('[data-test="inspect-install-note"]').text()).toBe(
-      'Factory už je v main. Přidání repo jen připojí k dashboardu, nic necommitne ani nepushne.',
+      'GIRO už je v main. Přidání repo jen připojí k dashboardu, nic necommitne ani nepushne.',
     )
     expect(card.find('[data-test="inspect-via-pr"]').exists()).toBe(false)
     expect(card.findAll('button').map((b) => b.text())).toEqual(['Přidat'])
@@ -323,7 +323,7 @@ describe('ReposAddView', () => {
   it.each([
     ['path_not_found', 'Složka neexistuje.'],
     ['not_a_directory', 'Cesta nevede ke složce.'],
-    ['not_git', 'HAIFA nespouští git init'],
+    ['not_git', 'GIRO nespouští git init'],
     ['run_worktree', 'worktree běhu úkolu'],
     ['bare_repo', 'Holé repo'],
     ['no_commits', 'nemá žádný commit'],
@@ -514,7 +514,7 @@ it('labels an unsupported repo: HAIFA does not take it over', async () => {
   stub({ inspect: inspected({ factory: factory('unsupported') }) })
   const wrapper = await mountView()
   await inspectPath(wrapper)
-  expect(wrapper.get('[data-test="inspect-state"]').text()).toBe('Nepodporováno: HAIFA tuto konfiguraci nepřevezme')
+  expect(wrapper.get('[data-test="inspect-state"]').text()).toBe('Nepodporováno: GIRO tuto konfiguraci nepřevezme')
 })
 
 

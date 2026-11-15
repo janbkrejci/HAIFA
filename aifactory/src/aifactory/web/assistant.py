@@ -261,9 +261,9 @@ def context_text(repos: list[tuple[str, Path]]) -> str:
         "# Context",
         "## Registered repositories",
         repos_text(repos),
-        "## The factory CLI (`factory --skill`)",
+        "## The GIRO CLI (`giro --skill`)",
         render_skill(),
-        "## The HAIFA guide",
+        "## The GIRO guide",
     ]
     for chapter in guide_chapters.chapters():
         parts.append(f"### Chapter `{chapter.id}`\n\n{chapter.markdown}")
@@ -454,7 +454,7 @@ def _git(cwd: Path, *args: str) -> None:
         [
             "git",
             "-c",
-            "user.name=HAIFA guide",
+            "user.name=GIRO guide",
             "-c",
             "user.email=guide@haifa.invalid",
             "-c",

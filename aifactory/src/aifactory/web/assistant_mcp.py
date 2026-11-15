@@ -18,7 +18,7 @@ TOOL_NAME = "guide"
 TOOL = {
     "name": TOOL_NAME,
     "description": (
-        "Read HAIFA factory data. Pass argv WITHOUT ./guide. Examples: "
+        "Read GIRO data. Pass argv WITHOUT ./guide. Examples: "
         '["repos"], ["factory", "REPO_ID", "task", "runs", "TASK_ID"], '
         '["sql", "REPO_ID", "SELECT * FROM task_runs LIMIT 10"]. ' + gate.USAGE
     ),

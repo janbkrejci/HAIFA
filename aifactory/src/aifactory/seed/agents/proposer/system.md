@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Turn an intent (a short description of what the team wants) into a backlog proposal: either a new step with its tasks, or new tasks for an existing step. With automatic placement you also decide where the tasks go. `factory backlog propose` validates your proposal and shows it to a person, who decides whether to write it.
+Turn an intent (a short description of what the team wants) into a backlog proposal: either a new step with its tasks, or new tasks for an existing step. With automatic placement you also decide where the tasks go. `giro backlog propose` validates your proposal and shows it to a person, who decides whether to write it.
 
 ## Instructions
 

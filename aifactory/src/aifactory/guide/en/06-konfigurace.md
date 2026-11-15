@@ -2,7 +2,7 @@
 
 Configuration lives in the repository's `.factory/`: `config.yaml`, `agents.yaml` (agent roster), optional `roles.yaml`, `workflows/` and `prompts/<agent>/`. `local.yaml` (trace DB, `database_url`), `trace.db` and `worktrees/` stay outside Git. Missing items are inherited from the library.
 
-**Runs read shared configuration from a commit on base.** Commit changes using the **Uncommitted configuration** icon or `factory config commit` (`--pr` for protected base). `factory config show` shows run configuration.
+**Runs read shared configuration from a commit on base.** Commit changes using the **Uncommitted configuration** icon or `giro config commit` (`--pr` for protected base). `giro config show` shows run configuration.
 
 ## config.yaml <!-- section:config-yaml -->
 
@@ -12,8 +12,8 @@ Configuration lives in the repository's `.factory/`: `config.yaml`, `agents.yaml
 | `git_provider` | `local` | `local`, `github` (`gh`), `azure` (`az`, `azure` section). |
 | `merge_strategy` | `squash` | `squash` or `merge`. |
 | `github_approver` | — | Another `gh` account that submits an approval review. |
-| `base_changes` | `direct` | `pr`: factory sends every base change as a pull request. |
-| `base_pr_merge` | `manual` | `auto`: factory immediately approves and merges these PRs. |
+| `base_changes` | `direct` | `pr`: giro sends every base change as a pull request. |
+| `base_pr_merge` | `manual` | `auto`: giro immediately approves and merges these PRs. |
 | `docs_root` | `factory` | Root for `backlog/`, `specs/`, `docs/`. |
 | `protected_files` | `[".factory/"]` | Paths agents cannot change. |
 | `max_parallel_runs` | `1` | Slots for concurrent tasks. |
@@ -22,17 +22,17 @@ Configuration lives in the repository's `.factory/`: `config.yaml`, `agents.yaml
 
 Other keys: `levels`, `workdir`, `worktrees_dir`, `generated`.
 
-## Factory tab <!-- section:zalozka-factory -->
+## GIRO tab <!-- section:zalozka-factory -->
 
-- **Repository status**, **Install factory**, **Pull configuration from base**, and **Next steps** after installation.
+- **Repository status**, **Install GIRO**, **Pull configuration from base**, and **Next steps** after installation.
 - **Check summary** and repository findings; an agent can **Resolve selected findings**.
-- **Repository settings:** **Shared repository settings** (including **Base changes**, **Factory pull request merging**, **Stacked pull requests**) and **Local uncommitted settings** (trace DB). **Save** writes to the working tree.
+- **Repository settings:** **Shared repository settings** (including **Base changes**, **GIRO pull request merging**, **Stacked pull requests**) and **Local uncommitted settings** (trace DB). **Save** writes to the working tree.
 - **Agent settings:** agents' harness, model and thinking, **inherited** or **overridden**; **Edit** and **Reset to inherited**.
-- **Lessons**: **Find lessons** (`factory learn scan`) groups repeated run feedback; **From all repositories** (`--all`) includes all repositories. Lessons are saved in the relevant repository (factory lessons in HAIFA); the message links to that repository's Lessons section.
+- **Lessons**: **Find lessons** (`giro learn scan`) groups repeated run feedback; **From all repositories** (`--all`) includes all repositories. Lessons are saved in the relevant repository (giro lessons in GIRO); the message links to that repository's Lessons section.
 
 ## Agents and harnesses <!-- section:agenti-a-harness -->
 
-Default agents: planner, scout, builder, tester, test-reviewer, reviewer, documenter. An agent has `harness` (always explicit), `model`, `thinking` and `writes`. Switch the whole roster with `factory config roster set claude` (or `codex`).
+Default agents: planner, scout, builder, tester, test-reviewer, reviewer, documenter. An agent has `harness` (always explicit), `model`, `thinking` and `writes`. Switch the whole roster with `giro config roster set claude` (or `codex`).
 
 Harness and model precedence, lowest to highest: repository roster, machine defaults (**Harnesses on this machine** dialog), task (or its step and project), choice for one run, workflow step override.
 

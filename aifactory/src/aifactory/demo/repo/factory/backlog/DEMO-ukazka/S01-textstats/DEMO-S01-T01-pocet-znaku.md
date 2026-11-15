@@ -18,4 +18,4 @@ Hotovo znamená:
 - `python -m unittest discover -s tests -t .` projde.
 
 ## Běhy
-<!-- doplňuje HAIFA při schválení PR -->
+<!-- doplňuje GIRO při schválení PR -->

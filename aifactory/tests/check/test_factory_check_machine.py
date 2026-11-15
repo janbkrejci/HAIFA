@@ -1,4 +1,4 @@
-"""``factory check``: machine, login, library and environment findings (FakeMachine).
+"""``giro check``: machine, login, library and environment findings (FakeMachine).
 
 No test starts a harness, ``gh`` or ``az``; the library remote is a bare repo on disk.
 """
@@ -314,7 +314,7 @@ def test_library_unpushed(outside: Path, lib: Path) -> None:
     report = _outside(outside, FakeMachine())
     finding = _one(report, "library_unpushed", "library", "warning")
     assert "1 commit(s)" in finding.message and "as of the last fetch" in finding.message
-    assert finding.fix == "factory library push"
+    assert finding.fix == "giro library push"
     assert "library_behind" not in _codes(report)
 
 
@@ -328,21 +328,21 @@ def test_library_behind(outside: Path, lib: Path, tmp_path: Path) -> None:
     assert "library_behind" not in _codes(_outside(outside, FakeMachine()))  # no fetch yet
     _git(lib, "fetch", "-q", "origin")  # the test fetches; the check never does
     finding = _one(_outside(outside, FakeMachine()), "library_behind", "library", "warning")
-    assert finding.fix == "factory library pull"
+    assert finding.fix == "giro library pull"
 
 
 def test_factory_outdated(outside: Path, lib: Path) -> None:
     _meta(lib, min_factory_version="999.0")
     report = _outside(outside, FakeMachine())
     finding = _one(report, "factory_outdated", "machine", "error")
-    assert "999.0" in finding.message and finding.fix == "factory upgrade"
+    assert "999.0" in finding.message and finding.fix == "giro upgrade"
     assert not report.ok
 
 
 def test_seed_update_available(outside: Path, lib: Path) -> None:
     _meta(lib, seed={})
     finding = _one(_outside(outside, FakeMachine()), "seed_update_available", "library", "info")
-    assert finding.fix == "factory library seed"
+    assert finding.fix == "giro library seed"
 
 
 # -- environment --

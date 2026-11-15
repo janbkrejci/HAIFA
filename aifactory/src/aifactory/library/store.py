@@ -131,7 +131,7 @@ def require_library(root: Path) -> str:
     """The HEAD commit of the library; ``library_missing`` when there is none."""
     if not (root / ".git").exists():
         raise LibraryStoreError(
-            "library_missing", f"no library at {root}; create it with factory library init"
+            "library_missing", f"no library at {root}; create it with giro library init"
         )
     head = _head(root)
     if head is None:
@@ -393,8 +393,8 @@ def check_remote(root: Path, head: str, branch: str) -> str | None:
 def behind_error(branch: str, behind: int) -> LibraryStoreError:
     return LibraryStoreError(
         "library_behind",
-        f"the library is {behind} commit(s) behind {REMOTE}/{branch}; run factory library pull",
-        data={"branch": branch, "ahead": 0, "behind": behind, "fix": "factory library pull"},
+        f"the library is {behind} commit(s) behind {REMOTE}/{branch}; run giro library pull",
+        data={"branch": branch, "ahead": 0, "behind": behind, "fix": "giro library pull"},
     )
 
 
@@ -580,7 +580,7 @@ def _check_empty_remote(cwd: Path, url: str) -> None:
         raise LibraryStoreError(
             "remote_not_empty",
             f"the remote {shown} is not empty ({len(refs)} ref(s)); "
-            "use factory library clone to join it",
+            "use giro library clone to join it",
         )
 
 

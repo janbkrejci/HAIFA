@@ -501,7 +501,7 @@ def _runs_active(count: int) -> JSONResponse:
     else:
         runs = f"běží {count} tasků"
     message = (
-        f"Aktualizace počká, {runs}. Instalace nahrazuje soubory HAIFA, které běžící tasky "
+        f"Aktualizace počká, {runs}. Instalace nahrazuje soubory GIRO, které běžící tasky "
         "používají, a mohla by je shodit. Až tasky doběhnou, klikni na chip znovu."
     )
     return JSONResponse(envelope_fail("runs_active", message), status_code=409)

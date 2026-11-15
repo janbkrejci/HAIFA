@@ -14,4 +14,4 @@ Done when `just test` passes and `tests/test_cli.py::VersionTest` runs.
 Constraints: standard library only, at most 40 changed lines.
 
 ## Běhy
-<!-- doplňuje HAIFA při schválení PR -->
+<!-- doplňuje GIRO při schválení PR -->

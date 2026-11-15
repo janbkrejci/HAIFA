@@ -1,7 +1,7 @@
 """The guide must match the dashboard and the CLI it describes.
 
 Bold text (``**…**``) in the guide names a dashboard label, so each one must occur in the
-Vue sources; every ``factory …`` command and every ``--option`` must exist in the argparse
+Vue sources; every ``giro …`` command and every ``--option`` must exist in the argparse
 tree; and the guide stays short. Bold text that is not a UI label is listed in
 ``NOT_UI_LABELS`` with the reason.
 """
@@ -16,6 +16,7 @@ from pathlib import Path
 
 from aifactory import guide
 from aifactory.cli import build_parser
+from aifactory.config.settings import ProjectSettings
 
 ROOT = Path(__file__).resolve().parents[1]
 WEB_SRC = ROOT / "web" / "src"
@@ -24,7 +25,7 @@ MAX_WORDS = 4100
 # Bold text in the guide that is not a dashboard label (terms, list lead-ins, headings of
 # troubleshooting items, labels composed at runtime). Anything else must be in web/src.
 NOT_UI_LABELS: dict[str, str] = {
-    "Domovský adresář HAIFA": "term in the introduction",
+    "Domovský adresář GIRO": "term in the introduction",
     "Alespoň jeden harness": "installation prerequisite",
     "App Installer": "Windows component",
     "Bash, `curl` a `unzip`": "installation prerequisite",
@@ -35,7 +36,7 @@ NOT_UI_LABELS: dict[str, str] = {
     "Chip aktualizací:": "list lead-in",
     "Chip knihovny:": "list lead-in",
     "Chip kontroly:": "list lead-in",
-    "HAIFA:": "list lead-in naming the logo link",
+    "GIRO:": "list lead-in naming the logo link",
     "Harnessy:": "list lead-in naming the limits bar",
     "Necommitnutý backlog": "UncommittedBanner composes it as `Necommitnutý ${title}`",
     "běhy čtou backlog z base": "emphasis",
@@ -96,14 +97,14 @@ def missing_labels(markdown: str, sources: str, exceptions: Iterable[str] = ()) 
 
 
 def factory_commands(markdown: str) -> list[str]:
-    """``factory …`` commands in code spans and on lines of code blocks."""
+    """``giro …`` commands in code spans and on lines of code blocks."""
     commands = [
-        s for s in _CODE_SPAN.findall(_FENCE.sub("", markdown)) if s.split()[:1] == ["factory"]
+        s for s in _CODE_SPAN.findall(_FENCE.sub("", markdown)) if s.split()[:1] == ["giro"]
     ]
     for block in _FENCE.findall(markdown):
         for line in block.splitlines():
             line = line.split(" #", 1)[0].strip().removeprefix("$ ")
-            if line.split()[:1] == ["factory"]:
+            if line.split()[:1] == ["giro"]:
                 commands.append(line)
     return commands
 
@@ -131,7 +132,7 @@ def _all_options(parser: argparse.ArgumentParser) -> set[str]:
 def command_problem(command: str, parser: argparse.ArgumentParser) -> str | None:
     """Why ``command`` does not exist in the argparse tree, or None."""
     current = parser
-    path = ["factory"]
+    path = ["giro"]
     descend = True
     for token in shlex.split(command)[1:]:
         if token.startswith("-"):
@@ -189,13 +190,21 @@ def test_a_missing_label_is_reported() -> None:
 def test_an_unknown_command_or_option_is_reported() -> None:
     parser = build_parser()
     markdown = (
-        "Spusť `factory task run ID`, `factory <příkaz> --help`, `factory tasks list`, "
-        "`factory task run ID --neexistuje` a přepínač `--nikde`.\n"
-        "```bash\nfactory check --offline  # komentář --zadny\nfactory library vymysleny\n```\n"
+        "Spusť `giro task run ID`, `giro <příkaz> --help`, `giro tasks list`, "
+        "`giro task run ID --neexistuje` a přepínač `--nikde`.\n"
+        "```bash\ngiro check --offline  # komentář --zadny\ngiro library vymysleny\n```\n"
     )
     assert cli_problems(markdown, parser) == [
-        "factory has no subcommand tasks",
-        "factory task run has no option --neexistuje",
-        "factory library has no subcommand vymysleny",
+        "giro has no subcommand tasks",
+        "giro task run has no option --neexistuje",
+        "giro library has no subcommand vymysleny",
         "unknown option --nikde",
     ]
+
+
+def test_documented_docs_root_matches_settings_in_both_locales() -> None:
+    for locale in ("cs", "en"):
+        markdown = guide.chapter("konfigurace", locale=locale).markdown
+        row = re.search(r"^\| `docs_root` \| `([^`]+)` \|", markdown, re.M)
+        assert row is not None, locale
+        assert row.group(1) == ProjectSettings().docs_root, locale

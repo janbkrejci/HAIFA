@@ -157,7 +157,7 @@ def _factory_id() -> str:
 
 
 SEED_TARGET = (
-    "the prompt of a role in the seed of the HAIFA library (target_detail: the role name); "
+    "the prompt of a role in the seed of the GIRO library (target_detail: the role name); "
     "only for the repo with is_factory"
 )
 REPO_RULE = (

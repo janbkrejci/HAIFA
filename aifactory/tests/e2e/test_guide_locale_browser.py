@@ -47,6 +47,11 @@ def test_guide_default_english_saved_czech_and_return_to_english() -> None:
             search = page.locator('[data-test="guide-search"]')
             section = article.locator("#harnessy-tohoto-pocitace")
             # Czech browser language must not select Czech UI automatically.
+            expect(page).to_have_title("Guide · GIRO")
+            expect(page.locator("a.brand")).to_have_text("giro")
+            expect(page.locator("a.brand")).to_have_attribute(
+                "aria-label", "GIRO — Goal in. Release out."
+            )
             expect(article.locator("h1")).to_have_text("First run")
             expect(section).to_have_text("Harnesses on this machine")
             expect(search).to_have_attribute("aria-label", "Search the guide")

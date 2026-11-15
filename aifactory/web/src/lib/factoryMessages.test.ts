@@ -14,8 +14,8 @@ it('uses stable codes for both locales and keeps unknown codes visible', () => {
     expect(findingText('config_uncommitted')).toBe(language === 'en' ? 'Uncommitted configuration' : 'Necommitnutá konfigurace')
     expect(findingFix('trace_db_shared')).toContain('trace_db')
     expect(findingFix('factory_missing')).toBe(language === 'en'
-      ? 'Install factory and commit .factory/ into base.'
-      : 'Nainstaluj factory a commitni .factory/ do base.')
+      ? 'Install GIRO and commit .factory/ into base.'
+      : 'Nainstaluj GIRO a commitni .factory/ do base.')
     expect(findingText('new_code')).toContain('new_code')
     expect(factoryErrorText(new ApiError('new_error', 'diagnostic'))).toContain('new_error')
     expect(settingsIssueText({ code: 'invalid_value', message: 'raw', id: 'base', path: null })).toContain('base')

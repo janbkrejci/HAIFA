@@ -537,8 +537,8 @@ def test_rendered_skill_describes_branch_cleanup_and_safety(
 ) -> None:
     assert main(["--skill"]) == 0
     skill = capsys.readouterr().out
-    approve = skill.split("### factory task approve\n", 1)[1].split("\n### ", 1)[0]
-    clean = skill.split("### factory task clean\n", 1)[1].split("\n### ", 1)[0]
+    approve = skill.split("### giro task approve\n", 1)[1].split("\n### ", 1)[0]
+    clean = skill.split("### giro task clean\n", 1)[1].split("\n### ", 1)[0]
     assert "After restacking dependents" in approve
     assert "delete the merged branch locally and on the remote" in approve
     for section in (approve, clean):

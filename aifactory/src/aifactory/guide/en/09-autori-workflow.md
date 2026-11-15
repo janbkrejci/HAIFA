@@ -1,6 +1,6 @@
 # Workflow author appendix
 
-A workflow is YAML with a name, description, steps and an `accept` condition. Save custom workflows in the repository's `.factory/workflows/<name>.yaml` or the library; validate with `factory workflow check .factory/workflows/<name>.yaml`.
+A workflow is YAML with a name, description, steps and an `accept` condition. Save custom workflows in the repository's `.factory/workflows/<name>.yaml` or the library; validate with `giro workflow check .factory/workflows/<name>.yaml`.
 
 ## Steps <!-- section:kroky -->
 

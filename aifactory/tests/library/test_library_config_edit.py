@@ -1,4 +1,4 @@
-"""``factory config set|remove|move`` with a temporary library and a bare remote (no network)."""
+"""``giro config set|remove|move`` with a temporary library and a bare remote (no network)."""
 
 from __future__ import annotations
 
@@ -349,7 +349,7 @@ def test_move_refusals(repo: Path, capsys: Capsys) -> None:
 
     shutil.rmtree(store.library_root(), onerror=writable)
     error = fail(capsys, repo, "library_missing", "move", "agent", "builder", "--commit")
-    assert "factory library init" in error["message"]
+    assert "giro library init" in error["message"]
 
 
 def test_move_plan_changed_when_the_library_moves(repo: Path, capsys: Capsys) -> None:

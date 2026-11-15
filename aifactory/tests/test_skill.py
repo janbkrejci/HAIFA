@@ -1,4 +1,4 @@
-"""`factory --skill`: every command, every error code and the formats are in the skill."""
+"""`giro --skill`: every command, every error code and the formats are in the skill."""
 
 from __future__ import annotations
 
@@ -54,7 +54,7 @@ def test_every_command_is_in_skill() -> None:
     leaves = _leaves(parser)
     assert len(leaves) == len(iter_commands(parser))
     for path, leaf in leaves:
-        name = "factory " + " ".join(path)
+        name = "giro " + " ".join(path)
         assert name in skill
         section = _section(skill, name)
         for action in leaf._actions:
@@ -85,7 +85,7 @@ def test_skill_sections() -> None:
     skill = render_skill()
     for text in (
         "## Prerequisites",
-        "### Add factory to an existing repo",
+        "### Add GIRO to an existing repo",
         "### Agents and prompts",
         "### Items of the repo: config set / remove / move",
         "## Calling convention",
@@ -107,7 +107,7 @@ def test_skill_sections() -> None:
         "### Approve",
         "### Return",
         "### Resolve",
-        "factory task resolve",
+        "giro task resolve",
     ):
         assert text in skill, text
 
@@ -119,10 +119,12 @@ def test_skill_front_matter_and_version() -> None:
     assert skill.startswith("---\n")
     metadata = yaml.safe_load(skill.split("---\n", 2)[1])
     assert metadata["name"] == "factory"
+    assert "# GIRO skill" in skill
+    assert "Goal in. Release out." in skill
     assert "Use when" in metadata["description"]
     assert "Do not use" in metadata["description"]
     assert __version__ in skill
-    assert "factory --version" in skill
+    assert "giro --version" in skill
     assert "regenerate this skill" in skill
     assert "never copy it into a repository" not in skill
 
@@ -159,7 +161,7 @@ def test_skill_installation_procedure() -> None:
     skill = render_skill()
     prerequisites = skill.split("## Prerequisites\n", 1)[1].split("\n## ", 1)[0]
     for text in (
-        "factory check --json",
+        "giro check --json",
         "data.action",
         "`installed`",
         "`unsupported`",
@@ -170,27 +172,27 @@ def test_skill_installation_procedure() -> None:
         assert text in prerequisites, text
     assert "repo_unsupported" in skill
     for text in (
-        "factory onboard",
-        "factory adopt",
+        "giro onboard",
+        "giro adopt",
         "pre_library_config",
         "sssf_leftover",
-        "factory update",
+        "giro update",
         "config export",
         "config add",
         "manifest.yaml",
     ):
         assert text not in skill, text
-    install = _section(skill, "Add factory to an existing repo")
+    install = _section(skill, "Add GIRO to an existing repo")
     for text in (
-        "factory check --json",
-        "factory init --dry-run --json",
+        "giro check --json",
+        "giro init --dry-run --json",
         "Show the user the files",
         "digest",
-        "factory init --commit --expect <digest>",
+        "giro init --commit --expect <digest>",
         "push_failed",
         "only with their consent",
         "--pr",
-        "factory backlog check --json",
+        "giro backlog check --json",
         "Repeat all options",
     ):
         assert text in install, text
@@ -225,11 +227,11 @@ def test_skill_agents_prompts_and_library() -> None:
         "library",
         "the seed",
         "library_commit",
-        "factory config move agent",
+        "giro config move agent",
     ):
         assert text in agents, text
     items = _section(skill, "Items of the repo: config set / remove / move")
-    for text in ("factory config move", "library_missing", "in_use", "--expect <digest>"):
+    for text in ("giro config move", "library_missing", "in_use", "--expect <digest>"):
         assert text in items, text
 
 
@@ -239,16 +241,16 @@ def test_skill_backlog_creation_procedure() -> None:
     skill = render_skill()
     section = _section(skill, "Plan -> backlog")
     for text in (
-        'factory backlog add --id M01 --title "Core"',
-        'factory backlog add M01 --id S01 --title "API"',
-        "factory backlog edit M01 --workflow simple-sdlc",
-        "factory task add M01-S01",
+        'giro backlog add --id M01 --title "Core"',
+        'giro backlog add M01 --id S01 --title "API"',
+        "giro backlog edit M01 --workflow simple-sdlc",
+        "giro task add M01-S01",
         "project → step → task",
         "nearest value wins",
-        "factory backlog commit --json",
+        "giro backlog commit --json",
     ):
         assert text in section, text
-    assigned = re.findall(r"factory backlog edit M01 --workflow ([\w-]+)", section)
+    assigned = re.findall(r"giro backlog edit M01 --workflow ([\w-]+)", section)
     assert assigned
     assert set(assigned) <= set(seed_workflow_names())
 
@@ -275,7 +277,7 @@ def test_skill_cli(capsys: Capsys) -> None:
     assert envelope_problems(obj) == []
     data = obj["data"]
     assert data["skill"].startswith("---\nname: factory\n")
-    assert {c["name"] for c in data["commands"]} >= {"factory task run", "factory task resolve"}
+    assert {c["name"] for c in data["commands"]} >= {"giro task run", "giro task resolve"}
     assert {c["code"] for c in data["error_codes"]} == set(ERROR_CODES)
 
 
@@ -365,7 +367,7 @@ def test_issue_codes_complete() -> None:
 
 
 def test_check_codes_complete() -> None:
-    """Every ``Finding("<code>", ...)`` of ``factory check`` is in ISSUE_CODES["check"]."""
+    """Every ``Finding("<code>", ...)`` of ``giro check`` is in ISSUE_CODES["check"]."""
     found: set[str] = set()
     for path in sorted((SRC / "check").rglob("*.py")):
         for call in _calls(path):
@@ -378,16 +380,16 @@ def test_check_codes_complete() -> None:
 def test_skill_describes_check() -> None:
     skill = render_skill()
     section = _section(skill, "Check")
-    for text in ("factory check", "--offline", "scope: repo", "scope: machine", "action"):
+    for text in ("giro check", "--offline", "scope: repo", "scope: machine", "action"):
         assert text in section, text
-    assert "only by reading" in _section(skill, "factory check")
+    assert "only by reading" in _section(skill, "giro check")
 
 
 def test_skill_describes_repo_instructions_and_skills() -> None:
     text = render_skill()
     for needle in (
         "### Repo instructions and skills",
-        "factory skills sync",
+        "giro skills sync",
         ".agents/skills",
         "--setting-sources project,local",
         "CLAUDE_SAFE_MODE",
@@ -414,10 +416,10 @@ def _code_spans(text: str) -> list[str]:
 
 
 def _factory_commands(text: str) -> set[tuple[str, ...]]:
-    """Every ``factory <word> ...`` in code: the leading lowercase words after ``factory``."""
+    """Every ``giro <word> ...`` in code: the leading lowercase words after ``giro``."""
     found: set[tuple[str, ...]] = set()
     for span in _code_spans(text):
-        for match in re.finditer(r"(?:^|[\s(])factory((?:\s+[a-z][a-z-]*)*)", span):
+        for match in re.finditer(r"(?:^|[\s(])giro((?:\s+[a-z][a-z-]*)*)", span):
             found.add(tuple(match.group(1).split()))
     return found
 
@@ -432,7 +434,7 @@ def _unknown_commands(text: str) -> list[str]:
             if not subs:
                 break  # a leaf: the rest are arguments
             if word not in subs[0].choices:
-                unknown.append("factory " + " ".join(words))
+                unknown.append("giro " + " ".join(words))
                 break
             parser = subs[0].choices[word]
     return unknown
@@ -443,7 +445,7 @@ def _guide() -> str:
 
 
 def test_guide_leaves_check_fixes_to_factory_check() -> None:
-    """The guide does not repeat the ``fix`` of every ``factory check`` code in tables."""
+    """The guide does not repeat the ``fix`` of every ``giro check`` code in tables."""
     text = _guide()
     assert "| Kód |" not in text
     assert "`fix`" in text
@@ -453,24 +455,24 @@ def test_guide_covers_setup_library_repos_and_upgrades() -> None:
     text = _guide()
     for needle in (
         "./install.sh",
-        "factory check",
-        "factory library clone",
-        "factory library init",
-        "factory init",
-        "factory obs",
-        "factory upgrade",
-        "factory library seed",
+        "giro check",
+        "giro library clone",
+        "giro library init",
+        "giro init",
+        "giro obs",
+        "giro upgrade",
+        "giro library seed",
         "min_factory_version",
         "just bundle",
     ):
         assert needle in text, needle
-    for removed in ("factory adopt", "factory update", "config export", "library where"):
+    for removed in ("giro adopt", "giro update", "config export", "library where"):
         assert removed not in text, removed
 
 
 def test_readme_points_to_the_guide() -> None:
     readme = README.read_text(encoding="utf-8")
-    assert "factory obs" in readme
+    assert "giro obs" in readme
     assert "src/aifactory/guide" in readme
 
 
@@ -488,48 +490,48 @@ def test_factory_commands_exist_in_parser() -> None:
     assert _unknown_commands(readme) == []
     assert _unknown_commands(text) == []
     assert _unknown_commands(skill) == []
-    assert _unknown_commands("`factory library where`, `factory adopt`") == [
-        "factory adopt",
-        "factory library where",
+    assert _unknown_commands("`giro library where`, `giro adopt`") == [
+        "giro adopt",
+        "giro library where",
     ]
 
 
 def test_skill_setup_and_item_procedures() -> None:
     skill = render_skill()
     setup = _section(skill, "Set up a machine")
-    for text in ("factory check --json", "factory library clone", "factory library init"):
+    for text in ("giro check --json", "giro library clone", "giro library init"):
         assert text in setup, text
     takeover = _section(skill, "Take over a repo with committed `.factory/`")
-    for text in ("factory check --json", "`installed`", "Never run", "factory obs"):
+    for text in ("giro check --json", "`installed`", "Never run", "giro obs"):
         assert text in takeover, text
     items = _section(skill, "Manage items")
     for text in (
-        "factory library import",
-        "factory config set",
-        "factory config remove",
-        "factory config move",
-        "factory config commit",
+        "giro library import",
+        "giro config set",
+        "giro config remove",
+        "giro config move",
+        "giro config commit",
         "inherit",
     ):
         assert text in items, text
     upgrade = _section(skill, "Upgrade")
-    for text in ("factory upgrade", "factory library seed", "next run"):
+    for text in ("giro upgrade", "giro library seed", "next run"):
         assert text in upgrade, text
 
 
 def test_allow_writes_explains_uncommitted_base() -> None:
     section = _section(render_skill(), "Retry")
     assert "writes_not_committed" in section
-    assert "factory backlog commit --json" in section
-    assert "factory task retry ID --json" in section
+    assert "giro backlog commit --json" in section
+    assert "giro task retry ID --json" in section
     assert ERROR_CODES["writes_not_committed"]
 
 
 def test_skill_explains_explicit_local_transition() -> None:
     skill = render_skill()
     for text in (
-        "factory config local legacy",
-        "factory config local import",
+        "giro config local legacy",
+        "giro config local import",
         "--overwrite",
         "deprecated_option",
         "Both automations default to off",
@@ -540,3 +542,17 @@ def test_skill_explains_explicit_local_transition() -> None:
     assert "auto_continue: false" not in skill
     assert "auto_merge: false" not in skill
     assert "auto_continue: true" not in skill
+
+
+def test_documented_docs_root_defaults_match_settings() -> None:
+    from aifactory.config.settings import ProjectSettings
+
+    skill = render_skill()
+    patterns = (
+        r"`docs_root` in `\.factory/config\.yaml`\s*\(default `([^`]+)`\)",
+        r"`--docs-root DIR` \(default `([^`]+)`\)",
+    )
+    for pattern in patterns:
+        documented = re.search(pattern, skill)
+        assert documented is not None, pattern
+        assert documented.group(1) == ProjectSettings().docs_root

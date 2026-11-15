@@ -178,7 +178,7 @@ describe('RepoCard automatic actions', () => {
             task_id: 'M01-S01-T02',
             run_id: 'r-quota',
             ok: true,
-            text: 'Factory pokračovala na Claude Code po vyčerpání kvóty Codexu',
+            text: 'GIRO pokračovala na Claude Code po vyčerpání kvóty Codexu',
             detail: { from: { harness: 'codex' }, to: { harness: 'claude' } },
           },
           {
@@ -193,16 +193,16 @@ describe('RepoCard automatic actions', () => {
         ],
       }),
     )
-    expect(card.findAll('section.group h3').map((h) => h.text())).toContain('Factory zasáhla sama')
+    expect(card.findAll('section.group h3').map((h) => h.text())).toContain('GIRO zasáhla sama')
     const rows = card.findAll('[data-test="row-auto-action"]')
     expect(rows.map((r) => r.attributes('data-action'))).toEqual(['fallback', 'retry'])
-    expect(rows[0].text()).toContain('Factory pokračovala na Claude Code po vyčerpání kvóty Codexu')
+    expect(rows[0].text()).toContain('GIRO pokračovala na Claude Code po vyčerpání kvóty Codexu')
     expect(rows[0].attributes('href')).toBe('#/r/a/runs/r-quota')
     expect(rows[1].classes()).toContain('failed')
   })
 
   it('has no section without automatic actions', () => {
-    expect(mountWith(repo('a')).text()).not.toContain('Factory zasáhla sama')
+    expect(mountWith(repo('a')).text()).not.toContain('GIRO zasáhla sama')
   })
 })
 

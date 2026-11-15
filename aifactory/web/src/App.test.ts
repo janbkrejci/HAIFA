@@ -235,7 +235,7 @@ describe('App', () => {
     repos[0] = { ...HAIFA, name: 'Installed HAIFA', factory: { state: 'installed' } }
     window.dispatchEvent(new Event('factory-applied')); await flushPromises()
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos')).toHaveLength(before + 2)
-    expect(document.title).toBe('Installed HAIFA · Backlog · HAIFA')
+    expect(document.title).toBe('Installed HAIFA · Backlog · GIRO')
     wrapper.unmount()
     window.dispatchEvent(new Event('factory-applied')); await flushPromises()
     expect(fetchMock.mock.calls.filter(([url]) => url === '/api/repos')).toHaveLength(before + 2)
@@ -273,7 +273,7 @@ describe('App', () => {
     const wrapper = mount(App)
     await flushPromises()
     const links = wrapper.findAll('nav a')
-    expect(links.map((a) => a.text())).toEqual(['Backlog', 'Běhy', 'Review', 'Factory'])
+    expect(links.map((a) => a.text())).toEqual(['Backlog', 'Běhy', 'Review', 'GIRO'])
     expect(links.map((a) => a.attributes('href'))).toEqual([
       '#/r/haifa/backlog',
       '#/r/haifa/runs',
@@ -299,17 +299,19 @@ describe('App', () => {
     go('#/r/haifa/runs')
     const wrapper = mount(App)
     await flushPromises()
-    expect(document.title).toBe('HAIFA · Běhy · HAIFA')
+    expect(document.title).toBe('HAIFA · Běhy · GIRO')
     go('#/overview')
     await flushPromises()
-    expect(document.title).toBe('Přehled · HAIFA')
+    expect(document.title).toBe('Přehled · GIRO')
+    expect(wrapper.get('a.brand').text()).toBe('giro')
+    expect(wrapper.get('a.brand').attributes('aria-label')).toBe('GIRO — Goal in. Release out.')
     go('#/repos/add')
     await flushPromises()
-    expect(document.title).toBe('Přidat repozitář · HAIFA')
+    expect(document.title).toBe('Přidat repozitář · GIRO')
     go('#/setup/library')
     await vi.dynamicImportSettled()
     await flushPromises()
-    expect(document.title).toBe('Knihovna · HAIFA')
+    expect(document.title).toBe('Knihovna · GIRO')
     expect(wrapper.get('[data-test="switcher-current"]').text()).toBe('Knihovna')
     expect(wrapper.get('main h1').text()).toBe('Knihovna')
     expect(fetchMock).toHaveBeenCalledWith('/api/library/inventory', expect.objectContaining({ signal: expect.any(AbortSignal) }))
@@ -435,6 +437,17 @@ describe('App', () => {
     answer!(envelope(DIRTY_STATUS))
     await flushPromises()
     expect(wrapper.find('[data-test="config-banner"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows the GIRO slogan in the brand tooltip on focus', async () => {
+    stubApi()
+    const wrapper = mount(App, { attachTo: document.body })
+    await flushPromises()
+    await wrapper.get('a.brand').trigger('focusin')
+    await flushPromises()
+    expect(document.body.querySelector('[role="tooltip"]')?.textContent?.trim()).toBe('Goal in. Release out.')
+    expect(wrapper.get('a.brand').attributes('title')).toBeUndefined()
     wrapper.unmount()
   })
 
@@ -935,7 +948,7 @@ it('updates shell labels, open switcher counts, title and lang without remountin
   await wrapper.get('[data-test="switcher-button"]').trigger('click')
   await flushPromises()
   const menu = wrapper.get('[data-test="switcher-menu"]').element
-  expect(document.title).toBe('HAIFA · Runs · HAIFA')
+  expect(document.title).toBe('HAIFA · Runs · GIRO')
   expect(document.documentElement.lang).toBe('en')
   expect(wrapper.get('[data-test="update-chip"]').attributes('aria-label')).toContain('System is up to date')
   expect(wrapper.get('[data-test="library-chip-ok"]').attributes('aria-label')).toBe('Library OK – click to open the library')
@@ -945,7 +958,7 @@ it('updates shell labels, open switcher counts, title and lang without remountin
   expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe('User and administrator guide')
   setLocale('cs')
   await flushPromises()
-  expect(document.title).toBe('HAIFA · Běhy · HAIFA')
+  expect(document.title).toBe('HAIFA · Běhy · GIRO')
   expect(document.documentElement.lang).toBe('cs')
   expect(wrapper.get('[data-test="update-chip"]').attributes('aria-label')).toContain('Systém je aktuální')
   expect(wrapper.get('[data-test="library-chip-ok"]').attributes('aria-label')).toBe('Knihovna OK – kliknutím otevřeš knihovnu')
@@ -957,7 +970,7 @@ it('updates shell labels, open switcher counts, title and lang without remountin
   expect(mounts).toBe(1)
   setLocale('en')
   await flushPromises()
-  expect(document.title).toBe('HAIFA · Runs · HAIFA')
+  expect(document.title).toBe('HAIFA · Runs · GIRO')
   expect(mounts).toBe(1)
 })
 
@@ -976,7 +989,7 @@ it.each([
   for (const [language, label] of [['en', en], ['cs', cs]] as const) {
     setLocale(language)
     await flushPromises()
-    expect(document.title).toBe(`${label} · HAIFA`)
+    expect(document.title).toBe(`${label} · GIRO`)
     expect(wrapper.get('[data-test="switcher-current"]').text()).toBe(label)
     expect(document.documentElement.lang).toBe(language)
   }

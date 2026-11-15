@@ -26,7 +26,7 @@ describe('StateChip', () => {
     await wrapper.get('[data-test="tip-anchor"]').trigger('mouseenter')
     await flushPromises()
     expect(document.body.querySelector('[data-test="tooltip"]')?.textContent).toContain(
-      'Schválil jsi pull request. Factory čeká na zelené CI a potom ho mergne sama.',
+      'Schválil jsi pull request. GIRO čeká na zelené CI a potom ho mergne sama.',
     )
   })
 

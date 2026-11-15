@@ -3,7 +3,7 @@
 Agents live in ``aifactory/seed/agents/<name>/`` and pi extensions in
 ``aifactory/seed/extensions/<name>/`` (``subagents`` from sssf); the seed workflows are the
 package defaults in ``aifactory/defaults/workflows/`` and are not copied. The skill
-``factory`` is generated: its ``SKILL.md`` is ``factory --skill`` of this version
+``factory`` is generated: its ``SKILL.md`` is ``giro --skill`` of this version
 (``skill_seed_item``). It is part of the library seed (``store.packaged_seed``) but not of
 ``seed_items``, the no-library fallback for inheritance.
 """
@@ -63,7 +63,7 @@ def seed_items() -> list[Item]:
 
 
 def skill_seed_item() -> Item:
-    """The generated seed skill ``factory`` (``factory --skill``), validated like any skill."""
+    """The generated seed skill ``factory`` (``giro --skill``), validated like any skill."""
     from aifactory.skill.render import render_skill  # the CLI parser imports the library
 
     data = render_skill().encode("utf-8")

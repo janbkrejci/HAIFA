@@ -113,7 +113,7 @@ def test_second_message_continues_the_session(
     assert one.session_dir == two.session_dir
     assert one.model == two.model == "sonnet"
     # The context goes with the first message of the session only.
-    assert "# HAIFA skill" in one.prompt and "# HAIFA skill" not in two.prompt
+    assert "# GIRO skill" in one.prompt and "# GIRO skill" not in two.prompt
     assert "A co čeká na review?" in two.prompt
     assert repo_id in one.system_prompt and str(repo) in one.system_prompt
     # Read-only: the guide command only, in a directory outside every repository.

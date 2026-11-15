@@ -349,7 +349,7 @@ def test_skill_describes_publish(capsys: Capsys) -> None:
 
     assert main(["--skill"]) == 0
     text: Any = capsys.readouterr().out
-    assert "factory task publish" in text
+    assert "giro task publish" in text
     for code in ("no_succeeded_run", "pr_exists", "pr_failed"):
         assert code in text
 

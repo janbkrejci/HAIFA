@@ -26,7 +26,7 @@ def latest_release(repository: str) -> dict[str, Any]:
         raise ValueError("Zdroj aktualizací není nastavený správně.")
     request = urllib.request.Request(
         f"https://api.github.com/repos/{repository}/releases/latest",
-        headers={"Accept": "application/vnd.github+json", "User-Agent": "HAIFA-update-check"},
+        headers={"Accept": "application/vnd.github+json", "User-Agent": "GIRO-update-check"},
     )
     with urllib.request.urlopen(request, timeout=10) as response:
         data = json.load(response)

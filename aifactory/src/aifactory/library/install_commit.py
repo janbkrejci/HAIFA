@@ -1,4 +1,4 @@
-"""``factory init --dry-run`` and ``factory init --commit``: install factory by one commit.
+"""``giro init --dry-run`` and ``giro init --commit``: install factory by one commit.
 
 ``plan_init`` renders the same files as the working-tree ``init`` (``config.yaml``; the
 backlog ``.gitkeep`` only when the backlog directory does not exist; the ``.gitignore``
@@ -19,7 +19,7 @@ commit goes to ``factory-init/<n>`` with a pull request; base and the checkout s
 Blockers (``data.blockers``; the commit refuses with the first, exit 2):
 ``already_installed`` (``config.yaml`` in base), ``existing_config`` (an sssf installation;
 HAIFA does not take it over), ``config_not_committed`` (``config.yaml`` only in the working
-tree; ``factory config commit``), ``dirty_paths`` (a planned path on disk with other
+tree; ``giro config commit``), ``dirty_paths`` (a planned path on disk with other
 content), ``invalid_plan`` (the planned configuration does not load) and, for the direct
 target, ``not_on_base``, ``run_in_progress``, ``base_behind``, ``base_diverged``.
 
@@ -327,14 +327,13 @@ def _state_blocker(root: Path, base_sha: str) -> Blocker | None:
     if _committed(root, base_sha, SSSF_CONFIG_DIR) or (root / SSSF_CONFIG_DIR).is_dir():
         return Blocker(
             "existing_config",
-            f"the repo has an sssf installation ({SSSF_CONFIG_DIR}/); "
-            "HAIFA does not take over sssf",
+            f"the repo has an sssf installation ({SSSF_CONFIG_DIR}/); GIRO does not take over sssf",
         )
     if (root / CONFIG_FILE).exists():
         return Blocker(
             "config_not_committed",
-            f"{CONFIG_FILE} is in the working tree but not in base; run factory config commit",
-            fix="factory config commit",
+            f"{CONFIG_FILE} is in the working tree but not in base; run giro config commit",
+            fix="giro config commit",
         )
     return None
 

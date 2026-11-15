@@ -112,9 +112,9 @@ describe('parseRoute', () => {
   })
 
   it('lists the four screens in order with their labels', () => {
-    expect(SCREENS.map((s) => s.label)).toEqual(['Backlog', 'Běhy', 'Review', 'Factory'])
+    expect(SCREENS.map((s) => s.label)).toEqual(['Backlog', 'Běhy', 'Review', 'GIRO'])
     expect(SCREEN_LABELS.runs).toBe('Běhy')
-    expect(SCREEN_LABELS.factory).toBe('Factory')
+    expect(SCREEN_LABELS.factory).toBe('GIRO')
   })
 
   it('parses the Factory tab without a redirect', () => {
@@ -208,10 +208,10 @@ describe('hrefs', () => {
 
 it('reads screen labels reactively without changing route identifiers', () => {
   setLocale('en')
-  expect(SCREENS.map(s => s.label)).toEqual(['Backlog', 'Runs', 'Review', 'Factory'])
+  expect(SCREENS.map(s => s.label)).toEqual(['Backlog', 'Runs', 'Review', 'GIRO'])
   expect(SCREEN_LABELS.runs).toBe('Runs')
   setLocale('cs')
-  expect(SCREENS.map(s => s.label)).toEqual(['Backlog', 'Běhy', 'Review', 'Factory'])
+  expect(SCREENS.map(s => s.label)).toEqual(['Backlog', 'Běhy', 'Review', 'GIRO'])
   expect(SCREEN_LABELS.runs).toBe('Běhy')
   expect(SCREENS.map(s => s.id)).toEqual(['backlog', 'runs', 'review', 'factory'])
 })

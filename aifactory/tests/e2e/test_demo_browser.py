@@ -158,6 +158,11 @@ def test_demo_from_empty_overview_to_merge(tmp_path: Path, monkeypatch: pytest.M
             try:
                 # the empty overview offers the sample next to adding a repository
                 page.goto("/")
+                expect(page).to_have_title("Přehled · GIRO")
+                expect(page.locator("a.brand")).to_have_text("giro")
+                expect(page.locator("a.brand")).to_have_attribute(
+                    "aria-label", "GIRO — Goal in. Release out."
+                )
                 empty = page.locator('[data-test="no-repos"]')
                 expect(empty.locator('[data-test="add-repo-link"]')).to_be_visible()
                 empty.locator('[data-test="try-demo"]').click()

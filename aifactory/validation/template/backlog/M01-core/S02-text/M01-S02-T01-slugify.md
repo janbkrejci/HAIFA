@@ -15,4 +15,4 @@ Constraints: standard library only, at most 40 changed lines, change only
 `src/sandbox/text.py`.
 
 ## Běhy
-<!-- doplňuje HAIFA při schválení PR -->
+<!-- doplňuje GIRO při schválení PR -->

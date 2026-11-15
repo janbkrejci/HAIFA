@@ -5,11 +5,11 @@ import { deferred } from '@/test/deferred'
 import GuideView from './GuideView.vue'
 
 const CHAPTERS = [
-  { id: 'uvod', title: 'Úvod', markdown: '# Úvod\n\nCo je HAIFA.\n\n## Pojmy\n\nTask a běh.\n' },
+  { id: 'uvod', title: 'Úvod', markdown: '# Úvod\n\nCo je GIRO.\n\n## Pojmy\n\nTask a běh.\n' },
   { id: 'backlog', title: 'Backlog', markdown: '# Backlog\n\n## Spuštění běhu\n\nTlačítko **Spustit**.\n\n| Kód | Oprava |\n| --- | --- |\n| `a` | b |\n' },
 ]
 const EN_CHAPTERS = [
-  { id: 'uvod', title: 'Introduction', markdown: '# Introduction\n\nWhat is HAIFA.\n\n## Terms <!-- section:pojmy -->\n\nTask and run.\n' },
+  { id: 'uvod', title: 'Introduction', markdown: '# Introduction\n\nWhat is GIRO.\n\n## Terms <!-- section:pojmy -->\n\nTask and run.\n' },
   { id: 'backlog', title: 'Backlog', markdown: '# Backlog\n\n## Starting a run <!-- section:spusteni-behu -->\n\nThe **Run** button.\n' },
 ]
 
@@ -139,7 +139,7 @@ describe('GuideView', () => {
     if (settle === 'resolve') stale.resolve(response())
     else stale.reject(new Error('stale error'))
     await flushPromises()
-    expect(wrapper.get('[data-test="guide-article"]').text()).toContain('What is HAIFA.')
+    expect(wrapper.get('[data-test="guide-article"]').text()).toContain('What is GIRO.')
     expect(wrapper.find('[data-test="guide-error"]').exists()).toBe(false)
   })
 })

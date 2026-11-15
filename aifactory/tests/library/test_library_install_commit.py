@@ -1,4 +1,4 @@
-"""``factory init --dry-run`` and ``--commit`` against a bare remote (HAIFA-S01-T12, no network)."""
+"""``giro init --dry-run`` and ``--commit`` against a bare remote (HAIFA-S01-T12, no network)."""
 
 from __future__ import annotations
 
@@ -351,7 +351,7 @@ def test_config_not_committed(repo: Path, capsys: Capsys) -> None:
     data = preview(capsys, repo)
 
     assert codes(data["blockers"])[0] == "config_not_committed"
-    assert data["blockers"][0]["fix"] == "factory config commit"
+    assert data["blockers"][0]["fix"] == "giro config commit"
 
 
 def test_invalid_plan(repo: Path, capsys: Capsys) -> None:

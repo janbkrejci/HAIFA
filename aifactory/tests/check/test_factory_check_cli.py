@@ -1,4 +1,4 @@
-"""``factory check``: envelope, exit codes 0/1/2 and the text output."""
+"""``giro check``: envelope, exit codes 0/1/2 and the text output."""
 
 from __future__ import annotations
 
@@ -129,4 +129,4 @@ def test_factory_without_a_command_prints_the_first_run_hint(capsys: Capsys) -> 
     assert main([]) == 0
     out = capsys.readouterr().out
     assert "usage:" in out
-    assert out.rstrip().endswith("První spuštění: factory check")
+    assert out.rstrip().endswith("První spuštění: giro check")

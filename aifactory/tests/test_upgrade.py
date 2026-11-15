@@ -364,7 +364,7 @@ def test_no_library_has_no_minimum() -> None:
 
 def test_skill_describes_upgrade() -> None:
     skill = render_skill()
-    assert "factory upgrade" in skill and "### Upgrade" in skill
+    assert "giro upgrade" in skill and "### Upgrade" in skill
     for code in ("up_to_date", "bundle_invalid", "checksum_mismatch", "editable_install"):
         assert f"`{code}`" in skill
 

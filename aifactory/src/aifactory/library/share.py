@@ -266,8 +266,8 @@ def propose(
     title = message.strip().splitlines()[0] if message.strip() else "library change"
     body = (
         message.strip()
-        + "\n\n---\nSent by HAIFA. The library maintainer reviews and merges this pull "
-        "request; HAIFA never merges it.\n"
+        + "\n\n---\nSent by GIRO. The library maintainer reviews and merges this pull "
+        "request; GIRO never merges it.\n"
     )
     branch = _branch_name(sha)
     proposal = Proposal(

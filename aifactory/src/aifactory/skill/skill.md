@@ -1,34 +1,43 @@
 ---
 name: factory
 description: >-
-  Use when a coding agent sets up HAIFA on a machine (check, library), adds HAIFA
+  Use when a coding agent sets up GIRO on a machine (check, library), adds GIRO
   to an existing Git repository or takes over a repo that already has it,
   manages its agents and workflows, turns a plan into a project/step/task
-  backlog, drives factory tasks, or upgrades HAIFA. Do not use for general
-  coding without HAIFA, unpacking the first HAIFA bundle (install.sh), or
+  backlog, drives giro tasks, or upgrades GIRO. Do not use for general
+  coding without GIRO, unpacking the first GIRO bundle (install.sh), or
   multi-repository operations.
 ---
 
-# HAIFA skill: driving the `factory` CLI (aifactory {{version}})
+# GIRO skill: driving the `giro` CLI (aifactory {{version}})
 
-This guide is generated from the installed code by `factory --skill`.
-Save its Markdown output as an agent's `SKILL.md`; `factory --skill --json`
-returns the same guide inside the JSON envelope. Compare `factory --version`
+This guide is generated from the installed code by `giro --skill`.
+Save its Markdown output as an agent's `SKILL.md`; `giro --skill --json`
+returns the same guide inside the JSON envelope. Compare `giro --version`
 with aifactory {{version}}: whenever the version changes, regenerate this skill
-with `factory --skill` and replace the saved copy.
+with `giro --skill` and replace the saved copy.
+
+Goal in. Release out.
+
+To move from older HAIFA, first update to the last HAIFA with the “HAIFA is becoming GIRO” alert. Once GIRO is released, click the migration action: it verifies the bundle, preserves a backup and restores the dashboard at the same address. Successful GIRO shows no migration alert and uses the new repository for normal updates. Backups are never automatically deleted. Standalone startup with old data may return `migration_required`; after stopping all processes, use `giro migrate --confirm --haifa-bundle /path/haifa-H.zip` with the verified last HAIFA bundle. Two distinct unmarked homes block startup. For rollback, stop all writes, preserve the new state too, then restore every original path and the software from the verified backup; do not remove the marker to bypass recovery. The source repository documents the full protocol in `docs/rebranding/release.md`.
+
+`factory` remains a compatibility alias of `giro`; `HAIFA_*` are legacy aliases of `GIRO_*`. A nonempty new name wins within a layer; process environment wins over `<home>/env`. `.factory/`, `factory/backlog/`, Python distribution `aifactory`, item `skill/factory` and the HAIFA-LIBRARY URL remain technical compatibility names. Browser preferences keep their storage keys at the same origin. Purging a marked migration home is refused; use `--keep-data` / `-KeepData` to preserve data.
+
+Target `janbkrejci/GIRO` releases become a public installation source only after
+verified cutover T06; active `janbkrejci/HAIFA` releases still contain HAIFA bundles.
 
 ## Prerequisites
 
-Start in the existing Git repository with `factory check --json`. The check only
+Start in the existing Git repository with `giro check --json`. The check only
 reads; even a failed check can return `data.findings`. Read each finding's `action`
 and `fix`, together with `data.state` and `data.action`, before making changes:
 
 | State | Action | Next step |
 | --- | --- | --- |
-| `none` (repo without factory) | `init` | Add factory to the existing repo below. |
+| `none` (repo without giro) | `init` | Add giro to the existing repo below. |
 | `uncommitted` (configuration only in the working tree) | `config_commit` | Review and commit configuration using the Commit configuration procedure, then check again. |
-| `installed` (`.factory/config.yaml` in base) | none | Factory is installed. Agents and workflows the repo lacks come from the library. |
-| `unsupported` (sssf `adws/` without `.factory/config.yaml`) | none | HAIFA does not take over sssf. Tell the user; do not convert it. |
+| `installed` (`.factory/config.yaml` in base) | none | GIRO is installed. Agents and workflows the repo lacks come from the library. |
+| `unsupported` (sssf `adws/` without `.factory/config.yaml`) | none | GIRO does not take over sssf. Tell the user; do not convert it. |
 
 Resolve machine findings (Git, provider CLI, chosen harness CLI and credentials)
 using their `fix`; do not run tasks until error findings are resolved. See Check for
@@ -36,18 +45,18 @@ the payload details.
 
 ## Calling convention
 
-- Start with `factory check --json` in a repository you have not worked in yet: it says
-  (only by reading) whether factory will run there and on this machine, and what to fix.
-  On a new machine run it anywhere, even outside a repository (`factory` without a command
-  prints "První spuštění: factory check").
+- Start with `giro check --json` in a repository you have not worked in yet: it says
+  (only by reading) whether giro will run there and on this machine, and what to fix.
+  On a new machine run it anywhere, even outside a repository (`giro` without a command
+  prints "První spuštění: giro check").
 - Always pass `--json`. stdout then carries exactly one JSON document, the envelope below;
   engine narration and tracebacks go to stderr. Parse stdout only.
 - Most commands take `--repo PATH` (default: the git repository of the current directory).
 - Runs read the configuration (`.factory/`) and the backlog from the **base commit**, not
   from the working tree. Commit (and push) backlog and `.factory/` edits before you run a
-  task; `factory config status --json` lists the uncommitted `.factory/` changes a run
-  would not see. Commit them with `factory config commit --json` (see Commit
-  configuration) and the backlog with `factory backlog commit --json`.
+  task; `giro config status --json` lists the uncommitted `.factory/` changes a run
+  would not see. Commit them with `giro config commit --json` (see Commit
+  configuration) and the backlog with `giro backlog commit --json`.
 
 ### The envelope
 
@@ -93,19 +102,19 @@ Rules (every command follows them, tests enforce them):
 
 ### Local repository choices and legacy import
 
-`factory config local show --repo PATH --json` reads the local choices without creating
+`giro config local show --repo PATH --json` reads the local choices without creating
 anything. Both automations default to off; the harness inherits this computer's default.
 The Overview card changes the same settings immediately, without a commit. Worktrees share
-their common Git identity; another clone or HAIFA_HOME has separate choices. Enabling a
+their common Git identity; another clone or GIRO_HOME has separate choices. Enabling a
 choice does not start work. `base_pr_merge` for administration PRs remains separate.
 
 Preview preserved legacy effective values and origins through project, step and task with
-`factory config local legacy --repo PATH --json`.
-Explicitly adopt with `factory config local import --repo PATH --json`. Uniform values can
+`giro config local legacy --repo PATH --json`.
+Explicitly adopt with `giro config local import --repo PATH --json`. Uniform values can
 be adopted directly. Conflicts require concrete repository-wide `--auto-merge on|off`,
 `--auto-continue on|off` or `--harness claude|codex|pi|inherit` choices. Existing local choices
 are preserved unless `--overwrite` is explicit. Import is atomic and idempotent, writes
-only HAIFA_HOME and leaves shared backlog bytes intact. Model/thinking are preview metadata;
+only GIRO_HOME and leaves shared backlog bytes intact. Model/thinking are preview metadata;
 the imported harness uses local presets/roster. Git pull does not change local choices.
 
 An unupgraded computer continues using frontmatter; an upgraded computer uses local choices.
@@ -118,25 +127,25 @@ backlog fields; their future removal is a separate change.
 
 ### Switch the local roster
 
-Repository operating settings live outside Git in HAIFA_HOME. Use
-`factory config local show --json` and
-`factory config local set --auto-merge on --auto-continue off --harness codex --json`.
+Repository operating settings live outside Git in GIRO_HOME. Use
+`giro config local show --json` and
+`giro config local set --auto-merge on --auto-continue off --harness codex --json`.
 Both accept `--repo PATH` without dashboard registration. `--harness inherit` restores
 the computer default. Set patches only supplied fields. Missing settings mean both
 automations are off; invalid files and unsupported versions fail without legacy fallback
 or overwriting the file. These commands are the shared storage contract; S11 runtime
 and dashboard integration must ship together before these switches control running work.
 
-`factory config roster show --json` lists effective local agent harness/model/thinking.
-`factory config roster set codex --dry-run --json` previews all-Codex
+`giro config roster show --json` lists effective local agent harness/model/thinking.
+`giro config roster set codex --dry-run --json` previews all-Codex
 (`gpt-6.1-sol`, medium); omit `--dry-run` to write locally. Use
-`factory config roster set claude --json` for all-Claude (`claude-opus-5-5`, medium).
+`giro config roster set claude --json` for all-Claude (`claude-opus-5-5`, medium).
 A whole-roster preset clears existing per-agent harness/model/thinking overrides,
 retaining purposes, prompts, writes and other settings. For a mixed roster, set Claude
-first, then `factory config roster set codex --agent builder --json`; a reviewer can
-be set with `factory config roster set claude --agent reviewer --json`.
+first, then `giro config roster set codex --agent builder --json`; a reviewer can
+be set with `giro config roster set claude --agent reviewer --json`.
 `--harness`, `--model`, `--thinking` override preset values; all commands accept `--repo`.
-Review the returned diff, then use the existing `factory config commit` flow. Runs read
+Review the returned diff, then use the existing `giro config commit` flow. Runs read
 committed base; workflow step overrides remain authoritative.
 
 Every command below accepts `--json`.
@@ -150,7 +159,7 @@ Every command below accepts `--json`.
 {{error_codes}}
 
 Codes that appear in `error.issues[].code` (and in `data.issues[].code`), by source
-(`check`: `data.findings[].code` of `factory check`; `item_origin`: the `origin` of an
+(`check`: `data.findings[].code` of `giro check`; `item_origin`: the `origin` of an
 agent, workflow, skill or extension in the dashboard, `repo` or `library`):
 
 {{issue_codes}}
@@ -158,40 +167,40 @@ agent, workflow, skill or extension in the dashboard, `repo` or `library`):
 What to do with the common ones:
 
 - `unmet_dependencies`: wait until the dependencies are done in base, or pass `--force`.
-- `conflict`: run `factory task resolve ID --json`, then approve again.
-- `backlog_invalid`: read `error.issues`, fix the files, run `factory backlog check --json`
+- `conflict`: run `giro task resolve ID --json`, then approve again.
+- `backlog_invalid`: read `error.issues`, fix the files, run `giro backlog check --json`
   until `ok` is true.
 - `already_running`: another run of the task is in progress; wait for it.
 - `run_already_paused`, `run_not_paused`: see Procedures, Pause, resume and stop.
 - `pr_failed`: the run succeeded and its branch exists; `data.pr_error` says why. Check the
-  remote and the provider CLI (`gh`, `az`), then `factory task publish ID --json` (see
+  remote and the provider CLI (`gh`, `az`), then `giro task publish ID --json` (see
   Publish). A push that failed on the network was already retried a few times.
 - `run_failed`: read `data.run.failure_kind` (`accept_not_met`, `nothing_to_do`, `quota`,
   `writes_violation`, `writes_needed`, `invalid_output`, `process_gone`, `stopped`,
   `blocked`, `other`), its
-  facts in `data.run.failure_detail` and the text in `data.run.error`; `factory task runs ID
-  --json` and `factory task show ID --json` give them for every run (a run recorded before
+  facts in `data.run.failure_detail` and the text in `data.run.error`; `giro task runs ID
+  --json` and `giro task show ID --json` give them for every run (a run recorded before
   the field reads as `other`, or `blocked` when its error starts with `blocked: `).
   `blocked` is no failure: an agent reported a blocking follow-up or task, the detail's
   `blockers` lists them; run them first, then retry. For `accept_not_met` the detail holds `accept`, the `values`
   of the fields it reads, the `rounds` of each `repeat`, the latest review `objections`
   and the test's `failed_checks`; `error` names the first of them in one sentence. The worktree and branch are kept. Continue the run
-  where it ended with `factory task retry ID --note TEXT --json` (see Procedures, Retry), or
-  start over with `factory task run ID --note TEXT --json`. A `nothing_to_do` run (the
+  where it ended with `giro task retry ID --note TEXT --json` (see Procedures, Retry), or
+  start over with `giro task run ID --note TEXT --json`. A `nothing_to_do` run (the
   task asks only for a change of the backlog) is not retried: make that change with
-  `factory task edit`, then the dashboard's Hotovo (`POST /api/runs/{id}/done`) marks the
+  `giro task edit`, then the dashboard's Hotovo (`POST /api/runs/{id}/done`) marks the
   task done without changes (refused: `not_nothing_to_do`), or cancel the task. A builder
   that finds the work done already reports `already_done` with evidence; that run
   succeeds and the task is done without changes, with no PR.
 - `run_not_retryable`, `task_done`: see Procedures, Retry.
 - `invalid_config`: read `error.issues[].path` and `message`, fix `.factory/`, commit.
 - `usage_error`: the arguments are wrong; see the command reference above.
-- `checks_failed`: `factory check` found errors; read `data.findings` (see Procedures,
+- `checks_failed`: `giro check` found errors; read `data.findings` (see Procedures,
   Check), fix the `error` findings and run the check again.
 
 ## Backlog format
 
-The factory documents live under one directory, `docs_root` in `.factory/config.yaml`
+The giro documents live under one directory, `docs_root` in `.factory/config.yaml`
 (default `factory`). It holds the backlog, the task specs and the task documentation, all
 structured by project and step:
 
@@ -217,16 +226,16 @@ structured by project and step:
 
 ### Task header
 
-YAML front matter; HAIFA writes the keys in this order: `{{field_order}}`.
+YAML front matter; GIRO writes the keys in this order: `{{field_order}}`.
 
 - `id`, `title` and `status` are required.
 - `status` is one of `{{statuses}}`. Set `todo` or `cancelled` by hand
-  (`factory task edit`); `done` is set only by `factory task approve` (or `backlog sync`).
+  (`giro task edit`); `done` is set only by `giro task approve` (or `backlog sync`).
 - `{{list_fields}}` are lists of strings.
 - `depends_on` may reference tasks or steps (a step is done when all its tasks are done).
   Store only `depends_on`; "blocks" is computed. `related` is informational.
 - `follows` is the id of the done task this one continues (a task, never inherited).
-  `factory task follow-up ID --body TEXT [--title TEXT] [--run] --json` creates it in the
+  `giro task follow-up ID --body TEXT [--title TEXT] [--run] --json` creates it in the
   step of ID with ID's own `writes` and `workflow`; a task that is not done is refused
   (`not_done`). `task show` lists the tasks that follow a task (`followed_by`).
 - `writes` is the list of paths or globs the agents may change; anything else is rolled back.
@@ -236,13 +245,13 @@ YAML front matter; HAIFA writes the keys in this order: `{{field_order}}`.
   An explicit `null` means none (`no_workflow`).
 - `test_timeout` is the shared time limit of the checks a workflow's `test` step runs, in
   whole seconds greater than 0 (own, or the nearest `index.md` above); without it `test_timeout` from
-  `.factory/config.yaml`, else 600. An invalid value is reported by `factory backlog check`
-  and stops `factory task run` with `invalid_test_timeout`.
+  `.factory/config.yaml`, else 600. An invalid value is reported by `giro backlog check`
+  and stops `giro task run` with `invalid_test_timeout`.
 
 The body has two sections:
 
 - `## Zadání`: what to do, where, "done means", out of scope, hard constraints.
-- `{{runs_heading}}` with `{{runs_placeholder}}`; HAIFA adds one line per approved PR.
+- `{{runs_heading}}` with `{{runs_placeholder}}`; GIRO adds one line per approved PR.
 
 Ids match `^[A-Za-z0-9][A-Za-z0-9._-]*$`, are unique across the backlog and start with the
 parent id plus `-` (`M01` -> `M01-S02` -> `M01-S02-T01`). The default task id is
@@ -252,7 +261,7 @@ States: the file stores `{{statuses}}`; `ready` and `blocked` are derived from
 `depends_on` for `todo` tasks; running, failed and in review live in the trace DB and the
 hosting. List filters (`--status`): `{{status_filters}}`.
 
-Example `{{index_file}}` of a project (its id is any short code, e.g. `M01` or `HAIFA`):
+Example `{{index_file}}` of a project (its id is any short code, e.g. `M01` or `GIRO`):
 
 ```markdown
 ---
@@ -303,16 +312,16 @@ Out of scope: writing endpoints.
 Hard constraints: do not change `src/model/`.
 
 ## Běhy
-<!-- doplňuje HAIFA při schválení PR -->
+<!-- doplňuje GIRO při schválení PR -->
 ```
 
 ### `.factory/config.yaml`
 
 Shared settings are committed in `.factory/config.yaml`. Create them through
-`factory init`,
+`giro init`,
 review the detected base and provider, then edit the YAML to fit
-this repository. Validate with `factory check --json` and
-`factory backlog check --json`; review and commit using Commit configuration.
+this repository. Validate with `giro check --json` and
+`giro backlog check --json`; review and commit using Commit configuration.
 Runs read these files from base. Machine-local `trace_db` and `database_url`
 belong in `.factory/local.yaml`, not here; the dashboard port is in its registry.
 
@@ -324,7 +333,7 @@ Every key, including nested entries, is generated from the configuration model.
 ### Agents and prompts
 
 Agents, workflows, skills and extensions are looked up in the repo first and in the
-library second: `$HAIFA_HOME/library` at its HEAD, or the seed in the package when there
+library second: `$GIRO_HOME/library` at its HEAD, or the seed in the package when there
 is no library (never both). A copy in the repo wins. A repo without `.factory/agents.yaml`
 and `.factory/prompts/` runs with the library agents and their default bindings; the
 roster `defaults` still apply to them. The library commit a run read is recorded in
@@ -382,8 +391,8 @@ Timeout and slots follow the Workflow format rules below.
 
 To change a library agent for one repo, copy its prompts into
 `.factory/prompts/<name>/` and edit them there. To share the repo's copy with every repo,
-move it to the library: `factory config move agent <name> --commit --dry-run --json`
-previews it, `factory config move agent <name> --commit --expect <digest> --json` writes
+move it to the library: `giro config move agent <name> --commit --dry-run --json`
+previews it, `giro config move agent <name> --commit --expect <digest> --json` writes
 the library and deletes the copy from the repo in one commit (see Items of the repo).
 
 
@@ -456,7 +465,7 @@ library (without a library the packaged workflows: {{workflows}}).
   machine-wide queue. A positive `test_slots` (`.factory/config.yaml`) opts into a limit.
   At most that many `test`
   steps run their command on the machine at once; the others wait in a queue in the
-  order they asked (`<HAIFA home>/test_slots`). The wait is traced as `test_slot` events
+  order they asked (`<GIRO home>/test_slots`). The wait is traced as `test_slot` events
   (`state: waiting` with `ahead`, then `state: acquired` with `waited_seconds`), shows in
   the dashboard and does not count into `test_timeout`. A slot of a crashed, stopped or
   killed run frees itself.
@@ -465,7 +474,7 @@ library (without a library the packaged workflows: {{workflows}}).
   the run succeeded.
 - Agents come from `.factory/agents.yaml` and roles from `.factory/roles.yaml`; a workflow
   names roles. `agent:` on a role step changes the agent for that step only;
-  `factory workflow check` and the run's preflight verify that it is in the roster and
+  `giro workflow check` and the run's preflight verify that it is in the roster and
   accepts the step's `harness`, `model` and `thinking` (`unknown_agent` at
   `steps[N].<step>.agent`). `data.steps[].agent` shows each step's agent.
 - `.factory/roles.yaml` without `code_steps` is an overlay of the packaged registry: an
@@ -484,7 +493,7 @@ library (without a library the packaged workflows: {{workflows}}).
       gates: [artifacts_exist]
       description: Audit the change against the security checklist
   ```
-- Validate with `factory workflow check FILE --json` (`data.issues`, `data.steps`).
+- Validate with `giro workflow check FILE --json` (`data.issues`, `data.steps`).
 
 Example:
 
@@ -510,31 +519,31 @@ accept: test.passed
 
 ### Set up a machine
 
-1. `factory check --json` anywhere (outside a repository only the machine and the library
+1. `giro check --json` anywhere (outside a repository only the machine and the library
    are checked). Resolve the `error` findings of `scope: machine` with their `fix`
    (Git identity, uv, the provider CLI, harness CLIs and their logins); see Check.
-2. A `library_missing` finding: `factory library clone --json` clones the default team
-   library (`$HAIFA_LIBRARY_URL`, else https://github.com/janbkrejci/HAIFA-LIBRARY.git);
-   `factory library clone URL --json` another team library; `--seed-fallback` creates a
+2. A `library_missing` finding: `giro library clone --json` clones the default team
+   library (`$GIRO_LIBRARY_URL`, else https://github.com/janbkrejci/HAIFA-LIBRARY.git);
+   `giro library clone URL --json` another team library; `--seed-fallback` creates a
    local library from the seed when the clone fails (`data.fallback`, a warning). When this
-   is the team's first machine with its own library, `factory library init [--name N]
+   is the team's first machine with its own library, `giro library init [--name N]
    [--remote URL] --json` from the seed (see Library and Sharing the library). Ask the
    user which one; never create a second library for a team that has one.
-3. `factory check --json` again until it reports no errors. Then add repositories (Add
-   factory to an existing repo, Take over a repo with committed `.factory/`).
+3. `giro check --json` again until it reports no errors. Then add repositories (Add
+   giro to an existing repo, Take over a repo with committed `.factory/`).
 
 ### Check
 
-`factory check [--repo PATH] [--offline] --json` only reads; it changes nothing in the
+`giro check [--repo PATH] [--offline] --json` only reads; it changes nothing in the
 repository, the trace DB, the library or the home directory, and never fetches.
 
 1. `data.state` is the state of the repo, read from base, first match wins:
    - `installed`: `.factory/config.yaml` is in base. No action.
    - `unsupported`: an sssf installation in `adws/` without `.factory/config.yaml`. No
-     action: HAIFA does not take over sssf.
+     action: GIRO does not take over sssf.
    - `uncommitted`: the configuration exists only in the working tree. Action
      `config_commit`.
-   - `none`: no factory. Action `init`.
+   - `none`: no giro. Action `init`.
 
    `data.action` is what that state calls for (`config_commit`, `init` or `null`). The
    finding of the state carries the same action: `factory_missing` (`init`),
@@ -547,16 +556,16 @@ repository, the trace DB, the library or the home directory, and never fetches.
 3. `data.findings` is a list of `{code, scope, severity, message, fix, action}`:
    - `scope: repo`: fix it in the repository and commit it to base (runs read base).
    - `scope: machine`: fix it on this machine (install a program, log in); nothing to commit.
-   - `scope: library`: fix it in the library in `$HAIFA_HOME` (`factory library ...`).
-   - `severity`: `error` (factory will not run), `warning` (it runs, but something is off),
+   - `scope: library`: fix it in the library in `$GIRO_HOME` (`giro library ...`).
+   - `severity`: `error` (giro will not run), `warning` (it runs, but something is off),
      `info`.
    - `fix` says in words what to do. `action` names the fix (`init`, `config_commit`,
      `config_pull`) or is `null` for a manual fix.
-     `config_commit` and `config_pull` are `factory config commit` and `factory config pull`
-     (see Commit configuration); `init` is `factory init`.
+     `config_commit` and `config_pull` are `giro config commit` and `giro config pull`
+     (see Commit configuration); `init` is `giro init`.
 4. Findings and their fixes, by group:
-   - Installation: `factory_outdated` (machine, error: the library needs a newer factory;
-     `factory upgrade`).
+   - Installation: `factory_outdated` (machine, error: the library needs a newer giro;
+     `giro upgrade`).
    - Platform and tools: `unsupported_platform` (only macOS, Linux, WSL and Windows),
      `git_missing`, `git_identity_missing` (`git config --global user.name/user.email`),
      `uv_missing` (install uv), `node_missing` (a roster with pi needs node).
@@ -569,11 +578,11 @@ repository, the trace DB, the library or the home directory, and never fetches.
      and `pi_not_isolated` (global files the harness loads).
    - Hosting by `git_provider`: `gh_missing`, `gh_login` (`gh auth login`), `az_missing`,
      `az_devops_missing`, `az_login` (`az login` or the PAT variable), `hosting_skipped`.
-   - Library: `library_missing` (`factory library clone URL` or `factory library init`),
-     `library_dirty` (commit or discard in the library), `library_behind` (`factory
-     library pull`), `library_unpushed` (`factory library push`), both as of the last
-     fetch, and `seed_update_available` (`factory library seed`).
-   - Environment: `env_file_mode` (`$HAIFA_HOME/env` is not 0600; `chmod 600`),
+   - Library: `library_missing` (`giro library clone URL` or `giro library init`),
+     `library_dirty` (commit or discard in the library), `library_behind` (`giro
+     library pull`), `library_unpushed` (`giro library push`), both as of the last
+     fetch, and `seed_update_available` (`giro library seed`).
+   - Environment: `env_file_mode` (`$GIRO_HOME/env` is not 0600; `chmod 600`),
      `env_override` (one of `CLAUDE_SAFE_MODE`, `CLAUDE_MCP_CONFIG`,
      `CLAUDE_PERMISSION_MODE`, `CODEX_SAFE_MODE`, `CODEX_SANDBOX`, `PI_SAFE_MODE` is set;
      unset it unless you want it).
@@ -590,16 +599,16 @@ repository, the trace DB, the library or the home directory, and never fetches.
    (`checks_failed`, the report is in `data`), 2 only when `--repo` is not a git
    repository (`not_a_repository`).
 
-### Add factory to an existing repo
+### Add GIRO to an existing repo
 
-`factory init` installs factory into a repository that has none. Install it into base with
+`giro init` installs giro into a repository that has none. Install it into base with
 one commit, after the user has seen the plan.
 
-1. `factory check --json`: follow `data.action` and the findings' actions.
-   `init` means a repo without factory. `config_commit` means configuration exists only
+1. `giro check --json`: follow `data.action` and the findings' actions.
+   `init` means a repo without giro. `config_commit` means configuration exists only
    in the working tree; commit it before continuing. State `installed` needs no init,
-   and HAIFA does not take over a repo in state `unsupported`.
-2. `factory init --dry-run --json [options]` writes nothing and returns the plan:
+   and GIRO does not take over a repo in state `unsupported`.
+2. `giro init --dry-run --json [options]` writes nothing and returns the plan:
    - `data.files`: `path`, `action`, `diff` and `content`: `.factory/config.yaml`, the
      backlog `.gitkeep` and `.gitignore`. Agents and workflows are not copied; runs take
      them from the library.
@@ -615,15 +624,15 @@ one commit, after the user has seen the plan.
    - `--docs-root DIR` (default `factory`). `$specs_dir/` and `$docs_dir/` in `writes`
      become `<docs_root>/specs/` and `<docs_root>/docs/`.
    - `--pr` plans a pull request; the direct-only blockers then do not apply.
-   - `--base-changes pr` writes `base_changes: pr`: from now on every change factory makes
+   - `--base-changes pr` writes `base_changes: pr`: from now on every change giro makes
      to base (install, config commit, config set/remove/move, backlog commit, uninstall)
      goes through a pull request, this install too. `--base-pr-merge auto` writes
-     `base_pr_merge: auto`: factory approves its own pull request where the hosting allows
+     `base_pr_merge: auto`: giro approves its own pull request where the hosting allows
      it, merges it at once (GitHub with `gh pr merge --admin`) and fast-forwards the local
      base (`data.merged`); a failed merge leaves the PR open with a warning. Ask the user
      before choosing either.
 3. Show the user the files, the blockers, the warnings and the digest.
-4. When the user agrees: `factory init --commit --expect <digest> [-m TEXT] --json`. It is
+4. When the user agrees: `giro init --commit --expect <digest> [-m TEXT] --json`. It is
    the same plan as one commit on base. Repeat all options (base, directories and
    provider) from the preview; `--expect`
    validates the recomputed plan, it does not store those options. The commit is pushed before base moves, and the
@@ -632,13 +641,13 @@ one commit, after the user has seen the plan.
 5. `plan_changed`: base or the plan changed since the preview. Run `--dry-run` again and
    show the user the new plan.
 6. `push_failed`: nothing changed. The remote may refuse direct pushes. Ask the user, and
-   only with their consent repeat it as `factory init --commit --pr --expect <digest>
+   only with their consent repeat it as `giro init --commit --pr --expect <digest>
    --json`. The commit then goes to `factory-init/<n>` with a pull request (`data.branch`,
    `data.pr`), and base and the checkout stay as they are.
 7. Blockers (the commit refuses with the first one):
-   - `already_installed`: `.factory/config.yaml` is committed; factory is installed.
-   - `existing_config`: an sssf installation; HAIFA does not take it over.
-   - `config_not_committed`: run `factory config commit`.
+   - `already_installed`: `.factory/config.yaml` is committed; giro is installed.
+   - `existing_config`: an sssf installation; GIRO does not take it over.
+   - `config_not_committed`: run `giro config commit`.
    - `dirty_paths`: the user moves or commits the listed files.
    - `invalid_plan`: see `data.validation.issues`, or `error.issues` on commit.
    - `not_on_base`, `run_in_progress`, `base_behind` and `base_diverged`: as in Commit
@@ -651,47 +660,47 @@ one commit, after the user has seen the plan.
    - `foreign_content`: the backlog, specs or docs directory already has files.
    - `remote_note`.
 9. After the direct commit (or after the installation PR is merged and base is
-   synchronized), verify `factory check --json` and `factory backlog check --json`.
+   synchronized), verify `giro check --json` and `giro backlog check --json`.
    Resolve findings before creating or running tasks.
-10. Without `--dry-run` and `--commit`, `factory init` writes the files to the working tree,
+10. Without `--dry-run` and `--commit`, `giro init` writes the files to the working tree,
    skips existing files unless `--force`, and commits nothing.
 
 ### Take over a repo with committed `.factory/`
 
-A repo where HAIFA is already installed (another machine ran `factory init`) needs no
+A repo where GIRO is already installed (another machine ran `giro init`) needs no
 installation on this machine.
 
 1. Clone the repository with git and set up the machine (Set up a machine), with the
-   same library as the team (`factory library clone URL --json`).
-2. `factory check --json` in the clone: `data.state` is `installed`. Never run
-   `factory init` there (`already_installed`). Resolve the machine findings (harnesses
+   same library as the team (`giro library clone URL --json`).
+2. `giro check --json` in the clone: `data.state` is `installed`. Never run
+   `giro init` there (`already_installed`). Resolve the machine findings (harnesses
    of the roster, logins, provider CLI).
 3. Optionally switch the harnesses for this repo (Switch the local roster) and commit
    it with Commit configuration.
-4. `factory obs --repo PATH` registers the repository in the dashboard and opens it.
+4. `giro obs --repo PATH` registers the repository in the dashboard and opens it.
 
 ### Commit configuration
 
-`factory config commit` commits the uncommitted shared `.factory/` files (the paths of
-`factory config status`; never `local.yaml`) to base in one commit. The commit is built on
+`giro config commit` commits the uncommitted shared `.factory/` files (the paths of
+`giro config status`; never `local.yaml`) to base in one commit. The commit is built on
 base without a checkout: other staged and unstaged work in the checkout stays.
 
-1. `factory config commit --dry-run --json` returns the plan: `data.files` (`path`,
+1. `giro config commit --dry-run --json` returns the plan: `data.files` (`path`,
    `action` create/modify/delete, `diff` against base, `content`), `data.blockers`
    (`code`, `message`) and `data.digest`. The digest covers base, its sha and every
    file's old blob and new content; not the target and not the message.
-2. Review the plan, then `factory config commit --expect <digest> [-m TEXT] --json`.
+2. Review the plan, then `giro config commit --expect <digest> [-m TEXT] --json`.
    `plan_changed` means base or the files changed since: run `--dry-run` again.
 3. Direct target: the main checkout must be on base (`not_on_base`), no run may be in
    progress (`run_in_progress`), and with a remote the remote base must not be ahead
-   (`base_behind`: run `factory config pull --json`) nor diverged (`base_diverged`: fix it
+   (`base_behind`: run `giro config pull --json`) nor diverged (`base_diverged`: fix it
    by hand). The commit is pushed without force; `push_failed` changed nothing. The local
    base moves only after the push (`data.pushed`, `data.advanced`); when that move fails,
-   `warnings` say so and `factory config pull` catches up.
+   `warnings` say so and `giro config pull` catches up.
 4. `--pr`: the commit goes to a new branch `factory-config/<n>`, which is pushed and gets a
    pull request (`data.branch`, `data.pr`); base and the checkout stay as they are.
 5. Nothing to commit: `data.committed: false`.
-6. `factory config pull --json` fast-forwards the local base to the remote base
+6. `giro config pull --json` fast-forwards the local base to the remote base
    (`data.updated`, `data.before`, `data.after`). `base_diverged`, `dirty_base`,
    `run_in_progress` and `no_remote` change nothing.
 
@@ -705,34 +714,34 @@ There is no importer; converting a plan is this procedure (D12).
    `<docs_root>/backlog/<project-id>-<slug>/` with
    `{{index_file}}`, and every step to a step directory inside it with its own
    `{{index_file}}`. Create them with
-   `factory backlog add --id CODE --title TEXT [--body TEXT] --json` (a project) and
-   `factory backlog add PROJECT --id CODE --title TEXT --json` (a step). Give only the short
+   `giro backlog add --id CODE --title TEXT [--body TEXT] --json` (a project) and
+   `giro backlog add PROJECT --id CODE --title TEXT --json` (a step). Give only the short
    code (`S03`); the id is always composed from the parent's id: `M01-S03`, in the directory
    `S03-<slug>`. Put shared defaults (`workflow`, `writes`, ...) into
-   the project or step index with `factory backlog edit ID --workflow NAME --writes PATH ...
+   the project or step index with `giro backlog edit ID --workflow NAME --writes PATH ...
    --json` (`--clear KEY ...` removes a key; keys it does not know stay as they are). The
    project id is any short code; keep the module's code from the plan (e.g. `M01`).
    An invalid code (letters, digits, `.` and `_`, no `-`) or a duplicate is rejected with
    `invalid_id` or `backlog_invalid` (`error.issues`: `duplicate_id`) and nothing is written.
 3. Add each task, in dependency order:
-   `factory task add STEP TITLE [--id CODE] --writes PATH ... --depends-on ID ... --body TEXT --json`
+   `giro task add STEP TITLE [--id CODE] --writes PATH ... --depends-on ID ... --body TEXT --json`
    (`--id T05` makes `STEP-T05`; without it the next free `T<nn>`)
    (or write the task files directly in the format above). `--body` is the text of
    `## Zadání`: what, where, "done means", out of scope, hard constraints.
-4. Add references later with `factory task link ID --depends-on ID ... --json`.
-5. Run `factory backlog check --json` until `ok` is true, then `factory backlog list`.
-6. `factory backlog commit --json` commits and pushes it to base; runs read the
+4. Add references later with `giro task link ID --depends-on ID ... --json`.
+5. Run `giro backlog check --json` until `ok` is true, then `giro backlog list`.
+6. `giro backlog commit --json` commits and pushes it to base; runs read the
    backlog from base.
 
 Example with the default project → step → task hierarchy:
 
 ```bash
-factory backlog add --id M01 --title "Core" --json
-factory backlog edit M01 --workflow simple-sdlc --writes src/ tests/ --json
-factory backlog add M01 --id S01 --title "API" --json
-factory task add M01-S01 "Health endpoint" --id T01 --body "Add GET /health; cover HTTP 200 in tests/api." --json
-factory backlog check --json
-factory backlog commit --json
+giro backlog add --id M01 --title "Core" --json
+giro backlog edit M01 --workflow simple-sdlc --writes src/ tests/ --json
+giro backlog add M01 --id S01 --title "API" --json
+giro task add M01-S01 "Health endpoint" --id T01 --body "Add GET /health; cover HTTP 200 in tests/api." --json
+giro backlog check --json
+giro backlog commit --json
 ```
 
 Put common settings at project level, narrower defaults on the step and only
@@ -740,7 +749,7 @@ exceptions on the task; the nearest value wins.
 
 ### Intent -> step with tasks
 
-`factory backlog propose "INTENT" [--project ID | --step ID] [--apply] --json` lets the
+`giro backlog propose "INTENT" [--project ID | --step ID] [--apply] --json` lets the
 read-only agent `proposer` turn a short intent into a proposal: a new step of the project
 with its tasks, or new tasks of an existing step. Without `--project` and `--step` the
 agent places the tasks itself: in an existing step whose goal covers the intent, in a new
@@ -748,7 +757,7 @@ step of the project the intent belongs to, or, when it belongs to no project, in
 project with a new step (not in a backlog without a project level). It works in an isolated checkout of the
 base commit and writes nothing. Every task has a title, an assignment ending with
 `Hotovo znamená:`, `depends_on` (also on existing tasks), `writes` and a workflow of the
-catalog. The proposal is validated like `factory task add`; an invalid one goes back to
+catalog. The proposal is validated like `giro task add`; an invalid one goes back to
 the agent once, and a second invalid one fails with `proposal_invalid` (`error.issues`)
 without writing. A quality check also looks at `writes`: they cover the files the
 assignment names, stay out of `protected_files` and the backlog, and tasks that can run
@@ -764,7 +773,7 @@ The agent's prompts are overridden in `.factory/prompts/proposer/`.
 
 ### Lessons from runs
 
-`factory learn scan [--since DATE] --json` reads the objections of every task run of the
+`giro learn scan [--since DATE] --json` reads the objections of every task run of the
 repo from the trace DB (blocking items and unmet findings of the review and test review,
 test triage of failed checks, revise phases) and lets the read-only agent `learner` group
 similar ones into lessons. Each of `data.lessons` has an `id`, a short `rule`, a `target`
@@ -774,18 +783,18 @@ repo is not registered), `origin` and `origin_repos` (the repos its objections c
 and their number), `occurrences` (the distinct runs), `runs` and `complaints` (snippets with
 their run). A lesson seen in one run only is never proposed. Show the lessons to the user
 and let them decide; never write a rule into the repo yourself.
-`factory learn scan --all --json` reads the objections of every repo registered in the
+`giro learn scan --all --json` reads the objections of every repo registered in the
 dashboard (objection keys prefixed `<repo_id>:`; a repo without a trace DB is skipped with a
 warning in the envelope's `warnings`) and sets `data.all` and `data.repos` (the number of
 repos with objections). The learner still runs in an isolated clone of the current repo.
 Each lesson is saved in the trace DB of its target repo (`repo`), not of the repo the scan
 runs in: a rule about one repo's conventions or code goes to that repo, a shortcoming of
-the factory itself (a role or agent) to the factory repo. The factory repo is the
-registered repo named by `HAIFA_FACTORY_REPO`, else the one whose `aifactory/pyproject.toml`
+the giro itself (a role or agent) to the giro repo. The giro repo is the
+registered repo named by `GIRO_FACTORY_REPO`, else the one whose `aifactory/pyproject.toml`
 names the project `aifactory`. The target `seed` (a role prompt in
-`aifactory/src/aifactory/seed/agents/`) is allowed only for the factory repo. Without
+`aifactory/src/aifactory/seed/agents/`) is allowed only for the giro repo. Without
 `--all` only the current repo is read.
-`factory learn accept ID [--project ID] --json`, run in the target repo (the one whose
+`giro learn accept ID [--project ID] --json`, run in the target repo (the one whose
 trace DB holds the lesson; `--repo PATH` for another), files the lesson as a task in the
 step `LEARN` of that repo's project (created when missing) with workflow `build-review`,
 `writes` on the lesson's target only and the rule with the objections (from the runs of
@@ -793,7 +802,7 @@ every repo, each with its repo) as evidence, and commits it to `base`; `data.tas
 it. Run it like any task (it ends in a pull request). The project is `--project`, else the
 one of the target repo's tasks whose runs objected, else the only project
 (`project_required` otherwise). Accepting again shows the same task (`data.existed`).
-`factory learn dismiss ID [--reason TEXT] --json` rejects a lesson in the trace DB. No later
+`giro learn dismiss ID [--reason TEXT] --json` rejects a lesson in the trace DB. No later
 scan offers an accepted or dismissed lesson or its objections again. Objections that repeat
 an accepted lesson are added to it instead (`data.repeats`: lesson `id` and the number
 `added`); the dashboard's Factory screen (section Lekce, switch Ze všech rep for `--all`,
@@ -804,8 +813,8 @@ before and after its pull request was merged. The agent's prompts are overridden
 
 ### Run
 
-1. `factory task list --status ready --json` lists the tasks that can start.
-2. `factory task run ID [--note TEXT] [--auto] --json` runs one task in its own worktree on
+1. `giro task list --status ready --json` lists the tasks that can start.
+2. `giro task run ID [--note TEXT] [--auto] --json` runs one task in its own worktree on
    a new branch `factory/<task-id>-<n>` and opens a pull request. `--harness NAME`,
    `--model NAME` and `--thinking LEVEL` put every agent on them for this run only (step
    overrides of the workflow still win; with `--auto` only the first run gets them). An
@@ -813,8 +822,8 @@ before and after its pull request was merged. The agent's prompts are overridden
 3. Read `data.run.state`, `data.pr` (the pull request), `data.pr_error` and `data.chain`.
 4. On failure (`run_failed`) the worktree and branch are kept; re-run with `--note` to tell
    the agents what to fix.
-5. Auto-continue is a repository-local choice in HAIFA_HOME, default off.
-   Set it with `factory config local set --auto-continue on|off --repo PATH`.
+5. Auto-continue is a repository-local choice in GIRO_HOME, default off.
+   Set it with `giro config local set --auto-continue on|off --repo PATH`.
    `--auto` does not bypass local off. Accepted runs finish after switching off;
    further automatic starts, slot refills and automatic retries are blocked.
    After a run opens its PR, the next ready task of the step, then of the project, starts.
@@ -826,26 +835,26 @@ before and after its pull request was merged. The agent's prompts are overridden
    {{stop_reasons}} (`data.chain.stop`, `data.chain.waiting`). The chain approves and
    merges nothing except through `auto_merge` (next point).
    Self-healing (`auto_heal`, inherited in the backlog, default `true`; switch it off
-   with `auto_heal: false` or `factory backlog edit ID --auto-heal off`): a chain that goes
+   with `auto_heal: false` or `giro backlog edit ID --auto-heal off`): a chain that goes
    on acts on a failed run by its `failure_kind`. `quota` continues on the project's
    quota chain (`quota_switch: [HARNESS, ...]`, `quota_switch_back`, project-only, set with
-   `factory backlog edit ID --quota-switch ... --quota-switch-back on|off`; it wins over any
+   `giro backlog edit ID --quota-switch ... --quota-switch-back on|off`; it wins over any
    `fallback`), else once on the configured fallback harness (with `auto_heal: false` not
    even a single run switches),
    `process_gone` is retried once, `nothing_to_do` with the agent's reason marks the task
    done without changes and the chain goes on; every other kind stops the chain as before.
    Each action is in `data.chain.events` (`action`: `fallback`, `retry` or `close`, `ok`,
    `text`), in `task_chains.events` and on the dashboard's Overview.
-6. Auto-merge is a repository-local choice in HAIFA_HOME, set with
-   `factory config local set --auto-merge on|off`. Backlog flags do not control it.
+6. Auto-merge is a repository-local choice in GIRO_HOME, set with
+   `giro config local set --auto-merge on|off`. Backlog flags do not control it.
    After the run its PR is approved and merged like
-   `factory task approve` (`merged_by: auto-merge` in `task_prs`) only when the run
+   `giro task approve` (`merged_by: auto-merge` in `task_prs`) only when the run
    `succeeded`, the workflow has a review phase whose last review approved with no blocking
    or unmet item, the PR merges cleanly and its checks finished with none red. Running
    checks are waited for (up to 30 minutes, else `checks_pending`); on GitHub a fresh PR
    gets a short wait for its checks to appear before "no checks" counts. A workflow without
    review is never merged automatically. Otherwise `data.auto_merge` (`merged`, `code`,
-   `reason`) says why and the PR waits for `factory task approve`. With auto-continue the
+   `reason`) says why and the PR waits for `giro task approve`. With auto-continue the
    next task starts only after the merge; a PR that was not merged stops the chain
    (`not_merged`). The local value is read again while waiting for CI and immediately
    before the hosting merge, serialized with settings updates. Off leaves the PR open;
@@ -856,7 +865,7 @@ before and after its pull request was merged. The agent's prompts are overridden
    auto continue. Missing settings default to off; invalid settings stop automation.
 7. Parallel runs (`max_parallel_runs` in `.factory/config.yaml`, whole number ≥ 1,
    default 1): with 1 the chain runs one task after another. Above 1 the chain keeps up to
-   that many slots taken (each run a separate `factory task run` process) and refills a
+   that many slots taken (each run a separate `giro task run` process) and refills a
    slot whenever one frees. A slot is taken by a task with a live run and by a task whose
    PR is open and unmerged (waiting for review); a task with both counts once. The slot
    frees when the PR is merged or closed, or when the run ends without a PR (failed,
@@ -874,26 +883,26 @@ before and after its pull request was merged. The agent's prompts are overridden
 Run states in `data.run.state` and `task_runs`: `running`, `succeeded`, `failed`,
 `aborted` (its process is gone), `stopped`. A running run also has `pause`: `null`,
 `pausing` or `paused`; a run with `pause: paused` is shown in state `paused`
-(`factory task show`, the dashboard).
+(`giro task show`, the dashboard).
 
-1. `factory task pause ID [--run RUN_ID] --json` asks the running run to pause. The phase in
+1. `giro task pause ID [--run RUN_ID] --json` asks the running run to pause. The phase in
    progress (an agent, a test) runs to its end; meanwhile `pause` is `pausing`. Before the
    next phase the run turns `paused` and waits: its process stays alive, no further phase
    starts. Nothing is frozen. A pause asked for in the last phase is dropped when the run
    finishes. Errors: `run_not_running` (the task has no running run, or it is finished),
    `run_already_paused` (`pausing` or `paused` already); exit 2, nothing changed.
-2. `factory task resume ID [--run RUN_ID] --json` lets a paused run go on with its next
+2. `giro task resume ID [--run RUN_ID] --json` lets a paused run go on with its next
    phase in the same worktree and branch (a pending `pausing` is dropped). Errors:
    `run_not_running`, `run_not_paused` (the run has no pause); exit 2, nothing changed.
 3. A paused run keeps its place among the parallel runs (`max_parallel_runs`) and blocks
    another run of its task; an auto-continue chain waits until it ends.
-4. `factory task stop ID --json` stops a running or paused run (state `stopped`); its
+4. `giro task stop ID --json` stops a running or paused run (state `stopped`); its
    worktree and branch stay. A pause does not survive a restart of the machine: the run's
    process is gone and the run becomes `aborted`.
 
 ### Retry
 
-`factory task retry ID [--run RUN_ID] [--note TEXT] [--from PHASE] [--harness NAME [--model
+`giro task retry ID [--run RUN_ID] [--note TEXT] [--from PHASE] [--harness NAME [--model
 NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped` or
 `aborted` run (or `--run`) as its next attempt.
 
@@ -909,10 +918,10 @@ NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped
 3. Every agent rejoins its coding-agent session when its harness and model are unchanged.
    The prompt gets a `## Continuation` section (the done phases, `context_handoff/`) and
    `--note` as `## Retry note`.
-4. Base is pulled from the remote first, like `factory config pull`; a base that cannot
+4. Base is pulled from the remote first, like `giro config pull`; a base that cannot
    move stops the retry with that error (`base_diverged`, `dirty_base`, `run_in_progress`)
    and nothing changes. When base moved past the branch, the branch is rebased onto it
-   (uncommitted work is committed first); a conflict is resolved like `factory task
+   (uncommitted work is committed first); a conflict is resolved like `giro task
    resolve`. When that fails the branch stays as it was and the run is `failed`. After a
    rebase the tests run again before any review.
 5. Configuration, backlog and workflow come from the current base. A phase whose step the
@@ -923,7 +932,7 @@ NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped
 7. After a `writes_violation` (`data.run.failure_detail.paths` are the worktree paths
    written outside `writes`) or a `writes_needed` (an agent reported `fail_kind:
    needs_writes`: `failure_detail.paths` and `needs_writes` hold the paths this task must
-   change, with the agent's reasons), `factory task retry ID --allow-writes --json` first
+   change, with the agent's reasons), `giro task retry ID --allow-writes --json` first
    adds them to the task's `writes` and commits the backlog to base (by `base_changes`),
    then retries from the failed phase with the allowed paths in the `## Retry note`;
    `data.allow_writes` lists `allow` and `refused` (with `reason`). A path in
@@ -931,7 +940,7 @@ NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped
    `not_writes_violation`, `nothing_to_allow`, `writes_in_pr` (base_changes: pr and the
    backlog PR is not merged yet: retry after the merge), `writes_not_committed` (the
    backlog in base lacks the new effective writes: commit the backlog with
-   `factory backlog commit --json`, then `factory task retry ID --json`). The retry
+   `giro backlog commit --json`, then `giro task retry ID --json`). The retry
    starts only after all allowed paths are verified in the base commit, including
    when the commit reports no change or a backlog PR has merged. A `ci-fix` run is not
    retried (`run_not_retryable`): see Approve.
@@ -947,14 +956,14 @@ NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped
 
 ### Review
 
-1. `factory task show ID --json` gives the task, its body, its runs and its PRs.
+1. `giro task show ID --json` gives the task, its body, its runs and its PRs.
 2. Review the PR diff through the hosting provider (`gh pr diff`, `az repos pr`, or
    `git diff` of the branch in local mode).
 3. Then approve, or return with a note.
 
 ### Approve
 
-1. `factory task approve ID --json` adds a commit with `status: done` and a
+1. `giro task approve ID --json` adds a commit with `status: done` and a
    `{{runs_heading}}` line to the PR, merges it, updates base from the remote and removes
    the branch's worktrees.
 2. On `conflict`, resolve first (below), then approve again.
@@ -963,17 +972,17 @@ NAME] [--thinking LEVEL]] --json` continues the task's newest `failed`, `stopped
    an approval vote. `data.reviewed` says whether a host approval was sent.
 4. Red CI checks start up to 2 `ci-fix` runs on the PR branch. One that ends
    `writes_needed` (its agent needs paths outside the task's `writes`) leaves the PR open
-   with `writes_needed` and the paths (`task_prs.auto_merge_error`). `factory task approve
+   with `writes_needed` and the paths (`task_prs.auto_merge_error`). `giro task approve
    ID --allow-writes --json` adds them to the task's `writes` in base (same refusals as
    `task retry --allow-writes`, `data.allow_writes`) and approves again, so the new
    `ci-fix` runs may write them.
 
 ### Publish
 
-`factory task publish ID --json` repeats the end of `task run` for the task's last
+`giro task publish ID --json` repeats the end of `task run` for the task's last
 succeeded run that has no pull request (its push or PR failed, `pr_failed`): it pushes the
 branch and opens the PR with the body kept from the run, recorded in `task_prs` as after a
-run. When the hosting already has an open PR for the branch that factory does not know, it
+run. When the hosting already has an open PR for the branch that giro does not know, it
 is adopted (recorded, its body updated) instead of opening a second one. A push failing on
 the network (RPC failed, HTTP2 framing, remote end hung up, timeout) is retried a few times
 with a pause, including hosting server errors (HTTP 5xx, Internal Server Error); a rejected
@@ -997,12 +1006,12 @@ The dashboard shows `pr_error` of a succeeded run without a PR and a button that
 
 ### Return
 
-`factory task return ID --note TEXT --json` starts a new run on the same branch with the note
+`giro task return ID --note TEXT --json` starts a new run on the same branch with the note
 in the prompt; the pull request is updated. Read `data.run` and `data.pr` as for a run.
 
 ### Resolve
 
-`factory task resolve ID --json` rebases the PR branch onto the current base. On a conflict
+`giro task resolve ID --json` rebases the PR branch onto the current base. On a conflict
 an agent changes only the conflicted files. Conflicted files inside a generated output
 (`generated:` in `.factory/config.yaml`, entries `{path, command, timeout}`) are not the
 agent's: the code step `rebuild` runs the output's `command` and the rebuilt output is
@@ -1012,13 +1021,13 @@ the rebase. Then approve.
 
 ### Sync and cleanup
 
-- `factory backlog sync --json` finds task PRs merged outside factory and opens one sync PR
+- `giro backlog sync --json` finds task PRs merged outside giro and opens one sync PR
   that marks them done (never commits to base, never merges it).
 - Cleanup runs automatically before and after execution, including retry, failure and stop.
-  `factory task clean --json` invokes the same cleanup manually. It removes worktrees of
+  `giro task clean --json` invokes the same cleanup manually. It removes worktrees of
   done/cancelled tasks, merged/closed PRs and older runs without a PR, plus orphan
   directories in the configured worktrees directory, and prunes Git registrations.
-  It deletes unused factory branches locally and remotely for cancelled tasks and
+  It deletes unused giro branches locally and remotely for cancelled tasks and
   merged/closed PRs. A running run, open PR, checkout or open stacked PR protects
   the resources it still uses. Dirty worktrees of nonterminal tasks are kept with
   warnings, as is the latest failed/stopped todo run for retry. Deletion failures
@@ -1027,12 +1036,12 @@ the rebase. Then approve.
 
 ### Upgrade
 
-`factory upgrade BUNDLE [--dry-run] --json` installs a newer HAIFA from a distribution
-bundle `haifa-<version>.zip`. `BUNDLE` is a path or a URL; only `https` and `file` URLs are
+`giro upgrade BUNDLE [--dry-run] --json` installs a newer GIRO from a distribution
+bundle `giro-<version>.zip`. `BUNDLE` is a path or a URL; only `https` and `file` URLs are
 downloaded (into a temporary directory), any other scheme is `invalid_url`, a failed
 download `download_failed`.
 
-1. An editable install (development from the HAIFA repo) is refused with
+1. An editable install (development from the GIRO repo) is refused with
    `editable_install`; update it with `git pull` instead.
 2. The bundle is unpacked into a temporary directory and every file listed in `SHA256SUMS`
    is verified. A broken zip, a missing `SHA256SUMS`, a listed file that is missing, or no
@@ -1049,40 +1058,40 @@ download `download_failed`.
    `uv tool install --force <wheel> --constraints constraints.txt` runs in the unpacked
    bundle: `uv_missing` when uv is not on PATH, `upgrade_failed` (exit 1, uv's output in
    `data`) when uv fails; the old version stays. On success `installed` is `true` and
-   `data.next` reminds to restart a running dashboard (`factory obs`).
-6. After the install the new `factory` refreshes the library: `library status --json`,
+   `data.next` reminds to restart a running dashboard (`giro obs`).
+6. After the install the new `giro` refreshes the library: `library status --json`,
    `library clone --seed-fallback` when the library is missing, then
-   `library seed --all` (`library_refreshed: true`). A failed refresh is a warning (then
-   run `factory library seed --all --json`); the upgrade still succeeds. The
+   `library seed` (`library_refreshed: true`). A failed refresh is a warning (then
+   run `giro library seed --json`); the upgrade still succeeds. The
    Windows handoff script and the bundle installers do the same.
 
-In short: `factory upgrade BUNDLE --dry-run --json`, `factory upgrade BUNDLE --json`,
-restart a running dashboard, then `factory check --json`. Repos need no step: they inherit the new item versions at
-their next run, and `factory --skill` must be regenerated for the new version.
+Run `giro upgrade BUNDLE --dry-run --json`, `giro upgrade BUNDLE --json`,
+restart a running dashboard, then `giro check --json`. Repos need no step: they inherit the new item versions at
+their next run, and `giro --skill` must be regenerated for the new version.
 
 ### Library
 
-The library is a git repository in the home directory, `$HAIFA_HOME/library`
-(`HAIFA_LIBRARY` overrides the path). `library.yaml` holds `format: 1`, `id` (uuid4),
+The library is a git repository in the home directory, `$GIRO_HOME/library`
+(`GIRO_LIBRARY` overrides the path). `library.yaml` holds `format: 1`, `id` (uuid4),
 `name`, `min_factory_version` and `seed` (`type/name` to the seed version the item came
 from). Items: `agents/<name>/{agent.yaml,system.md,user.md}`, `workflows/<name>.yaml`,
 `skills/<name>/` (with `SKILL.md`) and `extensions/<name>/` (with `<name>.ts`).
 
-1. `factory library init [--name N] --json` creates it from the seed in one commit
+1. `giro library init [--name N] --json` creates it from the seed in one commit
    (`library_exists`, `git_identity_missing`).
-2. `factory library list [--type T] --json` lists the items of HEAD with `version`,
+2. `giro library list [--type T] --json` lists the items of HEAD with `version`,
    `short_version` (8 characters) and the date and author of the last change.
-   `factory library show TYP JMENO [--version V] --json` returns `files` and `history`
+   `giro library show TYP JMENO [--version V] --json` returns `files` and `history`
    (`n`, `version`, `commit`, `date`, `author`). Both read HEAD, never the working tree;
-   the history is cached in `$HAIFA_HOME/cache/` and recomputed when the cache is gone.
-3. `factory library import CESTA --type agent|workflow|skill|extension [--name N]
+   the history is cached in `$GIRO_HOME/cache/` and recomputed when the cache is gone.
+3. `giro library import CESTA --type agent|workflow|skill|extension [--name N]
    --dry-run --json` validates a folder or file under the user's home directory
    (`outside_home`, also for a symlink leading out of it; `invalid_item` with
    `error.issues`) and returns the plan: `items[].action` (`create`, `update`,
    `unchanged`), `files` with diffs and `digest`. Review it, then run the same command
    without `--dry-run`. Equal content is a no-op (`committed: false`); new content under an
    existing name becomes the next version of that item.
-4. A write holds `$HAIFA_HOME/library.lock`, so concurrent writes run one after another.
+4. A write holds `$GIRO_HOME/library.lock`, so concurrent writes run one after another.
    It refuses a library with uncommitted changes (`library_dirty`; commit or discard them
    in the library yourself), commits on HEAD without a checkout and fast-forwards the
    branch and working tree. Nothing is forced and history is never rewritten.
@@ -1093,56 +1102,58 @@ A team shares the library through a git remote, stored as `origin` without user 
 password (`https://user:secret@host/x` is kept and shown as `https://host/x`; git asks its
 credential helper).
 
-1. `factory library init --remote URL --json` pushes the new library to an empty remote
+1. `giro library init --remote URL --json` pushes the new library to an empty remote
    before it exists locally (`remote_not_empty`, `push_failed`; nothing is created).
-   Others join with `factory library clone [URL] [--branch B] [--seed-fallback] --json`
+   Others join with `giro library clone [URL] [--branch B] [--seed-fallback] --json`
    (`library_exists`, `clone_failed`, `invalid_library` when `library.yaml` lacks
    `format`, `id` or `name`); without URL the default library is cloned.
-2. `factory library status [--fetch] --json` returns `library`, `id`, `name`, `remote`,
+2. `giro library status [--fetch] --json` returns `library`, `id`, `name`, `remote`,
    `branch`, `ahead` and `behind` (from the last fetched refs unless `--fetch`),
    `last_fetch`, `dirty` with `uncommitted`, `min_factory_version`, `factory_version` and
-   `compatible` (a warning when the installed factory is older), `unsent` (local commits
+   `compatible` (a warning when the installed giro is older), `unsent` (local commits
    in no open pull request), `sync_state` (`unshared`, `local`, `pending`, `behind`,
    `synced`) and `pull_requests` (the open pull requests sent from this library; `--fetch`
    asks GitHub which are still open).
 3. Changes never go to the library branch of the remote directly; they go as a pull
-   request and the library maintainer merges it. `factory library push --json` sends the
+   request and the library maintainer merges it. `giro library push --json` sends the
    unsent local commits as one pull request (`data.pull_request`: `branch`, `url`,
    `number`, `fork`; `pushed: 0` and `pull_request: null` when nothing is unsent;
    `library_behind`, `library_diverged`, `push_failed`, `pr_failed`); `no_remote` without
    a remote. On GitHub the branch `haifa-library/...` goes to the library repo when the
    user may write to it, else to the user's fork (`gh repo fork`); `gh pr create` opens the
    pull request. Other remotes get only the branch. Never merge, approve or force it.
-4. `factory library pull --json` fast-forwards; local commits the remote lacks are rebased
+4. `giro library pull --json` fast-forwards; local commits the remote lacks are rebased
    onto it and the merged ones drop out (`library_dirty`; a conflict is
    `library_diverged` and changes nothing).
 5. A write to a shared library fetches first. Behind the remote it is `library_behind`
-   (`data.fix` is `factory library pull`; run it, then repeat the write); diverged it is
+   (`data.fix` is `giro library pull`; run it, then repeat the write); diverged it is
    `library_diverged` (resolve it in the library with git, never by force). The commit is
    built on HEAD without a checkout and sent as a pull request (`data.pull_request`)
    before the local branch moves, so `push_failed` or `pr_failed` leaves local refs, index
    and files exactly as they were. The local library uses the change at once.
 
-#### After a HAIFA upgrade
+#### After a GIRO upgrade
 
-A new HAIFA can ship new versions of the seed agents, workflows and the `factory` skill
-(`skill/factory`, generated from `factory --skill`). `seed` in `library.yaml` records the
-seed version each item last took. Installing or upgrading HAIFA runs
-`factory library seed --all`: every seed item is replaced with the installed seed version,
-also items the team changed in the library (action `take`); items the seed lacks stay.
-Customizations belong in the repos' `.factory/`, which the refresh never touches.
-`--all` with `--take` is `usage_error`. Without `--all`:
+A new GIRO can ship new versions of the seed agents, workflows and the `factory` skill
+(`skill/factory`, generated from `giro --skill`). `seed` in `library.yaml` records the
+seed version each item last took. Installing or upgrading GIRO runs
+`giro library seed`: unchanged seed items update, team changes remain `kept`, and
+items absent from the seed stay. A dirty library is preserved with a diagnostic.
+The library item remains `skill/factory` for compatibility; no duplicate skill is created.
+Repository overrides in `.factory/` are untouched. `--all` explicitly replaces even
+modified seed items; never use it for an automatic refresh. `--all` with `--take`
+is `usage_error`. The non-destructive refresh works as follows:
 
-1. `factory library status --json` has `seed_update_available` (with `seed_updates`, the
+1. `giro library status --json` has `seed_update_available` (with `seed_updates`, the
    `type/name` list) and a `seed_update_available` warning when the installed seed has
    versions the library's `seed` lacks.
-2. `factory library seed --dry-run --json` returns the plan. `items[].action`: `create`
+2. `giro library seed --dry-run --json` returns the plan. `items[].action`: `create`
    (missing in the library, added), `update` (the team did not change it since the last
    seed, replaced), `unchanged` (the library already has the seed version) and `kept` (the
    team changed it; `items[].diff` shows what the seed would change). Review it, then run
    it without `--dry-run`. `seed` in `library.yaml` is set to the installed seed.
 3. A `kept` item stays as the team made it. To take the seed version anyway, run
-   `factory library seed --take TYP/JMENO --json` (repeatable; action `take`; `not_in_seed`
+   `giro library seed --take TYP/JMENO --json` (repeatable; action `take`; `not_in_seed`
    when the seed lacks it). Items the seed no longer has are never deleted.
 4. The write goes like `import` (lock, `library_dirty`, fetch, pull request). A second run without a
    new seed commits nothing (`committed: false`). Repos inherit the new versions at their
@@ -1154,30 +1165,30 @@ Agents, workflows, skills and extensions are inherited: a run looks in the repo'
 `.factory/` (in base) first, then in the library (see Agents and prompts). Use the
 narrowest change that does the job:
 
-- Share an item with every repo: `factory library import PATH --type T --dry-run --json`,
+- Share an item with every repo: `giro library import PATH --type T --dry-run --json`,
   review, then without `--dry-run` (see Library). Repos inherit it at their next run.
-- Change an agent's bindings for one repo: `factory config set agent NAME ... --json`.
+- Change an agent's bindings for one repo: `giro config set agent NAME ... --json`.
 - Drop the repo's own copy so the library item applies again:
-  `factory config remove TYPE NAME --json`.
-- Move the repo's own copy to the library: `factory config move TYPE NAME --json`.
+  `giro config remove TYPE NAME --json`.
+- Move the repo's own copy to the library: `giro config move TYPE NAME --json`.
 - A repo-only item: write it into `.factory/` (e.g. `.factory/prompts/<name>/`,
   `.factory/workflows/<name>.yaml`); there is no command that adds one.
-- Every change in the working tree reaches runs only after `factory config commit`
+- Every change in the working tree reaches runs only after `giro config commit`
   (see Commit configuration). Details of set, remove and move are below.
 
 ### Items of the repo: config set / remove / move
 
 ```bash
-factory config set agent builder --thinking high --tools read,bash --color '#112233' --json
-factory config remove workflow solo --json
-factory config move agent builder --commit --dry-run --json   # library files + repo deletions
-factory config move agent builder --commit --expect <digest> --json
+giro config set agent builder --thinking high --tools read,bash --color '#112233' --json
+giro config remove workflow solo --json
+giro config move agent builder --commit --dry-run --json   # library files + repo deletions
+giro config move agent builder --commit --expect <digest> --json
 ```
 
-1. Modes, as `factory init`: `--dry-run` returns the plan (`data.files`, `removed`,
+1. Modes, as `giro init`: `--dry-run` returns the plan (`data.files`, `removed`,
    `bindings`, `blockers`, `validation`, `digest`) and writes nothing. Without an option
    the plan is written to the working tree only (nothing committed; commit it later with
-   `factory config commit`). `--commit [--pr] [-m TEXT]` makes it one commit on base
+   `giro config commit`). `--commit [--pr] [-m TEXT]` makes it one commit on base
    (pushed before base moves) or a PR from `factory-config/<n>`. Review first:
    `--dry-run` (with `--commit` for the commit plan), check it, then repeat the command
    with `--expect <digest>`; a changed plan is `plan_changed`.
@@ -1223,12 +1234,12 @@ are never committed. A skill of the repo wins over the library's.
 
 A skill of the repo has its source in `.claude/skills/<name>/`; edit it there. `.agents/skills/` is
 its exact copy for codex and pi, with no symlinks. After a change run
-`factory skills sync [--repo PATH] --json` (`data.added`, `data.updated`, `data.removed`;
-`skills_sync_failed` when it cannot write) and commit both trees. `factory check` compares
+`giro skills sync [--repo PATH] --json` (`data.added`, `data.updated`, `data.removed`;
+`skills_sync_failed` when it cannot write) and commit both trees. `giro check` compares
 them in base and reports `skill_mirror_missing`, `skill_mirror_differs` and
 `skill_mirror_extra` (scope repo).
 
-Global files of the operator a harness cannot leave out are reported by `factory check` as
+Global files of the operator a harness cannot leave out are reported by `giro check` as
 `codex_not_isolated` (`~/.codex/AGENTS.md`, `AGENTS.override.md`, `~/.codex/skills`,
 `~/.agents/skills`) and `pi_not_isolated` (`AGENTS.md`, `AGENTS.override.md`, `CLAUDE.md`,
 `APPEND_SYSTEM.md` in `~/.pi/agent`), scope machine.

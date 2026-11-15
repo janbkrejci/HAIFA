@@ -1,4 +1,4 @@
-"""``factory init``: install factory into a repo.
+"""``giro init``: install factory into a repo.
 
 Writes ``.factory/config.yaml``, the backlog directory and the runtime lines of
 ``.gitignore``. Agents, workflows, skills and extensions are not copied: a run inherits
@@ -10,7 +10,7 @@ A repo whose ``config.yaml`` is committed (HEAD or base) is installed
 Existing files are skipped unless ``force`` is set.
 
 ``project_settings`` and ``render_config`` are shared with ``library.install_commit``
-(``factory init --dry-run`` and ``--commit``), which plans the same files and installs them
+(``giro init --dry-run`` and ``--commit``), which plans the same files and installs them
 into base with one commit.
 """
 
@@ -110,8 +110,7 @@ def _refuse(root: Path, base: str) -> None:
     if (root / SSSF_CONFIG_DIR).is_dir():
         raise LibraryStoreError(
             "existing_config",
-            f"the repo has an sssf installation ({SSSF_CONFIG_DIR}/); "
-            "HAIFA does not take over sssf",
+            f"the repo has an sssf installation ({SSSF_CONFIG_DIR}/); GIRO does not take over sssf",
             data={"found": [SSSF_CONFIG_DIR + "/"]},
         )
 
@@ -177,7 +176,7 @@ def render_config(settings: ProjectSettings, *, write_remote: bool = False) -> b
     if settings.base_pr_merge != "manual":
         config["base_pr_merge"] = settings.base_pr_merge
     body = yaml.safe_dump(config, sort_keys=False, allow_unicode=True, width=4096)
-    return ("# factory project settings, written by factory init\n" + body).encode("utf-8")
+    return ("# factory project settings, written by giro init\n" + body).encode("utf-8")
 
 
 def init_repo(
