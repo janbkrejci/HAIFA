@@ -616,3 +616,24 @@ def test_inventory_bulk_bmad_and_broken_config(client: TestClient) -> None:
     )
     assert all(row["ignored"] for row in data["items"])
     assert len(data["items"]) == 40
+
+
+def test_locale_clients_review_the_same_library_plan(client: TestClient) -> None:
+    """Locale headers change neither the reviewed digest nor the persisted library."""
+    english = TestClient(
+        client.app, base_url=str(client.base_url), headers={"Accept-Language": "en"}
+    )
+    czech = TestClient(client.app, base_url=str(client.base_url), headers={"Accept-Language": "cs"})
+    try:
+        body = {"action": "init", "options": {}}
+        en = response(english.post("/api/library/plan", json=body))
+        cs = response(czech.post("/api/library/plan", json=body))
+        assert en == cs
+        assert en["digest"]
+        assert not (state(client).home / "library").exists()
+        # Confirm the English client's plan from the Czech client.
+        response(czech.post("/api/library/apply", json={**body, "digest": en["digest"]}))
+        assert response(english.get("/api/library")) == response(czech.get("/api/library"))
+    finally:
+        english.close()
+        czech.close()

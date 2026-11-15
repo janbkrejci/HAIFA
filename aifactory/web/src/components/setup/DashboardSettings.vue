@@ -1,17 +1,18 @@
 <script setup lang="ts">
-import { errorText } from '../../lib/format'
+import { t } from '@/lib/i18n'
+import { setupErrorText } from '@/lib/setupMessages'
 // The dashboard section of #/setup (Knihovna): its port (GET/POST /api/dashboard/settings, applies after
 // a restart), the registry file and the home folder.
 import { computed, onMounted, ref } from 'vue'
-import { ApiError, fetchDashboardSettings, saveDashboardSettings, type DashboardSettings } from '@/lib/api'
+import { fetchDashboardSettings, saveDashboardSettings, type DashboardSettings } from '@/lib/api'
 import Spinner from '@/components/ui/Spinner.vue'
 
 const settings = ref<DashboardSettings | null>(null)
-const loadError = ref<string | null>(null)
+const loadError = ref<unknown>(null)
 const port = ref<number | string>('')
 const saving = ref(false)
-const saveError = ref<string | null>(null)
-const restartNote = ref<string | null>(null)
+const saveError = ref<unknown>(null)
+const restartPort = ref<number | null>(null)
 
 const portNumber = computed(() => Number(port.value))
 const valid = computed(
@@ -24,7 +25,7 @@ onMounted(async () => {
     settings.value = await fetchDashboardSettings()
     port.value = settings.value.port
   } catch (err) {
-    loadError.value = errorText(err)
+    loadError.value = err
   }
 })
 
@@ -32,17 +33,16 @@ async function save() {
   if (!valid.value || !changed.value) return
   saving.value = true
   saveError.value = null
-  restartNote.value = null
+  restartPort.value = null
   try {
     const data = await saveDashboardSettings(portNumber.value)
     settings.value = data
     port.value = data.port
     if (data.restart_required) {
-      restartNote.value = `Uloženo. Dashboard teď běží na jiném portu, nový port ${data.port} platí po restartu.`
+      restartPort.value = data.port
     }
   } catch (err) {
-    if (err instanceof ApiError) saveError.value = err.issues[0]?.message || err.message
-    else saveError.value = errorText(err)
+    saveError.value = err
   } finally {
     saving.value = false
   }
@@ -52,8 +52,8 @@ async function save() {
 <template>
   <section class="dashboard-settings" data-test="dashboard-settings">
     <h2>Dashboard</h2>
-    <p v-if="loadError" class="error" data-test="dash-error">Nastavení dashboardu se nepodařilo načíst: {{ loadError }}</p>
-    <p v-else-if="!settings" class="loading"><Spinner /> Načítám nastavení…</p>
+    <p v-if="loadError" class="error" data-test="dash-error">{{ t('setup.settingsLoadError') }} {{ setupErrorText(loadError) }}</p><details v-if="loadError"><summary>{{ t('dashboard.diagnostics') }}</summary>{{ String(loadError) }}</details>
+    <p v-else-if="!settings" class="loading"><Spinner /> {{ t('setup.loadingSettings') }}</p>
     <template v-else>
       <form class="port-row" @submit.prevent="save">
         <label for="dash-port">Port</label>
@@ -67,16 +67,16 @@ async function save() {
           data-test="dash-port"
         />
         <button type="submit" class="btn" :disabled="!valid || !changed || saving" data-test="dash-port-save">
-          <Spinner v-if="saving" /> Uložit
+          <Spinner v-if="saving" /> {{ t('setup.save') }}
         </button>
       </form>
-      <p class="note">Port platí po restartu dashboardu.</p>
-      <p v-if="restartNote" class="ok" data-test="dash-restart-note">{{ restartNote }}</p>
-      <p v-if="saveError" class="error" data-test="dash-port-error">{{ saveError }}</p>
+      <p class="note">{{ t('setup.portHint') }}</p>
+      <p v-if="restartPort !== null" class="ok" data-test="dash-restart-note">{{ t('setup.restart', { port: restartPort! }) }}</p>
+      <p v-if="saveError" class="error" data-test="dash-port-error">{{ setupErrorText(saveError) }}</p><details v-if="saveError"><summary>{{ t('dashboard.diagnostics') }}</summary>{{ String(saveError) }}</details>
       <dl class="paths">
-        <dt>Registr</dt>
+        <dt>{{ t('setup.registry') }}</dt>
         <dd class="mono" data-test="dash-registry">{{ settings.registry }}</dd>
-        <dt>Domov</dt>
+        <dt>{{ t('setup.home') }}</dt>
         <dd class="mono" data-test="dash-home">{{ settings.home }}</dd>
       </dl>
     </template>

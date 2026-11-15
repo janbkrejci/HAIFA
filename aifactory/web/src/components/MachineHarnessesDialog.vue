@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed, ref, watch } from 'vue'
 import { fetchHarnessSettings, saveHarnessSettings, testHarness, type HarnessCatalog, type HarnessSettings } from '@/lib/machineHarnesses'
-import { errorText } from '@/lib/format'
+import { setupErrorText } from '@/lib/setupMessages'
 import ConfirmDialog from './ui/ConfirmDialog.vue'
 import ModelPickerDialog from './ui/ModelPickerDialog.vue'
 import { ChevronRight, Play } from 'lucide-vue-next'
@@ -16,10 +17,10 @@ const loading = ref(false)
 const saving = ref(false)
 const testing = ref<string | null>(null)
 const modelPicker = ref<string | null>(null)
-const error = ref('')
+const error = ref<unknown>(null)
 function thinkingOptions(name: string) {
   const model = settings.value?.harnesses[name]?.model ?? ''
-  return (catalog.value?.thinking_levels?.[name]?.[model] ?? []).map(value => ({ value, label: value === 'off' ? 'Vypnuto' : value }))
+  return (catalog.value?.thinking_levels?.[name]?.[model] ?? []).map(value => ({ value, label: value === 'off' ? t('setup.off') : value }))
 }
 function defaultThinking(name: string, model: string) { return catalog.value?.thinking_defaults?.[name]?.[model] ?? null }
 let generation = 0
@@ -29,11 +30,11 @@ const canSave = computed(() => !!settings.value && !loading.value && !saving.val
 watch(() => props.open, async open => {
   const mine = ++generation
   if (!open) return
-  loading.value = true; error.value = ''; settings.value = null
+  loading.value = true; error.value = null; settings.value = null
   try {
     const data = await fetchHarnessSettings()
     if (mine === generation) { catalog.value = data; settings.value = structuredClone(data.settings) }
-  } catch (e) { if (mine === generation) error.value = errorText(e) }
+  } catch (e) { if (mine === generation) error.value = e }
   finally { if (mine === generation) loading.value = false }
 }, { immediate: true })
 function toggle(name: string, enabled: boolean) {
@@ -45,7 +46,7 @@ function toggle(name: string, enabled: boolean) {
 async function test(name: string) {
   if (!settings.value || !catalog.value || testing.value) return
   const model = settings.value.harnesses[name]!.model
-  testing.value = name; error.value = ''
+  testing.value = name; error.value = null
   try {
     const thinking = settings.value.harnesses[name]!.thinking
     const result = thinking ? await testHarness(name, model, thinking) : await testHarness(name, model)
@@ -54,14 +55,14 @@ async function test(name: string) {
     catalog.value.tests[name]![model] = result
     emit('tested')
     if (!result.ok && settings.value.default_harness === name) settings.value.default_harness = Object.keys(settings.value.harnesses).find(eligible) ?? null
-  } catch (e) { error.value = errorText(e) }
+  } catch (e) { error.value = e }
   finally { testing.value = null }
 }
 async function save() {
   if (!canSave.value || !settings.value) return
-  saving.value = true; error.value = ''
+  saving.value = true; error.value = null
   try { await saveHarnessSettings(JSON.parse(JSON.stringify(settings.value))); emit('saved'); emit('close') }
-  catch (e) { error.value = errorText(e) }
+  catch (e) { error.value = e }
   finally { saving.value = false }
 }
 function chooseModel(model: string) {
@@ -76,20 +77,21 @@ function chooseModel(model: string) {
 </script>
 
 <template>
-  <ConfirmDialog :open="open && modelPicker === null" title="Harnessy tohoto počítače" confirm-label="Uložit nastavení" :confirm-disabled="!canSave" @confirm="save" @cancel="!saving && !testing && emit('close')">
-    <p>Výchozí volby pro všechny factory na tomto počítači. Projekt a potom task mohou harness, model a thinking level přepsat.</p>
-    <p v-if="loading"><Spinner /> Načítám harnessy a modely…</p>
-    <p v-if="error" role="alert" data-test="machine-harness-error">{{ error }}</p>
+  <ConfirmDialog :open="open && modelPicker === null" :title="t('setup.harnessTitle')" :confirm-label="t('setup.saveSettings')" :confirm-disabled="!canSave" @confirm="save" @cancel="!saving && !testing && emit('close')">
+    <p>{{ t('setup.harnessHint') }}</p>
+    <p v-if="loading"><Spinner /> {{ t('setup.loadingHarnesses') }}</p>
+    <p v-if="error" role="alert" data-test="machine-harness-error">{{ setupErrorText(error) }}</p>
     <div v-if="settings && catalog" class="harnesses" data-test="machine-harnesses">
       <fieldset v-for="(choice, name) in settings.harnesses" :key="name" :disabled="saving || !!testing" :data-harness="name">
         <legend>{{ name }}</legend>
-        <p v-if="!catalog.available[name]">Na tomto počítači není nainstalovaný.</p>
-        <label><input type="checkbox" role="switch" class="switch" :aria-label="`Zapnout ${name}`" :checked="choice.enabled" :disabled="!catalog.available[name] && !choice.enabled" :data-test="`machine-enabled-${name}`" @change="toggle(name, ($event.target as HTMLInputElement).checked)"> {{ choice.enabled ? 'Zapnutý' : 'Vypnutý' }}</label>
-        <label><input v-model="settings.default_harness" type="radio" name="default-harness" :value="name" :disabled="!eligible(String(name))" :data-test="`machine-default-${name}`"> Výchozí harness</label>
-        <button type="button" class="model-button" :aria-label="`Výchozí model ${name}`" :disabled="!catalog.available[name] || !choice.enabled" :data-test="`machine-model-${name}`" @click="modelPicker = String(name)"><span><small>Výchozí model</small>{{ choice.model || 'Vybrat model' }}</span><ChevronRight :size="18" aria-hidden="true" /></button>
-        <button type="button" class="test-button" :disabled="!catalog.available[name] || !choice.model || !!testing" :data-test="`machine-test-${name}`" @click="test(String(name))"><Spinner v-if="testing === name" /><Play v-else :size="14" aria-hidden="true" /> {{ testing === name ? 'Testuji…' : 'Test' }}</button>
-        <label class="thinking-choice"><span>Výchozí thinking level</span><SelectMenu :model-value="choice.thinking ?? ''" :options="thinkingOptions(String(name))" placeholder="Model nenabízí nastavení" :label="`Výchozí thinking level ${name}`" :disabled="!catalog.available[name] || !choice.enabled || saving || !!testing || thinkingOptions(String(name)).length < 2" :data-test="`machine-thinking-${name}`" @update:model-value="choice.thinking = $event" /></label>
-        <p v-if="testResult(String(name))" :data-test="`machine-test-result-${name}`" :class="testResult(String(name))?.ok ? 'test-ok' : 'test-failed'" role="status">{{ testResult(String(name))?.ok ? 'Vše OK — harness odpověděl OK.' : testResult(String(name))?.error }}<span v-if="!testResult(String(name))?.ok"> Nelze použít jako výchozí; v topbaru se nezobrazí.</span></p>
+        <p v-if="!catalog.available[name]">{{ t('setup.notInstalled') }}</p>
+        <label><input type="checkbox" role="switch" class="switch" :aria-label="t('setup.enableHarness', { name })" :checked="choice.enabled" :disabled="!catalog.available[name] && !choice.enabled" :data-test="`machine-enabled-${name}`" @change="toggle(name, ($event.target as HTMLInputElement).checked)"> {{ choice.enabled ? t('setup.enabled') : t('setup.disabled') }}</label>
+        <label><input v-model="settings.default_harness" type="radio" name="default-harness" :value="name" :disabled="!eligible(String(name))" :data-test="`machine-default-${name}`"> {{ t('setup.defaultHarness') }}</label>
+        <button type="button" class="model-button" :aria-label="t('setup.modelLabel', { name })" :disabled="!catalog.available[name] || !choice.enabled" :data-test="`machine-model-${name}`" @click="modelPicker = String(name)"><span><small>{{ t('setup.defaultModel') }}</small>{{ choice.model || t('setup.chooseModel') }}</span><ChevronRight :size="18" aria-hidden="true" /></button>
+        <button type="button" class="test-button" :disabled="!catalog.available[name] || !choice.model || !!testing" :data-test="`machine-test-${name}`" @click="test(String(name))"><Spinner v-if="testing === name" /><Play v-else :size="14" aria-hidden="true" /> {{ testing === name ? t('setup.testing') : 'Test' }}</button>
+        <label class="thinking-choice"><span>{{ t('setup.defaultThinking') }}</span><SelectMenu :model-value="choice.thinking ?? ''" :options="thinkingOptions(String(name))" :placeholder="t('setup.noThinking')" :label="t('setup.thinkingLabel', { name })" :disabled="!catalog.available[name] || !choice.enabled || saving || !!testing || thinkingOptions(String(name)).length < 2" :data-test="`machine-thinking-${name}`" @update:model-value="choice.thinking = $event" /></label>
+        <p v-if="testResult(String(name))" :data-test="`machine-test-result-${name}`" :class="testResult(String(name))?.ok ? 'test-ok' : 'test-failed'" role="status">{{ testResult(String(name))?.ok ? t('setup.harnessOk') : t('setup.harnessFailed') }}<span v-if="!testResult(String(name))?.ok"> {{ t('setup.harnessUnusable') }}</span></p>
+        <details v-if="testResult(String(name))?.error"><summary>{{ t('dashboard.diagnostics') }}</summary>{{ testResult(String(name))?.error }}</details>
       </fieldset>
     </div>
   </ConfirmDialog>
@@ -99,6 +101,7 @@ function chooseModel(model: string) {
 <style scoped>
 .harnesses { display: flex; flex-direction: column; gap: 12px; max-height: 55vh; overflow-y: auto; }
 fieldset { border: 1px solid var(--border); border-radius: 12px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; padding: 16px; background: var(--panel-2); }
+fieldset > details { grid-column: 1 / -1; }
 fieldset > p { grid-column: 1 / -1; margin: 0; font-size: 13px; line-height: 1.5; }
 legend { font-weight: 600; }
 .test-ok { color: var(--green); }

@@ -1,11 +1,13 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import MachineHarnessesDialog from './MachineHarnessesDialog.vue'
 import { fetchHarnessSettings, saveHarnessSettings, testHarness } from '@/lib/machineHarnesses'
 
 vi.mock('@/lib/machineHarnesses', () => ({ fetchHarnessSettings: vi.fn(), saveHarnessSettings: vi.fn(), testHarness: vi.fn() }))
+beforeEach(() => setLocale('cs'))
 let wrapper: VueWrapper | null = null
-afterEach(() => { wrapper?.unmount(); wrapper = null; vi.clearAllMocks() })
+afterEach(() => { setLocale('en'); wrapper?.unmount(); wrapper = null; vi.clearAllMocks() })
 
 const settings = {
   version: 1, default_harness: 'codex',
@@ -35,7 +37,7 @@ describe('MachineHarnessesDialog', () => {
     el('machine-test-codex').click()
     await flushPromises()
     expect(testHarness).toHaveBeenCalledWith('codex', 'gpt-5.5', 'medium')
-    expect(el('machine-test-result-codex').textContent).toContain('Login failed')
+    expect(el('machine-test-result-codex').textContent).toContain('Test harnessu selhal.')
     expect(el('machine-default-codex').hasAttribute('disabled')).toBe(true)
     expect((el('machine-default-claude') as HTMLInputElement).checked).toBe(true)
     vi.mocked(testHarness).mockResolvedValueOnce({ ok: true, answer: 'OK' })
@@ -101,4 +103,19 @@ describe('MachineHarnessesDialog', () => {
     await flushPromises()
     expect(vi.mocked(saveHarnessSettings).mock.calls[0]![0].harnesses.codex!.thinking).toBe('medium')
   })
+})
+
+it('translates an open dialog while preserving unsaved harness and thinking choices', async () => {
+  const w = await open()
+  el('machine-enabled-codex').click(); await flushPromises()
+  const calls = vi.mocked(fetchHarnessSettings).mock.calls.length
+  setLocale('en'); await flushPromises()
+  expect(document.body.textContent).toContain('Harnesses on this computer')
+  expect((el('machine-enabled-codex') as HTMLInputElement).checked).toBe(false)
+  expect((el('machine-default-claude') as HTMLInputElement).checked).toBe(true)
+  expect(el('machine-thinking-claude').getAttribute('data-value')).toBe('high')
+  expect(fetchHarnessSettings).toHaveBeenCalledTimes(calls)
+  el('confirm-ok').click(); await flushPromises()
+  expect(saveHarnessSettings).toHaveBeenCalledWith(expect.objectContaining({ default_harness: 'claude', harnesses: expect.objectContaining({ codex: expect.objectContaining({ enabled: false }) }) }))
+  expect(w.emitted('saved')).toHaveLength(1)
 })

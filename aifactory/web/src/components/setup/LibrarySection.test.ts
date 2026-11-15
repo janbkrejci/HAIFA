@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import LibrarySection from './LibrarySection.vue'
 import { answerDialog, openDialog } from '@/test/modal'
@@ -25,7 +26,8 @@ async function openAgent() {
   await wrapper.get('[data-test="library-item"] button').trigger('click'); await flushPromises(); return wrapper
 }
 enableAutoUnmount(afterEach)
-afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+beforeEach(() => setLocale('cs'))
+afterEach(() => { setLocale('en'); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 describe('LibrarySection', () => {
   it('shows tabs and row metadata without repo usage', async () => {
     api(); const wrapper = mount(LibrarySection, { props: { findings: [] } }); await flushPromises()
@@ -337,4 +339,43 @@ describe('LibrarySection', () => {
     await wrapper.get('[data-test="library-fetch"]').trigger('click'); await flushPromises()
     expect(wrapper.get('[data-test="library-sync-state"]').text()).toContain('Srovnáno s remote')
   })
+})
+
+it('keeps an open import, its path and selected type across EN/CS switches', async () => {
+  const mock = api()
+  const wrapper = await openAgent()
+  await wrapper.get('[data-test="library-import"]').trigger('click'); await flushPromises()
+  const field = openDialog()!.querySelector<HTMLInputElement>('[data-test=import-path]')!
+  field.value = '~/skills/rozepsaná-cesta'; field.dispatchEvent(new Event('input', { bubbles: true }))
+  await flushPromises()
+  const calls = mock.mock.calls.length
+  setLocale('en'); await flushPromises()
+  expect(openDialog()?.textContent).toContain('Import into library')
+  expect(openDialog()!.querySelector('[data-test=import-path]')).toBe(field)
+  expect(field.value).toBe('~/skills/rozepsaná-cesta')
+  expect(openDialog()!.querySelector('[data-test=import-type]')!.textContent).toContain('Skills')
+  expect(mock).toHaveBeenCalledTimes(calls)
+  setLocale('cs'); await flushPromises()
+  expect(field.value).toBe('~/skills/rozepsaná-cesta')
+  await answerDialog(true)
+  expect(openDialog()?.textContent).toContain('Plán importu')
+  setLocale('en'); await flushPromises()
+  expect(openDialog()?.textContent).toContain('Import plan')
+  await answerDialog(true)
+  expect(wrapper.text()).toContain('Import completed')
+  setLocale('cs'); await flushPromises()
+  expect(wrapper.text()).toContain('Import dokončen')
+  expect(JSON.parse(String(mock.mock.calls.find(([url]) => url === '/api/library/apply')![1]!.body)).options)
+    .toEqual({ path: '~/skills/rozepsaná-cesta', type: 'skill' })
+})
+
+it('keeps an open historical item and its source content while translating the surrounding UI', async () => {
+  const mock = api(); const wrapper = await openAgent()
+  await wrapper.get('[data-test="item-history"] button').trigger('click'); await flushPromises()
+  const calls = mock.mock.calls.length
+  setLocale('en'); await flushPromises()
+  expect(wrapper.get('[data-test="item-old-version"]').text()).toContain('You are viewing an older version.')
+  expect(wrapper.get('[data-test="item-file"] pre').text()).toBe('Read-only prompt')
+  expect(wrapper.get('[data-test="library-detail"]').text()).toContain('Version history')
+  expect(mock).toHaveBeenCalledTimes(calls)
 })

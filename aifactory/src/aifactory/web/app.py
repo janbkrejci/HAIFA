@@ -630,6 +630,8 @@ async def machine_harness_test(request: Request) -> JSONResponse:
             body.get("thinking"),
         )
         request.app.state.library.invalidate()
+        # Localize from the outcome code, never by interpreting harness diagnostics.
+        result = {**result, "error_code": None if result.get("ok") else "harness_test_failed"}
         return JSONResponse(envelope_ok(result))
     except (ValueError, OSError, backlog.UsageError) as exc:
         return _usage_error(str(exc))
@@ -2486,7 +2488,16 @@ async def dashboard_settings_save(request: Request) -> JSONResponse:
         return _usage_error(exc.message)
     except RepoError as exc:
         if exc.code == "invalid_value":
-            issues = [{"code": "invalid_value", "message": exc.message, "path": None, "id": "port"}]
+            issues = [
+                {
+                    "code": "invalid_value",
+                    "message": exc.message,
+                    "message_code": "port_range",
+                    "params": {"min": 1, "max": 65535},
+                    "path": None,
+                    "id": "port",
+                }
+            ]
             body = envelope_fail(exc.code, exc.message, issues=issues)
             return JSONResponse(body, status_code=422)
         return _repo_error(exc)

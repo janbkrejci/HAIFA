@@ -1,13 +1,15 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // One finding of the machine check on #/setup: severity and code, the message and its fix
 // with a copy button. The dashboard gets only findings with a fix or an action.
 import { ref } from 'vue'
-import type { CheckFinding, CheckSeverity } from '@/lib/api'
+import type { CheckFinding } from '@/lib/api'
+import { findingText } from '@/lib/factoryMessages'
+import { machineFixText } from '@/lib/setupMessages'
 import { errorText } from '@/lib/format'
 
 defineProps<{ finding: CheckFinding }>()
 
-const SEVERITY_TEXT: Record<CheckSeverity, string> = { error: 'chyba', warning: 'varování', info: 'info' }
 const copied = ref(false)
 const copyError = ref('')
 
@@ -19,11 +21,12 @@ async function copy(text: string) {
 </script>
 <template>
   <article :class="finding.severity" data-test="machine-finding">
-    <strong>{{ SEVERITY_TEXT[finding.severity] ?? finding.severity }} · {{ finding.code }}</strong><p>{{ finding.message }}</p>
+    <strong>{{ finding.severity === 'info' ? 'info' : t(`setup.${finding.severity}`) }} · {{ finding.code }}</strong><p>{{ findingText(finding.code) }}</p>
     <template v-if="finding.fix">
-      <p>{{ finding.fix }}</p>
-      <button data-test="copy-fix" @click="copy(finding.fix)">{{ copied ? 'Zkopírováno' : 'Kopírovat' }}</button>
+      <p>{{ machineFixText(finding.code) }}</p>
+      <button data-test="copy-fix" @click="copy(finding.fix)">{{ copied ? t('setup.copied') : t('setup.copy') }}</button>
       <span v-if="copyError" role="alert">{{ copyError }}</span>
     </template>
+    <details><summary>{{ t('dashboard.diagnostics') }}</summary><p>{{ finding.message }}</p><pre v-if="finding.fix">{{ finding.fix }}</pre></details>
   </article>
 </template>

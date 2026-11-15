@@ -79,7 +79,7 @@ def test_factory_move_to_library_browser(tmp_path: Path, monkeypatch: pytest.Mon
                     '[data-test="library-item"] button:has(.item-name:text-is("simple-sdlc"))'
                 ).click()
                 row = page.locator(f'[data-test="override-{server.repo_id}"]')
-                expect(row).to_contain_text("liší se")
+                expect(row).to_contain_text("differs")
                 row.locator('[data-test="override-move"]').click()
                 modal = page.locator('[data-test="confirm-dialog"]')
                 expect(modal).to_contain_text("workflow/simple-sdlc")

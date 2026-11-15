@@ -1,9 +1,11 @@
-import { afterEach, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import RepoLibraryItems from './RepoLibraryItems.vue'
 
 enableAutoUnmount(afterEach)
-afterEach(() => vi.unstubAllGlobals())
+beforeEach(() => setLocale('cs'))
+afterEach(() => { setLocale('en'); vi.unstubAllGlobals() })
 async function choose(wrapper: VueWrapper, testId: string, value: string, label: string) {
   const trigger = wrapper.get(`[data-test=${testId}]`)
   expect(trigger.attributes('role')).toBe('combobox')
@@ -106,4 +108,23 @@ it('uses directory and type menus when saving a bulk rule and restores all sourc
   expect(wrapper.findAll('[data-test=inventory-item]')).toHaveLength(0)
   await choose(wrapper, 'inventory-repo', '', 'Repo')
   expect(wrapper.findAll('[data-test=inventory-item]')).toHaveLength(2)
+})
+
+it('keeps filters and an unsaved ignore rule when the locale changes', async () => {
+  const mock = api()
+  const wrapper = mount(RepoLibraryItems, { props: { type: 'skill', shared: [] }, attachTo: document.body })
+  await flushPromises()
+  await choose(wrapper, 'inventory-repo', 'one', 'Repo')
+  await choose(wrapper, 'ignore-mode', 'directory', 'Hromadně ignorovat')
+  await choose(wrapper, 'ignore-type', 'skill', 'Typ')
+  await wrapper.get('[data-test=ignore-value]').setValue('.claude/skills/rozepsáno')
+  await wrapper.get('[data-test=inventory-ignored]').setValue(true)
+  const calls = mock.mock.calls.length
+  setLocale('en'); await flushPromises()
+  expect(wrapper.get('[data-test=inventory-repo]').attributes('data-value')).toBe('one')
+  expect(wrapper.get('[data-test=ignore-mode]').text()).toContain('Directory')
+  expect(wrapper.get('[data-test=ignore-type]').text()).toContain('Skills')
+  expect((wrapper.get('[data-test=ignore-value]').element as HTMLInputElement).value).toBe('.claude/skills/rozepsáno')
+  expect((wrapper.get('[data-test=inventory-ignored]').element as HTMLInputElement).checked).toBe(true)
+  expect(mock).toHaveBeenCalledTimes(calls)
 })
