@@ -398,6 +398,8 @@ def run_upgrade(
     handoff: bool | None = None,
     restart: Sequence[str] | None = None,
     spawn: Callable[[Sequence[str], Mapping[str, str]], None] | None = None,
+    refresh: bool = True,
+    bundle_brand: str | None = None,
 ) -> UpgradeResult:
     """Install HAIFA from the bundle ``source`` (path or URL); see the module docstring.
 
@@ -418,6 +420,10 @@ def run_upgrade(
     try:
         zip_path = fetch_bundle(source, work)
         root = unpack_bundle(zip_path, work / "bundle")
+        if bundle_brand is not None and root.name != f"{bundle_brand}-{expected_version}":
+            raise UpgradeError(
+                "bundle_invalid", "The bundle root does not match the release identity."
+            )
         sums = verify_checksums(root)
         wheel = find_wheel(root, sums)
         target = wheel_version(root / wheel)
@@ -466,6 +472,7 @@ def run_upgrade(
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
+                env=None if environ is None else dict(environ),
             )
         except OSError as exc:
             raise UpgradeError(
@@ -484,6 +491,10 @@ def run_upgrade(
                 data={**result.to_json(), "returncode": proc.returncode},
             )
         result.installed = True
+        # The transition coordinator preserves the library verbatim. GIRO subsequently
+        # offers its non-destructive seed plan; --all would destroy local customizations.
+        if not refresh:
+            return result
         warning = refresh_library(uv, environ)
         if warning is None:
             result.library_refreshed = True

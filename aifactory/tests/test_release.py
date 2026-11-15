@@ -9,10 +9,13 @@ def test_ci_version_and_repository_are_embedded_together(tmp_path: Path) -> None
     package = tmp_path / "src/aifactory"
     (package / "web").mkdir(parents=True)
     (package / "__init__.py").write_text('__version__ = "0.1.0"\n')
-    (package / "web/updates.py").write_text('UPDATE_REPOSITORY = "old/repo"\n')
+    (package / "web/updates.py").write_text(
+        'UPDATE_REPOSITORY = "old/repo"\nMIGRATION_REPOSITORY = "janbkrejci/GIRO"\n'
+    )
     assert stamp(42, "example/haifa", tmp_path) == "0.1.42"
     assert version(tmp_path) == "0.1.42"
     assert '"example/haifa"' in (package / "web/updates.py").read_text()
+    assert 'MIGRATION_REPOSITORY = "janbkrejci/GIRO"' in (package / "web/updates.py").read_text()
     assert stamp(43, "example/haifa", tmp_path) == "0.1.43"
 
 

@@ -3,7 +3,7 @@ import { ApiError, getGlobal, postGlobal } from './api'
 import { fetchCode } from './code'
 import { errorText } from './format'
 
-export type UpdateErrorCode = 'check_failed' | 'invalid_response' | 'install_failed' | 'restart_timeout' | 'runs_active'
+export type UpdateErrorCode = 'check_failed' | 'invalid_response' | 'install_failed' | 'restart_timeout' | 'runs_active' | 'update_busy'
 
 export interface UpdateState {
   // 'waiting' is client-side only: the server refused to install while task runs are active.
@@ -15,11 +15,11 @@ export interface UpdateState {
   error?: string | null
 }
 function updateErrorCode(error: unknown, fallback: UpdateErrorCode): UpdateErrorCode {
-  if (error instanceof ApiError && ['runs_active', 'invalid_response', 'install_failed', 'restart_timeout'].includes(error.code)) return error.code as UpdateErrorCode
+  if (error instanceof ApiError && ['runs_active', 'update_busy', 'invalid_response', 'install_failed', 'restart_timeout'].includes(error.code)) return error.code as UpdateErrorCode
   return fallback
 }
 
-export function useUpdates(options: { reload?: () => void; wait?: (ms: number) => Promise<void> } = {}) {
+export function useUpdates(options: { reload?: () => void; wait?: (ms: number) => Promise<void>; migration?: boolean } = {}) {
   const state = ref<UpdateState>({ status: 'checking', current_version: '' })
   let busy = false
   let disposed = false
@@ -33,7 +33,7 @@ export function useUpdates(options: { reload?: () => void; wait?: (ms: number) =
       const result = await getGlobal<UpdateState>(`/updates${fresh ? '?fresh=1' : ''}`)
       if (!result || !['current', 'available', 'error', 'installing'].includes(result.status)) throw new ApiError('invalid_response', 'Invalid update check response')
       if (!disposed) {
-        state.value = { ...result, error_code: result.status === 'error' ? 'check_failed' : undefined }
+        state.value = { ...result, error_code: result.status === 'error' ? (result.error_code ?? 'check_failed') : undefined }
         if (result.status === 'installing') await watchRestart((await fetchCode()).started, result.current_version)
       }
     } catch (error) { if (!disposed) state.value = { ...state.value, status: 'error', error_code: updateErrorCode(error, 'check_failed'), error: errorText(error) } }
@@ -45,10 +45,10 @@ export function useUpdates(options: { reload?: () => void; wait?: (ms: number) =
     state.value = { ...state.value, status: 'installing', error: null, error_code: undefined }
     try {
       const before = await fetchCode()
-      await postGlobal<UpdateState>('/updates/install')
+      await postGlobal<UpdateState>(options.migration ? '/updates/migrate' : '/updates/install')
       await watchRestart(before.started, state.value.current_version)
     } catch (error) {
-      if (!disposed) state.value = { ...state.value, status: error instanceof ApiError && error.code === 'runs_active' ? 'waiting' : 'error', error_code: updateErrorCode(error, 'install_failed'), error: errorText(error) }
+      if (!disposed) state.value = { ...state.value, status: error instanceof ApiError && ['runs_active', 'update_busy'].includes(error.code) ? 'waiting' : 'error', error_code: updateErrorCode(error, 'install_failed'), error: errorText(error) }
     }
     finally { busy = false }
   }
@@ -73,7 +73,7 @@ export function useUpdates(options: { reload?: () => void; wait?: (ms: number) =
           ;(options.reload ?? (() => window.location.reload()))()
           return
         }
-        if (progress.status === 'error') throw new ApiError('install_failed', progress.error ?? 'Update installation failed')
+        if (progress.status === 'error') throw new ApiError(progress.error_code ?? 'install_failed', progress.error ?? 'Update installation failed')
       }
       if (!disposed) throw new ApiError('restart_timeout', 'Dashboard restart was not detected within 300 seconds')
   }

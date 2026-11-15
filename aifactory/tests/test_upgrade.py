@@ -56,6 +56,7 @@ def make_bundle(
     *,
     tamper: str | None = None,
     drop: str | None = None,
+    brand: str = "haifa",
 ) -> Path:
     """A ``haifa-<version>.zip`` laid out like ``bundle/build.py`` makes it."""
     wheel = f"aifactory-{version}-py3-none-any.whl"
@@ -74,10 +75,10 @@ def make_bundle(
     if drop is not None:
         files.pop(drop)
     out.mkdir(parents=True, exist_ok=True)
-    target = out / f"haifa-{version}.zip"
+    target = out / f"{brand}-{version}.zip"
     with zipfile.ZipFile(target, "w") as zf:
         for name, data in sorted(files.items()):
-            zf.writestr(f"haifa-{version}/{name}", data)
+            zf.writestr(f"{brand}-{version}/{name}", data)
     return target
 
 
@@ -448,3 +449,66 @@ def test_cli_on_windows_refuses_while_the_dashboard_runs(
     monkeypatch.setattr(cli, "_dashboard_running", lambda: True)
     code, obj = _run(capsys, str(make_bundle(tmp_path / "dist")))
     assert code == 2 and obj["error"]["code"] == "dashboard_running"
+
+
+def test_transition_explicitly_accepts_giro_zip_with_aifactory_wheel(tmp_path: Path) -> None:
+    bundle = make_bundle(tmp_path, version="1.0.1", brand="giro")
+    result = upgrade.run_upgrade(
+        str(bundle),
+        current="0.1.99999",
+        expected_version="1.0.1",
+        bundle_brand="giro",
+        dry_run=True,
+    )
+    assert result.wheel == "aifactory-1.0.1-py3-none-any.whl"
+    assert result.target_version == "1.0.1"
+    with pytest.raises(upgrade.UpgradeError) as error:
+        upgrade.run_upgrade(
+            str(bundle),
+            current="1.0.2",
+            expected_version="1.0.1",
+            bundle_brand="giro",
+            dry_run=True,
+        )
+    assert error.value.code == "up_to_date"
+
+
+def test_transition_rejects_legacy_root_and_renamed_distribution(tmp_path: Path) -> None:
+    old_root = make_bundle(tmp_path / "legacy", version="1.0.1")
+    with pytest.raises(upgrade.UpgradeError, match="release identity"):
+        upgrade.run_upgrade(
+            str(old_root), expected_version="1.0.1", bundle_brand="giro", dry_run=True
+        )
+    bundle = make_bundle(tmp_path / "giro", version="1.0.1", brand="giro")
+    with zipfile.ZipFile(bundle) as archive:
+        files = {info.filename: archive.read(info) for info in archive.infolist()}
+    with zipfile.ZipFile(bundle, "w") as archive:
+        for name, content in files.items():
+            if name.endswith("SHA256SUMS"):
+                content = content.replace(
+                    b"aifactory-1.0.1-py3-none-any.whl", b"giro-1.0.1-py3-none-any.whl"
+                )
+            archive.writestr(
+                name.replace("aifactory-1.0.1-py3-none-any.whl", "giro-1.0.1-py3-none-any.whl"),
+                content,
+            )
+    with pytest.raises(upgrade.UpgradeError, match="exactly one aifactory wheel"):
+        upgrade.run_upgrade(
+            str(bundle), expected_version="1.0.1", bundle_brand="giro", dry_run=True
+        )
+
+
+def test_transition_install_never_reseeds_library_and_passes_environment(
+    tmp_path: Path, uv_log: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("UV_EXIT", "1")
+    result = upgrade.run_upgrade(
+        str(make_bundle(tmp_path / "giro", version="1.0.1", brand="giro")),
+        expected_version="1.0.1",
+        bundle_brand="giro",
+        refresh=False,
+        environ={**os.environ, "UV_EXIT": "0"},
+    )
+    assert result.installed
+    assert not result.library_refreshed
+    assert _factory_calls(uv_log) == []

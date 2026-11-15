@@ -176,3 +176,165 @@ def test_runs_seen_in_overview_prevent_update(tmp_path: Path) -> None:
     assert error["code"] == "runs_active"
     assert "běží 3 tasky" in error["message"]
     assert not source.installing
+
+
+def giro_release(version: str = "1.0.1") -> dict[str, Any]:
+    return {
+        "tag_name": f"v{version}",
+        "assets": [
+            {
+                "name": f"giro-{version}.zip",
+                "browser_download_url": f"https://github.com/janbkrejci/GIRO/releases/download/v{version}/giro-{version}.zip",
+            }
+        ],
+    }
+
+
+def test_migration_click_uses_fixed_new_repository_and_existing_install_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aifactory import transition
+
+    calls: list[str] = []
+    prepared: list[tuple[Any, ...]] = []
+
+    def fetch(repo: str) -> dict[str, Any]:
+        calls.append(repo)
+        return giro_release() if repo == "janbkrejci/GIRO" else release()
+
+    monkeypatch.setenv("HAIFA_UPDATE_REPO", "test/haifa")
+    monkeypatch.setattr(updates, "editable_install", lambda: False)
+    monkeypatch.setattr(transition, "prepare", lambda *args: prepared.append(args))
+    source = updates.Updates(current="0.1.9999", home=tmp_path, fetch=fetch)
+    app = create_multi_app(home=tmp_path)
+    app.state.updates = source
+    # Never let a test leave its process.
+    monkeypatch.setattr(
+        source,
+        "install",
+        lambda restart: updates.Updates.install(source, restart, leave=lambda: None),
+    )
+    with TestClient(app, base_url="http://127.0.0.1:4700") as client:
+        client.get("/api/updates")
+        assert calls == ["test/haifa"] and prepared == []
+        assert client.post("/api/updates/migrate").status_code == 202
+        assert calls == ["test/haifa", "janbkrejci/GIRO"]
+        assert prepared == [
+            (tmp_path, giro_release()["assets"][0]["browser_download_url"], "0.1.9999", "1.0.1")
+        ]
+        assert client.post("/api/updates/migrate").json()["error"]["code"] == "update_busy"
+        assert len(prepared) == 1
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["network", "missing", "draft", "legacy_zip", "foreign_url", "major", "duplicate_asset"],
+)
+def test_migration_rejects_unavailable_or_wrong_release_and_can_retry(
+    failure: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    data = giro_release()
+    if failure == "missing":
+        data["assets"] = []
+    elif failure == "draft":
+        data["draft"] = True
+    elif failure == "legacy_zip":
+        data["assets"][0]["name"] = "haifa-1.0.1.zip"
+    elif failure == "foreign_url":
+        data["assets"][0]["browser_download_url"] = (
+            "https://github.com/janbkrejci/HAIFA/releases/download/v1.0.1/giro-1.0.1.zip"
+        )
+    elif failure == "major":
+        data = giro_release("0.1.9999")
+    elif failure == "duplicate_asset":
+        data["assets"] *= 2
+
+    def fetch(repo: str) -> dict[str, Any]:
+        assert repo == "janbkrejci/GIRO"
+        if failure == "network":
+            raise OSError("hosting offline")
+        return data
+
+    monkeypatch.setattr(updates, "editable_install", lambda: False)
+    source = updates.Updates(fetch=fetch)
+    with pytest.raises(UpgradeError, match="."):
+        source.begin(migration=True)
+    assert not source.installing
+    assert source.check()["status"] == "error"
+    source.fetch = lambda _: giro_release()
+    assert source.begin(migration=True)["status"] == "installing"
+    with pytest.raises(UpgradeError) as busy:
+        source.begin(migration=True)
+    assert busy.value.code == "update_busy"
+
+
+@pytest.mark.parametrize("race", [False, True])
+def test_migration_respects_active_run_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, race: bool
+) -> None:
+    monkeypatch.setattr(updates, "editable_install", lambda: False)
+    source = updates.Updates(fetch=lambda _: giro_release())
+    app = create_multi_app(home=tmp_path)
+    app.state.updates = source
+    results = iter([[], [object()]] if race else [[object()]])
+    app.state.launcher = SimpleNamespace(running=lambda: next(results))
+    with TestClient(app, base_url="http://127.0.0.1:4700") as client:
+        assert client.post("/api/updates/migrate").json()["error"]["code"] == "runs_active"
+    assert not source.installing
+
+
+@pytest.mark.parametrize(
+    ("legacy", "new", "expected"),
+    [
+        ("janbkrejci/HAIFA", "", "janbkrejci/GIRO"),
+        ("company/releases", "", "company/releases"),
+        ("janbkrejci/HAIFA", "company/giro", "company/giro"),
+    ],
+)
+def test_giro_subsequent_updates_ignore_only_old_default(
+    monkeypatch: pytest.MonkeyPatch, legacy: str, new: str, expected: str
+) -> None:
+    monkeypatch.setenv("HAIFA_UPDATE_REPO", legacy)
+    monkeypatch.setenv("GIRO_UPDATE_REPO", new)
+    source = updates.Updates(current="1.0.1", fetch=lambda repo: giro_release("1.0.2"))
+    assert source.repository == expected
+    if expected == "janbkrejci/GIRO":
+        assert source.check()["status"] == "available"
+
+
+@pytest.mark.parametrize("saved", ['{"error": "GIRO restart failed; HAIFA restored"}', "{"])
+def test_restored_haifa_keeps_recovery_diagnostic_and_allows_retry(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    saved: str,
+) -> None:
+    from aifactory.transition import ERROR_FILE
+
+    (tmp_path / ERROR_FILE).write_text(saved)
+    source = updates.Updates(home=tmp_path, fetch=lambda _: giro_release())
+    assert source.check()["status"] == "error"
+    assert source.check()["error"]
+    monkeypatch.setattr(updates, "editable_install", lambda: False)
+    assert source.begin(migration=True)["status"] == "installing"
+
+
+def test_other_process_discovered_during_preparation_keeps_waiting_reason(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from aifactory import transition
+
+    def busy(*args: Any, **kwargs: Any) -> Any:
+        raise UpgradeError("runs_active", "Another library writer is active")
+
+    monkeypatch.setattr(transition, "prepare", busy)
+    monkeypatch.setattr(updates, "editable_install", lambda: False)
+    source = updates.Updates(home=tmp_path, fetch=lambda _: giro_release())
+    source.begin(migration=True)
+    source.install(
+        lambda: pytest.fail("Must not restart"), leave=lambda: pytest.fail("Must not exit")
+    )
+    assert not source.installing
+    assert source.check()["error_code"] == "runs_active"

@@ -1,35 +1,44 @@
 name: Release
 
 on:
-  push:
-    branches: [main]
-    # backlog, task specs and docs, decisions and the operator's .factory/ change no
-    # product code: no new release
-    paths-ignore: ['factory/**', 'docs/**', '.factory/**']
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
-  cancel-in-progress: true
+  group: final-haifa-release
+  cancel-in-progress: false
 
 jobs:
   release:
-    if: github.ref == 'refs/heads/main' && github.event.repository.private == false
+    if: >-
+      github.repository == 'janbkrejci/HAIFA' &&
+      github.event_name == 'workflow_dispatch' &&
+      github.ref == 'refs/tags/haifa-transition-source' &&
+      github.sha == vars.HAIFA_TRANSITION_SHA &&
+      vars.HAIFA_TRANSITION_PUBLISHED == 'false' &&
+      github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HAIFA_TRANSITION_SHA: ${{ vars.HAIFA_TRANSITION_SHA }}
+      HAIFA_TRANSITION_PUBLISHED: ${{ vars.HAIFA_TRANSITION_PUBLISHED }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          ref: ${{ vars.HAIFA_TRANSITION_SHA }}
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: '3.12'
       - uses: oven-sh/setup-bun@v2
+      - name: Verify final HAIFA publication gate
+        working-directory: aifactory
+        run: uv run python -m bundle.release --check-transition
       - name: Build frontend
         working-directory: aifactory/web
         run: |
@@ -47,6 +56,7 @@ jobs:
         env:
           UV_TOOL_DIR: ${{ runner.temp }}/haifa-tools
           UV_TOOL_BIN_DIR: ${{ runner.temp }}/haifa-bin
+          HAIFA_HOME: ${{ runner.temp }}/haifa-home
           EXPECTED_VERSION: ${{ steps.bundle.outputs.version }}
         run: |
           unzip "aifactory/dist/haifa-$EXPECTED_VERSION.zip" -d "$RUNNER_TEMP/haifa-install"
@@ -54,29 +64,15 @@ jobs:
           "$UV_TOOL_BIN_DIR/factory" --version | grep -Fx "factory $EXPECTED_VERSION"
       - name: Publish completed release
         env:
-          GH_TOKEN: ${{ github.token }}
           VERSION: ${{ steps.bundle.outputs.version }}
         run: |
-          git fetch --no-tags origin main
-          current="$(git rev-parse FETCH_HEAD)"
-          # Match paths-ignore above: a backlog-only push does not start a replacement build.
-          if ! git merge-base --is-ancestor "$GITHUB_SHA" "$current"; then
-            echo "The build is no longer on main; skip publishing."
-            exit 0
-          fi
-          if ! git diff --quiet "$GITHUB_SHA" "$current" -- . \
-            ':(top,exclude)factory/**' ':(top,exclude)docs/**' ':(top,exclude).factory/**'; then
-            echo "Newer product changes are on main; skip publishing this older build."
-            exit 0
-          fi
+          cd aifactory
+          .venv/bin/python -m bundle.release --check-transition
+          # Claim publication before creating a release: even an interrupted dispatch
+          # cannot publish a second H. T06 recovers the same draft/tag manually.
+          git tag haifa-transition-published "$GITHUB_SHA"
+          git push origin refs/tags/haifa-transition-published
           tag="v$VERSION"
-          if gh release view "$tag" --json isDraft --jq .isDraft > "$RUNNER_TEMP/haifa-draft" 2>/dev/null; then
-            if [ "$(cat "$RUNNER_TEMP/haifa-draft")" = false ]; then
-              echo "This build is already published."
-              exit 0
-            fi
-          else
-            gh release create "$tag" --draft --target "$GITHUB_SHA" --title "HAIFA $VERSION" --notes "Automatically built release bundle. Source commit: $GITHUB_SHA."
-          fi
-          gh release upload "$tag" "aifactory/dist/haifa-$VERSION.zip" --clobber
+          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "HAIFA $VERSION" --notes "Final HAIFA transition release. Source commit: $GITHUB_SHA."
+          gh release upload "$tag" "dist/haifa-$VERSION.zip"
           gh release edit "$tag" --draft=false --latest
