@@ -29,7 +29,8 @@ def _sections(markdown: str) -> set[str]:
         if line.lstrip().startswith("```"):
             fence = not fence
         elif not fence and line.startswith("## "):
-            found.add(_slug(line[3:].strip()))
+            anchor = re.search(r"<!-- section:([a-z0-9-]+) -->$", line)
+            found.add(anchor.group(1) if anchor else _slug(line[3:].strip()))
     return found
 
 
@@ -60,10 +61,11 @@ def test_chapters_from_a_directory(tmp_path: Path) -> None:
     assert [(c.id, c.title) for c in chapters] == [("a", "a"), ("b", "Béčko")]
 
 
-def test_guide_links_point_to_existing_chapters_and_sections() -> None:
-    sections = {c.id: _sections(c.markdown) for c in guide.chapters()}
+@pytest.mark.parametrize("locale", ["en", "cs"])
+def test_guide_links_point_to_existing_chapters_and_sections(locale: str) -> None:
+    sections = {c.id: _sections(c.markdown) for c in guide.chapters(locale=locale)}
     broken: list[str] = []
-    for chapter in guide.chapters():
+    for chapter in guide.chapters(locale=locale):
         for target in re.findall(r"\]\((#/[^)\s]+)\)", chapter.markdown):
             parts = target.removeprefix("#/").split("/")
             if parts[0] != "guide":
@@ -75,11 +77,32 @@ def test_guide_links_point_to_existing_chapters_and_sections() -> None:
     assert broken == []
 
 
-def test_relative_markdown_links_are_not_used() -> None:
+@pytest.mark.parametrize("locale", ["en", "cs"])
+def test_relative_markdown_links_are_not_used(locale: str) -> None:
     """The dashboard renders only http(s) and #/ links; anything else would show as text."""
-    for chapter in guide.chapters():
+    for chapter in guide.chapters(locale=locale):
         links = re.findall(r"\]\(([^)\s]+)\)", chapter.markdown)
         assert [x for x in links if not x.startswith(("http://", "https://", "#/"))] == []
+
+
+def test_translations_preserve_every_chapter_and_public_section_url() -> None:
+    czech = guide.chapters(locale="cs")
+    english = guide.chapters(locale="en")
+    assert [c.id for c in english] == [c.id for c in czech]
+    assert sorted(p.name for p in (SRC_GUIDE / "en").glob("*.md")) == sorted(
+        p.name for p in SRC_GUIDE.glob("*.md")
+    )
+    for original, translated in zip(czech, english, strict=True):
+        assert translated.markdown.startswith(f"# {translated.title}\n")
+        assert translated.title != original.title
+        assert _sections(translated.markdown) == _sections(original.markdown)
+        headings = re.findall(r"^## (.+)$", translated.markdown, re.MULTILINE)
+        assert len(headings) == len(_sections(original.markdown))
+        assert all(re.search(r"<!-- section:[a-z0-9-]+ -->$", h) for h in headings)
+    assert guide.chapter("uvod", locale="en").title == "What is HAIFA"
+    assert guide.chapter("uvod").title == "Co je HAIFA"
+    with pytest.raises(ValueError, match="Unsupported guide locale"):
+        guide.chapters(locale="../en")
 
 
 def test_bundle_install_guide_is_the_installation_chapter() -> None:

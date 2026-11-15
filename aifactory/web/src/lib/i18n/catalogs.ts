@@ -415,6 +415,10 @@ export const en = {
   'validation.required': '{field} is required.',
   'counts.items': '{count} item | {count} items',
   'time.justNow': 'just now',
+  'guide.title': 'Guide',
+  'guide.noResults': 'No results found.',
+  'guide.loadError': 'Could not load the guide.',
+  'guide.errorDetails': 'Technical details',
 }
 
 export const cs: Record<keyof typeof en, string> = {
@@ -827,6 +831,10 @@ export const cs: Record<keyof typeof en, string> = {
   // Intl categories: one, few, many (fractional), other.
   'counts.items': '{count} položka | {count} položky | {count} položky | {count} položek',
   'time.justNow': 'právě teď',
+  'guide.title': 'Příručka',
+  'guide.noResults': 'Nic nenalezeno.',
+  'guide.loadError': 'Příručku se nepodařilo načíst.',
+  'guide.errorDetails': 'Technické podrobnosti',
 }
 
 export type MessageKey = keyof typeof en
