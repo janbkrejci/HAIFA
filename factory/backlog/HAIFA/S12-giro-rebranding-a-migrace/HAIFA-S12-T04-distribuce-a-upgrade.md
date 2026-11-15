@@ -2,6 +2,7 @@
 id: HAIFA-S12-T04
 title: Poslední HAIFA — alert a upgrade na GIRO z nového repo
 status: done
+archived: true
 depends_on: [HAIFA-S12-T01]
 writes: [aifactory/, giro/, .github/workflows/, justfile, README.md, docs/rebranding/, docs/decisions.md]
 ---
