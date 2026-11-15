@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The AI guide: a side panel over every screen. It keeps the open thread across screens
 // (lib/assistant.ts), attaches the screen as a removable chip, streams the answer as markdown
 // with dashboard links, lists older threads and offers three questions in an empty thread.
@@ -92,7 +93,7 @@ const harnessesLoading = ref(false)
 const harnessesError = ref('')
 const usableHarnesses = computed(() => harnesses.value.filter((h) => h.usable))
 const harnessOptions = computed(() => [
-  { value: '', label: 'Podle nastavení' },
+  { value: '', label: t('helpers.configured') },
   ...usableHarnesses.value.map((h) => ({ value: h.harness, label: h.harness })),
 ])
 const selectedHarness = computed(() => harnesses.value.find((h) => h.harness === assistant.selectedHarness))
@@ -148,12 +149,12 @@ const streamed = computed(() => streamedAnswer(assistant.streaming?.text ?? ''))
 const { dialog, ask, confirm, cancel } = useConfirm()
 
 async function remove(item: ThreadSummary): Promise<void> {
-  const ok = await ask({
-    title: 'Smazat vlákno?',
-    message: `Vlákno „${item.title || 'Bez názvu'}“ se smaže natrvalo i se všemi zprávami. Tuto akci nelze vrátit.`,
-    confirmLabel: 'Smazat vlákno',
+  const ok = await ask(() => ({
+    title: t('helpers.deleteQuestion'),
+    message: t('helpers.deleteMessage', { title: item.title || t('helpers.untitled') }),
+    confirmLabel: t('helpers.deleteThread'),
     tone: 'danger',
-  })
+  }))
   if (ok) await deleteThread(item.id)
 }
 
@@ -184,34 +185,34 @@ watch(
 </script>
 
 <template>
-  <aside v-if="assistant.open" class="assistant" aria-label="AI průvodce" data-test="assistant-panel">
+  <aside v-if="assistant.open" class="assistant" :aria-label="t('helpers.guide')" data-test="assistant-panel">
     <header class="head">
       <div class="head-title">
         <Sparkles :size="16" aria-hidden="true" />
-        <strong>AI průvodce</strong>
+        <strong>{{ t('helpers.guide') }}</strong>
         <span v-if="answering" class="who" data-test="assistant-harness">{{ answering }}</span>
-        <span v-else class="who faint" data-test="assistant-harness">Podle nastavení</span>
+        <span v-else class="who faint" data-test="assistant-harness">{{ t('helpers.configured') }}</span>
       </div>
       <div class="head-actions">
-        <Tooltip text="Starší vlákna">
+        <Tooltip :text="t('helpers.history')">
           <button
             type="button"
             class="icon"
             :class="{ active: assistant.listing }"
-            aria-label="Starší vlákna"
+            :aria-label="t('helpers.history')"
             data-test="assistant-threads"
             @click="showThreads(!assistant.listing)"
           >
             <History :size="16" aria-hidden="true" />
           </button>
         </Tooltip>
-        <Tooltip text="Nové vlákno">
-          <button type="button" class="icon" aria-label="Nové vlákno" data-test="assistant-new" @click="newThread">
+        <Tooltip :text="t('helpers.newThread')">
+          <button type="button" class="icon" :aria-label="t('helpers.newThread')" data-test="assistant-new" @click="newThread">
             <Plus :size="16" aria-hidden="true" />
           </button>
         </Tooltip>
-        <Tooltip text="Zavřít">
-          <button type="button" class="icon" aria-label="Zavřít" data-test="assistant-close" @click="setOpen(false)">
+        <Tooltip :text="t('helpers.close')">
+          <button type="button" class="icon" :aria-label="t('helpers.close')" data-test="assistant-close" @click="setOpen(false)">
             <X :size="16" aria-hidden="true" />
           </button>
         </Tooltip>
@@ -220,8 +221,8 @@ watch(
 
     <section v-if="assistant.listing" class="threads" data-test="assistant-thread-list">
       <p v-if="assistant.threadsError" class="error" role="alert" data-test="assistant-threads-error">{{ assistant.threadsError }}</p>
-      <p v-if="assistant.threads === null && !assistant.threadsError" class="faint"><Spinner /> Načítám vlákna…</p>
-      <p v-else-if="assistant.threads && !assistant.threads.length" class="faint" data-test="assistant-no-threads">Zatím žádné vlákno.</p>
+      <p v-if="assistant.threads === null && !assistant.threadsError" class="faint"><Spinner /> {{ t('helpers.loadingThreads') }}</p>
+      <p v-else-if="assistant.threads && !assistant.threads.length" class="faint" data-test="assistant-no-threads">{{ t('helpers.noThreads') }}</p>
       <ul v-else-if="assistant.threads">
         <li v-for="item in assistant.threads" :key="item.id" class="thread-row">
           <button
@@ -231,17 +232,17 @@ watch(
             data-test="assistant-thread-item"
             @click="openThread(item.id)"
           >
-            <span class="thread-title">{{ item.title || 'Bez názvu' }}</span>
+            <span class="thread-title">{{ item.title || t('helpers.untitled') }}</span>
             <span class="thread-meta faint">
-              {{ fmtDayTime(item.updated_at) }} · {{ item.messages }} zpráv · {{ harnessLabel(item.harness, item.model, item.thinking) }}
-              <template v-if="item.busy"> · odpovídá</template>
+              {{ fmtDayTime(item.updated_at) }} · {{ t('helpers.messages', { count: item.messages }, item.messages) }} · {{ harnessLabel(item.harness, item.model, item.thinking) }}
+              <template v-if="item.busy"> {{ t('helpers.answering') }}</template>
             </span>
           </button>
-          <Tooltip text="Smazat vlákno">
+          <Tooltip :text="t('helpers.deleteThread')">
             <button
               type="button"
               class="icon thread-delete"
-              aria-label="Smazat vlákno"
+              :aria-label="t('helpers.deleteThread')"
               data-test="assistant-thread-delete"
               :disabled="!!assistant.deleting"
               :aria-busy="assistant.deleting === item.id || undefined"
@@ -257,9 +258,9 @@ watch(
 
     <template v-else>
       <div ref="log" class="log" data-test="assistant-log">
-        <p v-if="assistant.loading" class="faint"><Spinner /> Načítám vlákno…</p>
+        <p v-if="assistant.loading" class="faint"><Spinner /> {{ t('helpers.loadingThread') }}</p>
         <div v-if="empty" class="empty" data-test="assistant-empty">
-          <p class="faint">Zeptej se na repa, tasky, běhy, PR, konfiguraci nebo knihovnu. Průvodce jen čte; změnu navrhne a provede se, až ji potvrdíš.</p>
+          <p class="faint">{{ t('helpers.guideHint') }}</p>
           <button
             v-for="question in offered"
             :key="question"
@@ -292,9 +293,9 @@ watch(
           <p v-for="(tool, i) in assistant.streaming?.tools ?? []" :key="i" class="tool faint">{{ tool }}</p>
           <div v-if="streamed.text.trim()" class="md" v-html="html(streamed.text, streamRepo)" />
           <div v-for="n in streamed.pending" :key="`pending-${n}`" class="pending-action faint" data-test="assistant-action-pending">
-            <Spinner /> Připravuji návrh akce…
+            <Spinner /> {{ t('helpers.preparing') }}
           </div>
-          <p class="faint"><Spinner /> Průvodce odpovídá…</p>
+          <p class="faint"><Spinner /> {{ t('helpers.guideAnswering') }}</p>
         </div>
       </div>
 
@@ -304,20 +305,20 @@ watch(
 
       <form class="composer" @submit.prevent="submit()">
         <div v-if="!thread && !assistant.loading" class="harness-choice" data-test="assistant-harness-choice">
-          <label>Harness nového vlákna
-            <SelectMenu v-model="assistant.selectedHarness" :options="harnessOptions" label="Harness nového vlákna" data-test="assistant-harness-select" :disabled="assistant.sending || harnessesLoading" />
+          <label>{{ t('helpers.newHarness') }}
+            <SelectMenu v-model="assistant.selectedHarness" :options="harnessOptions" :label="t('helpers.newHarness')" data-test="assistant-harness-select" :disabled="assistant.sending || harnessesLoading" />
           </label>
-          <p v-if="selectedHarness" class="faint" data-test="assistant-harness-preview">Model: {{ selectedHarness.model || 'výchozí model harnessu' }} · Thinking: {{ selectedHarness.thinking || 'výchozí nastavení harnessu' }}</p>
-          <p class="faint">Guide zatím vyžaduje podporovaný harness s omezenými nástroji (Claude nebo Codex). Pi není podporovaný. Volba platí jen pro nové vlákno.</p>
-          <p v-if="harnessesLoading" class="faint" data-test="assistant-harness-loading">Načítám harnessy…</p>
-          <p v-else-if="harnessesError" class="error" role="alert" data-test="assistant-harness-error">Harnessy se nepodařilo načíst: {{ harnessesError }} <button type="button" @click="loadHarnesses">Zkusit znovu</button></p>
-          <p v-else-if="!usableHarnesses.length" class="faint" data-test="assistant-harness-none">Není dostupný žádný podporovaný harness pro Guide.</p>
+          <p v-if="selectedHarness" class="faint" data-test="assistant-harness-preview">Model: {{ selectedHarness.model || t('helpers.defaultModel') }} · Thinking: {{ selectedHarness.thinking || t('helpers.defaultThinking') }}</p>
+          <p class="faint">{{ t('helpers.harnessHint') }}</p>
+          <p v-if="harnessesLoading" class="faint" data-test="assistant-harness-loading">{{ t('helpers.loadingHarnesses') }}</p>
+          <p v-else-if="harnessesError" class="error" role="alert" data-test="assistant-harness-error">{{ t('helpers.harnessError', { error: harnessesError }) }} <button type="button" @click="loadHarnesses">{{ t('helpers.retry') }}</button></p>
+          <p v-else-if="!usableHarnesses.length" class="faint" data-test="assistant-harness-none">{{ t('helpers.noHarnesses') }}</p>
           <p v-for="item in harnesses.filter(h => !h.usable)" :key="item.harness" class="faint">{{ item.harness }}: {{ item.reason }}</p>
-          <button type="button" class="suggestion" data-test="assistant-harness-settings" @click="openHarnessSettings">Harnessy tohoto počítače</button>
+          <button type="button" class="suggestion" data-test="assistant-harness-settings" @click="openHarnessSettings">{{ t('helpers.machineHarnesses') }}</button>
         </div>
         <div v-if="context" class="chip" data-test="assistant-context">
           <span>{{ contextLabel(context) }}</span>
-          <button type="button" class="chip-remove" aria-label="Odebrat kontext obrazovky" data-test="assistant-context-remove" @click="removeContext">
+          <button type="button" class="chip-remove" :aria-label="t('helpers.removeContext')" data-test="assistant-context-remove" @click="removeContext">
             <X :size="12" aria-hidden="true" />
           </button>
         </div>
@@ -325,12 +326,12 @@ watch(
           v-model="draft"
           :disabled="!!assistantUnavailableReason"
           rows="3"
-          placeholder="Zeptej se průvodce…"
-          aria-label="Zpráva průvodci"
+          :placeholder="t('helpers.ask')"
+          :aria-label="t('helpers.message')"
           data-test="assistant-input"
           @keydown="onKey"
         />
-        <button type="submit" class="send" :disabled="!!assistantUnavailableReason || busy || !draft.trim()" data-test="assistant-send">Odeslat</button>
+        <button type="submit" class="send" :disabled="!!assistantUnavailableReason || busy || !draft.trim()" data-test="assistant-send">{{ t('helpers.send') }}</button>
       </form>
     </template>
     <ConfirmDialog v-bind="dialog" @confirm="confirm" @cancel="cancel" />

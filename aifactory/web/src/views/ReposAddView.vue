@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { errorText, shortSha } from '../lib/format'
 // #/repos/add: pick a folder (typed path with suggestions, the folder browser or the system
 // dialog), inspect it and add it from its card. Adding registers the repo and commits
@@ -6,7 +7,7 @@ import { errorText, shortSha } from '../lib/format'
 import { onMounted, ref } from 'vue'
 import { FolderOpen, Search } from 'lucide-vue-next'
 import { ApiError, fetchDirs, fetchPickStatus, inspectRepo, pickFolder, type AddRepoResult, type InspectResult, type RepoInstall } from '@/lib/api'
-import { USAGE_ERROR_TEXT, pickErrorText } from '@/lib/addRepo'
+import { pickErrorText } from '@/lib/addRepo'
 import { OVERVIEW_HREF, repoHref } from '@/lib/router'
 import BackLink from '@/components/ui/BackLink.vue'
 import FolderBrowser from '@/components/repos/FolderBrowser.vue'
@@ -35,11 +36,11 @@ const path = ref('~/')
 const home = ref<string | null>(null)
 const pickAvailable = ref(false)
 const picking = ref(false)
-const pickError = ref<string | null>(null)
+const pickError = ref<unknown>(null)
 const browsing = ref(false)
 const inspecting = ref(false)
 const result = ref<InspectResult | null>(null)
-const inspectError = ref<string | null>(null)
+const inspectError = ref<unknown>(null)
 let generation = 0
 
 async function inspect(value: string = path.value): Promise<void> {
@@ -54,8 +55,7 @@ async function inspect(value: string = path.value): Promise<void> {
     if (mine === generation) result.value = data
   } catch (err) {
     if (mine !== generation) return
-    if (err instanceof ApiError && err.code === 'usage_error') inspectError.value = USAGE_ERROR_TEXT
-    else inspectError.value = errorText(err)
+    inspectError.value = err
   } finally {
     if (mine === generation) inspecting.value = false
   }
@@ -78,8 +78,7 @@ async function pick() {
     const answer = await pickFolder()
     if (answer.path) useFolder(answer.path)
   } catch (err) {
-    pickError.value =
-      err instanceof ApiError ? pickErrorText(err.code, err.message) : errorText(err)
+    pickError.value = err
   } finally {
     picking.value = false
   }
@@ -95,42 +94,42 @@ onMounted(async () => {
 <template>
   <section class="add-view" data-test="repos-add">
     <template v-if="done">
-      <BackLink :href="OVERVIEW_HREF" label="Přehled" />
+      <BackLink :href="OVERVIEW_HREF" :label="t('helpers.overview')" />
       <article class="done-card" data-test="repo-added">
-        <h1>Repozitář {{ done.name }} {{ done.synced ? 'synchronizován' : 'přidán' }}</h1>
+        <h1>{{ t(done.synced ? 'helpers.synced' : 'helpers.added', { name: done.name }) }}</h1>
         <p class="note" data-test="repo-added-install">
-          <template v-if="done.install.pr && done.install.merged">Factory z knihovny prošla pull requestem <a :href="done.install.pr.url" target="_blank" rel="noopener" data-test="repo-added-pr">{{ done.install.pr.branch }}</a>, který factory hned mergnula.</template>
-          <template v-else-if="done.install.pr">Factory z knihovny je v pull requestu <a :href="done.install.pr.url" target="_blank" rel="noopener" data-test="repo-added-pr">{{ done.install.pr.branch }}</a>. Po jeho mergi použij v záložce Factory Stáhnout konfiguraci z base.</template>
-          <template v-else-if="done.install.committed">Factory z knihovny commitnuta {{ shortSha(done.install.commit) }} ({{ done.install.files.length }} {{ done.install.files.length === 1 ? 'soubor' : (done.install.files.length < 5 ? 'soubory' : 'souborů') }}), {{ done.install.pushed ? 'pushnuto' : 'bez pushe' }}.</template>
-          <template v-else>Factory už v repu byla, beze změny: nic se necommitovalo ani nepushlo.</template>
-          V záložce Factory najdeš další kroky.
+          <template v-if="done.install.pr && done.install.merged">{{ t('helpers.prMergedBefore') }} <a :href="done.install.pr.url" target="_blank" rel="noopener" data-test="repo-added-pr">{{ done.install.pr.branch }}</a>{{ t('helpers.prMergedAfter') }}</template>
+          <template v-else-if="done.install.pr">{{ t('helpers.prBefore') }} <a :href="done.install.pr.url" target="_blank" rel="noopener" data-test="repo-added-pr">{{ done.install.pr.branch }}</a>{{ t('helpers.prAfter') }}</template>
+          <template v-else-if="done.install.committed">{{ t('helpers.committed', { sha: shortSha(done.install.commit), files: t('helpers.files', { count: done.install.files.length }, done.install.files.length), push: t(done.install.pushed ? 'helpers.pushed' : 'helpers.notPushed') }) }}</template>
+          <template v-else>{{ t('helpers.unchanged') }}</template>
+          {{ t('helpers.nextSteps') }}
         </p>
         <div class="done-actions">
-          <a :href="done.href" class="btn ok" data-test="repo-added-open">Otevřít repo</a>
-          <button type="button" class="btn" data-test="repo-added-another" @click="addAnother">Přidat další repozitář</button>
+          <a :href="done.href" class="btn ok" data-test="repo-added-open">{{ t('helpers.openRepo') }}</a>
+          <button type="button" class="btn" data-test="repo-added-another" @click="addAnother">{{ t('helpers.another') }}</button>
         </div>
       </article>
     </template>
     <template v-else>
-    <BackLink :href="OVERVIEW_HREF" label="Přehled" />
-    <h1>Přidat repozitář</h1>
-    <h2 class="step"><span class="step-no">1</span> Složka</h2>
+    <BackLink :href="OVERVIEW_HREF" :label="t('helpers.overview')" />
+    <h1>{{ t('helpers.addRepo') }}</h1>
+    <h2 class="step"><span class="step-no">1</span> {{ t('helpers.folder') }}</h2>
     <div class="folder-row">
       <PathField v-model="path" :home="home" @submit="inspect()" />
       <button type="button" class="btn ok" :disabled="inspecting" data-test="add-inspect" @click="inspect()">
-        <Spinner v-if="inspecting" /><Search v-else :size="14" aria-hidden="true" /> Zkontrolovat
+        <Spinner v-if="inspecting" /><Search v-else :size="14" aria-hidden="true" /> {{ t('helpers.inspect') }}
       </button>
     </div>
     <div class="folder-actions">
       <button type="button" class="btn" data-test="add-browse" @click="browsing = true">
-        <FolderOpen :size="14" aria-hidden="true" /> Procházet…
+        <FolderOpen :size="14" aria-hidden="true" /> {{ t('helpers.browse') }}
       </button>
       <button v-if="pickAvailable" type="button" class="btn" :disabled="picking" data-test="add-pick" @click="pick">
-        <Spinner v-if="picking" /> Vybrat ve Finderu…
+        <Spinner v-if="picking" /> {{ t('helpers.pick') }}
       </button>
     </div>
-    <p v-if="pickError" class="error" data-test="pick-error">{{ pickError }}</p>
-    <p v-if="inspectError" class="error" data-test="inspect-error">{{ inspectError }}</p>
+    <p v-if="pickError" class="error" data-test="pick-error">{{ pickError instanceof ApiError ? pickErrorText(pickError.code, pickError.message) : errorText(pickError) }}</p>
+    <p v-if="inspectError" class="error" data-test="inspect-error">{{ inspectError instanceof ApiError && inspectError.code === 'usage_error' ? t('helpers.usageError') : errorText(inspectError) }}</p>
     <InspectCard
       v-if="result"
       :key="result.path"

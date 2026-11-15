@@ -46,11 +46,9 @@ export function factoryStateText(state: string | null | undefined): string {
  */
 export function removeConfirm(repo: { name: string; path: string }): ConfirmOptions {
   return {
-    title: `Odebrat repozitář ${repo.name}?`,
-    message:
-      `Repo se odpojí jen z dashboardu, ve složce ${repo.path} se nic nezmění: .factory/, backlog, specifikace ` +
-      'i dokumentace v repu zůstanou. Kdykoli ho můžeš znovu přidat.',
-    confirmLabel: 'Odebrat',
+    title: t('helpers.removeQuestion', { name: repo.name }),
+    message: t('helpers.removeMessage', { path: repo.path }),
+    confirmLabel: t('helpers.remove'),
     tone: 'danger',
   }
 }
@@ -73,7 +71,7 @@ export function useRemoveRepo(onRemoved: (id: string) => void) {
 
   async function remove(repo: { id: string; name: string; path: string }): Promise<boolean> {
     error.value = null
-    if (!(await ask(removeConfirm(repo)))) return false
+    if (!(await ask(() => removeConfirm(repo)))) return false
     removing.value = repo.id
     try {
       await removeRepo(repo.id, { uninstall: false })

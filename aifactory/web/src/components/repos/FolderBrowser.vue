@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { errorText } from '../../lib/format'
 // Folder browser of the Add repository page: a modal that starts in the home folder
 // (GET /api/fs/dirs), enters subfolders, goes up and returns the chosen folder. Esc closes.
@@ -66,7 +67,7 @@ function onKeydown(e: KeyboardEvent) {
         data-test="folder-browser"
         @keydown="onKeydown"
       >
-        <h2 id="folder-browser-title" class="modal-title">Vybrat složku</h2>
+        <h2 id="folder-browser-title" class="modal-title">{{ t('helpers.chooseFolder') }}</h2>
         <div class="current">
           <button
             type="button"
@@ -75,14 +76,14 @@ function onKeydown(e: KeyboardEvent) {
             data-test="browser-up"
             @click="dirs?.parent && load(dirs.parent)"
           >
-            <ArrowUp :size="14" aria-hidden="true" /> Nahoru
+            <ArrowUp :size="14" aria-hidden="true" /> {{ t('helpers.up') }}
           </button>
           <span class="path mono" data-test="browser-path">{{ dirs?.path ?? '' }}</span>
           <Spinner v-if="loading" />
         </div>
         <p v-if="error" class="error" data-test="browser-error">{{ error }}</p>
         <ul v-if="dirs" class="entries">
-          <li v-if="!dirs.entries.length" class="none">Žádné podsložky.</li>
+          <li v-if="!dirs.entries.length" class="none">{{ t('helpers.noFolders') }}</li>
           <li v-for="entry in dirs.entries" :key="entry.path">
             <button type="button" class="entry" data-test="browser-entry" @click="load(entry.path)">
               <Folder :size="14" aria-hidden="true" />
@@ -92,9 +93,9 @@ function onKeydown(e: KeyboardEvent) {
             </button>
           </li>
         </ul>
-        <p v-if="dirs?.truncated" class="note" data-test="browser-truncated">Zobrazeno prvních 500 složek</p>
+        <p v-if="dirs?.truncated" class="note" data-test="browser-truncated">{{ t('helpers.truncated') }}</p>
         <div class="modal-actions">
-          <button type="button" class="btn" data-test="browser-cancel" @click="emit('close')">Zrušit</button>
+          <button type="button" class="btn" data-test="browser-cancel" @click="emit('close')">{{ t('helpers.cancel') }}</button>
           <button
             type="button"
             class="btn ok"
@@ -102,7 +103,7 @@ function onKeydown(e: KeyboardEvent) {
             data-test="browser-choose"
             @click="dirs && emit('choose', dirs.path)"
           >
-            Vybrat tuto složku
+            {{ t('helpers.chooseThis') }}
           </button>
         </div>
       </div>

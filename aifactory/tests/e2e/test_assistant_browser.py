@@ -76,6 +76,7 @@ def test_assistant_conversation_browser(tmp_path: Path, monkeypatch: pytest.Monk
     with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
         page = browser.new_page()
+        page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         page.set_default_timeout(15000)
         try:
             page.goto(f"{url}/#/r/{identifier}/runs")
@@ -260,6 +261,7 @@ def test_assistant_select_harness_for_pi_repo_browser(
     with dashboard(repo, home) as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
         page = browser.new_page()
+        page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         page.set_default_timeout(15000)
         try:
             page.goto(f"{url}/#/r/{identifier}/runs")
@@ -334,6 +336,7 @@ def test_assistant_proposed_action_browser(tmp_path: Path, monkeypatch: pytest.M
     with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
         page = browser.new_page()
+        page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         page.set_default_timeout(15000)
         try:
             repo_id.append(identifier)
@@ -397,6 +400,7 @@ def test_assistant_follow_up_browser(tmp_path: Path, monkeypatch: pytest.MonkeyP
     with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
         page = browser.new_page()
+        page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         page.set_default_timeout(15000)
         try:
             repo_id.append(identifier)

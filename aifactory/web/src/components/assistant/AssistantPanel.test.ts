@@ -575,3 +575,58 @@ describe('AssistantPanel', () => {
     expect(wrapper.findAll('[data-test="assistant-thread-item"]')).toHaveLength(1)
   })
 })
+
+
+it('switches panel labels without changing the draft, messages, proposals or stream', async () => {
+  setLocale('en')
+  const { fetchMock } = stubApi({ detail: WITH_PROPOSAL })
+  const wrapper = await openPanel()
+  await openThread(THREAD.id)
+  await flushPromises()
+  await wrapper.get('[data-test="assistant-input"]').setValue('Rozepsaná zpráva / unfinished')
+  assistant.streaming = { text: 'Původní stream', tools: ['raw tool output'] }
+  assistant.thread!.busy = true
+  await flushPromises()
+  const panel = wrapper.get('[data-test="assistant-panel"]').element
+  const calls = fetchMock.mock.calls.length
+  for (const language of ['cs', 'en'] as const) {
+    setLocale(language)
+    await flushPromises()
+    expect(wrapper.get('[data-test="assistant-panel"]').element).toBe(panel)
+    expect(wrapper.get('[data-test="assistant-panel"]').attributes('aria-label')).toBe(language === 'cs' ? 'AI průvodce' : 'AI guide')
+    expect(wrapper.get('[data-test="assistant-send"]').text()).toBe(language === 'cs' ? 'Odeslat' : 'Send')
+    expect((wrapper.get('[data-test="assistant-input"]').element as HTMLTextAreaElement).value).toBe('Rozepsaná zpráva / unfinished')
+    expect(wrapper.get('[data-test="assistant-user"]').text()).toContain('Uprav writes')
+    expect(wrapper.get('[data-test="assistant-answer"]').text()).toContain('Navrhuji změnu.')
+    expect(wrapper.get('[data-test="assistant-action"]').text()).toContain('Task píše i do docs.')
+    expect(wrapper.get('[data-test="assistant-action-title"]').text()).toBe(language === 'cs' ? 'Upravit task P01-S01-T01' : 'Edit task P01-S01-T01')
+    expect(wrapper.get('[data-test="assistant-streaming"]').text()).toContain('Původní stream')
+    expect(wrapper.get('[data-test="assistant-streaming"]').text()).toContain('raw tool output')
+  }
+  expect(fetchMock.mock.calls.length).toBe(calls)
+})
+
+it('retranslates suggestions and an open delete confirmation, keeping thread titles', async () => {
+  const older = { ...THREAD, title: 'Moje původní otázka', messages: 2 }
+  stubApi({ threads: [older] })
+  const wrapper = await openPanel()
+  expect(wrapper.get('[data-test="assistant-suggestion"]').text()).toBe('Co se teď ve factory děje?')
+  setLocale('en')
+  await flushPromises()
+  expect(wrapper.get('[data-test="assistant-suggestion"]').text()).toBe('What is happening in factory now?')
+  await wrapper.get('[data-test="assistant-threads"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[data-test="assistant-thread-item"]').text()).toContain('2 messages')
+  await wrapper.get('[data-test="assistant-thread-delete"]').trigger('click')
+  await flushPromises()
+  const dialog = document.body.querySelector('[role="dialog"]')!
+  expect(dialog.textContent).toContain('Delete thread?')
+  setLocale('cs')
+  await flushPromises()
+  expect(document.body.querySelector('[role="dialog"]')).toBe(dialog)
+  expect(dialog.textContent).toContain('Smazat vlákno?')
+  expect(dialog.textContent).toContain('Moje původní otázka')
+  expect(wrapper.get('[data-test="assistant-thread-item"]').text()).toContain('2 zprávy')
+  document.body.querySelector<HTMLButtonElement>('[data-test="confirm-cancel"]')!.click()
+  await flushPromises()
+})

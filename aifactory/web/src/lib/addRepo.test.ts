@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { describe, expect, it } from 'vitest'
 import type { FsEntry } from './api'
 import { PROBLEM_TEXT, expandHome, filterEntries, problemText, splitForSuggest } from './addRepo'
@@ -43,4 +49,15 @@ describe('problemText', () => {
       ['bare_repo', 'linked_worktree', 'no_commits', 'not_a_directory', 'not_git', 'path_not_found', 'run_worktree', 'trace_db_shared'],
     )
   })
+})
+
+
+it('translates known folder problems on demand and preserves paths and unknown diagnostics', () => {
+  const linked = { code: 'linked_worktree', message: 'raw', main_checkout: '/w/česká cesta' }
+  const unknown = { code: 'new_code', message: 'Původní diagnostika' }
+  expect(problemText(linked)).toBe('Složka je propojený worktree. Přidej hlavní checkout /w/česká cesta.')
+  setLocale('en')
+  expect(problemText(linked)).toBe('The folder is a linked worktree. Add the main checkout /w/česká cesta.')
+  expect(problemText({ code: 'not_git', message: 'raw' })).toBe('The folder is not in a Git repository. HAIFA does not run git init.')
+  expect(problemText(unknown)).toBe('Původní diagnostika')
 })

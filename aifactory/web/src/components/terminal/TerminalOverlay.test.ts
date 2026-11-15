@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { MockTerminal } from './xtermMock'
@@ -110,4 +116,31 @@ describe('TerminalOverlay', () => {
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/terminal/sessions/late', { method: 'DELETE', keepalive: true })
   })
+})
+
+
+it('keeps the PTY, raw output and pending input when terminal controls change language', async () => {
+  setLocale('en')
+  const { fetchMock, output } = api()
+  const wrapper = mountOverlay()
+  await flushPromises()
+  const term = MockTerminal.instances[0]!
+  const bytes = new TextEncoder().encode('Původní výstup / raw output')
+  output().enqueue(bytes)
+  term.data('unfinished command')
+  await flushPromises()
+  const calls = fetchMock.mock.calls.length
+  for (const language of ['cs', 'en'] as const) {
+    setLocale(language)
+    await flushPromises()
+    expect(wrapper.attributes('aria-label')).toBe(language === 'cs' ? 'Terminál' : 'Terminal')
+    expect(wrapper.get('#terminal-close').attributes('aria-label')).toBe(language === 'cs' ? 'Zavřít terminál' : 'Close terminal')
+    expect(MockTerminal.instances).toEqual([term])
+    expect(term.dispose).not.toHaveBeenCalled()
+    expect(term.reset).toHaveBeenCalledTimes(1)
+    expect(term.write).toHaveBeenCalledTimes(1)
+    expect(term.write).toHaveBeenCalledWith(bytes)
+  }
+  expect(fetchMock.mock.calls.length).toBe(calls)
+  expect(fetchMock.mock.calls.find(([url]) => url.endsWith('/input'))?.[1]?.body).toBe(JSON.stringify({ data: 'unfinished command' }))
 })

@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   actionOutcome,
@@ -396,4 +402,25 @@ describe('opening the guide', () => {
     await createThread()
     expect(fetchMock).toHaveBeenCalledWith('/api/assistant/threads', expect.objectContaining({ body: '{}' }))
   })
+})
+
+
+it('translates action chrome while preserving generated task text and recorded outcomes', () => {
+  const action: ProposedAction = {
+    id: 'locale-test', kind: 'follow_up', repo: 'haifa', task: 'P01-S01-T01',
+    title: 'Navazuje na P01-S01-T01: Původní název', body: 'Původní zadání', note: 'Původní poznámka',
+    status: 'proposed', run: true,
+  }
+  const request = actionRequest(action)
+  const outcome = actionOutcome(action, { task: { id: 'P01-S01-T02' } })
+  const original = JSON.stringify(action)
+  for (const language of ['en', 'cs'] as const) {
+    setLocale(language)
+    expect(actionPreview(action)).toContainEqual({ label: language === 'cs' ? 'Zadání' : 'Task description', before: null, after: 'Původní zadání' })
+    expect(actionPreview(action)).toContainEqual({ label: language === 'cs' ? 'Název' : 'Title', before: null, after: action.title })
+    expect(contextLabel({ repo: 'haifa', run: 'abcd1234' })).toBe(language === 'cs' ? 'repo haifa · běh abcd1234' : 'repo haifa · run abcd1234')
+    expect(actionRequest(action)).toEqual(request)
+    expect(actionOutcome(action, { task: { id: 'P01-S01-T02' } })).toBe(outcome)
+    expect(JSON.stringify(action)).toBe(original)
+  }
 })

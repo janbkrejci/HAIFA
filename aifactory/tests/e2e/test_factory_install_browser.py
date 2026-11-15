@@ -88,14 +88,14 @@ def test_factory_install_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
                 page.locator('[data-test="add-inspect"]').click()
                 card = page.locator('[data-test="inspect-card"]')
                 expect(card.locator('[data-test="inspect-install-note"]')).to_contain_text(
-                    "zapíše do repa .factory/config.yaml"
+                    "writes .factory/config.yaml to the repository"
                 )
                 expect(card.locator("button")).to_have_count(1)
                 assert not (repo / ".factory").exists()
                 card.locator('[data-test="inspect-add"]').click()
                 done = page.locator('[data-test="repo-added-install"]')
-                expect(done).to_contain_text("commitnuta")
-                expect(done).to_contain_text("pushnuto")
+                expect(done).to_contain_text("committed")
+                expect(done).to_contain_text("pushed")
                 after = git(repo, "rev-parse", "main")
                 assert git(repo, "rev-list", "--count", f"{before}..main") == "1"
                 assert git(bare, "rev-parse", "main") == after
