@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Port of the sssf visualizer's PhaseDetail: header, collapsible sections on the
 // left (request, agent config, description, compiled prompts, gates, cost, outputs)
 // and the always-visible events column on the right. Payloads arrive parsed.
@@ -30,7 +31,7 @@ import {
   parseQualityCall,
   parseToolCall,
 } from '@/lib/events'
-import { fmtClock, fmtInt, fmtMoney4, plural, secondsBetween } from '@/lib/format'
+import { fmtClock, fmtInt, fmtMoney4, secondsBetween } from '@/lib/format'
 import { highlightValue } from '@/lib/highlight'
 import { modelIcon, modelName } from '@/lib/models'
 import {
@@ -148,7 +149,7 @@ function hasBreakdown(u: Partial<UsageBreakdown> | null | undefined): u is Parti
   return !!u && USAGE_KEYS.some((k) => typeof u[k] === 'number')
 }
 
-const THINKING_TIP = 'Thinking tokeny – součást výstupu výše, účtované za cenu výstupu. Do součtu se nepřičítají.'
+const thinkingTip = () => t('runs.thinking_tokeny_soucast_vystupu_vyse_uctovane_za_cenu_vystupu_do_souctu_se_nepricitaj')
 
 const phaseUsage = computed<{ rows: UsageRow[]; partial: boolean } | null>(() => {
   const p = props.phase
@@ -163,7 +164,7 @@ const phaseUsage = computed<{ rows: UsageRow[]; partial: boolean } | null>(() =>
       rows: [
         {
           key: 'celkem',
-          label: 'celkem',
+          label: t('runs.celkem'),
           tokens: p.tokens || endEvent?.tokens || 0,
           cost: p.cost || end?.cost || 0,
           kind: 'total',
@@ -173,8 +174,8 @@ const phaseUsage = computed<{ rows: UsageRow[]; partial: boolean } | null>(() =>
   }
   const n = (v: number | undefined) => (typeof v === 'number' ? v : 0)
   const rows: UsageRow[] = [
-    { key: 'vstup', label: 'vstup', tokens: n(u.input_tokens), cost: n(u.input_cost) },
-    { key: 'výstup', label: 'výstup', tokens: n(u.output_tokens), cost: n(u.output_cost) },
+    { key: 'vstup', label: t('runs.vstup'), tokens: n(u.input_tokens), cost: n(u.input_cost) },
+    { key: 'výstup', label: t('runs.vystup'), tokens: n(u.output_tokens), cost: n(u.output_cost) },
   ]
   const reasoning = n(u.reasoning_tokens)
   if (reasoning > 0) {
@@ -186,19 +187,19 @@ const phaseUsage = computed<{ rows: UsageRow[]; partial: boolean } | null>(() =>
       tokens: reasoning,
       cost: output ? (n(u.output_cost) * reasoning) / output : 0,
       kind: 'nested',
-      tip: THINKING_TIP,
+      tip: thinkingTip(),
     })
   }
   rows.push(
-    { key: 'cache-cteni', label: 'cache čtení', tokens: n(u.cache_read_tokens), cost: n(u.cache_read_cost) },
-    { key: 'cache-zapis', label: 'cache zápis', tokens: n(u.cache_write_tokens), cost: n(u.cache_write_cost) },
+    { key: 'cache-cteni', label: t('runs.cache_cteni'), tokens: n(u.cache_read_tokens), cost: n(u.cache_read_cost) },
+    { key: 'cache-zapis', label: t('runs.cache_zapis'), tokens: n(u.cache_write_tokens), cost: n(u.cache_write_cost) },
   )
   const sumTokens =
     n(u.input_tokens) + n(u.output_tokens) + n(u.cache_read_tokens) + n(u.cache_write_tokens)
   const sumCost = n(u.input_cost) + n(u.output_cost) + n(u.cache_read_cost) + n(u.cache_write_cost)
   rows.push({
     key: 'celkem',
-    label: 'celkem',
+    label: t('runs.celkem'),
     tokens: typeof u.total_tokens === 'number' ? u.total_tokens : sumTokens || p.tokens,
     cost: typeof u.total_cost === 'number' ? u.total_cost : sumCost || p.cost,
     kind: 'total',
@@ -313,8 +314,8 @@ const promptPanels = computed<PromptPanel[]>(() => {
   if (!p) return []
   const panels: PromptPanel[] = []
   for (const [id, title] of [
-    ['system', 'system prompt'],
-    ['user', 'user prompt'],
+    ['system', t('runs.systemPrompt')],
+    ['user', t('runs.userPrompt')],
   ] as const) {
     const text = p[id]
     if (text == null) continue
@@ -336,19 +337,19 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
       </div>
       <div class="d-tags">
         <span class="tag" data-test="tag-agent">
-          <span class="tag-k">agent</span>
+          <span class="tag-k">{{ t('runs.agent') }}</span>
           <span class="tag-v">{{ phase.owner ?? '—' }}</span>
         </span>
         <span class="tag" data-test="tag-kind">
-          <span class="tag-k">druh</span>
+          <span class="tag-k">{{ t('runs.druh') }}</span>
           <span class="tag-v">{{ phase.kind ?? '—' }}</span>
         </span>
         <span class="tag" data-test="tag-attempt">
-          <span class="tag-k">pokus</span>
+          <span class="tag-k">{{ t('runs.pokus') }}</span>
           <span class="tag-v">{{ phase.attempt ?? 0 }}/{{ phase.retries ?? 0 }}</span>
         </span>
       </div>
-      <button type="button" class="close" aria-label="Zavřít" data-test="phase-close" @click="$emit('close')">
+      <button type="button" class="close" :aria-label="t('runs.zavrit')" data-test="phase-close" @click="$emit('close')">
         <X :size="18" :stroke-width="2" />
       </button>
     </header>
@@ -368,7 +369,7 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
         <DetailSection
           v-if="requestText"
           id="request"
-          title="Požadavek"
+          :title="t('runs.pozadavek')"
           :icon="Inbox"
           :open="openSections.has('request')"
           @toggle="toggleSection('request')"
@@ -382,28 +383,28 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
             :aria-expanded="requestExpanded"
             @click="requestExpanded = !requestExpanded"
           >
-            {{ requestExpanded ? 'Sbalit zadání' : 'Zobrazit celé zadání' }}
+            {{ requestExpanded ? t('runs.sbalit_zadani') : t('runs.zobrazit_cele_zadani') }}
           </button>
         </DetailSection>
 
         <DetailSection
           v-if="agentConfig"
           id="config"
-          title="Konfigurace agenta"
+          :title="t('runs.konfigurace_agenta')"
           :icon="SlidersHorizontal"
           :open="openSections.has('config')"
           @toggle="toggleSection('config')"
         >
           <div class="cfg">
             <div v-if="agentConfig.coding_agent" class="cfg-row" data-test="cfg-coding_agent">
-              <span class="cfg-k">coding agent</span>
+              <span class="cfg-k">{{ t('runs.coding_agent') }}</span>
               <span class="cfg-chip">
                 <SquareTerminal class="cfg-icon" :size="18" :stroke-width="2" />
                 {{ agentConfig.coding_agent }}
               </span>
             </div>
             <div v-if="agentConfig.model" class="cfg-row" data-test="cfg-model">
-              <span class="cfg-k">model</span>
+              <span class="cfg-k">{{ t('runs.model') }}</span>
               <Tooltip :text="agentConfig.model">
                 <span class="cfg-chip" tabindex="0">
                   <img
@@ -417,32 +418,32 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
               </Tooltip>
             </div>
             <div v-if="agentConfig.thinking" class="cfg-row" data-test="cfg-thinking">
-              <span class="cfg-k">thinking</span>
+              <span class="cfg-k">{{ t('runs.thinking') }}</span>
               <span class="cfg-chip">
                 <Brain class="cfg-icon" :size="18" :stroke-width="2" />
                 {{ agentConfig.thinking }}
               </span>
             </div>
             <div v-if="agentConfig.tools !== undefined" class="cfg-row" data-test="cfg-tools">
-              <span class="cfg-k">tools</span>
-              <span v-if="agentConfig.tools === null" class="cfg-v">všechny nástroje</span>
+              <span class="cfg-k">{{ t('runs.tools') }}</span>
+              <span v-if="agentConfig.tools === null" class="cfg-v">{{ t('runs.vsechny_nastroje') }}</span>
               <span v-else class="cfg-chips">
                 <span v-for="t in agentConfig.tools" :key="t" class="cfg-chip">{{ t }}</span>
               </span>
             </div>
             <div v-if="agentConfig.harness_engineering !== undefined" class="cfg-row" data-test="cfg-harness_engineering">
-              <span class="cfg-k">harness engineering</span>
-              <span v-if="!agentConfig.harness_engineering?.length" class="cfg-v dim">žádné</span>
+              <span class="cfg-k">{{ t('runs.harness_engineering') }}</span>
+              <span v-if="!agentConfig.harness_engineering?.length" class="cfg-v dim">{{ t('runs.zadne') }}</span>
               <span v-else class="cfg-chips">
                 <span v-for="h in agentConfig.harness_engineering" :key="h" class="cfg-chip">{{ h }}</span>
               </span>
             </div>
             <div v-if="agentConfig.purpose" class="cfg-row" data-test="cfg-purpose">
-              <span class="cfg-k">purpose</span>
+              <span class="cfg-k">{{ t('runs.purpose') }}</span>
               <span class="cfg-v">{{ agentConfig.purpose }}</span>
             </div>
             <div v-if="agentConfig.session_id" class="cfg-row" data-test="cfg-session">
-              <span class="cfg-k">session</span>
+              <span class="cfg-k">{{ t('runs.session') }}</span>
               <span class="cfg-chip">
                 <Fingerprint class="cfg-icon" :size="18" :stroke-width="2" />
                 {{ agentConfig.session_id }}
@@ -454,7 +455,7 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
         <DetailSection
           v-if="phase.description"
           id="description"
-          title="Popis"
+          :title="t('runs.popis')"
           :icon="AlignLeft"
           :open="openSections.has('description')"
           @toggle="toggleSection('description')"
@@ -465,21 +466,17 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
         <DetailSection
           v-if="phase.kind === 'agent'"
           id="prompts"
-          title="Sestavené prompty"
+          :title="t('runs.sestavene_prompty')"
           :icon="MessagesSquare"
           :count="promptsState === 'ready' ? promptPanels.length : null"
           :open="openSections.has('prompts')"
           @toggle="toggleSection('prompts')"
         >
-          <p v-if="promptsState === 'loading'" class="faint" data-test="prompts-loading">Načítám prompty…</p>
-          <p v-else-if="promptsState === 'error'" class="faint" data-test="prompts-error">
-            Prompty se nepodařilo načíst.
-          </p>
+          <p v-if="promptsState === 'loading'" class="faint" data-test="prompts-loading">{{ t('runs.nacitam_prompty') }}</p>
+          <p v-else-if="promptsState === 'error'" class="faint" data-test="prompts-error"> {{ t('runs.prompty_se_nepodarilo_nacist') }} </p>
           <template v-else-if="promptsState === 'ready'">
-            <p v-if="promptsLegacy" class="faint prompts-note" data-test="prompts-legacy">
-              Běh nemá prompty jednotlivých fází – zobrazuji poslední prompty agenta.
-            </p>
-            <p v-if="!promptPanels.length" class="faint" data-test="prompts-empty">Žádné sestavené prompty.</p>
+            <p v-if="promptsLegacy" class="faint prompts-note" data-test="prompts-legacy"> {{ t('runs.beh_nema_prompty_jednotlivych_fazi_zobrazuji_posledni_prompty_agenta') }} </p>
+            <p v-if="!promptPanels.length" class="faint" data-test="prompts-empty">{{ t('runs.zadne_sestavene_prompty') }}</p>
             <div
               v-for="panel in promptPanels"
               :key="panel.id"
@@ -497,13 +494,11 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
                 <span class="chev">{{ openPrompts.has(panel.id) ? '▾' : '▸' }}</span>
                 <span class="prompt-title">{{ panel.title }}</span>
                 <span class="dim" data-test="prompt-lines">
-                  {{ panel.lines }} {{ plural(panel.lines, 'řádek', 'řádky', 'řádků') }}
+                  {{ panel.lines }} {{ t('runs.lineCount', {}, panel.lines) }}
                 </span>
               </button>
               <div v-if="openPrompts.has(panel.id)" class="prompt-body">
-                <p v-if="panel.truncated" class="faint prompts-note" data-test="prompt-truncated">
-                  Zkráceno na {{ prompts?.max_bytes }} B.
-                </p>
+                <p v-if="panel.truncated" class="faint prompts-note" data-test="prompt-truncated"> {{ t('runs.truncated', { bytes: prompts?.max_bytes ?? 0 }) }} </p>
                 <MarkdownView :source="panel.text" />
               </div>
             </div>
@@ -512,13 +507,13 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
 
         <DetailSection
           id="gates"
-          title="Gates"
+          :title="t('runs.gates')"
           :icon="ShieldCheck"
           :count="phaseGates.length"
           :open="openSections.has('gates')"
           @toggle="toggleSection('gates')"
         >
-          <p v-if="!phaseGates.length" class="faint">Žádné gates.</p>
+          <p v-if="!phaseGates.length" class="faint">{{ t('runs.zadne_gates') }}</p>
           <div
             v-for="g in phaseGates"
             :key="g.id"
@@ -540,21 +535,19 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
                 <X v-else :size="18" :stroke-width="2.5" />
               </span>
               <span class="gate-name">{{ g.gate }}</span>
-              <span class="gate-verdict">{{ g.passed ? 'prošel' : 'neprošel' }}</span>
+              <span class="gate-verdict">{{ g.passed ? t('runs.prosel') : t('runs.neprosel') }}</span>
               <span v-if="g.checks" class="tag" :class="{ 'tag-fail': !g.passed }" data-test="gate-checks-label">
-                <span class="tag-k">kontroly</span>
+                <span class="tag-k">{{ t('runs.kontroly') }}</span>
                 <span class="tag-v">{{ checksLabel(g.checks) }}</span>
               </span>
               <span class="tag" data-test="gate-attempt">
-                <span class="tag-k">pokus</span>
+                <span class="tag-k">{{ t('runs.pokus') }}</span>
                 <span class="tag-v">{{ g.attempt ?? 0 }}</span>
               </span>
               <span class="dim gate-time">{{ fmtClock(g.created_at) }}</span>
             </button>
             <div v-if="openGates.has(g.id)" class="gate-checks" data-test="gate-body">
-              <p v-if="g.checks && !g.checks.length" class="faint">
-                Nic ke kontrole – gate neprověřil žádnou položku.
-              </p>
+              <p v-if="g.checks && !g.checks.length" class="faint"> {{ t('runs.nic_ke_kontrole_gate_neproveril_zadnou_polozku') }} </p>
               <div
                 v-for="(c, i) in g.checks ?? []"
                 :key="i"
@@ -574,7 +567,7 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
               <ul v-if="g.violations.length" class="violations" data-test="violations">
                 <li v-for="(v, i) in g.violations" :key="i">{{ v }}</li>
               </ul>
-              <p v-if="!g.checks && !g.violations.length" class="faint">Bez podrobností.</p>
+              <p v-if="!g.checks && !g.violations.length" class="faint">{{ t('runs.bez_podrobnosti') }}</p>
             </div>
           </div>
         </DetailSection>
@@ -582,7 +575,7 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
         <DetailSection
           v-if="phaseUsage"
           id="cost"
-          title="Náklady"
+          :title="t('runs.naklady')"
           :icon="Receipt"
           :open="openSections.has('cost')"
           @toggle="toggleSection('cost')"
@@ -591,8 +584,8 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
             <thead>
               <tr>
                 <th class="u-k"></th>
-                <th class="u-n">tokeny</th>
-                <th class="u-c">cena</th>
+                <th class="u-n">{{ t('runs.tokeny_125') }}</th>
+                <th class="u-c">{{ t('runs.cena') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -613,33 +606,31 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
               </tr>
             </tbody>
           </table>
-          <p v-if="phaseUsage.partial" class="faint u-note" data-test="cost-partial">
-            Běh nemá rozpis po složkách – zaznamenán jen součet.
-          </p>
+          <p v-if="phaseUsage.partial" class="faint u-note" data-test="cost-partial"> {{ t('runs.beh_nema_rozpis_po_slozkach_zaznamenan_jen_soucet') }} </p>
         </DetailSection>
 
         <DetailSection
           id="outputs"
-          title="Výstupy"
+          :title="t('runs.vystupy')"
           :icon="Package"
           :count="phaseOutputs.length"
           :open="openSections.has('outputs')"
           @toggle="toggleSection('outputs')"
         >
-          <p v-if="!phaseOutputs.length" class="faint">Žádné výstupy.</p>
+          <p v-if="!phaseOutputs.length" class="faint">{{ t('runs.zadne_vystupy') }}</p>
           <div v-for="env in phaseOutputs" :key="env.envelope_id" class="output" data-test="envelope">
             <div class="output-line">
               <span class="output-type">{{ env.output_type ?? '—' }}</span>
               <span class="tag">
-                <span class="tag-k">agent</span>
+                <span class="tag-k">{{ t('runs.agent') }}</span>
                 <span class="tag-v">{{ env.agent ?? '—' }}</span>
               </span>
               <span class="tag">
-                <span class="tag-k">pokus</span>
+                <span class="tag-k">{{ t('runs.pokus') }}</span>
                 <span class="tag-v">{{ env.attempt ?? 0 }}</span>
               </span>
               <span class="output-valid" :class="env.valid ? 'pass' : 'fail'">
-                {{ env.valid ? 'platný' : 'neplatný' }}
+                {{ env.valid ? t('runs.platny') : t('runs.neplatny') }}
               </span>
             </div>
             <!-- Safe: highlightValue escapes ALL input before emitting its own spans. -->
@@ -649,9 +640,9 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
       </div>
 
       <div class="d-col" data-test="events-col">
-        <h3><Activity class="h3-icon" :size="19" :stroke-width="2" /> Události ({{ listedEvents.length }})</h3>
-        <p v-if="!listedEvents.length && eventsLoading" class="faint" data-test="phase-events-loading">Načítám události…</p>
-        <p v-else-if="!listedEvents.length" class="faint">Žádné události.</p>
+        <h3><Activity class="h3-icon" :size="19" :stroke-width="2" /> {{ t('runs.eventsCount', { count: listedEvents.length }) }}</h3>
+        <p v-if="!listedEvents.length && eventsLoading" class="faint" data-test="phase-events-loading">{{ t('runs.nacitam_udalosti') }}</p>
+        <p v-else-if="!listedEvents.length" class="faint">{{ t('runs.zadne_udalosti') }}</p>
         <div v-for="e in listedEvents" :key="e.event_id" class="event" :data-event="e.event_id" :data-type="e.type">
           <button
             type="button"
@@ -665,7 +656,7 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
             <span class="e-type" :class="EVENT_TYPE_CLASS[e.type ?? '']">{{ isRunningTool(e) ? 'tool_call' : e.type }}</span>
             <span class="e-name" :class="{ 't-red': !eventOk(e) }">{{ eventLabel(e) }}</span>
             <span class="e-extra">
-              <span v-if="isRunningTool(e)" class="dim" data-test="tool-running">běží…</span>
+              <span v-if="isRunningTool(e)" class="dim" data-test="tool-running">{{ t('runs.bezi_135') }}</span>
               <StatChip v-if="eventDuration(e) != null" kind="runtime" compact :value="eventDuration(e)" />
               <StatChip v-if="e.tokens" kind="tokens" compact :value="e.tokens" />
             </span>
@@ -675,37 +666,37 @@ const promptsLegacy = computed(() => !!prompts.value && (prompts.value.legacy ||
             <template v-if="parseToolCall(e)">
               <div class="p-meta">
                 <span class="p-tool">{{ parseToolCall(e)?.tool }}</span>
-                <span v-if="parseToolCall(e)?.ok === false" class="t-red">chyba</span>
+                <span v-if="parseToolCall(e)?.ok === false" class="t-red">{{ t('runs.chyba') }}</span>
                 <StatChip v-if="eventDuration(e) != null" kind="runtime" compact :value="eventDuration(e)" />
               </div>
-              <h4>argumenty</h4>
+              <h4>{{ t('runs.argumenty') }}</h4>
               <!-- Safe: highlightValue escapes ALL input. -->
               <pre class="p-pre" v-html="highlightValue(parseToolCall(e)?.args ?? {})" />
               <template v-if="parseToolCall(e)?.result_snippet">
-                <h4>výsledek</h4>
+                <h4>{{ t('runs.vysledek') }}</h4>
                 <pre class="p-pre">{{ parseToolCall(e)?.result_snippet }}</pre>
               </template>
             </template>
             <template v-else-if="parseQualityCall(e)">
               <div class="p-meta quality-meta" data-test="quality-meta">
-                <span><span class="dim">příkaz</span> <code>{{ parseQualityCall(e)?.command }}</code></span>
+                <span><span class="dim">{{ t('runs.prikaz') }}</span> <code>{{ parseQualityCall(e)?.command }}</code></span>
                 <span>
-                  <span class="dim">návratový kód</span>
+                  <span class="dim">{{ t('runs.navratovy_kod') }}</span>
                   <span
                     data-test="quality-returncode"
                     :class="{ 't-red': (parseQualityCall(e)?.returncode ?? 0) !== 0 }"
                   >{{ parseQualityCall(e)?.returncode ?? '—' }}</span>
                 </span>
-                <span :class="eventOk(e) ? 't-green' : 't-red'">{{ eventOk(e) ? 'prošel' : 'neprošel' }}</span>
+                <span :class="eventOk(e) ? 't-green' : 't-red'">{{ eventOk(e) ? t('runs.prosel') : t('runs.neprosel') }}</span>
               </div>
-              <h4>payload</h4>
+              <h4>{{ t('runs.payload') }}</h4>
               <pre class="p-pre" v-html="highlightValue(e.payload)" />
             </template>
             <template v-else-if="e.payload != null">
-              <h4>payload</h4>
+              <h4>{{ t('runs.payload') }}</h4>
               <pre class="p-pre" v-html="highlightValue(e.payload)" />
             </template>
-            <p v-else class="faint">Bez payloadu.</p>
+            <p v-else class="faint">{{ t('runs.bez_payloadu') }}</p>
           </div>
         </div>
       </div>

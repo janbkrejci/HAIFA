@@ -1,3 +1,4 @@
+import { t } from './i18n'
 // Auto-continue chains (GET /api/chains): runs of a chain with their results, free slots of
 // max_parallel_runs, tasks the last selection skipped and why, tasks that ran alone (wide
 // writes). POST /api/chains/<id>/dismiss erases an ended chain.
@@ -77,35 +78,35 @@ export function chainsOf(data: unknown): Chain[] {
   return Array.isArray(chains) ? (chains as Chain[]) : []
 }
 
-const SKIP_LABELS: Record<string, string> = {
-  writes_overlap: 'překryv writes',
-  exclusive: 'jen samostatně',
-  waits_on_pr: 'čeká na PR',
-  blocked: 'blokováno',
-  no_workflow: 'bez workflow',
-  human_task: 'pro člověka',
-  in_review: 'v review',
-  no_slot: 'žádný volný slot (PR v review)',
-  running: 'běží',
-  cannot_start: 'nelze spustit',
-  excluded: 'odloženo v kanbanu',
-}
+const SKIP_LABELS = (): Record<string, string> => ({
+  writes_overlap: t('runs.prekryv_writes'),
+  exclusive: t('runs.jen_samostatne'),
+  waits_on_pr: t('runs.ceka_na_pr'),
+  blocked: t('runs.blokovano'),
+  no_workflow: t('runs.noWorkflow'),
+  human_task: t('runs.pro_cloveka'),
+  in_review: t('runs.inReview'),
+  no_slot: t('runs.zadny_volny_slot_pr_v_review'),
+  running: t('runs.bezi_169'),
+  cannot_start: t('runs.cannotStart'),
+  excluded: t('runs.odlozeno_v_kanbanu'),
+})
 
 export function skipReasonLabel(reason: string): string {
-  return SKIP_LABELS[reason] ?? reason
+  return SKIP_LABELS()[reason] ?? reason
 }
 
-const STOP_LABELS: Record<string, string> = {
-  exhausted: 'není co spustit',
-  failed: 'běh selhal',
-  disabled: 'auto-continue vypnuto',
-  not_merged: 'PR nesloučen',
-}
+const STOP_LABELS = (): Record<string, string> => ({
+  exhausted: t('runs.neni_co_spustit'),
+  failed: t('runs.beh_selhal'),
+  disabled: t('runs.autoDisabled'),
+  not_merged: t('runs.pr_nesloucen'),
+})
 
 /** The chain's state in the panel's header. */
 export function chainStateLabel(chain: Chain): string {
-  if (chain.state === 'running') return 'běží'
-  if (chain.state === 'aborted') return 'přerušen'
-  const stop = chain.stop ? (STOP_LABELS[chain.stop] ?? chain.stop) : '—'
-  return `skončil: ${stop}`
+  if (chain.state === 'running') return t('runs.bezi_169')
+  if (chain.state === 'aborted') return t('runs.prerusen')
+  const stop = chain.stop ? (STOP_LABELS()[chain.stop] ?? chain.stop) : '—'
+  return t('runs.skoncil_p0', { p0: stop })
 }

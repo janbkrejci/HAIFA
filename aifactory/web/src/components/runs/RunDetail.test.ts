@@ -34,7 +34,7 @@ describe('RunDetail', () => {
       await wrapper.get('[data-test="retry-run"]').trigger('click')
       await wrapper.get('[data-test="retry-form"]').trigger('submit')
       await flushPromises()
-      expect(wrapper.get('[data-test="retry-error"]').text()).toContain(message)
+      expect(wrapper.get('[data-test="retry-error"]').text()).toContain('Task už běží.')
       expect(wrapper.emitted('retried')).toBeUndefined()
     } finally {
       vi.unstubAllGlobals()

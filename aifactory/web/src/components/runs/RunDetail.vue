@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed } from 'vue'
 import { CircleStop, Pause, Play, Upload } from 'lucide-vue-next'
 import { useNow } from '@/lib/clock'
@@ -81,10 +82,10 @@ function onClose() {
 const { dialog, ask, confirm: onDialogConfirm, cancel: onDialogCancel } = useConfirm()
 
 async function onStop() {
-  const ok = await ask({
-    title: `Zastavit běh ${run.value.run_id} tasku ${run.value.task_id}?`,
+  const ok = await ask(() => ({
+    title: t('runs.zastavit_beh_p0_tasku_p1', { p0: run.value.run_id, p1: run.value.task_id }),
     tone: 'danger',
-  })
+  }))
   if (ok) emit('stop')
 }
 </script>
@@ -108,8 +109,7 @@ async function onStop() {
           @click="emit('pause')"
         >
           <Spinner v-if="pauseBusy" />
-          <Pause v-else :size="16" /> Pauza
-        </button>
+          <Pause v-else :size="16" /> {{ t('runs.pauza') }} </button>
         <button
           v-if="canResume"
           type="button"
@@ -120,8 +120,7 @@ async function onStop() {
           @click="emit('resume')"
         >
           <Spinner v-if="pauseBusy" />
-          <Play v-else :size="16" /> Pokračovat
-        </button>
+          <Play v-else :size="16" /> {{ t('runs.pokracovat') }} </button>
         <button
           v-if="run.state === 'running' && run.owned_here !== false"
           type="button"
@@ -132,26 +131,25 @@ async function onStop() {
           @click="onStop"
         >
           <Spinner v-if="stopping" />
-          <CircleStop v-else :size="16" /> Zastavit
-        </button>
+          <CircleStop v-else :size="16" /> {{ t('runs.zastavit') }} </button>
         <RetryRunButton v-if="canRetry(run) && !card" :run-id="run.run_id" @started="emit('retried')" />
-        <span v-if="run.state === 'running' && run.owned_here === false" class="faint" data-test="remote-run">Běží na jiném stroji; zastavení je dostupné tam.</span>
+        <span v-if="run.state === 'running' && run.owned_here === false" class="faint" data-test="remote-run">{{ t('runs.bezi_na_jinem_stroji_zastaveni_je_dostupne_tam') }}</span>
       </div>
       <DemoSteps v-if="demo !== null" :run="run" :phases="phases" />
       <FailureCard v-if="card" :run="run" :phases="phases" @retried="emit('retried')" @cancelled="emit('cancelled')" @done="emit('done')" />
       <dl class="meta">
-        <div><dt>Běh</dt><dd class="mono">{{ run.run_id }}</dd></div>
-        <div><dt>Workflow</dt><dd>{{ run.workflow ?? '—' }}</dd></div>
-        <div><dt>Větev</dt><dd class="mono">{{ run.branch }}</dd></div>
-        <div><dt>Knihovna</dt><dd class="mono" data-test="run-library">{{ run.library_commit ? shortSha(run.library_commit) : 'seed' }}</dd></div>
-        <div><dt>Začátek</dt><dd>{{ fmtTime(run.started_at) }}</dd></div>
-        <div><dt>Konec</dt><dd>{{ fmtTime(run.ended_at) }}</dd></div>
+        <div><dt>{{ t('runs.beh') }}</dt><dd class="mono">{{ run.run_id }}</dd></div>
+        <div><dt>{{ t('runs.workflow') }}</dt><dd>{{ run.workflow ?? '—' }}</dd></div>
+        <div><dt>{{ t('runs.vetev') }}</dt><dd class="mono">{{ run.branch }}</dd></div>
+        <div><dt>{{ t('runs.knihovna') }}</dt><dd class="mono" data-test="run-library">{{ run.library_commit ? shortSha(run.library_commit) : 'seed' }}</dd></div>
+        <div><dt>{{ t('runs.zacatek') }}</dt><dd>{{ fmtTime(run.started_at) }}</dd></div>
+        <div><dt>{{ t('runs.konec') }}</dt><dd>{{ fmtTime(run.ended_at) }}</dd></div>
         <div v-if="run.harness_start">
-          <dt>Start</dt>
+          <dt>{{ t('runs.start') }}</dt>
           <dd data-test="harness-start">{{ switchLabel(run.harness_start) }}</dd>
         </div>
         <div v-if="run.retries?.length">
-          <dt>Pokus</dt>
+          <dt>{{ t('runs.pokus_159') }}</dt>
           <dd data-test="run-attempt">
             {{ run.attempt ?? run.retries.length + 1 }}
             <ul class="retries">
@@ -159,53 +157,52 @@ async function onStop() {
                 {{ i + 2 }}. {{ fmtTime(retry.started_at) }}: {{ retryLabel(retry) }}<span
                   v-if="retry.note"
                   class="dim"
-                  >; poznámka: {{ retry.note }}</span
+                  >{{ t('runs.poznamka') }} {{ retry.note }}</span
                 >
               </li>
             </ul>
           </dd>
         </div>
         <div>
-          <dt>Spustil</dt>
+          <dt>{{ t('runs.spustil') }}</dt>
           <dd data-test="started-by">{{ startedByTip(run.started_by) }}</dd>
         </div>
         <div>
-          <dt>PR</dt>
+          <dt>{{ t('runs.pr_162') }}</dt>
           <dd>
             <template v-if="run.pr">
               <a :href="run.pr.url" target="_blank" rel="noopener" data-test="pr-link">
                 #{{ run.pr.pr_id }} ({{ prStateLabel(run.pr.state) }})
               </a>
-              <a :href="reviewHref(run.task_id)" class="review-link" data-test="pr-review">Review</a>
+              <a :href="reviewHref(run.task_id)" class="review-link" data-test="pr-review">{{ t('runs.review') }}</a>
             </template>
             <span v-else class="faint">—</span>
             <span v-if="!run.pr && run.pr_error" class="auto-error" data-test="pr-error"
-              >PR nevznikl: {{ run.pr_error }}</span
+              >{{ t('runs.pr_nevznikl') }} {{ run.pr_error }}</span
             >
             <button
               v-if="canPublish(run)"
               type="button"
               class="publish"
               data-test="publish-run"
-              aria-label="Pushnout větev a otevřít PR (factory task publish)"
+              :aria-label="t('runs.pushnout_vetev_a_otevrit_pr_factory_task_publish')"
               :disabled="publishing"
               :aria-busy="publishing || undefined"
               @click="emit('publish')"
             >
               <Spinner v-if="publishing" />
-              <Upload v-else :size="14" /> Publikovat
-            </button>
+              <Upload v-else :size="14" /> {{ t('runs.publikovat') }} </button>
             <span
               v-if="run.pr?.merged_by === 'auto-merge'"
               class="merged-by"
               data-test="pr-merged-by"
-              >sloučil auto-merge</span
+              >{{ t('runs.sloucil_auto_merge') }}</span
             >
             <span
               v-else-if="run.pr?.state === 'open' && run.pr.auto_merge_error"
               class="auto-error"
               data-test="pr-auto-merge-error"
-              >auto-merge nesloučil: {{ run.pr.auto_merge_error }}</span
+              >{{ t('runs.auto_merge_nesloucil') }} {{ run.pr.auto_merge_error }}</span
             >
           </dd>
         </div>
@@ -220,10 +217,10 @@ async function onStop() {
       <p v-if="!card && run.error" class="error-bar" data-test="run-error">{{ run.error }}</p>
     </header>
 
-    <h3>Fáze</h3>
+    <h3>{{ t('runs.faze') }}</h3>
     <RunWaterfall :detail="detail" :events="events" :phase-id="phaseId" :now="now" />
-    <p v-if="eventsLoading" class="faint hint" data-test="events-loading">Načítám události…</p>
-    <p v-if="phases.length && !selected" class="faint hint" data-test="phase-hint">Vyber fázi pro detail.</p>
+    <p v-if="eventsLoading" class="faint hint" data-test="events-loading">{{ t('runs.nacitam_udalosti') }}</p>
+    <p v-if="phases.length && !selected" class="faint hint" data-test="phase-hint">{{ t('runs.vyber_fazi_pro_detail') }}</p>
 
     <PhaseDetail
       v-if="selected"

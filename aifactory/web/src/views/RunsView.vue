@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { errorText } from '../lib/format'
+import { runError } from '@/lib/runMessages'
+import { t } from '@/lib/i18n'
 import { computed, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import BackLink from '@/components/ui/BackLink.vue'
@@ -9,7 +10,7 @@ import RunsList from '@/components/runs/RunsList.vue'
 import ChainPanel from '@/components/runs/ChainPanel.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
-import { ApiError, isDbBusyText } from '@/lib/api'
+import { isDbBusy } from '@/lib/api'
 import { chainsOf, dismissChain, fetchChains, type Chain } from '@/lib/chains'
 import { useConfirm } from '@/lib/confirm'
 import { useLive, type LiveTraceEvent } from '@/lib/live'
@@ -45,23 +46,25 @@ const phaseId = computed(() => params.value[1] ?? null)
 const loading = ref(false)
 /** The list arrived at least once: until then it shows no empty state. */
 const listReady = ref(false)
-const error = ref<string | null>(null)
+const retryableError = ref(false)
+const errorSource = ref<(() => string) | null>(null)
+const error = computed(() => errorSource.value?.() ?? null)
 
 const runs = ref<RunSummary[]>([])
 const runTasks = ref<string[]>([])
 const stateFilter = ref('')
 const taskFilter = ref('')
-const stateOptions = [
-  { value: '', label: 'Všechny stavy' },
-  { value: 'running', label: 'Běží' },
-  { value: 'paused', label: 'Pozastavené' },
-  { value: 'succeeded', label: 'Úspěšné' },
-  { value: 'failed', label: 'Chyba' },
-  { value: 'aborted', label: 'Přerušené' },
-  { value: 'stopped', label: 'Zastavené' },
-]
+const stateOptions = computed(() => [
+  { value: '', label: t('runs.vsechny_stavy') },
+  { value: 'running', label: t('runs.bezi') },
+  { value: 'paused', label: t('runs.pozastavene') },
+  { value: 'succeeded', label: t('runs.uspesne') },
+  { value: 'failed', label: t('runs.stateFailed') },
+  { value: 'aborted', label: t('runs.prerusene') },
+  { value: 'stopped', label: t('runs.zastavene') },
+])
 const taskOptions = computed(() => [
-  { value: '', label: 'Všechny tasky' },
+  { value: '', label: t('runs.vsechny_tasky') },
   ...runTasks.value.map((task) => ({ value: task, label: task })),
 ])
 const offset = ref(0)
@@ -110,7 +113,8 @@ const dismissing = ref<string | null>(null)
 const totals = ref<RunTotals | null>(null)
 const totalsOpen = ref(false)
 const totalsLoading = ref(false)
-const totalsError = ref<string | null>(null)
+const totalsErrorSource = ref<(() => string) | null>(null)
+const totalsError = computed(() => totalsErrorSource.value?.() ?? null)
 /** The archived view: only archived runs; otherwise only the active ones. Totals keep every run. */
 const archived = ref(false)
 /** An archive or delete request is on its way. */
@@ -126,18 +130,14 @@ let cursors: RunCursors | null = null
 let tailing = false
 let tailAgain = false
 
-function message(e: unknown): string {
-  if (e instanceof ApiError) return e.message
-  return errorText(e)
-}
-
 async function loadTotals() {
   totalsLoading.value = true
-  totalsError.value = null
+  totalsErrorSource.value = null
   try {
     totals.value = await fetchRunTotals()
   } catch (e) {
-    totalsError.value = `Náklady se nepodařilo načíst: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    totalsErrorSource.value = () => t('runs.naklady_se_nepodarilo_nacist_p0', { p0: runError(e) })
   } finally {
     totalsLoading.value = false
   }
@@ -162,7 +162,8 @@ async function onDismissChain(chainId: string) {
     await dismissChain(chainId)
     chains.value = chains.value.filter((c) => c.chain_id !== chainId)
   } catch (e) {
-    error.value = `Řetěz se nepodařilo skrýt: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    errorSource.value = () => t('runs.retez_se_nepodarilo_skryt_p0', { p0: runError(e) })
   } finally {
     dismissing.value = null
   }
@@ -170,7 +171,7 @@ async function onDismissChain(chainId: string) {
 
 async function loadList() {
   loading.value = true
-  error.value = null
+  errorSource.value = null
   void loadChains()
   const seq = ++listLoadingSeq
   try {
@@ -178,7 +179,8 @@ async function loadList() {
     if (totalsOpen.value) void loadTotals()
     listReady.value = true
   } catch (e) {
-    error.value = `Běhy se nepodařilo načíst: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    errorSource.value = () => t('runs.behy_se_nepodarilo_nacist_p0', { p0: runError(e) })
   } finally {
     if (seq === listLoadingSeq) loading.value = false
   }
@@ -200,7 +202,7 @@ async function loadDetail(id: string) {
   }
   loading.value = true
   eventsLoading.value = true
-  error.value = null
+  errorSource.value = null
   const runReq = fetchRun(id)
   const eventsReq = fetchAllEvents(id)
   // Settled by the awaits below; this only keeps an early failure from being unhandled.
@@ -221,11 +223,12 @@ async function loadDetail(id: string) {
     events.value = evts
     cursors = detail.value ? cursorsOf(detail.value, evts) : null
   } catch (e) {
+    retryableError.value = isDbBusy(e)
     if (stale()) return
     detail.value = null
     events.value = []
     cursors = null
-    error.value = `Běh ${id} se nepodařilo načíst: ${message(e)}`
+    errorSource.value = () => t('runs.beh_p0_se_nepodarilo_nacist_p1', { p0: id, p1: runError(e) })
   } finally {
     if (seq === loadSeq) {
       loading.value = false
@@ -260,7 +263,8 @@ async function tail(id: string) {
       }
     } while (tailAgain)
   } catch (e) {
-    error.value = `Nové události běhu se nepodařilo načíst: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    errorSource.value = () => t('runs.nove_udalosti_behu_se_nepodarilo_nacist_p0', { p0: runError(e) })
   } finally {
     tailing = false
   }
@@ -273,7 +277,8 @@ async function refreshList() {
     if (totalsOpen.value) void loadTotals()
     listReady.value = true
   } catch (e) {
-    error.value = `Běhy se nepodařilo načíst: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    errorSource.value = () => t('runs.behy_se_nepodarilo_nacist_p0', { p0: runError(e) })
   }
 }
 
@@ -307,7 +312,8 @@ async function onStop() {
     await stopRun(id)
     await loadDetail(id)
   } catch (e) {
-    error.value = `Běh se nepodařilo zastavit: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    errorSource.value = () => t('runs.beh_se_nepodarilo_zastavit_p0', { p0: runError(e) })
   } finally {
     stopping.value = false
   }
@@ -321,9 +327,10 @@ async function onPause(resume: boolean) {
     await (resume ? resumeRun(id) : pauseRun(id))
     await loadDetail(id)
   } catch (e) {
-    error.value = resume
-      ? `Běh se nepodařilo pustit dál: ${message(e)}`
-      : `Běh se nepodařilo pozastavit: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    errorSource.value = () => resume
+      ? t('runs.beh_se_nepodarilo_pustit_dal_p0', { p0: runError(e) })
+      : t('runs.beh_se_nepodarilo_pozastavit_p0', { p0: runError(e) })
   } finally {
     pauseBusy.value = false
   }
@@ -334,13 +341,15 @@ async function onPublish() {
   const id = runId.value
   if (!id) return
   publishing.value = true
-  error.value = null
+  errorSource.value = null
   try {
     const result = await publishRun(id)
     await loadDetail(id)
-    if (result.pr_error) error.value = `PR se nepodařilo otevřít: ${result.pr_error}`
+    const prError = result.pr_error
+    if (prError) errorSource.value = () => t('runs.pr_se_nepodarilo_otevrit_p0', { p0: prError })
   } catch (e) {
-    error.value = `PR se nepodařilo otevřít: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    errorSource.value = () => t('runs.pr_se_nepodarilo_otevrit_p0', { p0: runError(e) })
   } finally {
     publishing.value = false
   }
@@ -354,13 +363,14 @@ function onArchivedView(value: boolean) {
 }
 
 /** Run an archive or delete request, then reload the list. */
-async function act(failure: string, request: () => Promise<unknown>) {
+async function act(failure: () => string, request: () => Promise<unknown>) {
   archiving.value = true
-  error.value = null
+  errorSource.value = null
   try {
     await request()
   } catch (e) {
-    error.value = `${failure}: ${message(e)}`
+    retryableError.value = isDbBusy(e)
+    errorSource.value = () => `${failure()}: ${runError(e)}`
   } finally {
     archiving.value = false
   }
@@ -368,41 +378,41 @@ async function act(failure: string, request: () => Promise<unknown>) {
 }
 
 function onArchive(id: string) {
-  void act('Běh se nepodařilo archivovat', () => archiveRun(id))
+  void act(() => t('runs.beh_se_nepodarilo_archivovat'), () => archiveRun(id))
 }
 
 function onUnarchive(id: string) {
-  void act('Běh se nepodařilo vrátit z archivu', () => unarchiveRun(id))
+  void act(() => t('runs.beh_se_nepodarilo_vratit_z_archivu'), () => unarchiveRun(id))
 }
 
 async function onDelete(id: string) {
-  const ok = await ask({
-    title: 'Smazat běh z databáze?',
-    message: `Běh ${id} a celý jeho záznam se nevratně smaže.`,
-    confirmLabel: 'Smazat',
+  const ok = await ask(() => ({
+    title: t('runs.smazat_beh_z_databaze'),
+    message: t('runs.beh_p0_a_cely_jeho_zaznam_se_nevratne_smaze', { p0: id }),
+    confirmLabel: t('runs.delete'),
     tone: 'danger',
-  })
-  if (ok) await act('Běh se nepodařilo smazat', () => deleteRun(id))
+  }))
+  if (ok) await act(() => t('runs.beh_se_nepodarilo_smazat'), () => deleteRun(id))
 }
 
 async function onArchiveFinished() {
-  const ok = await ask({
-    title: 'Archivovat dokončené běhy?',
+  const ok = await ask(() => ({
+    title: t('runs.archivovat_dokoncene_behy'),
     message:
-      'Všechny dokončené běhy (úspěšné, s chybou, přerušené i zastavené) se přesunou do archivu. Z archivu je lze kdykoli vrátit.',
-    confirmLabel: 'Archivovat',
-  })
-  if (ok) await act('Dokončené běhy se nepodařilo archivovat', archiveFinishedRuns)
+      t('runs.vsechny_dokoncene_behy_uspesne_s_chybou_prerusene_i_zastavene_se_presunou_do_archivu_'),
+    confirmLabel: t('runs.archivovat'),
+  }))
+  if (ok) await act(() => t('runs.dokoncene_behy_se_nepodarilo_archivovat'), archiveFinishedRuns)
 }
 
 async function onDeleteArchived() {
-  const ok = await ask({
-    title: 'Vymazat všechny archivované běhy?',
-    message: 'Všechny archivované běhy a jejich záznamy se nevratně smažou z databáze.',
-    confirmLabel: 'Vymazat všechny',
+  const ok = await ask(() => ({
+    title: t('runs.vymazat_vsechny_archivovane_behy'),
+    message: t('runs.vsechny_archivovane_behy_a_jejich_zaznamy_se_nevratne_smazou_z_databaze'),
+    confirmLabel: t('runs.vymazat_vsechny'),
     tone: 'danger',
-  })
-  if (ok) await act('Archivované běhy se nepodařilo vymazat', deleteArchivedRuns)
+  }))
+  if (ok) await act(() => t('runs.archivovane_behy_se_nepodarilo_vymazat'), deleteArchivedRuns)
 }
 
 watch(
@@ -417,17 +427,14 @@ watch(
 <template>
   <section class="runs-view">
     <div class="view-head">
-      <h1>Běhy</h1>
-      <BackLink v-if="runId" :href="here('runs')" label="všechny běhy" />
+      <h1>{{ t('runs.behy') }}</h1>
+      <BackLink v-if="runId" :href="here('runs')" :label="t('runs.vsechny_behy')" />
       <button type="button" class="refresh" data-test="refresh" :disabled="loading" @click="reload">
-        <RefreshCw :size="16" :class="{ spin: loading }" /> Obnovit
-      </button>
+        <RefreshCw :size="16" :class="{ spin: loading }" /> {{ t('runs.obnovit') }} </button>
     </div>
     <p v-if="error" class="error-bar" data-test="error">
       {{ error }}
-      <button v-if="isDbBusyText(error)" type="button" class="retry" data-test="retry" @click="reload">
-        Zkusit znovu
-      </button>
+      <button v-if="retryableError" type="button" class="retry" data-test="retry" @click="reload"> {{ t('runs.zkusit_znovu') }} </button>
     </p>
 
     <template v-if="runId">
@@ -448,17 +455,16 @@ watch(
         @cancelled="reload"
         @done="reload"
       />
-      <p v-else-if="loading" class="faint" data-test="detail-loading">
-        Načítám běh <span class="run-id">{{ runId }}</span>…
+      <p v-else-if="loading" class="faint" data-test="detail-loading"> {{ t('runs.nacitam_beh') }} <span class="run-id">{{ runId }}</span>…
       </p>
     </template>
     <template v-else>
       <ChainPanel v-if="!archived" :chains="chains" :dismissing="dismissing" @dismiss="onDismissChain" />
       <div class="run-filters">
-        <label>Stav <SelectMenu v-model="stateFilter" data-test="state-filter"
-          label="Stav běhu" :options="stateOptions" @update:model-value="filterList" /></label>
-        <label>Task <SelectMenu v-model="taskFilter" data-test="task-filter"
-          label="Task běhu" :options="taskOptions" @update:model-value="filterList" /></label>
+        <label>{{ t('runs.stav') }} <SelectMenu v-model="stateFilter" data-test="state-filter"
+          :label="t('runs.stav_behu')" :options="stateOptions" @update:model-value="filterList" /></label>
+        <label>{{ t('runs.task') }} <SelectMenu v-model="taskFilter" data-test="task-filter"
+          :label="t('runs.task_behu')" :options="taskOptions" @update:model-value="filterList" /></label>
       </div>
       <RunsList
         :runs="runs"
@@ -473,10 +479,10 @@ watch(
         @archive-finished="onArchiveFinished"
         @delete-archived="onDeleteArchived"
       />
-      <nav v-if="listReady" class="run-pages" aria-label="Stránky běhů">
-        <button type="button" data-test="previous-page" :disabled="loading || offset === 0" @click="changePage(-1)">Předchozí</button>
-        <span data-test="page-count">{{ totalRuns ? offset + 1 : 0 }}–{{ offset + runs.length }} z {{ totalRuns }}</span>
-        <button type="button" data-test="next-page" :disabled="loading || offset + runs.length >= totalRuns" @click="changePage(1)">Další</button>
+      <nav v-if="listReady" class="run-pages" :aria-label="t('runs.stranky_behu')">
+        <button type="button" data-test="previous-page" :disabled="loading || offset === 0" @click="changePage(-1)">{{ t('runs.predchozi') }}</button>
+        <span data-test="page-count">{{ t('runs.pageCount', { first: totalRuns ? offset + 1 : 0, last: offset + runs.length, total: totalRuns }) }}</span>
+        <button type="button" data-test="next-page" :disabled="loading || offset + runs.length >= totalRuns" @click="changePage(1)">{{ t('runs.dalsi') }}</button>
       </nav>
       <CostTotals
         v-if="listReady"

@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RunWaterfall from './RunWaterfall.vue'
@@ -164,11 +170,11 @@ describe('RunWaterfall', () => {
     const wrapper = mount(RunWaterfall, { props: { detail: d, events: [], now: start + 10_000 } })
     const block = () => wrapper.find('button.block[data-phase="p1"]')
     const width = () => Number.parseFloat((block().element as HTMLElement).style.width)
-    expect(block().find('.b-dur').text()).toBe('10.0s')
+    expect(block().find('.b-dur').text()).toBe('10,0s')
     expect(block().classes()).toContain('running')
     const before = width()
     await wrapper.setProps({ now: start + 30_000 })
-    expect(block().find('.b-dur').text()).toBe('30.0s')
+    expect(block().find('.b-dur').text()).toBe('30,0s')
     expect(width()).toBeGreaterThan(before)
   })
 

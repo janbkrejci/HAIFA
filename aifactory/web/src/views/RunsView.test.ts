@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import RunsView from './RunsView.vue'
@@ -77,7 +83,7 @@ describe('RunsView', () => {
     await wrapper.find('[data-section="costs"] [data-test="dsec-toggle"]').trigger('click')
     await flushPromises()
     expect(fetchMock).toHaveBeenCalledWith('/api/repos/haifa/runs/totals', expect.objectContaining({ signal: expect.any(AbortSignal) }))
-    expect(wrapper.find('[data-test="backlog-total"]').text()).toContain('$0.2600')
+    expect(wrapper.find('[data-test="backlog-total"]').text()).toMatch(/0,2600\sUS\$/)
     expect(wrapper.find('[data-test="state-filter"]').exists()).toBe(true)
     expect(wrapper.find('[data-test="task-filter"]').exists()).toBe(true)
     await wrapper.find('[data-test="view-archived"]').trigger('click')
@@ -102,7 +108,7 @@ describe('RunsView', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fail('invalid_config', 'bad config', 500)))
     const wrapper = mount(RunsView)
     await flushPromises()
-    expect(wrapper.find('[data-test="error"]').text()).toContain('bad config')
+    expect(wrapper.find('[data-test="error"]').text()).toContain('Požadavek selhal (invalid_config).')
     wrapper.unmount()
   })
 
@@ -228,7 +234,7 @@ describe('RunsView', () => {
     await flushPromises()
     await wrapper.find('[data-test="stop-run"]').trigger('click')
     await answerDialog(true)
-    expect(wrapper.find('[data-test="error"]').text()).toContain('run r-run is failed')
+    expect(wrapper.find('[data-test="error"]').text()).toContain('Aktuální stav běhu tuto akci neumožňuje.')
     wrapper.unmount()
   })
 
@@ -487,7 +493,7 @@ describe('RunsView', () => {
       await flushPromises()
       await wrapper.find('tr[data-run="r-ok"] [data-test="archive"]').trigger('click')
       await flushPromises()
-      expect(wrapper.find('[data-test="error"]').text()).toContain('run r-ok is still running')
+      expect(wrapper.find('[data-test="error"]').text()).toContain('Aktuální stav běhu tuto akci neumožňuje.')
       wrapper.unmount()
     })
   })

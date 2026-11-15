@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { runError } from '@/lib/runMessages'
+import { t } from '@/lib/i18n'
 // The failure card at the top of a run detail: the kind of the failure in Czech, one
 // sentence and the facts from the run's `failure_detail`, the whole error text, and the
 // actions that exist for the kind (lib/failure.ts). A writes_violation or writes_needed offers
@@ -13,7 +15,6 @@ import { Ban, CircleCheck, ShieldCheck } from 'lucide-vue-next'
 import { editTask } from '@/lib/backlog'
 import { useConfirm } from '@/lib/confirm'
 import { allowWritesReason, failureCard, type FailurePhase } from '@/lib/failure'
-import { errorText } from '@/lib/format'
 import { taskHref } from '@/lib/router'
 import {
   allowWritesAndRetry,
@@ -45,7 +46,8 @@ const wantsAllow = computed(() => !!card.value?.actions.includes('allow_writes')
 const plan = ref<AllowWritesPlan | null>(null)
 const allowing = ref(false)
 const allowed = ref(false)
-const allowError = ref<string | null>(null)
+const allowErrorSource = ref<(() => string) | null>(null)
+const allowError = computed(() => allowErrorSource.value?.() ?? null)
 const canAllow = computed(() => wantsAllow.value && !!plan.value?.allow.length)
 const refused = computed(() =>
   (plan.value?.refused ?? []).map((r) => `${r.path} — ${allowWritesReason(r.reason, r.message)}`),
@@ -75,29 +77,30 @@ const fullError = computed(() => {
 
 const cancelling = ref(false)
 const cancelled = ref(false)
-const cancelError = ref<string | null>(null)
+const cancelErrorSource = ref<(() => string) | null>(null)
+const cancelError = computed(() => cancelErrorSource.value?.() ?? null)
 const { dialog, ask, confirm: onDialogConfirm, cancel: onDialogCancel } = useConfirm()
 
 async function onAllowWrites() {
   const paths = plan.value?.allow ?? []
   if (!paths.length) return
-  const ok = await ask({
-    title: `Povolit cesty tasku ${props.run.task_id}?`,
+  const ok = await ask(() => ({
+    title: t('runs.allowTitle', { task: props.run.task_id }),
     message: isCiFix.value
-      ? `Do writes tasku přibude ${paths.join(', ')}. Změna backlogu se commitne do base a schválení PR se spustí znovu.`
-      : `Do writes tasku přibude ${paths.join(', ')}. Změna backlogu se commitne do base a běh pokračuje.`,
-    confirmLabel: isCiFix.value ? 'Povolit a schválit' : 'Povolit a pokračovat',
-    cancelLabel: 'Ponechat',
-  })
+      ? t('runs.do_writes_tasku_pribude_p0_zmena_backlogu_se_commitne_do_base_a_schvaleni_pr_se_spust', { p0: paths.join(', ') })
+      : t('runs.do_writes_tasku_pribude_p0_zmena_backlogu_se_commitne_do_base_a_beh_pokracuje', { p0: paths.join(', ') }),
+    confirmLabel: isCiFix.value ? t('runs.povolit_a_schvalit') : t('runs.povolit_a_pokracovat'),
+    cancelLabel: t('runs.keep'),
+  }))
   if (!ok) return
   allowing.value = true
-  allowError.value = null
+  allowErrorSource.value = null
   try {
     await allowWritesAndRetry(props.run.run_id)
     allowed.value = true
     emit('retried')
   } catch (e) {
-    allowError.value = `Cesty se nepodařilo povolit: ${errorText(e)}`
+    allowErrorSource.value = () => t('runs.cesty_se_nepodarilo_povolit_p0', { p0: runError(e) })
   } finally {
     allowing.value = false
   }
@@ -105,46 +108,47 @@ async function onAllowWrites() {
 
 const marking = ref(false)
 const marked = ref(false)
-const markError = ref<string | null>(null)
+const markErrorSource = ref<(() => string) | null>(null)
+const markError = computed(() => markErrorSource.value?.() ?? null)
 
 async function onMarkDone() {
-  const ok = await ask({
-    title: `Označit task ${props.run.task_id} jako hotový?`,
-    message: 'Task dostane stav hotovo v base se záznamem „bez změn“ a důvodem agenta. PR nevznikne.',
-    confirmLabel: 'Hotovo',
-    cancelLabel: 'Ponechat',
-  })
+  const ok = await ask(() => ({
+    title: t('runs.oznacit_task_p0_jako_hotovy', { p0: props.run.task_id }),
+    message: t('runs.task_dostane_stav_hotovo_v_base_se_zaznamem_bez_zmen_a_duvodem_agenta_pr_nevznikne'),
+    confirmLabel: t('runs.hotovo'),
+    cancelLabel: t('runs.keep'),
+  }))
   if (!ok) return
   marking.value = true
-  markError.value = null
+  markErrorSource.value = null
   try {
     await markRunDone(props.run.run_id)
     marked.value = true
     emit('done')
   } catch (e) {
-    markError.value = `Task se nepodařilo označit jako hotový: ${errorText(e)}`
+    markErrorSource.value = () => t('runs.task_se_nepodarilo_oznacit_jako_hotovy_p0', { p0: runError(e) })
   } finally {
     marking.value = false
   }
 }
 
 async function onCancelTask() {
-  const ok = await ask({
-    title: `Zrušit task ${props.run.task_id}?`,
-    message: 'Zrušený task se už nespouští. Běh i jeho větev zůstanou.',
-    confirmLabel: 'Zrušit task',
-    cancelLabel: 'Ponechat',
+  const ok = await ask(() => ({
+    title: t('runs.zrusit_task_p0', { p0: props.run.task_id }),
+    message: t('runs.zruseny_task_se_uz_nespousti_beh_i_jeho_vetev_zustanou'),
+    confirmLabel: t('runs.zrusit_task'),
+    cancelLabel: t('runs.keep'),
     tone: 'danger',
-  })
+  }))
   if (!ok) return
   cancelling.value = true
-  cancelError.value = null
+  cancelErrorSource.value = null
   try {
     await editTask(props.run.task_id, { status: 'cancelled' })
     cancelled.value = true
     emit('cancelled')
   } catch (e) {
-    cancelError.value = `Task se nepodařilo zrušit: ${errorText(e)}`
+    cancelErrorSource.value = () => t('runs.task_se_nepodarilo_zrusit_p0', { p0: runError(e) })
   } finally {
     cancelling.value = false
   }
@@ -166,7 +170,7 @@ async function onCancelTask() {
           @click="onAllowWrites"
         >
           <Spinner v-if="allowing" />
-          <ShieldCheck v-else :size="14" /> {{ isCiFix ? 'Povolit tyto cesty a schválit znovu' : 'Povolit tyto cesty a pokračovat' }}
+          <ShieldCheck v-else :size="14" /> {{ isCiFix ? t('runs.povolit_tyto_cesty_a_schvalit_znovu') : t('runs.povolit_tyto_cesty_a_pokracovat') }}
         </button>
         <button
           v-if="canMarkDone"
@@ -178,10 +182,9 @@ async function onCancelTask() {
           @click="onMarkDone"
         >
           <Spinner v-if="marking" />
-          <CircleCheck v-else :size="14" /> Hotovo
-        </button>
+          <CircleCheck v-else :size="14" /> {{ t('runs.hotovo') }} </button>
         <SwitchHarnessButton v-if="canSwitch" :run-id="run.run_id" @started="emit('retried')" />
-        <RetryRunButton v-if="canContinue" :run-id="run.run_id" :label="card.kind === 'needs_environment' ? 'Spustit znovu' : 'Pokračovat'" @started="emit('retried')" />
+        <RetryRunButton v-if="canContinue" :run-id="run.run_id" :label="card.kind === 'needs_environment' ? t('runs.startAgain') : t('runs.pokracovat')" @started="emit('retried')" />
         <button
           v-if="canCancel"
           type="button"
@@ -192,12 +195,11 @@ async function onCancelTask() {
           @click="onCancelTask"
         >
           <Spinner v-if="cancelling" />
-          <Ban v-else :size="14" /> Zrušit task
-        </button>
+          <Ban v-else :size="14" /> {{ t('runs.zrusit_task') }} </button>
       </div>
     </header>
     <p class="sentence" data-test="failure-sentence">{{ card.sentence }}</p>
-    <p v-if="card.kind === 'needs_environment'">Až bude prostředí k dispozici, spusťte běh znovu.</p>
+    <p v-if="card.kind === 'needs_environment'">{{ t('runs.az_bude_prostredi_k_dispozici_spustte_beh_znovu') }}</p>
     <div v-for="fact in card.facts" :key="fact.id" class="fact" :data-fact="fact.id">
       <h4>{{ fact.label }}</h4>
       <ul :class="{ mono: fact.mono }">
@@ -208,28 +210,27 @@ async function onCancelTask() {
       </ul>
     </div>
     <div v-if="canAllow" class="fact" data-fact="allow">
-      <h4>Akce přidá do writes</h4>
+      <h4>{{ t('runs.akce_prida_do_writes') }}</h4>
       <ul class="mono">
         <li v-for="path in plan?.allow ?? []" :key="path" data-test="failure-item">{{ path }}</li>
       </ul>
     </div>
     <div v-if="wantsAllow && refused.length" class="fact" data-fact="refused">
-      <h4>Tyto cesty akce nepovolí</h4>
+      <h4>{{ t('runs.tyto_cesty_akce_nepovoli') }}</h4>
       <ul>
         <li v-for="(item, i) in refused" :key="i" data-test="failure-item">{{ item }}</li>
       </ul>
     </div>
     <details v-if="fullError" class="full-error">
-      <summary>Celá chybová zpráva</summary>
+      <summary>{{ t('runs.cela_chybova_zprava') }}</summary>
       <pre data-test="run-error">{{ fullError }}</pre>
     </details>
-    <p v-if="allowed" class="done" data-test="allow-done">
-      Writes tasku {{ run.task_id }} rozšířené, {{ isCiFix ? 'schválení PR běží znovu' : 'běh pokračuje' }}.
+    <p v-if="allowed" class="done" data-test="allow-done"> {{ t('runs.taskWritesExtended', { task: run.task_id, result: isCiFix ? t('runs.schvaleni_pr_bezi_znovu') : t('runs.beh_pokracuje') }) }}
     </p>
     <p v-if="allowError" class="error" data-test="allow-error">{{ allowError }}</p>
-    <p v-if="marked" class="done" data-test="mark-done-done">Task {{ run.task_id }} je hotový bez změn.</p>
+    <p v-if="marked" class="done" data-test="mark-done-done">{{ t('runs.taskDone', { task: run.task_id }) }}</p>
     <p v-if="markError" class="error" data-test="mark-done-error">{{ markError }}</p>
-    <p v-if="cancelled" class="done" data-test="cancel-done">Task {{ run.task_id }} je zrušený.</p>
+    <p v-if="cancelled" class="done" data-test="cancel-done">{{ t('runs.taskCancelled', { task: run.task_id }) }}</p>
     <p v-if="cancelError" class="error" data-test="cancel-error">{{ cancelError }}</p>
     <ConfirmDialog v-bind="dialog" @confirm="onDialogConfirm" @cancel="onDialogCancel" />
   </section>

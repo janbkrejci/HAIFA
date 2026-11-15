@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import FailureCard from './FailureCard.vue'
@@ -80,7 +86,7 @@ describe('FailureCard', () => {
       await wrapper.get(`[data-test="${action === 'switch' ? 'switch-form' : 'retry-form'}"]`).trigger('submit')
     }
     await flushPromises()
-    expect(wrapper.get(`[data-test="${action === 'allow' ? 'allow-error' : action === 'switch' ? 'switch-error' : 'retry-error'}"]`).text()).toContain(message)
+    expect(wrapper.get(`[data-test="${action === 'allow' ? 'allow-error' : action === 'switch' ? 'switch-error' : 'retry-error'}"]`).text()).toContain('Task už běží.')
     expect(wrapper.emitted('retried')).toBeUndefined()
   })
 

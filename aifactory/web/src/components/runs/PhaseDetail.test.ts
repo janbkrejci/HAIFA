@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import PhaseDetail from './PhaseDetail.vue'
@@ -262,10 +268,10 @@ describe('PhaseDetail', () => {
     ])
     const cells = (key: string) =>
       section.findAll(`[data-row="${key}"] td`).map((td) => td.text().replace(/\s/g, ' '))
-    expect(cells('vstup')).toEqual(['vstup', '100', '$0.1000'])
-    expect(cells('thinking')).toEqual(['thinking', '10', '$0.0333'])
-    expect(cells('cache-cteni')).toEqual(['cache čtení', '1,000', '$0.0300'])
-    expect(cells('celkem')).toEqual(['celkem', '1,180', '$0.2500'])
+    expect(cells('vstup')).toEqual(['vstup', '100', '0,1000 US$'])
+    expect(cells('thinking')).toEqual(['thinking', '10', '0,0333 US$'])
+    expect(cells('cache-cteni')).toEqual(['cache čtení', '1 000', '0,0300 US$'])
+    expect(cells('celkem')).toEqual(['celkem', '1 180', '0,2500 US$'])
     expect(section.find('[data-row="thinking"]').classes()).toContain('u-nested')
     expect(section.find('[data-row="celkem"]').classes()).toContain('u-total')
     expect(section.find('[data-test="cost-partial"]').exists()).toBe(false)
@@ -277,7 +283,7 @@ describe('PhaseDetail', () => {
     })
     const section = await open(wrapper, 'cost')
     expect(section.findAll('tbody tr').map((r) => r.attributes('data-row'))).toEqual(['celkem'])
-    expect(section.find('[data-row="celkem"]').text()).toContain('$0.2500')
+    expect(section.find('[data-row="celkem"]').text()).toMatch(/0,2500\sUS\$/)
     expect(section.find('[data-test="cost-partial"]').text()).toContain('jen součet')
   })
 
@@ -313,8 +319,8 @@ describe('PhaseDetail', () => {
     expect(body.text()).toContain('výsledek')
     expect(body.text()).toContain("print('x')")
     const end = wrapper.find('[data-event="e4"]')
-    expect(end.find('[data-stat="runtime"]').text()).toContain('3.0s')
-    expect(end.find('[data-stat="tokens"]').text()).toContain('1.2k')
+    expect(end.find('[data-stat="runtime"]').text()).toContain('3,0s')
+    expect(end.find('[data-stat="tokens"]').text()).toContain('1,2k')
   })
 
   it('labels logs by their message and hides the phase header log', () => {

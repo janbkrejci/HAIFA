@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Cost totals over every run (GET /api/runs/totals): folded by default, RunsView loads them when
 // the section opens.
 import { Coins } from 'lucide-vue-next'
@@ -12,24 +13,21 @@ defineEmits<{ toggle: [] }>()
 
 <template>
   <div class="totals" data-test="cost-totals">
-    <DetailSection id="costs" title="Náklady" :icon="Coins" :open="open" @toggle="$emit('toggle')">
+    <DetailSection id="costs" :title="t('runs.naklady')" :icon="Coins" :open="open" @toggle="$emit('toggle')">
       <p v-if="error" class="error" data-test="totals-error">{{ error }}</p>
-      <p v-else-if="!totals" class="faint" data-test="totals-loading">Načítám…</p>
+      <p v-else-if="!totals" class="faint" data-test="totals-loading">{{ t('runs.nacitam') }}</p>
       <template v-else>
-        <p class="backlog" data-test="backlog-total">
-          Celý backlog:
-          <strong data-col="cost">{{ fmtCost(totals.backlog.cost) }}</strong>
-          · <span data-col="tokens">{{ fmtTokens(totals.backlog.tokens) }}</span> tokenů
-          · <span data-col="runs">{{ totals.backlog.runs }}</span> běhů
-          <span v-if="loading" class="faint" data-test="totals-refreshing"> · obnovuji…</span>
+        <p class="backlog" data-test="backlog-total"> {{ t('runs.cely_backlog') }} <strong data-col="cost">{{ fmtCost(totals.backlog.cost) }}</strong>
+          · <span data-col="tokens">{{ fmtTokens(totals.backlog.tokens) }}</span> {{ t('runs.tokenCount', {}, totals.backlog.tokens) }} · <span data-col="runs">{{ totals.backlog.runs }}</span> {{ t('runs.runCount', {}, totals.backlog.runs) }}
+          <span v-if="loading" class="faint" data-test="totals-refreshing"> {{ t('runs.obnovuji') }}</span>
         </p>
         <table v-if="totals.tasks.length" class="table">
           <thead>
             <tr>
-              <th>Task</th>
-              <th class="num">Běhy</th>
-              <th class="num">Tokeny</th>
-              <th class="num">Náklady</th>
+              <th>{{ t('runs.task') }}</th>
+              <th class="num">{{ t('runs.behy') }}</th>
+              <th class="num">{{ t('runs.tokeny') }}</th>
+              <th class="num">{{ t('runs.naklady') }}</th>
             </tr>
           </thead>
           <tbody>

@@ -1,28 +1,29 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Port of the sssf visualizer's StatusChip: run states and phase statuses, in Czech.
 import { computed, type Component } from 'vue'
 import { Ban, Check, Circle, CircleSlash, Hourglass, LoaderCircle, Lock, Pause, X } from 'lucide-vue-next'
 
 const props = defineProps<{ status: string | null }>()
 
-const KINDS: Record<string, { cls: string; label: string; icon: Component }> = {
-  running: { cls: 'running', label: 'běží', icon: LoaderCircle },
-  succeeded: { cls: 'success', label: 'úspěch', icon: Check },
-  success: { cls: 'success', label: 'úspěch', icon: Check },
-  failed: { cls: 'fail', label: 'chyba', icon: X },
-  fail: { cls: 'fail', label: 'chyba', icon: X },
+const KINDS = computed<Record<string, { cls: string; label: string; icon: Component }>>(() => ({
+  running: { cls: 'running', label: t('runs.bezi_169'), icon: LoaderCircle },
+  succeeded: { cls: 'success', label: t('runs.uspech'), icon: Check },
+  success: { cls: 'success', label: t('runs.uspech'), icon: Check },
+  failed: { cls: 'fail', label: t('runs.chyba'), icon: X },
+  fail: { cls: 'fail', label: t('runs.chyba'), icon: X },
   // a failed run that waits for its blocking tasks (failure kind blocked): not a failure
-  blocked: { cls: 'blocked', label: 'blokovaný', icon: Lock },
-  aborted: { cls: 'aborted', label: 'přerušeno', icon: CircleSlash },
-  stopped: { cls: 'stopped', label: 'zastaveno', icon: Ban },
+  blocked: { cls: 'blocked', label: t('runs.blokovany'), icon: Lock },
+  aborted: { cls: 'aborted', label: t('runs.preruseno'), icon: CircleSlash },
+  stopped: { cls: 'stopped', label: t('runs.zastaveno'), icon: Ban },
   // a running run that waits before its next phase (factory task pause), or will
-  paused: { cls: 'paused', label: 'pozastaveno', icon: Pause },
-  pausing: { cls: 'pausing', label: 'pozastavuje se', icon: Hourglass },
-  queued: { cls: 'queued', label: 'čeká', icon: Circle },
-}
+  paused: { cls: 'paused', label: t('runs.pozastaveno'), icon: Pause },
+  pausing: { cls: 'pausing', label: t('runs.pozastavuje_se'), icon: Hourglass },
+  queued: { cls: 'queued', label: t('runs.ceka'), icon: Circle },
+}))
 
 const kind = computed(
-  () => KINDS[props.status ?? ''] ?? { cls: 'queued', label: props.status ?? '—', icon: Circle },
+  () => KINDS.value[props.status ?? ''] ?? { cls: 'queued', label: props.status ?? '—', icon: Circle },
 )
 </script>
 

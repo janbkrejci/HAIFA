@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { Archive, ArchiveRestore, Trash2 } from 'lucide-vue-next'
 import { fmtCost, fmtDuration, fmtTime, fmtTokens } from '@/lib/format'
 import { runHref, taskHref } from '@/lib/router'
@@ -42,25 +43,21 @@ function openRun(event: MouseEvent, run: RunSummary) {
 <template>
   <div class="runs-list">
     <div class="filters">
-      <div class="view-switch" role="group" aria-label="Zobrazení">
+      <div class="view-switch" role="group" :aria-label="t('runs.zobrazeni')">
         <button
           type="button"
           data-test="view-active"
           :class="{ on: !archived }"
           :aria-pressed="!archived"
           @click="emit('update:archived', false)"
-        >
-          Aktivní
-        </button>
+        > {{ t('runs.aktivni') }} </button>
         <button
           type="button"
           data-test="view-archived"
           :class="{ on: archived }"
           :aria-pressed="archived"
           @click="emit('update:archived', true)"
-        >
-          Archivované
-        </button>
+        > {{ t('runs.archivovane') }} </button>
       </div>
       <button
         v-if="!archived"
@@ -70,8 +67,7 @@ function openRun(event: MouseEvent, run: RunSummary) {
         :disabled="busy"
         @click="emit('archive-finished')"
       >
-        <Archive :size="15" /> Archivovat dokončené
-      </button>
+        <Archive :size="15" /> {{ t('runs.archivovat_dokoncene') }} </button>
       <button
         v-else
         type="button"
@@ -80,30 +76,29 @@ function openRun(event: MouseEvent, run: RunSummary) {
         :disabled="busy || !runs.length"
         @click="emit('delete-archived')"
       >
-        <Trash2 :size="15" /> Vymazat všechny
-      </button>
+        <Trash2 :size="15" /> {{ t('runs.vymazat_vsechny') }} </button>
     </div>
 
     <template v-if="!ready">
-      <p v-if="loading" class="faint" data-test="list-loading">Načítám…</p>
+      <p v-if="loading" class="faint" data-test="list-loading">{{ t('runs.nacitam') }}</p>
     </template>
     <p v-else-if="!runs.length" class="empty-state" data-test="no-runs">
-      {{ archived ? 'Žádné archivované běhy' : 'Žádné běhy' }}
+      {{ archived ? t('runs.zadne_archivovane_behy') : t('runs.zadne_behy') }}
     </p>
-    <div v-else class="table-scroll" role="region" aria-label="Seznam běhů" tabindex="0">
+    <div v-else class="table-scroll" role="region" :aria-label="t('runs.seznam_behu')" tabindex="0">
       <table class="table">
         <thead>
           <tr>
-            <th>Task</th>
-            <th>Workflow</th>
-            <th>Stav</th>
-            <th>Začátek</th>
-            <th>Spustil</th>
-            <th class="num">Doba</th>
-            <th class="num">Tokeny</th>
-            <th class="num">Náklady</th>
-            <th>PR</th>
-            <th class="phases">Fáze</th>
+            <th>{{ t('runs.task') }}</th>
+            <th>{{ t('runs.workflow') }}</th>
+            <th>{{ t('runs.stav') }}</th>
+            <th>{{ t('runs.zacatek') }}</th>
+            <th>{{ t('runs.spustil') }}</th>
+            <th class="num">{{ t('runs.doba') }}</th>
+            <th class="num">{{ t('runs.tokeny') }}</th>
+            <th class="num">{{ t('runs.naklady') }}</th>
+            <th>{{ t('runs.pr_162') }}</th>
+            <th class="phases">{{ t('runs.faze') }}</th>
             <th class="actions"></th>
           </tr>
         </thead>
@@ -124,9 +119,7 @@ function openRun(event: MouseEvent, run: RunSummary) {
             <td>{{ run.workflow ?? '—' }}</td>
             <td>
               <StatusChip :status="shownState(run)" />
-              <span v-if="shownState(run) === 'blocked'" class="blockers" data-col="blockers">
-                čeká na
-                <template v-for="(id, i) in runBlockers(run)" :key="id"
+              <span v-if="shownState(run) === 'blocked'" class="blockers" data-col="blockers"> {{ t('runs.ceka_na') }} <template v-for="(id, i) in runBlockers(run)" :key="id"
                   >{{ i ? ', ' : ' ' }}<a :href="taskHref(id)" class="mono" data-test="blocker-link">{{ id }}</a></template
                 >
               </span>
@@ -154,24 +147,24 @@ function openRun(event: MouseEvent, run: RunSummary) {
             <td class="phases"><PhaseDots :phases="run.phases ?? []" /></td>
             <td class="actions">
               <template v-if="archived">
-                <Tooltip text="Vrátit z archivu">
+                <Tooltip :text="t('runs.vratit_z_archivu')">
                   <button
                     type="button"
                     class="icon"
                     data-test="unarchive"
-                    aria-label="Vrátit z archivu"
+                    :aria-label="t('runs.vratit_z_archivu')"
                     :disabled="busy"
                     @click="emit('unarchive', run.run_id)"
                   >
                     <ArchiveRestore :size="16" />
                   </button>
                 </Tooltip>
-                <Tooltip text="Smazat z databáze">
+                <Tooltip :text="t('runs.smazat_z_databaze')">
                   <button
                     type="button"
                     class="icon danger"
                     data-test="delete"
-                    aria-label="Smazat z databáze"
+                    :aria-label="t('runs.smazat_z_databaze')"
                     :disabled="busy"
                     @click="emit('delete', run.run_id)"
                   >
@@ -179,12 +172,12 @@ function openRun(event: MouseEvent, run: RunSummary) {
                   </button>
                 </Tooltip>
               </template>
-              <Tooltip v-else-if="isFinished(run)" text="Archivovat">
+              <Tooltip v-else-if="isFinished(run)" :text="t('runs.archivovat')">
                 <button
                   type="button"
                   class="icon"
                   data-test="archive"
-                  aria-label="Archivovat"
+                  :aria-label="t('runs.archivovat')"
                   :disabled="busy"
                   @click="emit('archive', run.run_id)"
                 >
