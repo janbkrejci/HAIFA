@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { Terminal } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
@@ -134,14 +135,14 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="terminal-overlay" role="dialog" aria-modal="true" aria-label="Terminál" data-test="terminal-overlay">
-    <header><span>Terminál</span><button id="terminal-close" type="button" aria-label="Zavřít terminál" @click="close">×</button></header>
-    <p v-if="loading || starting">Načítám terminál…</p>
+  <section class="terminal-overlay" role="dialog" aria-modal="true" :aria-label="t('helpers.terminal')" data-test="terminal-overlay">
+    <header><span>{{ t('helpers.terminal') }}</span><button id="terminal-close" type="button" :aria-label="t('helpers.closeTerminal')" @click="close">×</button></header>
+    <p v-if="loading || starting">{{ t('helpers.loadingTerminal') }}</p>
     <p v-if="error" role="alert">{{ error }}</p>
-    <p v-if="!loading && !enabled" data-test="terminal-disabled">Terminál je dostupný jen při dashboardu na tomto počítači (loopback).</p>
-    <p v-else-if="!loading && !pty" data-test="terminal-unsupported">Interaktivní terminál na tomto stroji není dostupný.</p>
+    <p v-if="!loading && !enabled" data-test="terminal-disabled">{{ t('helpers.terminalDisabled') }}</p>
+    <p v-else-if="!loading && !pty" data-test="terminal-unsupported">{{ t('helpers.terminalUnsupported') }}</p>
     <div v-show="enabled && pty" ref="viewport" class="terminal-viewport" />
-    <p v-if="ended" role="status">Sezení terminálu skončilo. <button type="button" class="restart" @click="start">Nové sezení (Enter)</button></p>
+    <p v-if="ended" role="status">{{ t('helpers.terminalEnded') }} <button type="button" class="restart" @click="start">{{ t('helpers.restart') }}</button></p>
   </section>
 </template>
 

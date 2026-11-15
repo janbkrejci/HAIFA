@@ -47,7 +47,7 @@ def test_terminal_commands_browser(terminal_page: Page, tmp_path: Path) -> None:
     page = terminal_page
     for key in ("Control", "Shift", "Control", "Shift"):
         page.keyboard.press(key)
-    overlay = page.get_by_role("dialog", name="Terminál", exact=True)
+    overlay = page.get_by_role("dialog", name="Terminal", exact=True)
     expect(overlay).to_be_visible()
     expect(overlay.locator(".xterm")).to_be_visible()
     terminal = overlay.locator(".xterm-helper-textarea")
@@ -124,7 +124,7 @@ def test_terminal_vim_browser(terminal_page: Page, tmp_path: Path) -> None:
     page = terminal_page
     for key in ("Control", "Shift", "Control", "Shift"):
         page.keyboard.press(key)
-    overlay = page.get_by_role("dialog", name="Terminál", exact=True)
+    overlay = page.get_by_role("dialog", name="Terminal", exact=True)
     expect(overlay.locator(".xterm-helper-textarea")).to_be_focused()
     target = tmp_path / "vim-screen.txt"
     target.write_text("haifa-vim-screen\n", encoding="utf-8")

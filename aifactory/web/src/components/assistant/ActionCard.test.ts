@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import ActionCard from './ActionCard.vue'
+import { setLocale } from '@/lib/i18n'
 import { resetAssistantForTests, type ProposedAction } from '@/lib/assistant'
 
 function envelope(data: unknown, status = 200) {
@@ -50,18 +51,20 @@ function stubApi() {
 enableAutoUnmount(afterEach)
 
 afterEach(() => {
+  setLocale('en')
   resetAssistantForTests()
   vi.unstubAllGlobals()
 })
 
 describe('ActionCard follow_up', () => {
-  it('previews the takeover of writes and workflow and writes nothing until Provést', async () => {
+  it.each(['en', 'cs'] as const)('previews the takeover in %s and writes nothing until execution', async language => {
+    setLocale(language)
     const posted = stubApi()
     const action = { ...FOLLOW_UP }
     const wrapper = mount(ActionCard, { props: { action, threadId: 'a1b2c3d4e5f6' } })
     await flushPromises()
 
-    expect(wrapper.get('[data-test="assistant-action-title"]').text()).toBe('Navázat follow-upem na P01-S01-T01')
+    expect(wrapper.get('[data-test="assistant-action-title"]').text()).toBe(language === 'cs' ? 'Navázat follow-upem na P01-S01-T01' : 'Follow up on P01-S01-T01')
     const preview = wrapper.get('[data-test="assistant-action-preview"]').text()
     expect(preview).toContain('Navazuje na P01-S01-T01: First')
     expect(preview).toContain('Writes')
@@ -69,7 +72,7 @@ describe('ActionCard follow_up', () => {
     expect(preview).not.toContain('docs/')
     expect(preview).toContain('custom')
     expect(preview).toContain('Dodělat dokumentaci.')
-    expect(preview).toContain('commitnout backlog a spustit')
+    expect(preview).toContain(language === 'cs' ? 'commitnout backlog a spustit' : 'commit backlog and run')
     expect(posted).toEqual([])
 
     await wrapper.get('[data-test="assistant-action-run"]').trigger('click')

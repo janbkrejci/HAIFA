@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // A folder path field (Add repository page, library import), with suggestions of the subfolders of the typed
 // folder (GET /api/fs/dirs, tagged git and factory). ↑↓ pick a suggestion, Enter or a click
 // takes it, Esc and blur close the list; Enter without a picked suggestion submits.
@@ -17,7 +18,7 @@ const props = withDefaults(
     autofocus?: boolean
     disabled?: boolean
   }>(),
-  { debounce: 150, label: 'Cesta ke složce repozitáře', dataTest: 'add-path', autofocus: true, disabled: false },
+  { debounce: 150, dataTest: 'add-path', autofocus: true, disabled: false },
 )
 const emit = defineEmits<{ 'update:modelValue': [value: string]; submit: [] }>()
 
@@ -127,7 +128,7 @@ onBeforeUnmount(() => {
       type="text"
       spellcheck="false"
       autocomplete="off"
-      :aria-label="label"
+      :aria-label="label ?? t('helpers.pathLabel')"
       role="combobox"
       :aria-expanded="open ? 'true' : 'false'"
       aria-autocomplete="list"

@@ -516,3 +516,70 @@ it('labels an unsupported repo: HAIFA does not take it over', async () => {
   await inspectPath(wrapper)
   expect(wrapper.get('[data-test="inspect-state"]').text()).toBe('Nepodporováno: HAIFA tuto konfiguraci nepřevezme')
 })
+
+
+it('switches EN/CS without losing a typed path, inspection options or the browsed folder', async () => {
+  setLocale('en')
+  const fetchMock = stub({ dirs: { [HOME]: [dir('code')], [`${HOME}/code`]: [] } })
+  const wrapper = await mountView()
+  expect(wrapper.get('h1').text()).toBe('Add repository')
+  await inspectPath(wrapper, '/w/repo')
+  await wrapper.get('[data-test="inspect-via-pr"] input').setValue(true)
+  await wrapper.get('[data-test="inspect-auto-merge"] input').setValue(true)
+  await wrapper.get('[data-test="add-path"]').setValue('~/rozepsaná cesta')
+  await wrapper.get('[data-test="add-browse"]').trigger('click')
+  await flushPromises()
+  document.body.querySelector<HTMLButtonElement>('[data-test="browser-entry"]')!.click()
+  await flushPromises()
+  const browser = document.body.querySelector('[data-test="folder-browser"]')!
+  const calls = fetchMock.mock.calls.length
+  for (const language of ['cs', 'en'] as const) {
+    setLocale(language)
+    await flushPromises()
+    expect(wrapper.get('h1').text()).toBe(language === 'cs' ? 'Přidat repozitář' : 'Add repository')
+    expect(wrapper.get('[data-test="add-path"]').attributes('aria-label')).toBe(language === 'cs' ? 'Cesta ke složce repozitáře' : 'Repository folder path')
+    expect((wrapper.get('[data-test="add-path"]').element as HTMLInputElement).value).toBe('~/rozepsaná cesta')
+    expect((wrapper.get('[data-test="inspect-via-pr"] input').element as HTMLInputElement).checked).toBe(true)
+    expect((wrapper.get('[data-test="inspect-auto-merge"] input').element as HTMLInputElement).checked).toBe(true)
+    expect(document.body.querySelector('[data-test="folder-browser"]')).toBe(browser)
+    expect(browser.querySelector('[data-test="browser-path"]')!.textContent).toBe(`${HOME}/code`)
+    expect(browser.querySelector('h2')!.textContent).toBe(language === 'cs' ? 'Vybrat složku' : 'Choose folder')
+  }
+  expect(fetchMock.mock.calls.length).toBe(calls)
+})
+
+it('retranslates known inspect and picker errors while preserving raw server diagnostics', async () => {
+  stub({ inspect: () => failure('usage_error', 'raw usage error'), handler: (url, init) =>
+    url === '/api/fs/pick' && init?.method === 'POST' ? failure('picker_busy', 'raw picker error') : undefined,
+    pickAvailable: true,
+  })
+  const wrapper = await mountView()
+  await inspectPath(wrapper, 'relative/path')
+  await wrapper.get('[data-test="add-pick"]').trigger('click')
+  await flushPromises()
+  expect(wrapper.get('[data-test="inspect-error"]').text()).toBe('Zadej absolutní cestu nebo cestu začínající ~.')
+  expect(wrapper.get('[data-test="pick-error"]').text()).toBe('Dialog výběru složky už je otevřený.')
+  setLocale('en')
+  await flushPromises()
+  expect(wrapper.get('[data-test="inspect-error"]').text()).toBe('Enter an absolute path or a path starting with ~.')
+  expect(wrapper.get('[data-test="pick-error"]').text()).toBe('The folder picker is already open.')
+  expect((wrapper.get('[data-test="add-path"]').element as HTMLInputElement).value).toBe('relative/path')
+})
+
+it('keeps the added repository card and install details when switching language', async () => {
+  setLocale('en')
+  stub()
+  const wrapper = await mountView()
+  await inspectPath(wrapper)
+  await wrapper.get('[data-test="inspect-add"]').trigger('click')
+  await flushPromises()
+  const card = wrapper.get('[data-test="repo-added"]').element
+  expect(wrapper.get('h1').text()).toBe('Repository repo added')
+  expect(wrapper.get('[data-test="repo-added-install"]').text()).toContain('3 files')
+  setLocale('cs')
+  await flushPromises()
+  expect(wrapper.get('[data-test="repo-added"]').element).toBe(card)
+  expect(wrapper.get('h1').text()).toBe('Repozitář repo přidán')
+  expect(wrapper.get('[data-test="repo-added-install"]').text()).toContain('3 soubory')
+  expect(wrapper.get('[data-test="repo-added-install"]').text()).toContain('abcdef1')
+})

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // An action the guide proposed: a preview of the change and the Provést button. Nothing is
 // written until the user presses it; then the dashboard's own write API runs the action and
 // the outcome is recorded in the thread (lib/assistant.ts).
@@ -43,7 +44,7 @@ const multiline = (text: string | null) => !!text && (text.includes('\n') || tex
   <div class="card" :class="action.status" data-test="assistant-action" :data-kind="action.kind">
     <div class="card-head">
       <strong data-test="assistant-action-title">{{ actionTitle(action) }}</strong>
-      <a v-if="href" :href="href" class="faint open">otevřít</a>
+      <a v-if="href" :href="href" class="faint open">{{ t('helpers.openAction') }}</a>
     </div>
     <p v-if="action.reason" class="reason faint">{{ action.reason }}</p>
     <dl class="preview" data-test="assistant-action-preview">
@@ -62,9 +63,9 @@ const multiline = (text: string | null) => !!text && (text.includes('\n') || tex
     </dl>
     <div v-if="action.status === 'proposed'" class="buttons">
       <button type="button" class="primary" :disabled="!!assistantUnavailableReason || busy" data-test="assistant-action-run" @click="executeAction(threadId, action)">
-        <Spinner v-if="busy" /> Provést
+        <Spinner v-if="busy" /> {{ t('helpers.execute') }}
       </button>
-      <button type="button" :disabled="!!assistantUnavailableReason || busy" data-test="assistant-action-dismiss" @click="dismissAction(threadId, action)">Zahodit</button>
+      <button type="button" :disabled="!!assistantUnavailableReason || busy" data-test="assistant-action-dismiss" @click="dismissAction(threadId, action)">{{ t('helpers.dismiss') }}</button>
     </div>
     <p v-else class="state" data-test="assistant-action-state">
       {{ stateLabel }}<template v-if="action.outcome?.message">: {{ action.outcome.message }}</template>

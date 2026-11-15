@@ -135,13 +135,13 @@ export function streamUrl(id: string, after: number): string {
 // ── proposed actions ─────────────────────────────────────────────────────────────────────
 
 const ACTION_TITLES: Record<ActionKind, string> = {
-  create_task: 'Založit task',
-  edit_task: 'Upravit task',
-  run_task: 'Spustit task',
-  retry_run: 'Zopakovat běh',
-  approve_pr: 'Schválit PR',
-  cancel_task: 'Zrušit task',
-  follow_up: 'Navázat follow-upem na',
+  get create_task() { return t('helpers.create_task') },
+  get edit_task() { return t('helpers.edit_task') },
+  get run_task() { return t('helpers.run_task') },
+  get retry_run() { return t('helpers.retry_run') },
+  get approve_pr() { return t('helpers.approve_pr') },
+  get cancel_task() { return t('helpers.cancel_task') },
+  get follow_up() { return t('helpers.follow_up') },
 }
 
 /** The run id of a `retry_run` (`run` of a `follow_up` is a flag). */
@@ -197,42 +197,42 @@ export function actionPreview(action: ProposedAction, now: TaskNow | null = null
   }
   switch (action.kind) {
     case 'create_task':
-      field('Krok', action.step)
-      field('Název', action.title)
+      field(t('helpers.step'), action.step)
+      field(t('helpers.title'), action.title)
       field('Writes', action.writes ? list(action.writes) : undefined)
       field('Workflow', action.workflow)
-      field('Závisí na', action.depends_on ? list(action.depends_on) : undefined)
-      field('Zadání', action.body)
+      field(t('helpers.depends'), action.depends_on ? list(action.depends_on) : undefined)
+      field(t('helpers.body'), action.body)
       break
     case 'edit_task':
       field('Task', action.task)
-      field('Název', action.title, now ? now.title : null)
+      field(t('helpers.title'), action.title, now ? now.title : null)
       field('Writes', action.writes ? list(action.writes) : undefined, now ? list(now.writes) : null)
       field('Workflow', action.workflow, now ? (now.workflow ?? '—') : null)
-      field('Zadání', action.body, now ? now.body : null)
+      field(t('helpers.body'), action.body, now ? now.body : null)
       break
     case 'run_task':
     case 'approve_pr':
       field('Task', action.task)
-      field('Poznámka', action.note)
+      field(t('helpers.note'), action.note)
       break
     case 'retry_run':
-      field('Běh', runOf(action))
-      field('Poznámka', action.note)
+      field(t('helpers.run'), runOf(action))
+      field(t('helpers.note'), action.note)
       break
     case 'cancel_task':
       field('Task', action.task)
-      field('Stav', 'cancelled', now ? now.status : null)
+      field(t('helpers.state'), 'cancelled', now ? now.status : null)
       break
     case 'follow_up': {
-      const inherited = 'zdědí z kroku'
-      field('Navazuje na', action.task)
-      if (now && now.status !== 'done') field('Stav', `${now.status || 'bez stavu'} (jen hotový task jde navázat)`)
-      field('Název', action.title ?? (now ? `Navazuje na ${action.task}: ${now.title}` : `Navazuje na ${action.task}: …`))
-      field('Writes', now ? (now.own_writes.length ? list(now.own_writes) : inherited) : `převezme z ${action.task}`)
-      field('Workflow', now ? (now.own_workflow ?? inherited) : `převezme z ${action.task}`)
-      field('Zadání', action.body)
-      field('Po založení', action.run === true ? 'commitnout backlog a spustit' : 'jen založit (backlog necommitovaný)')
+      const inherited = t('helpers.inherited')
+      field(t('helpers.follows'), action.task)
+      if (now && now.status !== 'done') field(t('helpers.state'), t('helpers.mustBeDone', { status: now.status || t('helpers.noState') }))
+      field(t('helpers.title'), action.title ?? (now ? `Navazuje na ${action.task}: ${now.title}` : `Navazuje na ${action.task}: …`))
+      field('Writes', now ? (now.own_writes.length ? list(now.own_writes) : inherited) : t('helpers.takesOver', { task: action.task ?? '' }))
+      field('Workflow', now ? (now.own_workflow ?? inherited) : t('helpers.takesOver', { task: action.task ?? '' }))
+      field(t('helpers.body'), action.body)
+      field(t('helpers.afterCreate'), action.run === true ? t('helpers.commitAndRun') : t('helpers.createOnly'))
       break
     }
   }
@@ -302,9 +302,9 @@ export function actionOutcome(action: ProposedAction, data: unknown): string {
 }
 
 export const ACTION_STATES: Record<Exclude<ActionStatus, 'proposed'>, string> = {
-  done: 'provedeno',
-  failed: 'selhalo',
-  dismissed: 'zahozeno',
+  get done() { return t('helpers.done') },
+  get failed() { return t('helpers.failed') },
+  get dismissed() { return t('helpers.dismissed') },
 }
 
 /** The line of an outcome message (`role: action`) in the thread, in the dashboard's words. */
@@ -445,7 +445,7 @@ export function contextLabel(context: ScreenContext): string {
   const parts: string[] = []
   if (context.repo) parts.push(`repo ${context.repo}`)
   if (context.task) parts.push(`task ${context.task}`)
-  if (context.run) parts.push(`běh ${context.run}`)
+  if (context.run) parts.push(t('helpers.contextRun', { run: context.run }))
   return parts.join(' · ')
 }
 
@@ -458,30 +458,30 @@ export function suggestions(kind: ScreenKind, runState: string | null = null): s
   switch (kind) {
     case 'run':
       if (runState === 'failed' || runState === 'aborted') {
-        return ['Proč tenhle běh selhal?', 'Co mám změnit, aby task prošel?', 'Ve které fázi se běh zastavil?']
+        return [t('helpers.question.1'), t('helpers.question.2'), t('helpers.question.3')]
       }
       if (runState === 'running') {
-        return ['Co tenhle běh právě dělá?', 'Jak dlouho ještě poběží?', 'Kolik zatím stál?']
+        return [t('helpers.question.4'), t('helpers.question.5'), t('helpers.question.6')]
       }
-      return ['Co tenhle běh udělal?', 'Kolik běh stál a kde?', 'Které fáze trvaly nejdéle?']
+      return [t('helpers.question.7'), t('helpers.question.8'), t('helpers.question.9')]
     case 'task':
-      return ['Co má tenhle task udělat?', 'Proč task neběží nebo na co čeká?', 'Jak dopadly běhy tohoto tasku?']
+      return [t('helpers.question.10'), t('helpers.question.11'), t('helpers.question.12')]
     case 'pr':
-      return ['Co mění tenhle PR?', 'Prošly testy v běhu tohoto PR?', 'Na co se mám při review zaměřit?']
+      return [t('helpers.question.13'), t('helpers.question.14'), t('helpers.question.15')]
     case 'backlog':
-      return ['Které tasky jsou připravené ke spuštění?', 'Co blokuje postup projektu?', 'Které tasky selhaly?']
+      return [t('helpers.question.16'), t('helpers.question.17'), t('helpers.question.18')]
     case 'runs':
-      return ['Které běhy dnes selhaly a proč?', 'Kolik stály běhy za poslední týden?', 'Co právě běží?']
+      return [t('helpers.question.19'), t('helpers.question.20'), t('helpers.question.21')]
     case 'review':
-      return ['Které PR čekají na review?', 'Který PR je nejstarší?', 'Které PR mají neúspěšné CI?']
+      return [t('helpers.question.22'), t('helpers.question.23'), t('helpers.question.24')]
     case 'factory':
-      return ['Jaká workflow tohle repo používá?', 'Je konfigurace v pořádku?', 'Které agenty a modely repo používá?']
+      return [t('helpers.question.25'), t('helpers.question.26'), t('helpers.question.27')]
     case 'overview':
-      return ['Co se teď ve factory děje?', 'Které repo potřebuje pozornost?', 'Co čeká na moje review?']
+      return [t('helpers.question.28'), t('helpers.question.29'), t('helpers.question.30')]
     case 'setup':
-      return ['Je tenhle počítač připravený?', 'Co je v knihovně agentů?', 'Které harnessy jsou zapnuté?']
+      return [t('helpers.question.31'), t('helpers.question.32'), t('helpers.question.33')]
     default:
-      return ['Jak HAIFA funguje?', 'Jak spustím první task?', 'Co se teď ve factory děje?']
+      return [t('helpers.question.34'), t('helpers.question.35'), t('helpers.question.36')]
   }
 }
 

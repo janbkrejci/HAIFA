@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { errorText } from '../../lib/format'
 // The card of an inspected folder on the Add repository page (POST /api/repos/inspect):
 // its repo root, branch, remote, factory state and trace DB, then one action. Adding
@@ -15,7 +16,15 @@ const props = defineProps<{ inspect: InspectResult }>()
 const emit = defineEmits<{ added: [result: AddRepoResult]; reinspect: [path: string] }>()
 
 const adding = ref(false)
-const addError = ref<string | null>(null)
+const addFailure = ref<unknown>(null)
+const addError = computed(() => {
+  const err = addFailure.value
+  if (!err) return null
+  if (!(err instanceof ApiError)) return errorText(err)
+  const data = (err.data && typeof err.data === 'object' ? err.data : {}) as Partial<RepoProblem>
+  return problemText({ ...data, code: err.code, message: err.message }, props.inspect)
+    + (err.code === 'push_failed' && !viaPr.value ? t('helpers.pushHint', { base: base.value }) : '')
+})
 /** `base_changes: pr`: a base that takes changes only through pull requests (the install too). */
 const viaPr = ref(false)
 /** `base_pr_merge: auto`: factory approves where allowed and merges its own PRs at once. */
@@ -36,17 +45,11 @@ const openHref = computed(() => props.inspect.registered
 
 async function add() {
   adding.value = true
-  addError.value = null
+  addFailure.value = null
   try {
     emit('added', await addRepo(root.value, viaPr.value && !installed.value ? { base_changes: 'pr', base_pr_merge: autoMerge.value ? 'auto' : 'manual' } : {}))
   } catch (err) {
-    if (err instanceof ApiError) {
-      const data = (err.data && typeof err.data === 'object' ? err.data : {}) as Partial<RepoProblem>
-      addError.value = problemText({ ...data, code: err.code, message: err.message }, props.inspect)
-      if (err.code === 'push_failed' && !viaPr.value) addError.value += ` Pokud ${base.value} přijímá změny jen přes pull request, zaškrtni „Změny base přes pull request“.`
-    } else {
-      addError.value = errorText(err)
-    }
+    addFailure.value = err
   } finally {
     adding.value = false
   }
@@ -57,20 +60,20 @@ async function add() {
   <article class="inspect-card" data-test="inspect-card" :data-state="inspect.problem ? 'problem' : (state ?? 'unknown')">
     <dl class="rows">
       <template v-if="inspect.root">
-        <dt>Kořen repozitáře</dt>
+        <dt>{{ t('helpers.root') }}</dt>
         <dd class="mono" data-test="inspect-root">{{ inspect.root }}</dd>
       </template>
       <template v-else>
-        <dt>Složka</dt>
+        <dt>{{ t('helpers.folder') }}</dt>
         <dd class="mono" data-test="inspect-path">{{ inspect.path }}</dd>
       </template>
       <template v-if="inspect.branch">
-        <dt>Větev</dt>
+        <dt>{{ t('helpers.branch') }}</dt>
         <dd class="mono" data-test="inspect-branch">{{ inspect.branch }}</dd>
       </template>
       <template v-if="inspect.root && !inspect.problem">
         <dt>Remote</dt>
-        <dd class="mono" data-test="inspect-remote">{{ inspect.remote?.url ?? 'bez remote' }}</dd>
+        <dd class="mono" data-test="inspect-remote">{{ inspect.remote?.url ?? t('helpers.noRemote') }}</dd>
       </template>
       <template v-if="inspect.factory">
         <dt>Factory</dt>
@@ -83,7 +86,7 @@ async function add() {
     </dl>
 
     <p v-if="inspect.subdir && inspect.root" class="note" data-test="inspect-subdir">
-      Použije se kořen repozitáře {{ inspect.root }}.
+      {{ t('helpers.subdir', { root: inspect.root }) }}
     </p>
 
     <template v-if="kind === 'problem' && inspect.problem">
@@ -95,40 +98,40 @@ async function add() {
         data-test="use-main-checkout"
         @click="emit('reinspect', inspect.problem.main_checkout)"
       >
-        Použít hlavní checkout
+        {{ t('helpers.mainCheckout') }}
       </button>
     </template>
 
     <template v-else>
-      <p v-if="kind === 'registered'" class="note" data-test="inspect-registered">Repo už je v dashboardu.</p>
+      <p v-if="kind === 'registered'" class="note" data-test="inspect-registered">{{ t('helpers.registered') }}</p>
       <p v-if="installed" class="note" data-test="inspect-install-note">
-        Factory už je v {{ base }}. {{ kind === 'registered' ? 'Repo je připojené' : 'Přidání repo jen připojí k dashboardu' }}, nic necommitne ani nepushne.
+        {{ t('helpers.installedNote', { base, connection: t(kind === 'registered' ? 'helpers.connected' : 'helpers.connectOnly') }) }}
       </p>
       <p v-else class="note" data-test="inspect-install-note">
-        {{ kind === 'registered' ? 'Synchronizace' : 'Přidání' }} zapíše do repa .factory/config.yaml (existující ponechá), doplní .gitignore a
-        <template v-if="viaPr && autoMerge">otevře s tím pull request do {{ base }} a hned ho mergne.</template>
-        <template v-else-if="viaPr">otevře s tím pull request do {{ base }}. Factory začne fungovat po jeho mergi a akci Stáhnout konfiguraci z base v záložce Factory.</template>
-        <template v-else>commitne to do {{ base }}.</template>
+        {{ t('helpers.installIntro', { action: t(kind === 'registered' ? 'helpers.syncing' : 'helpers.adding') }) }}
+        <template v-if="viaPr && autoMerge">{{ t('helpers.installAuto', { base }) }}</template>
+        <template v-else-if="viaPr">{{ t('helpers.installPr', { base }) }}</template>
+        <template v-else>{{ t('helpers.installCommit', { base }) }}</template>
       </p>
       <label v-if="!installed" class="via-pr" data-test="inspect-via-pr">
         <input v-model="viaPr" type="checkbox" :disabled="adding" />
-        Změny base přes pull request ({{ base }} nepřijímá přímý push): instalace, konfigurace, knihovna, backlog i odebrání
+        {{ t('helpers.viaPr', { base }) }}
       </label>
       <label v-if="viaPr && !installed" class="via-pr" data-test="inspect-auto-merge">
         <input v-model="autoMerge" type="checkbox" :disabled="adding" />
-        Pull requesty factory hned schválit a mergnout (GitHub s --admin, Azure DevOps vlastním schválením)
+        {{ t('helpers.autoMerge') }}
       </label>
-      <p v-if="adding" class="note" data-test="inspect-adding">{{ installed ? 'Připojuji repo…' : viaPr ? (autoMerge ? 'Zapisuji factory a merguji pull request…' : 'Zapisuji factory a otevírám pull request…') : `Zapisuji factory a commituji do ${base}…` }}</p>
+      <p v-if="adding" class="note" data-test="inspect-adding">{{ installed ? t('helpers.connecting') : viaPr ? (autoMerge ? t('helpers.writingAuto') : t('helpers.writingPr')) : t('helpers.writingCommit', { base }) }}</p>
       <p v-if="addError" class="problem" data-test="inspect-add-error">{{ addError }}</p>
       <div class="actions">
         <template v-if="kind === 'registered'">
-          <a :href="openHref" class="btn" data-test="inspect-open">Otevřít</a>
+          <a :href="openHref" class="btn" data-test="inspect-open">{{ t('helpers.open') }}</a>
           <button v-if="!installed" type="button" class="btn ok" :disabled="adding" data-test="inspect-sync" @click="add">
-            <Spinner v-if="adding" /> Synchronizovat s knihovnou
+            <Spinner v-if="adding" /> {{ t('helpers.sync') }}
           </button>
         </template>
         <button v-else type="button" class="btn ok" :disabled="adding" data-test="inspect-add" @click="add">
-          <Spinner v-if="adding" /> Přidat
+          <Spinner v-if="adding" /> {{ t('helpers.add') }}
         </button>
       </div>
     </template>
