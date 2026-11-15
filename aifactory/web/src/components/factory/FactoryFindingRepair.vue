@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { findingText } from '@/lib/factoryMessages'
 import { onMounted, ref } from 'vue'
 import type { CheckFinding } from '@/lib/api'
 import {
@@ -24,7 +26,7 @@ const action = ref<RunAction | null>(null)
 const waiting = ref(false)
 let checkingPending = false
 
-// A snapshot: subsequent checks must not change an already reviewed repair request.
+// A snapshot: neither subsequent checks nor locale switches change generated task content.
 const body = [
   'Vyřeš následující vybrané nálezy kontroly Factory. Po opravě spusť factory check a popiš výsledek každého vybraného nálezu.',
   'Respektuj povolené cesty a chráněné soubory. Nálezy tohoto počítače a knihovny řeš jen v rámci oprávnění běhu; pokud opravu nelze provést, uveď konkrétní překážku a postup pro operátora.',
@@ -105,34 +107,35 @@ onMounted(() => { void load() })
 
 <template>
   <section class="repair" data-test="factory-repair">
-    <h2>Vyřešit vybrané nálezy ({{ findings.length }})</h2>
+    <h2>{{ t('factoryUi.repairCountFragment') }}{{ findings.length }})</h2>
     <ul class="targets" data-test="repair-findings">
-      <li v-for="(f, i) in findings" :key="`${f.code}-${i}`"><code>{{ f.code }}</code> {{ f.message }}</li>
+      <li v-for="(f, i) in findings" :key="`${f.code}-${i}`"><code>{{ f.code }}</code> {{ findingText(f.code) }}<details><summary>{{ t('factoryUi.technical') }}</summary>{{ f.message }}</details></li>
     </ul>
-    <p>Vytvoř opravný úkol, zvol workflow a povolené cesty, commitni backlog a spusť běh.</p>
+    <p>{{ t('factoryUi.repairIntro') }}</p>
     <template v-if="!task">
-      <p v-if="loading">Načítám backlog…</p>
+      <p v-if="loading">{{ t('factoryUi.loadingBacklog') }}</p>
       <template v-else-if="data?.steps.length">
         <TaskForm mode="add" :steps="data.steps" :task-ids="data.tasks.map((t) => t.id)" :workflows="data.workflows"
           initial-title="Opravit vybrané nálezy Factory" :initial-body="body"
           :busy="busy" :pending="busy" :error="error" @submit="create" @cancel="emit('close')" />
       </template>
-      <p v-else-if="data">Nejprve vytvoř krok v <a :href="here('backlog')">backlogu</a>.</p>
+      <p v-else-if="data">{{ t('factoryUi.createStepFragment') }} <a :href="here('backlog')">{{ t('factoryUi.backlog') }}</a>.</p>
       <template v-if="!data">
-        <p v-if="error" role="alert">{{ error.message }}</p>
-        <button v-if="error" type="button" @click="load">Zkusit znovu</button>
+        <p v-if="error" role="alert">{{ error.code ? t('factoryUi.errorUnknown', { code: error.code }) : error.message }}</p>
+        <details v-if="error"><summary>{{ t('factoryUi.technical') }}</summary>{{ error.message }}</details>
+        <button v-if="error" type="button" @click="load">{{ t('factoryUi.retry') }}</button>
       </template>
-      <button v-if="!data?.steps.length" type="button" @click="emit('close')">Zavřít</button>
+      <button v-if="!data?.steps.length" type="button" @click="emit('close')">{{ t('factoryUi.close') }}</button>
     </template>
     <template v-else>
-      <p>Opravný úkol: <a :href="taskHref(task.id)">{{ task.id }}</a></p>
-      <p v-if="!task.workflow || !task.writes.length">Před spuštěním nastav v úkolu workflow a povolené cesty.</p>
-      <p>Commit backlogu zahrne všechny jeho necommitnuté změny.</p>
-      <p v-if="check?.config && !check.config.clean">Nové nebo upravené workflow nejprve commitni čipem „Necommitnutá konfigurace“ v horní liště.</p>
+      <p>{{ t('factoryUi.repairTask') }} <a :href="taskHref(task.id)">{{ task.id }}</a></p>
+      <p v-if="!task.workflow || !task.writes.length">{{ t('factoryUi.repairPrerequisites') }}</p>
+      <p>{{ t('factoryUi.backlogCommitHint') }}</p>
+      <p v-if="check?.config && !check.config.clean">{{ t('factoryUi.workflowCommitHint') }}</p>
       <RunDialog :check="check" :start-disabled="!check?.in_base || !task.workflow || !task.writes.length"
         :loading="loading" :busy="busy" :error="error" :result="result" :action="action" :waiting="waiting"
         @start="start" @commit="commit" @cancel="emit('close')" />
-      <button v-if="error || waiting" type="button" :disabled="busy || loading" @click="waiting ? claimPending() : load()">Obnovit stav běhu</button>
+      <button v-if="error || waiting" type="button" :disabled="busy || loading" @click="waiting ? claimPending() : load()">{{ t('factoryUi.refreshRun') }}</button>
     </template>
   </section>
 </template>

@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import RepoSettings from './RepoSettings.vue'
@@ -60,7 +66,7 @@ describe('RepoSettings', () => {
     vi.stubGlobal('fetch', vi.fn(async () => fail('invalid_config', [], 500)))
     const wrapper = mount(RepoSettings)
     await flushPromises()
-    expect(wrapper.get('[data-test="error"]').text()).toContain('invalid settings')
+    expect(wrapper.get('[data-test="error"]').text()).toContain('Neplatná konfigurace')
   })
 
   it('saves the changed values and refreshes the config status', async () => {
@@ -98,10 +104,33 @@ describe('RepoSettings', () => {
     await wrapper.get('[data-test="base"]').setValue('  ')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.get('[data-test="error-base"]').text()).toBe('must not be empty')
+    expect(wrapper.get('[data-test="error-base"]').text()).toBe('Neplatná hodnota nastavení base.')
     expect(wrapper.get('[data-test="base"]').attributes('aria-invalid')).toBe('true')
     expect((wrapper.get('[data-test="base"]').element as HTMLInputElement).value).toBe('  ')
     expect(wrapper.find('[data-test="saved"]').exists()).toBe(false)
     expect(wrapper.emitted('saved')).toBeUndefined()
   })
+})
+
+
+it('translates a rejected save in place using validation metadata and preserves the draft', async () => {
+  setLocale('en')
+  const fetch = stub(() => fail('invalid_value', [{ code: 'invalid_value', id: 'max_parallel_runs',
+    path: '.factory/config.yaml', message: 'original diagnostic', message_code: 'greater_than_equal', params: { limit: 1 } }]))
+  const wrapper = mount(RepoSettings)
+  await flushPromises()
+  await wrapper.get('[data-test="max_parallel_runs"]').setValue('0')
+  await wrapper.get('[data-test="base"]').setValue('draft/base')
+  await wrapper.get('form').trigger('submit')
+  await flushPromises()
+  expect(wrapper.get('[data-test="error-max_parallel_runs"]').text()).toBe('Enter a whole number of at least 1.')
+  const count = fetch.mock.calls.length
+  setLocale('cs'); await flushPromises()
+  expect(wrapper.get('[data-test="error-max_parallel_runs"]').text()).toBe('Zadej celé číslo alespoň 1.')
+  expect((wrapper.get('[data-test="base"]').element as HTMLInputElement).value).toBe('draft/base')
+  expect((wrapper.get('[data-test="max_parallel_runs"]').element as HTMLInputElement).value).toBe('0')
+  expect(fetch).toHaveBeenCalledTimes(count)
+  expect(wrapper.text()).toContain('original diagnostic')
+  expect(wrapper.emitted('saved')).toBeUndefined()
+  wrapper.unmount()
 })

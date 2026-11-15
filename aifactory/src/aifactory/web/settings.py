@@ -271,7 +271,12 @@ def _model_issues(
             loc = err["loc"]
             field = str(loc[0]) if loc else default_field
             message = str(err["msg"]).removeprefix("Value error, ")
-            out.append(_issue(rel, field, message))
+            issue = _issue(rel, field, message)
+            issue["message_code"] = err["type"]
+            ctx = err.get("ctx", {})
+            if "ge" in ctx:
+                issue["params"] = {"limit": ctx["ge"]}
+            out.append(issue)
         return out
     return []
 

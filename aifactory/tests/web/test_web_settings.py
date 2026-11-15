@@ -294,3 +294,19 @@ def test_legacy_local_preview_import_and_preservation(client: TestClient, root: 
     assert service.path.read_bytes() == saved
     _check(client.post(url, json={"overwrite": "yes"}), 422)
     assert {p: p.read_bytes() for p in before} == before
+
+
+def test_validation_metadata_is_locale_independent(client: TestClient, root: Path) -> None:
+    before = _bytes(root, CONFIG)
+    payload = {"shared": {"max_parallel_runs": 0}}
+    english = client.post("/api/settings", json=payload, headers={"Accept-Language": "en"})
+    czech = client.post("/api/settings", json=payload, headers={"Accept-Language": "cs"})
+    assert english.status_code == czech.status_code == 422
+    assert english.json() == czech.json()
+    issue = english.json()["error"]["issues"][0]
+    assert issue["code"] == "invalid_value"
+    assert issue["id"] == "max_parallel_runs"
+    assert issue["message_code"] == "greater_than_equal"
+    assert issue["params"] == {"limit": 1}
+    assert issue["message"]
+    assert _bytes(root, CONFIG) == before

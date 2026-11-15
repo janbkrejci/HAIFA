@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { factoryDiagnostic, factoryErrorText, findingText, findingFix } from '@/lib/factoryMessages'
 // #/r/<id>/factory: everything about the factory of one repo. `factory check` of the repo
 // (GET /api/repos/<id>/factory/check) with the package version, and the findings in two
 // groups: fix in the repo and commit, or fix on this machine for this repo. Machine findings
@@ -12,7 +14,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { RefreshCw } from 'lucide-vue-next'
 import { fetchFactoryCheck, fetchMachineCheck, type CheckFinding, type CheckSeverity, type FactoryCheck } from '@/lib/api'
-import { errorText, fmtTime, shortSha } from '@/lib/format'
+import { fmtTime, shortSha } from '@/lib/format'
 import { factoryStateText } from '@/lib/repos'
 import FactoryOperation from '@/components/factory/FactoryOperation.vue'
 import FactoryFindingRepair from '@/components/factory/FactoryFindingRepair.vue'
@@ -26,7 +28,7 @@ import LessonsSection from '@/components/factory/LessonsSection.vue'
 import CollapsibleSection from '@/components/ui/CollapsibleSection.vue'
 
 const SEVERITY_ORDER: Record<CheckSeverity, number> = { error: 0, warning: 1, info: 2 }
-const SEVERITY_TEXT: Record<CheckSeverity, string> = { error: 'chyba', warning: 'varování', info: 'info' }
+const SEVERITY_TEXT = computed<Record<CheckSeverity, string>>(() => ({ error: t('factoryUi.error'), warning: t('factoryUi.warningSeverity'), info: 'info' }))
 
 const completed = computed(() => lastFactoryResult.value?.repoId === repoId ? lastFactoryResult.value.result : null)
 const operation = ref<FactoryAction | null>(null)
@@ -83,7 +85,7 @@ async function openRepair() {
   repairSection.value?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest' })
 }
 const loading = ref(true) // the check starts on mount
-const error = ref<string | null>(null)
+const error = ref<unknown>(null)
 let generation = 0
 
 async function load(fresh = false): Promise<void> {
@@ -103,7 +105,7 @@ async function load(fresh = false): Promise<void> {
       if (scrollToSettings) void showSettings()
     }
   } catch (err) {
-    if (mine === generation) error.value = errorText(err)
+    if (mine === generation) error.value = err
   } finally {
     if (mine === generation) loading.value = false
   }
@@ -132,12 +134,12 @@ const verdictOk = computed(() => counts.value.error === 0)
 const groups = computed(() => [
   {
     id: 'repo',
-    title: 'Repozitář: opravit a commitnout',
+    title: t('factoryUi.repoGroup'),
     items: sorted(findings.value.filter((f) => f.scope === 'repo')),
   },
   {
     id: 'local',
-    title: 'Počítač: potřebné pro toto repo',
+    title: t('factoryUi.localGroup'),
     items: sorted(findings.value.filter((f) => f.scope !== 'repo')),
   },
 ].filter((group) => group.items.length > 0))
@@ -155,65 +157,66 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
     <div class="head">
       <h1>Factory</h1>
       <button type="button" class="btn" :disabled="loading || !!repair" data-test="factory-recheck" @click="load(true); itemManager?.reload()">
-        <RefreshCw :size="14" aria-hidden="true" :class="{ spin: loading }" /> Znovu zkontrolovat
+        <RefreshCw :size="14" aria-hidden="true" :class="{ spin: loading }" /> {{ t('factoryUi.recheck') }}
       </button>
     </div>
 
     <FactoryOperation v-if="operation" :key="operationSerial" :action="operation" :repo-id="repoId" :remote="report?.remote" @busy="operationBusy = $event" @success="load(true); itemManager?.reload()" />
 
-    <p v-if="loading && !report" class="loading" data-test="factory-loading"><Spinner /> Kontroluji factory…</p>
-    <p v-if="error" class="error" data-test="factory-error">Kontrola factory selhala: {{ error }}</p>
+    <p v-if="loading && !report" class="loading" data-test="factory-loading"><Spinner /> {{ t('factoryUi.checking') }}</p>
+    <p v-if="error" class="error" data-test="factory-error">{{ t('factoryUi.checkFailed') }} {{ factoryErrorText(error) }}</p>
+    <details v-if="error"><summary>{{ t('factoryUi.technical') }}</summary>{{ factoryDiagnostic(error) }}</details>
 
     <div v-if="completed" data-test="factory-completed">
-      <p v-if="completed.library_commit">Commit knihovny: {{ completed.library_commit }}</p>
-      <p>Hotovo: {{ completed.commit ?? completed.after }}</p>
-      <template v-if="completed.pr"><a :href="completed.pr.url" target="_blank" rel="noopener">Otevřít PR</a><p>Běhy počkají na merge. Po merge použij Stáhnout konfiguraci z base.</p></template>
-      <a :href="repoHref(repoId,'backlog')">Otevřít backlog</a>
+      <p v-if="completed.library_commit">{{ t('factoryUi.libraryCommit') }} {{ completed.library_commit }}</p>
+      <p>{{ t('factoryUi.done') }} {{ completed.commit ?? completed.after }}</p>
+      <template v-if="completed.pr"><a :href="completed.pr.url" target="_blank" rel="noopener">{{ t('factoryUi.openPr') }}</a><p>{{ t('factoryUi.waitMerge') }}</p></template>
+      <a :href="repoHref(repoId,'backlog')">{{ t('factoryUi.openBacklog') }}</a>
     </div>
-    <CollapsibleSection v-if="installed" v-model:open="nextOpen" heading="Co dál" class="next-steps" data-test="factory-next-steps">
+    <CollapsibleSection v-if="installed" v-model:open="nextOpen" :heading="t('factoryUi.next')" class="next-steps" data-test="factory-next-steps">
       <ol>
-        <li>Zkontroluj harnessy a modely agentů. <button type="button" class="btn" data-test="next-roster" @click="showRoster">Nastavení agentů</button></li>
-        <li data-test="next-commit-hint">Commitni konfiguraci červeným čipem „Necommitnutá konfigurace“ v horní liště, běhy čtou jen commitnutou base.</li>
-        <li>Založ první projekt v backlogu. <a :href="repoHref(repoId, 'backlog', NEW_CONTAINER)" class="btn" data-test="next-project">Založit projekt</a></li>
+        <li>{{ t('factoryUi.checkAgents') }} <button type="button" class="btn" data-test="next-roster" @click="showRoster">{{ t('factoryUi.agents') }}</button></li>
+        <li data-test="next-commit-hint">{{ t('factoryUi.commitHint') }}</li>
+        <li>{{ t('factoryUi.firstProject') }} <a :href="repoHref(repoId, 'backlog', NEW_CONTAINER)" class="btn" data-test="next-project">{{ t('factoryUi.createProject') }}</a></li>
       </ol>
     </CollapsibleSection>
     <template v-if="report">
       <div class="actions" :inert="repair || itemsBusy ? true : undefined">
-        <button v-if="report.state === 'none'" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-init" @click="openOperation('init')">Nainstalovat factory</button>
-        <button v-if="completed?.pr || (report.behind ?? 0) > 0 || report.findings.some(f => f.code === 'base_behind')" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-pull" @click="openOperation('pull')">Stáhnout konfiguraci z base</button>
+        <button v-if="report.state === 'none'" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-init" @click="openOperation('init')">{{ t('factoryUi.install') }}</button>
+        <button v-if="completed?.pr || (report.behind ?? 0) > 0 || report.findings.some(f => f.code === 'base_behind')" type="button" class="btn" :disabled="operationBusy" data-test="factory-open-pull" @click="openOperation('pull')">{{ t('factoryUi.pull') }}</button>
       </div>
-      <CollapsibleSection v-model:open="summaryOpen" heading="Souhrn kontroly" data-test="factory-summary">
+      <CollapsibleSection v-model:open="summaryOpen" :heading="t('factoryUi.summary')" data-test="factory-summary">
         <div class="summary">
         <p class="verdict" :class="verdictOk ? 'is-ok' : 'is-bad'" data-test="factory-verdict">
-          <template v-if="verdictOk">Factory je v pořádku</template>
-          <template v-else>{{ counts.error }} chyb, {{ counts.warning }} varování</template>
+          <template v-if="verdictOk">{{ t('factoryUi.healthy') }}</template>
+          <template v-else>{{ t('factoryUi.checkCounts', { errors: counts.error, warnings: counts.warning }) }}</template>
         </p>
         <dl class="rows">
-          <dt>Stav repa</dt>
+          <dt>{{ t('factoryUi.repoState') }}</dt>
           <dd data-test="factory-state">{{ factoryStateText(report.state) }}</dd>
-          <dt>Verze balíčku</dt>
+          <dt>{{ t('factoryUi.version') }}</dt>
           <dd class="mono" data-test="factory-version">{{ report.version }}</dd>
           <template v-if="report.base">
             <dt>Base</dt>
             <dd class="mono" data-test="factory-base">
               {{ report.base }}@{{ short(report.commit) }}
               <template v-if="report.ahead !== null && report.behind !== null">
-                · napřed {{ report.ahead }}, pozadu {{ report.behind }}
+                {{ t('factoryUi.aheadFragment') }} {{ report.ahead }}{{ t('factoryUi.behindFragment') }} {{ report.behind }}
               </template>
             </dd>
           </template>
-          <dt>Zkontrolováno</dt>
+          <dt>{{ t('factoryUi.checked') }}</dt>
           <dd data-test="factory-checked">
-            {{ fmtTime(report.checked_at) }}<template v-if="report.cached"> (z mezipaměti)</template>
+            {{ fmtTime(report.checked_at) }}<template v-if="report.cached"> {{ t('factoryUi.cached') }}</template>
           </dd>
         </dl>
         </div>
       </CollapsibleSection>
 
       <div v-if="findings.length" class="repair-actions">
-        <span data-test="factory-selected-count">Vybráno: {{ selected.length }}</span>
+        <span data-test="factory-selected-count">{{ t('factoryUi.selected') }} {{ selected.length }}</span>
         <button type="button" class="btn" data-test="factory-repair-open"
-          :disabled="!selected.length || loading || !!error || operationBusy || !!repair || itemsBusy" @click="openRepair">Vyřešit vybrané nálezy</button>
+          :disabled="!selected.length || loading || !!error || operationBusy || !!repair || itemsBusy" @click="openRepair">{{ t('factoryUi.repair') }}</button>
       </div>
       <div v-if="repair" ref="repairSection" class="repair-section">
         <FactoryFindingRepair :findings="repair" @close="repair = null" />
@@ -229,18 +232,21 @@ onBeforeUnmount(() => { ++generation; window.removeEventListener('factory-commit
             :data-severity="f.severity"
           >
             <input v-model="selected" type="checkbox" :value="findings.indexOf(f)"
-              :aria-label="`Vybrat nález ${f.code}: ${f.message}`" data-test="finding-select"
+              :aria-label="t('factoryUi.selectFinding', { code: f.code, message: findingText(f.code) })" data-test="finding-select"
               :disabled="loading || !!error || operationBusy || !!repair || itemsBusy" />
             <span class="severity" :class="`sev-${f.severity}`">{{ SEVERITY_TEXT[f.severity] ?? f.severity }}</span>
             <span class="code mono">{{ f.code }}</span>
-            <span class="message">{{ f.message }}</span>
-            <span v-if="f.fix" class="fix">Oprava: {{ f.fix }}</span>
+            <span class="message">{{ findingText(f.code) }}</span>
+            <span v-if="f.fix" class="fix">{{ t('factoryUi.fix') }} {{ findingFix(f.code) }}</span>
+            <details class="fix"><summary>{{ t('factoryUi.technical') }}</summary>
+              <p>{{ f.message }}</p><p v-if="f.fix">{{ f.fix }}</p>
+            </details>
           </li>
         </ul>
       </CollapsibleSection>
       <p v-if="hidden.length" class="elsewhere" data-test="factory-machine-link">
-        Další nálezy tohoto počítače a knihovny: {{ hidden.length }}<template v-if="hidden.some(f => f.severity === 'error')"> (s chybami)</template>
-        · <a :href="SETUP_HREF">Otevřít stránku Knihovna</a>
+        {{ t('factoryUi.otherFindings') }} {{ hidden.length }}<template v-if="hidden.some(f => f.severity === 'error')"> {{ t('factoryUi.withErrors') }}</template>
+        · <a :href="SETUP_HREF">{{ t('factoryUi.openLibrary') }}</a>
       </p>
     </template>
     <section v-if="report && report.state !== 'none'" ref="settingsSection" data-test="factory-settings">

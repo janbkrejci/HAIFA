@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The settings form: shared .factory/config.yaml and local .factory/local.yaml.
 import { computed, ref } from 'vue'
 import {
@@ -26,16 +27,16 @@ const emit = defineEmits<{
 
 type TextField = 'workdir' | 'docs_root' | 'worktrees_dir' | 'base'
 
-const PATH_FIELDS: { name: TextField; label: string; hint: string }[] = [
-  { name: 'workdir', label: 'Pracovní adresář agentů', hint: '. = kořen repa, nebo podadresář' },
+const PATH_FIELDS = computed<{ name: TextField; label: string; hint: string }[]>(() => [
+  { name: 'workdir', label: t('factoryUi.workdir'), hint: t('factoryUi.workdirHint') },
   {
     name: 'docs_root',
-    label: 'Kořen dokumentů factory',
-    hint: 'obsahuje backlog/, specs/ a docs/ (projekt/step/task); . = kořen repa',
+    label: t('factoryUi.docsRoot'),
+    hint: t('factoryUi.docsRootHint'),
   },
-  { name: 'worktrees_dir', label: 'Adresář worktree', hint: 'relativně ke kořeni repa' },
-  { name: 'base', label: 'Base větev', hint: 'větev, ze které běhy čtou konfiguraci a backlog' },
-]
+  { name: 'worktrees_dir', label: t('factoryUi.worktreesDir'), hint: t('factoryUi.worktreesHint') },
+  { name: 'base', label: t('factoryUi.baseBranch'), hint: t('factoryUi.baseHint') },
+])
 
 const initial = ref<SettingsFormValues>(formValues(props.settings))
 const values = ref<SettingsFormValues>({ ...initial.value })
@@ -85,14 +86,14 @@ function onReset(): void {
 <template>
   <form class="settings-form" data-test="settings-form" @submit.prevent="onSubmit">
     <div v-if="fileIssues.length" class="warning" data-test="file-issues">
-      <p>Soubor je teď neplatný:</p>
+      <p>{{ t('factoryUi.invalidFile') }}</p>
       <ul>
-        <li v-for="(issue, i) in fileIssues" :key="i" class="mono">{{ issue.path }}: {{ issue.message }}</li>
+        <li v-for="(issue, i) in fileIssues" :key="i" class="mono">{{ issue.path }}<details><summary>{{ t('factoryUi.technical') }}</summary>{{ issue.message }}</details></li>
       </ul>
     </div>
 
     <fieldset>
-      <legend>Sdílené nastavení repozitáře (<code>{{ settings.files.shared }}</code>, commituje se)</legend>
+      <legend>{{ t('factoryUi.sharedSettingsFragment') }}<code>{{ settings.files.shared }}</code>{{ t('factoryUi.committedFragment') }}</legend>
 
       <label v-for="field in PATH_FIELDS" :key="field.name">
         {{ field.label }}
@@ -117,17 +118,17 @@ function onReset(): void {
           :invalid="invalid('git_provider')"
         />
         <span v-if="values.git_provider === 'azure'" class="hint" data-test="azure-hint">
-          Sekce <code>azure</code> se tady needituje. Když v souboru chybí, uložení selže.
+          {{ t('factoryUi.section') }} <code>azure</code> {{ t('factoryUi.azureHint') }}
         </span>
         <span v-for="msg in fieldError('git_provider')" :key="msg" class="field-error" data-test="error-git_provider">{{ msg }}</span>
       </label>
 
       <label>
-        Merge strategie
+        {{ t('factoryUi.mergeStrategy') }}
         <SelectMenu
           v-model="values.merge_strategy"
           data-test="merge_strategy"
-          label="Merge strategie"
+          :label="t('factoryUi.mergeStrategy')"
           :options="mergeStrategyOptions"
           :invalid="invalid('merge_strategy')"
         />
@@ -135,33 +136,33 @@ function onReset(): void {
       </label>
 
       <label>
-        Změny base
+        {{ t('factoryUi.baseChanges') }}
         <SelectMenu
           v-model="values.base_changes"
           data-test="base_changes"
-          label="Změny base"
+          :label="t('factoryUi.baseChanges')"
           :options="baseChangesOptions"
           :invalid="invalid('base_changes')"
         />
-        <span class="hint">direct: factory commituje a pushuje do base. pr: každá změna (instalace, konfigurace, knihovna, backlog, odebrání) jde pull requestem.</span>
+        <span class="hint">{{ t('factoryUi.baseChangesHint') }}</span>
         <span v-for="msg in fieldError('base_changes')" :key="msg" class="field-error" data-test="error-base_changes">{{ msg }}</span>
       </label>
 
       <label>
-        Merge pull requestů factory
+        {{ t('factoryUi.basePrMerge') }}
         <SelectMenu
           v-model="values.base_pr_merge"
           data-test="base_pr_merge"
-          label="Merge pull requestů factory"
+          :label="t('factoryUi.basePrMerge')"
           :options="basePrMergeOptions"
           :invalid="invalid('base_pr_merge')"
         />
-        <span class="hint">manual: PR schválí a mergne člověk. auto: factory PR sám schválí (Azure DevOps), hned mergne (GitHub s --admin) a posune base.</span>
+        <span class="hint">{{ t('factoryUi.basePrMergeHint') }}</span>
         <span v-for="msg in fieldError('base_pr_merge')" :key="msg" class="field-error" data-test="error-base_pr_merge">{{ msg }}</span>
       </label>
 
       <label>
-        Souběžné běhy auto-continue
+        {{ t('factoryUi.parallelRuns') }}
         <input
           v-model="values.max_parallel_runs"
           type="text"
@@ -171,8 +172,7 @@ function onReset(): void {
           :aria-invalid="invalid('max_parallel_runs') ? 'true' : undefined"
         />
         <span class="hint">
-          Kolik běhů řetěz auto-continue drží naráz (1 = jeden po druhém). Tasky s překrývajícími se
-          writes neběží souběžně.
+          {{ t('factoryUi.parallelRunsHint') }}
         </span>
         <span v-for="msg in fieldError('max_parallel_runs')" :key="msg" class="field-error" data-test="error-max_parallel_runs">{{ msg }}</span>
       </label>
@@ -180,17 +180,16 @@ function onReset(): void {
       <label>
         <span class="check-row">
           <input v-model="values.stacked_prs" type="checkbox" data-test="stacked_prs" />
-          Stacked pull requesty
+          {{ t('factoryUi.stackedPrs') }}
         </span>
         <span class="hint">
-          Task, jehož závislosti čekají jen v otevřených PR, se spustí z větve PR závislosti a nečeká
-          na její merge. Jeho PR se mergne až po závislosti, předtím ho factory přebázuje na base.
+          {{ t('factoryUi.stackedHint') }}
         </span>
         <span v-for="msg in fieldError('stacked_prs')" :key="msg" class="field-error" data-test="error-stacked_prs">{{ msg }}</span>
       </label>
 
       <label>
-        Chráněné soubory
+        {{ t('factoryUi.protectedFiles') }}
         <textarea
           v-model="values.protected_files"
           rows="4"
@@ -198,16 +197,16 @@ function onReset(): void {
           :class="{ invalid: invalid('protected_files') }"
           :aria-invalid="invalid('protected_files') ? 'true' : undefined"
         />
-        <span class="hint">jedna cesta na řádek</span>
+        <span class="hint">{{ t('factoryUi.onePath') }}</span>
         <span v-for="msg in fieldError('protected_files')" :key="msg" class="field-error" data-test="error-protected_files">{{ msg }}</span>
       </label>
     </fieldset>
 
     <fieldset>
-      <legend>Lokální necommitované nastavení (<code>{{ settings.files.local }}</code>, mimo git)</legend>
+      <legend>{{ t('factoryUi.localSettingsFragment') }}<code>{{ settings.files.local }}</code>{{ t('factoryUi.outsideGitFragment') }}</legend>
 
       <label>
-        Cesta k trace DB
+        {{ t('factoryUi.traceDb') }}
         <input
           v-model="values.trace_db"
           type="text"
@@ -232,9 +231,9 @@ function onReset(): void {
         :aria-busy="busy || undefined"
       >
         <Spinner v-if="busy" />
-        Uložit
+        {{ t('factoryUi.save') }}
       </button>
-      <button type="button" data-test="reset" :disabled="busy" @click="onReset">Vrátit</button>
+      <button type="button" data-test="reset" :disabled="busy" @click="onReset">{{ t('factoryUi.reset') }}</button>
     </div>
   </form>
 </template>

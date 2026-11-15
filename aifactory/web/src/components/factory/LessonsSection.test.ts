@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import LessonsSection from './LessonsSection.vue'
@@ -91,7 +97,7 @@ describe('LessonsSection', () => {
     expect(runs.map((r) => r.text())).toEqual(['run-a', 'run-b'])
     expect(runs[0]!.attributes('href')).toBe('#/r/a/runs/run-a')
     expect(card.text()).toContain('triáž testů')
-    expect(wrapper.get('[data-test="lessons-scan-done"]').text()).toContain('3 výtek z 2 běhy')
+    expect(wrapper.get('[data-test="lessons-scan-done"]').text()).toContain('výtek: 3, běhů: 2, lekcí: 1')
   })
 
   it('says there are no lessons yet', async () => {
@@ -180,7 +186,7 @@ describe('LessonsSection', () => {
       ['beta', '#/r/beta/factory/lessons'],
       ['gamma', '#/r/gamma/factory/lessons'],
     ])
-    expect(wrapper.get('[data-test="lessons-scan-warning"]').text()).toBe('delta: cannot read the lessons')
+    expect(wrapper.get('[data-test="lessons-scan-warning"]').text()).toContain('delta: cannot read the lessons')
   })
 
   it('has no notice when every lesson stayed in this repo', async () => {
@@ -203,7 +209,8 @@ describe('LessonsSection', () => {
     stub([{ lessons: [], scan: { ...DONE, state: 'failed', result: null, error: 'learner harness unavailable' } }])
     const wrapper = mount(LessonsSection)
     await settle()
-    expect(wrapper.get('[data-test="lessons-scan-error"]').text()).toBe('learner harness unavailable')
+    expect(wrapper.get('[data-test="lessons-scan-error"]').text()).toContain('Hledání lekcí selhalo.')
+    expect(wrapper.get('[data-test="lessons-scan-error"]').text()).toContain('learner harness unavailable')
   })
 
   it('accepts a lesson and shows the task', async () => {
@@ -275,6 +282,26 @@ describe('LessonsSection', () => {
     await settle()
     await wrapper.get('[data-test="lesson-accept"]').trigger('click')
     await settle()
-    expect(wrapper.get('[data-test="lessons-error"]').text()).toContain('commit_failed message')
+    expect(wrapper.get('[data-test="lessons-error"]').text()).toContain('Commit se nezdařil')
   })
+})
+
+
+it('switches lesson controls and plurals while preserving authored content and project selection', async () => {
+  setLocale('en')
+  setNames({ levels: ['project', 'step', 'task'], names: { P01: { title: 'Vlastní projekt', level: 'project' } } })
+  const posts = stub([{ lessons: [lesson()], scan: null }], () => failed('project_required'))
+  const wrapper = mount(LessonsSection); await settle()
+  expect(wrapper.get('[data-test="lesson-occurrences"]').text()).toBe('2 runs')
+  expect(wrapper.get('[data-test="lessons-scan"]').text()).toBe('Find lessons')
+  await wrapper.get('[data-test="lessons-all"]').setValue(false)
+  await wrapper.get('[data-test="lesson-accept"]').trigger('click'); await settle()
+  const selected = wrapper.get('[data-test="lesson-project-select"]').attributes('data-value')
+  setLocale('cs'); await settle()
+  expect(wrapper.get('[data-test="lesson-occurrences"]').text()).toBe('2 běhy')
+  expect(wrapper.get('[data-test="lesson-project-select"]').attributes('data-value')).toBe(selected)
+  expect((wrapper.get('[data-test="lessons-all"]').element as HTMLInputElement).checked).toBe(false)
+  expect(wrapper.get('[data-test="lesson-rule"]').text()).toBe(lesson().rule)
+  expect(wrapper.get('[data-test="lesson-complaints"]').text()).toContain('no test for x')
+  expect(posts).toHaveLength(1)
 })

@@ -270,11 +270,12 @@ describe('FactoryView', () => {
     await flushPromises()
     expect(wrapper.find('[data-test="factory-error"]').exists()).toBe(false)
     // the counts follow the findings shown here
-    expect(wrapper.get('[data-test="factory-summary"]').text()).toContain('1 chyb, 1 varování')
+    expect(wrapper.get('[data-test="factory-summary"]').text()).toContain('Chyby: 1, varování: 1')
     const repo = wrapper.get('[data-test="findings-repo"]')
     expect(repo.text()).toContain('Repozitář: opravit a commitnout')
     expect(repo.findAll('[data-test="finding"]').map((f) => f.attributes('data-severity'))).toEqual(['error', 'info'])
-    expect(repo.text()).toContain('Oprava: fix config_invalid')
+    expect(repo.text()).toContain('Oprava: Postup opravy je v technických podrobnostech.')
+    expect(repo.get('details').text()).toContain('fix config_invalid')
     const local = wrapper.get('[data-test="findings-local"]')
     expect(local.text()).toContain('Počítač: potřebné pro toto repo')
     // library findings and the machine findings #/setup shows are only there
@@ -336,7 +337,7 @@ describe('FactoryView', () => {
     stub(failed('not_a_repository', null, 422))
     const wrapper = mount(FactoryView)
     await flushPromises()
-    expect(wrapper.get('[data-test="factory-error"]').text()).toContain('not_a_repository message')
+    expect(wrapper.get('[data-test="factory-error"]').text()).toContain('Složka není git repozitář')
   })
 
   it('checks again with fresh=1', async () => {
@@ -461,4 +462,22 @@ it('reopens a fresh preview when the same operation is selected again', async ()
   window.dispatchEvent(new Event('factory-commit-preview')); await flushPromises()
   expect(fetchMock.mock.calls.filter(([url, init]) => url.endsWith('/factory/plan') && JSON.parse(String(init?.body)).action === 'config_commit')).toHaveLength(2)
   expect(fetchMock.mock.calls.some(([url]) => url.endsWith('/factory/apply'))).toBe(false)
+})
+
+
+it('translates findings by code and preserves selection and open settings without refetching', async () => {
+  setLocale('en')
+  const fetch = stub(ok(report({ findings: [finding('config_uncommitted', 'repo')] })))
+  const wrapper = mount(FactoryView); await flushPromises()
+  await wrapper.get('[data-test="finding-select"]').setValue(true)
+  await wrapper.get('[data-test="base"]').setValue('draft/base')
+  const count = fetch.mock.calls.length
+  expect(wrapper.get('.message').text()).toBe('Uncommitted configuration')
+  setLocale('cs'); await flushPromises()
+  expect(wrapper.get('.message').text()).toBe('Necommitnutá konfigurace')
+  expect(wrapper.get('[data-test="factory-selected-count"]').text()).toContain('1')
+  expect((wrapper.get('[data-test="base"]').element as HTMLInputElement).value).toBe('draft/base')
+  expect(fetch).toHaveBeenCalledTimes(count)
+  setLocale('en'); await flushPromises()
+  expect(wrapper.get('.message').text()).toBe('Uncommitted configuration')
 })

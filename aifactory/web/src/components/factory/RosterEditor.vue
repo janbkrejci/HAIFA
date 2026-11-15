@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { factoryDiagnostic, factoryErrorText } from '@/lib/factoryMessages'
 // The agents of "Nastavení agentů" on the Factory tab (GET /api/repos/<id>/factory/roster): every
 // agent once, with its harness, model and thinking and whether each value is inherited (library
 // and roster defaults) or overridden in .factory/agents.yaml. "Upravit" sets an override, "Vrátit
@@ -12,7 +14,6 @@ import {
   type RosterField,
 } from '@/lib/api'
 import { useConfigStatus } from '@/lib/configStatus'
-import { errorText } from '@/lib/format'
 import { detectedHarnesses, modelSuggestions, rosterChoices } from '@/lib/roster'
 import DiffContent from '@/components/review/DiffContent.vue'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
@@ -28,12 +29,12 @@ const FIELDS: readonly RosterField[] = ['harness', 'model', 'thinking']
 const roster = ref<FactoryRoster | null>(null)
 const machineHarnesses = ref<string[]>([])
 const loading = ref(false)
-const error = ref('')
+const error = ref<unknown>('')
 /** The agent whose row is being edited. */
 const editing = ref<string | null>(null)
 const row = ref<Row>({ harness: '', model: '', thinking: '' })
 /** The change under review: its request and the server's dry run. */
-const pending = ref<{ agent: string; change: Omit<RosterChange, 'dry_run'>; label: string; result: RosterChangeResult } | null>(null)
+const pending = ref<{ agent: string; change: Omit<RosterChange, 'dry_run'>; reset: boolean; result: RosterChangeResult } | null>(null)
 const working = ref(false)
 const saved = ref(false)
 const configStatus = useConfigStatus()
@@ -110,7 +111,7 @@ async function load(): Promise<void> {
     if (mine !== generation) return
     roster.value = data
   } catch (err) {
-    if (mine === generation) error.value = errorText(err)
+    if (mine === generation) error.value = err
   } finally {
     if (mine === generation) loading.value = false
   }
@@ -136,16 +137,16 @@ function cancel(): void {
   editing.value = null
 }
 
-async function preview(agent: string, change: Omit<RosterChange, 'dry_run'>, label: string): Promise<void> {
+async function preview(agent: string, change: Omit<RosterChange, 'dry_run'>, reset = false): Promise<void> {
   if (locked.value) return
   working.value = true
   error.value = ''
   saved.value = false
   try {
     const result = await saveFactoryRoster({ ...change, dry_run: true }, props.repoId)
-    pending.value = { agent, change, label, result }
+    pending.value = { agent, change, reset, result }
   } catch (err) {
-    error.value = errorText(err)
+    error.value = err
   } finally {
     working.value = false
   }
@@ -153,14 +154,14 @@ async function preview(agent: string, change: Omit<RosterChange, 'dry_run'>, lab
 
 function previewAgent(agent: FactoryRosterAgent): Promise<void> {
   const change = rowChange(agent)
-  return change ? preview(agent.name, change, `Agent ${agent.name}`) : Promise.resolve()
+  return change ? preview(agent.name, change) : Promise.resolve()
 }
 
 function previewReset(agent: FactoryRosterAgent): Promise<void> {
   const reset = resettable(agent)
   if (!reset.length) return Promise.resolve()
   editing.value = null
-  return preview(agent.name, { agent: agent.name, reset }, `Agent ${agent.name}: návrat na zděděné hodnoty`)
+  return preview(agent.name, { agent: agent.name, reset }, true)
 }
 
 function discard(): void {
@@ -180,7 +181,7 @@ async function save(): Promise<void> {
     void configStatus.refresh()
     await load()
   } catch (err) {
-    error.value = errorText(err)
+    error.value = err
   } finally {
     working.value = false
   }
@@ -200,64 +201,65 @@ defineExpose({ reload: load })
 
 <template>
   <section class="roster" data-test="roster-editor">
-    <p class="hint">Harness, model a přemýšlení se dědí z knihovny a výchozích hodnot projektu. Přepis se zapíše do .factory/agents.yaml v pracovním stromu a jde vrátit na zděděnou hodnotu.</p>
-    <p v-if="loading && !roster" class="loading"><Spinner /> Načítám agenty…</p>
-    <p v-if="error" role="alert" class="error" data-test="roster-error">{{ error }}</p>
+    <p class="hint">{{ t('factoryUi.rosterIntro') }}</p>
+    <p v-if="loading && !roster" class="loading"><Spinner /> {{ t('factoryUi.loadingAgents') }}</p>
+    <p v-if="error" role="alert" class="error" data-test="roster-error">{{ factoryErrorText(error) }}</p>
+    <details v-if="error"><summary>{{ t('factoryUi.technical') }}</summary>{{ factoryDiagnostic(error) }}</details>
 
     <datalist :id="`roster-models-${repoId}`"><option v-for="m in models" :key="m" :value="m" /></datalist>
     <div v-if="agents.length" class="table">
       <table data-test="roster-agents">
-        <thead><tr><th>Agent</th><th>Harness</th><th>Model</th><th>Přemýšlení</th><th /></tr></thead>
+        <thead><tr><th>Agent</th><th>Harness</th><th>Model</th><th>{{ t('factoryUi.thinking') }}</th><th /></tr></thead>
         <tbody>
           <template v-for="agent in agents" :key="agent.name">
             <tr :data-test="`roster-agent-${agent.name}`" :class="{ editing: editing === agent.name }">
               <td>
                 <span class="mono">{{ agent.name }}</span>
-                <span v-if="agent.origin === 'repo'" class="origin own" data-test="roster-own">vlastní kopie</span>
-                <span v-else class="origin" data-test="roster-origin">z knihovny</span>
+                <span v-if="agent.origin === 'repo'" class="origin own" data-test="roster-own">{{ t('factoryUi.ownCopy') }}</span>
+                <span v-else class="origin" data-test="roster-origin">{{ t('factoryUi.fromLibrary') }}</span>
                 <small v-if="agent.purpose" class="purpose">{{ agent.purpose }}</small>
               </td>
               <template v-if="editing === agent.name">
-                <td><SelectMenu v-model="row.harness" :label="`Harness agenta ${agent.name}`" :options="harnessOptions" :disabled="locked" data-test="roster-harness" /></td>
-                <td><input v-model="row.model" :list="`roster-models-${repoId}`" :aria-label="`Model agenta ${agent.name}`" :disabled="locked" data-test="roster-model" /></td>
-                <td><SelectMenu v-model="row.thinking" :label="`Přemýšlení agenta ${agent.name}`" :options="thinkingOptions" :disabled="locked" data-test="roster-thinking" /></td>
+                <td><SelectMenu v-model="row.harness" :label="t('factoryUi.agentHarness', { name: agent.name })" :options="harnessOptions" :disabled="locked" data-test="roster-harness" /></td>
+                <td><input v-model="row.model" :list="`roster-models-${repoId}`" :aria-label="t('factoryUi.agentModel', { name: agent.name })" :disabled="locked" data-test="roster-model" /></td>
+                <td><SelectMenu v-model="row.thinking" :label="t('factoryUi.agentThinking', { name: agent.name })" :options="thinkingOptions" :disabled="locked" data-test="roster-thinking" /></td>
                 <td class="row-actions">
-                  <button type="button" class="btn" :disabled="locked || !rowChange(agent) || rowBlank(agent)" data-test="roster-preview" @click="previewAgent(agent)">Náhled změny</button>
-                  <button type="button" class="btn" :disabled="working || !!pending" data-test="roster-cancel" @click="cancel">Zrušit</button>
-                  <small v-if="rowBlank(agent)" class="note">Hodnotu nejde smazat, jen změnit. K zděděné hodnotě vede Vrátit na zděděné.</small>
+                  <button type="button" class="btn" :disabled="locked || !rowChange(agent) || rowBlank(agent)" data-test="roster-preview" @click="previewAgent(agent)">{{ t('factoryUi.previewChange') }}</button>
+                  <button type="button" class="btn" :disabled="working || !!pending" data-test="roster-cancel" @click="cancel">{{ t('factoryUi.cancel') }}</button>
+                  <small v-if="rowBlank(agent)" class="note">{{ t('factoryUi.cannotClear') }}</small>
                 </td>
               </template>
               <template v-else>
                 <td v-for="field in FIELDS" :key="field" :data-test="`roster-${field}-value`">
                   <span class="mono">{{ value(agent, field) || '—' }}</span>
                   <template v-if="agent.inherited">
-                    <Tooltip v-if="isOverridden(agent, field)" :text="`Zděděno: ${agent.inherited[field]}`">
-                      <span class="state overridden" tabindex="0" :data-test="`roster-overridden-${field}`">přepsáno</span>
+                    <Tooltip v-if="isOverridden(agent, field)" :text="t('factoryUi.inheritedValue', { value: agent.inherited[field] })">
+                      <span class="state overridden" tabindex="0" :data-test="`roster-overridden-${field}`">{{ t('factoryUi.overridden') }}</span>
                     </Tooltip>
-                    <span v-else class="state" :data-test="`roster-inherited-${field}`">zděděno</span>
+                    <span v-else class="state" :data-test="`roster-inherited-${field}`">{{ t('factoryUi.inherited') }}</span>
                   </template>
                 </td>
                 <td class="row-actions">
-                  <button type="button" class="btn" :disabled="locked || editing !== null" data-test="roster-edit" @click="edit(agent)">Upravit</button>
+                  <button type="button" class="btn" :disabled="locked || editing !== null" data-test="roster-edit" @click="edit(agent)">{{ t('factoryUi.edit') }}</button>
                   <button v-if="resettable(agent).length" type="button" class="btn" :disabled="locked || editing !== null"
-                    data-test="roster-reset" @click="previewReset(agent)">Vrátit na zděděné</button>
+                    data-test="roster-reset" @click="previewReset(agent)">{{ t('factoryUi.resetInherited') }}</button>
                 </td>
               </template>
             </tr>
             <tr v-if="pending?.agent === agent.name" class="pending-row">
               <td colspan="5">
                 <section class="pending" data-test="roster-pending">
-                  <h4>Náhled: {{ pending.label }}</h4>
-                  <p v-if="!pending.result.changed" data-test="roster-unchanged">Roster už takhle nastavený je, není co uložit.</p>
+                  <h4>{{ t('factoryUi.previewLabel') }} {{ t(pending.reset ? 'factoryUi.agentResetPreview' : 'factoryUi.agentPreview', { name: pending.agent }) }}</h4>
+                  <p v-if="!pending.result.changed" data-test="roster-unchanged">{{ t('factoryUi.rosterUnchanged') }}</p>
                   <ul v-if="changedBindings.length" data-test="roster-changes">
                     <li v-for="c in changedBindings" :key="c.after.name">{{ c.after.name }}: {{ binding(c.before) }} → {{ binding(c.after) }}</li>
                   </ul>
                   <DiffContent v-if="pending.result.diff" :patch="pending.result.diff" />
                   <div class="actions">
                     <button type="button" class="btn ok" :disabled="working || !pending.result.changed" data-test="roster-save" @click="save">
-                      <Spinner v-if="working" /> Uložit
+                      <Spinner v-if="working" /> {{ t('factoryUi.save') }}
                     </button>
-                    <button type="button" class="btn" :disabled="working" data-test="roster-discard" @click="discard">Zrušit</button>
+                    <button type="button" class="btn" :disabled="working" data-test="roster-discard" @click="discard">{{ t('factoryUi.cancel') }}</button>
                   </div>
                 </section>
               </td>
@@ -266,23 +268,23 @@ defineExpose({ reload: load })
         </tbody>
       </table>
     </div>
-    <p v-else-if="roster" class="note">Roster nemá žádné agenty.</p>
+    <p v-else-if="roster" class="note">{{ t('factoryUi.rosterEmpty') }}</p>
 
     <p v-if="saved" class="ok" data-test="roster-saved">
-      Uloženo. Běhy použijí změnu až po commitu konfigurace (červený čip v horní liště).
+      {{ t('factoryUi.rosterSaved') }}
     </p>
 
-    <h4>Přepisy na krocích workflow</h4>
-    <p class="hint">Krok workflow může mít vlastní harness nebo model. Ten má přednost před rosterem i před volbou pro jeden běh.</p>
+    <h4>{{ t('factoryUi.workflowOverrides') }}</h4>
+    <p class="hint">{{ t('factoryUi.workflowOverrideHint') }}</p>
     <table v-if="overrides.length" data-test="roster-overrides">
-      <thead><tr><th>Workflow</th><th>Krok</th><th>Agent</th><th>Harness</th><th>Model</th><th>Přemýšlení</th></tr></thead>
+      <thead><tr><th>Workflow</th><th>{{ t('factoryUi.step') }}</th><th>Agent</th><th>Harness</th><th>Model</th><th>{{ t('factoryUi.thinking') }}</th></tr></thead>
       <tbody>
         <tr v-for="o in overrides" :key="`${o.workflow}/${o.step}`">
           <td>{{ o.workflow }}</td><td>{{ o.step }}</td><td>{{ o.agent ?? '—' }}</td><td>{{ o.harness ?? '—' }}</td><td>{{ o.model ?? '—' }}</td><td>{{ o.thinking ?? '—' }}</td>
         </tr>
       </tbody>
     </table>
-    <p v-else class="note" data-test="roster-no-overrides">Žádný krok workflow nemá vlastní harness ani model.</p>
+    <p v-else class="note" data-test="roster-no-overrides">{{ t('factoryUi.noOverrides') }}</p>
   </section>
 </template>
 

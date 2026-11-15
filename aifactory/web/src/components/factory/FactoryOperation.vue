@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { factoryDiagnostic, factoryErrorText } from '@/lib/factoryMessages'
 import { computed, onBeforeUnmount, onMounted, ref, toRaw, watch } from 'vue'
 import { ApiError, applyBasePull, applyFactoryPlan, fetchBasePullPlan, fetchFactoryPlan, fetchOverview, type FactoryAction, type FactoryOptions, type FactoryPlan, type FactoryInitPlan, type FactoryRequest, type FactoryResult, type OverviewRunning } from '@/lib/api'
 import { installOptions, lastFactoryResult } from '@/lib/factory'
@@ -6,7 +8,7 @@ import { useConfirm } from '@/lib/confirm'
 import { useLive } from '@/lib/live'
 import { repoHref } from '@/lib/router'
 import { runningKey, runningLink } from '@/lib/overview'
-import { errorText, plural, shortSha } from '@/lib/format'
+import { shortSha } from '@/lib/format'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import PlanView from './PlanView.vue'
@@ -20,7 +22,7 @@ const plan = ref<FactoryPlan | null>(null)
 const formPlan = ref<FactoryInitPlan | null>(null)
 const loading = ref(false)
 const applying = ref(false)
-const error = ref('')
+const error = ref<unknown>('')
 const errorCode = ref('')
 const result = ref<FactoryResult | null>(null)
 const runs = ref<OverviewRunning[]>([])
@@ -33,11 +35,11 @@ let runGeneration = 0
 let disposed = false
 const disabled = computed(() => loading.value || applying.value || !plan.value || !!plan.value.blockers.length || (plan.value.action === 'pull' ? plan.value.before === plan.value.after : !plan.value.files.length) || !runsKnown.value || !!runs.value.length || !!result.value)
 const remote = computed(() => plan.value?.remote !== undefined ? plan.value.remote : props.remote)
-const EMPTY_PLAN_TEXT: Record<FactoryAction, string> = {
-  init: 'Instalace nemá co zapsat.',
-  config_commit: 'Konfigurace je commitnutá, není co commitnout.',
-  pull: 'Konfigurace odpovídá base, není co stáhnout.',
-}
+const EMPTY_PLAN_TEXT = computed<Record<FactoryAction, string>>(() => ({
+  init: t('factoryUi.emptyInit'),
+  config_commit: t('factoryUi.emptyConfig'),
+  pull: t('factoryUi.emptyPull'),
+}))
 const emptyPlan = computed(() => !!plan.value && (plan.value.action === 'pull' ? plan.value.before === plan.value.after : !plan.value.files?.length))
 function requestBody() {
   if (props.action === 'pull') throw new Error('pull has a separate API')
@@ -59,7 +61,7 @@ async function load(initial = false) {
     }
   } catch (e) {
     if (mine !== generation || disposed) return
-    error.value = errorText(e)
+    error.value = e
     errorCode.value = e instanceof ApiError ? e.code : ''
     const data = e instanceof ApiError ? e.data as FactoryPlan | null : null
     plan.value = data?.digest && Array.isArray(data.files) && Array.isArray(data.blockers) ? data : null
@@ -94,10 +96,13 @@ async function perform() {
   if (disabled.value || !plan.value) return
   const mine = generation
   const snapshot: FactoryRequest & { digest: string; message: string } = structuredClone({ action: props.action as FactoryRequest['action'], options: toRaw(options.value), target: target.value, digest: plan.value.digest, message: message.value })
-  const title = props.action === 'pull' ? `Stáhnout konfiguraci z ${remote.value}/${plan.value.base}?`
-    : target.value === 'pr' ? `Commitnout ${plan.value.files.length} souborů a otevřít PR do ${plan.value.base}?`
-    : `Commitnout ${plan.value.files.length} souborů do ${plan.value.base}${remote.value ? ` a pushnout na ${remote.value}` : ''}?`
-  if (!await ask({ title, confirmLabel: 'Provést' })) return
+  const params = { remote: remote.value ?? '', base: plan.value.base, count: plan.value.files.length }
+  if (!await ask(() => ({
+    title: props.action === 'pull' ? t('factoryUi.confirmPull', params)
+      : target.value === 'pr' ? t('factoryUi.confirmPr', params)
+      : t(remote.value ? 'factoryUi.confirmPush' : 'factoryUi.confirmCommit', params),
+    confirmLabel: t('factoryUi.perform'),
+  }))) return
   if (disposed || mine !== generation || disabled.value) return
   applying.value = true
   emit('busy', true)
@@ -113,11 +118,11 @@ async function perform() {
     void refreshRuns()
   } catch (e) {
     if (disposed) return
-    error.value = errorText(e)
+    error.value = e
     errorCode.value = e instanceof ApiError ? e.code : ''
     if (errorCode.value === 'plan_changed') {
       await load()
-      error.value = 'Plán se změnil. Zkontroluj nový náhled a znovu jej potvrď.'
+      error.value = new ApiError('plan_changed', '')
     }
     if (errorCode.value === 'run_in_progress') { await refreshRuns(); await load() }
   } finally {
@@ -135,34 +140,35 @@ onBeforeUnmount(() => { disposed = true; ++generation; ++runGeneration; cancel()
   <section class="operation" data-test="factory-operation">
     <fieldset :disabled="applying || !!result">
       <InstallForm v-if="action === 'init' && formPlan" :options="options" @change="change" />
-      <label v-if="action !== 'pull'">Cíl <SelectMenu :model-value="target" label="Cíl" :options="[{value:'base',label:'Base'},{value:'pr',label:'PR'}]" data-test="factory-target" @update:model-value="target = $event as 'base' | 'pr'; load()" /></label>
-      <label v-if="action !== 'pull'">Zpráva commitu <input v-model="message" data-test="factory-message"></label>
+      <label v-if="action !== 'pull'">{{ t('factoryUi.target') }} <SelectMenu :model-value="target" :label="t('factoryUi.target')" :options="[{value:'base',label:'Base'},{value:'pr',label:'PR'}]" data-test="factory-target" @update:model-value="target = $event as 'base' | 'pr'; load()" /></label>
+      <label v-if="action !== 'pull'">{{ t('factoryUi.commitMessage') }} <input v-model="message" data-test="factory-message"></label>
     </fieldset>
-    <p v-if="loading" role="status">Přepočítávám plán…</p>
-    <p v-if="error" role="alert" class="error" data-test="operation-error"><template v-if="!plan && errorCode">Blokátor </template>{{ errorCode }}: {{ error }}</p>
+    <p v-if="loading" role="status">{{ t('factoryUi.recalculating') }}</p>
+    <p v-if="error" role="alert" class="error" data-test="operation-error"><template v-if="!plan && errorCode">{{ t('factoryUi.blocker') }} </template>{{ errorCode }}: {{ factoryErrorText(error) }}</p>
+    <details v-if="error"><summary>{{ t('factoryUi.technical') }}</summary>{{ factoryDiagnostic(error) }}</details>
     <template v-if="errorCode === 'push_failed'">
-      <p>V repozitáři se nic nezměnilo</p>
-      <button type="button" data-test="factory-pr" @click="asPr">Otevřít jako PR</button>
+      <p>{{ t('factoryUi.unchangedRepo') }}</p>
+      <button type="button" data-test="factory-pr" @click="asPr">{{ t('factoryUi.asPr') }}</button>
     </template>
-    <p v-if="runsFailed" data-test="factory-runs-failed">Stav běhů se nepodařilo ověřit, zápis je zakázaný.
-      <button type="button" data-test="factory-runs-retry" @click="refreshRuns">Zkusit znovu</button></p>
-    <p v-else-if="!runsKnown">Stav běhů se ověřuje, zápis je zakázaný.</p>
+    <p v-if="runsFailed" data-test="factory-runs-failed">{{ t('factoryUi.runsFailed') }}
+      <button type="button" data-test="factory-runs-retry" @click="refreshRuns">{{ t('factoryUi.retry') }}</button></p>
+    <p v-else-if="!runsKnown">{{ t('factoryUi.runsChecking') }}</p>
     <div v-if="runs.length" data-test="factory-running">
-      <p>V repu běží {{ runs.length }} {{ plural(runs.length, 'běh', 'běhy', 'běhů') }}, počká se, až {{ runs.length === 1 ? 'doběhne' : 'doběhnou' }}.</p>
+      <p>{{ t('factoryUi.runsWaiting', { count: runs.length }, runs.length) }}</p>
       <a v-for="run in runs" :key="runningKey(run)" :href="runningLink({ id: repoId }, run)">{{ run.run_id ?? run.task_id }} </a>
     </div>
-    <PlanView v-if="plan" :plan="plan" title="Náhled plánu" data-test="factory-plan">
-      <p v-if="plan.action === 'pull'">Stáhnout konfiguraci do {{ plan.base }} ({{ shortSha(plan.before) }} → {{ shortSha(plan.after) }}) z {{ plan.remote }}/{{ plan.base }}</p>
-      <p v-else-if="target === 'pr'">1 commit na nové větvi a otevření PR do {{ plan.base }}</p>
-      <p v-else>1 commit na {{ plan.base }} ({{ shortSha(plan.base_sha) }} → nový)<template v-if="remote">, push na {{ remote }}/{{ plan.base }}</template></p>
+    <PlanView v-if="plan" :plan="plan" :title="t('factoryUi.preview')" data-test="factory-plan">
+      <p v-if="plan.action === 'pull'">{{ t('factoryUi.pullToFragment') }} {{ plan.base }} ({{ shortSha(plan.before) }} → {{ shortSha(plan.after) }}{{ t('factoryUi.fromFragment') }} {{ plan.remote }}/{{ plan.base }}</p>
+      <p v-else-if="target === 'pr'">{{ t('factoryUi.prCommitFragment') }} {{ plan.base }}</p>
+      <p v-else>{{ t('factoryUi.baseCommitFragment') }} {{ plan.base }} ({{ shortSha(plan.base_sha) }} {{ t('factoryUi.newFragment') }}<template v-if="remote">{{ t('factoryUi.pushFragment') }} {{ remote }}/{{ plan.base }}</template></p>
     </PlanView>
-    <button type="button" :disabled="disabled" data-test="factory-perform" @click="perform">{{ applying ? 'Provádím…' : 'Provést' }}</button>
+    <button type="button" :disabled="disabled" data-test="factory-perform" @click="perform">{{ t(applying ? 'factoryUi.performing' : 'factoryUi.perform') }}</button>
     <p v-if="emptyPlan" data-test="factory-plan-empty">{{ EMPTY_PLAN_TEXT[action] }}</p>
     <div v-if="result" data-test="factory-success">
-      <p>Hotovo: {{ result.commit ?? result.after }}</p>
-      <p v-for="w in result.warnings" :key="w">{{ w }}</p>
-      <template v-if="result.pr"><a :href="result.pr.url" target="_blank" rel="noopener">Otevřít PR</a><p>Běhy počkají na merge. Po merge použij Stáhnout konfiguraci z base.</p></template>
-      <a :href="repoHref(repoId,'backlog')">Otevřít backlog</a>
+      <p>{{ t('factoryUi.done') }} {{ result.commit ?? result.after }}</p>
+      <details v-for="w in result.warnings" :key="w"><summary>{{ t('factoryUi.warning') }} {{ t('factoryUi.technical') }}</summary>{{ w }}</details>
+      <template v-if="result.pr"><a :href="result.pr.url" target="_blank" rel="noopener">{{ t('factoryUi.openPr') }}</a><p>{{ t('factoryUi.waitMerge') }}</p></template>
+      <a :href="repoHref(repoId,'backlog')">{{ t('factoryUi.openBacklog') }}</a>
     </div>
     <ConfirmDialog v-bind="dialog" @confirm="confirm" @cancel="cancel" />
   </section>

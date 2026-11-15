@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import { ApiError, type FactoryRoster, type RosterChangeResult } from '@/lib/api'
@@ -151,9 +157,34 @@ describe('RosterEditor', () => {
     api.save.mockRejectedValueOnce(new ApiError('invalid_config', 'unknown model nonsense'))
     await w.get(`${row} [data-test="roster-preview"]`).trigger('click')
     await flushPromises()
-    expect(w.get('[data-test="roster-error"]').text()).toBe('unknown model nonsense')
+    expect(w.get('[data-test="roster-error"]').text()).toBe('Neplatná konfigurace')
     expect(w.find('[data-test="roster-pending"]').exists()).toBe(false)
     await w.get(`${row} [data-test="roster-cancel"]`).trigger('click')
     expect(w.find(`${row} [data-test="roster-model"]`).exists()).toBe(false)
   })
+})
+
+
+it('keeps the edited binding and reviewed reset when switching languages', async () => {
+  setLocale('en')
+  const w = setup(); await flushPromises()
+  const row = w.get('[data-test="roster-agent-builder"]')
+  await row.get('[data-test="roster-edit"]').trigger('click')
+  await row.get('[data-test="roster-model"]').setValue('my-model')
+  setLocale('cs'); await flushPromises()
+  expect(row.get('[data-test="roster-preview"]').text()).toBe('Náhled změny')
+  expect((row.get('[data-test="roster-model"]').element as HTMLInputElement).value).toBe('my-model')
+  await row.get('[data-test="roster-preview"]').trigger('click'); await flushPromises()
+  const calls = api.save.mock.calls.length
+  setLocale('en'); await flushPromises()
+  expect(w.get('[data-test="roster-pending"]').text()).toContain('Preview: Agent builder')
+  expect(api.save).toHaveBeenCalledTimes(calls)
+  await w.get('[data-test="roster-save"]').trigger('click'); await flushPromises()
+  expect(api.save).toHaveBeenLastCalledWith({ agent: 'builder', model: 'my-model', dry_run: false }, 'a')
+  api.save.mockResolvedValue(RESET)
+  await w.get('[data-test="roster-agent-reviewer"] [data-test="roster-reset"]').trigger('click'); await flushPromises()
+  setLocale('cs'); await flushPromises()
+  expect(w.get('[data-test="roster-pending"]').text()).toContain('návrat na zděděné hodnoty')
+  await w.get('[data-test="roster-save"]').trigger('click'); await flushPromises()
+  expect(api.save).toHaveBeenLastCalledWith({ agent: 'reviewer', reset: ['model', 'thinking'], dry_run: false }, 'a')
 })
