@@ -1,4 +1,4 @@
-# Installs HAIFA (the `factory` tool) from this bundle on Windows: checks and installs the
+# Installs GIRO (the `factory` tool) from this bundle on Windows: checks and installs the
 # dependencies, installs factory with uv and clones the library. Windows PowerShell 5.1 and
 # PowerShell 7. Started by install.bat; ASCII only, PowerShell 5.1 reads it as ANSI.
 $ErrorActionPreference = 'Stop'
@@ -95,7 +95,7 @@ function Get-Sha256([string]$Path) {
 }
 
 Set-Location $PSScriptRoot
-Write-Host "Installing HAIFA $Version"
+Write-Host "Installing GIRO $Version"
 
 Step 'Verifying SHA256SUMS'
 foreach ($line in Get-Content -LiteralPath 'SHA256SUMS') {
@@ -116,6 +116,16 @@ foreach ($dep in $Dependencies) {
     Install-Dependency $dep[0] $dep[1] $dep[2]
 }
 
+$bin = (uv tool dir --bin | Out-String).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $bin) { Fail 'uv tool dir --bin failed' }
+$existing = Get-Command giro -ErrorAction SilentlyContinue
+if ($existing) {
+    $expected = Join-Path $bin 'giro.exe'
+    $owned = (uv tool list | Out-String) -match '(?m)^ *- giro(\.exe)?\r?$'
+    if ($existing.Source -ne $expected -or -not $owned) {
+        Fail "giro already exists on PATH ($($existing.Source)); resolve the collision before installing."
+    }
+}
 Step 'Installing factory'
 Invoke-Native 'uv tool install' { uv tool install --force $Wheel --constraints constraints.txt }
 Invoke-Native 'uv tool update-shell' { uv tool update-shell }
@@ -123,36 +133,36 @@ $bin = (uv tool dir --bin | Out-String).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $bin) {
     Fail 'uv tool dir --bin failed'
 }
-$factory = Join-Path $bin 'factory.exe'
-if (-not (Test-Path -LiteralPath $factory -PathType Leaf)) {
-    Fail "factory is not at $factory after uv tool install"
+$giro = Join-Path $bin 'giro.exe'
+if (-not (Test-Path -LiteralPath $giro -PathType Leaf)) {
+    Fail "giro is not at $giro after uv tool install"
 }
 
-# The default team library (HAIFA_LIBRARY_URL overrides it) is cloned; without network
+# The default team library (GIRO_LIBRARY_URL overrides it) is cloned; without network
 # factory creates a local library from the seed and warns. Then every seed item of the
-# library is refreshed to this version's seed (factory library seed --all); items the seed
+# library is refreshed to this version's seed (giro library seed); items the seed
 # lacks and the repos' .factory/ copies (the customizations) stay. A failed refresh warns.
 Step 'Setting up the library'
-$status = (& $factory library status --json | Out-String) | ConvertFrom-Json
+$status = (& $giro library status --json | Out-String) | ConvertFrom-Json
 if ($status.ok) {
     Write-Host 'The library exists.'
 } elseif ($status.error.code -eq 'library_missing') {
-    Invoke-Native 'factory library clone' { & $factory library clone --seed-fallback }
+    Invoke-Native 'giro library clone' { & $giro library clone --seed-fallback }
 } else {
-    Fail "factory library status: $($status.error.message)"
+    Fail "giro library status: $($status.error.message)"
 }
-Write-Host "Refreshing the library to HAIFA $Version"
+Write-Host "Refreshing the library to GIRO $Version"
 try {
-    & $factory library seed --all
+    & $giro library seed
     $refreshed = ($LASTEXITCODE -eq 0)
 } catch {
     $refreshed = $false
 }
 if (-not $refreshed) {
-    Write-Warning 'the library was not refreshed; run: factory library seed --all'
+    Write-Warning 'the library was not refreshed; run: giro library seed'
 }
 
 Write-Host ''
-Write-Host "HAIFA $Version installed."
+Write-Host "GIRO $Version installed."
 Write-Host 'Log in where you have not yet: gh auth login, claude auth login, codex login'
-Write-Host 'Then open a new terminal and check prerequisites and logins with: factory check'
+Write-Host 'Then open a new terminal and check prerequisites and logins with: giro check'

@@ -996,8 +996,8 @@ def main(argv: list[str] | None = None, *, steps: Callable[[E2E], None] | None =
     workdir = owned.add(Path(tempfile.mkdtemp(prefix="haifa-azure-e2e-")))
     out = results_mod.output_dir(args.results_dir.resolve(), "azure-e2e", moment)
     report = Report(organization, args.project, name)
-    previous_home = os.environ.get("HAIFA_HOME")
-    os.environ["HAIFA_HOME"] = str(isolated_home(workdir))
+    previous_home = {key: os.environ.get(key) for key in ("GIRO_HOME", "HAIFA_HOME")}
+    os.environ["GIRO_HOME"] = os.environ["HAIFA_HOME"] = str(isolated_home(workdir))
     e2e = E2E(
         Azure(organization, args.project, workdir, report.commands),
         report,
@@ -1019,17 +1019,18 @@ def main(argv: list[str] | None = None, *, steps: Callable[[E2E], None] | None =
     return _finish(e2e, out, args.keep_workdir, previous_home)
 
 
-def _finish(e2e: E2E, out: Path, keep_workdir: bool, previous_home: str | None) -> int:
+def _finish(e2e: E2E, out: Path, keep_workdir: bool, previous_home: dict[str, str | None]) -> int:
     try:
         logs = e2e.workdir / "logs"
         if logs.is_dir():
             shutil.copytree(logs, out / "logs", dirs_exist_ok=True)
         e2e.cleanup(keep_workdir)
     finally:
-        if previous_home is None:
-            os.environ.pop("HAIFA_HOME", None)
-        else:
-            os.environ["HAIFA_HOME"] = previous_home
+        for key, previous in previous_home.items():
+            if previous is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous
         report = e2e.report
         write_json(out / "azure-e2e.json", report.to_json())
         for step in report.steps:

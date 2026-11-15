@@ -1,5 +1,5 @@
 @echo off
-rem Uninstalls HAIFA on Windows: runs uninstall.ps1 next to this file. Double-click or run
+rem Uninstalls GIRO on Windows: runs uninstall.ps1 next to this file. Double-click or run
 rem from cmd; arguments (-Purge, -KeepData) go to uninstall.ps1.
 setlocal
 rem Started from PowerShell 7: its PSModulePath breaks the modules of Windows PowerShell.

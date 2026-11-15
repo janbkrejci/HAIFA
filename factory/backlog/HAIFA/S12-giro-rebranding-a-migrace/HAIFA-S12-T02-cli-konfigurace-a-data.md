@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S12-T02
 title: GIRO — CLI, technické názvy a bezpečná migrace dat
-status: todo
+status: done
 depends_on: [HAIFA-S12-T01, HAIFA-S12-T04]
 writes: [aifactory/, giro/, justfile, .gitignore, .github/workflows/, docs/rebranding/, docs/decisions.md]
 ---
@@ -43,3 +43,4 @@ a izolované home; žádné volání modelů ani změna provozních dat.
 
 ## Běhy
 <!-- doplňuje factory při schválení PR -->
+- 2026-11-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/246 · náklady $0.00

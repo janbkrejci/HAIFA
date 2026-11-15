@@ -20,7 +20,6 @@ log and the run processes' output.
 from __future__ import annotations
 
 import json
-import os
 import re
 import stat
 import sys
@@ -106,7 +105,9 @@ class Net:
 
 def _launch(p: Playwright) -> Browser:
     """System Chrome first (bundled browsers do not run on every macOS), then bundled chromium."""
-    requested = os.environ.get(CHANNEL_ENV)
+    from aifactory.environment import value
+
+    requested = value(CHANNEL_ENV)
     channels: list[str | None] = [requested or None] if requested is not None else ["chrome", None]
     errors: list[str] = []
     for channel in channels:

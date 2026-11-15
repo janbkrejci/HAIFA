@@ -33,6 +33,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
+from aifactory.environment import value
 from aifactory.run import backup, gitops
 from aifactory.run.basemoves import RUN_ENV
 
@@ -124,7 +125,7 @@ def record(
             old=_sha(old) if old is not None else None,
             new=digest,
             mode=mode & 0o777,
-            run=os.environ.get(RUN_ENV) or None,
+            run=value(RUN_ENV) or None,
             command=command,
         )
         line = (json.dumps(asdict(entry)) + "\n").encode("utf-8")

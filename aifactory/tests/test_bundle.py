@@ -17,6 +17,16 @@ from bundle.build import build_bundle, constraints
 from aifactory import __version__
 from fake_exe import make_executable
 
+
+def _system_path() -> str:
+    # A source installation's giro must not be mistaken for the fake uv's tool.
+    return os.pathsep.join(
+        part
+        for part in os.environ["PATH"].split(os.pathsep)
+        if not any((Path(part) / name).is_file() for name in ("giro", "giro.exe"))
+    )
+
+
 PROJECT = Path(__file__).resolve().parents[1]
 EXPECTED = {
     f"aifactory-{__version__}-py3-none-any.whl",
@@ -58,24 +68,24 @@ def bundle_zip(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def unpacked(bundle_zip: Path, tmp_path: Path) -> Path:
     with zipfile.ZipFile(bundle_zip) as zf:
         zf.extractall(tmp_path)
-    root = tmp_path / f"haifa-{__version__}"
+    root = tmp_path / f"giro-{__version__}"
     for script in ("install.sh", "uninstall.sh"):
         (root / script).chmod(0o755)
     return root
 
 
 def test_zip_name_has_package_version(bundle_zip: Path) -> None:
-    assert bundle_zip.name == f"haifa-{__version__}.zip"
+    assert bundle_zip.name == f"giro-{__version__}.zip"
 
 
 def test_zip_holds_only_the_bundle_files(bundle_zip: Path) -> None:
     with zipfile.ZipFile(bundle_zip) as zf:
         names = zf.namelist()
         modes = [
-            zf.getinfo(f"haifa-{__version__}/{script}").external_attr >> 16
+            zf.getinfo(f"giro-{__version__}/{script}").external_attr >> 16
             for script in ("install.sh", "uninstall.sh")
         ]
-    assert sorted(names) == sorted(f"haifa-{__version__}/{n}" for n in EXPECTED)
+    assert sorted(names) == sorted(f"giro-{__version__}/{n}" for n in EXPECTED)
     assert all(mode & 0o111 for mode in modes)
 
 
@@ -122,8 +132,8 @@ def test_constraints_pin_runtime_dependencies_from_lock(unpacked: Path) -> None:
 
 def test_install_docs_are_versioned(unpacked: Path) -> None:
     doc = (unpacked / "INSTALL.md").read_text("utf-8")
-    assert f"haifa-{__version__}.zip" in doc
-    for needle in ("./install.sh", "install.bat", "factory check", "factory upgrade"):
+    assert f"giro-{__version__}.zip" in doc
+    for needle in ("./install.sh", "install.bat", "giro check", "giro upgrade"):
         assert needle in doc
     assert "@VERSION@" not in doc
 
@@ -156,7 +166,7 @@ def _fake_uv_bin(tmp_path: Path) -> Path:
 def _fake_factory_bin(tmp_path: Path) -> Path:
     bin_dir = tmp_path / "tools"
     bin_dir.mkdir()
-    factory = bin_dir / "factory"
+    factory = bin_dir / "giro"
     factory.write_text(FAKE_FACTORY, encoding="utf-8", newline="\n")
     make_executable(factory)
     return bin_dir
@@ -169,7 +179,7 @@ def test_install_sh_clones_a_missing_library_and_refreshes_it(
     log = tmp_path / "factory.log"
     env = {
         **os.environ,
-        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{os.environ['PATH']}",
+        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{_system_path()}",
         "UV_LOG": str(tmp_path / "uv.log"),
         "FACTORY_BIN": str(_fake_factory_bin(tmp_path)),
         "FACTORY_LOG": str(log),
@@ -190,12 +200,12 @@ def test_install_sh_clones_a_missing_library_and_refreshes_it(
         assert calls == [
             "library status --json",
             "library clone --seed-fallback",
-            "library seed --all",
+            "library seed",
         ]
     else:
-        assert calls == ["library status --json", "library seed --all"]
-    assert f"Refreshing the library to HAIFA {__version__}" in proc.stdout
-    refused = "the library was not refreshed; run: factory library seed --all"
+        assert calls == ["library status --json", "library seed"]
+    assert f"Refreshing the library to GIRO {__version__}" in proc.stdout
+    refused = "the library was not refreshed; run: giro library seed"
     assert (refused in proc.stderr) == bool(seed_exit)
     assert "installed" in proc.stdout  # a failed refresh does not stop the install
 
@@ -204,7 +214,7 @@ def test_install_sh_runs_uv_tool_install(unpacked: Path, tmp_path: Path) -> None
     log = tmp_path / "uv.log"
     env = {
         **os.environ,
-        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{os.environ['PATH']}",
+        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{_system_path()}",
         "UV_LOG": str(log),
     }
     env.pop("FACTORY_BIN", None)
@@ -219,17 +229,18 @@ def test_install_sh_runs_uv_tool_install(unpacked: Path, tmp_path: Path) -> None
     )
     wheel = f"aifactory-{__version__}-py3-none-any.whl"
     assert log.read_text("utf-8") == (
-        f"tool install --force {wheel} --constraints constraints.txt\ntool dir --bin\n"
+        f"tool dir --bin\ntool install --force {wheel} --constraints constraints.txt\n"
+        "tool dir --bin\n"
     )
-    assert "factory check" in proc.stdout
-    assert "factory library clone --seed-fallback" in proc.stderr
+    assert "giro check" in proc.stdout
+    assert "giro library clone --seed-fallback" in proc.stderr
 
 
 def test_install_sh_runs_from_another_directory(unpacked: Path, tmp_path: Path) -> None:
     log = tmp_path / "uv.log"
     env = {
         **os.environ,
-        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{os.environ['PATH']}",
+        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{_system_path()}",
         "UV_LOG": str(log),
     }
     subprocess.run(
@@ -239,7 +250,7 @@ def test_install_sh_runs_from_another_directory(unpacked: Path, tmp_path: Path) 
         capture_output=True,
         check=True,
     )
-    assert log.read_text("utf-8").startswith("tool install --force ")
+    assert "tool install --force " in log.read_text("utf-8")
 
 
 def test_install_sh_rejects_bad_checksum(unpacked: Path, tmp_path: Path) -> None:
@@ -247,7 +258,7 @@ def test_install_sh_rejects_bad_checksum(unpacked: Path, tmp_path: Path) -> None
     log = tmp_path / "uv.log"
     env = {
         **os.environ,
-        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{os.environ['PATH']}",
+        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{_system_path()}",
         "UV_LOG": str(log),
     }
     proc = subprocess.run(_install_sh("./install.sh"), cwd=unpacked, env=env, capture_output=True)
@@ -292,15 +303,17 @@ if name in ("winget", "npm") and args[:1] == ["install"]:
 elif name == "git" and args[:2] == ["config", "--get"]:
     print("Test User" if args[2] == "user.name" else "test@example.com")
 elif name == "uv" and args[:2] == ["tool", "list"]:
-    print("aifactory v0.1.0\\n- factory")
+    print("aifactory v1.0.0\\n- factory\\n- giro")
 elif name == "uv" and args[:3] == ["tool", "dir", "--bin"]:
     print(os.environ["FAKE_BIN"])
-elif name == "factory" and args[:2] == ["library", "status"]:
+elif name == "giro" and args == ["--data-home"]:
+    print(os.environ.get("GIRO_HOME") or os.environ["HAIFA_HOME"])
+elif name == "giro" and args[:2] == ["library", "status"]:
     if os.environ["FAKE_LIBRARY"] == "missing":
         print(json.dumps({{"ok": False, "error": {{"code": "library_missing", "message": "no"}}}}))
         sys.exit(2)
     print(json.dumps({{"ok": True, "data": {{}}}}))
-elif name == "factory" and args[:2] == ["library", "seed"]:
+elif name == "giro" and args[:2] == ["library", "seed"]:
     sys.exit(int(os.environ.get("FAKE_SEED_EXIT", "0")))
 """
 windows_only = pytest.mark.skipif(sys.platform != "win32", reason="install.ps1 runs on Windows")
@@ -319,7 +332,7 @@ def _windows_env(
     bin_dir, stash = tmp_path / "bin", tmp_path / "stash"
     bin_dir.mkdir()
     stash.mkdir()
-    for name in (*WIN_TOOLS, "factory"):
+    for name in (*WIN_TOOLS, "giro"):
         _fake_tool(stash if name in missing else bin_dir, name)
     root = os.environ.get("SystemRoot", r"C:\Windows")
     path = [str(bin_dir), rf"{root}\System32", rf"{root}\System32\WindowsPowerShell\v1.0"]
@@ -356,7 +369,11 @@ def _install_ps1(unpacked: Path, env: dict[str, str]) -> subprocess.CompletedPro
 
 def _install_commands(log: list[str]) -> list[str]:
     """The log without the dependency and identity probes."""
-    return [line for line in log if not line.startswith(("git config --get", "uv tool dir"))]
+    return [
+        line
+        for line in log
+        if not line.startswith(("git config --get", "uv tool dir", "uv tool list"))
+    ]
 
 
 def test_windows_installers_are_versioned(unpacked: Path) -> None:
@@ -382,10 +399,10 @@ def test_install_ps1_on_a_ready_machine_installs_factory_and_refreshes_the_libra
     assert _install_commands(_log(env)) == [
         f"uv tool install --force {wheel} --constraints constraints.txt",
         "uv tool update-shell",
-        "factory library status --json",
-        "factory library seed --all",
+        "giro library status --json",
+        "giro library seed",
     ]
-    assert "factory check" in proc.stdout
+    assert "giro check" in proc.stdout
     assert ("the library was not refreshed" in proc.stdout + proc.stderr) == bool(seed_exit)
 
 
@@ -402,9 +419,9 @@ def test_install_ps1_installs_missing_tools_and_creates_the_library(
         "npm install -g @openai/codex",
     ]
     assert log[-3:] == [
-        "factory library status --json",
-        "factory library clone --seed-fallback",
-        "factory library seed --all",
+        "giro library status --json",
+        "giro library clone --seed-fallback",
+        "giro library seed",
     ]
 
 
@@ -441,7 +458,7 @@ def test_install_bat_runs_install_ps1_and_passes_its_exit_code(
         capture_output=True,
     )
     assert ok.returncode == 0, ok.stdout + ok.stderr
-    assert "factory library status --json" in _log(env)
+    assert "giro library status --json" in _log(env)
     (unpacked / "constraints.txt").write_text("evil==1\n", encoding="utf-8", newline="\n")
     bad = subprocess.run(
         [cmd, "/c", str(unpacked / "install.bat")],
@@ -472,7 +489,7 @@ def test_uninstall_sh_removes_factory_and_data_on_request(
     log = tmp_path / "uv.log"
     env = {
         **os.environ,
-        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{os.environ['PATH']}",
+        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{_system_path()}",
         "UV_LOG": str(log),
         "HAIFA_HOME": str(home),
     }
@@ -486,7 +503,11 @@ def test_uninstall_sh_removes_factory_and_data_on_request(
         encoding="utf-8",
     )
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert log.read_text("utf-8").splitlines() == ["tool list", "tool uninstall aifactory"]
+    assert log.read_text("utf-8").splitlines() == [
+        "tool dir --bin",
+        "tool list",
+        "tool uninstall aifactory",
+    ]
     assert home.exists() is kept
 
 
@@ -516,7 +537,12 @@ def test_uninstall_ps1_removes_factory_and_data_on_request(
     env = {**_windows_env(tmp_path), "HAIFA_HOME": str(home)}
     proc = _uninstall_ps1(unpacked, env, *args)
     assert proc.returncode == 0, proc.stdout + proc.stderr
-    assert _log(env) == ["uv tool list", "uv tool uninstall aifactory"]
+    assert _log(env) == [
+        "uv tool dir --bin",
+        "giro --data-home",
+        "uv tool list",
+        "uv tool uninstall aifactory",
+    ]
     assert home.exists() is kept
 
 
@@ -535,3 +561,45 @@ def test_uninstall_bat_without_an_answer_keeps_the_data(unpacked: Path, tmp_path
     assert proc.returncode == 0, proc.stdout + proc.stderr
     assert "uv tool uninstall aifactory" in _log(env)
     assert home.exists()
+
+
+def test_install_sh_refuses_an_unrelated_giro_before_installing(
+    unpacked: Path, tmp_path: Path
+) -> None:
+    fake_bin = _fake_uv_bin(tmp_path)
+    collision = fake_bin / "giro"
+    collision.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    make_executable(collision)
+    log = tmp_path / "uv.log"
+    proc = subprocess.run(
+        _install_sh(str(unpacked / "install.sh")),
+        env={**os.environ, "PATH": f"{fake_bin}{os.pathsep}{_system_path()}", "UV_LOG": str(log)},
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    assert "giro already exists" in proc.stderr
+    assert "tool install" not in log.read_text()
+
+
+def test_uninstall_sh_protects_a_migration_before_removing_software(
+    unpacked: Path, tmp_path: Path
+) -> None:
+    home = _haifa_home(tmp_path)
+    (home / "giro-migration.json").write_text('{"state":"prepared"}')
+    log = tmp_path / "uv.log"
+    env = {
+        **os.environ,
+        "HAIFA_HOME": str(home),
+        "PATH": f"{_fake_uv_bin(tmp_path)}{os.pathsep}{_system_path()}",
+        "UV_LOG": str(log),
+    }
+    proc = subprocess.run(
+        [*_install_sh(str(unpacked / "uninstall.sh")), "--purge"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert proc.returncode != 0
+    assert (home / "env").exists()
+    assert "tool uninstall" not in log.read_text()

@@ -19,7 +19,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-FAKE_ENV = "HAIFA_VALIDATE_FAKE"
+FAKE_ENV = "GIRO_VALIDATE_FAKE"
 AIFACTORY_DIR = Path(__file__).resolve().parents[1]
 
 
@@ -32,15 +32,21 @@ def _ensure_pythonpath() -> None:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    from validation.hidden import HIDDEN_ENV
 
-    hidden_dir = os.environ.pop(HIDDEN_ENV, None)
+    from aifactory.environment import value
+
+    hidden_dir = value("VALIDATE_HIDDEN")
+    os.environ.pop("GIRO_VALIDATE_HIDDEN", None)
+    os.environ.pop("HAIFA_VALIDATE_HIDDEN", None)
     if hidden_dir:
         from validation import hidden
 
         hidden.install(Path(hidden_dir))
-    script = os.environ.get(FAKE_ENV)
+    script = value("VALIDATE_FAKE")
+    os.environ.pop("GIRO_VALIDATE_FAKE", None)
+    os.environ.pop("HAIFA_VALIDATE_FAKE", None)
     if script:
+        os.environ["GIRO_VALIDATE_FAKE"] = os.environ["HAIFA_VALIDATE_FAKE"] = script
         from validation import fake
 
         fake.install(Path(script))

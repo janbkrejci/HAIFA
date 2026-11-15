@@ -1,8 +1,8 @@
-# Installs a verified HAIFA bundle once the factory process that unpacked it has exited.
+# Installs a verified GIRO bundle once the factory process that unpacked it has exited.
 # Windows locks the files of a running Python, so `uv tool install --force` cannot replace
 # the tool environment the dashboard or `factory upgrade` runs from (aifactory.upgrade).
 # After the install the new factory.exe refreshes the library to the new seed (status, clone
-# --seed-fallback when missing, seed --all); a failure is logged and does not stop the restart.
+# --seed-fallback when missing, seed); a failure is logged and does not stop the restart.
 # The only argument is the JSON plan written by aifactory.upgrade.hand_off.
 param([Parameter(Mandatory = $true)][string]$PlanFile)
 
@@ -19,10 +19,11 @@ function Wait-Exit([int]$Id, [string]$Name) {
     if (-not $exited) { Write-Log "process $Id did not exit within 2 minutes" }
 }
 
-Write-Log "HAIFA $($plan.version): waiting for process $($plan.pid)"
+Write-Log "GIRO $($plan.version): waiting for process $($plan.pid)"
 Wait-Exit $plan.pid ''
 # The uv launcher factory.exe waits for its python.exe child and holds its own file.
 Wait-Exit $plan.launcher 'factory'
+Wait-Exit $plan.launcher 'giro'
 
 $code = 1
 for ($attempt = 1; $attempt -le 3; $attempt++) {
@@ -40,7 +41,7 @@ function Update-Library {
         Write-Log "library not refreshed: uv tool dir --bin failed: $bin"
         return
     }
-    $factory = Join-Path $bin 'factory.exe'
+    $factory = Join-Path $bin 'giro.exe'
     if (-not (Test-Path -LiteralPath $factory -PathType Leaf)) {
         Write-Log "library not refreshed: factory is not at $factory"
         return
@@ -57,8 +58,8 @@ function Update-Library {
         Write-Log "factory library clone --seed-fallback exited with ${LASTEXITCODE}:`r`n$output"
         if ($LASTEXITCODE -ne 0) { return }
     }
-    $output = & $factory library seed --all 2>&1 | Out-String
-    Write-Log "factory library seed --all exited with ${LASTEXITCODE}:`r`n$output"
+    $output = & $factory library seed 2>&1 | Out-String
+    Write-Log "factory library seed exited with ${LASTEXITCODE}:`r`n$output"
 }
 
 if ($code -eq 0) {

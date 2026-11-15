@@ -1,7 +1,7 @@
 [project]
 name = "aifactory"
 dynamic = ["version"]
-description = "HAIFA (Helios AI Factory): local control panel and CLI"
+description = "GIRO: local control panel and CLI. Goal in. Release out."
 readme = "README.md"
 requires-python = ">=3.11"
 license = "MIT"
@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.scripts]
+giro = "aifactory.cli:main"
 factory = "aifactory.cli:main"
 
 [dependency-groups]

@@ -27,6 +27,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+from aifactory.environment import value
 from aifactory.library.store import REMOTE, LibraryStoreError, _git_detail
 from aifactory.providers import git
 from aifactory.providers.base import ProviderError
@@ -52,7 +53,14 @@ _GITHUB = re.compile(
 def default_library_url(environ: Mapping[str, str] | None = None) -> str:
     """``$HAIFA_LIBRARY_URL``, else the HAIFA-LIBRARY repo."""
     env = os.environ if environ is None else environ
-    return (env.get(LIBRARY_URL_ENV) or "").strip() or DEFAULT_LIBRARY_URL
+    selected = value(LIBRARY_URL_ENV, env)
+    if selected is None:
+        return DEFAULT_LIBRARY_URL
+    if not selected.strip():
+        raise LibraryStoreError(
+            "invalid_value", "GIRO_LIBRARY_URL must not contain only whitespace"
+        )
+    return selected.strip()
 
 
 def github_repo(url: str | None) -> tuple[str, str] | None:

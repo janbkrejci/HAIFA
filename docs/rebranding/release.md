@@ -131,3 +131,36 @@ stejně jako nezávislí zapisující klienti externí DB. Neznámý nebo neově
 není souhlas s migrací. Celé ověření implementace používá pouze fake hosting,
 izolované home/tool adresáře a falešné nástroje; nic se nepublikuje a neupgraduje
 na operátorově instalaci. T07 zopakuje skutečnou platformní matici podle T01.
+
+## GIRO zdroj T02
+
+Ověřený uchovaný zdroj T04 je commit
+`4dd3ddf1ea18f672674123df94dc4643a4868f52`. Jeho workflow a builder nadále vytvářejí
+poslední HAIFA; tento commit se při cutoveru použije pro `HAIFA_TRANSITION_SHA`
+a `haifa-transition-source`, nikoli aktuální rebrandingový main.
+GIRO zdroj má verzi `1.0.0`; CI ji stampuje na `1.0.<run number>`.
+Samostatný `giro-release.yml` publikuje pouze veřejné `janbkrejci/GIRO`, main,
+a pouze při `GIRO_RELEASE_ENABLED=true`. Ve starém repo se tento job nespustí.
+Jméno distribuce, wheelu a `uv tool uninstall aifactory` se nemění.
+
+Samostatně nainstalované GIRO při legacy-only defaultu nic nezaloží a vrátí
+`migration_required`. Po zastavení všech HAIFA procesů lze výslovně provést
+`giro migrate --confirm --haifa-bundle /cesta/haifa-H.zip` (také `--json`).
+ZIP musí být ověřený poslední HAIFA bundle. Při explicitním `GIRO_HOME` nebo
+`HAIFA_HOME` se zálohuje a označí stejný adresář; bez nich se legacy default
+zkopíruje do sousedního `giro`. Oba neoznačené defaulty znamenají kolizi, i když
+je nový prázdný. Přerušená operace se neopakuje přes existující marker.
+
+Offline příkaz nemění software, externí datové cesty ani checkouty. Zachová
+celý home, dirty knihovnu, externí knihovnu a runtime registrovaných repozitářů.
+Odmítne aktivní běhy, neověřitelnou konfiguraci a sdílenou DB bez koordinované
+zálohy. Uchová původní ZIP, `paths`, `data_hashes` a manifest v privátní záloze.
+Pro návrat zastavte všechny zapisující procesy, zazálohujte také nový stav,
+ověřte kontrolní součty plánu a obnovte **každou** původní cestu z `data/<index>`.
+Ověřený wheel z uchovaného H ZIP nainstalujte pomocí
+`uv tool install --force WHEEL --constraints constraints.txt`; nepouštějte
+instalační refresh knihovny poslední HAIFA (`seed --all`). Až po ověření obnovy
+odstraňte marker z obnovené sady. Nový home a zálohy uchovejte odděleně.
+Uninstall odmítá purge označeného home; `--keep-data`/`-KeepData` ponechá data
+i zálohy. GIRO používá pouze nedestruktivní `library seed`, dirty knihovnu
+při chybě refresh zachová s diagnostikou.

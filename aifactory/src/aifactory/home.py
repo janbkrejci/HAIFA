@@ -1,11 +1,8 @@
-"""The HAIFA home directory: machine-wide state that belongs to no repository.
+"""GIRO's machine home, with explicit HAIFA aliases and guarded legacy discovery.
 
-``haifa_home()`` is ``$HAIFA_HOME``, else ``$XDG_CONFIG_HOME/haifa``, else
-``~/.config/haifa`` (an empty variable counts as unset). ``logs_dir()`` is its ``logs/``
-(created with mode 0700); the dashboard writes the JSON envelope and the output of every
-run it starts there. ``create_private`` creates a new file with mode 0600.
-``load_env_file`` reads ``<home>/env`` (KEY=VALUE) into the environment at ``factory``
-start without overriding variables the environment already has.
+Defaults use XDG_CONFIG_HOME/giro or ~/.config/giro (Path.home on Windows).
+Legacy-only defaults require confirmed migration; ambiguous directories fail closed.
+Environment files cannot redirect the already selected home.
 """
 
 from __future__ import annotations
@@ -32,17 +29,38 @@ def _env(environ: Mapping[str, str], name: str) -> str | None:
 
 
 def haifa_home(environ: Mapping[str, str] | None = None) -> Path:
-    """``$HAIFA_HOME``, else ``$XDG_CONFIG_HOME/haifa``, else ``~/.config/haifa``."""
+    """Explicit GIRO_HOME/HAIFA_HOME, otherwise the guarded GIRO default."""
     env = os.environ if environ is None else environ
-    explicit = _env(env, HOME_ENV)
+    from aifactory.environment import value
+    from aifactory.upgrade import UpgradeError
+
+    explicit = value("HOME", env)
     if explicit is not None:
         return Path(explicit).expanduser()
     xdg = _env(env, XDG_ENV)
-    if xdg is not None:
-        return Path(xdg).expanduser() / "haifa"
     home = _env(env, "HOME")
     base = Path(home) if home is not None else Path.home()
-    return base / ".config" / "haifa"
+    parent = Path(xdg).expanduser() if xdg is not None else base / ".config"
+    target, legacy = parent / "giro", parent / "haifa"
+    if legacy.exists() and target.resolve() != legacy.resolve():
+        if target.exists():
+            from aifactory.migration_guard import MARKER, check_home
+
+            if (target / MARKER).exists():
+                check_home(target, expected_source=legacy)
+                return target
+            raise UpgradeError(
+                "migration_collision",
+                f"Both {legacy} and {target} exist without a completed migration. "
+                "Stop writers, back up both and inspect them; select GIRO_HOME explicitly.",
+            )
+        raise UpgradeError(
+            "migration_required",
+            f"Legacy data found at {legacy}. Stop HAIFA and use its transition button, "
+            "or run giro migrate --confirm --haifa-bundle PATH to the verified last HAIFA ZIP. "
+            "Nothing has been written.",
+        )
+    return target
 
 
 def logs_dir(environ: Mapping[str, str] | None = None) -> Path:
@@ -93,14 +111,10 @@ def load_env_file(
             f"factory: warning: env_file_mode: {path} has mode {mode:04o}, expected 0600",
             file=out,
         )
-    loaded: list[str] = []
-    for key, value in dotenv_values(path).items():
-        # The home was selected and its migration lease acquired before this
-        # file was opened. It must not redirect subsequent writes to another home.
-        if key in {"HOME", "HAIFA_HOME", "GIRO_HOME", "XDG_CONFIG_HOME"}:
-            continue
-        if value is None or key in env:
-            continue
-        env[key] = value
-        loaded.append(key)
-    return loaded
+    from aifactory.environment import resolve
+
+    before = dict(env)
+    settings = dotenv_values(path)
+    resolved = resolve(before, settings, stderr=stderr)
+    env.update(resolved)
+    return [key for key in settings if key not in before and key in resolved]

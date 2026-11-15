@@ -31,7 +31,11 @@ typecheck:
 lint:
     cd aifactory && uv run ruff check . && uv run ruff format --check .
 
-# the factory CLI from source
+# the GIRO CLI from source
+giro *ARGS:
+    uv run --project aifactory giro "$@"
+
+# transitional alias from the same installation
 factory *ARGS:
     uv run --project aifactory factory "$@"
 
@@ -41,7 +45,7 @@ shared-db *ARGS:
 
 # dashboard from source on 127.0.0.1:4700: just dash [--port N] [--no-open]
 dash *ARGS:
-    uv run --project aifactory factory obs "$@"
+    uv run --project aifactory giro obs "$@"
 
 # build the frontend into aifactory/src/aifactory/web/static (needs bun)
 web-build:
@@ -55,7 +59,7 @@ web-test:
 web-dev:
     cd aifactory/web && bun install --frozen-lockfile && bun run dev
 
-# distribution ZIP aifactory/dist/haifa-<version>.zip
+# distribution ZIP aifactory/dist/giro-<version>.zip
 bundle: web-build
     cd aifactory && uv run python -m bundle.build
 

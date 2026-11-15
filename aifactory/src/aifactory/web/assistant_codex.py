@@ -162,8 +162,11 @@ def launch_args(request: AgentRequest, home: Path, repo_id: str | None) -> list[
                 "required": True,
                 "enabled_tools": ["guide"],
                 "env": {
+                    "GIRO_HOME": str(home),
                     "HAIFA_HOME": str(home),
+                    "GIRO_GUIDE_REPO": repo_id or "",
                     "HAIFA_GUIDE_REPO": repo_id or "",
+                    "GIRO_RUN_ID": operator_env().get("HAIFA_RUN_ID", "guide"),
                     "HAIFA_RUN_ID": operator_env().get("HAIFA_RUN_ID", "guide"),
                 },
             }

@@ -303,6 +303,7 @@ def _ask_learner(
             run = Run(cfg, job_id, tracer, "learn-scan")
             run.repo_root = isolated
             run.agent_environment = {
+                "GIRO_RUN_ID": job_id,
                 "HAIFA_RUN_ID": job_id,
                 "CLAUDE_SAFE_MODE": "1",
                 "CODEX_SAFE_MODE": "1",

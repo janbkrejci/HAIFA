@@ -56,14 +56,15 @@ SUBCOMMANDS: tuple[tuple[str, str], ...] = (
     ("skills", "keep the repo's skills mirror for codex and pi in sync"),
     (
         "library",
-        "the HAIFA library in the home directory: init, list, show, import, clone, status, "
+        "the GIRO library in the home directory: init, list, show, import, clone, status, "
         "pull, push, seed",
     ),
     (
         "learn",
         "collect objections that keep coming back in task runs into lessons: scan, accept, dismiss",
     ),
-    ("upgrade", "install a newer HAIFA from a haifa-<version>.zip bundle"),
+    ("migrate", "explicit offline migration of legacy HAIFA data with a retained rollback bundle"),
+    ("upgrade", "install a newer GIRO from a giro-<version>.zip bundle"),
     ("obs", "serve the local dashboard (127.0.0.1 unless --host) and open it"),
 )
 
@@ -86,10 +87,12 @@ class _Parser(argparse.ArgumentParser):
 
 def build_parser() -> argparse.ArgumentParser:
     parser = _Parser(
-        prog="factory",
-        description="HAIFA (Helios AI Factory): run backlog tasks through coding-agent workflows.",
+        prog="giro",
+        description=(
+            "GIRO — Goal in. Release out. Run backlog tasks through coding-agent workflows."
+        ),
     )
-    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument("--version", action="version", version=f"GIRO {__version__}")
     parser.add_argument(
         "--skill",
         action="store_true",
@@ -104,7 +107,11 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", metavar="<command>")
     for name, help_text in SUBCOMMANDS:
         child = sub.add_parser(name, help=help_text, description=help_text)
-        if name == "check":
+        if name == "migrate":
+            from aifactory.home_migration import add_arguments
+
+            add_arguments(child)
+        elif name == "check":
             _add_check_command(child)
         elif name == "init":
             _add_init_command(child)
@@ -140,7 +147,7 @@ def _add_check_command(parser: argparse.ArgumentParser) -> None:
         "(installed, unsupported, uncommitted or none) with its action (config_commit or "
         "init, or null) and findings {code, scope, severity, message, "
         "fix, action}: scope 'repo' is fixed and committed to base, 'machine' is fixed "
-        "locally, 'library' is fixed in the library in $HAIFA_HOME; severity is error, "
+        "locally, 'library' is fixed in the library in $GIRO_HOME; severity is error, "
         "warning or info; action names the fix (init, config_commit, config_pull) or is "
         "null. "
         "Outside a git repository (without --repo) only the machine and the library are "
@@ -215,7 +222,7 @@ def _add_harness_commands(parser: argparse.ArgumentParser) -> None:
     check.add_argument(
         "--config",
         metavar="PATH",
-        help="HAIFA roster (.factory/agents.yaml); only the harnesses it uses are checked",
+        help="GIRO roster (.factory/agents.yaml); only the harnesses it uses are checked",
     )
 
 
@@ -296,7 +303,7 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
         "init",
         help="create the library from the seed in one commit",
         description=(
-            "Create the library ($HAIFA_HOME/library, overridden by HAIFA_LIBRARY) as a git "
+            "Create the library ($GIRO_HOME/library, overridden by GIRO_LIBRARY) as a git "
             "repository from the packaged seed in one commit: library.yaml (format, id, name, "
             "min_factory_version, seed) and the seed agents, workflows and the factory skill. "
             "An existing library is refused (library_exists); git needs user.name and user.email "
@@ -339,7 +346,7 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
             "into the library. The item is validated (invalid_item with error.issues) and the "
             "plan {items, files with diffs, digest} is returned. Equal content is a no-op "
             "(committed false); other content under an existing name is a new version. "
-            "Without --dry-run the write holds $HAIFA_HOME/library.lock, refuses a library "
+            "Without --dry-run the write holds $GIRO_HOME/library.lock, refuses a library "
             "with uncommitted changes (library_dirty), commits on HEAD without a checkout "
             "and fast-forwards the branch and working tree. A library with a remote sends "
             "the change as a pull request (data.pull_request), never a push to its branch."
@@ -353,10 +360,10 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
     import_.add_argument("--dry-run", action="store_true", help="only print the plan")
     clone = sub.add_parser(
         "clone",
-        help="clone a shared library from a git remote (default: the HAIFA library)",
+        help="clone a shared library from a git remote (default: the GIRO library)",
         description=(
             "Clone the library from URL into the library path and return its status. Without "
-            "URL the default library is cloned: $HAIFA_LIBRARY_URL, else "
+            "URL the default library is cloned: $GIRO_LIBRARY_URL, else "
             "https://github.com/janbkrejci/HAIFA-LIBRARY.git. An "
             "existing library is refused (library_exists), a failed clone is clone_failed and "
             "a remote without a valid library.yaml (format, id, name) is invalid_library; "
@@ -369,7 +376,7 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
         "url",
         metavar="URL",
         nargs="?",
-        help="git remote of the library (default: the HAIFA library)",
+        help="git remote of the library (default: the GIRO library)",
     )
     clone.add_argument(
         "--seed-fallback",
@@ -409,7 +416,7 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
             "pull request against the library branch; the branch itself is never pushed. On "
             "GitHub the pull request comes from a branch in the library repo when you may "
             "write to it, else from your fork (gh repo fork); other remotes get only the "
-            "branch haifa-library/... HAIFA never merges or approves it. A library behind the "
+            "branch haifa-library/... GIRO never merges or approves it. A library behind the "
             "remote (library_behind: run factory library pull) or diverged from it "
             "(library_diverged) is refused; a rejected push is push_failed, a failed gh call "
             "pr_failed."
@@ -417,7 +424,7 @@ def _add_library_commands(parser: argparse.ArgumentParser) -> None:
     )
     seed = sub.add_parser(
         "seed",
-        help="take the new seed versions into the library after a HAIFA upgrade",
+        help="take the new seed versions into the library after a GIRO upgrade",
         description=(
             "Compare every item of the installed seed with HEAD of the library and the seed "
             "version recorded in library.yaml (seed). Missing in the library: create. Library "
@@ -465,7 +472,7 @@ def _add_init_command(parser: argparse.ArgumentParser) -> None:
         "makes the same plan one commit on base (pushed before base moves; --pr opens a "
         "pull request from factory-init/<n> instead); --expect DIGEST refuses a plan that "
         "changed (plan_changed). Blockers: already_installed (config.yaml in base), "
-        "existing_config (an sssf installation; HAIFA does not take it over), "
+        "existing_config (an sssf installation; GIRO does not take it over), "
         "config_not_committed (run factory config commit), dirty_paths, invalid_plan, "
         "not_on_base, run_in_progress, base_behind, base_diverged. Nothing is written to "
         "the library."
@@ -528,7 +535,7 @@ def _add_try_command(parser: argparse.ArgumentParser) -> None:
     parser.description = (
         "Create the sample repository: a small Python library with tests "
         "(python -m unittest discover -s tests -t .) and a backlog of three tasks of "
-        "growing size (DEMO-S01-T01..T03). The folder (default: demo in the HAIFA home) "
+        "growing size (DEMO-S01-T01..T03). The folder (default: demo in the GIRO home) "
         "gets git init with base main, .factory/config.yaml with git_provider local (no "
         "GitHub, no gh), the .gitignore lines and one commit; the repository is registered "
         "in the dashboard. A folder that exists and is not empty is not changed: its path "
@@ -540,7 +547,7 @@ def _add_try_command(parser: argparse.ArgumentParser) -> None:
         "directory",
         nargs="?",
         metavar="DIR",
-        help="folder of the sample repository (default: $HAIFA_HOME/demo)",
+        help="folder of the sample repository (default: $GIRO_HOME/demo)",
     )
     parser.add_argument("--json", action="store_true", help="print machine-readable JSON")
 
@@ -891,7 +898,7 @@ def _harness(args: argparse.Namespace) -> int:
 def _add_config_commands(parser: argparse.ArgumentParser) -> None:
     parser.set_defaults(config_parser=parser)
     sub = parser.add_subparsers(dest="config_command", metavar="<subcommand>")
-    local = sub.add_parser("local", help="repository operating settings in HAIFA_HOME")
+    local = sub.add_parser("local", help="repository operating settings in GIRO_HOME")
     local.set_defaults(local_parser=local)
     local_commands = local.add_subparsers(dest="local_command", metavar="<subcommand>")
     local_show = local_commands.add_parser("show", help="read local repository settings")
@@ -903,7 +910,7 @@ def _add_config_commands(parser: argparse.ArgumentParser) -> None:
         "legacy", help="preview legacy task/step/project values; writes nothing"
     )
     take = local_commands.add_parser(
-        "import", help="explicitly import legacy values into HAIFA_HOME"
+        "import", help="explicitly import legacy values into GIRO_HOME"
     )
     take.add_argument(
         "--overwrite", action="store_true", help="explicitly replace existing local settings"
@@ -3190,7 +3197,17 @@ def main(argv: Sequence[str] | None = None) -> int:
     from aifactory.migration_guard import check_home, process_lease
     from aifactory.upgrade import UpgradeError
 
+    arguments = list(sys.argv[1:] if argv is None else argv)
+    if arguments and arguments[0] == "migrate":
+        from aifactory.home_migration import migration_command
+
+        return migration_command(arguments[1:])
+    if arguments == ["--version"] or "--help" in arguments:
+        return _main(argv)
     try:
+        if arguments == ["--data-home"]:
+            print(haifa_home())
+            return 0
         with process_lease(haifa_home()):
             if "obs" not in (sys.argv[1:] if argv is None else argv):
                 check_home(haifa_home(), writing=True)
@@ -3206,7 +3223,13 @@ def _main(argv: Sequence[str] | None = None) -> int:
     if argv is None:
         oscompat.utf8_stdio()
     _leave_deleted_cwd()
-    load_env_file()
+    if list(sys.argv[1:] if argv is None else argv) != ["--version"] and "--help" not in (
+        sys.argv[1:] if argv is None else argv
+    ):
+        from aifactory.environment import resolve
+
+        load_env_file()
+        os.environ.update(resolve(os.environ))
     argv_list = list(sys.argv[1:] if argv is None else argv)
     want_json = "--json" in argv_list
     parser = build_parser()
@@ -3254,7 +3277,7 @@ def _add_obs_command(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--host",
         metavar="ADDR",
-        help="address to listen on (default: $HAIFA_DASH_HOST, else 127.0.0.1); "
+        help="address to listen on (default: $GIRO_DASH_HOST, else 127.0.0.1); "
         "0.0.0.0 serves the whole network, with no login",
     )
     parser.add_argument("--no-open", action="store_true", help="do not open the browser")
@@ -3314,7 +3337,10 @@ def _obs(args: argparse.Namespace) -> int:
 
     host = web_server.resolve_host(args.host)
     url = web_server.dashboard_url(port, host)
-    restarted = os.environ.pop(web_server.RESTART_ENV, None) is not None
+    restarted = bool(
+        os.environ.pop("GIRO_OBS_RESTART", None) or os.environ.pop(web_server.RESTART_ENV, None)
+    )
+    os.environ.pop(web_server.RESTART_ENV, None)
     data: dict[str, Any] = {
         "url": url,
         "host": host,
@@ -3334,7 +3360,7 @@ def _obs(args: argparse.Namespace) -> int:
             data["reused"] = True
             if args.json:
                 return _emit_ok(data, warnings)
-            print(f"HAIFA dashboard už běží: {url}{fragment}")
+            print(f"GIRO dashboard už běží: {url}{fragment}")
             for warning in warnings:
                 print(f"warning: {warning}", file=sys.stderr)
             return 0
@@ -3350,7 +3376,7 @@ def _obs(args: argparse.Namespace) -> int:
         _emit_ok(data, warnings)
     else:
         where = "" if host in web_server.LOOPBACK else f", naslouchá na {host}:{port}"
-        print(f"HAIFA dashboard: {url}{fragment}  (Ctrl+C ukončí{where})")
+        print(f"GIRO dashboard: {url}{fragment}  (Ctrl+C ukončí{where})")
         for warning in warnings:
             print(f"warning: {warning}", file=sys.stderr)
     sys.stdout.flush()
@@ -3374,7 +3400,7 @@ def _obs(args: argparse.Namespace) -> int:
 
 def _add_upgrade_command(parser: argparse.ArgumentParser) -> None:
     parser.description = (
-        "Install a newer HAIFA from a bundle haifa-<version>.zip (a path, or an https or "
+        "Install a newer GIRO from a bundle giro-<version>.zip (a path, or an https or "
         "file URL; other schemes are invalid_url). The bundle is unpacked into a temporary "
         "directory, SHA256SUMS is verified (checksum_mismatch), the version is read from the "
         "wheel and compared with the installed one (up_to_date when not newer; a broken zip "
@@ -3397,7 +3423,7 @@ def _add_upgrade_command(parser: argparse.ArgumentParser) -> None:
 
 
 def _dashboard_running() -> bool:
-    """Whether the dashboard of this HAIFA home answers on its registered port."""
+    """Whether the dashboard of this GIRO home answers on its registered port."""
     from aifactory.home import haifa_home
     from aifactory.web import server as web_server
     from aifactory.web.registry import Registry
@@ -3446,9 +3472,9 @@ def _upgrade(args: argparse.Namespace) -> int:
     if result.dry_run:
         print("dry run: nothing installed")
     elif result.handed_off:
-        print(f"installing HAIFA {result.target_version}: {HANDOFF_HINT}; log: {result.log}")
+        print(f"installing GIRO {result.target_version}: {HANDOFF_HINT}; log: {result.log}")
     else:
-        print(f"installed HAIFA {result.target_version}; {RESTART_HINT}")
+        print(f"installed GIRO {result.target_version}; {RESTART_HINT}")
     return 0
 
 
@@ -3480,7 +3506,7 @@ def _add_learn_commands(parser: argparse.ArgumentParser) -> None:
         action="store_true",
         help="read the objections of every repo registered in the dashboard; each lesson "
         "names the repo its rule belongs to and is saved in that repo's trace DB (factory "
-        "shortcomings go to the HAIFA repo, target 'seed' only there)",
+        "shortcomings go to the GIRO repo, target 'seed' only there)",
     )
     accept = sub.add_parser(
         "accept",
@@ -3555,7 +3581,7 @@ def _dispatch(parser: argparse.ArgumentParser, args: argparse.Namespace) -> int:
     if command is None:
         parser.print_help()
         print()
-        print("První spuštění: factory check")
+        print("První spuštění: giro check")
         return 0
     if command == "check":
         return _check(args)

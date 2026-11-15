@@ -17,6 +17,7 @@ from typing import Any
 
 import yaml
 
+from aifactory.environment import value
 from validation import results as results_mod
 from validation.context import SESSIONS_DIR, TRACE_DB, Context
 from validation.hidden import write_hidden
@@ -153,7 +154,11 @@ def isolated_haifa_home(workdir: Path, source: Path | None = None) -> Path:
 
 def _worker_json(argv: list[str]) -> tuple[int, dict[str, Any]]:
     """A factory command through the worker without the fake (github preflight)."""
-    env = {k: v for k, v in os.environ.items() if k != "HAIFA_VALIDATE_FAKE"}
+    env = {
+        k: v
+        for k, v in os.environ.items()
+        if k not in {"GIRO_VALIDATE_FAKE", "HAIFA_VALIDATE_FAKE"}
+    }
     proc = subprocess.run(
         [sys.executable, "-m", "validation.worker", *argv],
         cwd=AIFACTORY_DIR,
@@ -396,9 +401,9 @@ def main(argv: list[str] | None = None) -> int:
         roster = resolve_roster(args.roster) if args.roster is not None else None
         target: str | AzureRepo | None = None
         if args.remote == "github":
-            target = preflight_github(os.environ.get(SANDBOX_ENV), roster)
+            target = preflight_github(value(SANDBOX_ENV), roster)
         elif args.remote == "azure":
-            target = preflight_azure(os.environ.get(AZURE_SANDBOX_ENV), roster)
+            target = preflight_azure(value(AZURE_SANDBOX_ENV), roster)
         else:
             _require_just()
     except SetupError as exc:
@@ -420,15 +425,16 @@ def main(argv: list[str] | None = None) -> int:
         else:
             owned.add(workdir)
 
-    previous_home = os.environ.get(HOME_ENV)
-    os.environ[HOME_ENV] = str(isolated_haifa_home(workdir))
+    previous_home = {key: os.environ.get(key) for key in ("GIRO_HOME", "HAIFA_HOME")}
+    os.environ["GIRO_HOME"] = os.environ["HAIFA_HOME"] = str(isolated_haifa_home(workdir))
     try:
         return _run(args, names, roster, target, started, owned, workdir)
     finally:
-        if previous_home is None:
-            os.environ.pop(HOME_ENV, None)
-        else:
-            os.environ[HOME_ENV] = previous_home
+        for key, previous in previous_home.items():
+            if previous is None:
+                os.environ.pop(key, None)
+            else:
+                os.environ[key] = previous
 
 
 def _run(

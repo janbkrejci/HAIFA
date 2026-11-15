@@ -216,7 +216,12 @@ Snapshot = dict[str, tuple[int, int]]
 @pytest.fixture(scope="session")
 def _real_haifa_home() -> Path:
     """The operator's HAIFA home, taken before any test changes the environment."""
-    return haifa_home_module.haifa_home()
+    explicit = os.environ.get("GIRO_HOME") or os.environ.get("HAIFA_HOME")
+    if explicit:
+        return Path(explicit).expanduser()
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config"))
+    # Do not invoke guarded discovery against the operator's live legacy installation.
+    return base / "haifa"
 
 
 def _snapshot(root: Path) -> Snapshot:
@@ -249,9 +254,15 @@ def _haifa_home(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Iterator[Path]:
     home = tmp_path_factory.mktemp("haifa-home")
+    from aifactory.environment import SUFFIXES
+
+    # Tests must not inherit the factory runner's run ID, sandbox or machine choices.
+    for suffix in SUFFIXES:
+        for prefix in ("GIRO_", "HAIFA_"):
+            monkeypatch.delenv(prefix + suffix, raising=False)
     monkeypatch.setenv(haifa_home_module.HOME_ENV, str(home))
     yield home
-    after = _snapshot(_real_haifa_home)
+    after = _protected_home_snapshots(_real_haifa_home)
     assert after == _real_haifa_snapshot, f"the real HAIFA home {_real_haifa_home} changed"
 
 
@@ -263,4 +274,11 @@ def _real_haifa_snapshot(_real_haifa_home: Path) -> Snapshot:
     before every test doubles the I/O and would accept a previous test's leak as
     the next test's baseline.
     """
-    return _snapshot(_real_haifa_home)
+    return _protected_home_snapshots(_real_haifa_home)
+
+
+def _protected_home_snapshots(root: Path) -> Snapshot:
+    paths = {root}
+    if root.name in {"haifa", "giro"}:
+        paths.add(root.with_name("giro" if root.name == "haifa" else "haifa"))
+    return {f"{path}/{key}": item for path in paths for key, item in _snapshot(path).items()}

@@ -1,5 +1,5 @@
 @echo off
-rem Installs HAIFA on Windows: runs install.ps1 next to this file. Double-click or run from cmd.
+rem Installs GIRO on Windows: runs install.ps1 next to this file. Double-click or run from cmd.
 setlocal
 rem Started from PowerShell 7: its PSModulePath breaks the modules of Windows PowerShell.
 set "PSModulePath="

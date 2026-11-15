@@ -1,0 +1,65 @@
+name: GIRO release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: giro-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: >-
+      github.repository == 'janbkrejci/GIRO' &&
+      github.ref == 'refs/heads/main' &&
+      vars.GIRO_RELEASE_ENABLED == 'true' &&
+      github.event.repository.private == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+        with:
+          python-version: '3.12'
+      - uses: oven-sh/setup-bun@v2
+      - name: Build frontend
+        working-directory: aifactory/web
+        run: |
+          bun install --frozen-lockfile
+          bun run build
+      - name: Build uniquely versioned GIRO bundle
+        id: bundle
+        working-directory: aifactory
+        run: |
+          uv sync --locked
+          version="$(.venv/bin/python -m bundle.release)"
+          .venv/bin/python -m bundle.build
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - name: Verify isolated fresh installation and both entry points
+        env:
+          UV_TOOL_DIR: ${{ runner.temp }}/giro-tools
+          UV_TOOL_BIN_DIR: ${{ runner.temp }}/giro-bin
+          GIRO_HOME: ${{ runner.temp }}/giro-home
+          EXPECTED_VERSION: ${{ steps.bundle.outputs.version }}
+        run: |
+          unzip "aifactory/dist/giro-$EXPECTED_VERSION.zip" -d "$RUNNER_TEMP/giro-install"
+          bash "$RUNNER_TEMP/giro-install/giro-$EXPECTED_VERSION/install.sh"
+          "$UV_TOOL_BIN_DIR/giro" --version | grep -Fx "GIRO $EXPECTED_VERSION"
+          "$UV_TOOL_BIN_DIR/factory" --version | grep -Fx "GIRO $EXPECTED_VERSION"
+      - name: Publish GIRO only from its new repository
+        env:
+          VERSION: ${{ steps.bundle.outputs.version }}
+        working-directory: aifactory
+        run: |
+          test "$GITHUB_REPOSITORY" = janbkrejci/GIRO
+          tag="v$VERSION"
+          gh release create "$tag" "dist/giro-$VERSION.zip" --target "$GITHUB_SHA" --title "GIRO $VERSION" --notes "Goal in. Release out. Source: $GITHUB_SHA"
