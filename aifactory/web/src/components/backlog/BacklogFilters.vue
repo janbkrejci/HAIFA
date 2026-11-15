@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed } from 'vue'
 import {
   levelLabel,
@@ -36,7 +37,7 @@ function scopeLabel(o: ScopeOption): string {
 }
 
 const projectChoices = computed<SelectOption[]>(() => [
-  { value: '', label: 'vše' },
+  { value: '', label: t('backlog.vse') },
   ...props.projects.map((p) => ({ value: p.id, label: scopeLabel(p) })),
 ])
 
@@ -64,16 +65,16 @@ function setProject(value: string) {
         :checked="hideDone"
         @change="emit('update:hideDone', ($event.target as HTMLInputElement).checked)"
       />
-      Skrýt hotové
+      {{ t('backlog.skryt_hotove') }}
     </label>
-    <div class="modes" role="group" aria-label="Zobrazení">
+    <div class="modes" role="group" :aria-label="t('backlog.zobrazeni')">
       <button
         type="button"
         data-test="mode-tree"
         :class="{ active: mode === 'tree' }"
         @click="emit('update:mode', 'tree')"
       >
-        Strom
+        {{ t('backlog.strom') }}
       </button>
       <button
         type="button"
@@ -81,7 +82,7 @@ function setProject(value: string) {
         :class="{ active: mode === 'kanban' }"
         @click="emit('update:mode', 'kanban')"
       >
-        Kanban
+        {{ t('backlog.kanban') }}
       </button>
     </div>
   </div>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed, ref, watch } from 'vue'
 import {
   AlertTriangle,
@@ -22,6 +23,7 @@ import {
   canStackDependencies,
   fetchBacklog,
   type DependsRef,
+  type BoardState,
   taskInProgress,
   isDoneState,
   blockedTooltip,
@@ -90,19 +92,24 @@ const editing = ref(false)
 /** The form was opened by "Vylepšit agentem": it starts the agent at once. */
 const autoImprove = ref(false)
 
+function dependencyState(state: string): string {
+  if (state === 'unknown') return t('backlog.unknownState')
+  return Object.hasOwn(STATE_LABELS, state) ? STATE_LABELS[state as BoardState] : state
+}
+
 const task = computed(() => props.detail.task)
 const level = useLevels()
 /** `Task nemá workflow – nastav ho na tasku, stepu nebo projektu.` with the configured levels. */
 const NO_WORKFLOW_HINT = computed(() => {
   const where = [...level.levels.value].reverse().map((l) => levelNoun(l, 'gen'))
   const last = where.pop() ?? ''
-  const list = where.length ? `${where.join(', ')} nebo ${last}` : last
-  return `${levelLabel(level.task.value)} nemá workflow – nastav ho na ${list}.`
+  const list = where.length ? `${where.join(', ')}${t('backlog.or')}${last}` : last
+  return t('backlog.p0_nema_workflow_nastav_ho_na_p1', { p0: levelLabel(level.task.value), p1: list })
 })
 const noWorkflow = computed(() => !task.value.workflow)
 /** A person's task (`assignee: human`): no run starts it, the person marks it done. */
 const forHuman = computed(() => task.value.assignee === 'human')
-const HUMAN_HINT = 'Task udělá člověk, factory ho nespustí. Až bude hotový, označ ho jako hotový.'
+const HUMAN_HINT = computed(() => t('backlog.task_udela_clovek_factory_ho_nespusti_az_bude_hotovy_oznac_ho_jako_hotovy'))
 /** A done or cancelled task never runs again. */
 const finished = computed(() => isDoneState(task.value.board_state))
 /** A done task is not run, edited or improved again: a follow-up task continues it. */
@@ -141,14 +148,14 @@ const dependenciesBlocked = computed(() =>
   !canStackDependencies(task.value.blocked_by, [...props.detail.depends, ...containerDependencies.value]),
 )
 const runTooltip = computed(() => {
-  if (inProgress.value) return task.value.board_state === 'running' ? 'Task právě běží.' : 'Task čeká na review/merge PR.'
-  if (dependenciesBlocked.value) return blockedTooltip(task.value.blocked_by, names.value) || 'Task je blokovaný.'
+  if (inProgress.value) return task.value.board_state === 'running' ? t('backlog.task_prave_bezi') : t('backlog.task_ceka_na_review_merge_pr')
+  if (dependenciesBlocked.value) return blockedTooltip(task.value.blocked_by, names.value) || t('backlog.task_je_blokovany')
 
   if (finished.value) {
     const noun = levelLabel(level.task.value)
-    return task.value.board_state === 'done' ? `${noun} je hotový, znovu se nespouští.` : `${noun} je zrušený, nespouští se.`
+    return task.value.board_state === 'done' ? t('backlog.p0_je_hotovy_znovu_se_nespousti', { p0: noun }) : t('backlog.p0_je_zruseny_nespousti_se', { p0: noun })
   }
-  if (forHuman.value) return HUMAN_HINT
+  if (forHuman.value) return HUMAN_HINT.value
   return noWorkflow.value ? NO_WORKFLOW_HINT.value : ''
 })
 const runBlocked = computed(() => noWorkflow.value || finished.value || forHuman.value || inProgress.value || dependenciesBlocked.value)
@@ -156,7 +163,7 @@ const runBlocked = computed(() => noWorkflow.value || finished.value || forHuman
 const queueable = computed(() => DEFERRABLE_STATES.includes(task.value.board_state))
 /** Advice is offered only for a task that has not started. */
 const adviceBlocked = computed(() => finished.value || inProgress.value)
-const improveTooltip = computed(() => (adviceBlocked.value ? `${levelLabel(level.task.value)} už nejde měnit.` : ''))
+const improveTooltip = computed(() => (adviceBlocked.value ? t('backlog.p0_uz_nejde_menit', { p0: levelLabel(level.task.value) }) : ''))
 
 function openEdit(improve: boolean) {
   if (inProgress.value || (improve && adviceBlocked.value)) return
@@ -180,33 +187,32 @@ const readiness = computed<Readiness>(() => {
   if (inProgress.value) {
     return {
       tone: 'muted',
-      title: `${levelLabel(level.task.value)} je ve stavu ${STATE_LABELS[state]}.`,
+      title: t('backlog.readinessState', { level: levelLabel(level.task.value), state: STATE_LABELS[state] }),
       reasons: [],
       runId: props.detail.runs[0]?.run_id ?? null,
     }
   }
-  if (state === 'human') return { tone: 'muted', title: HUMAN_HINT, reasons: [], runId: null }
+  if (state === 'human') return { tone: 'muted', title: HUMAN_HINT.value, reasons: [], runId: null }
   const reasons: string[] = []
-  if (forHuman.value) reasons.push(HUMAN_HINT)
+  if (forHuman.value) reasons.push(HUMAN_HINT.value)
   else if (noWorkflow.value) reasons.push(NO_WORKFLOW_HINT.value)
   for (const u of task.value.blocked_by) reasons.push(unmetLine(u, names.value))
-  if (task.value.invalid || props.detail.issues.length) reasons.push('Soubor má chyby – oprav je před spuštěním.')
-  if (!reasons.length) return { tone: 'ok', title: 'Připraveno ke spuštění', reasons, runId: null }
-  return { tone: 'warn', title: 'Před spuštěním je potřeba:', reasons, runId: null }
+  if (task.value.invalid || props.detail.issues.length) reasons.push(t('backlog.soubor_ma_chyby_oprav_je_pred_spustenim'))
+  if (!reasons.length) return { tone: 'ok', title: t('backlog.pripraveno_ke_spusteni'), reasons, runId: null }
+  return { tone: 'warn', title: t('backlog.pred_spustenim_je_potreba'), reasons, runId: null }
 })
 
 const { dialog, ask, confirm: onDialogConfirm, cancel: onDialogCancel } = useConfirm()
 
 /** Asks first, then sets status `cancelled` on a task that has not started (Zrušeno column). */
 async function cancelTask() {
-  const noun = levelNoun(level.task.value)
-  const ok = await ask({
-    title: `Zrušit ${noun} ${task.value.id}?`,
-    message: `${levelLabel(level.task.value)} se přesune do sloupce Zrušeno a nespustí se. Vrátit ho jde úpravou statusu.`,
-    confirmLabel: `Zrušit ${noun}`,
-    cancelLabel: 'Ponechat',
+  const ok = await ask(() => ({
+    title: t('backlog.zrusit_p0_p1', { p0: levelNoun(level.task.value), p1: task.value.id }),
+    message: t('backlog.p0_se_presune_do_sloupce_zruseno_a_nespusti_se_vratit_ho_jde_upravou_status', { p0: levelLabel(level.task.value) }),
+    confirmLabel: t('backlog.zrusit_p0', { p0: levelNoun(level.task.value) }),
+    cancelLabel: t('backlog.keep'),
     tone: 'danger',
-  })
+  }))
   if (ok) emit('cancel-task')
 }
 
@@ -265,7 +271,7 @@ function onEdit(input: EditTaskInput) {
             :disabled="busy || followUpOpen"
             @click="followUpOpen = true"
           >
-            <GitBranchPlus :size="14" /> Navázat follow-upem
+            <GitBranchPlus :size="14" /> {{ t('backlog.navazat_follow_upem') }}
           </button>
           <Tooltip v-if="!done" :text="runTooltip">
             <button
@@ -278,7 +284,7 @@ function onEdit(input: EditTaskInput) {
               @click="emit('open-run')"
             >
               <Spinner v-if="run?.loading" />
-              <Play v-else :size="14" /> Spustit
+              <Play v-else :size="14" /> {{ t('backlog.spustit') }}
             </button>
           </Tooltip>
           <Tooltip v-if="!editing && !done" :text="inProgress ? improveTooltip : ''">
@@ -288,7 +294,7 @@ function onEdit(input: EditTaskInput) {
               :disabled="busy || inProgress"
               @click="openEdit(false)"
             >
-              <Pencil :size="14" /> Upravit
+              <Pencil :size="14" /> {{ t('backlog.upravit') }}
             </button>
           </Tooltip>
           <Tooltip v-if="forHuman && !finished" :text="inProgress ? improveTooltip : ''">
@@ -298,7 +304,7 @@ function onEdit(input: EditTaskInput) {
               :disabled="busy || inProgress"
               @click="onEdit({ status: 'done' })"
             >
-              <CheckCircle2 :size="14" /> Hotovo
+              <CheckCircle2 :size="14" /> {{ t('backlog.hotovo') }}
             </button>
           </Tooltip>
           <button
@@ -311,7 +317,7 @@ function onEdit(input: EditTaskInput) {
             @click="cancelTask"
           >
             <Spinner v-if="action === 'cancel'" />
-            <Ban v-else :size="14" /> Zrušit
+            <Ban v-else :size="14" /> {{ t('backlog.zrusit') }}
           </button>
           <Tooltip v-if="!editing && !done" :text="improveTooltip">
             <button
@@ -321,7 +327,7 @@ function onEdit(input: EditTaskInput) {
               :disabled="busy || adviceBlocked"
               @click="openEdit(true)"
             >
-              <Wand2 :size="18" /> Vylepšit agentem
+              <Wand2 :size="18" /> {{ t('backlog.vylepsit_agentem') }}
             </button>
           </Tooltip>
         </div>
@@ -329,7 +335,7 @@ function onEdit(input: EditTaskInput) {
       <div class="path mono" data-test="path">{{ task.path }}</div>
       <div v-if="detail.follows" class="follows" data-test="follows">
         <CornerDownRight :size="14" aria-hidden="true" />
-        Navazuje na
+        {{ t('backlog.navazuje_na') }}
         <a v-if="detail.follows.kind === 'task'" :href="taskHref(detail.follows.id)" class="mono">{{ detail.follows.id }}</a>
         <span v-else class="mono">{{ detail.follows.id }}</span>
         <span v-if="detail.follows.title" class="ellipsis">{{ detail.follows.title }}</span>
@@ -349,9 +355,9 @@ function onEdit(input: EditTaskInput) {
       <div class="readiness-text">
         <strong>{{ readiness.title }}</strong>
         <span v-if="readiness.tone === 'ok'">
-          · workflow <b class="mono">{{ task.workflow }}</b>
+          {{ t('backlog.workflow') }} <b class="mono">{{ task.workflow }}</b>
         </span>
-        <a v-if="readiness.runId" :href="runHref(readiness.runId)" class="mono">· běh {{ readiness.runId }}</a>
+        <a v-if="readiness.runId" :href="runHref(readiness.runId)" class="mono">{{ t('backlog.beh') }} {{ readiness.runId }}</a>
         <ul v-if="readiness.reasons.length" class="reasons">
           <li v-for="(reason, n) in readiness.reasons" :key="n" data-test="readiness-reason">{{ reason }}</li>
         </ul>
@@ -404,19 +410,19 @@ function onEdit(input: EditTaskInput) {
           @cancel="closeEdit"
         />
         <template v-else>
-          <IssueList v-if="error" :message="error.message" :issues="error.issues" />
+          <IssueList v-if="error" :code="error.code" :message="error.message" :issues="error.issues" />
           <TaskDocuments :task-id="task.id" :body="detail.body" />
         </template>
 
         <section class="card">
-          <h3><History :size="16" /> Běhy <span class="count">{{ detail.runs.length }}</span></h3>
+          <h3><History :size="16" /> {{ t('backlog.behy') }} <span class="count">{{ detail.runs.length }}</span></h3>
           <table v-if="detail.runs.length" class="table" data-test="runs">
             <thead>
               <tr>
-                <th>Běh</th>
-                <th>Stav</th>
-                <th>Větev</th>
-                <th class="right">Začátek</th>
+                <th>{{ t('backlog.runLabel') }}</th>
+                <th>{{ t('backlog.stav') }}</th>
+                <th>{{ t('backlog.vetev') }}</th>
+                <th class="right">{{ t('backlog.zacatek') }}</th>
                 <th></th>
               </tr>
             </thead>
@@ -436,38 +442,38 @@ function onEdit(input: EditTaskInput) {
               </tr>
             </tbody>
           </table>
-          <p v-else class="faint" data-test="no-runs">Žádné běhy</p>
+          <p v-else class="faint" data-test="no-runs">{{ t('backlog.zadne_behy') }}</p>
         </section>
 
         <section class="card">
-          <h3><GitPullRequest :size="16" /> PR <span class="count">{{ detail.prs.length }}</span></h3>
+          <h3><GitPullRequest :size="16" /> {{ t('backlog.pr') }} <span class="count">{{ detail.prs.length }}</span></h3>
           <ul v-if="detail.prs.length" class="pr-list" data-test="prs">
             <li v-for="pr in detail.prs" :key="pr.branch" :data-pr="pr.pr_id">
               <span class="pr-state" data-test="pr-state">{{ prStateLabel(pr.state) }}</span>
               <CodeTip :code="pr.task_id">
                 <a :href="pr.url" target="_blank" rel="noopener" data-test="pr-link">#{{ pr.pr_id }} {{ pr.title }}</a>
               </CodeTip>
-              <a :href="reviewHref(pr.task_id)" class="pill-link" data-test="pr-review">Review</a>
+              <a :href="reviewHref(pr.task_id)" class="pill-link" data-test="pr-review">{{ t('backlog.review') }}</a>
               <span class="mono faint pr-branch">{{ pr.branch }}</span>
             </li>
           </ul>
-          <p v-else class="faint" data-test="no-prs">Žádné PR</p>
+          <p v-else class="faint" data-test="no-prs">{{ t('backlog.zadne_pr') }}</p>
         </section>
       </div>
 
       <aside class="side">
         <section class="card">
-          <h3><Settings2 :size="16" /> Nastavení</h3>
+          <h3><Settings2 :size="16" /> {{ t('backlog.nastaveni') }}</h3>
           <dl class="props">
-            <dt>Workflow</dt>
+            <dt>{{ t('backlog.workflowLabel') }}</dt>
             <dd data-test="workflow">
               <span v-if="task.workflow" class="mono">{{ task.workflow }}</span>
-              <span v-else class="amber">bez workflow</span>
-              <span v-if="task.workflow && !task.own_workflow" class="faint"> (zděděno)</span>
+              <span v-else class="amber">{{ t('backlog.bez_workflow') }}</span>
+              <span v-if="task.workflow && !task.own_workflow" class="faint"> {{ t('backlog.zdedeno') }}</span>
             </dd>
-            <dt>Automatizace a harness</dt>
-            <dd>Nová Factory používá místní volby na Přehledu — Na tomto počítači.</dd>
-            <dt>Writes</dt>
+            <dt>{{ t('backlog.automatizace_a_harness') }}</dt>
+            <dd>{{ t('backlog.nova_factory_pouziva_mistni_volby_na_prehledu_na_tomto_pocitaci') }}</dd>
+            <dt>{{ t('backlog.writes') }}</dt>
             <dd data-test="writes">
               <span v-if="task.writes.length" class="chips">
                 <span v-for="w in task.writes" :key="w" class="chip mono">{{ w }}</span>
@@ -475,9 +481,9 @@ function onEdit(input: EditTaskInput) {
               <span v-else>—</span>
             </dd>
             <template v-if="queueable">
-              <dt>Auto continue</dt>
+              <dt>{{ t('backlog.auto_continue') }}</dt>
               <dd data-test="auto-queue">
-                <span data-test="auto-queue-state">{{ task.auto_excluded ? 'odloženo' : 've frontě' }}</span>
+                <span data-test="auto-queue-state">{{ task.auto_excluded ? t('backlog.odlozeno') : t('backlog.ve_fronte') }}</span>
                 <button
                   type="button"
                   class="queue-toggle wide"
@@ -487,7 +493,7 @@ function onEdit(input: EditTaskInput) {
                 >
                   <PlayCircle v-if="task.auto_excluded" :size="14" />
                   <PauseCircle v-else :size="14" />
-                  {{ task.auto_excluded ? 'Vrátit do auto continue' : 'Vyloučit z auto continue' }}
+                  {{ task.auto_excluded ? t('backlog.vratit_do_auto_continue') : t('backlog.vyloucit_z_auto_continue') }}
                 </button>
               </dd>
             </template>
@@ -495,22 +501,22 @@ function onEdit(input: EditTaskInput) {
         </section>
 
         <section class="card">
-          <h3><Link2 :size="16" /> Vazby</h3>
+          <h3><Link2 :size="16" /> {{ t('backlog.vazby') }}</h3>
           <div class="link-group" data-test="depends">
-            <h4>Závisí na <span class="count">{{ detail.depends.length }}</span></h4>
+            <h4>{{ t('backlog.zavisi_na') }} <span class="count">{{ detail.depends.length }}</span></h4>
             <ul v-if="detail.depends.length">
               <li v-for="dep in detail.depends" :key="dep.id" :data-dep="dep.id">
                 <a v-if="dep.kind === 'task'" :href="taskHref(dep.id)" class="mono">{{ dep.id }}</a>
                 <span v-else class="mono">{{ dep.id }}</span>
                 <span v-if="dep.title" class="ellipsis">{{ dep.title }}</span>
-                <span class="faint small" data-test="dep-state">{{ dep.state }}</span>
-                <span class="push"><Tooltip :text="inProgress ? improveTooltip : 'Odebrat vazbu'">
+                <span class="faint small" data-test="dep-state">{{ dependencyState(dep.state) }}</span>
+                <span class="push"><Tooltip :text="inProgress ? improveTooltip : t('backlog.odebrat_vazbu')">
                   <button
                     type="button"
                     class="icon"
                     :data-test="`unlink-${dep.id}`"
                     :disabled="busy || inProgress"
-                    aria-label="Odebrat vazbu"
+                    :aria-label="t('backlog.odebrat_vazbu')"
                     :aria-busy="action === unlinkKey('depends_on', dep.id) || undefined"
                     @click="removeLink('depends_on', dep.id)"
                   >
@@ -520,11 +526,11 @@ function onEdit(input: EditTaskInput) {
                 </Tooltip></span>
               </li>
             </ul>
-            <p v-else class="faint">Žádné závislosti</p>
+            <p v-else class="faint">{{ t('backlog.zadne_zavislosti') }}</p>
           </div>
 
           <div class="link-group" data-test="blocks">
-            <h4>Blokuje <span class="count">{{ detail.blocks.length }}</span></h4>
+            <h4>{{ t('backlog.blokuje') }} <span class="count">{{ detail.blocks.length }}</span></h4>
             <ul v-if="detail.blocks.length">
               <li v-for="b in detail.blocks" :key="b.id" :data-block="b.id">
                 <a :href="taskHref(b.id)" class="mono">{{ b.id }}</a>
@@ -532,11 +538,11 @@ function onEdit(input: EditTaskInput) {
                 <span class="push"><StateChip :state="b.board_state" /></span>
               </li>
             </ul>
-            <p v-else class="faint">Nic</p>
+            <p v-else class="faint">{{ t('backlog.nic') }}</p>
           </div>
 
           <div v-if="followers.length" class="link-group" data-test="followed-by">
-            <h4>Navazují na něj <span class="count">{{ followers.length }}</span></h4>
+            <h4>{{ t('backlog.navazuji_na_nej') }} <span class="count">{{ followers.length }}</span></h4>
             <ul>
               <li v-for="f in followers" :key="f.id" :data-follower="f.id">
                 <a :href="taskHref(f.id)" class="mono">{{ f.id }}</a>
@@ -547,17 +553,17 @@ function onEdit(input: EditTaskInput) {
           </div>
 
           <div class="link-group" data-test="related">
-            <h4>Související <span class="count">{{ task.related.length }}</span></h4>
+            <h4>{{ t('backlog.souvisejici') }} <span class="count">{{ task.related.length }}</span></h4>
             <ul v-if="task.related.length">
               <li v-for="r in task.related" :key="r" :data-related="r">
                 <a :href="taskHref(r)" class="mono">{{ r }}</a>
-                <span class="push"><Tooltip :text="inProgress ? improveTooltip : 'Odebrat vazbu'">
+                <span class="push"><Tooltip :text="inProgress ? improveTooltip : t('backlog.odebrat_vazbu')">
                   <button
                     type="button"
                     class="icon"
                     :data-test="`unrelate-${r}`"
                     :disabled="busy || inProgress"
-                    aria-label="Odebrat vazbu"
+                    :aria-label="t('backlog.odebrat_vazbu')"
                     :aria-busy="action === unlinkKey('related', r) || undefined"
                     @click="removeLink('related', r)"
                   >
@@ -567,7 +573,7 @@ function onEdit(input: EditTaskInput) {
                 </Tooltip></span>
               </li>
             </ul>
-            <p v-else class="faint">Nic</p>
+            <p v-else class="faint">{{ t('backlog.nic') }}</p>
           </div>
         </section>
       </aside>

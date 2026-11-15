@@ -1,10 +1,16 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TaskDocuments from './TaskDocuments.vue'
 import type { TaskDocument } from '@/lib/backlog'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
-vi.mock('@/lib/api', () => api)
+vi.mock('@/lib/api', async (original) => ({ ...(await original<object>()), ...api }))
 
 afterEach(() => {
   api.getApi.mockReset()
@@ -125,7 +131,14 @@ describe('TaskDocuments', () => {
     const wrapper = mount(TaskDocuments, { props: { taskId: 'T1', body: '## Cíl\n\nUdělat **to**.' } })
     await flushPromises()
     await wrapper.get('[data-test="doc-backlog"]').trigger('click')
-    expect(wrapper.get('[data-test="doc-problem"]').text()).toContain('file too large to show')
+    expect(wrapper.get('[data-test="doc-problem"]').text()).toBe(
+      'Obsah nejde zobrazit: Soubor je příliš velký pro zobrazení.',
+    )
+    setLocale('en')
+    await flushPromises()
+    expect(wrapper.get('[data-test="doc-problem"]').text()).toBe(
+      'Cannot display content: The file is too large to display.',
+    )
     wrapper.unmount()
   })
 

@@ -77,6 +77,7 @@ class IntentJob:
     data: dict[str, Any] | None = None
     agent: dict[str, str] | None = None
     error: str | None = None
+    error_code: str | None = None
     issues: list[dict[str, Any]] = field(default_factory=list)
     notes: list[str] = field(default_factory=list)
     applied: dict[str, Any] | None = None
@@ -87,7 +88,7 @@ class IntentJob:
     def events(self) -> Path:
         return self.repo / ".factory/data/backlog-propose" / self.id / "events.jsonl"
 
-    def progress(self) -> list[dict[str, str]]:
+    def progress(self) -> list[dict[str, Any]]:
         """What the agent did in the current turn, newest last."""
         try:
             with self.events.open("rb") as stream:
@@ -123,6 +124,7 @@ class IntentJob:
             "proposal": self.data,
             "agent": dict(self.agent) if self.agent is not None else None,
             "error": self.error,
+            "error_code": self.error_code,
             "issues": self.issues,
             "notes": list(self.notes),
             "progress": self.progress() if self.state in {"queued", "running"} else [],
@@ -130,7 +132,7 @@ class IntentJob:
         }
 
 
-def _progress_item(line: str) -> dict[str, str] | None:
+def _progress_item(line: str) -> dict[str, Any] | None:
     try:
         event = json.loads(line)
     except ValueError:
@@ -159,7 +161,23 @@ def _progress_item(line: str) -> dict[str, str] | None:
         text = f"Chyba: {str(payload.get('error') or '')[:200]}"
     if text is None:
         return None
-    return {"kind": str(kind), "text": text[:300], "ts": str(event.get("ts") or "")}
+    item: dict[str, Any] = {
+        "kind": str(kind),
+        "text": text[:300],
+        "ts": str(event.get("ts") or ""),
+    }
+    # UI metadata is separate from tool names and stored agent output.
+    if kind == "agent_start":
+        item.update(
+            code="agent_start", params={"name": name, "model": str(payload.get("model") or "")}
+        )
+    elif kind in {"gate_fail", "agent_end"}:
+        item["code"] = kind
+    elif kind == "log":
+        item["code"] = name
+    elif kind == "error":
+        item.update(code="error", params={"error": str(payload.get("error") or "")[:200]})
+    return item
 
 
 def _target(body: dict[str, Any]) -> Target:
@@ -280,6 +298,7 @@ class IntentManager:
             job.notes.append(note)
             job.round += 1
             job.error = None
+            job.error_code = None
             job.issues = []
             job.state = "queued"
             self.pool.submit(self._run, job, Refinement(note, current))
@@ -315,6 +334,7 @@ class IntentManager:
             message, issues = _error_text(exc)
             with self.lock:
                 job.error = message
+                job.error_code = getattr(exc, "code", "proposal_failed")
                 job.issues = issues
                 if job.state == "closed":
                     job.stack.close()

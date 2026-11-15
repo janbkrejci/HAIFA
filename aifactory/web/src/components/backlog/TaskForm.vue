@@ -1,9 +1,10 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // One form for a new task (factory task add) and for editing a task (factory task edit).
 import { computed, nextTick, ref, watch } from 'vue'
 import {
   CODE_RE,
-  INHERIT_LABEL,
+  inheritLabel,
   SETTING_LABELS,
   THINKING_LEVELS,
   levelLabel,
@@ -94,10 +95,10 @@ function parameterText(key: string): string {
   if (value == null) return ''
   return String(value)
 }
-const thinkingOptions: SelectOption[] = [
-  { value: '', label: INHERIT_LABEL },
+const thinkingOptions = computed<SelectOption[]>(() => [
+  { value: '', label: inheritLabel() },
   ...THINKING_LEVELS.map((level) => ({ value: level, label: level })),
-]
+])
 function setParameter(key: string, event: Event) {
   setParameterText(key, (event.target as HTMLInputElement).value)
 }
@@ -177,9 +178,9 @@ const stepOptions = computed<SelectOption[]>(() =>
   props.steps.map((s) => ({ value: s.id, label: s.title ? `${s.id} · ${s.title}` : s.id })),
 )
 const statusOptions = computed<SelectOption[]>(() => [
-  ...(isDone.value ? [{ value: 'done', label: 'Hotovo' }] : []),
-  { value: 'todo', label: 'K řešení' },
-  { value: 'cancelled', label: 'Zrušeno' },
+  ...(isDone.value ? [{ value: 'done', label: t('backlog.hotovo') }] : []),
+  { value: 'todo', label: t('backlog.k_reseni') },
+  { value: 'cancelled', label: t('backlog.zruseno') },
 ])
 /** A new task needs a step; without one the form explains how to create it. */
 const noSteps = computed(() => props.mode === 'add' && props.steps.length === 0)
@@ -190,9 +191,9 @@ const frozen = computed(() =>
 )
 /** Why the AI proposals are disabled; '' when they can run. */
 const adviceBlocker = computed(() => {
-  if (frozen.value) return `${levelLabel(level.task.value)} už nejde měnit.`
-  if (props.mode === 'add' && !step.value) return `Vyber ${stepNoun.value}.`
-  if (!title.value.trim()) return 'Vyplň titulek.'
+  if (frozen.value) return t('backlog.p0_uz_nejde_menit', { p0: levelLabel(level.task.value) })
+  if (props.mode === 'add' && !step.value) return t('backlog.chooseStep', { level: stepNoun.value })
+  if (!title.value.trim()) return t('backlog.vypln_titulek')
   return ''
 })
 const visibleParameters = computed(() =>
@@ -208,7 +209,7 @@ const codeOptions = computed<SelectOption[]>(() =>
     .map(([id, n]) => ({ value: id, label: n.title ? `${id} · ${n.title}` : id })),
 )
 const workflowOptions = computed<SelectOption[]>(() => [
-  { value: '', label: 'Zděděno' },
+  { value: '', label: t('backlog.inherited') },
   ...Array.from(new Set([...props.workflows, ...(advice.value ? [advice.value.result.workflow_name] : [])])).map((w) => ({ value: w, label: w })),
 ])
 
@@ -297,8 +298,8 @@ async function onCancel() {
 <template>
   <form class="task-form" :data-mode="mode" @submit.prevent="onSubmit">
     <div class="form-head">
-      <h2 v-if="mode === 'add'">Nový {{ taskNoun }}</h2>
-      <h2 v-else>Upravit {{ task?.id ?? '' }}</h2>
+      <h2 v-if="mode === 'add'">{{ t('backlog.novy') }} {{ taskNoun }}</h2>
+      <h2 v-else>{{ t('backlog.upravit') }} {{ task?.id ?? '' }}</h2>
       <ImproveButton
         v-if="!noSteps"
         :draft="parameterDraft"
@@ -312,8 +313,8 @@ async function onCancel() {
     </div>
 
     <p v-if="noSteps" class="no-steps" data-test="no-steps">
-      {{ levelLabel(level.task.value) }} patří do {{ levelNoun(level.step.value, 'gen') }}, zatím žádný není.
-      <a :href="newStepHref()" data-test="no-steps-link">Založit {{ stepNoun }}</a>
+      {{ levelLabel(level.task.value) }} {{ t('backlog.patri_do') }} {{ levelNoun(level.step.value, 'gen') }}{{ t('backlog.zatim_zadny_neni') }}
+      <a :href="newStepHref()" data-test="no-steps-link">{{ t('backlog.zalozit') }} {{ stepNoun }}</a>
     </p>
 
     <fieldset class="fields" :disabled="parameterBusy" data-test="fields">
@@ -323,27 +324,27 @@ async function onCancel() {
           <SelectMenu v-model="step" data-test="step" :label="stepLabel" :options="stepOptions" />
         </label>
         <label>
-          Kód (volitelné)
+          {{ t('backlog.kod_volitelne') }}
           <input v-model="taskId" data-test="id" type="text" :placeholder="nextTaskCode" autocomplete="off" />
-          <span v-if="!taskCodeValid" class="hint error" data-test="id-invalid">Kód smí obsahovat jen písmena, číslice, „.“ a „_“.</span>
-          <span v-else-if="taskIdPreview" class="hint faint" data-test="id-preview">Id: <span class="mono">{{ taskIdPreview }}</span></span>
+          <span v-if="!taskCodeValid" class="hint error" data-test="id-invalid">{{ t('backlog.kod_smi_obsahovat_jen_pismena_cislice_a') }}</span>
+          <span v-else-if="taskIdPreview" class="hint faint" data-test="id-preview">{{ t('backlog.id') }} <span class="mono">{{ taskIdPreview }}</span></span>
         </label>
       </div>
 
       <label>
-        Titulek
+        {{ t('backlog.titulek') }}
         <input v-model="title" data-test="title" type="text" required />
       </label>
 
       <label>
-        Zadání
+        {{ t('backlog.zadani') }}
         <textarea v-model="body" data-test="body" rows="14" />
       </label>
 
       <div class="workflow-row">
         <label class="workflow-field">
-          Workflow
-          <SelectMenu v-model="workflow" data-test="workflow" label="Workflow" :options="workflowOptions" />
+          {{ t('backlog.workflowLabel') }}
+          <SelectMenu v-model="workflow" data-test="workflow" :label="t('backlog.workflowLabel')" :options="workflowOptions" />
         </label>
 
         <WorkflowAdvice
@@ -359,57 +360,57 @@ async function onCancel() {
       </div>
 
       <details data-test="advanced" :open="advancedOpen" @toggle="advancedOpen = ($event.target as HTMLDetailsElement).open">
-        <summary>Další nastavení</summary>
+        <summary>{{ t('backlog.dalsi_nastaveni') }}</summary>
         <div class="advanced">
           <label v-if="mode === 'edit'">
-            Status
+            {{ t('backlog.status') }}
             <SelectMenu
               v-model="status"
               data-test="status"
-              label="Status"
+              :label="t('backlog.status')"
               :options="statusOptions"
               :disabled="isDone"
             />
             <span v-if="isDone" class="hint faint" data-test="done-note">
-              Hotový {{ taskNoun }} mění jen schválení PR.
+              {{ t('backlog.hotovy') }} {{ taskNoun }} {{ t('backlog.meni_jen_schvaleni_pr') }}
             </span>
           </label>
 
-          <p>Automatizace a výchozí harness nové Factory se nastavují na Přehledu — Na tomto počítači.</p>
+          <p>{{ t('backlog.automatizace_a_vychozi_harness_nove_factory_se_nastavuji_na_prehledu_na_tom') }}</p>
 
           <label>
-            Writes
+            {{ t('backlog.writes') }}
             <textarea
               v-model="writesText"
               data-test="writes"
               rows="3"
-              placeholder="jedna cesta na řádek"
+              :placeholder="t('backlog.jedna_cesta_na_radek')"
               :disabled="mode === 'edit' && inheritWrites"
             />
           </label>
           <label v-if="mode === 'edit'" class="check">
             <input v-model="inheritWrites" data-test="inherit-writes" type="checkbox" />
-            dědit writes
+            {{ t('backlog.dedit_writes') }}
           </label>
 
           <div class="pair">
             <div class="field">
-              <span>Závisí na</span>
-              <IdPicker v-model="depends" data-test="depends" label="Závisí na" :options="codeOptions" :dialog="mode === 'edit'" />
+              <span>{{ t('backlog.zavisi_na') }}</span>
+              <IdPicker v-model="depends" data-test="depends" :label="t('backlog.zavisi_na')" :options="codeOptions" :dialog="mode === 'edit'" />
             </div>
             <div class="field">
-              <span>Související</span>
-              <IdPicker v-model="related" data-test="related" label="Související" :options="codeOptions" />
+              <span>{{ t('backlog.souvisejici') }}</span>
+              <IdPicker v-model="related" data-test="related" :label="t('backlog.souvisejici')" :options="codeOptions" />
             </div>
           </div>
 
           <div class="parameters" data-test="task-parameters">
-            <h4>Parametry (prázdné = zděděno)</h4>
+            <h4>{{ t('backlog.parametry_prazdne_zdedeno') }}</h4>
             <label v-for="key in visibleParameters" :key="key" :data-parameter="key">
               <span class="parameter-name">
                 {{ SETTING_LABELS[key] ?? key }} <code class="key">{{ key }}</code>
               </span>
-              <SelectMenu v-if="key === 'model'" :model-value="parameterText(key)" :options="modelOptions(projectHarness)" label="Model tasku" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
+              <SelectMenu v-if="key === 'model'" :model-value="parameterText(key)" :options="modelOptions(projectHarness)" :label="t('backlog.model_tasku')" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
               <SelectMenu v-else-if="key === 'thinking'" :model-value="parameterText(key)" :options="thinkingOptions" :label="SETTING_LABELS[key] ?? key" :data-test="`parameter-${key}`" @update:model-value="setParameterText(key, $event)" />
               <input
                 v-else
@@ -433,12 +434,12 @@ async function onCancel() {
         :aria-busy="pending || undefined"
       >
         <Spinner v-if="pending" />
-        {{ mode === 'add' ? 'Založit' : 'Uložit' }}
+        {{ mode === 'add' ? t('backlog.zalozit') : t('backlog.ulozit') }}
       </button>
-      <button type="button" data-test="cancel" @click="onCancel">Zrušit</button>
+      <button type="button" data-test="cancel" @click="onCancel">{{ t('backlog.zrusit') }}</button>
     </div>
 
-    <IssueList v-if="error" :message="error.message" :issues="error.issues" />
+    <IssueList v-if="error" :code="error.code" :message="error.message" :issues="error.issues" />
   </form>
 </template>
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Picks backlog codes (the links "Závisí na" and "Související" of a task) from a list instead of
 // typing them: the chosen codes are chips with a remove button, a dropdown adds another one.
 // A chosen code missing from the list (e.g. an unknown reference already in the file) stays a chip.
@@ -55,7 +56,7 @@ function remove(id: string) {
         <button
           type="button"
           class="remove"
-          :aria-label="`Odebrat ${id}`"
+          :aria-label="t('backlog.removeCode', { code: id })"
           :disabled="disabled"
           :data-test="`unpick-${id}`"
           @click="remove(id)"
@@ -70,11 +71,11 @@ function remove(id: string) {
         type="button"
         class="add"
         :disabled="disabled || !free.length"
-        :aria-label="`${label}: přidat`"
+        :aria-label="t('backlog.p0_pridat', { p0: label })"
         @click="picking = true"
       >
         <Plus :size="14" aria-hidden="true" />
-        {{ free.length ? 'Přidat…' : 'Není co přidat' }}
+        {{ free.length ? t('backlog.pridat') : t('backlog.neni_co_pridat') }}
       </button>
       <CodePickerDialog :open="picking" :heading="label" :options="free" @choose="pick" @close="picking = false" />
     </template>
@@ -85,7 +86,7 @@ function remove(id: string) {
       :options="free"
       :label="label"
       :disabled="disabled || !free.length"
-      :placeholder="free.length ? 'Přidat…' : 'Není co přidat'"
+      :placeholder="free.length ? t('backlog.pridat') : t('backlog.neni_co_pridat')"
       @update:model-value="add"
     />
   </div>

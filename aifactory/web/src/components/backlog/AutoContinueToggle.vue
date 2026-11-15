@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The `auto_continue` switch of a module or step (`factory backlog auto-continue`); with
 // `label="Auto-merge" test-prefix="merge"` the `auto_merge` one (`factory backlog auto-merge`).
+import { computed } from 'vue'
 import type { AutoMode } from '@/lib/backlog'
 import Spinner from '@/components/ui/Spinner.vue'
 
@@ -23,11 +25,11 @@ withDefaults(
 )
 const emit = defineEmits<{ change: [mode: AutoMode] }>()
 
-const OPTIONS: readonly { mode: AutoMode; label: string }[] = [
-  { mode: 'inherit', label: 'Zděděno' },
-  { mode: 'on', label: 'Zapnuto' },
-  { mode: 'off', label: 'Vypnuto' },
-]
+const OPTIONS = computed<readonly { mode: AutoMode; label: string }[]>(() => [
+  { mode: 'inherit', label: t('backlog.inherited') },
+  { mode: 'on', label: t('backlog.zapnuto') },
+  { mode: 'off', label: t('backlog.off') },
+])
 </script>
 
 <template>
@@ -50,7 +52,7 @@ const OPTIONS: readonly { mode: AutoMode; label: string }[] = [
       </button>
     </div>
     <span class="effective faint" :data-test="`${testPrefix}-effective`">
-      efektivně: {{ effective ? 'zapnuto' : 'vypnuto' }}
+      {{ t('backlog.efektivne') }} {{ effective ? t('backlog.onValue') : t('backlog.offValue') }}
     </span>
     <span v-if="hint" class="effective faint" :data-test="`${testPrefix}-hint`">{{ hint }}</span>
   </div>

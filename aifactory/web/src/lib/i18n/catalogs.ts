@@ -1,5 +1,8 @@
+import { backlogEn, backlogCs } from './backlog'
+
 /** Stable UI keys only. IDs, routes, API codes and user content never belong here. */
 export const en = {
+  ...backlogEn,
   "dashboard.warning.trace_unreadable": "Could not read the run database {path}.",
   "dashboard.warning.config_state_unavailable": "Configuration status is unavailable.",
   "dashboard.warning.config_changes_unavailable": "Uncommitted configuration changes are unavailable.",
@@ -398,6 +401,7 @@ export const en = {
 }
 
 export const cs: Record<keyof typeof en, string> = {
+  ...backlogCs,
   "dashboard.warning.trace_unreadable": "Databázi běhů {path} se nepodařilo přečíst.",
   "dashboard.warning.config_state_unavailable": "Stav konfigurace není dostupný.",
   "dashboard.warning.config_changes_unavailable": "Necommitnuté změny konfigurace nejsou dostupné.",

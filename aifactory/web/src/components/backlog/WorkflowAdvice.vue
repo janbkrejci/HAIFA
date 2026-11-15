@@ -1,4 +1,8 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { backlogError } from '@/lib/backlogMessages'
+import { flattenIssues } from '@/lib/backlog'
+import { fmtMoney4, fmtNumber } from '@/lib/format'
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { Wand2 } from 'lucide-vue-next'
 import { getApi, postApi } from '@/lib/api'
@@ -23,6 +27,7 @@ interface Job {
   state: 'queued' | 'running' | 'succeeded' | 'failed'
   recommendation: (Recommendation & { usage?: AdviceUsage | null }) | null
   error: string | null
+  error_code?: string | null
   usage?: AdviceUsage | null
 }
 const props = defineProps<{ draft: Record<string, unknown>; taskId?: string; disabled?: boolean }>()
@@ -32,14 +37,15 @@ const emit = defineEmits<{
   invalidate: []
 }>()
 const busy = ref(false)
-const error = ref('')
+const error = ref<string | (() => string)>('')
+const errorDetail = ref<string | null>(null)
 const result = ref<Recommendation | null>(null)
 /** The cost of every finished proposal of this form (null: the provider reported none). */
 const costs = ref<(AdviceUsage | null)[]>([])
 function costText(cost: AdviceUsage | null): string {
-  if (!cost) return 'Provider náklady nevykázal.'
-  const price = cost.cost_usd == null ? 'Provider cenu nevykázal' : `$${cost.cost_usd.toFixed(4)} USD`
-  return `${price} · ${cost.tokens} tokenů (vykázané providerem)`
+  if (!cost) return t('backlog.provider_naklady_nevykazal')
+  const price = cost.cost_usd == null ? t('backlog.provider_cenu_nevykazal') : fmtMoney4(cost.cost_usd)
+  return t('backlog.tokenUsage', { price, count: fmtNumber(cost.tokens) }, cost.tokens)
 }
 let requestedDraft = ''
 let requestedTaskId: string | undefined
@@ -61,7 +67,10 @@ watch(() => JSON.stringify([props.taskId, props.draft]), () => {
   // Applying our selection changes only workflow; keep its explanation and save reference.
   if (result.value && props.taskId === requestedTaskId && props.draft.workflow === result.value.workflow_name &&
       withoutWorkflow(props.draft) === requestedDraft) return
-  if (busy.value) error.value = 'Zadání se změnilo. Spusť návrh znovu.'
+  if (busy.value) {
+    errorDetail.value = null
+    error.value = () => t('backlog.zadani_se_zmenilo_spust_navrh_znovu')
+  }
   stop()
   result.value = null
   emit('invalidate')
@@ -89,16 +98,16 @@ async function start() {
   const scope = currentRepoId()
   controller = new AbortController()
   result.value = null
+  errorDetail.value = null
   error.value = ''
   emit('invalidate')
   busy.value = true
   emit('busy', true)
   const active = () => token === generation && scope === currentRepoId()
-  let finished: Job | null = null
   const fail = (e: unknown) => {
     if (!active()) return
-    error.value = e instanceof Error ? e.message : 'Návrh workflow selhal. Zkus to znovu.'
-    if (finished) costs.value.push(finished.usage ?? null)
+    errorDetail.value = null
+    error.value = () => e instanceof Error ? backlogError(flattenIssues(e)) : t('backlog.navrh_workflow_selhal_zkus_to_znovu')
     stop()
   }
   const poll = async (id: string) => {
@@ -107,8 +116,11 @@ async function start() {
       const job = await getApi<Job>(`/backlog/workflow-advice/${encodeURIComponent(id)}`, controller?.signal)
       if (!active()) return
       if (job.state === 'failed') {
-        finished = job
-        throw new Error(job.error || 'Návrh workflow selhal.')
+        errorDetail.value = job.error_code === 'advice_invalid' ? job.error : null
+        error.value = () => backlogError({ code: job.error_code ?? undefined, message: job.error || t('backlog.navrh_workflow_selhal') })
+        costs.value.push(job.usage ?? null)
+        stop()
+        return
       }
       if (job.state === 'succeeded' && job.recommendation) {
         result.value = job.recommendation
@@ -133,19 +145,23 @@ defineExpose({ start })
     <button type="button" :disabled="disabled || busy" @click="start">
       <Spinner v-if="busy" />
       <Wand2 v-else :size="16" aria-hidden="true" />
-      {{ busy ? 'Agent vybírá workflow…' : 'Navrhnout workflow' }}
+      {{ busy ? t('backlog.agent_vybira_workflow') : t('backlog.suggestWorkflow') }}
     </button>
-    <p v-if="error" role="alert">{{ error }}</p>
+    <p v-if="error" role="alert">{{ typeof error === 'function' ? error() : error }}</p>
+    <details v-if="error && errorDetail" data-test="advice-error-details">
+      <summary>{{ t('dashboard.diagnostics') }}</summary>
+      <pre>{{ errorDetail }}</pre>
+    </details>
     <p v-for="(cost, index) in costs" :key="index" data-test="workflow-advice-cost">
-      Návrh {{ index + 1 }}: {{ costText(cost) }}
+      {{ t('backlog.navrh') }} {{ index + 1 }}: {{ costText(cost) }}
     </p>
     <div v-if="result" data-test="advice-result">
       <strong>{{ result.workflow_name }}</strong>
-      · {{ result.decision === 'new' ? 'nové workflow' : 'existující workflow' }}
+      · {{ result.decision === 'new' ? t('backlog.nove_workflow') : t('backlog.existujici_workflow') }}
       <p>{{ result.reason }}</p>
       <p v-for="warning in result.warnings" :key="warning" class="faint">{{ warning }}</p>
       <ul><li v-for="(item, index) in result.outline" :key="index">{{ item.step || item.name || item.kind }}{{ item.agent ? ` · ${item.agent}` : '' }}{{ item.max ? ` (max ${item.max})` : '' }}</li></ul>
-      <details v-if="result.workflow_yaml"><summary>YAML workflow</summary><pre>{{ result.workflow_yaml }}</pre></details>
+      <details v-if="result.workflow_yaml"><summary>{{ t('backlog.yaml_workflow') }}</summary><pre>{{ result.workflow_yaml }}</pre></details>
     </div>
   </div>
 </template>

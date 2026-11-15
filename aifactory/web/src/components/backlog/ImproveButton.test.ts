@@ -1,9 +1,15 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import ImproveButton from './ImproveButton.vue'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
-vi.mock('@/lib/api', () => api)
+vi.mock('@/lib/api', async (original) => ({ ...(await original<object>()), ...api }))
 const proposal = {
   title: 'Improved task', body: 'Acceptance criteria', writes: ['src/'],
   depends_on: ['P01-S01-T02'], related: [], workflow: 'plan', reason: 'Clear scope',
@@ -31,7 +37,7 @@ describe('ImproveButton', () => {
     const note = wrapper.get('[data-test="improve-note"]')
     expect(note.text()).toContain('Clear scope')
     expect(wrapper.get('[data-test="improve-advisor"]').text()).toContain('codex · gpt-5.5 · high')
-    expect(wrapper.get('[data-test="improve-cost"]').text()).toContain('$0.0123 USD')
+    expect(wrapper.get('[data-test="improve-cost"]').text()).toContain('0,0123 US$')
     await wrapper.get('[data-test="improve-note-close"]').trigger('click')
     expect(wrapper.find('[data-test="improve-note"]').exists()).toBe(false)
     wrapper.unmount()
@@ -66,7 +72,7 @@ describe('ImproveButton', () => {
     await wrapper.get('[data-test="improve"]').trigger('click')
     await flushPromises()
     expect(wrapper.text()).toContain('Provider cenu nevykázal')
-    expect(wrapper.text()).not.toContain('$0.0000')
+    expect(wrapper.text()).not.toContain('0,0000')
     wrapper.unmount()
   })
 

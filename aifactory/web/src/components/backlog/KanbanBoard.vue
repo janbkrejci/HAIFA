@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The kanban of the Backlog screen. The Připraveno column is the auto-continue queue: its
 // order changes by drag and drop or the ↑/↓ buttons (`reorder` with the whole new order).
 // Odloženo holds tasks excluded from auto continue; a card moves there and back by drag and
@@ -37,10 +38,10 @@ const emit = defineEmits<{
   clearPriority: [id: string]
 }>()
 
-const COLUMN_TOOLTIPS: Partial<Record<KanbanColumn, string>> = {
+const COLUMN_TOOLTIPS = computed<Partial<Record<KanbanColumn, string>>>(() => ({
   ...STATE_TOOLTIPS,
-  deferred: 'Tasky vyloučené z auto continue. Auto continue je nespustí, ručně je spustit jde.',
-}
+  deferred: t('backlog.tasky_vyloucene_z_auto_continue_auto_continue_je_nespusti_rucne_je_spustit_'),
+}))
 
 const columns = computed(() =>
   kanbanColumns(props.states).map((column) => {
@@ -63,9 +64,9 @@ const readyIds = computed(() =>
 
 function priorityText(task: TaskNode): string {
   if (task.priority_blockers) {
-    return `Zablokován během běhu na ${task.priority_blockers.join(', ')}: jde hned po nich, před frontou`
+    return t('backlog.zablokovan_behem_behu_na_p0_jde_hned_po_nich_pred_frontou', { p0: task.priority_blockers.join(', ') })
   }
-  return `Blokuje ${(task.priority_of ?? []).join(', ')}: jde před frontou`
+  return t('backlog.blokuje_p0_jde_pred_frontou', { p0: (task.priority_of ?? []).join(', ') })
 }
 
 function canExclude(task: TaskNode): boolean {
@@ -148,7 +149,7 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
 
 <template>
   <p class="queue-help faint" data-test="queue-help">
-    Auto continue bere tasky ze sloupce Připraveno shora dolů. Odložené tasky nespustí, ručně je spustit jde.
+    {{ t('backlog.auto_continue_bere_tasky_ze_sloupce_pripraveno_shora_dolu_odlozene_tasky_ne') }}
   </p>
   <div
     class="board"
@@ -170,12 +171,12 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
           <span class="label hint" tabindex="0" data-test="column-tip">{{ COLUMN_LABELS[col.column] ?? col.column }}</span>
         </Tooltip>
         <span v-else class="label">{{ COLUMN_LABELS[col.column] ?? col.column }}</span>
-        <Tooltip v-if="col.archiveColumn" :text="`Zobrazit archivované (${col.archivedCount})`">
+        <Tooltip v-if="col.archiveColumn" :text="t('backlog.zobrazit_archivovane_p0', { p0: col.archivedCount })">
           <button
             type="button"
             class="icon"
             data-test="show-archived"
-            :aria-label="`Zobrazit archivované (${col.archivedCount})`"
+            :aria-label="t('backlog.zobrazit_archivovane_p0', { p0: col.archivedCount })"
             :aria-pressed="col.showingArchived"
             @click="setShowArchived(col.archiveColumn, !col.showingArchived)"
           >
@@ -203,20 +204,20 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
           </span>
           <span class="title">{{ task.title }}</span>
           <span class="meta">
-            <span :class="{ faint: !task.workflow }">{{ task.workflow ?? 'bez workflow' }}</span>
+            <span :class="{ faint: !task.workflow }">{{ task.workflow ?? t('backlog.bez_workflow') }}</span>
           </span>
-          <span v-if="task.invalid" class="warn" data-test="invalid">neplatný status</span>
+          <span v-if="task.invalid" class="warn" data-test="invalid">{{ t('backlog.neplatny_status') }}</span>
           <Tooltip v-if="hasPriority(task)" :text="priorityText(task)">
-            <span class="priority" data-test="priority">přednostně</span>
+            <span class="priority" data-test="priority">{{ t('backlog.prednostne') }}</span>
           </Tooltip>
         </a>
         <div v-if="canExclude(task) || hasPriority(task) || col.archiveColumn" class="tools">
-          <Tooltip v-if="col.archiveColumn" :text="task.archived ? 'Obnovit' : 'Archivovat'">
+          <Tooltip v-if="col.archiveColumn" :text="task.archived ? t('backlog.restore') : t('backlog.archive')">
             <button
               type="button"
               class="icon"
               data-test="archive-toggle"
-              :aria-label="task.archived ? 'Obnovit' : 'Archivovat'"
+              :aria-label="task.archived ? t('backlog.restore') : t('backlog.archive')"
               :disabled="busy"
               @click="emit('archive', task.id, !task.archived)"
             >
@@ -224,12 +225,12 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
               <Archive v-else :size="14" />
             </button>
           </Tooltip>
-          <Tooltip v-if="hasPriority(task)" text="Zrušit přednost">
+          <Tooltip v-if="hasPriority(task)" :text="t('backlog.zrusit_prednost')">
             <button
               type="button"
               class="icon"
               data-test="priority-clear"
-              aria-label="Zrušit přednost"
+              :aria-label="t('backlog.zrusit_prednost')"
               :disabled="busy"
               @click="emit('clearPriority', task.id)"
             >
@@ -241,7 +242,7 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
               type="button"
               class="icon"
               data-test="move-up"
-              aria-label="Posunout výš"
+              :aria-label="t('backlog.posunout_vys')"
               :disabled="busy || index === 0"
               @click="move(task.id, -1)"
             >
@@ -251,19 +252,19 @@ function onDrop(event: DragEvent, column: KanbanColumn, beforeId: string | null 
               type="button"
               class="icon"
               data-test="move-down"
-              aria-label="Posunout níž"
+              :aria-label="t('backlog.posunout_niz')"
               :disabled="busy || index === col.tasks.length - 1"
               @click="move(task.id, 1)"
             >
               <ArrowDown :size="14" />
             </button>
           </template>
-          <Tooltip v-if="canExclude(task)" :text="task.auto_excluded ? 'Vrátit do auto continue' : 'Vyloučit z auto continue'">
+          <Tooltip v-if="canExclude(task)" :text="task.auto_excluded ? t('backlog.vratit_do_auto_continue') : t('backlog.vyloucit_z_auto_continue')">
             <button
               type="button"
               class="icon"
               data-test="exclude-toggle"
-              :aria-label="task.auto_excluded ? 'Vrátit do auto continue' : 'Vyloučit z auto continue'"
+              :aria-label="task.auto_excluded ? t('backlog.vratit_do_auto_continue') : t('backlog.vyloucit_z_auto_continue')"
               :aria-pressed="!!task.auto_excluded"
               :disabled="busy"
               @click="toggleExclude(task)"

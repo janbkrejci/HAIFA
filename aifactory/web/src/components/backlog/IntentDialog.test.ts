@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import IntentDialog from './IntentDialog.vue'
@@ -127,7 +133,7 @@ describe('IntentDialog', () => {
     await wrapper.get('[data-test="intent-apply"]').trigger('click')
     await settle()
     const applied = wrapper.get('[data-test="intent-applied"]').text()
-    expect(applied).toContain('Zapsáno: 2')
+    expect(applied).toContain('Zapsány 2 tasky v')
     expect(applied).toContain('P02-S02')
     expect(applied).toContain('Nový projekt: P02')
     expect(applied).toContain('commitnutý do main')

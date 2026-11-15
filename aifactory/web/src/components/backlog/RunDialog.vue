@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { backlogError } from '@/lib/backlogMessages'
+import { flattenIssues } from '@/lib/backlog'
 // Prepare and start a task run (`factory task run [--note] [--force] [--harness] [--model]
 // [--thinking]`): what the run uses (workflow, writes, base, task text),
 // the warnings first (uncommitted config D4, task not in base, unmet dependencies, a running
@@ -9,6 +12,7 @@ import {
   THINKING_LEVELS,
   levelLabel,
   levelNoun,
+  unmetLine,
   type RunAction,
   type RunCheck,
   type RunInput,
@@ -18,7 +22,7 @@ import {
 } from '@/lib/backlog'
 import { fetchFactoryRoster, type FactoryRosterAgent } from '@/lib/api'
 import { askDiscard, useUnsavedGuard } from '@/lib/leaveGuard'
-import { errorText, shortSha } from '@/lib/format'
+import { shortSha } from '@/lib/format'
 import { useLevels } from '@/lib/names'
 import { currentRepoId, here, OVERVIEW_HREF, runHref } from '@/lib/router'
 import type { SelectOption } from '@/lib/select'
@@ -104,29 +108,29 @@ const configCommitHref = computed(() => {
 })
 
 // ── harness for this run ─────────────────────────────────────────────────────
-const ROSTER = 'podle rosteru'
-const harnessOptions: SelectOption[] = [
-  { value: '', label: ROSTER },
+const ROSTER = computed(() => t('backlog.fromRoster'))
+const harnessOptions = computed<SelectOption[]>(() => [
+  { value: '', label: ROSTER.value },
   ...RUN_HARNESSES.map((h) => ({ value: h, label: h })),
-]
-const thinkingOptions: SelectOption[] = [
-  { value: '', label: ROSTER },
+])
+const thinkingOptions = computed<SelectOption[]>(() => [
+  { value: '', label: ROSTER.value },
   ...THINKING_LEVELS.map((t) => ({ value: t, label: t })),
-]
+])
 const roster = ref<FactoryRosterAgent[] | null>(null)
-const rosterError = ref('')
+const rosterError = ref<(() => string) | null>(null)
 const rosterLoading = ref(false)
 
 async function loadRoster() {
   const id = currentRepoId()
   if (roster.value !== null || rosterLoading.value || !id) return
   rosterLoading.value = true
-  rosterError.value = ''
+  rosterError.value = null
   try {
     const data = await fetchFactoryRoster(id)
     roster.value = Array.isArray(data?.agents) ? data.agents : []
   } catch (e) {
-    rosterError.value = errorText(e)
+    rosterError.value = () => backlogError(flattenIssues(e))
   } finally {
     rosterLoading.value = false
   }
@@ -150,36 +154,36 @@ function start(force: boolean) {
 
 <template>
   <section class="run-dialog" data-test="run-dialog">
-    <h3>Spustit {{ taskNoun }}</h3>
-    <p v-if="loading" class="faint" data-test="run-loading">Kontroluji…</p>
+    <h3>{{ t('backlog.spustit') }} {{ taskNoun }}</h3>
+    <p v-if="loading" class="faint" data-test="run-loading">{{ t('backlog.kontroluji') }}</p>
     <template v-else-if="check">
       <dl class="summary" data-test="run-summary">
-        <dt>Workflow</dt>
-        <dd data-test="summary-workflow">{{ workflow ?? 'bez workflow' }}</dd>
-        <dt>Zápisy</dt>
+        <dt>{{ t('backlog.workflowLabel') }}</dt>
+        <dd data-test="summary-workflow">{{ workflow ?? t('backlog.bez_workflow') }}</dd>
+        <dt>{{ t('backlog.zapisy') }}</dt>
         <dd class="mono" data-test="summary-writes">{{ writes.join(', ') || '—' }}</dd>
-        <dt>Base</dt>
+        <dt>{{ t('backlog.base') }}</dt>
         <dd data-test="summary-base">
           <code>{{ check.base }}</code><template v-if="baseSha"> (<code>{{ baseSha }}</code>)</template>
         </dd>
       </dl>
       <details v-if="body !== undefined" class="body" data-test="summary-body">
-        <summary>Zadání</summary>
-        <MarkdownView :source="body ?? ''" empty="Bez zadání." />
+        <summary>{{ t('backlog.zadani') }}</summary>
+        <MarkdownView :source="body ?? ''" :empty="t('backlog.bez_zadani')" />
       </details>
 
       <div v-if="dirtyConfig && config" class="warning" data-test="config-warning">
         <p>
-          Konfigurace <code>.factory/</code> má necommitnuté změny, běh použije verzi z
+          {{ t('backlog.konfigurace') }} <code>{{ t('backlog.factory') }}</code> {{ t('backlog.ma_necommitnute_zmeny_beh_pouzije_verzi_z') }}
           {{ config.base }} ({{ shortSha(config.commit) }}).
         </p>
         <ul>
           <li v-for="c in config.changes" :key="c.path" class="mono">{{ c.status }} {{ c.path }}</li>
         </ul>
-        <a :href="configCommitHref" class="button-link" data-test="config-commit-link">Commitnout konfiguraci</a>
+        <a :href="configCommitHref" class="button-link" data-test="config-commit-link">{{ t('backlog.commitnout_konfiguraci') }}</a>
       </div>
       <div v-if="notInBase" class="warning" data-test="not-in-base">
-        <p>{{ taskLabel }} není commitnutý v base ({{ check.base }}), běh ho nenajde. Nejdřív commitni backlog.</p>
+        <p>{{ taskLabel }} {{ t('backlog.neni_commitnuty_v_base') }}{{ check.base }}{{ t('backlog.beh_ho_nenajde_nejdriv_commitni_backlog') }}</p>
         <button
           type="button"
           data-test="commit-backlog"
@@ -188,11 +192,11 @@ function start(force: boolean) {
           @click="emit('commit')"
         >
           <Spinner v-if="action === 'commit'" />
-          Commitnout backlog do base
+          {{ t('backlog.commitnout_backlog_do_base') }}
         </button>
       </div>
       <div v-if="stack" class="info" data-test="run-stacked">
-        Závislosti čekají v otevřených PR, běh naváže na větev
+        {{ t('backlog.zavislosti_cekaji_v_otevrenych_pr_beh_navaze_na_vetev') }}
         <span class="mono">{{ stack.branch }}</span>:
         <ul>
           <li v-for="pr in stack.prs" :key="pr.task_id" :data-stack="pr.task_id">
@@ -200,77 +204,77 @@ function start(force: boolean) {
             <a :href="pr.url" target="_blank" rel="noopener">{{ pr.url }}</a>
           </li>
         </ul>
-        PR tohoto tasku se mergne až po nich.
+        {{ t('backlog.pr_tohoto_tasku_se_mergne_az_po_nich') }}
       </div>
       <div v-else-if="unmet.length" class="warning" data-test="unmet-warning">
-        <p>Nesplněné závislosti v base:</p>
+        <p>{{ t('backlog.nesplnene_zavislosti_v_base') }}</p>
         <ul>
           <li v-for="u in unmet" :key="u.id" :data-unmet="u.id">
-            <span class="mono">{{ u.id }}</span> — {{ u.reason }}
+            {{ unmetLine(u) }}
           </li>
         </ul>
       </div>
       <div v-if="running" class="info" data-test="run-running">
-        {{ taskLabel }} už běží:
+        {{ taskLabel }} {{ t('backlog.uz_bezi') }}
         <a :href="runHref(running.run_id)" class="mono">{{ running.run_id }}</a>
       </div>
       <div v-else-if="launcherBusy" class="info" data-test="launcher-busy">
-        Z dashboardu už běží jiný běh, počkej na jeho konec.
-        <a :href="here('runs')" data-test="launcher-busy-link">Běžící běhy</a>
+        {{ t('backlog.z_dashboardu_uz_bezi_jiny_beh_pockej_na_jeho_konec') }}
+        <a :href="here('runs')" data-test="launcher-busy-link">{{ t('backlog.bezici_behy') }}</a>
       </div>
     </template>
 
     <details class="harness" data-test="run-harness" @toggle="onHarnessToggle">
-      <summary>Harness pro tento běh</summary>
-      <p class="faint">Prázdné = podle tasku, projektu a nastavení tohoto počítače. Přepíše harness všech agentů jen pro tento běh; přepisy na krocích workflow platí dál.</p>
+      <summary>{{ t('backlog.harness_pro_tento_beh') }}</summary>
+      <p class="faint">{{ t('backlog.prazdne_podle_tasku_projektu_a_nastaveni_tohoto_pocitace_prepise_harness_vs') }}</p>
       <div class="harness-fields">
         <label>
-          Harness
-          <SelectMenu v-model="harness" data-test="run-harness-name" label="Harness" :options="harnessOptions" :disabled="busy" />
+          {{ t('backlog.harness') }}
+          <SelectMenu v-model="harness" data-test="run-harness-name" :label="t('backlog.harness')" :options="harnessOptions" :disabled="busy" />
         </label>
         <label>
-          Model
+          {{ t('backlog.model') }}
           <input v-model="model" data-test="run-model" type="text" :placeholder="ROSTER" :disabled="busy" />
         </label>
         <label>
-          Přemýšlení
-          <SelectMenu v-model="thinking" data-test="run-thinking" label="Přemýšlení" :options="thinkingOptions" :disabled="busy" />
+          {{ t('backlog.premysleni') }}
+          <SelectMenu v-model="thinking" data-test="run-thinking" :label="t('backlog.premysleni')" :options="thinkingOptions" :disabled="busy" />
         </label>
       </div>
-      <p v-if="rosterLoading" class="faint" data-test="roster-loading">Načítám roster…</p>
-      <p v-else-if="rosterError" class="faint" data-test="roster-error">Roster nejde načíst: {{ rosterError }}</p>
+      <p v-if="rosterLoading" class="faint" data-test="roster-loading">{{ t('backlog.nacitam_roster') }}</p>
+      <p v-else-if="rosterError" class="faint" data-test="roster-error">{{ t('backlog.roster_nejde_nacist') }} {{ rosterError() }}</p>
       <table v-else-if="roster" class="roster" data-test="roster">
         <thead>
-          <tr><th>Agent</th><th>Harness</th><th>Model</th><th>Přemýšlení</th></tr>
+          <tr><th>{{ t('backlog.agent') }}</th><th>{{ t('backlog.harness') }}</th><th>{{ t('backlog.model') }}</th><th>{{ t('backlog.premysleni') }}</th></tr>
         </thead>
         <tbody>
           <tr v-for="a in roster" :key="a.name" :data-agent="a.name">
             <td class="mono">{{ a.name }}</td>
-            <td>{{ a.harness ?? 'výchozí' }}</td>
-            <td class="mono">{{ a.model ?? 'výchozí' }}</td>
-            <td>{{ a.thinking ?? 'výchozí' }}</td>
+            <td>{{ a.harness ?? t('backlog.vychozi') }}</td>
+            <td class="mono">{{ a.model ?? t('backlog.vychozi') }}</td>
+            <td>{{ a.thinking ?? t('backlog.vychozi') }}</td>
           </tr>
         </tbody>
       </table>
     </details>
 
     <p class="faint hint" data-test="run-continuation-hint">
-      Automatické pokračování řídí nastavení repozitáře na <a :href="OVERVIEW_HREF">Přehledu</a>.
+      {{ t('backlog.automaticke_pokracovani_ridi_nastaveni_repozitare_na') }} <a :href="OVERVIEW_HREF">{{ t('backlog.prehledu') }}</a>.
     </p>
 
     <label class="note">
-      <span>Poznámka (volitelná)</span>
+      <span>{{ t('backlog.poznamka_volitelna') }}</span>
       <textarea v-model="note" data-test="run-note" rows="3" :disabled="busy" />
     </label>
 
-    <IssueList v-if="error" :message="error.message" :issues="error.issues" />
+    <IssueList v-if="error" :code="error.code" :message="error.message" :issues="error.issues" />
 
     <p v-if="result" class="success" data-test="run-result">
       <template v-if="result.run">
-        Běh <span class="mono">{{ result.run.run_id }}</span> spuštěn.
-        <a :href="runHref(result.run.run_id)" class="button-link" data-test="run-open">Otevřít běh</a>
+        {{ t('backlog.runLabel') }} <span class="mono">{{ result.run.run_id }}</span> {{ t('backlog.spusten') }}
+        <a :href="runHref(result.run.run_id)" class="button-link" data-test="run-open">{{ t('backlog.otevrit_beh') }}</a>
       </template>
-      <template v-else>Běh se spouští…</template>
+      <template v-else>{{ t('backlog.beh_se_spousti') }}</template>
     </p>
 
     <div class="actions">
@@ -283,10 +287,10 @@ function start(force: boolean) {
         @click="start(false)"
       >
         <Spinner v-if="action === 'start'" />
-        Spustit
+        {{ t('backlog.spustit') }}
       </button>
       <button type="button" data-test="run-cancel" :disabled="busy" @click="cancel">
-        Zavřít
+        {{ t('backlog.zavrit') }}
       </button>
     </div>
   </section>

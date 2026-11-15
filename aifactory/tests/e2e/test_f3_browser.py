@@ -144,6 +144,7 @@ def page_fixture(server: Server, net: Net) -> Iterator[Page]:
     with sync_playwright() as p:
         browser = _launch(p)
         context: BrowserContext = browser.new_context(base_url=server.url)
+        context.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         context.set_default_timeout(DEFAULT_TIMEOUT_MS)
         expect.set_options(timeout=DEFAULT_TIMEOUT_MS)
 

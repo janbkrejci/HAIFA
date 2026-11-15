@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TaskForm from './TaskForm.vue'
@@ -7,7 +13,7 @@ import { resetNamesForTests, setNames } from '@/lib/names'
 import { confirmLeave, hasUnsavedChanges, leaveDialog } from '@/lib/leaveGuard'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
-vi.mock('@/lib/api', () => api)
+vi.mock('@/lib/api', async (original) => ({ ...(await original<object>()), ...api }))
 beforeEach(() => {
   api.postApi.mockReset().mockResolvedValue({ job_id: 'edit-job' })
   api.getApi.mockReset().mockResolvedValue({
@@ -440,7 +446,7 @@ describe('TaskForm', () => {
     })
     const error = wrapper.find('[data-test="write-error"]')
     expect(error.text()).toContain('change rejected')
-    expect(error.find('[data-issue="unknown_ref"]').text()).toContain('unknown NOPE')
+    expect(error.find('[data-issue="unknown_ref"]').text()).toContain('Odkazovaná položka neexistuje.')
   })
 
   it('reports unsaved changes until the form is submitted', async () => {

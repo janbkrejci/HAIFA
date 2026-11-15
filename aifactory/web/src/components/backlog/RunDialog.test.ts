@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { cancelLeave, confirmLeave, hasUnsavedChanges } from '@/lib/leaveGuard'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -82,7 +88,7 @@ describe('RunDialog', () => {
     const wrapper = dialog(
       runCheck({ unmet: [{ id: 'M01-S01-T01', reason: 'not_done', missing: ['M01-S01-T01'] }] }),
     )
-    expect(wrapper.find('[data-unmet="M01-S01-T01"]').text()).toContain('not_done')
+    expect(wrapper.find('[data-unmet="M01-S01-T01"]').text()).toContain('task není hotový')
     expect(wrapper.find('[data-test="run-start"]').attributes('disabled')).toBeDefined()
     expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
     await wrapper.get('[data-test="run-start"]').trigger('click')
@@ -107,7 +113,7 @@ describe('RunDialog', () => {
     const wrapper = dialog(runCheck(), {
       error: { message: 'depends on work not done', issues: [], code: 'unmet_dependencies' },
     })
-    expect(wrapper.find('[data-test="write-error"]').text()).toContain('depends on work not done')
+    expect(wrapper.find('[data-test="write-error"]').text()).toContain('Závislosti nejsou dokončené.')
     expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeDefined()
   })
@@ -203,4 +209,30 @@ it('keeps a cancelled discard confirmation open and clears the draft only after 
   expect(wrapper.emitted('cancel')).toHaveLength(1)
   expect(hasUnsavedChanges()).toBe(false)
   wrapper.unmount()
+})
+
+
+it.each([
+  ['not_done', 'M01-S01-T01', 'M01-S01-T01 – task is not done', 'M01-S01-T01 – task není hotový'],
+  ['incomplete', 'M01-S01', 'M01-S01 – step has unfinished tasks: M01-S01-T01', 'M01-S01 – step má nehotové tasky: M01-S01-T01'],
+])('translates unmet %s without enabling a blocked run', async (reason, id, english, czech) => {
+  const check = runCheck({ unmet: [{ id, reason, missing: ['M01-S01-T01'] }] })
+  const original = JSON.stringify(check.unmet)
+  const wrapper = dialog(check)
+  try {
+    await wrapper.get('[data-test="run-note"]').setValue('My run note')
+    for (const locale of ['en', 'cs', 'en'] as const) {
+      setLocale(locale)
+      await flushPromises()
+      expect(wrapper.get(`[data-unmet="${id}"]`).text()).toBe(locale === 'en' ? english : czech)
+      expect(wrapper.get(`[data-unmet="${id}"]`).attributes('data-unmet')).toBe(id)
+      expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeDefined()
+      await wrapper.get('[data-test="run-start"]').trigger('click')
+      expect(wrapper.emitted('start')).toBeUndefined()
+      expect((wrapper.get('[data-test="run-note"]').element as HTMLTextAreaElement).value).toBe('My run note')
+      expect(JSON.stringify(check.unmet)).toBe(original)
+    }
+  } finally {
+    wrapper.unmount()
+  }
 })

@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import BacklogView from './BacklogView.vue'
@@ -220,7 +226,7 @@ describe('BacklogView', () => {
     expect(wrapper.get('[data-test="archive-toggle"]').attributes('disabled')).toBeDefined()
     pending.resolve(fail('unavailable', 'offline', 503))
     await flushPromises()
-    expect(wrapper.get('[data-test="error"]').text()).toContain('Frontu se nepodařilo uložit: offline')
+    expect(wrapper.get('[data-test="error"]').text()).toContain('Frontu se nepodařilo uložit: Požadavek selhal (unavailable). offline')
     expect(wrapper.get('[data-test="archive-toggle"]').attributes('disabled')).toBeUndefined()
     expect(wrapper.get('[data-test="archive-toggle"]').attributes('aria-label')).toBe('Archivovat')
     expect(wrapper.get('[data-item="finished"]').classes()).not.toContain('archived')
@@ -834,7 +840,7 @@ describe('BacklogView', () => {
     await wrapper.get('[data-test="container-title"]').setValue('Duplicate')
     await wrapper.get('[data-test="container-form"]').trigger('submit')
     await flushPromises()
-    expect(wrapper.get('[data-test="write-error"]').text()).toContain('duplicate step')
+    expect(wrapper.get('[data-test="write-error"]').text()).toContain('Tento kód už existuje.')
     expect(wrapper.get<HTMLInputElement>('[data-test="container-title"]').element.value).toBe('Duplicate')
     await wrapper.get('[data-test="container-cancel"]').trigger('click')
     expect(window.location.hash).toBe('#/r/haifa/backlog')
@@ -999,7 +1005,7 @@ describe('BacklogView', () => {
     await flushPromises()
     await wrapper.get('[data-test="run-start"]').trigger('click')
     await flushPromises()
-    expect(wrapper.get('[data-test="run-dialog"] [data-test="write-error"]').text()).toContain('depends on work')
+    expect(wrapper.get('[data-test="run-dialog"] [data-test="write-error"]').text()).toContain('Závislosti nejsou dokončené.')
     expect(wrapper.find('[data-test="run-force"]').exists()).toBe(false)
     expect(wrapper.get('[data-test="run-start"]').attributes('disabled')).toBeDefined()
     await wrapper.get('[data-test="run-start"]').trigger('click')

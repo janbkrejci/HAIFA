@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Navázat follow-upem: a done task is never reopened; a new task follows it
 // (`factory task follow-up`). The person says what to change, redo or finish, optionally a
 // title, and whether the backlog is committed and the new task run at once (default). Confirm creates the task and
@@ -54,7 +55,7 @@ function created(result: FollowUpResult) {
 }
 
 const canSubmit = computed(() => !saving.value && !uncommitted.value && body.value.trim() !== '')
-const defaultTitle = computed(() => `Navazuje na ${props.taskId}: ${props.taskTitle}`)
+const defaultTitle = computed(() => t('backlog.followUpTitle', { id: props.taskId, title: props.taskTitle }))
 
 async function submit() {
   if (!canSubmit.value) return
@@ -70,7 +71,7 @@ async function submit() {
     }
     result = await followUpTask(props.taskId, { ...payload, request_id: requestIdentity(payload) })
     if (result.error) {
-      error.value = { message: result.error.message, issues: [] }
+      error.value = { code: result.error.code, message: result.error.message, issues: [] }
       uncommitted.value = result
       return
     }
@@ -91,32 +92,32 @@ async function submit() {
 <template>
   <section class="follow-up-dialog" role="dialog" aria-labelledby="follow-up-title" data-test="follow-up-dialog">
     <div class="head">
-      <h3 id="follow-up-title"><GitBranchPlus :size="16" aria-hidden="true" /> Navazující task na {{ taskId }}</h3>
-      <button type="button" class="icon" aria-label="Zavřít" data-test="follow-up-close" :disabled="saving" @click="cancel">
+      <h3 id="follow-up-title"><GitBranchPlus :size="16" aria-hidden="true" /> {{ t('backlog.navazujici_task_na') }} {{ taskId }}</h3>
+      <button type="button" class="icon" :aria-label="t('backlog.zavrit')" data-test="follow-up-close" :disabled="saving" @click="cancel">
         <X :size="16" />
       </button>
     </div>
     <fieldset class="fields" :disabled="saving">
       <label>
-        Co změnit, předělat nebo dodělat
+        {{ t('backlog.co_zmenit_predelat_nebo_dodelat') }}
         <textarea v-model="body" data-test="follow-up-body" rows="5" />
       </label>
       <label>
-        Titulek (volitelný)
+        {{ t('backlog.titulek_volitelny') }}
         <input v-model="title" type="text" data-test="follow-up-title" :placeholder="defaultTitle" />
       </label>
       <label class="check">
         <input v-model="runNow" type="checkbox" data-test="follow-up-run" />
-        Commitnout a spustit
+        {{ t('backlog.commitnout_a_spustit') }}
       </label>
     </fieldset>
-    <IssueList v-if="error" :message="error.message" :issues="error.issues" />
+    <IssueList v-if="error" :code="error.code" :message="error.message" :issues="error.issues" />
     <div v-if="uncommitted" class="actions">
       <p data-test="follow-up-uncommitted">
-        {{ uncommitted.task.id }} je zapsaný, ale dokončení akce selhalo. Otevři task a pokračuj z jeho detailu.
+        {{ uncommitted.task.id }} {{ t('backlog.je_zapsany_ale_dokonceni_akce_selhalo_otevri_task_a_pokracuj_z_jeho_detailu') }}
       </p>
       <button type="button" class="primary" data-test="follow-up-open" @click="created(uncommitted)">
-        Otevřít {{ uncommitted.task.id }}
+        {{ t('backlog.otevrit') }} {{ uncommitted.task.id }}
       </button>
     </div>
     <div v-else class="actions">
@@ -128,9 +129,9 @@ async function submit() {
         :aria-busy="saving || undefined"
         @click="submit"
       >
-        <Spinner v-if="saving" /> {{ runNow ? 'Založit a spustit' : 'Založit' }}
+        <Spinner v-if="saving" /> {{ runNow ? t('backlog.zalozit_a_spustit') : t('backlog.zalozit') }}
       </button>
-      <button type="button" data-test="follow-up-cancel" :disabled="saving" @click="cancel">Zrušit</button>
+      <button type="button" data-test="follow-up-cancel" :disabled="saving" @click="cancel">{{ t('backlog.zrusit') }}</button>
     </div>
   </section>
 </template>

@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 // Spinners on Backlog actions: the clicked button spins until the server answers,
 // colliding actions are disabled meanwhile, and a `pending` run start spins until live updates.
 import { afterEach, describe, expect, it, vi } from 'vitest'

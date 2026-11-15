@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { backlogError } from '@/lib/backlogMessages'
+import type { WriteError } from '@/lib/backlog'
 // A container row expands its children or opens its backlog metadata settings.
 // Task rows open the task detail; machine-local choices are on the Overview.
 import { computed, ref } from 'vue'
@@ -43,7 +46,7 @@ const editable = computed(() =>
 )
 
 const archiving = ref(false)
-const archiveError = ref<string | null>(null)
+const archiveError = ref<WriteError | null>(null)
 async function toggleArchive() {
   if (!canEdit.value || props.depth !== 0 || !props.node.id || archiving.value) return
   archiving.value = true
@@ -52,7 +55,7 @@ async function toggleArchive() {
     await editContainer(props.node.id, { archived: !props.node.archived })
     emit('changed')
   } catch (e) {
-    archiveError.value = flattenIssues(e).message
+    archiveError.value = flattenIssues(e)
   } finally {
     archiving.value = false
   }
@@ -77,7 +80,7 @@ function openTask(event: MouseEvent) {
         class="toggle"
         data-test="toggle"
         :aria-expanded="open ? 'true' : 'false'"
-        :aria-label="open ? 'Sbalit' : 'Rozbalit'"
+        :aria-label="open ? t('backlog.collapse') : t('backlog.expand')"
         @click.stop="toggle"
       >
         <ChevronRight :size="16" class="chevron" :class="{ open }" />
@@ -85,7 +88,7 @@ function openTask(event: MouseEvent) {
       <span class="level" data-test="level">{{ levelLabel(levels[depth] ?? node.level) }}</span>
       <CodeTip :code="node.id"><span class="id">{{ node.id ?? node.path }}</span></CodeTip>
       <span class="title">{{ node.title }}</span>
-      <span v-if="node.archived" class="level">Archivováno</span>
+      <span v-if="node.archived" class="level">{{ t('backlog.archivovano') }}</span>
       <span v-if="stateCounts.length" class="states" data-test="state-counts">
         <StateChip v-for="s in stateCounts" :key="s.state" :state="s.state" :count="s.count" />
       </span>
@@ -95,14 +98,14 @@ function openTask(event: MouseEvent) {
         class="graph-link"
         data-test="graph-link"
         @click.stop
-      >Graf</a>
+      >{{ t('backlog.graf') }}</a>
       <button
         v-if="canEdit && depth === 0"
         type="button"
         class="switch-button"
         data-test="project-archive-toggle"
         :disabled="archiving"
-        :aria-label="node.archived ? 'Obnovit projekt' : 'Archivovat projekt'"
+        :aria-label="node.archived ? t('backlog.restoreProject') : t('backlog.archiveProject')"
         @click.stop="toggleArchive"
       >
         <ArchiveRestore v-if="node.archived" :size="15" />
@@ -114,13 +117,13 @@ function openTask(event: MouseEvent) {
         class="switch-button"
         data-test="settings"
         :aria-expanded="settingsOpen ? 'true' : 'false'"
-        aria-label="Nastavení"
+        :aria-label="t('backlog.nastaveni')"
         @click.stop="toggleSettings(key)"
       >
         <SlidersHorizontal :size="15" />
       </button>
     </div>
-    <p v-if="archiveError" role="alert" data-test="project-archive-error">{{ archiveError }}</p>
+    <p v-if="archiveError" role="alert" data-test="project-archive-error">{{ backlogError(archiveError) }}</p>
     <TreeSettings
       v-if="settingsOpen && editable"
       :node="editable"
@@ -152,9 +155,9 @@ function openTask(event: MouseEvent) {
         <span class="title">{{ node.title }}</span>
       </a>
       <StateChip :state="node.board_state" :blocked-by="node.blocked_by" :waits-for-human="node.waits_for_human" />
-      <span v-if="node.invalid" class="warn" data-test="invalid">neplatný status</span>
+      <span v-if="node.invalid" class="warn" data-test="invalid">{{ t('backlog.neplatny_status') }}</span>
       <span class="workflow" :class="{ faint: !node.workflow }">
-        {{ node.workflow ?? 'bez workflow' }}
+        {{ node.workflow ?? t('backlog.bez_workflow') }}
       </span>
     </div>
   </li>

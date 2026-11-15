@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { mergeNames, resetNamesForTests } from '@/lib/names'
@@ -71,8 +77,8 @@ describe('ReviewList', () => {
     const row = wrapper.find('tr[data-pr="M01-S01-T01"]')
     expect(row.find('[data-col="project"]').text()).toBe('M01')
     expect(row.find('[data-test="mergeability"]').text()).toBe('lze mergovat')
-    expect(row.find('[data-col="cost"]').text()).toBe('$0.2500')
-    expect(row.find('[data-col="tokens"]').text()).toBe('1.2k')
+    expect(row.find('[data-col="cost"]').text()).toBe('0,2500\u00a0US$')
+    expect(row.find('[data-col="tokens"]').text()).toBe('1,2k')
     expect(row.find('a.task-link').attributes('href')).toBe('#/r/haifa/review/M01-S01-T01')
     const pr = row.find('a[data-col="pr"]')
     expect(pr.attributes('href')).toBe('https://example.test/pr/7')
@@ -80,7 +86,7 @@ describe('ReviewList', () => {
     expect(pr.attributes('rel')).toBe('noopener')
     const other = wrapper.find('tr[data-pr="M02-S01-T01"]')
     expect(other.find('[data-test="mergeability"]').text()).toBe('konflikt')
-    expect(other.find('[data-col="cost"]').text()).toBe('$1.50')
+    expect(other.find('[data-col="cost"]').text()).toBe('1,50\u00a0US$')
     expect(other.find('[data-col="run"] a').attributes('href')).toBe('#/r/haifa/runs/r-run')
     expect(other.find('a[data-col="pr"]').exists()).toBe(false)
     expect(other.find('[data-col="pr"]').text()).toBe('local:factory/M02-S01-T01-1')

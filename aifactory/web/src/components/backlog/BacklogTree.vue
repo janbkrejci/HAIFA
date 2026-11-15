@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 import { computed, watch } from 'vue'
 import { Plus } from 'lucide-vue-next'
 import { DEFAULT_LEVELS, levelNoun, takeReveal, type BacklogNode } from '@/lib/backlog'
@@ -30,13 +31,13 @@ const topNoun = computed(() => levelNoun(props.levels[0] ?? DEFAULT_LEVELS[0] ??
 
 <template>
   <div v-if="!items.length && filtered" class="empty-state" data-test="empty-filter">
-    <p>Filtru nic neodpovídá.</p>
-    <button type="button" class="button" data-test="clear-filter" @click="emit('clear-filter')">Zrušit filtr</button>
+    <p>{{ t('backlog.filtru_nic_neodpovida') }}</p>
+    <button type="button" class="button" data-test="clear-filter" @click="emit('clear-filter')">{{ t('backlog.zrusit_filtr') }}</button>
   </div>
   <div v-else-if="!items.length" class="empty-state" data-test="empty-tree">
-    <p>Backlog je prázdný. Založ první {{ topNoun }}.</p>
+    <p>{{ t('backlog.backlog_je_prazdny_zaloz_prvni') }} {{ topNoun }}.</p>
     <a :href="newContainerHref()" class="button" data-test="empty-new-project">
-      <Plus :size="16" /> Nový {{ topNoun }}
+      <Plus :size="16" /> {{ t('backlog.novy') }} {{ topNoun }}
     </a>
   </div>
   <ul v-else class="tree" data-test="tree">

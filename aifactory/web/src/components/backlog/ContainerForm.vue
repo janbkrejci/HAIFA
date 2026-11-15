@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The form for a new project or step (`factory backlog add [PARENT] --id --title --body`).
 // The code is the short one (`S11`); the server composes the id with the parent (`HAIFA-S11`).
 import { computed, ref } from 'vue'
@@ -49,14 +50,14 @@ function onSubmit() {
 <template>
   <form class="container-form" data-test="container-form" :data-level="level" @submit.prevent="onSubmit">
     <h2>
-      Nový {{ noun }}
+      {{ t('backlog.novy') }} {{ noun }}
       <span v-if="parent" class="faint" data-test="container-parent">
-        v <span class="mono">{{ parent }}</span><template v-if="parentTitle"> · {{ parentTitle }}</template>
+        {{ t('backlog.v') }} <span class="mono">{{ parent }}</span><template v-if="parentTitle"> · {{ parentTitle }}</template>
       </span>
     </h2>
 
     <label>
-      Kód
+      {{ t('backlog.kod') }}
       <input
         v-model="code"
         data-test="container-id"
@@ -65,18 +66,18 @@ function onSubmit() {
         :placeholder="placeholder"
         autocomplete="off"
       />
-      <span v-if="short && !codeValid" class="hint error" data-test="container-id-invalid">Kód smí obsahovat jen písmena, číslice, „.“ a „_“.</span>
-      <span v-else-if="short" class="hint faint" data-test="container-id-preview">Id: <span class="mono">{{ preview }}</span></span>
+      <span v-if="short && !codeValid" class="hint error" data-test="container-id-invalid">{{ t('backlog.kod_smi_obsahovat_jen_pismena_cislice_a') }}</span>
+      <span v-else-if="short" class="hint faint" data-test="container-id-preview">{{ t('backlog.id') }} <span class="mono">{{ preview }}</span></span>
     </label>
 
     <label>
-      Název
+      {{ t('backlog.nazev') }}
       <input v-model="title" data-test="container-title" type="text" required />
     </label>
 
     <label>
-      Popis
-      <textarea v-model="body" data-test="container-body-input" rows="6" placeholder="markdown" />
+      {{ t('backlog.popis') }}
+      <textarea v-model="body" data-test="container-body-input" rows="6" :placeholder="t('backlog.markdown')" />
     </label>
 
     <div class="actions">
@@ -88,12 +89,12 @@ function onSubmit() {
         :aria-busy="pending || undefined"
       >
         <Spinner v-if="pending" />
-        Založit
+        {{ t('backlog.zalozit') }}
       </button>
-      <button type="button" data-test="container-cancel" @click="emit('cancel')">Zrušit</button>
+      <button type="button" data-test="container-cancel" @click="emit('cancel')">{{ t('backlog.zrusit') }}</button>
     </div>
 
-    <IssueList v-if="error" :message="error.message" :issues="error.issues" />
+    <IssueList v-if="error" :code="error.code" :message="error.message" :issues="error.issues" />
   </form>
 </template>
 
