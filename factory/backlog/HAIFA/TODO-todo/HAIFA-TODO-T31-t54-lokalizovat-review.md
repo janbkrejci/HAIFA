@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T31
 title: "T54: Lokalizovat Review"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S01-T54]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/tests/]

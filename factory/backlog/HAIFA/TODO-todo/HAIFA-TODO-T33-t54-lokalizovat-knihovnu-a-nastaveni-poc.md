@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T33
 title: "T54: Lokalizovat Knihovnu a nastavení počítače"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S01-T54]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/tests/]

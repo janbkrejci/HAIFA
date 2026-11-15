@@ -2,6 +2,7 @@
 id: HAIFA-S12-T01
 title: GIRO — mapa názvů, kompatibility a cílového repozitáře
 status: done
+archived: true
 depends_on: []
 writes: [docs/rebranding/, docs/decisions.md]
 ---

@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T35
 title: "T54: Aktivovat globální English/Čeština a ověřit úplnou lokalizaci"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S01-T54]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/src/aifactory/guide/, aifactory/tests/]

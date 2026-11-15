@@ -2,6 +2,7 @@
 id: HAIFA-S01-T53
 title: "Vícejazyčnost dashboardu: společný základ EN/CS a lokalizované formátování"
 status: done
+archived: true
 depends_on: []
 writes: [aifactory/web/, aifactory/src/aifactory/web/static/, aifactory/tests/]
 ---

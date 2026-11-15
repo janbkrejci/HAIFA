@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T34
 title: "T54: Lokalizovat přidání repozitáře a panely pomocníků"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S01-T54]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/tests/]

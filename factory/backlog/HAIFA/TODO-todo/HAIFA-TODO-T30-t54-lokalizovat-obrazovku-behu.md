@@ -2,6 +2,7 @@
 id: HAIFA-TODO-T30
 title: "T54: Lokalizovat obrazovku běhů"
 status: done
+archived: true
 depends_on: []
 related: [HAIFA-S01-T54]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/tests/]
