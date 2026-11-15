@@ -1,7 +1,7 @@
 ---
 id: HAIFA-S01-T54
 title: Dokončit anglické a české UI dashboardu a zapnout výchozí EN
-status: todo
+status: done
 depends_on: [HAIFA-S01-T53, HAIFA-S01-T50, HAIFA-S01-T51, HAIFA-S01-T52, HAIFA-TODO-T27, HAIFA-TODO-T28, HAIFA-TODO-T29, HAIFA-TODO-T30, HAIFA-TODO-T31, HAIFA-TODO-T32, HAIFA-TODO-T33, HAIFA-TODO-T34, HAIFA-TODO-T35]
 writes: [aifactory/web/, aifactory/src/aifactory/web/, aifactory/src/aifactory/guide/, aifactory/tests/]
 ---
@@ -23,3 +23,4 @@ Ověření: vyhledat přímé volající v celém aifactory/tests/ a zvolit jen 
 
 ## Běhy
 <!-- doplňuje HAIFA při schválení PR -->
+- 2026-11-15 · workflow build-test-review · PR https://github.com/janbkrejci/HAIFA/pull/244 · náklady $0.00
