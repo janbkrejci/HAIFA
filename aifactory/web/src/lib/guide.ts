@@ -1,6 +1,7 @@
 // The user and administrator guide (#/guide): chapters from GET /api/guide, their sections
 // and a search over them.
 import { getGlobal } from './api'
+import { locale, type Locale } from './i18n'
 
 export interface GuideChapter {
   id: string
@@ -21,8 +22,8 @@ export interface GuideHit {
   snippet: string
 }
 
-export async function fetchGuide(): Promise<GuideChapter[]> {
-  return (await getGlobal<{ chapters: GuideChapter[] }>('/guide')).chapters
+export async function fetchGuide(language: Locale = locale.value): Promise<GuideChapter[]> {
+  return (await getGlobal<{ chapters: GuideChapter[] }>(`/guide?locale=${language}`)).chapters
 }
 
 /** Lowercase without diacritics, for slugs and search. */
@@ -43,8 +44,10 @@ export function sections(markdown: string): GuideSection[] {
     if (/^\s*```/.test(line)) fence = !fence
     const heading = fence ? null : /^##\s+(.*)$/.exec(line)
     if (heading?.[1] !== undefined) {
-      const title = heading[1].trim()
-      out.push({ id: slug(title), title, text: '' })
+      // Translated headings retain the original public section URLs.
+      const anchor = /\s*<!-- section:([a-z0-9-]+) -->\s*$/.exec(heading[1])
+      const title = heading[1].replace(/\s*<!-- section:[a-z0-9-]+ -->\s*$/, '').trim()
+      out.push({ id: anchor?.[1] ?? slug(title), title, text: '' })
       continue
     }
     const last = out[out.length - 1]

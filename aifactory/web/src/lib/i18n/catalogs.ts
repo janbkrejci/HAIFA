@@ -357,6 +357,11 @@ export const en = {
   "updates.installing": "Installing update…",
   "updates.installHint": "Version {version}: click to download and install the update, restart the dashboard and run a system check.",
   "updates.retryHint": "Click to check again.",
+  'updates.check_failed': 'The update check failed. Click to try again.',
+  'updates.invalid_response': 'The update check returned an invalid response. Click to try again.',
+  'updates.install_failed': 'The update could not be installed. Click to check again.',
+  'updates.restart_timeout': 'The update did not finish within five minutes. Check the running dashboard.',
+  'updates.runs_active': 'The update is waiting for active tasks to finish. Click to retry installation.',
   "limits.loading": "Harnesses – loading harness settings",
   "limits.empty": "Configure harnesses – click to open harness settings",
   "limits.settings": "Usage limits and harness settings",
@@ -415,6 +420,10 @@ export const en = {
   'validation.required': '{field} is required.',
   'counts.items': '{count} item | {count} items',
   'time.justNow': 'just now',
+  'guide.title': 'Guide',
+  'guide.noResults': 'No results found.',
+  'guide.loadError': 'Could not load the guide.',
+  'guide.errorDetails': 'Technical details',
 }
 
 export const cs: Record<keyof typeof en, string> = {
@@ -768,6 +777,11 @@ export const cs: Record<keyof typeof en, string> = {
   "updates.installing": "Instaluji aktualizaci…",
   "updates.installHint": "Verze {version}: kliknutím stáhneš a nainstaluješ aktualizaci, restartuješ dashboard a spustíš kontrolu systému.",
   "updates.retryHint": "Kliknutím zopakuješ kontrolu.",
+  'updates.check_failed': 'Kontrola aktualizací selhala. Kliknutím ji zopakuješ.',
+  'updates.invalid_response': 'Kontrola aktualizací vrátila neplatnou odpověď. Kliknutím ji zopakuješ.',
+  'updates.install_failed': 'Aktualizaci se nepodařilo nainstalovat. Kliknutím zopakuješ kontrolu.',
+  'updates.restart_timeout': 'Aktualizace se do pěti minut nedokončila. Zkontroluj běžící dashboard.',
+  'updates.runs_active': 'Aktualizace čeká na dokončení běžících tasků. Kliknutím zopakuješ instalaci.',
   "limits.loading": "Harnessy – načítání nastavení harnessů",
   "limits.empty": "Nakonfigurujte harnessy – kliknutím otevřeš nastavení harnessů",
   "limits.settings": "Usage limity a nastavení harnessů",
@@ -827,6 +841,10 @@ export const cs: Record<keyof typeof en, string> = {
   // Intl categories: one, few, many (fractional), other.
   'counts.items': '{count} položka | {count} položky | {count} položky | {count} položek',
   'time.justNow': 'právě teď',
+  'guide.title': 'Příručka',
+  'guide.noResults': 'Nic nenalezeno.',
+  'guide.loadError': 'Příručku se nepodařilo načíst.',
+  'guide.errorDetails': 'Technické podrobnosti',
 }
 
 export type MessageKey = keyof typeof en

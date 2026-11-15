@@ -479,7 +479,11 @@ async def updates_check(request: Request) -> JSONResponse:
 
 async def guide_get(request: Request) -> JSONResponse:
     """The user and administrator guide: every chapter with its markdown."""
-    items = await run_in_threadpool(guide.chapters)
+    # Preserve the existing response for clients without a locale parameter.
+    locale = request.query_params.get("locale", "cs")
+    if locale not in {"en", "cs"}:
+        locale = "en"
+    items = await run_in_threadpool(guide.chapters, locale=locale)
     return JSONResponse(envelope_ok({"chapters": [item.as_dict() for item in items]}))
 
 

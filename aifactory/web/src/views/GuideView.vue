@@ -1,7 +1,7 @@
 <script setup lang="ts">
 // #/guide[/<chapter>[/<section>]]: the user and administrator guide. Chapters on the left with
 // the sections of the open one and a search over all of them; the chapter rendered on the right.
-import { computed, nextTick, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue'
 import { BookOpen, Search } from 'lucide-vue-next'
 import { locale, t } from '@/lib/i18n'
 import { errorText } from '@/lib/format'
@@ -42,24 +42,34 @@ async function place(): Promise<void> {
 
 watch([html, () => params.value[1]], () => { void place() })
 
-onMounted(async () => {
+let generation = 0
+watch(locale, async (language) => {
+  const mine = ++generation
+  chapters.value = null
+  error.value = ''
   try {
-    chapters.value = await fetchGuide()
+    const result = await fetchGuide(language)
+    if (mine !== generation) return
+    chapters.value = result
     void place()
   } catch (err) {
+    if (mine !== generation) return
     error.value = errorText(err)
   }
-})
+}, { immediate: true })
+onBeforeUnmount(() => { generation++ })
 </script>
 
 <template>
   <section class="guide" data-test="guide">
-    <div v-if="error" class="guide-error" data-test="guide-error">{{ t('guide.error', { error }) }}</div>
+    <div v-if="error" class="guide-error" data-test="guide-error">
+      {{ t('guide.loadError') }}
+      <details><summary>{{ t('guide.errorDetails') }}</summary>{{ error }}</details>
+    </div>
     <div v-else-if="chapters === null" class="guide-loading"><Spinner /> {{ t('guide.loading') }}</div>
     <div v-else class="guide-layout">
       <nav class="guide-nav" :aria-label="t('guide.chapters')">
         <h1><BookOpen :size="20" aria-hidden="true" /> {{ t('nav.guide') }}</h1>
-        <p v-if="locale === 'en'" class="faint">{{ t('guide.contentLanguage') }}</p>
         <label class="guide-search">
           <Search :size="15" aria-hidden="true" />
           <input v-model="query" type="search" :placeholder="t('guide.search')" :aria-label="t('guide.search')" data-test="guide-search" />
@@ -89,7 +99,7 @@ onMounted(async () => {
           </a>
         </div>
       </nav>
-      <article class="guide-article" lang="cs">
+      <article class="guide-article" :lang="locale">
         <div ref="article" class="md" data-test="guide-article" v-html="html" />
         <footer class="guide-pager">
           <a v-if="previous" :href="guideHref(previous.id)" data-test="guide-previous">← {{ previous.title }}</a>
@@ -242,6 +252,12 @@ onMounted(async () => {
   border: 1px solid var(--border);
   border-radius: 12px;
   background: var(--surface);
+  overflow-wrap: anywhere;
+}
+
+.guide-article :deep(table) {
+  display: block;
+  overflow-x: auto;
 }
 
 .guide-article :deep(h1) {
@@ -287,6 +303,13 @@ onMounted(async () => {
   .guide-nav {
     position: static;
     max-height: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .guide,
+  .guide-article {
+    padding: 16px;
   }
 }
 </style>

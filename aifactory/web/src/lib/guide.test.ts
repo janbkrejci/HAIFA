@@ -19,6 +19,13 @@ describe('guide', () => {
     expect(parts[1]!.text).toContain('## není nadpis')
   })
 
+  it('keeps public section ids when headings are translated', () => {
+    const parts = sections('# Backlog\n## Starting a run <!-- section:spusteni-behu -->\nRun the task.')
+    expect(parts[1]).toEqual({ id: 'spusteni-behu', title: 'Starting a run', text: 'Run the task.\n' })
+    expect(search([{ id: 'backlog', title: 'Backlog', markdown: '## Starting a run <!-- section:spusteni-behu -->\nRun.' }], 'starting')[0]?.section.id)
+      .toBe('spusteni-behu')
+  })
+
   it('finds sections holding every word, without diacritics', () => {
     const hits = search(CHAPTERS, 'spusteni tlacitko')
     expect(hits.map((h) => [h.chapter.id, h.section.id])).toEqual([['backlog', 'spusteni-behu']])

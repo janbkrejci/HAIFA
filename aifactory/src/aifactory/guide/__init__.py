@@ -1,6 +1,6 @@
-"""The user and administrator guide: Czech markdown chapters shipped in the package.
+"""The user and administrator guide: static Czech and English markdown chapters.
 
-Each chapter is ``<NN>-<id>.md`` in this directory; ``NN`` orders the chapters and the
+Each chapter is ``<NN>-<id>.md`` here (Czech) or in ``en/`` (English); ``NN`` orders them and the
 first ``# `` heading is its title. The dashboard serves them on ``/api/guide`` and renders
 them on ``#/guide``. The installation chapter is also the bundle's standalone
 ``INSTALL.md`` (``bundle/build.py``).
@@ -34,8 +34,15 @@ def _title(markdown: str, fallback: str) -> str:
     return fallback
 
 
-def chapters(directory: Path = GUIDE_DIR) -> list[Chapter]:
-    """The chapters in order of their number prefix."""
+def chapters(directory: Path = GUIDE_DIR, *, locale: str = "cs") -> list[Chapter]:
+    """Chapters in order; keep Czech as the standalone/bundle API default.
+
+    Dashboard callers pass their locale explicitly. Never change server-wide state.
+    """
+    if locale not in {"en", "cs"}:
+        raise ValueError(f"Unsupported guide locale: {locale}")
+    if locale == "en":
+        directory = directory / "en"
     found: list[tuple[int, Chapter]] = []
     for path in directory.glob("*.md"):
         match = _NAME.match(path.name)
@@ -47,9 +54,9 @@ def chapters(directory: Path = GUIDE_DIR) -> list[Chapter]:
     return [chapter for _, chapter in sorted(found, key=lambda item: (item[0], item[1].id))]
 
 
-def chapter(chapter_id: str, directory: Path = GUIDE_DIR) -> Chapter:
+def chapter(chapter_id: str, directory: Path = GUIDE_DIR, *, locale: str = "cs") -> Chapter:
     """The chapter ``chapter_id``; ``KeyError`` when there is none."""
-    for item in chapters(directory):
+    for item in chapters(directory, locale=locale):
         if item.id == chapter_id:
             return item
     raise KeyError(chapter_id)
