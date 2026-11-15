@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
@@ -124,7 +130,7 @@ describe('ContainerSettings', () => {
       code: 'invalid_value',
     })
     const error = wrapper.get('[data-test="write-error"]')
-    expect(error.text()).toContain("'workflow' must be a non-empty string")
+    expect(error.get('.message').text()).toBe('Zadaná hodnota není platná.')
     expect(error.find('[data-issue="invalid_value"]').exists()).toBe(true)
   })
 

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { backlogError } from '@/lib/backlogMessages'
 // Backlog metadata only. Operating choices live on the Overview for this machine.
 import { computed, nextTick, onMounted, ref } from 'vue'
 import {
@@ -19,7 +21,7 @@ const emit = defineEmits<{ changed: [] }>()
 
 const root = ref<HTMLElement | null>(null)
 const detail = ref<ContainerDetailData | null>(null)
-const loadError = ref<string | null>(null)
+const loadError = ref<(() => string) | null>(null)
 const saving = ref(false)
 const saveError = ref<WriteError | null>(null)
 const busy = computed(() => saving.value)
@@ -35,10 +37,10 @@ async function load() {
   try {
     const next = await fetchContainer(props.node.id)
     detail.value = isContainerDetail(next) ? next : null
-    loadError.value = detail.value ? null : `Nastavení ${props.node.id} se nepodařilo načíst.`
+    loadError.value = detail.value ? null : () => t('backlog.nastaveni_p0_se_nepodarilo_nacist', { p0: props.node.id })
   } catch (e) {
     detail.value = null
-    loadError.value = `Nastavení ${props.node.id} se nepodařilo načíst: ${flattenIssues(e).message}`
+    loadError.value = () => t('backlog.nastaveni_p0_se_nepodarilo_nacist_p1', { p0: props.node.id, p1: backlogError(flattenIssues(e)) })
   }
 }
 
@@ -68,7 +70,7 @@ async function onSave(input: EditContainerInput) {
 
 <template>
   <div ref="root" class="tree-settings" data-test="settings-panel" :data-container="node.id">
-    <p class="faint">Automatizace a výchozí harness nové Factory se nastavují na Přehledu — Na tomto počítači.</p>
+    <p class="faint">{{ t('backlog.automatizace_a_vychozi_harness_nove_factory_se_nastavuji_na_prehledu_na_tom') }}</p>
     <ContainerSettings
       v-if="detail"
       :key="formKey"
@@ -80,8 +82,8 @@ async function onSave(input: EditContainerInput) {
       :error="saveError"
       @save="onSave"
     />
-    <p v-else-if="loadError" class="warn" data-test="settings-error">{{ loadError }}</p>
-    <p v-else class="faint" data-test="settings-loading">Načítám nastavení…</p>
+    <p v-else-if="loadError" class="warn" data-test="settings-error">{{ loadError() }}</p>
+    <p v-else class="faint" data-test="settings-loading">{{ t('backlog.nacitam_nastaveni') }}</p>
   </div>
 </template>
 

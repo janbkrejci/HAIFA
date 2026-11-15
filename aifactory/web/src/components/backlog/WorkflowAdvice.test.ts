@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import WorkflowAdvice from './WorkflowAdvice.vue'
@@ -6,7 +12,7 @@ import { backlogData } from '@/test/backlogFixtures'
 import { chooseOption } from '@/test/select'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
-vi.mock('@/lib/api', () => api)
+vi.mock('@/lib/api', async (original) => ({ ...(await original<object>()), ...api }))
 const recommendation = {
   workflow_name: 'research', decision: 'new', reason: 'Analysis is sufficient.',
   workflow_yaml: '<script>alert(1)</script>', outline: [{ name: 'plan' }],
@@ -73,7 +79,7 @@ describe('workflow advice', () => {
     await flushPromises()
     const costs = wrapper.findAll('[data-test="workflow-advice-cost"]').map((c) => c.text())
     expect(costs).toEqual([
-      'Návrh 1: $0.0105 USD · 42 tokenů (vykázané providerem)',
+      'Návrh 1: 0,0105 US$ · 42 tokenů (vykázaných providerem)',
       'Návrh 2: Provider náklady nevykázal.',
     ])
     wrapper.unmount()

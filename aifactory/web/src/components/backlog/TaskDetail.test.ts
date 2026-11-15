@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import TaskDetail from './TaskDetail.vue'
@@ -8,7 +14,7 @@ import { answerDialog, openDialog } from '@/test/modal'
 import { resetNamesForTests, setNames } from '@/lib/names'
 
 const api = vi.hoisted(() => ({ postApi: vi.fn(), getApi: vi.fn() }))
-vi.mock('@/lib/api', () => api)
+vi.mock('@/lib/api', async (original) => ({ ...(await original<object>()), ...api }))
 
 afterEach(() => {
   document.body.innerHTML = ''
@@ -699,4 +705,46 @@ it('keeps the edit draft through a live refresh while save is pending or rejecte
   await wrapper.setProps({ busy: false, error: { message: 'Conflict', issues: [] }, detail: taskDetail() })
   expect((wrapper.get('[data-test="title"]').element as HTMLInputElement).value).toBe('Preserved draft')
   wrapper.unmount()
+})
+
+it('translates dependency states EN to CS to EN without changing IDs or container progress', async () => {
+  const states = [
+    ['todo', 'No workflow', 'Bez workflow'],
+    ['ready', 'Ready', 'Připraveno'],
+    ['human', 'For a person', 'Pro člověka'],
+    ['blocked', 'Blocked', 'Blokováno'],
+    ['failed', 'Failed', 'Selhalo'],
+    ['running', 'Running', 'Běží'],
+    ['in review', 'Awaiting review', 'Čeká na review'],
+    ['approved', 'Approved, awaiting CI', 'Schváleno, čeká na CI'],
+    ['awaiting merge', 'Awaiting PR auto-merge', 'Čeká na automerge PR'],
+    ['done', 'Done', 'Hotovo'],
+    ['cancelled', 'Cancelled', 'Zrušeno'],
+  ] as const
+  const detail = taskDetail()
+  detail.depends = [
+    ...states.map(([state], i) => ({ id: `T${i}`, kind: 'task' as const, title: null, state })),
+    { id: 'M01-S01', kind: 'container', title: 'Dokončený step', state: 'done' },
+    { id: 'M01-S02', kind: 'container', title: 'Rozpracovaný step', state: '2/5' },
+    { id: 'MISSING', kind: 'unknown', title: null, state: 'unknown' },
+  ]
+  const original = JSON.stringify(detail.depends)
+  const wrapper = mount(TaskDetail, { props: { detail, workflows: ['plan'], busy: false, error: null } })
+  try {
+    for (const locale of ['en', 'cs', 'en'] as const) {
+      setLocale(locale)
+      await flushPromises()
+      expect(wrapper.findAll('[data-test="dep-state"]').map((s) => s.text())).toEqual([
+        ...states.map((state) => state[locale === 'en' ? 1 : 2]),
+        locale === 'en' ? 'Done' : 'Hotovo',
+        '2/5',
+        locale === 'en' ? 'Unknown' : 'Neznámý stav',
+      ])
+      expect(wrapper.findAll('[data-dep]').map((row) => row.attributes('data-dep')))
+        .toEqual(detail.depends.map((dep) => dep.id))
+      expect(JSON.stringify(detail.depends)).toBe(original)
+    }
+  } finally {
+    wrapper.unmount()
+  }
 })

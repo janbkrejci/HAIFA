@@ -1,4 +1,5 @@
 import { computed, onMounted, ref } from 'vue'
+import { t } from './i18n'
 import { getGlobal, postGlobal } from './api'
 
 export interface HarnessSettings {
@@ -24,12 +25,12 @@ export function useHarnessChoices() {
   const catalog = ref<HarnessCatalog | null>(null)
   onMounted(async () => { try { const data = await fetchHarnessSettings(); if (data.settings?.harnesses) catalog.value = data } catch { /* Parent forms remain usable when the machine API is unavailable. */ } })
   const harnessOptions = computed(() => [
-    { value: '', label: 'Zdědit' },
+    { value: '', label: t('backlog.zdedit') },
     ...Object.entries(catalog.value?.settings.harnesses ?? {}).filter(([name, c]) => c.enabled && catalog.value?.available[name]).map(([name]) => ({ value: name, label: name })),
   ])
   function modelOptions(harness?: string | null) {
     const selected = harness || catalog.value?.settings.default_harness || ''
-    return [{ value: '', label: 'Zdědit' }, ...(catalog.value?.models[selected] ?? []).map(model => ({ value: model, label: model }))]
+    return [{ value: '', label: t('backlog.zdedit') }, ...(catalog.value?.models[selected] ?? []).map(model => ({ value: model, label: model }))]
   }
   return { catalog, harnessOptions, modelOptions }
 }

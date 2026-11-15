@@ -19,6 +19,7 @@ def test_workflow_advice_browser(tmp_path: Path) -> None:
     with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
         page = browser.new_page()
+        page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         page.set_default_timeout(15000)
         try:
             # Existing task without workflow -> same editor -> agent -> save.

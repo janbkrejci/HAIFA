@@ -79,6 +79,7 @@ def test_retry_from_run_and_task_detail(tmp_path: Path, screen: str) -> None:
         )
         browser = _launch(p)
         context = browser.new_context(base_url=obs.url)
+        context.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         context.set_default_timeout(SERVER_TIMEOUT_MS)
         blocked: list[str] = []
 

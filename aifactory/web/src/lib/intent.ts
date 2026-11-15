@@ -49,6 +49,8 @@ export interface Proposal {
 }
 
 export interface IntentProgress {
+  code?: string
+  params?: Record<string, string>
   kind: string
   text: string
   ts: string
@@ -65,6 +67,7 @@ export interface IntentJob {
   requested?: IntentTarget
   proposal: Proposal | null
   error: string | null
+  error_code?: string | null
   issues: ApiIssue[]
   notes: string[]
   progress: IntentProgress[]

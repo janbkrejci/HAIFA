@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { backlogError } from '@/lib/backlogMessages'
 // The Backlog screen of repo <id> (#/r/<id>/backlog…): …/backlog (tree or kanban), …/backlog/new[/<step id>]
 // (form, the step preselected), …/backlog/<task id>, …/backlog/graph/<project or step id> (dependency graph and
 // a link to its Nastavení panel in the tree), …/backlog/new-container[/<project id>] (form for a new project or step).
@@ -81,7 +83,7 @@ import {
   type LiveFilesEvent,
   type LiveTraceEvent,
 } from '@/lib/live'
-import { isDbBusyText } from '@/lib/api'
+import { isDbBusy } from '@/lib/api'
 import {
   GRAPH,
   PROJECT_BACKLOG,
@@ -104,7 +106,6 @@ import { mergeNames, setLevels, useLevels, useNames } from '@/lib/names'
 import { useBacklogStatus } from '@/lib/backlogStatus'
 import type { Proposal } from '@/lib/intent'
 import { useConfigStatus } from '@/lib/configStatus'
-import { plural } from '@/lib/format'
 import CodeTip from '@/components/ui/CodeTip.vue'
 import SelectMenu from '@/components/ui/SelectMenu.vue'
 
@@ -157,7 +158,9 @@ let loadSeq = 0
 const loading = ref(false)
 /** A new task waits for its own list load, even when a previous screen cached steps. */
 const newTaskReady = ref(false)
-const error = ref<string | null>(null)
+const error = ref<(() => string) | null>(null)
+const errorText = computed(() => error.value?.() ?? null)
+const retryable = ref(false)
 const writeError = ref<WriteError | null>(null)
 /** Key of the running write (`add`, `edit`, `assign`, `link:…`, `unlink:…`): its button spins. */
 const busyAction = ref<string | null>(null)
@@ -264,7 +267,7 @@ const shownGraph = computed(() =>
 const issues = computed(() => (Array.isArray(data.value?.issues) ? data.value.issues : []))
 const problemsText = computed(() => {
   const n = issues.value.length
-  return `Backlog má ${n} ${plural(n, 'problém', 'problémy', 'problémů')}.`
+  return t('backlog.problems', { count: n }, n)
 })
 /** The „Skrýt hotové“ switch hides every task of a non-empty tree. */
 const treeFiltered = computed(() => items.value.length > 0 && treeItems.value.length === 0)
@@ -276,13 +279,14 @@ const graphStep = computed(() =>
 )
 
 function message(e: unknown): string {
-  return flattenIssues(e).message
+  return backlogError(flattenIssues(e))
 }
 
 async function loadList() {
   const seq = ++loadSeq
   loading.value = true
   error.value = null
+  retryable.value = false
   try {
     const list = await fetchBacklog()
     if (seq === loadSeq) {
@@ -299,7 +303,10 @@ async function loadList() {
       if (isNew.value) newTaskReady.value = true
     }
   } catch (e) {
-    if (seq === loadSeq) error.value = `Backlog se nepodařilo načíst: ${message(e)}`
+    if (seq === loadSeq) {
+      retryable.value = isDbBusy(e)
+      error.value = () => t('backlog.backlog_se_nepodarilo_nacist_p0', { p0: message(e) })
+    }
   } finally {
     if (seq === loadSeq) loading.value = false
   }
@@ -309,6 +316,7 @@ async function loadDetail(id: string) {
   const seq = ++loadSeq
   loading.value = true
   error.value = null
+  retryable.value = false
   // another task: drop the previous one at once, a reload of the same task keeps it shown
   if (detailFor.value !== id) setDetail(id, null)
   try {
@@ -318,8 +326,9 @@ async function loadDetail(id: string) {
     setDetail(id, task?.task ? task : null)
   } catch (e) {
     if (seq !== loadSeq || taskId.value !== id) return
+    retryable.value = isDbBusy(e)
     setDetail(id, null)
-    error.value = `Task ${id} se nepodařilo načíst: ${message(e)}`
+    error.value = () => t('backlog.task_p0_se_nepodarilo_nacist_p1', { p0: id, p1: message(e) })
   } finally {
     if (seq === loadSeq) loading.value = false
   }
@@ -329,6 +338,7 @@ async function loadGraph(id: string) {
   const seq = ++loadSeq
   loading.value = true
   error.value = null
+  retryable.value = false
   try {
     // the levels (Nový step) and the forms read the backlog list; load it when it is not loaded yet
     const [next, list] = await Promise.all([
@@ -341,8 +351,9 @@ async function loadGraph(id: string) {
     }
   } catch (e) {
     if (seq !== loadSeq) return
+    retryable.value = isDbBusy(e)
     graph.value = null
-    error.value = `Graf ${id} se nepodařilo načíst: ${message(e)}`
+    error.value = () => t('backlog.graf_p0_se_nepodarilo_nacist_p1', { p0: id, p1: message(e) })
   } finally {
     if (seq === loadSeq) loading.value = false
   }
@@ -352,7 +363,7 @@ function reload() {
   writeError.value = null
   if (isGraph.value) {
     if (graphId.value) void loadGraph(graphId.value)
-    else error.value = `Chybí id ${levelsText(level.containers.value, 'gen')}.`
+    else error.value = () => t('backlog.chybi_id_p0', { p0: levelsText(level.containers.value, 'gen') })
   } else if (taskId.value) void loadDetail(taskId.value)
   else void loadList()
 }
@@ -379,13 +390,15 @@ function optimistic(change: (tasks: BacklogData['tasks']) => BacklogData['tasks'
 async function queueWrite(apply: () => Promise<unknown>, undo: () => void) {
   queueBusy.value = true
   error.value = null
+  retryable.value = false
   try {
     await apply()
     queueBusy.value = false
     await loadList()
   } catch (e) {
     undo()
-    error.value = `Frontu se nepodařilo uložit: ${message(e)}`
+    retryable.value = isDbBusy(e)
+    error.value = () => t('backlog.frontu_se_nepodarilo_ulozit_p0', { p0: message(e) })
   } finally {
     queueBusy.value = false
   }
@@ -616,7 +629,8 @@ async function liveRefresh(change: LiveChange) {
     data.value = list
     if (id && task?.task && taskId.value === id) setDetail(id, task)
   } catch (e) {
-    error.value = `Backlog se nepodařilo obnovit: ${message(e)}`
+    retryable.value = isDbBusy(e)
+    error.value = () => t('backlog.backlog_se_nepodarilo_obnovit_p0', { p0: message(e) })
   }
 }
 
@@ -679,8 +693,8 @@ watch(
 <template>
   <section class="backlog-view">
     <div class="view-head">
-      <h1>Backlog</h1>
-      <BackLink v-if="target" :href="here('backlog')" label="backlog" />
+      <h1>{{ t('backlog.backlog') }}</h1>
+      <BackLink v-if="target" :href="here('backlog')" :label="t('backlog.backlogNoun')" />
       <div class="head-actions">
         <a
           v-if="!isIntent && !taskId"
@@ -688,7 +702,7 @@ watch(
           class="button"
           data-test="new-intent"
         >
-          <Lightbulb :size="16" /> Nový záměr
+          <Lightbulb :size="16" /> {{ t('backlog.novy_zamer') }}
         </a>
         <a
           v-if="!target"
@@ -696,7 +710,7 @@ watch(
           class="button"
           data-test="new-project"
         >
-          <Plus :size="16" /> Nový {{ levelNoun(level.top.value) }}
+          <Plus :size="16" /> {{ t('backlog.novy') }} {{ levelNoun(level.top.value) }}
         </a>
         <a
           v-if="!target && listChildLevel"
@@ -704,7 +718,7 @@ watch(
           class="button"
           data-test="new-step"
         >
-          <Plus :size="16" /> Nový {{ levelNoun(listChildLevel) }}
+          <Plus :size="16" /> {{ t('backlog.novy') }} {{ levelNoun(listChildLevel) }}
         </a>
         <a
           v-if="isGraph && graph && graphChildLevel"
@@ -712,20 +726,20 @@ watch(
           class="button"
           data-test="new-step"
         >
-          <Plus :size="16" /> Nový {{ levelNoun(graphChildLevel) }}
+          <Plus :size="16" /> {{ t('backlog.novy') }} {{ levelNoun(graphChildLevel) }}
         </a>
         <a v-if="!isNew" :href="newTaskHref(graphStep)" class="button" data-test="new-task">
-          <Plus :size="16" /> Nový {{ levelNoun(level.task.value) }}
+          <Plus :size="16" /> {{ t('backlog.novy') }} {{ levelNoun(level.task.value) }}
         </a>
         <button type="button" class="button" data-test="refresh" :disabled="loading" @click="reload">
-          <RefreshCw :size="16" :class="{ spin: loading }" /> Obnovit
+          <RefreshCw :size="16" :class="{ spin: loading }" /> {{ t('backlog.obnovit') }}
         </button>
       </div>
     </div>
-    <p v-if="error" class="error-bar" data-test="error">
-      {{ error }}
-      <button v-if="isDbBusyText(error)" type="button" class="retry" data-test="retry" @click="reload">
-        Zkusit znovu
+    <p v-if="errorText" class="error-bar" data-test="error">
+      {{ errorText }}
+      <button v-if="retryable" type="button" class="retry" data-test="retry" @click="reload">
+        {{ t('backlog.zkusit_znovu') }}
       </button>
     </p>
 
@@ -735,7 +749,7 @@ watch(
         @applied="onIntentApplied"
         @cancel="cancelNew"
       />
-      <p v-else-if="loading" class="faint" data-test="intent-loading">Načítám…</p>
+      <p v-else-if="loading" class="faint" data-test="intent-loading">{{ t('backlog.nacitam') }}</p>
     </template>
     <template v-else-if="isNew">
       <TaskForm
@@ -751,14 +765,14 @@ watch(
         @submit="onAdd"
         @cancel="cancelNew"
       />
-      <p v-else-if="loading" class="faint" data-test="new-task-loading">Načítám…</p>
+      <p v-else-if="loading" class="faint" data-test="new-task-loading">{{ t('backlog.nacitam') }}</p>
     </template>
     <template v-else-if="isNewContainer">
       <template v-if="isNewStep">
-        <p v-if="loading" class="faint" data-test="new-step-loading">Načítám…</p>
+        <p v-if="loading" class="faint" data-test="new-step-loading">{{ t('backlog.nacitam') }}</p>
         <template v-else-if="data && !error">
           <p v-if="!listChildLevel" class="error-bar" data-test="no-child-level">
-            {{ levelLabel(level.top.value) }} obsahuje jen {{ levelNoun(level.task.value) }}y.
+            {{ t('backlog.onlyTasks', { container: levelLabel(level.top.value) }) }}
           </p>
           <label v-else-if="projects.length" class="step-project">
             {{ levelLabel(level.top.value) }}
@@ -767,14 +781,14 @@ watch(
               :label="levelLabel(level.top.value)"
               :model-value="selectedProject"
               :options="projectChoices"
-              :placeholder="`Vyber ${levelNoun(level.top.value)}`"
+              :placeholder="t('backlog.chooseLevel', { level: levelNoun(level.top.value) })"
               :disabled="busy"
               @update:model-value="selectedProject = $event"
             />
           </label>
           <p v-else data-test="new-step-empty">
-            Nejprve založ {{ levelNoun(level.top.value) }}.
-            <a :href="newContainerHref()">Nový {{ levelNoun(level.top.value) }}</a>
+            {{ t('backlog.nejprve_zaloz') }} {{ levelNoun(level.top.value) }}.
+            <a :href="newContainerHref()">{{ t('backlog.novy') }} {{ levelNoun(level.top.value) }}</a>
           </p>
         </template>
       </template>
@@ -792,7 +806,7 @@ watch(
         @cancel="cancelNewContainer"
       />
       <p v-else-if="data && !isNewStep" class="error-bar" data-test="no-child-level">
-        {{ newParent }} obsahuje jen {{ levelNoun(level.task.value) }}y.
+        {{ t('backlog.onlyTasks', { container: newParent ?? '' }) }}
       </p>
     </template>
     <template v-else-if="taskId">
@@ -817,7 +831,7 @@ watch(
         @follow-up="onFollowUp"
       />
       <p v-else-if="loading" class="faint" data-test="detail-loading">
-        <span class="mono" data-test="loading-id">{{ taskId }}</span> · Načítám…
+        <span class="mono" data-test="loading-id">{{ taskId }}</span> {{ t('backlog.loadingInline') }}
       </p>
     </template>
     <template v-else-if="isGraph">
@@ -835,7 +849,7 @@ watch(
               :checked="hideDone"
               @change="onHideDone(($event.target as HTMLInputElement).checked)"
             />
-            Skrýt hotové
+            {{ t('backlog.skryt_hotove') }}
           </label>
         </div>
         <DependencyGraph :graph="shownGraph ?? graph" />
@@ -845,10 +859,10 @@ watch(
             class="settings-link"
             data-test="settings-link"
             @click="revealSettings(graph.container.id)"
-          >Nastavení {{ levelNoun(graph.container.level, 'gen') }} ve stromu backlogu</a>
+          >{{ t('backlog.nastaveni') }} {{ levelNoun(graph.container.level, 'gen') }} {{ t('backlog.ve_stromu_backlogu') }}</a>
         </p>
       </section>
-      <p v-else-if="loading" class="faint">Načítám…</p>
+      <p v-else-if="loading" class="faint">{{ t('backlog.nacitam') }}</p>
     </template>
     <template v-else>
       <div v-if="issues.length" data-test="problems">
@@ -867,7 +881,7 @@ watch(
       <template v-if="data">
         <label v-if="mode === 'tree'" class="archive-projects">
           <input v-model="showArchivedProjects" type="checkbox" data-test="show-archived-projects" />
-          Zobrazit archivované projekty
+          {{ t('backlog.zobrazit_archivovane_projekty') }}
         </label>
         <KanbanBoard
           v-if="mode === 'kanban'"
@@ -889,7 +903,7 @@ watch(
           @clear-filter="onFilters({}); onHideDone(false); showArchivedProjects = true"
         />
       </template>
-      <p v-else-if="loading" class="faint" data-test="list-loading">Načítám…</p>
+      <p v-else-if="loading" class="faint" data-test="list-loading">{{ t('backlog.nacitam') }}</p>
     </template>
   </section>
 </template>

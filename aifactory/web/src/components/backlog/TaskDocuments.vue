@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { backlogError, documentProblem } from '@/lib/backlogMessages'
 // Task card with tabs: the rendered task body (Zadání, shown first) and the read-only
 // markdown documents (backlog item, spec and doc). The tabs are the card's only label; every
 // tab shows rendered markdown only, without a source view. The server finds the documents by the
 // task id; a missing one is listed but cannot be opened.
 import { computed, ref, watch } from 'vue'
-import { documentMarkdown, fetchTaskDocuments, type TaskDocument } from '@/lib/backlog'
-import { errorText } from '@/lib/format'
+import { documentMarkdown, fetchTaskDocuments, flattenIssues, type TaskDocument } from '@/lib/backlog'
 import MarkdownView from '@/components/ui/MarkdownView.vue'
 import Spinner from '@/components/ui/Spinner.vue'
 import Tooltip from '@/components/ui/Tooltip.vue'
@@ -14,7 +15,7 @@ const props = defineProps<{ taskId: string; body: string }>()
 
 const documents = ref<TaskDocument[]>([])
 const loading = ref(false)
-const error = ref<string | null>(null)
+const error = ref<(() => string) | null>(null)
 /** The open tab: `body` is the task body, otherwise a document kind. */
 const selected = ref<TaskDocument['kind'] | 'body'>('body')
 
@@ -32,7 +33,7 @@ async function load(taskId: string) {
   } catch (e) {
     if (mine !== token) return
     documents.value = []
-    error.value = errorText(e)
+    error.value = () => t('backlog.documentsFailed', { error: backlogError(flattenIssues(e)) })
   } finally {
     if (mine === token) loading.value = false
   }
@@ -49,13 +50,13 @@ function open(doc: TaskDocument) {
 
 function tip(doc: TaskDocument): string {
   if (doc.exists) return doc.path
-  return doc.problem ? `${doc.path} – ${doc.problem}` : `${doc.path} – soubor neexistuje`
+  return doc.problem ? `${doc.path} – ${documentProblem(doc.problem)}` : t('backlog.document.missing', { path: doc.path })
 }
 </script>
 
 <template>
   <section class="card task-docs" data-test="task-documents">
-    <div class="doc-tabs" role="tablist" aria-label="Dokumenty tasku">
+    <div class="doc-tabs" role="tablist" :aria-label="t('backlog.dokumenty_tasku')">
       <button
         type="button"
         role="tab"
@@ -64,7 +65,7 @@ function tip(doc: TaskDocument): string {
         :aria-selected="selected === 'body'"
         @click="selected = 'body'"
       >
-        Zadání
+        {{ t('backlog.zadani') }}
       </button>
       <Tooltip v-for="doc in documents" :key="doc.kind" :text="tip(doc)">
         <button
@@ -77,22 +78,22 @@ function tip(doc: TaskDocument): string {
           :disabled="!doc.exists"
           @click="open(doc)"
         >
-          {{ doc.label }}
-          <span v-if="!doc.exists" class="tag" data-test="doc-missing">chybí</span>
+          {{ t(`backlog.document.${doc.kind}`) }}
+          <span v-if="!doc.exists" class="tag" data-test="doc-missing">{{ t('backlog.chybi') }}</span>
         </button>
       </Tooltip>
       <Spinner v-if="loading" />
     </div>
-    <p v-if="error" class="error" data-test="docs-error">{{ error }}</p>
+    <p v-if="error" class="error" data-test="docs-error">{{ error() }}</p>
     <div v-if="selected === 'body'" class="doc-body">
-      <MarkdownView :source="body" empty="Zadání je prázdné." preview-only data-test="body" />
+      <MarkdownView :source="body" :empty="t('backlog.zadani_je_prazdne')" preview-only data-test="body" />
     </div>
     <div v-else-if="current" class="doc-body" :data-doc="current.kind">
       <div class="doc-path mono" data-test="doc-path">{{ current.path }}</div>
       <p v-if="current.content == null" class="faint" data-test="doc-problem">
-        Obsah nejde zobrazit{{ current.problem ? `: ${current.problem}` : '' }}.
+        {{ t('backlog.obsah_nejde_zobrazit') }}{{ current.problem ? `: ${documentProblem(current.problem)}` : '.' }}
       </p>
-      <MarkdownView v-else :source="source" empty="Dokument je prázdný." preview-only data-test="doc-content" />
+      <MarkdownView v-else :source="source" :empty="t('backlog.dokument_je_prazdny')" preview-only data-test="doc-content" />
     </div>
   </section>
 </template>

@@ -1,18 +1,27 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { backlogError } from '@/lib/backlogMessages'
 import type { ApiIssue } from '@/lib/api'
 
-defineProps<{ message: string; issues: ApiIssue[] }>()
+defineProps<{ message: string; issues: ApiIssue[]; code?: string }>()
 </script>
 
 <template>
   <div class="issue-list" data-test="write-error" role="alert">
-    <p class="message">{{ message }}</p>
+    <p class="message">{{ backlogError({ code, message }) }}</p>
     <ul v-if="issues.length">
       <li v-for="(issue, n) in issues" :key="n" :data-issue="issue.code">
-        <code>{{ issue.code }}</code>: {{ issue.message }}
+        <code>{{ issue.code }}</code>: {{ backlogError(issue) }}
         <span v-if="issue.path" class="faint">({{ issue.path }})</span>
       </li>
     </ul>
+    <details v-if="(code && backlogError({ code, message }) !== message) || issues.some(issue => backlogError(issue) !== issue.message)" data-test="error-details">
+      <summary>{{ t('dashboard.diagnostics') }}</summary>
+      <p>{{ message }}</p>
+      <ul v-if="issues.length">
+        <li v-for="(issue, n) in issues" :key="n"><code>{{ issue.code }}</code>: {{ issue.message }}</li>
+      </ul>
+    </details>
   </div>
 </template>
 

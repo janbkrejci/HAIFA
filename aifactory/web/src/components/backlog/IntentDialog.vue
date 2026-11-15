@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { intentProgressText } from '@/lib/backlogMessages'
 // Nový záměr: the person writes an intent; the proposer agent places it (an existing or new
 // project, an existing or new step) and proposes the tasks (`web.intent`). Its progress is shown while
 // it works; the result is a tree of the new tasks with expandable texts and the findings of
@@ -188,36 +190,35 @@ function onEdit(code: string) {
 const stepLabel = computed(() => levelLabel(level.step.value))
 const projectLabel = computed(() => levelLabel(level.top.value))
 const projectNoun = computed(() => levelNoun(level.top.value))
-const taskNounPlural = computed(() => `${levelNoun(level.task.value)}y`)
 const stateText = computed(() => {
   const j = job.value
   if (!j) return ''
-  if (j.state === 'queued') return 'Návrh čeká na agenta…'
-  return j.round > 1 ? `Agent upravuje návrh (kolo ${j.round})…` : 'Agent navrhuje…'
+  if (j.state === 'queued') return t('backlog.navrh_ceka_na_agenta')
+  return j.round > 1 ? t('backlog.agent_upravuje_navrh_kolo_p0', { p0: j.round }) : t('backlog.proposing')
 })
 const appliedProposal = computed(() => (job.value?.state === 'applied' ? job.value.proposal : null))
 const jobError = computed<WriteError | null>(() =>
-  job.value?.error ? { message: job.value.error, issues: job.value.issues ?? [] } : null,
+  job.value?.error ? { code: job.value.error_code ?? undefined, message: job.value.error, issues: job.value.issues ?? [] } : null,
 )
 </script>
 
 <template>
   <section class="intent-dialog" role="dialog" aria-labelledby="intent-title" data-test="intent-dialog">
     <div class="head">
-      <h2 id="intent-title"><Lightbulb :size="18" aria-hidden="true" /> Nový záměr</h2>
-      <button type="button" class="icon" aria-label="Zavřít" data-test="intent-close" @click="cancel">
+      <h2 id="intent-title"><Lightbulb :size="18" aria-hidden="true" /> {{ t('backlog.novy_zamer') }}</h2>
+      <button type="button" class="icon" :aria-label="t('backlog.zavrit')" data-test="intent-close" @click="cancel">
         <X :size="16" />
       </button>
     </div>
 
     <fieldset class="fields" :disabled="busy || !!appliedProposal">
       <label>
-        Záměr
+        {{ t('backlog.zamer') }}
         <textarea
           v-model="intent"
           data-test="intent-text"
           rows="3"
-          placeholder="Co má nový kus práce přinést, jednou nebo pár větami. Umístění navrhne agent; změníš ho v poli Upřesni (např. „dej to do HAIFA-S03“)."
+          :placeholder="t('backlog.co_ma_novy_kus_prace_prinest_jednou_nebo_par_vetami_umisteni_navrhne_agent_')"
         />
       </label>
     </fieldset>
@@ -230,32 +231,41 @@ const jobError = computed<WriteError | null>(() =>
         @click="propose"
       >
         <Spinner v-if="sending && !job" />
-        {{ job && !appliedProposal ? 'Navrhnout znovu' : 'Navrhnout' }}
+        {{ job && !appliedProposal ? t('backlog.proposeAgain') : t('backlog.propose') }}
       </button>
     </div>
 
     <div v-if="working" class="progress" data-test="intent-progress" aria-live="polite">
       <p class="state"><Spinner /> {{ stateText }}</p>
       <ol v-if="job?.progress.length">
-        <li v-for="(item, n) in job.progress" :key="n" :data-kind="item.kind">{{ item.text }}</li>
+        <li v-for="(item, n) in job.progress" :key="n" :data-kind="item.kind">{{ intentProgressText(item) }}</li>
       </ol>
     </div>
 
-    <IssueList v-if="error" :message="error.message" :issues="error.issues" />
-    <IssueList v-if="jobError && !working" :message="jobError.message" :issues="jobError.issues" />
+    <IssueList v-if="error" :code="error.code" :message="error.message" :issues="error.issues" />
+    <IssueList v-if="jobError && !working" :code="jobError.code" :message="jobError.message" :issues="jobError.issues" />
 
     <div v-if="appliedProposal" class="applied" data-test="intent-applied">
       <p>
-        Zapsáno: {{ appliedProposal.tasks.length }} {{ taskNounPlural }} v
+        {{ t('backlog.appliedTasks', { count: appliedProposal.tasks.length }, appliedProposal.tasks.length) }}
         <span class="mono">{{ appliedProposal.step.id }}</span>.
         <template v-if="appliedProposal.project?.new">
-          Nový {{ projectNoun }}: <span class="mono">{{ appliedProposal.project.id }}</span>.
+          {{ t('backlog.novy') }} {{ projectNoun }}: <span class="mono">{{ appliedProposal.project.id }}</span>.
         </template>
         <template v-if="appliedProposal.commit?.committed">
-          Backlog je commitnutý do {{ appliedProposal.commit.base }}.
+          {{ t('backlog.backlog_je_commitnuty_do') }} {{ appliedProposal.commit.base }}.
         </template>
       </p>
-      <p v-for="warning in appliedProposal.warnings ?? []" :key="warning" class="warning">{{ warning }}</p>
+      <template v-if="!appliedProposal.commit && appliedProposal.warnings?.length">
+        <p class="warning">{{ t('backlog.intentCommitFailed') }}</p>
+        <details>
+          <summary>{{ t('dashboard.diagnostics') }}</summary>
+          <p v-for="warning in appliedProposal.warnings" :key="warning">{{ warning }}</p>
+        </details>
+      </template>
+      <template v-else>
+        <p v-for="warning in appliedProposal.warnings ?? []" :key="warning" class="warning">{{ warning }}</p>
+      </template>
     </div>
 
     <div v-else-if="proposal && !working" class="result" data-test="intent-result">
@@ -264,7 +274,7 @@ const jobError = computed<WriteError | null>(() =>
         <span class="level">{{ projectLabel }}</span>
         <span class="mono">{{ proposal.project.id }}</span>
         <strong>{{ proposal.project.title }}</strong>
-        <span class="faint">{{ proposal.project.new ? 'nový' : 'existující' }}</span>
+        <span class="faint">{{ proposal.project.new ? t('backlog.newPlacement') : t('backlog.existujici') }}</span>
       </div>
       <MarkdownView
         v-if="proposal.project?.new && proposal.project.body"
@@ -275,11 +285,11 @@ const jobError = computed<WriteError | null>(() =>
         <span class="level">{{ stepLabel }}</span>
         <span class="mono">{{ proposal.step.id }}</span>
         <strong>{{ proposal.step.title }}</strong>
-        <span class="faint">{{ proposal.step.new ? 'nový' : 'existující' }}</span>
+        <span class="faint">{{ proposal.step.new ? t('backlog.newPlacement') : t('backlog.existujici') }}</span>
       </div>
       <MarkdownView v-if="proposal.step.new && proposal.step.body" :source="proposal.step.body" preview-only />
       <p v-if="proposal.placement_reason" class="reason faint" data-test="intent-reason">
-        Proč sem: {{ proposal.placement_reason }}
+        {{ t('backlog.proc_sem') }} {{ proposal.placement_reason }}
       </p>
 
       <ul class="tasks">
@@ -295,13 +305,13 @@ const jobError = computed<WriteError | null>(() =>
               <span class="mono">{{ task.id }}</span>
               <span class="title">{{ edits[task.code]?.title ?? task.title }}</span>
               <span v-if="taskFindings(task.id).length" class="finding-count" data-test="intent-task-findings">
-                {{ taskFindings(task.id).length }} nález
+                {{ t('backlog.findings', { count: taskFindings(task.id).length }, taskFindings(task.id).length) }}
               </span>
             </summary>
             <dl class="meta">
-              <dt>workflow</dt><dd>{{ task.workflow }}</dd>
-              <dt>writes</dt><dd class="mono">{{ task.writes.join(', ') || '–' }}</dd>
-              <dt>závisí na</dt><dd class="mono">{{ task.depends_on.join(', ') || '–' }}</dd>
+              <dt>{{ t('backlog.workflowNoun') }}</dt><dd>{{ task.workflow }}</dd>
+              <dt>{{ t('backlog.writesNoun') }}</dt><dd class="mono">{{ task.writes.join(', ') || '–' }}</dd>
+              <dt>{{ t('backlog.dependsNoun') }}</dt><dd class="mono">{{ task.depends_on.join(', ') || '–' }}</dd>
             </dl>
             <ul v-if="taskFindings(task.id).length" class="findings">
               <li v-for="(f, n) in taskFindings(task.id)" :key="n" :data-rule="f.rule">
@@ -310,11 +320,11 @@ const jobError = computed<WriteError | null>(() =>
             </ul>
             <div v-if="editing.has(task.code) && edits[task.code]" class="edit">
               <label>
-                Titulek
+                {{ t('backlog.titulek') }}
                 <input v-model="edits[task.code]!.title" type="text" data-test="intent-task-title" />
               </label>
               <label>
-                Zadání
+                {{ t('backlog.zadani') }}
                 <textarea v-model="edits[task.code]!.body" rows="10" data-test="intent-task-body" />
               </label>
             </div>
@@ -328,18 +338,18 @@ const jobError = computed<WriteError | null>(() =>
               :disabled="busy"
               @click="onEdit(task.code)"
             >
-              <Pencil :size="14" /> {{ editing.has(task.code) ? 'Hotovo' : 'Upravit' }}
+              <Pencil :size="14" /> {{ editing.has(task.code) ? t('backlog.hotovo') : t('backlog.upravit') }}
             </button>
             <button type="button" data-test="intent-task-remove" :disabled="busy" @click="onRemove(task.code)">
-              <template v-if="removed.has(task.code)"><Undo2 :size="14" /> Vrátit</template>
-              <template v-else><X :size="14" /> Odebrat</template>
+              <template v-if="removed.has(task.code)"><Undo2 :size="14" /> {{ t('backlog.vratit') }}</template>
+              <template v-else><X :size="14" /> {{ t('backlog.odebrat') }}</template>
             </button>
           </div>
         </li>
       </ul>
 
       <div v-if="otherFindings.length" class="findings" data-test="intent-findings">
-        <h3>Nálezy kontroly</h3>
+        <h3>{{ t('backlog.nalezy_kontroly') }}</h3>
         <ul>
           <li v-for="(f, n) in otherFindings" :key="n" :data-rule="f.rule">
             <span class="mono">{{ f.task }}</span> <code>{{ f.rule }}</code>: {{ f.message }}
@@ -347,17 +357,17 @@ const jobError = computed<WriteError | null>(() =>
         </ul>
       </div>
       <p v-if="findings.length" class="faint" data-test="intent-findings-count">
-        Kontrola kvality: {{ findings.length }} nález(ů), návrh jde přesto použít.
+        {{ t('backlog.qualityFindings', { count: findings.length }, findings.length) }}
       </p>
 
       <label class="refine">
-        Upřesni
+        {{ t('backlog.upresni') }}
         <textarea
           v-model="note"
           data-test="intent-note"
           rows="2"
           :disabled="busy"
-          placeholder="Připomínka k návrhu; agent ho upraví ve stejné session."
+          :placeholder="t('backlog.pripominka_k_navrhu_agent_ho_upravi_ve_stejne_session')"
         />
       </label>
       <div class="actions">
@@ -367,7 +377,7 @@ const jobError = computed<WriteError | null>(() =>
           :disabled="busy || !ready || !note.trim()"
           @click="refine"
         >
-          <Spinner v-if="sending" /> Upřesnit
+          <Spinner v-if="sending" /> {{ t('backlog.upresnit') }}
         </button>
         <button
           type="button"
@@ -376,12 +386,12 @@ const jobError = computed<WriteError | null>(() =>
           :disabled="busy || !ready || kept.length === 0"
           @click="apply"
         >
-          <Spinner v-if="applying" /> Použít ({{ kept.length }})
+          <Spinner v-if="applying" /> {{ t('backlog.pouzit') }}{{ kept.length }})
         </button>
-        <button type="button" data-test="intent-cancel" :disabled="applying" @click="cancel">Zrušit</button>
+        <button type="button" data-test="intent-cancel" :disabled="applying" @click="cancel">{{ t('backlog.zrusit') }}</button>
       </div>
       <ul v-if="job?.notes.length" class="notes faint" data-test="intent-notes">
-        <li v-for="(n, i) in job.notes" :key="i">Připomínka {{ i + 1 }}: {{ n }}</li>
+        <li v-for="(n, i) in job.notes" :key="i">{{ t('backlog.pripominka') }} {{ i + 1 }}: {{ n }}</li>
       </ul>
     </div>
   </section>

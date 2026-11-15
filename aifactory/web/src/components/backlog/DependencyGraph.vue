@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The dependency graph of a project or step: tasks as nodes (coloured by board state),
 // `depends_on` as arrows. A task node links to its detail.
 import { computed, ref } from 'vue'
@@ -53,15 +54,15 @@ function nodeLabel(node: GraphNode): string {
   return level ? `${levelLabel(level)} ${head}` : head
 }
 
-const outsideLabel = computed(() => `mimo ${containers.value.map((l) => levelNoun(l)).join('/')}`)
+const outsideLabel = computed(() => t('backlog.outside', { levels: containers.value.map((l) => levelNoun(l)).join('/') }))
 
 // One controlled tooltip for the whole graph; it lives outside the <svg> and the
 // scroll container, positioned next to the hovered/focused node.
-const tip = ref<{ el: Element; text: string } | null>(null)
+const tip = ref<{ el: Element; node: GraphNode } | null>(null)
 
 function showTip(e: Event, node: GraphNode) {
   const el = e.currentTarget
-  if (el instanceof Element) tip.value = { el, text: nodeLabel(node) }
+  if (el instanceof Element) tip.value = { el, node }
 }
 
 function hideTip() {
@@ -76,14 +77,14 @@ function clip(text: string | null, max = 24): string {
 
 <template>
   <div class="dependency-graph" data-test="graph">
-    <p v-if="!layout.nodes.length" class="faint" data-test="empty-graph">Žádné tasky</p>
+    <p v-if="!layout.nodes.length" class="faint" data-test="empty-graph">{{ t('backlog.zadne_tasky') }}</p>
     <div v-else class="canvas">
       <svg
         :width="layout.width"
         :height="layout.height"
         :viewBox="`0 0 ${layout.width} ${layout.height}`"
         role="img"
-        aria-label="Graf závislostí"
+        :aria-label="t('backlog.graf_zavislosti')"
       >
         <defs>
           <marker
@@ -150,7 +151,7 @@ function clip(text: string | null, max = 24): string {
         </template>
       </svg>
     </div>
-    <Tooltip :text="tip?.text ?? ''" :anchor="tip?.el ?? null" />
+    <Tooltip :text="tip ? nodeLabel(tip.node) : ''" :anchor="tip?.el ?? null" />
     <ul class="legend" data-test="legend">
       <li v-for="state in BOARD_STATES" :key="state" :class="`state-${state.replace(/\s+/g, '-')}`">
         <span class="swatch" />{{ STATE_LABELS[state] }}

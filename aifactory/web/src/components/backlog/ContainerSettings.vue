@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Backlog metadata with inherited values and origins. Operating choices are edited
 // on the Overview; legacy values remain untouched when saving this form.
 import { computed, reactive, ref } from 'vue'
 import {
   CONTAINER_KEYS,
   HARNESS_KEYS,
-  INHERIT_LABEL,
+  inheritLabel,
   SETTING_LABELS,
   levelNoun,
   originText,
@@ -37,9 +38,9 @@ const props = defineProps<{
 const emit = defineEmits<{ save: [input: EditContainerInput] }>()
 const { harnessOptions, modelOptions } = useHarnessChoices()
 
-const HINTS: Partial<Record<ContainerKey, string>> = {
-  writes: 'jedna cesta na řádek',
-}
+const HINTS = computed<Partial<Record<ContainerKey, string>>>(() => ({
+  writes: t('backlog.jedna_cesta_na_radek'),
+}))
 
 const keys = computed<ContainerKey[]>(() => {
   const allowed = props.editableKeys?.length ? props.editableKeys : CONTAINER_KEYS
@@ -184,11 +185,11 @@ function workflowOptions(): SelectOption[] {
 
 function flagOptions(key: ContainerKey): SelectOption[] {
   const inherited = effective[key]?.origin?.source === 'own' ? null : effective[key]?.value
-  const suffix = typeof inherited === 'boolean' ? ` (${inherited ? 'zapnuto' : 'vypnuto'})` : ''
+  const suffix = typeof inherited === 'boolean' ? ` (${inherited ? t('backlog.onValue') : t('backlog.offValue')})` : ''
   return [
-    { value: 'inherit', label: `${INHERIT_LABEL}${suffix}` },
-    { value: 'on', label: 'Zapnuto' },
-    { value: 'off', label: 'Vypnuto' },
+    { value: 'inherit', label: `${inheritLabel()}${suffix}` },
+    { value: 'on', label: t('backlog.zapnuto') },
+    { value: 'off', label: t('backlog.off') },
   ]
 }
 
@@ -201,24 +202,23 @@ function onSave() {
 
 <template>
   <form class="container-settings" data-test="container-settings" @submit.prevent="onSave">
-    <h3>Nastavení</h3>
+    <h3>{{ t('backlog.nastaveni') }}</h3>
     <p class="note" data-test="commit-note">
-      Změny se zapíší do <code>{{ container.index_path ?? container.path }}</code> v pracovním
-      stromu. Běhy je použijí až po commitu backlogu do base.
+      {{ t('backlog.zmeny_se_zapisi_do') }} <code>{{ container.index_path ?? container.path }}</code> {{ t('backlog.v_pracovnim_stromu_behy_je_pouziji_az_po_commitu_backlogu_do_base') }}
     </p>
 
     <label class="title-row">
-      Název
+      {{ t('backlog.nazev') }}
       <input v-model="title" data-test="settings-title" type="text" required />
     </label>
 
     <table class="settings">
       <thead>
         <tr>
-          <th>Klíč</th>
-          <th>Platná hodnota</th>
-          <th>Zdědit</th>
-          <th>Vlastní hodnota</th>
+          <th>{{ t('backlog.klic') }}</th>
+          <th>{{ t('backlog.platna_hodnota') }}</th>
+          <th>{{ t('backlog.zdedit') }}</th>
+          <th>{{ t('backlog.vlastni_hodnota') }}</th>
         </tr>
       </thead>
       <tbody>
@@ -235,12 +235,12 @@ function onSave() {
           <td :data-test="`value-${key}`">
             <template v-if="effective[key]?.origin?.source === 'own'">
               <span class="value mono">{{ settingText(effective[key]?.value, key) }}</span>
-              <span class="origin own" data-test="origin">vlastní</span>
+              <span class="origin own" data-test="origin">{{ t('backlog.vlastni') }}</span>
             </template>
             <template v-else>
               <span class="value mono dim">{{ settingText(effective[key]?.value, key) }}</span>
               <span class="origin faint" data-test="origin">
-                zděděno · {{ originText(effective[key]?.origin) }}
+                {{ t('backlog.inheritedOrigin') }} {{ originText(effective[key]?.origin) }}
               </span>
             </template>
           </td>
@@ -250,7 +250,7 @@ function onSave() {
               v-model="rows[key].inherit"
               type="checkbox"
               :data-test="`inherit-${key}`"
-              :aria-label="`Zdědit ${SETTING_LABELS[key] ?? key}`"
+              :aria-label="t('backlog.zdedit_p0', { p0: SETTING_LABELS[key] ?? key })"
             />
           </td>
           <td>
@@ -263,14 +263,14 @@ function onSave() {
               @update:model-value="(value: string) => setFlag(key, value)"
             />
             <template v-else-if="!rows[key].inherit">
-              <SelectMenu v-if="key === 'harness'" :model-value="rows[key].text" :options="harnessOptions" label="Harness projektu" :data-test="`edit-${key}`" @update:model-value="setHarness" />
-              <SelectMenu v-else-if="key === 'model'" :model-value="rows[key].text" :options="modelOptions(rows.harness.inherit ? '' : rows.harness.text)" label="Model projektu" :data-test="`edit-${key}`" @update:model-value="setModel" />
+              <SelectMenu v-if="key === 'harness'" :model-value="rows[key].text" :options="harnessOptions" :label="t('backlog.harness_projektu')" :data-test="`edit-${key}`" @update:model-value="setHarness" />
+              <SelectMenu v-else-if="key === 'model'" :model-value="rows[key].text" :options="modelOptions(rows.harness.inherit ? '' : rows.harness.text)" :label="t('backlog.model_projektu')" :data-test="`edit-${key}`" @update:model-value="setModel" />
               <SelectMenu
                 v-else-if="key === 'workflow'"
                 v-model="rows[key].text"
                 :data-test="`edit-${key}`"
-                label="Workflow"
-                placeholder="vyber workflow"
+                :label="t('backlog.workflowLabel')"
+                :placeholder="t('backlog.vyber_workflow')"
                 :options="workflowOptions()"
               />
               <div v-else-if="key === 'quota_switch'" class="chain" :data-test="`edit-${key}`">
@@ -281,27 +281,27 @@ function onSave() {
                     :checked="chainOn"
                     @change="setChainOn(($event.target as HTMLInputElement).checked)"
                   />
-                  Zapnuto
+                  {{ t('backlog.zapnuto') }}
                 </label>
                 <template v-if="chainOn">
                   <ol class="chain-list">
                     <li v-for="(name, index) in chain" :key="name" data-test="quota-chain-item" :data-harness="name">
                       <span class="mono">{{ name }}</span>
-                      <button type="button" data-test="chain-up" :disabled="index === 0" :aria-label="`${name} výš`" @click="moveChain(index, -1)">↑</button>
-                      <button type="button" data-test="chain-down" :disabled="index === chain.length - 1" :aria-label="`${name} níž`" @click="moveChain(index, 1)">↓</button>
-                      <button type="button" data-test="chain-remove" :aria-label="`Odebrat ${name}`" @click="removeChain(index)">✕</button>
+                      <button type="button" data-test="chain-up" :disabled="index === 0" :aria-label="t('backlog.p0_vys', { p0: name })" @click="moveChain(index, -1)">↑</button>
+                      <button type="button" data-test="chain-down" :disabled="index === chain.length - 1" :aria-label="t('backlog.p0_niz', { p0: name })" @click="moveChain(index, 1)">↓</button>
+                      <button type="button" data-test="chain-remove" :aria-label="t('backlog.removeCode', { code: name })" @click="removeChain(index)">✕</button>
                     </li>
                   </ol>
                   <SelectMenu
                     v-if="chainOptions.length"
                     model-value=""
                     data-test="chain-add"
-                    label="Přidat záložní harness"
-                    placeholder="přidat harness"
+                    :label="t('backlog.pridat_zalozni_harness')"
+                    :placeholder="t('backlog.pridat_harness')"
                     :options="chainOptions"
                     @update:model-value="addChain"
                   />
-                  <span v-if="!chain.length" class="hint warn" data-test="chain-hint">vyber aspoň jeden harness</span>
+                  <span v-if="!chain.length" class="hint warn" data-test="chain-hint">{{ t('backlog.vyber_aspon_jeden_harness') }}</span>
                 </template>
               </div>
               <textarea
@@ -313,7 +313,7 @@ function onSave() {
               />
               <input v-else v-model="rows[key].text" :data-test="`edit-${key}`" type="text" />
             </template>
-            <span v-else class="faint">dědí se</span>
+            <span v-else class="faint">{{ t('backlog.dedi_se') }}</span>
           </td>
         </tr>
       </tbody>
@@ -328,15 +328,15 @@ function onSave() {
         :aria-busy="pending || undefined"
       >
         <Spinner v-if="pending" />
-        Uložit
+        {{ t('backlog.ulozit') }}
       </button>
     </div>
 
-    <IssueList v-if="error" :message="error.message" :issues="error.issues" />
+    <IssueList v-if="error" :code="error.code" :message="error.message" :issues="error.issues" />
 
     <section class="description">
-      <h4>Popis {{ levelGen }}</h4>
-      <MarkdownView :source="container.body ?? ''" data-test="container-body" empty="Bez popisu." />
+      <h4>{{ t('backlog.popis') }} {{ levelGen }}</h4>
+      <MarkdownView :source="container.body ?? ''" data-test="container-body" :empty="t('backlog.bez_popisu')" />
     </section>
   </form>
 </template>

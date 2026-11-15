@@ -19,7 +19,8 @@ from intent_fixture import export_step, install_fake, placed, task
 pytestmark = [pytest.mark.browser, pytest.mark.xdist_group("e2e")]
 
 
-def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("language", ["en", "cs"])
+def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, language: str) -> None:
     repo = make_repo(tmp_path / "repo")
     # CI has no global git identity; the backlog commit of Použít needs one
     git(repo, "config", "user.name", "Test")
@@ -50,6 +51,7 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
     with dashboard(repo, tmp_path / "home") as (url, identifier), sync_playwright() as p:
         browser = _launch(p)
         page = browser.new_page()
+        page.add_init_script(f"localStorage.setItem('haifa.dashboard.locale', '{language}')")
         page.set_default_timeout(15000)
         try:
             page.goto(f"{url}/#/r/{identifier}/backlog")
@@ -60,15 +62,19 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
             dialog.locator('[data-test="intent-propose"]').click()
 
             progress = dialog.locator('[data-test="intent-progress"]')
-            expect(progress).to_contain_text("Agent navrhuje")
-            expect(progress).to_contain_text("Agent proposer pracuje")
+            expect(progress).to_contain_text(
+                "Agent navrhuje" if language == "cs" else "The agent is proposing"
+            )
+            expect(progress).to_contain_text(
+                "Agent proposer pracuje" if language == "cs" else "Agent proposer is working"
+            )
             release.set()
 
             tasks = dialog.locator('[data-test="intent-task"]')
             expect(tasks).to_have_count(2)
             project = dialog.locator('[data-test="intent-project"]')
             expect(project).to_contain_text("P01")
-            expect(project).to_contain_text("existující")
+            expect(project).to_contain_text("existující" if language == "cs" else "existing")
             expect(dialog.locator('[data-test="intent-step"]')).to_contain_text("P01-S02")
             expect(dialog.locator('[data-test="intent-reason"]')).to_contain_text(reason)
             first_task = dialog.locator('[data-task="P01-S02-T01"]')
@@ -90,7 +96,7 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
             second.locator('[data-test="intent-task-title"]').fill("CLI pro export")
             dialog.locator('[data-task="P01-S02-T03"] [data-test="intent-task-remove"]').click()
             apply = dialog.locator('[data-test="intent-apply"]')
-            expect(apply).to_contain_text("Použít (2)")
+            expect(apply).to_contain_text("Použít (2)" if language == "cs" else "Apply (2)")
             page.screenshot(path=str(tmp_path / "intent.png"), full_page=True)
             apply.click()
             page.wait_for_url("**/backlog/graph/P01-S02")
@@ -103,7 +109,7 @@ def test_intent_browser(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None
             dialog.locator('[data-test="intent-propose"]').click()
             project = dialog.locator('[data-test="intent-project"]')
             expect(project).to_contain_text("P02")
-            expect(project).to_contain_text("nový")
+            expect(project).to_contain_text("nový" if language == "cs" else "new")
             expect(dialog.locator('[data-test="intent-result"]')).to_contain_text(
                 "Reporty a exporty dat."
             )

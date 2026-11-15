@@ -1,3 +1,4 @@
+import { t } from './i18n'
 // The backlog tree, kanban and task writes, as served by /api/backlog (aifactory/web/backlog.py).
 // Writes call the same core functions as `factory task add|edit|link`.
 import { ref } from 'vue'
@@ -34,34 +35,47 @@ export const BOARD_STATES: readonly BoardState[] = [
 ]
 
 export const STATE_LABELS: Record<BoardState, string> = {
-  todo: 'Bez workflow',
-  ready: 'Připraveno',
-  human: 'Pro člověka',
-  blocked: 'Blokováno',
-  failed: 'Selhalo',
-  running: 'Běží',
-  'in review': 'Čeká na review',
-  approved: 'Schváleno, čeká na CI',
-  'awaiting merge': 'Čeká na automerge PR',
-  done: 'Hotovo',
-  cancelled: 'Zrušeno',
+  get todo() { return t('backlog.noWorkflow') },
+  get ready() { return t('backlog.pripraveno') },
+  get human() { return t('backlog.pro_cloveka') },
+  get blocked() { return t('backlog.blokovano') },
+  get failed() { return t('backlog.failed') },
+  get running() { return t('backlog.bezi') },
+  get 'in review'() { return t('backlog.ceka_na_review') },
+  get approved() { return t('backlog.schvaleno_ceka_na_ci') },
+  get 'awaiting merge'() { return t('backlog.ceka_na_automerge_pr') },
+  get done() { return t('backlog.hotovo') },
+  get cancelled() { return t('backlog.zruseno') },
 }
 
 /** Tooltips of the board states that need an explanation. */
 export const STATE_TOOLTIPS: Partial<Record<BoardState, string>> = {
-  todo: 'Task nejde spustit, dokud nemá workflow (vlastní nebo zděděné z projektu či stepu).',
-  failed: 'Poslední běh tasku selhal. Podrobnosti a akce najdeš v detailu tasku nebo běhu.',
-  human: 'Task udělá člověk, factory ho nespustí. Až bude hotový, označ ho v detailu jako hotový.',
-  'in review': 'Pull request čeká na tvoje review.',
-  approved: 'Schválil jsi pull request. Factory čeká na zelené CI a potom ho mergne sama.',
-  'awaiting merge': 'Auto-merge je zapnutý, factory pull request mergne sama.',
+  get todo() { return t('backlog.task_nejde_spustit_dokud_nema_workflow_vlastni_nebo_zdedene_z_projektu_ci_s') },
+  get failed() { return t('backlog.posledni_beh_tasku_selhal_podrobnosti_a_akce_najdes_v_detailu_tasku_nebo_be') },
+  get human() { return t('backlog.task_udela_clovek_factory_ho_nespusti_az_bude_hotovy_oznac_ho_v_detailu_jak') },
+  get 'in review'() { return t('backlog.pull_request_ceka_na_tvoje_review') },
+  get approved() { return t('backlog.schvalil_jsi_pull_request_factory_ceka_na_zelene_ci_a_potom_ho_mergne_sama') },
+  get 'awaiting merge'() { return t('backlog.auto_merge_je_zapnuty_factory_pull_request_mergne_sama') },
 }
 
 /** A kanban column: a board state, or Odloženo (tasks excluded from auto continue). */
 export type KanbanColumn = BoardState | 'deferred'
 
 /** Column labels of the kanban: the board states and Odloženo. */
-export const COLUMN_LABELS: Record<KanbanColumn, string> = { ...STATE_LABELS, deferred: 'Odloženo' }
+export const COLUMN_LABELS: Record<KanbanColumn, string> = {
+  get 'todo'() { return STATE_LABELS['todo'] },
+  get 'ready'() { return STATE_LABELS['ready'] },
+  get 'human'() { return STATE_LABELS['human'] },
+  get 'blocked'() { return STATE_LABELS['blocked'] },
+  get 'failed'() { return STATE_LABELS['failed'] },
+  get 'running'() { return STATE_LABELS['running'] },
+  get 'in review'() { return STATE_LABELS['in review'] },
+  get 'approved'() { return STATE_LABELS['approved'] },
+  get 'awaiting merge'() { return STATE_LABELS['awaiting merge'] },
+  get 'done'() { return STATE_LABELS['done'] },
+  get 'cancelled'() { return STATE_LABELS['cancelled'] },
+  get deferred() { return t('backlog.deferredLabel') },
+}
 
 /** Board states whose excluded tasks move to Odloženo (they have not started yet). */
 export const DEFERRABLE_STATES: readonly BoardState[] = ['ready', 'blocked', 'failed', 'todo']
@@ -127,10 +141,10 @@ export const DEFAULT_LEVELS: readonly string[] = ['project', 'step', 'task']
 
 /** Czech names of the known levels: [label, lowercase nominative, lowercase genitive]. */
 const LEVEL_NAMES: Record<string, readonly [string, string, string]> = {
-  project: ['Projekt', 'projekt', 'projektu'],
-  module: ['Modul', 'modul', 'modulu'],
-  step: ['Step', 'step', 'stepu'],
-  task: ['Task', 'task', 'tasku'],
+  get project() { return [t('backlog.level.project.label'), t('backlog.level.project.nom'), t('backlog.level.project.gen')] as const },
+  get module() { return [t('backlog.level.module.label'), t('backlog.level.module.nom'), t('backlog.level.module.gen')] as const },
+  get step() { return [t('backlog.level.step.label'), t('backlog.level.step.nom'), t('backlog.level.step.gen')] as const },
+  get task() { return [t('backlog.level.task.label'), t('backlog.level.task.nom'), t('backlog.level.task.gen')] as const },
 }
 
 /** The label of a level (`project` → Projekt, `module` → Modul); another name unchanged. */
@@ -147,7 +161,7 @@ export function levelNoun(level: string, form: 'nom' | 'gen' = 'nom'): string {
 
 /** Levels joined for a sentence: `projektu nebo stepu`. */
 export function levelsText(levels: readonly string[], form: 'nom' | 'gen' = 'nom'): string {
-  return levels.map((l) => levelNoun(l, form)).join(' nebo ')
+  return levels.map((l) => levelNoun(l, form)).join(t('backlog.or'))
 }
 
 /** `levels` of an answer, or the default ones. */
@@ -220,7 +234,7 @@ export interface Unmet {
 export function containerNoun(id: string, names: CodeNames = {}): string {
   const level = names[id]?.level
   if (level) return levelNoun(level)
-  return id.split('-').length > 1 ? 'step' : 'projekt'
+  return levelNoun(id.split('-').length > 1 ? 'step' : 'project')
 }
 
 /** One line of the Blokováno tooltip: `<kód> (<název>) – <důvod>`. */
@@ -229,17 +243,17 @@ export function unmetLine(u: Unmet, names: CodeNames = {}): string {
   const task = levelNoun(names[u.id]?.level ?? 'task')
   switch (u.reason) {
     case 'not_done':
-      return `${code} – ${task} není hotový`
+      return t('backlog.p0_p1_neni_hotovy', { p0: code, p1: task })
     case 'cancelled':
-      return `${code} – ${task} je zrušený`
+      return t('backlog.p0_p1_je_zruseny', { p0: code, p1: task })
     case 'unknown':
-      return `${code} – položka neexistuje`
+      return t('backlog.p0_polozka_neexistuje', { p0: code })
     case 'empty':
-      return `${code} – ${containerNoun(u.id, names)} je prázdný`
+      return t('backlog.p0_p1_je_prazdny', { p0: code, p1: containerNoun(u.id, names) })
     case 'incomplete':
-      return `${code} – ${containerNoun(u.id, names)} má nehotové tasky: ${u.missing
+      return t('backlog.p0_p1_ma_nehotove_tasky_p2', { p0: code, p1: containerNoun(u.id, names), p2: u.missing
         .map((m) => codeWithTitle(m, names))
-        .join(', ')}`
+        .join(', ') })
     default:
       return `${code} – ${u.reason}`
   }
@@ -247,11 +261,11 @@ export function unmetLine(u: Unmet, names: CodeNames = {}): string {
 
 /** Tooltip text of the Blokováno badge; '' when nothing blocks. */
 /** Label of a blocked task that waits for a person's task. */
-export const WAITS_FOR_HUMAN_LABEL = 'Čeká na člověka'
+export const waitsForHumanLabel = () => t('backlog.ceka_na_cloveka')
 
 export function blockedTooltip(blockedBy: readonly Unmet[] | undefined, names: CodeNames = {}): string {
   if (!blockedBy?.length) return ''
-  return ['Blokuje:', ...blockedBy.map((u) => unmetLine(u, names))].join('\n')
+  return [t('backlog.blocking'), ...blockedBy.map((u) => unmetLine(u, names))].join('\n')
 }
 
 export interface TaskNode {
@@ -1267,19 +1281,19 @@ export function editContainer(
  */
 export function settingText(value: unknown, key?: string): string {
   if (key === 'quota_switch' && Array.isArray(value)) {
-    return value.length ? value.map(String).join(' → ') : 'vypnuto'
+    return value.length ? value.map(String).join(' → ') : t('backlog.offValue')
   }
   if (value === null || value === undefined) return '—'
-  if (typeof value === 'boolean') return value ? 'zapnuto' : 'vypnuto'
-  if (Array.isArray(value)) return value.length ? value.map(String).join(', ') : '(prázdné)'
+  if (typeof value === 'boolean') return value ? t('backlog.onValue') : t('backlog.offValue')
+  if (Array.isArray(value)) return value.length ? value.map(String).join(', ') : t('backlog.prazdne')
   return String(value)
 }
 
 /** Where an inherited value comes from: `Projekt M01`, `.factory/config.yaml (test_timeout)`. */
 export function originText(origin: SettingOrigin | null | undefined): string {
-  if (!origin) return 'nenastaveno'
+  if (!origin) return t('backlog.unset')
   if (origin.source === 'config') return `${origin.path} (${origin.key})`
-  if (origin.source === 'default') return 'výchozí'
+  if (origin.source === 'default') return t('backlog.vychozi')
   const label = levelLabel(origin.level)
   return origin.id ? `${label} ${origin.id}` : label
 }
@@ -1298,20 +1312,20 @@ export function childLevel(levels: readonly string[], parentLevel?: string | nul
 
 /** Czech labels of the task and container settings (the key stays visible next to them). */
 export const SETTING_LABELS: Record<string, string> = {
-  harness: 'Harness',
-  model: 'Model',
-  thinking: 'Přemýšlení',
-  workflow: 'Workflow',
-  writes: 'Zápisy',
-  test_timeout: 'Limit testů (s)',
-  auto_continue: 'Auto continue',
-  auto_merge: 'Auto-merge',
-  quota_switch: 'Automaticky přepnout harness při vyčerpání limitu tokenů',
-  quota_switch_back: 'Vrátit zpět při obnovení limitu',
+  get harness() { return 'Harness' },
+  get model() { return 'Model' },
+  get thinking() { return t('backlog.premysleni') },
+  get workflow() { return 'Workflow' },
+  get writes() { return t('backlog.zapisy') },
+  get test_timeout() { return t('backlog.limit_testu_s') },
+  get auto_continue() { return 'Auto continue' },
+  get auto_merge() { return 'Auto-merge' },
+  get quota_switch() { return t('backlog.automaticky_prepnout_harness_pri_vycerpani_limitu_tokenu') },
+  get quota_switch_back() { return t('backlog.vratit_zpet_pri_obnoveni_limitu') },
 }
 
 /** Options of an inherited switch, the same labels everywhere. */
-export const INHERIT_LABEL = 'Zděděno'
+export const inheritLabel = () => t('backlog.inherited')
 
 // ── Codes of new projects and steps ─────────────────────────────────────────
 

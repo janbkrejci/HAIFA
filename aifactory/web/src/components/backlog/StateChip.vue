@@ -4,7 +4,7 @@ import Tooltip from '@/components/ui/Tooltip.vue'
 import {
   STATE_LABELS,
   STATE_TOOLTIPS,
-  WAITS_FOR_HUMAN_LABEL,
+  waitsForHumanLabel,
   blockedTooltip,
   type BoardState,
   type Unmet,
@@ -21,7 +21,7 @@ const forHuman = computed(() => props.state === 'blocked' && !!props.waitsForHum
 // The state colours are shared with the overview task summary (style.css, `.state-chip`).
 const cls = computed(() => ['state-chip', stateClass(forHuman.value ? 'human' : props.state)])
 const label = computed(() => {
-  const name = forHuman.value ? WAITS_FOR_HUMAN_LABEL : (STATE_LABELS[props.state] ?? props.state)
+  const name = forHuman.value ? waitsForHumanLabel() : (STATE_LABELS[props.state] ?? props.state)
   return props.count === undefined ? name : `${name} ${props.count}`
 })
 // Blokováno explains what blocks the task and why; Bez workflow why it cannot run.

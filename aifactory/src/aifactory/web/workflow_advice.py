@@ -76,6 +76,7 @@ class Job:
     state: str = "queued"
     result: dict[str, Any] | None = None
     error: str | None = None
+    error_code: str | None = None
     completed: float | None = None
     cancelled: Cancellation = field(default_factory=Cancellation)
     usage: dict[str, Any] | None = None
@@ -91,6 +92,7 @@ class Job:
             "fingerprint": self.fingerprint,
             "recommendation": self.result,
             "error": self.error,
+            "error_code": self.error_code,
             "usage": self.usage,
             "warnings": self.result.get("warnings", []) if self.result else [],
             "advisor": self.context.get("advisor"),
@@ -322,6 +324,12 @@ class AdviceManager:
                 job.result = result
         except BaseException as exc:
             with self.lock:
+                if isinstance(exc, UsageError):
+                    job.error_code = "advice_invalid"
+                else:
+                    job.error_code = (
+                        "task_advice_failed" if self.task_parameters else "workflow_advice_failed"
+                    )
                 job.error = (
                     exc.message
                     if isinstance(exc, UsageError)

@@ -49,6 +49,7 @@ def test_follow_up_from_done_task(tmp_path: Path) -> None:
         )
         browser = _launch(p)
         context = browser.new_context(base_url=obs.url)
+        context.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
         context.set_default_timeout(SERVER_TIMEOUT_MS)
         blocked: list[str] = []
 

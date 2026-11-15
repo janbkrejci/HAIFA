@@ -14,11 +14,14 @@ export interface Advisor { harness?: string; model?: string; thinking?: string }
 </script>
 
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
+import { backlogError } from '@/lib/backlogMessages'
+import { flattenIssues } from '@/lib/backlog'
+import { fmtMoney4, fmtNumber } from '@/lib/format'
 // "Vylepšit agentem": the task advice runs with the harness, model and thinking level
 // the task inherits (the same agent it would run with); the result goes straight into the form.
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Wand2, X } from 'lucide-vue-next'
-import { errorText } from '@/lib/format'
 import { getApi, postApi } from '@/lib/api'
 import { currentRepoId } from '@/lib/router'
 import Spinner from '@/components/ui/Spinner.vue'
@@ -29,6 +32,7 @@ interface Job {
   state: string
   recommendation: TaskProposal | null
   error: string | null
+  error_code?: string | null
   usage?: TaskProposal['usage']
   advisor?: Advisor | null
 }
@@ -44,7 +48,8 @@ const props = defineProps<{
 const emit = defineEmits<{ result: [proposal: TaskProposal]; busy: [value: boolean] }>()
 
 const busy = ref(false)
-const error = ref('')
+const error = ref<string | (() => string)>('')
+const errorDetail = ref<string | null>(null)
 const note = ref<{ reason: string; advisor: Advisor | null; usage: TaskProposal['usage'] } | null>(null)
 const blocked = computed(() => !!props.disabled || !!props.blocker)
 
@@ -62,13 +67,15 @@ function stop() {
 watch(() => JSON.stringify([props.taskId, props.draft]), () => {
   if (!busy.value) return
   stop()
-  error.value = 'Zadání se změnilo. Spusť vylepšení znovu.'
+  errorDetail.value = null
+  error.value = () => t('backlog.zadani_se_zmenilo_spust_vylepseni_znovu')
 })
 function scopeChanged() {
   if (scope === currentRepoId()) return
   stop()
   scope = currentRepoId()
   note.value = null
+  errorDetail.value = null
   error.value = ''
 }
 window.addEventListener('hashchange', scopeChanged)
@@ -79,9 +86,9 @@ function advisorText(advisor: Advisor | null): string {
   return [advisor.harness, advisor.model, advisor.thinking].filter(Boolean).join(' · ')
 }
 function costText(usage: TaskProposal['usage']): string {
-  if (!usage) return 'Provider náklady nevykázal.'
-  const cost = usage.cost_usd == null ? 'Provider cenu nevykázal' : `$${usage.cost_usd.toFixed(4)} USD`
-  return `${cost} · ${usage.tokens} tokenů (vykázané providerem)`
+  if (!usage) return t('backlog.provider_naklady_nevykazal')
+  const cost = usage.cost_usd == null ? t('backlog.provider_cenu_nevykazal') : fmtMoney4(usage.cost_usd)
+  return t('backlog.tokenUsage', { price: cost, count: fmtNumber(usage.tokens) }, usage.tokens)
 }
 
 async function start() {
@@ -89,6 +96,7 @@ async function start() {
   stop()
   const token = generation
   const active = () => token === generation && scope === currentRepoId()
+  errorDetail.value = null
   error.value = ''
   note.value = null
   busy.value = true
@@ -97,7 +105,8 @@ async function start() {
   let advisor: Advisor | null = null
   function fail(e: unknown) {
     if (!active()) return
-    error.value = errorText(e)
+    errorDetail.value = null
+    error.value = () => backlogError(flattenIssues(e))
     stop()
   }
   async function poll(id: string) {
@@ -107,7 +116,8 @@ async function start() {
       if (!active()) return
       advisor = job.advisor ?? advisor
       if (job.state === 'failed') {
-        error.value = job.error || 'Vylepšení selhalo.'
+        errorDetail.value = job.error_code === 'advice_invalid' ? job.error : null
+        error.value = () => backlogError({ code: job.error_code ?? undefined, message: job.error || t('backlog.vylepseni_selhalo') })
         stop()
         return
       }
@@ -145,12 +155,16 @@ defineExpose({ start })
       >
         <Spinner v-if="busy" />
         <Wand2 v-else :size="18" />
-        {{ busy ? 'Agent vylepšuje…' : 'Vylepšit agentem' }}
+        {{ busy ? t('backlog.agent_vylepsuje') : t('backlog.vylepsit_agentem') }}
       </button>
     </Tooltip>
-    <p v-if="error" role="alert" data-test="improve-error">{{ error }}</p>
+    <p v-if="error" role="alert" data-test="improve-error">{{ typeof error === 'function' ? error() : error }}</p>
+    <details v-if="error && errorDetail" data-test="advice-error-details">
+      <summary>{{ t('dashboard.diagnostics') }}</summary>
+      <pre>{{ errorDetail }}</pre>
+    </details>
     <div v-if="note" class="note" data-test="improve-note">
-      <button type="button" class="close" aria-label="Zavřít" data-test="improve-note-close" @click="note = null"><X :size="14" /></button>
+      <button type="button" class="close" :aria-label="t('backlog.zavrit')" data-test="improve-note-close" @click="note = null"><X :size="14" /></button>
       <p>{{ note.reason }}</p>
       <p class="faint" data-test="improve-meta">
         <span v-if="advisorText(note.advisor)" data-test="improve-advisor">{{ advisorText(note.advisor) }} · </span>
