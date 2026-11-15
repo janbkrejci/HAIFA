@@ -2,6 +2,7 @@
 id: HAIFA-S12-T02
 title: GIRO — CLI, technické názvy a bezpečná migrace dat
 status: done
+archived: true
 depends_on: [HAIFA-S12-T01, HAIFA-S12-T04]
 writes: [aifactory/, giro/, justfile, .gitignore, .github/workflows/, docs/rebranding/, docs/decisions.md]
 ---
