@@ -124,7 +124,11 @@ describe('App', () => {
     expect(chip.find(`.${icon}`).exists()).toBe(true)
     expect(chip.attributes('aria-label')).toContain(label)
     if (status === 'available') expect(chip.attributes('aria-label')).toContain('Verze 0.2.0')
-    if (status === 'error') expect(chip.attributes('aria-label')).toContain('Offline')
+    if (status === 'error') {
+      expect(chip.attributes('aria-label')).toContain('Kontrola aktualizací selhala. Kliknutím ji zopakuješ.')
+      expect(chip.attributes('aria-label')).not.toContain('Offline')
+      expect(wrapper.get('[data-test="update-diagnostics"] pre').text()).toBe('Offline')
+    }
     await chip.trigger('focusin')
     expect(document.body.querySelector('[role="tooltip"]')?.textContent).toBe(chip.attributes('aria-label'))
     await chip.trigger('focusout')

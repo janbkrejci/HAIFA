@@ -3,13 +3,22 @@ import { ApiError, getGlobal, postGlobal } from './api'
 import { fetchCode } from './code'
 import { errorText } from './format'
 
+export type UpdateErrorCode = 'check_failed' | 'invalid_response' | 'install_failed' | 'restart_timeout' | 'runs_active'
+
 export interface UpdateState {
   // 'waiting' is client-side only: the server refused to install while task runs are active.
   status: 'checking' | 'current' | 'available' | 'waiting' | 'error' | 'installing'
   current_version: string
   target_version?: string
+  error_code?: UpdateErrorCode
+  /** Original diagnostic only; never used as a user-facing instruction. */
   error?: string | null
 }
+function updateErrorCode(error: unknown, fallback: UpdateErrorCode): UpdateErrorCode {
+  if (error instanceof ApiError && ['runs_active', 'invalid_response', 'install_failed', 'restart_timeout'].includes(error.code)) return error.code as UpdateErrorCode
+  return fallback
+}
+
 export function useUpdates(options: { reload?: () => void; wait?: (ms: number) => Promise<void> } = {}) {
   const state = ref<UpdateState>({ status: 'checking', current_version: '' })
   let busy = false
@@ -19,27 +28,27 @@ export function useUpdates(options: { reload?: () => void; wait?: (ms: number) =
   async function check(fresh = false) {
     if (busy || disposed) return
     busy = true
-    state.value = { ...state.value, status: 'checking', error: null }
+    state.value = { ...state.value, status: 'checking', error: null, error_code: undefined }
     try {
       const result = await getGlobal<UpdateState>(`/updates${fresh ? '?fresh=1' : ''}`)
-      if (!result || !['current', 'available', 'error', 'installing'].includes(result.status)) throw new Error('Neplatná odpověď kontroly aktualizací.')
+      if (!result || !['current', 'available', 'error', 'installing'].includes(result.status)) throw new ApiError('invalid_response', 'Invalid update check response')
       if (!disposed) {
-        state.value = result
+        state.value = { ...result, error_code: result.status === 'error' ? 'check_failed' : undefined }
         if (result.status === 'installing') await watchRestart((await fetchCode()).started, result.current_version)
       }
-    } catch (error) { if (!disposed) state.value = { ...state.value, status: 'error', error: errorText(error) } }
+    } catch (error) { if (!disposed) state.value = { ...state.value, status: 'error', error_code: updateErrorCode(error, 'check_failed'), error: errorText(error) } }
     finally { busy = false }
   }
   async function install() {
     if (busy || disposed) return
     busy = true
-    state.value = { ...state.value, status: 'installing', error: null }
+    state.value = { ...state.value, status: 'installing', error: null, error_code: undefined }
     try {
       const before = await fetchCode()
       await postGlobal<UpdateState>('/updates/install')
       await watchRestart(before.started, state.value.current_version)
     } catch (error) {
-      if (!disposed) state.value = { ...state.value, status: error instanceof ApiError && error.code === 'runs_active' ? 'waiting' : 'error', error: errorText(error) }
+      if (!disposed) state.value = { ...state.value, status: error instanceof ApiError && error.code === 'runs_active' ? 'waiting' : 'error', error_code: updateErrorCode(error, 'install_failed'), error: errorText(error) }
     }
     finally { busy = false }
   }
@@ -64,9 +73,9 @@ export function useUpdates(options: { reload?: () => void; wait?: (ms: number) =
           ;(options.reload ?? (() => window.location.reload()))()
           return
         }
-        if (progress.status === 'error') throw new Error(progress.error ?? 'Aktualizace selhala.')
+        if (progress.status === 'error') throw new ApiError('install_failed', progress.error ?? 'Update installation failed')
       }
-      if (!disposed) throw new Error('Aktualizace se do pěti minut nedokončila. Zkontroluj běžící dashboard.')
+      if (!disposed) throw new ApiError('restart_timeout', 'Dashboard restart was not detected within 300 seconds')
   }
   function activate() { if (state.value.status === 'available' || state.value.status === 'waiting') void install(); else void check(true) }
   onMounted(() => { void check(); timer = setInterval(() => void check(), 30 * 60 * 1000) })
