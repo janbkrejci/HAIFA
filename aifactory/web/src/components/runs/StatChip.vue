@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // Port of the sssf visualizer's StatChip; runtime is in seconds.
 import { computed } from 'vue'
 import { BookOpen, CircleDollarSign, Coins, PenLine, Timer } from 'lucide-vue-next'
@@ -22,13 +23,13 @@ const ICONS = {
   written: PenLine,
 }
 
-const TITLES = {
-  cost: 'Náklady – dolary za všechny agenty běhu.',
-  tokens: 'Tokeny (účtované) – vše odeslané a vygenerované, v každém tahu znovu.',
-  runtime: 'Doba běhu.',
-  read: 'Přečteno – tokeny, které vstoupily do kontextu poprvé (bez cache re-readů).',
-  written: 'Zapsáno – tokeny, které modely vygenerovaly.',
-}
+const TITLES = computed(() => ({
+  cost: t('runs.naklady_dolary_za_vsechny_agenty_behu'),
+  tokens: t('runs.tokeny_uctovane_vse_odeslane_a_vygenerovane_v_kazdem_tahu_znovu'),
+  runtime: t('runs.doba_behu'),
+  read: t('runs.precteno_tokeny_ktere_vstoupily_do_kontextu_poprve_bez_cache_re_readu'),
+  written: t('runs.zapsano_tokeny_ktere_modely_vygenerovaly'),
+}))
 
 const text = computed(() => {
   if (props.kind === 'cost') return fmtCost(props.value)

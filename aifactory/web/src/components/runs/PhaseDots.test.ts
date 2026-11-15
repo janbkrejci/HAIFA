@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PhaseDots from './PhaseDots.vue'
@@ -9,7 +15,7 @@ describe('PhaseDots', () => {
       seq, name: `phase-${seq}`, status: 'success',
     })).reverse()
     const wrapper = mount(PhaseDots, { props: { phases } })
-    const labels = Array.from({ length: 100 }, (_, seq) => `phase-${seq} — success`)
+    const labels = Array.from({ length: 100 }, (_, seq) => `phase-${seq} — úspěch`)
     const dots = wrapper.findAll('.d')
     expect(dots).toHaveLength(100)
     expect(dots.map(dot => dot.attributes('aria-label'))).toEqual(labels)

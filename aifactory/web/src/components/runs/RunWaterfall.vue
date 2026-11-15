@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { t } from '@/lib/i18n'
 // The run's waterfall (gantt), ported from the sssf visualizer's SessionTrace.vue.
 // Layout lives in lib/waterfall.ts; this component only renders it.
 import { computed, nextTick, onBeforeUnmount, ref, watch, type Component } from 'vue'
@@ -141,13 +142,13 @@ const STATUS_GLYPH: Record<string, Component> = {
   queued: Circle,
 }
 
-const STATUS_LABEL: Record<string, string> = {
-  success: 'úspěch',
-  fail: 'chyba',
-  failed: 'chyba',
-  running: 'běží',
-  queued: 'čeká',
-}
+const STATUS_LABEL = computed<Record<string, string>>(() => ({
+  success: t('runs.uspech'),
+  fail: t('runs.chyba'),
+  failed: t('runs.chyba'),
+  running: t('runs.bezi_169'),
+  queued: t('runs.ceka'),
+}))
 
 function isFail(status: string | null): boolean {
   return status === 'fail' || status === 'failed'
@@ -175,18 +176,18 @@ function durMs(p: PhaseRow): number {
 }
 
 function blockTip(p: PhaseRow): string {
-  const lines = [`${p.name ?? p.phase_id} — ${STATUS_LABEL[p.status ?? ''] ?? p.status ?? '—'}`]
+  const lines = [`${p.name ?? p.phase_id} — ${STATUS_LABEL.value[p.status ?? ''] ?? p.status ?? '—'}`]
   if (p.description) lines.push(p.description)
   lines.push(`Harness: ${p.harness ?? '—'} · Model: ${p.model ?? '—'}`)
   const dur = durMs(p)
-  lines.push(`Pokus: ${p.attempt ?? '—'} · Doba: ${fmtDuration(Number.isFinite(dur) ? dur / 1000 : null)}`)
+  lines.push(t('runs.attemptDuration', { attempt: p.attempt ?? '—', duration: fmtDuration(Number.isFinite(dur) ? dur / 1000 : null) }))
   return lines.join('\n')
 }
 
 function ctxTip(lane: Lane): string {
   const c = lane.context
   if (!c) return ''
-  return `${fmtInt(c.used)} / ${fmtInt(c.window)} tokenů · zbývá ${fmtInt(c.window - c.used)}`
+  return t('runs.p0_p1_tokenu_zbyva_p2', { p0: fmtInt(c.used), p1: fmtInt(c.window), p2: fmtInt(c.window - c.used) })
 }
 
 const tip = ref<{ el: Element | null; phase: PhaseRow | null }>({ el: null, phase: null })
@@ -206,19 +207,17 @@ function select(p: PhaseRow) {
 </script>
 
 <template>
-  <p v-if="!hasPhases" class="faint">Žádné fáze v trace.</p>
+  <p v-if="!hasPhases" class="faint">{{ t('runs.zadne_faze_v_trace') }}</p>
   <div v-else class="waterfall" data-test="waterfall">
     <label v-if="overflowing" class="wf-follow">
-      <input type="checkbox" :checked="following" @change="toggleFollowing" />
-      Automaticky posouvat pohled
-    </label>
+      <input type="checkbox" :checked="following" @change="toggleFollowing" /> {{ t('runs.automaticky_posouvat_pohled') }} </label>
     <div
       ref="scroller"
       class="wf-scroll"
       data-test="waterfall-scroll"
       :data-overflow="overflowing || undefined"
       role="region"
-      aria-label="Časová osa fází"
+      :aria-label="t('runs.casova_osa_fazi')"
       tabindex="0"
       @scroll="onScroll"
     >
@@ -226,7 +225,7 @@ function select(p: PhaseRow) {
         <div class="row axis-row">
           <div class="label" />
           <div class="track">
-            <span v-if="timeline.zonePct" class="zone-head" :style="{ width: `${timeline.zonePct}%` }">požadavek</span>
+            <span v-if="timeline.zonePct" class="zone-head" :style="{ width: `${timeline.zonePct}%` }">{{ t('runs.pozadavek_175') }}</span>
             <span v-for="(t, i) in timeline.ticks" :key="i" class="axis-label" :style="{ left: `${t.pct}%` }">{{
               t.label
             }}</span>
@@ -254,7 +253,7 @@ function select(p: PhaseRow) {
             <Tooltip v-if="lane.context" :text="ctxTip(lane)">
               <span class="lane-ctx" data-test="lane-ctx">
                 <span class="ctx-head">
-                  <span class="ctx-label">Kontext</span>
+                  <span class="ctx-label">{{ t('runs.kontext') }}</span>
                   <span class="ctx-pct">{{ contextLabel(lane.context) }}</span>
                 </span>
                 <span class="ctx-bar">
@@ -307,7 +306,7 @@ function select(p: PhaseRow) {
                     :value="durMs(p) / 1000"
                   />
                 </span>
-                <span class="b-desc">{{ p.started_at ? p.description : 've frontě' }}</span>
+                <span class="b-desc">{{ p.started_at ? p.description : t('runs.ve_fronte') }}</span>
                 <span
                   v-for="(t, i) in toolTicks(p, events, now)"
                   :key="i"

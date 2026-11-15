@@ -2,7 +2,7 @@
 // Port of the sssf visualizer's PhaseDots: one icon per phase, in seq order.
 import { computed, type Component } from 'vue'
 import { Check, Circle, Hourglass, LoaderCircle, X } from 'lucide-vue-next'
-import { slotWaitLabel, type PhaseDot } from '@/lib/runs'
+import { phaseStatusLabel, slotWaitLabel, type PhaseDot } from '@/lib/runs'
 import Tooltip from '@/components/ui/Tooltip.vue'
 
 const props = defineProps<{ phases: PhaseDot[] }>()
@@ -22,7 +22,7 @@ function waiting(p: PhaseDot): boolean {
 
 function dotLabel(p: PhaseDot): string {
   if (waiting(p) && p.slot_wait) return `${p.name} — ${slotWaitLabel(p.slot_wait)}`
-  return `${p.name} — ${p.status}`
+  return `${p.name} — ${phaseStatusLabel(p.status)}`
 }
 </script>
 

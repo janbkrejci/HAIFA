@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import CostTotals from './CostTotals.vue'
@@ -22,12 +28,12 @@ describe('CostTotals', () => {
   it('shows the backlog total and one row per task', () => {
     const wrapper = mount(CostTotals, { props: { ...shown, totals: runTotals() } })
     const backlog = wrapper.find('[data-test="backlog-total"]')
-    expect(backlog.find('[data-col="cost"]').text()).toBe('$0.2600')
-    expect(backlog.find('[data-col="tokens"]').text()).toBe('1.3k')
+    expect(backlog.find('[data-col="cost"]').text()).toMatch(/0,2600\sUS\$/)
+    expect(backlog.find('[data-col="tokens"]').text()).toBe('1,3k')
     expect(backlog.find('[data-col="runs"]').text()).toBe('2')
     const rows = wrapper.findAll('tbody tr')
     expect(rows.map((r) => r.attributes('data-task'))).toEqual(['M01-S01-T01', 'M01-S01-T02'])
-    expect(rows[0]!.find('[data-col="cost"]').text()).toBe('$0.2500')
+    expect(rows[0]!.find('[data-col="cost"]').text()).toMatch(/0,2500\sUS\$/)
     expect(rows[1]!.text()).toContain('Loader')
   })
 

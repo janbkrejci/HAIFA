@@ -1,8 +1,8 @@
+import { t } from './i18n'
 // Task runs and their trace, as served by /api/runs (aifactory/web/runs.py).
 // Trace shapes follow the sssf visualizer's shared/types.ts, with JSON columns parsed.
 import { getApi, postApi } from './api'
 import { shownFailureKind } from './failure'
-import { plural } from './format'
 
 export type PhaseKind = 'engineer' | 'agent' | 'code'
 
@@ -44,7 +44,7 @@ export interface PhaseDot {
 /** "čeká na volný slot testů, před ní 2 běhy" for a waiting test phase. */
 export function slotWaitLabel(wait: SlotWait): string {
   const ahead = wait.ahead ?? 0
-  return `čeká na volný slot testů, před ní ${ahead} ${plural(ahead, 'běh', 'běhy', 'běhů')}`
+  return t('runs.ceka_na_volny_slot_testu_pred_ni_p0_p1', { p0: ahead, p1: t('runs.runCount', {}, ahead) })
 }
 
 /** A request longer than this many characters starts collapsed in the run detail. */
@@ -62,17 +62,17 @@ export function excerpt(text: string, max: number): string {
   return `${cut.trimEnd()}…`
 }
 
-const PR_STATE_LABELS: Record<string, string> = {
-  open: 'otevřený',
-  merged: 'sloučený',
-  closed: 'zavřený',
-  draft: 'rozpracovaný',
-}
+const PR_STATE_LABELS = (): Record<string, string> => ({
+  open: t('runs.otevreny'),
+  merged: t('runs.slouceny'),
+  closed: t('runs.zavreny'),
+  draft: t('runs.rozpracovany'),
+})
 
 /** Czech state of a pull request (`open` → otevřený); an unknown state unchanged. */
 export function prStateLabel(state: string | null | undefined): string {
   if (!state) return '—'
-  return PR_STATE_LABELS[state] ?? state
+  return PR_STATE_LABELS()[state] ?? state
 }
 
 export interface RunPr {
@@ -477,7 +477,7 @@ export function fetchPhasePrompts(runId: string, phaseId: string): Promise<Phase
 /** Collapsed gate-row label: "k z N selhalo" when items failed, else the count. */
 export function checksLabel(checks: GateCheck[]): string {
   const failed = checks.filter((c) => !c.ok).length
-  return failed > 0 ? `${failed} z ${checks.length} selhalo` : String(checks.length)
+  return failed > 0 ? t('runs.failedChecks', { failed, total: checks.length }) : String(checks.length)
 }
 
 export function stopRun(runId: string): Promise<StopResponse> {
@@ -498,31 +498,31 @@ export function resumeRun(runId: string): Promise<PauseResponse> {
   return postApi<PauseResponse>(`/runs/${encodeURIComponent(runId)}/resume`)
 }
 
-const STARTED_BY: Record<string, string> = {
-  manual: 'ručně',
+const STARTED_BY = (): Record<string, string> => ({
+  manual: t('runs.rucne'),
   'auto-continue': 'auto-continue',
   'auto-resolve': 'auto-resolve',
   'auto-ci-fix': 'auto-ci-fix',
-}
+})
 
 /** Who started a run, for the list and the detail: `ručně`, `auto-continue`, `auto-resolve`, `auto-ci-fix`. */
 export function startedByLabel(value: string | null | undefined): string {
-  return value ? (STARTED_BY[value] ?? value) : '—'
+  return value ? (STARTED_BY()[value] ?? value) : '—'
 }
 
 /** Tooltip of who started a run. */
 export function startedByTip(value: string | null | undefined): string {
   switch (value) {
     case 'manual':
-      return 'Spuštěno ručně (dashboard nebo factory task run)'
+      return t('runs.spusteno_rucne_dashboard_nebo_factory_task_run')
     case 'auto-continue':
-      return 'Spuštěno automaticky řetězem auto-continue'
+      return t('runs.spusteno_automaticky_retezem_auto_continue')
     case 'auto-resolve':
-      return 'Spuštěno automaticky: auto-merge řeší konflikt PR'
+      return t('runs.spusteno_automaticky_auto_merge_resi_konflikt_pr')
     case 'auto-ci-fix':
-      return 'Spuštěno automaticky: schválení opravuje červenou CI PR'
+      return t('runs.spusteno_automaticky_schvaleni_opravuje_cervenou_ci_pr')
     default:
-      return 'Neznámé: běh je starší než záznam o spuštění'
+      return t('runs.nezname_beh_je_starsi_nez_zaznam_o_spusteni')
   }
 }
 
@@ -657,9 +657,9 @@ export function markRunDone(runId: string): Promise<RunDoneResponse> {
 
 /** Where a retry continued, for the run detail: `od fáze review_1, po rebase na abc1234`. */
 export function retryLabel(retry: RunRetry): string {
-  const parts = [retry.from_phase ? `od fáze ${retry.from_phase}` : 'od první fáze']
-  if (retry.replayed) parts.push(`převzato ${retry.replayed} hotových fází`)
-  if (retry.rebased_onto) parts.push(`po rebase na ${retry.rebased_onto.slice(0, 7)}`)
+  const parts = [retry.from_phase ? t('runs.od_faze_p0', { p0: retry.from_phase }) : t('runs.od_prvni_faze')]
+  if (retry.replayed) parts.push(t('runs.prevzato_p0_hotovych_fazi', { p0: retry.replayed }))
+  if (retry.rebased_onto) parts.push(t('runs.rebasedOnto', { commit: retry.rebased_onto.slice(0, 7) }))
   if (retry.harness_switch) parts.push(switchLabel(retry.harness_switch))
   return parts.join(', ')
 }
@@ -671,9 +671,9 @@ function bindingLabel(side: HarnessBinding): string {
 
 /** „přepnuto codex/gpt → claude/opus (kvóta, automaticky)“ */
 export function switchLabel(sw: HarnessSwitch): string {
-  const reason = sw.reason === 'quota' ? 'kvóta' : sw.reason === 'quota_return' ? 'návrat (limit obnoven)' : sw.reason
-  const why = [reason, sw.auto ? 'automaticky' : 'operátor']
-  return `přepnuto ${bindingLabel(sw.from)} → ${bindingLabel(sw.to)} (${why.join(', ')})`
+  const reason = sw.reason === 'quota' ? t('runs.kvota') : sw.reason === 'quota_return' ? t('runs.navrat_limit_obnoven') : sw.reason
+  const why = [reason, sw.auto ? t('runs.automatic') : t('runs.operator')]
+  return t('runs.prepnuto_p0_p1_p2', { p0: bindingLabel(sw.from), p1: bindingLabel(sw.to), p2: why.join(', ') })
 }
 
 /** A harness „Pokračovat s jiným harnessem“ offers, with the model it would run. */
@@ -727,4 +727,16 @@ export function archiveFinishedRuns(): Promise<{ archived: string[] }> {
 /** Erase every archived run and its trace from the database. */
 export function deleteArchivedRuns(): Promise<{ deleted: string[] }> {
   return postApi<{ deleted: string[] }>('/runs/delete-archived')
+}
+
+/** Localized phase state; unknown future states keep their code. */
+export function phaseStatusLabel(status: string | null): string {
+  const labels: Record<string, string> = {
+    success: t('runs.uspech'),
+    fail: t('runs.chyba'),
+    failed: t('runs.chyba'),
+    running: t('runs.bezi_169'),
+    queued: t('runs.ceka'),
+  }
+  return status ? labels[status] ?? status : '—'
 }

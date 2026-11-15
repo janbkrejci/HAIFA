@@ -1,7 +1,7 @@
+import { t } from './i18n'
 // The failure card of a run that did not succeed: the typed `failure_kind` of the run
 // (`aifactory.failure`) in Czech, one sentence and the facts from `failure_detail`, and the
 // actions that exist for the kind. Every text comes from the run's data, never a generic hint.
-import { plural } from './format'
 
 export type FailureKind =
   | 'accept_not_met'
@@ -25,19 +25,19 @@ export type FailureKind =
  */
 export type FailureAction = 'continue' | 'cancel_task' | 'allow_writes' | 'mark_done' | 'switch_harness'
 
-const LABELS: Record<FailureKind, string> = {
-  accept_not_met: 'Nesplněná podmínka accept',
-  nothing_to_do: 'Agent neměl co dělat',
-  needs_environment: 'Chybí prostředí pro práci',
-  quota: 'Vyčerpaná kvóta',
-  writes_violation: 'Zápis mimo writes',
-  writes_needed: 'Chybí cesty ve writes',
-  invalid_output: 'Neplatný výstup agenta',
-  process_gone: 'Proces běhu skončil',
-  stopped: 'Běh zastaven',
-  blocked: 'Blokovaný',
-  other: 'Jiná chyba',
-}
+const LABELS = (): Record<FailureKind, string> => ({
+  accept_not_met: t('runs.nesplnena_podminka_accept'),
+  nothing_to_do: t('runs.agent_nemel_co_delat'),
+  needs_environment: t('runs.chybi_prostredi_pro_praci'),
+  quota: t('runs.vycerpana_kvota'),
+  writes_violation: t('runs.zapis_mimo_writes'),
+  writes_needed: t('runs.chybi_cesty_ve_writes'),
+  invalid_output: t('runs.neplatny_vystup_agenta'),
+  process_gone: t('runs.proces_behu_skoncil'),
+  stopped: t('runs.beh_zastaven'),
+  blocked: t('runs.blokovany_233'),
+  other: t('runs.jina_chyba'),
+})
 
 const ACTIONS: Record<FailureKind, readonly FailureAction[]> = {
   accept_not_met: ['continue', 'cancel_task'],
@@ -56,7 +56,7 @@ const ACTIONS: Record<FailureKind, readonly FailureAction[]> = {
 /** The kind of a run in Czech; an unknown kind unchanged, none: an empty string. */
 export function failureLabel(kind: string | null | undefined): string {
   if (!kind) return ''
-  return LABELS[kind as FailureKind] ?? kind
+  return LABELS()[kind as FailureKind] ?? kind
 }
 
 /** One block of facts on the card: a heading and its lines. */
@@ -169,11 +169,10 @@ export function runBlockers(run: FailedRun): string[] {
 
 function blockedCard(run: FailedRun): [string, FailureFact[]] {
   const blockers = runBlockers(run)
-  const one = blockers.length === 1
   const text = blockers.length
-    ? `Task čeká na ${one ? 'blokující task' : 'blokující tasky'} ${blockers.join(', ')}; po ${one ? 'jeho' : 'jejich'} dokončení se dá pokračovat`
-    : 'Task čeká na blokující tasky; po jejich dokončení se dá pokračovat'
-  return [text, blockers.length ? [{ id: 'blockers', label: 'Blokující tasky', items: blockers, mono: true, tasks: true }] : []]
+    ? t(blockers.length === 1 ? 'runs.blockedOne' : 'runs.blockedMany', { tasks: blockers.join(', ') })
+    : t('runs.task_ceka_na_blokujici_tasky_po_jejich_dokonceni_se_da_pokracovat')
+  return [text, blockers.length ? [{ id: 'blockers', label: t('runs.blokujici_tasky'), items: blockers, mono: true, tasks: true }] : []]
 }
 
 function acceptCard(run: FailedRun, d: Detail): [string, FailureFact[]] {
@@ -181,7 +180,7 @@ function acceptCard(run: FailedRun, d: Detail): [string, FailureFact[]] {
   const error = firstLine(run.error)
   const text = error && error !== 'accept not met'
     ? error
-    : accept ? `Podmínka accept \`${accept}\` nebyla splněna` : 'Podmínka accept workflow nebyla splněna'
+    : accept ? t('runs.podminka_accept_p0_nebyla_splnena', { p0: accept }) : t('runs.podminka_accept_workflow_nebyla_splnena')
   const review = obj(d.review)
   const test = obj(d.test)
   const values = obj(d.values)
@@ -189,18 +188,18 @@ function acceptCard(run: FailedRun, d: Detail): [string, FailureFact[]] {
   const facts = [
     ...fact(
       'objections',
-      review ? `Výtky review (${str(review.step) ?? 'review'})` : 'Výtky review',
+      review ? t('runs.vytky_review_p0', { p0: str(review.step) ?? 'review' }) : t('runs.vytky_review'),
       review ? (strings(review.objections).length ? strings(review.objections) : [str(review.summary) ?? ''].filter(Boolean)) : [],
     ),
-    ...fact('checks', test ? `Neprošlé kontroly (${str(test.step) ?? 'test'})` : 'Neprošlé kontroly', test ? strings(test.failed_checks) : [], true),
-    ...fact('accept', 'Podmínka accept', accept ? [accept] : [], true),
-    ...fact('values', 'Hodnoty v podmínce', values ? Object.entries(values).map(([k, v]) => `${k} = ${shown(v)}`) : [], true),
+    ...fact('checks', test ? t('runs.neprosle_kontroly_p0', { p0: str(test.step) ?? 'test' }) : t('runs.neprosle_kontroly'), test ? strings(test.failed_checks) : [], true),
+    ...fact('accept', t('runs.podminka_accept'), accept ? [accept] : [], true),
+    ...fact('values', t('runs.hodnoty_v_podmince'), values ? Object.entries(values).map(([k, v]) => `${k} = ${shown(v)}`) : [], true),
     ...fact(
       'rounds',
-      'Kola smyček',
+      t('runs.kola_smycek'),
       rounds.map((r) => {
         const max = num(r.max)
-        return `${str(r.loop) ?? 'repeat'}: ${num(r.rounds) ?? '?'}${max !== null ? ` z ${max}` : ''}`
+        return `${str(r.loop) ?? 'repeat'}: ${num(r.rounds) ?? '?'}${max !== null ? t('runs.ofMax', { max }) : ''}`
       }),
       true,
     ),
@@ -208,33 +207,33 @@ function acceptCard(run: FailedRun, d: Detail): [string, FailureFact[]] {
   return [text, facts]
 }
 
-const ALLOW_REASONS: Record<string, string> = {
-  protected: 'chráněná cesta (protected_files), writes ji nepovolí',
-  backlog: 'cesta v backlogu, backlog zapisuje jen factory',
-  main_checkout: 'zápis do hlavního checkoutu mimo worktree běhu, writes ho nepovolí',
-  already_allowed: 'writes tasku ji už povolují, zápis zakázaly writes agenta (agents.yaml)',
-}
+const ALLOW_REASONS = (): Record<string, string> => ({
+  protected: t('runs.chranena_cesta_protected_files_writes_ji_nepovoli'),
+  backlog: t('runs.backlogPath'),
+  main_checkout: t('runs.zapis_do_hlavniho_checkoutu_mimo_worktree_behu_writes_ho_nepovoli'),
+  already_allowed: t('runs.writes_tasku_ji_uz_povoluji_zapis_zakazaly_writes_agenta_agents_yaml'),
+})
 
 /** Why „Povolit tyto cesty a pokračovat“ does not add a path, in Czech. */
 export function allowWritesReason(reason: string, message = ''): string {
-  return ALLOW_REASONS[reason] ?? (message || reason)
+  return ALLOW_REASONS()[reason] ?? (message || reason)
 }
 
 function writesCard(d: Detail): [string, FailureFact[]] {
   const agent = str(d.agent) ?? 'agent'
-  const paths = [...strings(d.paths), ...strings(d.main_paths).map((p) => `hlavní checkout: ${p}`)]
+  const paths = [...strings(d.paths), ...strings(d.main_paths).map((p) => t('runs.hlavni_checkout_p0', { p0: p }))]
   const problems = strings(d.problems)
   const outside = paths.length ? paths : problems
   const n = outside.length
   const text = n
-    ? `Agent ${agent} zapsal mimo povolené cesty (${n} ${plural(n, 'cesta', 'cesty', 'cest')})`
-    : `Agent ${agent} zapsal mimo povolené cesty`
+    ? t('runs.agent_p0_zapsal_mimo_povolene_cesty_p1_p2', { p0: agent, p1: n, p2: t('runs.pathCount', {}, n) })
+    : t('runs.agent_p0_zapsal_mimo_povolene_cesty', { p0: agent })
   const writes = strings(d.writes)
   return [
     text,
     [
-      ...fact('paths', 'Zapsáno mimo writes', outside, true),
-      ...fact('writes', 'Povolené writes', writes, true),
+      ...fact('paths', t('runs.zapsano_mimo_writes'), outside, true),
+      ...fact('writes', t('runs.povolene_writes'), writes, true),
     ],
   ]
 }
@@ -257,14 +256,14 @@ function neededCard(d: Detail): [string, FailureFact[]] {
   const paths = neededPaths(d)
   const n = paths.length
   const text = n
-    ? `Agent ${agent} potřebuje změnit cesty mimo writes tasku (${n} ${plural(n, 'cesta', 'cesty', 'cest')})`
-    : `Agent ${agent} potřebuje změnit cesty mimo writes tasku`
+    ? t('runs.agent_p0_potrebuje_zmenit_cesty_mimo_writes_tasku_p1_p2', { p0: agent, p1: n, p2: t('runs.pathCount', {}, n) })
+    : t('runs.agent_p0_potrebuje_zmenit_cesty_mimo_writes_tasku', { p0: agent })
   const summary = str(d.summary)
   return [
     text,
     [
-      ...fact('paths', 'Potřebné cesty', paths, true),
-      ...fact('summary', 'Zdůvodnění agenta', summary ? [summary] : []),
+      ...fact('paths', t('runs.potrebne_cesty'), paths, true),
+      ...fact('summary', t('runs.zduvodneni_agenta'), summary ? [summary] : []),
     ],
   ]
 }
@@ -274,14 +273,14 @@ function quotaCard(d: Detail, phases: readonly FailurePhase[]): [string, Failure
   const harness = str(d.harness) ?? str(failed?.harness) ?? 'harness'
   const model = str(d.model) ?? str(failed?.model)
   const agent = str(d.agent)
-  const text = `Harness ${harness} ohlásil vyčerpanou kvótu` + (model ? ` u modelu ${model}` : '') +
+  const text = t('runs.harness_p0_ohlasil_vycerpanou_kvotu', { p0: harness }) + (model ? t('runs.quotaModel', { model }) : '') +
     (agent ? ` (agent ${agent})` : '')
   return [
     text,
     [
       ...fact('harness', 'Harness', [harness], true),
       ...fact('model', 'Model', model ? [model] : [], true),
-      ...fact('message', 'Hláška harnessu', str(d.message) ? [str(d.message) as string] : []),
+      ...fact('message', t('runs.hlaska_harnessu'), str(d.message) ? [str(d.message) as string] : []),
     ],
   ]
 }
@@ -291,26 +290,26 @@ function invalidCard(run: FailedRun, d: Detail): [string, FailureFact[]] {
   if (d.cause === 'gates') {
     const violations = strings(d.violations)
     return [
-      `Výstup agenta ${agent} neprošel kontrolami ani po opravách`,
-      fact('violations', 'Neprošlé kontroly výstupu', violations),
+      t('runs.vystup_agenta_p0_neprosel_kontrolami_ani_po_opravach', { p0: agent }),
+      fact('violations', t('runs.neprosle_kontroly_vystupu'), violations),
     ]
   }
   if (d.cause === 'json') {
     const type = str(d.output_type)
     return [
-      `Agent ${agent} nevrátil platný JSON${type ? ` ${type}` : ''}`,
-      fact('error', 'Chyba', str(d.error) ? [str(d.error) as string] : [], true),
+      t('runs.agent_p0_nevratil_platny_json_p1', { p0: agent, p1: type ? ` ${type}` : '' }),
+      fact('error', t('runs.chyba'), str(d.error) ? [str(d.error) as string] : [], true),
     ]
   }
-  return [firstLine(run.error) ?? `Agent ${agent} nevrátil platný výstup`, []]
+  return [firstLine(run.error) ?? t('runs.agent_p0_nevratil_platny_vystup', { p0: agent }), []]
 }
 
 function stoppedText(run: FailedRun, d: Detail): string {
-  if (d.cause === 'keyboard_interrupt') return 'Proces běhu přerušil Ctrl+C'
+  if (d.cause === 'keyboard_interrupt') return t('runs.proces_behu_prerusil_ctrl_c')
   const signal = num(d.signal)
-  if (d.cause === 'signal' && signal !== null) return `Proces běhu ukončil signál ${signal}`
+  if (d.cause === 'signal' && signal !== null) return t('runs.proces_behu_ukoncil_signal_p0', { p0: signal })
   const note = str(d.note) ?? firstLine(run.error)
-  return note ? `Běh zastavil operátor: ${note}` : 'Běh zastavil operátor'
+  return note ? t('runs.beh_zastavil_operator_p0', { p0: note }) : t('runs.beh_zastavil_operator')
 }
 
 /** The card of a run that did not succeed; null for a running or succeeded run. */
@@ -326,13 +325,13 @@ export function failureCard(run: FailedRun, phases: readonly FailurePhase[] = []
       break
     case 'nothing_to_do': {
       const summary = str(d.summary)
-      text = `Agent ${str(d.agent) ?? 'agent'} neměl co dělat` + (summary ? `: ${firstLine(summary)}` : '')
+      text = t('runs.agent_p0_nemel_co_delat', { p0: str(d.agent) ?? 'agent' }) + (summary ? `: ${firstLine(summary)}` : '')
       break
     }
     case 'needs_environment': {
-      text = `Agent ${str(d.agent) ?? 'agent'} nemá prostředí potřebné pro práci`
+      text = t('runs.agent_p0_nema_prostredi_potrebne_pro_praci', { p0: str(d.agent) ?? 'agent' })
       const summary = str(d.summary)
-      facts = fact('summary', 'Co chybí v prostředí', summary ? [summary] : [])
+      facts = fact('summary', t('runs.co_chybi_v_prostredi'), summary ? [summary] : [])
       break
     }
     case 'quota':
@@ -349,7 +348,7 @@ export function failureCard(run: FailedRun, phases: readonly FailurePhase[] = []
       break
     case 'process_gone': {
       const pid = num(d.pid)
-      text = pid !== null ? `Proces běhu (PID ${pid}) skončil dřív, než běh doběhl` : (firstLine(run.error) ?? 'Proces běhu skončil dřív, než běh doběhl')
+      text = pid !== null ? t('runs.proces_behu_pid_p0_skoncil_driv_nez_beh_dobehl', { p0: pid }) : (firstLine(run.error) ?? t('runs.proces_behu_skoncil_driv_nez_beh_dobehl'))
       break
     }
     case 'stopped':
@@ -359,7 +358,7 @@ export function failureCard(run: FailedRun, phases: readonly FailurePhase[] = []
       ;[text, facts] = blockedCard(run)
       break
     default:
-      text = firstLine(run.error) ?? 'Běh selhal bez chybové zprávy'
+      text = firstLine(run.error) ?? t('runs.beh_selhal_bez_chybove_zpravy')
   }
   return {
     kind,

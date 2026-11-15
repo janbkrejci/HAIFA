@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import RunsList from './RunsList.vue'
@@ -48,8 +54,8 @@ describe('RunsList', () => {
     expect(row.text()).toContain('plan-commit')
     expect(row.text()).toContain('úspěch')
     expect(row.find('[data-col="duration"]').text()).toBe('5m 00s')
-    expect(row.find('[data-col="tokens"]').text()).toBe('1.2k')
-    expect(row.find('[data-col="cost"]').text()).toBe('$0.2500')
+    expect(row.find('[data-col="tokens"]').text()).toBe('1,2k')
+    expect(row.find('[data-col="cost"]').text()).toMatch(/0,2500\sUS\$/)
     const pr = row.find('a[data-col="pr"]')
     expect(pr.attributes('href')).toBe('https://example.test/pr/7')
     expect(pr.attributes('target')).toBe('_blank')

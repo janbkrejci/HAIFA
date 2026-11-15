@@ -350,6 +350,7 @@ def test_long_run_waterfall_scrolls_locally() -> None:
                 constructor() { super(); window.waterfallLive = this; }
                 close() {}
             }""")
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", _serve(details))
             page.goto("http://haifa.test/#/r/haifa/runs/long-run")
             region = page.locator('[data-test="waterfall-scroll"]')

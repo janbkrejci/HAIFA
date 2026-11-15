@@ -57,6 +57,7 @@ def test_runs_paging_browser() -> None:
         browser = _launch(playwright)
         try:
             page = browser.new_page(viewport={"width": 390, "height": 844})
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/r/haifa/runs")
             expect(page.locator('[data-test="page-count"]')).to_have_text("1–100 z 101")
@@ -145,6 +146,7 @@ def test_runs_overflow_browser(width: int) -> None:
         browser = _launch(playwright)
         try:
             page = browser.new_page(viewport={"width": width, "height": 900})
+            page.add_init_script("localStorage.setItem('haifa.dashboard.locale', 'cs')")
             page.route("**/*", serve)
             page.goto("http://haifa.test/#/r/haifa/runs")
             region = page.get_by_role("region", name="Seznam běhů")
@@ -166,7 +168,7 @@ def test_runs_overflow_browser(width: int) -> None:
             dots = region.locator(".d")
             expect(dots).to_have_count(100)
             assert dots.evaluate_all("els => els.map(el => el.getAttribute('aria-label'))") == [
-                f"phase-{seq} — success" for seq in range(100)
+                f"phase-{seq} — úspěch" for seq in range(100)
             ]
             geometry = region.locator(".dots").evaluate("""el => {
                 const box = el.getBoundingClientRect();
@@ -198,12 +200,12 @@ def test_runs_overflow_browser(width: int) -> None:
             expect(archive).to_be_focused()
             dots.last.scroll_into_view_if_needed()
             dots.last.hover()
-            tooltip = page.get_by_role("tooltip", name="phase-99 — success", exact=True)
-            expect(tooltip).to_have_text("phase-99 — success")
+            tooltip = page.get_by_role("tooltip", name="phase-99 — úspěch", exact=True)
+            expect(tooltip).to_have_text("phase-99 — úspěch")
             expect(tooltip).to_be_visible()
             page.mouse.move(0, 0)
             dots.last.focus()
-            expect(tooltip).to_have_text("phase-99 — success")
+            expect(tooltip).to_have_text("phase-99 — úspěch")
             page.keyboard.press("Escape")
             expect(tooltip).to_have_count(0)
             _assert_document_fits(page)

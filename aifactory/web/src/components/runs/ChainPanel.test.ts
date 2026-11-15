@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import ChainPanel from './ChainPanel.vue'
@@ -34,9 +40,13 @@ function chain(over: Partial<Chain> = {}): Chain {
 }
 
 describe('ChainPanel', () => {
-  it('names the tasks whose PR waits for review among the slots', () => {
+  it.each([
+    ['cs', 'Sloty: 1/3 (volné 1) · v review: M01-S01-T06'],
+    ['en', 'Slots: 1/3 (free 1) · in review: M01-S01-T06'],
+  ] as const)('names the tasks whose PR waits for review among the slots in %s', (language, expected) => {
+    setLocale(language)
     const wrapper = mount(ChainPanel, { props: { chains: [chain({ free_slots: 1, in_review: ['M01-S01-T06'] })] } })
-    expect(wrapper.get('[data-test="chain-slots"]').text()).toBe('Sloty: 1/3 (volné 1) · v review: M01-S01-T06')
+    expect(wrapper.get('[data-test="chain-slots"]').text()).toBe(expected)
   })
 
   it('shows nothing without chains', () => {

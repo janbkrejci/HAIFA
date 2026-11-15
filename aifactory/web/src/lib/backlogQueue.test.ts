@@ -1,3 +1,9 @@
+import { beforeEach as beforeLocaleTest, afterEach as afterLocaleTest } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+
+beforeLocaleTest(() => setLocale('cs'))
+afterLocaleTest(() => setLocale('en'))
+
 // The kanban queue (order, Odloženo), the run payload, the codes of new containers
 // (lib/backlog.ts), the Czech PR states (lib/runs.ts) and the new task link with its step
 // (lib/router.ts).
