@@ -229,3 +229,21 @@ S11 identita podle common Git dir a lokální provozní volby zůstávají zacho
   a release); nemá PR testy, pytest, lint, mypy ani Windows/macOS kontrolu.
   Produkt poskytuje workflow a PR/approve/merge, nikoli obecnou automatickou
   publikaci každého uživatelského projektu. Slogan nesmí takovou funkci slibovat.
+
+## 2026-11-15 — Provozní zdroje a přenos HAIFA → GIRO (T05)
+
+- [Migrační postup](rebranding/repository-migration.md) určuje přenos všech heads
+  a tags do nového `janbkrejci/GIRO` se zachováním objektových SHA; GitHub PR,
+  issues a releasy zůstávají v původním HAIFA. Read-only inventura nenašla
+  otevřené PR/issues; existující devět větví se zachová bez automatického merge.
+- Uchovaný zdroj poslední HAIFA je přesně
+  `4dd3ddf1ea18f672674123df94dc4643a4868f52` (T04), nikoli rebrandingový main.
+  T06 jej sváže s `haifa-transition-source` a `HAIFA_TRANSITION_SHA`; nejprve
+  ověří GIRO G, potom vydá H a vypne všechny HAIFA Actions. G_SHA a skutečná
+  čísla H/G se zaznamenají z konkrétních T06 běhů, nikoli odhadem před vydáním.
+- Nové repo se importuje s vypnutými Actions, protože přenesené historické
+  větve mohou obsahovat starší publikační workflow. Původní public repo i jeho
+  poslední HAIFA latest zůstanou dostupné. Knihovna zůstává HAIFA-LIBRARY dle T01.
+- Přesun vývojářského checkoutu je volitelná samostatná odstávka. Pouhá změna
+  remote nemění registry ID; přesun common Git dir mění klíč lokálních voleb,
+  proto vyžaduje opravu worktree vazeb, registry a nastavení ze zálohy.
