@@ -110,6 +110,8 @@ def test_dashboard_settings(client: TestClient, home: Path) -> None:
         body = _post(client, "/api/dashboard/settings", {"port": bad}, 422)
         assert body["error"]["code"] == "invalid_value"
         assert body["error"]["issues"][0]["id"] == "port"
+        assert body["error"]["issues"][0]["message_code"] == "port_range"
+        assert body["error"]["issues"][0]["params"] == {"min": 1, "max": 65535}
     body = _post(client, "/api/dashboard/settings", {"colour": "red"}, 400)
     assert body["error"]["code"] == "usage_error"
     assert _registry(home)["port"] == 4801

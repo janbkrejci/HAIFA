@@ -651,3 +651,46 @@ def test_library_git_timeout_preserves_cached_check(
     assert cached["checked_at"] == first["checked_at"]
     assert cached["findings"] == first["findings"]
     assert not any(record.exc_info for record in caplog.records)
+
+
+def test_locale_clients_share_neutral_machine_cache(client: TestClient) -> None:
+    """A browser preference must never alter a shared probe result or another client."""
+    state(client).check_machine = FakeMachine(present=set())
+    english = TestClient(
+        client.app, base_url=str(client.base_url), headers={"Accept-Language": "en"}
+    )
+    czech = TestClient(client.app, base_url=str(client.base_url), headers={"Accept-Language": "cs"})
+    try:
+        first = english.get("/api/machine/check?fresh=1").json()
+        cs = czech.get("/api/machine/check").json()
+        en = english.get("/api/machine/check").json()
+        assert cs == en
+        assert cs["data"]["cached"]
+        assert cs["data"]["findings"] == first["data"]["findings"]
+        assert cs["data"]["checked_at"] == first["data"]["checked_at"]
+        assert not state(client).home.exists()
+    finally:
+        english.close()
+        czech.close()
+
+
+@pytest.mark.parametrize("ok", [False, True])
+def test_harness_test_has_neutral_outcome_code(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, ok: bool
+) -> None:
+    from aifactory.harness import probe
+
+    diagnostic = "Libovolná diagnostika, která se nesmí parsovat."
+    monkeypatch.setattr(
+        probe, "test_and_record", lambda *args: {"ok": ok, "error": None if ok else diagnostic}
+    )
+    for language in ("en", "cs"):
+        data = response(
+            client.post(
+                "/api/machine/harnesses/test",
+                json={"harness": "codex", "model": "test-model"},
+                headers={"Accept-Language": language},
+            )
+        )
+        assert data["error_code"] == (None if ok else "harness_test_failed")
+        assert data["error"] == (None if ok else diagnostic)

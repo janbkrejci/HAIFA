@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import DashboardSettings from './DashboardSettings.vue'
 
@@ -28,8 +29,9 @@ async function mountView() {
 }
 
 enableAutoUnmount(afterEach)
+beforeEach(() => setLocale('cs'))
 
-afterEach(() => {
+afterEach(() => { setLocale('en');
   vi.unstubAllGlobals()
   document.body.innerHTML = ''
 })
@@ -85,6 +87,36 @@ describe('DashboardSettings', () => {
     await wrapper.get('[data-test="dash-port"]').setValue('80')
     await wrapper.get('form').trigger('submit')
     await flushPromises()
-    expect(wrapper.get('[data-test="dash-port-error"]').text()).toBe('port 80 is privileged')
+    expect(wrapper.get('[data-test="dash-port-error"]').text()).toBe('Port musí být celé číslo od 1 do 65535.')
   })
+})
+
+it('switches language without losing an unsaved port, and retranslates the saved restart note', async () => {
+  const fetchMock = stub((_url, init) => init?.method === 'POST'
+    ? envelope({ ...SETTINGS, port: 4812, restart_required: true }) : undefined)
+  const wrapper = await mountView()
+  await wrapper.get('[data-test="dash-port"]').setValue('4812')
+  const calls = fetchMock.mock.calls.length
+  setLocale('en'); await flushPromises()
+  expect(wrapper.get('[data-test="dash-port-save"]').text()).toBe('Save')
+  expect((wrapper.get('[data-test="dash-port"]').element as HTMLInputElement).value).toBe('4812')
+  expect(fetchMock).toHaveBeenCalledTimes(calls)
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(wrapper.get('[data-test="dash-restart-note"]').text()).toContain('Saved.')
+  setLocale('cs'); await flushPromises()
+  expect(wrapper.get('[data-test="dash-restart-note"]').text()).toContain('nový port 4812')
+  expect(wrapper.get('[data-test="dash-registry"]').text()).toBe(SETTINGS.registry)
+})
+
+it.each(['en', 'cs'] as const)('localizes a rejected port by its field code in %s', async language => {
+  setLocale(language)
+  stub((_url, init) => init?.method === 'POST' ? new Response(JSON.stringify({
+    ok: false, data: null, warnings: [], error: { code: 'invalid_value', message: 'arbitrary diagnostic',
+      issues: [{ id: 'port', message_code: 'port_range', message: 'Nepřekládat parsováním této věty.' }] },
+  }), { status: 422 }) : undefined)
+  const wrapper = await mountView()
+  await wrapper.get('[data-test="dash-port"]').setValue('4812')
+  await wrapper.get('form').trigger('submit'); await flushPromises()
+  expect(wrapper.get('[data-test="dash-port-error"]').text()).toBe(language === 'en'
+    ? 'The port must be an integer from 1 to 65535.' : 'Port musí být celé číslo od 1 do 65535.')
 })

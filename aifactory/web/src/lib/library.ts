@@ -1,11 +1,12 @@
+import { t } from './i18n'
 import {
   getGlobal, postGlobal,
   type CheckFinding, type FactoryFile, type FactoryItemType, type PlanBlocker, type PlanItem, type PlanWarning,
 } from './api'
 
-export const ITEM_TABS: readonly { type: FactoryItemType; label: string }[] = [
-  { type: 'agent', label: 'Agenti' }, { type: 'workflow', label: 'Workflow' },
-  { type: 'skill', label: 'Skilly' }, { type: 'extension', label: 'Rozšíření pi' },
+export const ITEM_TABS: readonly { type: FactoryItemType; label: import('./i18n/catalogs').MessageKey }[] = [
+  { type: 'agent', label: 'setup.agents' }, { type: 'workflow', label: 'setup.workflows' },
+  { type: 'skill', label: 'setup.skills' }, { type: 'extension', label: 'setup.extensions' },
 ]
 export interface Revision { n: number; version: string; short_version: string; date: string; author: string }
 export interface LibraryItem {
@@ -47,20 +48,20 @@ export function fetchOverrides(): Promise<LibraryOverrides> { return getGlobal('
 export function connectRemote(url: string): Promise<unknown> { return postGlobal('/library/remote', { url }) }
 /** The sync state of the library with its remote, in words. */
 export function syncState(s: LibraryStatus): { text: string; tone: 'ok' | 'warning' | 'error' | 'dim' } {
-  if (!s.exists) return { text: 'Knihovna není založená', tone: 'dim' }
-  if (s.dirty) return { text: 'Knihovna má necommitnuté změny · synchronizace je zablokovaná', tone: 'error' }
-  if (!s.remote) return { text: 'Bez remote · knihovna je jen na tomto počítači', tone: 'dim' }
+  if (!s.exists) return { text: t('setup.noLibrary'), tone: 'dim' }
+  if (s.dirty) return { text: t('setup.dirtyLibrary'), tone: 'error' }
+  if (!s.remote) return { text: t('setup.noRemote'), tone: 'dim' }
   const ahead = s.ahead ?? 0, behind = s.behind ?? 0
   const unsent = s.unsent ?? ahead
-  if (unsent && behind) return { text: `Rozcházejí se · ${unsent} lokálních změn, ${behind} commitů chybí · stáhni změny`, tone: 'error' }
-  if (unsent) return { text: `Lokální změny · ${unsent} neodeslaných commitů · odešli je jako pull request`, tone: 'warning' }
+  if (unsent && behind) return { text: t('setup.diverged', { unsent, behind }), tone: 'error' }
+  if (unsent) return { text: t('setup.localChanges', { unsent }), tone: 'warning' }
   const open = s.pull_requests?.length ?? 0
   if (ahead) {
-    const prs = open ? ` · ${open} otevřených PR` : ''
-    return { text: `Čeká v PR${prs} · mergne správce knihovny${behind ? ', pak stáhni změny' : ''}`, tone: behind ? 'warning' : 'ok' }
+    const prs = open ? t('setup.openCount', { count: open }) : ''
+    return { text: t('setup.pending', { prs, pull: behind ? t('setup.thenPull') : '' }), tone: behind ? 'warning' : 'ok' }
   }
-  if (behind) return { text: `Pozadu o ${behind} · stáhni změny z remote`, tone: 'warning' }
-  return { text: 'Srovnáno s remote', tone: 'ok' }
+  if (behind) return { text: t('setup.behind', { behind }), tone: 'warning' }
+  return { text: t('setup.synced'), tone: 'ok' }
 }
 /** Status without the item list: cheap enough for the topbar readiness check. */
 export function fetchLibrarySummary(): Promise<LibraryStatus> { return getGlobal('/library?items=0') }
@@ -77,20 +78,20 @@ export function syncLibrary(action: 'pull' | 'push'): Promise<{ pull_request?: L
 }
 /** Where a sent change waits: the PR link, or the branch to open a PR from by hand. */
 export function pullRequestText(pr: LibraryPullRequest): string {
-  if (pr.url) return `PR #${pr.number ?? '?'}${pr.fork ? ' z forku ' + pr.head_repo : ''}`
-  return `větev ${pr.branch} · pull request otevři ručně`
+  if (pr.url) return `PR #${pr.number ?? '?'}${pr.fork ? t('setup.fork', { repo: pr.head_repo ?? '' }) : ''}`
+  return t('setup.manualPr', { branch: pr.branch })
 }
 export function findingGroup(f: CheckFinding): string {
-  if (f.scope === 'library') return 'Knihovna'
-  if (/harness|^pi_model_|^node_/.test(f.code)) return 'Harnessy'
-  if (/^gh_|^az_|^azure_|^hosting_|^github_/.test(f.code)) return 'Hosting'
-  if (/^git_|^uv_|^just_/.test(f.code)) return 'Nástroje'
-  if (/factory|haifa|version/.test(f.code)) return 'HAIFA'
-  return 'Prostředí'
+  if (f.scope === 'library') return 'library'
+  if (/harness|^pi_model_|^node_/.test(f.code)) return 'harnesses'
+  if (/^gh_|^az_|^azure_|^hosting_|^github_/.test(f.code)) return 'hosting'
+  if (/^git_|^uv_|^just_/.test(f.code)) return 'tools'
+  if (/factory|haifa|version/.test(f.code)) return 'haifa'
+  return 'environment'
 }
-export const FINDING_GROUPS = ['HAIFA', 'Nástroje', 'Harnessy', 'Hosting', 'Knihovna', 'Prostředí']
+export const FINDING_GROUPS = ['haifa', 'tools', 'harnesses', 'hosting', 'library', 'environment'] as const
 /** The groups of the machine findings on #/setup; library findings are in the library section. */
-export const MACHINE_GROUPS = FINDING_GROUPS.filter(name => name !== 'Knihovna')
+export const MACHINE_GROUPS = FINDING_GROUPS.filter(name => name !== 'library')
 export function versionLabel(item: { n?: number; short_version?: string | null; version?: string | null }): string {
   const hash = item.short_version ?? item.version?.replace(/^sha256:/, '').slice(0, 8) ?? '—'
   return `${item.n ? 'v' + item.n + ' · ' : ''}${hash}`
@@ -103,3 +104,9 @@ export interface RepoItemDetail { files: { path: string; content: string | null;
 export function fetchInventory(): Promise<RepoInventory> { return getGlobal('/library/inventory') }
 export function saveIgnore(repo: string, rules: IgnoreRule[]): Promise<RepoInventory> { return postGlobal('/library/ignore', { repo, rules }) }
 export function fetchRepoItem(item: RepoLibraryItem): Promise<RepoItemDetail> { return postGlobal('/library/repo-item', { repo: item.repo, type: item.type, path: item.path }) }
+
+export function groupLabel(group: typeof FINDING_GROUPS[number]): string {
+  if (group === 'haifa') return 'HAIFA'
+  if (group === 'hosting') return 'Hosting'
+  return t(`setup.${group}`)
+}

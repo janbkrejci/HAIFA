@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { setLocale } from '@/lib/i18n'
+import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { enableAutoUnmount, flushPromises, mount } from '@vue/test-utils'
 import SetupView from './SetupView.vue'
 import LibrarySection from '@/components/setup/LibrarySection.vue'
@@ -24,23 +25,24 @@ function api(exists = false, remote: string | null = null) {
   return fetchMock
 }
 enableAutoUnmount(afterEach)
-afterEach(() => { vi.unstubAllGlobals(); document.body.innerHTML = '' })
+beforeEach(() => setLocale('cs'))
+afterEach(() => { setLocale('en'); vi.unstubAllGlobals(); document.body.innerHTML = '' })
 describe('Knihovna page', () => {
   it('shows only groups with findings and the library findings in the library section', async () => {
-    expect(['git_missing', 'uv_missing', 'just_missing'].map(c => findingGroup(finding(c)))).toEqual(['Nástroje', 'Nástroje', 'Nástroje'])
-    expect(findingGroup(finding('harness_login'))).toBe('Harnessy')
-    expect(findingGroup(finding('gh_login'))).toBe('Hosting')
-    expect(findingGroup(finding('factory_version'))).toBe('HAIFA')
-    expect(findingGroup(finding('env_override'))).toBe('Prostředí')
+    expect(['git_missing', 'uv_missing', 'just_missing'].map(c => findingGroup(finding(c)))).toEqual(['tools', 'tools', 'tools'])
+    expect(findingGroup(finding('harness_login'))).toBe('harnesses')
+    expect(findingGroup(finding('gh_login'))).toBe('hosting')
+    expect(findingGroup(finding('factory_version'))).toBe('haifa')
+    expect(findingGroup(finding('env_override'))).toBe('environment')
     api()
     const wrapper = mount(SetupView); await flushPromises()
     expect(wrapper.get('h1').text()).toBe('Knihovna')
     const order = wrapper.findAll('[data-test="library"], [data-test="machine-check"], [data-test="dashboard-settings"]').map(s => s.attributes('data-test'))
     expect(order).toEqual(['library', 'machine-check', 'dashboard-settings'])
     expect(wrapper.get('[data-test="machine-check"] h2').text()).toBe('Kontrola počítače')
-    expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('2 chyb, 0 varování')
-    expect(wrapper.findAll('[data-group]').map(g => g.attributes('data-group'))).toEqual(['Nástroje'])
-    expect(wrapper.get('[data-group="Nástroje"]').text()).toContain('chyba · git_identity_missing')
+    expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('2 chyby, 0 varování')
+    expect(wrapper.findAll('[data-group]').map(g => g.attributes('data-group'))).toEqual(['tools'])
+    expect(wrapper.get('[data-group="tools"]').text()).toContain('chyba · git_identity_missing')
     expect(wrapper.get('[data-test="library"]').text()).toContain('library_missing')
     expect(wrapper.find('[data-test="harness-counts"]').exists()).toBe(false)
     expect(wrapper.find('[data-test="getting-started"]').exists()).toBe(false)
@@ -165,12 +167,14 @@ describe('Knihovna page', () => {
     const wrapper = mount(SetupView); await flushPromises()
     const alert = wrapper.get('[data-test="machine-timeout"]').text()
     expect(alert).toContain('Kontrola nedoběhla do 60 s. Nedokončený krok: machine: logins (claude auth status).')
-    expect(alert).toContain('(5 min. ago)')
+    expect(alert).toContain('(před 5 min)')
     // The old result is never presented as a current success.
     expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('Poslední známý stav: Počítač je v pořádku')
     expect(wrapper.get('[data-test="machine-verdict"]').classes()).toContain('is-bad')
     expect(wrapper.get('[data-test="machine-summary"]').text()).toContain('neaktuální')
     expect(wrapper.get('[data-test="machine-refresh"]').attributes('disabled')).toBeUndefined()
+    setLocale('en'); await flushPromises()
+    expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('Last known status: This computer is healthy')
   })
   it('shows no verdict for a first check that timed out', async () => {
     machineApi(() => timedOut(null))
@@ -192,10 +196,10 @@ describe('Knihovna page', () => {
       expect(answers).toHaveLength(2)
       answers[1]!(envelope({ ok: false, findings: [finding('git_identity_missing')], checked_at: '2026-11-10T10:00:00Z', cached: false }, false))
       await flushPromises()
-      expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('1 chyb, 0 varování')
+      expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('1 chyba, 0 varování')
       answers[0]!(envelope({ ok: true, findings: [], checked_at: '2026-11-10T09:00:00Z', cached: true }))
       await flushPromises()
-      expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('1 chyb, 0 varování')
+      expect(wrapper.get('[data-test="machine-verdict"]').text()).toBe('1 chyba, 0 varování')
       expect(wrapper.find('[data-test="setup-busy"]').exists()).toBe(false)
     } finally { vi.useRealTimers() }
   })
@@ -205,9 +209,24 @@ describe('Knihovna page', () => {
       machineApi(() => new Promise<Response>(() => {}))
       const wrapper = mount(SetupView); await flushPromises()
       await vi.advanceTimersByTimeAsync(75_000)
-      expect(wrapper.get('[data-test="setup-error"]').text()).toBe('Kontrola počítače selhala: Kontrola nedoběhla do 75 s; nedokončený krok: machine: logins (claude auth status)')
+      expect(wrapper.get('[data-test="setup-error"]').text()).toBe('Kontrola počítače selhala: Kontrola nedoběhla do 75 s. Nedokončený krok: machine: logins (claude auth status).')
       expect(wrapper.find('[data-test="setup-busy"]').exists()).toBe(false)
       expect(wrapper.get('[data-test="machine-refresh"]').attributes('disabled')).toBeUndefined()
     } finally { vi.useRealTimers() }
   })
+})
+
+it('retranslates findings and status without refreshing the machine or discarding its report', async () => {
+  const mock = api()
+  const wrapper = mount(SetupView); await flushPromises()
+  const calls = mock.mock.calls.length
+  setLocale('en'); await flushPromises()
+  expect(wrapper.get('h1').text()).toBe('Library')
+  expect(wrapper.get('[data-group=tools] h3').text()).toBe('Tools')
+  expect(wrapper.get('[data-group=tools]').text()).toContain('error · git_identity_missing')
+  expect(wrapper.get('[data-test=machine-verdict]').text()).toBe('2 errors, 0 warnings')
+  setLocale('cs'); await flushPromises()
+  expect(wrapper.get('h1').text()).toBe('Knihovna')
+  expect(wrapper.get('[data-group=tools] h3').text()).toBe('Nástroje')
+  expect(mock).toHaveBeenCalledTimes(calls)
 })

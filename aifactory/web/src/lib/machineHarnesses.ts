@@ -16,7 +16,7 @@ export interface HarnessCatalog {
   configured: boolean
   tests?: Record<string, Record<string, HarnessTest>>
 }
-export interface HarnessTest { ok: boolean; error?: string | null; answer?: string; at?: string }
+export interface HarnessTest { ok: boolean; error_code?: string | null; error?: string | null; answer?: string; at?: string }
 export const fetchHarnessSettings = () => getGlobal<HarnessCatalog>('/machine/harnesses')
 export const saveHarnessSettings = (settings: HarnessSettings) => postGlobal<HarnessCatalog>('/machine/harnesses', settings)
 export const testHarness = (harness: string, model: string, thinking?: string | null) => postGlobal<HarnessTest>('/machine/harnesses/test', { harness, model, ...(thinking ? { thinking } : {}) })

@@ -85,7 +85,7 @@ class CheckJob:
     budget: float
     started: float
     started_at: str
-    step: str = "příprava"
+    step: str = "prepare"
     detail: str | None = None
     done: threading.Event = field(default_factory=threading.Event)
     result: CachedCheck | None = None
@@ -273,7 +273,7 @@ def _work(job: CheckJob, home: Path, state: GlobalState, machine: Machine | None
             }
             report = run_check(where, groups=probes, **kwargs)
             library = run_check(where, groups=libraries, **kwargs)
-        job.at("dokončení")
+        job.at("complete")
         data = report.to_json()
         data["groups"] = [*data["groups"], *(g.name for g in libraries)]
         data["checked_at"] = datetime.now(UTC).isoformat()
