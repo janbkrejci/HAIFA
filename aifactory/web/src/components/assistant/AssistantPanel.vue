@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { t } from '@/lib/i18n'
+import LanguageSelect from '@/components/LanguageSelect.vue'
 // The AI guide: a side panel over every screen. It keeps the open thread across screens
 // (lib/assistant.ts), attaches the screen as a removable chip, streams the answer as markdown
 // with dashboard links, lists older threads and offers three questions in an empty thread.
@@ -218,6 +219,7 @@ watch(
         </Tooltip>
       </div>
     </header>
+    <div class="language"><LanguageSelect /></div>
 
     <section v-if="assistant.listing" class="threads" data-test="assistant-thread-list">
       <p v-if="assistant.threadsError" class="error" role="alert" data-test="assistant-threads-error">{{ assistant.threadsError }}</p>
@@ -339,6 +341,7 @@ watch(
 </template>
 
 <style scoped>
+.language { padding: 8px 16px; }
 .harness-choice { font-size: 12px; }
 .harness-choice p { margin: 6px 0; }
 .assistant {

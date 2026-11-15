@@ -3,6 +3,7 @@
 // the sections of the open one and a search over all of them; the chapter rendered on the right.
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { BookOpen, Search } from 'lucide-vue-next'
+import { locale, t } from '@/lib/i18n'
 import { errorText } from '@/lib/format'
 import { fetchGuide, search, sections, type GuideChapter } from '@/lib/guide'
 import { renderMarkdown } from '@/lib/markdown'
@@ -53,14 +54,15 @@ onMounted(async () => {
 
 <template>
   <section class="guide" data-test="guide">
-    <div v-if="error" class="guide-error" data-test="guide-error">Příručku se nepodařilo načíst: {{ error }}</div>
-    <div v-else-if="chapters === null" class="guide-loading"><Spinner /> Načítám příručku…</div>
+    <div v-if="error" class="guide-error" data-test="guide-error">{{ t('guide.error', { error }) }}</div>
+    <div v-else-if="chapters === null" class="guide-loading"><Spinner /> {{ t('guide.loading') }}</div>
     <div v-else class="guide-layout">
-      <nav class="guide-nav" aria-label="Kapitoly příručky">
-        <h1><BookOpen :size="20" aria-hidden="true" /> Příručka</h1>
+      <nav class="guide-nav" :aria-label="t('guide.chapters')">
+        <h1><BookOpen :size="20" aria-hidden="true" /> {{ t('nav.guide') }}</h1>
+        <p v-if="locale === 'en'" class="faint">{{ t('guide.contentLanguage') }}</p>
         <label class="guide-search">
           <Search :size="15" aria-hidden="true" />
-          <input v-model="query" type="search" placeholder="Hledat v příručce" aria-label="Hledat v příručce" data-test="guide-search" />
+          <input v-model="query" type="search" :placeholder="t('guide.search')" :aria-label="t('guide.search')" data-test="guide-search" />
         </label>
         <ol v-if="!query.trim()" class="guide-chapters">
           <li v-for="c in chapters" :key="c.id">
@@ -73,7 +75,7 @@ onMounted(async () => {
           </li>
         </ol>
         <div v-else class="guide-hits" data-test="guide-hits">
-          <p v-if="!hits.length" class="faint">Nic nenalezeno.</p>
+          <p v-if="!hits.length" class="faint">{{ t('guide.noHits') }}</p>
           <a
             v-for="h in hits"
             :key="`${h.chapter.id}/${h.section.id}`"
@@ -87,7 +89,7 @@ onMounted(async () => {
           </a>
         </div>
       </nav>
-      <article class="guide-article">
+      <article class="guide-article" lang="cs">
         <div ref="article" class="md" data-test="guide-article" v-html="html" />
         <footer class="guide-pager">
           <a v-if="previous" :href="guideHref(previous.id)" data-test="guide-previous">← {{ previous.title }}</a>

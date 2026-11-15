@@ -1,4 +1,5 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
+import { setLocale } from './i18n'
 import { AGENT_FALLBACK_COLORS } from './events'
 import type { AgentSession, PhaseRow, RunDetail, TraceEvent } from './runs'
 import { applyTail } from './runs'
@@ -438,4 +439,14 @@ describe('buildTimeline for a short run', () => {
     expect(narrow.overflow).toBe(true)
     expect(narrow.width).toBeCloseTo(8 * MIN_BLOCK_PX + 7 * BLOCK_GAP_PX + 0.004 * 600)
   })
+})
+
+
+afterEach(() => setLocale('en'))
+it.each(['en', 'cs'] as const)('localizes waterfall lane chrome in %s, preserving owners', language => {
+  setLocale(language)
+  const lanes = buildLanes(run([phase({ phase_id: 'code', kind: 'code' }), phase({ phase_id: 'agent', owner: 'builder' })]), [])
+  expect(lanes[0]!.meta).toBe(language === 'en' ? 'request' : 'požadavek')
+  expect(lanes[1]!.label).toBe(language === 'en' ? 'code' : 'kód')
+  expect(lanes[2]!.label).toBe('builder')
 })

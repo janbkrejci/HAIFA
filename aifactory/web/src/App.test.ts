@@ -1,3 +1,4 @@
+import { chooseOption } from './test/select'
 import { setLocale } from '@/lib/i18n'
 import { beforeEach, afterEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, ref } from 'vue'
@@ -975,4 +976,25 @@ it.each([
     expect(wrapper.get('[data-test="switcher-current"]').text()).toBe(label)
     expect(document.documentElement.lang).toBe(language)
   }
+})
+
+
+it('offers the global language preference with no repositories and keeps it across repo navigation', async () => {
+  setLocale('en')
+  stubApi({ repos: [] })
+  go('#/overview')
+  const wrapper = mount(App, { attachTo: document.body })
+  await flushPromises()
+  expect(wrapper.get('[data-test="language-select"]').attributes('aria-label')).toBe('Language')
+  await chooseOption(wrapper, '[data-test="language-select"]', 'cs')
+  expect(document.documentElement.lang).toBe('cs')
+  expect(localStorage.getItem('haifa.dashboard.locale')).toBe('cs')
+  for (const hash of ['#/r/first/backlog', '#/r/second/runs', '#/setup']) {
+    go(hash)
+    await flushPromises()
+    expect(wrapper.get('[data-test="language-select"]').text()).toContain('Čeština')
+  }
+  await chooseOption(wrapper, '[data-test="language-select"]', 'en')
+  expect(document.documentElement.lang).toBe('en')
+  expect(localStorage.getItem('haifa.dashboard.locale')).toBe('en')
 })
