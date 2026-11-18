@@ -38,6 +38,48 @@ from aifactory.web.server import dashboard_url, restart_command
 
 ERROR_FILE = "giro-transition-error.json"
 
+# Windows clears inherited ACE flags and canonicalizes ACE order when persisting
+# a protected DACL. Compare the complete ACE bytes without that provenance flag,
+# retaining duplicates, rights, identities and all other inheritance flags.
+# Persist only Access via .NET: PowerShell's Set-Acl directory provider also
+# requests audit privileges, which an ordinary dashboard process does not have.
+_BACKUP_ACL = """
+$ErrorActionPreference='Stop'
+Import-Module "$PSHOME/Modules/Microsoft.PowerShell.Security/Microsoft.PowerShell.Security.psd1"
+function AclKey($acl) {
+    $raw=[System.Security.AccessControl.RawSecurityDescriptor]::new($acl.Sddl)
+    $entries=@(foreach ($ace in $raw.DiscretionaryAcl) {
+        $ace.AceFlags=[int]$ace.AceFlags -band 239
+        $bytes=[byte[]]::new($ace.BinaryLength)
+        $ace.GetBinaryForm($bytes,0)
+        [Convert]::ToBase64String($bytes)
+    })
+    [Array]::Sort($entries, [StringComparer]::Ordinal)
+    return "$($null -eq $raw.DiscretionaryAcl)|" +
+        ($entries -join '|')
+}
+$acl=Get-Acl -LiteralPath $env:GIRO_ACL_SOURCE
+$acl.SetAccessRuleProtection($true,$true)
+$copy=[System.Security.AccessControl.FileSecurity]::new()
+if ([System.IO.Directory]::Exists($env:GIRO_ACL_TARGET)) {
+    $copy=[System.Security.AccessControl.DirectorySecurity]::new()
+}
+$copy.SetSecurityDescriptorSddlForm($acl.Sddl, 'Access')
+function ApplyAcl($copy) {
+    if ([System.IO.Directory]::Exists($env:GIRO_ACL_TARGET)) {
+        [System.IO.Directory]::SetAccessControl($env:GIRO_ACL_TARGET,$copy)
+    } else {
+        [System.IO.File]::SetAccessControl($env:GIRO_ACL_TARGET,$copy)
+    }
+}
+ApplyAcl $copy
+$actual=Get-Acl -LiteralPath $env:GIRO_ACL_TARGET
+if (-not $actual.AreAccessRulesProtected -or -not $actual.AreAccessRulesCanonical -or
+    (AclKey $actual) -cne (AclKey $acl)) {
+    throw 'Backup ACL verification failed'
+}
+"""
+
 
 def _digest(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -91,24 +133,19 @@ def _copy(source: Path, target: Path) -> None:
     if sys.platform == "win32":
         # copy2/copytree do not preserve Windows DACLs. Freeze the source's
         # effective inherited rules on the copy so its new parent cannot widen them.
-        subprocess.run(
-            [
-                "powershell",
-                "-NoProfile",
-                "-NonInteractive",
-                "-Command",
-                "$ErrorActionPreference='Stop'; "
-                "$acl=Get-Acl -LiteralPath $env:GIRO_ACL_SOURCE; "
-                "$acl.SetAccessRuleProtection($true,$true); "
-                "Set-Acl -LiteralPath $env:GIRO_ACL_TARGET -AclObject $acl; "
-                "$actual=Get-Acl -LiteralPath $env:GIRO_ACL_TARGET; "
-                "if ($actual.Sddl -ne $acl.Sddl) { throw 'Backup ACL verification failed' }",
-            ],
-            env={**os.environ, "GIRO_ACL_SOURCE": str(source), "GIRO_ACL_TARGET": str(target)},
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        try:
+            subprocess.run(
+                ["powershell", "-NoProfile", "-NonInteractive", "-Command", _BACKUP_ACL],
+                env={**os.environ, "GIRO_ACL_SOURCE": str(source), "GIRO_ACL_TARGET": str(target)},
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = (exc.stderr or exc.stdout or str(exc)).strip()
+            raise UpgradeError(
+                "migration_unsafe", f"Cannot preserve backup permissions for {source}: {detail}"
+            ) from exc
 
 
 def _data_paths(home: Path) -> tuple[list[Path], int]:

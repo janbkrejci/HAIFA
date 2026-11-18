@@ -15,9 +15,10 @@ jobs:
     if: >-
       github.repository == 'janbkrejci/HAIFA' &&
       github.event_name == 'workflow_dispatch' &&
-      github.ref == 'refs/tags/haifa-transition-source' &&
-      github.sha == vars.HAIFA_TRANSITION_SHA &&
-      vars.HAIFA_TRANSITION_PUBLISHED == 'false' &&
+      github.ref == 'refs/tags/haifa-transition-acl-source' &&
+      github.sha == vars.HAIFA_TRANSITION_HOTFIX_SHA &&
+      vars.HAIFA_TRANSITION_HOTFIX_PUBLISHED == 'false' &&
+      vars.HAIFA_TRANSITION_PUBLISHED == 'true' &&
       github.event.repository.private == false
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -25,13 +26,15 @@ jobs:
       contents: write
     env:
       GH_TOKEN: ${{ github.token }}
+      HAIFA_TRANSITION_HOTFIX_SHA: ${{ vars.HAIFA_TRANSITION_HOTFIX_SHA }}
+      HAIFA_TRANSITION_HOTFIX_PUBLISHED: ${{ vars.HAIFA_TRANSITION_HOTFIX_PUBLISHED }}
       HAIFA_TRANSITION_SHA: ${{ vars.HAIFA_TRANSITION_SHA }}
       HAIFA_TRANSITION_PUBLISHED: ${{ vars.HAIFA_TRANSITION_PUBLISHED }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-          ref: ${{ vars.HAIFA_TRANSITION_SHA }}
+          ref: ${{ vars.HAIFA_TRANSITION_HOTFIX_SHA }}
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
         with:
           python-version: '3.12'
@@ -68,11 +71,10 @@ jobs:
         run: |
           cd aifactory
           .venv/bin/python -m bundle.release --check-transition
-          # Claim publication before creating a release: even an interrupted dispatch
-          # cannot publish a second H. T06 recovers the same draft/tag manually.
-          git tag haifa-transition-published "$GITHUB_SHA"
-          git push origin refs/tags/haifa-transition-published
+          # Claim this one ACL hotfix. Keep the original publication marker intact.
+          git tag haifa-transition-acl-published "$GITHUB_SHA"
+          git push origin refs/tags/haifa-transition-acl-published
           tag="v$VERSION"
-          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "HAIFA $VERSION" --notes "Final HAIFA transition release. Source commit: $GITHUB_SHA."
+          gh release create "$tag" --draft --target "$GITHUB_SHA" --title "HAIFA $VERSION" --notes "Windows GIRO migration hotfix: preserve and verify backup access rules without requiring audit privileges. Update HAIFA first, then retry the GIRO transition. Source commit: $GITHUB_SHA."
           gh release upload "$tag" "dist/haifa-$VERSION.zip"
           gh release edit "$tag" --draft=false --latest

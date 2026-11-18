@@ -1,5 +1,30 @@
 # Poslední HAIFA a přechod na GIRO
 
+## Opravné vydání přechodu pro Windows (2026-11-18)
+
+HAIFA 0.1.614 zůstává původním přechodovým vydáním. Uživatel schválil jedno
+opravné vydání kvůli selhání zálohování Windows ACL před přechodem na GIRO.
+Hotfix vychází z `4dd3ddf1ea18f672674123df94dc4643a4868f52`, bez rebrandingu.
+Kopíruje pouze DACL bez vyžadování oprávnění pro audit a ověřuje pravidla po
+normalizaci příznaku zdědění a pořadí ACE. Skutečná změna práv nebo zapnuté
+dědění zálohy přechod nadále zastaví. Diagnostika obsahuje chybu PowerShellu.
+
+Samostatná publikační brána této větve používá tag `haifa-transition-acl-source`,
+proměnné `HAIFA_TRANSITION_HOTFIX_SHA` a `HAIFA_TRANSITION_HOTFIX_PUBLISHED=false`
+a jednorázový claim `haifa-transition-acl-published`. Původní tagy, SHA a
+`HAIFA_TRANSITION_PUBLISHED=true` se nemění. Kontrola vyžaduje původní publikovaný
+tag na původním SHA, jeho předkovství vůči hotfixu, stabilní GIRO a vyšší HAIFA
+verzi. Obě brány používají stejnou concurrency skupinu. Claim vzniká před
+publikováním; při přerušení se dokončí stejné vydání, claim se nemaže.
+Po publikaci se `HAIFA_TRANSITION_HOTFIX_PUBLISHED` přepne na `true`.
+
+Uživatel nejprve nainstaluje opravnou HAIFA běžnou aktualizací a potom znovu
+spustí přechod na GIRO. Změna nepublikuje žádné nové vydání GIRO.
+
+Lokální ověření hotfixu na Windows: `just lint`, `just typecheck`, 60 testů
+`test_release_workflow.py`, `test_release.py` a `test_transition.py`, dalších
+11 testů dashboardu vybraných pomocí `migration or failed_install`.
+
 Podporovaná cesta je pouze **stará HAIFA → poslední HAIFA H → kliknutí v dashboardu
 → GIRO G z nového repo**. H zůstává HAIFA, včetně CLI, vzhledu, distribučního jména
 `aifactory` a jediného assetu `haifa-H.zip` s kořenem `haifa-H/`. G má jediný

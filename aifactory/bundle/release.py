@@ -18,14 +18,31 @@ def check_transition() -> None:
     if (
         env.get("GITHUB_REPOSITORY") != "janbkrejci/HAIFA"
         or env.get("GITHUB_EVENT_NAME") != "workflow_dispatch"
-        or env.get("GITHUB_REF") != "refs/tags/haifa-transition-source"
-        or not re.fullmatch(r"[0-9a-f]{40}", env.get("HAIFA_TRANSITION_SHA", ""))
-        or env.get("GITHUB_SHA") != env.get("HAIFA_TRANSITION_SHA")
-        or env.get("HAIFA_TRANSITION_PUBLISHED") != "false"
+        or env.get("GITHUB_REF") != "refs/tags/haifa-transition-acl-source"
+        or not re.fullmatch(r"[0-9a-f]{40}", env.get("HAIFA_TRANSITION_HOTFIX_SHA", ""))
+        or env.get("GITHUB_SHA") != env.get("HAIFA_TRANSITION_HOTFIX_SHA")
+        or env.get("HAIFA_TRANSITION_HOTFIX_PUBLISHED") != "false"
     ):
         raise ValueError("Only the approved, unpublished HAIFA transition source may publish")
-    published = subprocess.run(
+    # The ACL hotfix is a descendant of the retained, already published HAIFA.
+    # Never reset the original publication marker to authorize a second release.
+    original = env.get("HAIFA_TRANSITION_SHA", "")
+    if (
+        not re.fullmatch(r"[0-9a-f]{40}", original)
+        or env.get("HAIFA_TRANSITION_PUBLISHED") != "true"
+    ):
+        raise ValueError("The original HAIFA transition release must remain published")
+    subprocess.run(["git", "merge-base", "--is-ancestor", original, env["GITHUB_SHA"]], check=True)
+    retained = subprocess.run(
         ["git", "ls-remote", "--tags", "origin", "refs/tags/haifa-transition-published"],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+    if retained != [original, "refs/tags/haifa-transition-published"]:
+        raise ValueError("The original HAIFA publication marker must match its approved source")
+    published = subprocess.run(
+        ["git", "ls-remote", "--tags", "origin", "refs/tags/haifa-transition-acl-published"],
         capture_output=True,
         text=True,
         check=True,

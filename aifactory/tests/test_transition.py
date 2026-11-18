@@ -91,9 +91,10 @@ def prepared_home(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
         folder = home / f"library/folder{suffix}"
         folder.mkdir()
         (folder / "contents").write_bytes(b"ordinary user directory")
-    with sqlite3.connect(home / "history.db") as connection:
+    with closing(sqlite3.connect(home / "history.db")) as connection:
         connection.execute("CREATE TABLE history(value TEXT)")
         connection.execute("INSERT INTO history VALUES ('preserved')")
+        connection.commit()
     monkeypatch.setenv("HOME", str(tmp_path))
     monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path))
     monkeypatch.setenv("HAIFA_HOME", str(home))
@@ -226,9 +227,11 @@ def test_preparation_failures_preserve_haifa_and_can_retry(
     ],
 )
 def test_worker_installs_with_existing_updater_validates_and_rolls_back(
+    # Build fake executables with the real interpreter before prepared_home
+    # redirects sys.executable to the retained-tool fixture.
+    uv_log: Path,
     prepared_home: Path,
     hosting: dict[str, Any],
-    uv_log: Path,
     monkeypatch: pytest.MonkeyPatch,
     failure: str | None,
     default_home: bool,
@@ -431,20 +434,55 @@ def test_windows_backup_preserves_acl_or_stops(
         assert "SetAccessRuleProtection($true,$true)" in argv[-1]
         assert "Backup ACL verification failed" in argv[-1]
         if fails:
-            raise subprocess.CalledProcessError(1, argv)
+            raise subprocess.CalledProcessError(1, argv, stderr="ACL access denied")
         return subprocess.CompletedProcess(argv, 0, "")
 
     monkeypatch.setattr(sys, "platform", "win32")
     monkeypatch.setattr(subprocess, "run", acl)
     if fails:
-        with pytest.raises(subprocess.CalledProcessError):
+        with pytest.raises(UpgradeError, match="ACL access denied") as error:
             transition._copy(source, target)
+        assert error.value.code == "migration_unsafe"
     else:
         transition._copy(source, target)
         assert target.read_text() == "secret"
     assert calls[0]["check"] is True
     assert calls[0]["env"]["GIRO_ACL_SOURCE"] == str(source)
     assert calls[0]["env"]["GIRO_ACL_TARGET"] == str(target)
+
+
+@pytest.mark.skipif(sys.platform != "win32", reason="Windows ACL round trip")
+@pytest.mark.parametrize("tamper", [None, "inheritance", "rights"])
+def test_real_windows_backup_acl_verification(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, tamper: str | None
+) -> None:
+    source, target = tmp_path / "source", tmp_path / "backup"
+    source.write_text("preserved")
+    if tamper:
+        script = transition._BACKUP_ACL
+        if tamper == "inheritance":
+            # Simulate a successful write that leaves the inherited target DACL.
+            script = script.replace("ApplyAcl $copy", "")
+        else:
+            # Simulate reading back a protected DACL with an extra grant.
+            script = script.replace(
+                "$actual=Get-Acl -LiteralPath $env:GIRO_ACL_TARGET",
+                "$actual=Get-Acl -LiteralPath $env:GIRO_ACL_TARGET\n"
+                "$sid=[System.Security.Principal.SecurityIdentifier]::new('S-1-1-0')\n"
+                "$rule=[System.Security.AccessControl.FileSystemAccessRule]::new("
+                "$sid,'FullControl','Allow')\n"
+                "$actual.AddAccessRule($rule)",
+            )
+        monkeypatch.setattr(
+            transition,
+            "_BACKUP_ACL",
+            script,
+        )
+        with pytest.raises(UpgradeError, match="Backup ACL verification failed"):
+            transition._copy(source, target)
+    else:
+        transition._copy(source, target)
+        assert target.read_text() == "preserved"
 
 
 def test_unwritable_migration_guard_refuses_cli_with_json_error(
